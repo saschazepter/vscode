@@ -23,6 +23,8 @@ import { IWorkbenchUIElementFactory, IResourceLabel } from '../../../editor/brow
 import { RefCounted } from '../../../editor/browser/widget/diffEditor/utils.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { ResourceLabel } from '../../../workbench/browser/labels.js';
+import { MenuWorkbenchToolBar } from '../../../platform/actions/browser/toolbar.js';
+import { Menus } from '../menus.js';
 
 /**
  * A file with original and modified URIs for diff preview.
@@ -41,8 +43,12 @@ const $ = dom.$;
 export class DiffPreviewWidget extends Disposable {
 
 	static readonly PREFERRED_WIDTH = 500;
+	private static readonly HEADER_HEIGHT = 32;
 
 	private readonly container: HTMLElement;
+	private readonly headerContainer: HTMLElement;
+	private readonly titleLabel: HTMLElement;
+	private readonly fileCountBadge: HTMLElement;
 	private readonly emptyStateContainer: HTMLElement;
 	private readonly editorContainer: HTMLElement;
 
@@ -74,6 +80,20 @@ export class DiffPreviewWidget extends Disposable {
 		super();
 
 		this.container = dom.append(parent, $('.diff-preview-widget'));
+
+		// Header bar with title and actions
+		this.headerContainer = dom.append(this.container, $('.diff-preview-header'));
+		const titleContainer = dom.append(this.headerContainer, $('.diff-preview-header-title'));
+		this.titleLabel = dom.append(titleContainer, $('span.diff-preview-header-label'));
+		this.titleLabel.textContent = localize('diffPreview.title', "Review");
+		this.fileCountBadge = dom.append(titleContainer, $('span.diff-preview-files-count'));
+		this.fileCountBadge.style.display = 'none';
+
+		const toolbarContainer = dom.append(this.headerContainer, $('.diff-preview-header-toolbar'));
+		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, toolbarContainer, Menus.DiffPreviewToolbar, {
+			menuOptions: { shouldForwardArgs: true },
+			toolbarOptions: { primaryGroup: g => g.startsWith('navigation') },
+		}));
 
 		// Empty state
 		this.emptyStateContainer = dom.append(this.container, $('.diff-preview-empty'));
@@ -109,11 +129,15 @@ export class DiffPreviewWidget extends Disposable {
 		if (files.length === 0) {
 			this.documentsObs.set([], undefined);
 			this.updateEmptyState(true);
+			this.fileCountBadge.textContent = '';
+			this.fileCountBadge.style.display = 'none';
 			this.updateViewModel();
 			return;
 		}
 
 		this.updateEmptyState(false);
+		this.fileCountBadge.textContent = `${files.length}`;
+		this.fileCountBadge.style.display = '';
 
 		// Resolve text models for each file
 		const docs: RefCounted<IDocumentDiffItem>[] = [];
@@ -155,7 +179,7 @@ export class DiffPreviewWidget extends Disposable {
 		// Re-layout now that the editor has content
 		if (this.multiDiffEditor && this.currentWidth > 0 && this.currentHeight > 0) {
 			const innerWidth = Math.max(0, this.currentWidth - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING);
+			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
 			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
 		}
 	}
@@ -178,7 +202,7 @@ export class DiffPreviewWidget extends Disposable {
 
 		if (this.multiDiffEditor) {
 			const innerWidth = Math.max(0, width - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, height - DiffPreviewWidget.VERTICAL_PADDING);
+			const innerHeight = Math.max(0, height - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
 			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
 		}
 	}
@@ -229,7 +253,7 @@ export class DiffPreviewWidget extends Disposable {
 
 		if (this.currentWidth > 0 && this.currentHeight > 0) {
 			const innerWidth = Math.max(0, this.currentWidth - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING);
+			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
 			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
 		}
 	}

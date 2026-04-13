@@ -28,6 +28,7 @@ import { ChangesViewPane } from './changesView.js';
 import { toIChangesFileItem } from './changesViewRenderer.js';
 import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
 import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
+import { Menus } from '../../../browser/menus.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -240,7 +241,7 @@ registerAction2(class OpenDiffInModalAction extends Action2 {
 				id: MenuId.MultiDiffEditorFileToolbar,
 				group: 'navigation',
 				order: -10,
-				when: IsSessionsWindowContext,
+				when: ContextKeyExpr.false(),
 			}],
 		});
 	}
@@ -257,6 +258,54 @@ registerAction2(class OpenDiffInModalAction extends Action2 {
 		const item = changes.find(c => c.uri.toString() === uri.toString());
 		if (item) {
 			view.openFileInModal(item, changes);
+		}
+	}
+});
+
+// --- Diff Preview Toolbar Actions ---
+
+registerAction2(class ViewAllInEditorAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.agentSessions.viewAllInEditor',
+			title: localize2('viewAllInEditor', "View All in Editor"),
+			icon: Codicon.goToFile,
+			f1: false,
+			precondition: IsSessionsWindowContext,
+			menu: [{
+				id: Menus.DiffPreviewToolbar,
+				group: 'navigation',
+				order: 1,
+			}],
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+		await view?.openChanges();
+	}
+});
+
+registerAction2(class CloseDiffPreviewAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.agentSessions.closeDiffPreview',
+			title: localize2('closeDiffPreview', "Close Preview"),
+			icon: Codicon.close,
+			f1: false,
+			precondition: IsSessionsWindowContext,
+			menu: [{
+				id: Menus.DiffPreviewToolbar,
+				group: 'navigation',
+				order: 100,
+			}],
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
+		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+		if (part instanceof AuxiliaryBarPart && part.isDiffPreviewVisible) {
+			part.toggleDiffPreview();
 		}
 	}
 });

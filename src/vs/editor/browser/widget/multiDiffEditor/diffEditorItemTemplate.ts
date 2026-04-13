@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { h } from '../../../../base/browser/dom.js';
+import { addDisposableListener, h } from '../../../../base/browser/dom.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
@@ -136,6 +136,16 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			btn.icon = this._collapsed.read(reader) ? Codicon.chevronRight : Codicon.chevronDown;
 		}));
 		this._register(btn.onDidClick(() => {
+			this._viewModel.get()?.collapsed.set(!this._collapsed.get(), undefined);
+		}));
+
+		// Clicking anywhere in the header content (except actions) toggles collapse
+		this._register(addDisposableListener(this._elements.header, 'click', (e) => {
+			// Don't toggle if clicking on the actions toolbar or the collapse button itself
+			const target = e.target as HTMLElement;
+			if (target.closest('.actions') || target.closest('.collapse-button')) {
+				return;
+			}
 			this._viewModel.get()?.collapsed.set(!this._collapsed.get(), undefined);
 		}));
 
