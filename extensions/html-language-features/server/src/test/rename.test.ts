@@ -3,7 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as assert from 'assert';
+import { suite, test } from 'node:test';
+import assert from 'node:assert/strict';
 import { WorkspaceEdit, TextDocument, getLanguageModes, ClientCapabilities } from '../modes/languageModes.js';
 import { getNodeFileFS } from '../node/nodeFs.js';
 

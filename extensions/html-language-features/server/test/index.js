@@ -3,39 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as path from 'node:path';
+import { run } from 'node:test';
+import { spec } from 'node:test/reporters';
+import path from 'node:path';
 import glob from 'glob';
-import Mocha from 'mocha';
 
-const suite = 'Integration HTML Extension Tests';
 const testRoot = import.meta.dirname;
+const files = glob.sync(path.posix.join(testRoot, '../out/test/**/*.test.js'));
 
-const options = {
-	ui: 'tdd',
-	color: true,
-	timeout: 60000
-};
+const stream = run({
+	files,
+	timeout: 60000,
+	...(process.env.MOCHA_GREP ? { testNamePatterns: [process.env.MOCHA_GREP] } : {}),
+});
 
-if (process.env.MOCHA_GREP) {
-	options.grep = process.env.MOCHA_GREP;
-}
-
-if (process.env.BUILD_ARTIFACTSTAGINGDIRECTORY || process.env.GITHUB_WORKSPACE) {
-	options.reporter = 'mocha-multi-reporters';
-	options.reporterOptions = {
-		reporterEnabled: 'spec, mocha-junit-reporter',
-		mochaJunitReporterReporterOptions: {
-			testsuitesTitle: `${suite} ${process.platform}`,
-			mochaFile: path.join(
-				process.env.BUILD_ARTIFACTSTAGINGDIRECTORY || process.env.GITHUB_WORKSPACE || testRoot,
-				`test-results/${process.platform}-${process.arch}-${suite.toLowerCase().replace(/[^\w]/g, '-')}-results.xml`)
-		}
-	};
-}
-
-const mocha = new Mocha(options);
-
-glob.sync(path.posix.join(testRoot, '../out/test/**/*.test.js'))
-	.forEach(file => mocha.addFile(file));
-
-mocha.run(failures => process.exit(failures ? -1 : 0));
+let failed = 0;
+stream.on('test:fail', () => failed++);
+stream.compose(spec).pipe(process.stdout);
+stream.on('close', () => process.exit(failed ? 1 : 0));

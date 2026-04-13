@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import 'mocha';
-import * as assert from 'assert';
+import { suite, test } from 'node:test';
+import assert from 'node:assert/strict';
 import { getLanguageModes, ClientCapabilities, TextDocument, SelectionRange } from '../modes/languageModes.js';
 import { getSelectionRanges } from '../modes/selectionRanges.js';
 import { getNodeFileFS } from '../node/nodeFs.js';
