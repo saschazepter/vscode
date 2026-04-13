@@ -38,6 +38,7 @@ import { IInstantiationService } from '../../../util/vs/platform/instantiation/c
 import { LineCheck } from '../../inlineChat/vscode-node/naturalLanguageHint';
 import { createCorrelationId } from '../common/correlationId';
 import { NesChangeHint } from '../common/nesTriggerHint';
+import { computeGhostTextEditKey, ShownGhostTextTracker } from '../common/shownGhostTextTracker';
 import { NESInlineCompletionContext } from '../node/nextEditProvider';
 import { NextEditProviderTelemetryBuilder, TelemetrySender } from '../node/nextEditProviderTelemetry';
 import { INextEditResult, NextEditResult } from '../node/nextEditResult';
@@ -148,6 +149,32 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 	private readonly _renameSymbolSuggestions: IObservable<boolean>;
 	private readonly _inlineCompletionsAdvanced: IObservable<boolean>;
 
+	//#region Ghost text tracking
+	private readonly _ghostTextTrackingEnabled: boolean;
+	private readonly _ghostTextTracker = new ShownGhostTextTracker();
+
+	/**
+	 * Context of the currently pending (not yet finalized) ghost text suggestion.
+	 * Set when a ghost text suggestion is shown; cleared when endOfLifetime is received
+	 * or when a new provide call preemptively records it as ignored (race condition handling).
+	 */
+	private _pendingShownGhostText: {
+		readonly editKey: string;
+		readonly docUri: string;
+		readonly cursorLine: number;
+		readonly cursorCharacter: number;
+		readonly documentVersion: number;
+	} | undefined;
+
+	private readonly _ghostTextItemKeys = new WeakMap<NesCompletionItem, {
+		readonly editKey: string;
+		readonly docUri: string;
+		readonly cursorLine: number;
+		readonly cursorCharacter: number;
+		readonly documentVersion: number;
+	}>();
+	//#endregion
+
 	constructor(
 		private readonly model: InlineEditModel,
 		private readonly logger: InlineEditLogger,
@@ -172,6 +199,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		this._displayNextEditorNES = this._configurationService.getExperimentBasedConfig(ConfigKey.Advanced.UseAlternativeNESNotebookFormat, this._expService);
 		this._renameSymbolSuggestions = this._configurationService.getExperimentBasedConfigObservable(ConfigKey.Advanced.InlineEditsRenameSymbolSuggestions, this._expService);
 		this._inlineCompletionsAdvanced = this._configurationService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.InlineEditsInlineCompletionsAdvanced, this._expService);
+		this._ghostTextTrackingEnabled = this._configurationService.getConfig(ConfigKey.TeamInternal.InlineEditsGhostTextTracking);
 
 		this.setCurrentModelId = (modelId: string) => this._modelService.setCurrentModelId(modelId);
 
@@ -237,6 +265,18 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		token: CancellationToken
 	): Promise<NesCompletionList | undefined> {
 		const logger = this._logger.createSubLogger(['provideInlineCompletionItems', shortenOpportunityId(context.requestUuid)]);
+
+		// Ghost text tracking: preemptively record the previous ghost text as ignored
+		// if its endOfLifetime hasn't arrived yet (race condition handling).
+		if (this._ghostTextTrackingEnabled && this._pendingShownGhostText) {
+			const pending = this._pendingShownGhostText;
+			this._ghostTextTracker.recordIgnored(pending.docUri, pending.editKey, {
+				cursorLine: pending.cursorLine,
+				cursorCharacter: pending.cursorCharacter,
+				documentVersion: pending.documentVersion,
+			});
+			this._pendingShownGhostText = undefined;
+		}
 
 		// Disable NES while capture mode is active to avoid interference
 		if (this.expectedEditCaptureController.isCaptureActive) {
@@ -432,6 +472,26 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 				return emptyList;
 			}
 
+			// Ghost text tracking: compute context once, use for both filtering and recording
+			let ghostTextCtx: { editKey: string; docUri: string; cursorLine: number; cursorCharacter: number; documentVersion: number } | undefined;
+			if (this._ghostTextTrackingEnabled && completionItem.range) {
+				const r = completionItem.range;
+				const insertTextStr = typeof completionItem.insertText === 'string' ? completionItem.insertText : completionItem.insertText?.value ?? '';
+				ghostTextCtx = {
+					editKey: computeGhostTextEditKey(r.start.line, r.start.character, r.end.line, r.end.character, insertTextStr),
+					docUri: document.uri.toString(),
+					cursorLine: position.line,
+					cursorCharacter: position.character,
+					documentVersion: document.version,
+				};
+
+				if (this._ghostTextTracker.shouldFilter(ghostTextCtx.docUri, ghostTextCtx.editKey, isInlineCompletion, position.line, position.character, document.version)) {
+					logger.trace('ghost text tracking: filtered out previously shown suggestion');
+					this.telemetrySender.scheduleSendingEnhancedTelemetry(suggestionInfo.suggestion, telemetryBuilder);
+					return emptyList;
+				}
+			}
+
 			const menuCommands: InlineCompletionCommand[] = [];
 			if (this.inlineEditDebugComponent) {
 				menuCommands.push(...this.inlineEditDebugComponent.getCommands(logContext));
@@ -464,6 +524,12 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 				supportsRename,
 				correlationId,
 			};
+
+			// Ghost text tracking: associate context with ghost text suggestions for
+			// recording rejection/ignore in handleEndOfLifetime
+			if (ghostTextCtx && isInlineCompletion) {
+				this._ghostTextItemKeys.set(nesCompletionItem, ghostTextCtx);
+			}
 
 			return new NesCompletionList(context.requestUuid, nesCompletionItem, menuCommands, telemetryBuilder);
 		} catch (e) {
@@ -554,6 +620,14 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		} else {
 			this.model.diagnosticsBasedProvider?.handleShown(info.suggestion);
 		}
+
+		// Ghost text tracking: mark this ghost text suggestion as pending (shown but not yet finalized)
+		if (this._ghostTextTrackingEnabled) {
+			const ghostTextCtx = this._ghostTextItemKeys.get(completionItem);
+			if (ghostTextCtx) {
+				this._pendingShownGhostText = ghostTextCtx;
+			}
+		}
 	}
 
 	public handleListEndOfLifetime(list: NesCompletionList, reason: InlineCompletionsDisposeReason): void {
@@ -572,6 +646,9 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 	public handleEndOfLifetime(item: NesCompletionItem, reason: InlineCompletionEndOfLifeReason): void {
 		const logger = this._logger.createSubLogger(['handleEndOfLifetime', shortenOpportunityId(item.info.requestUuid)]);
 		logger.trace(`reason: ${InlineCompletionEndOfLifeReasonKind[reason.kind]}`);
+
+		// Ghost text tracking: record outcome for ghost text suggestions that were shown
+		this._recordGhostTextOutcome(item, reason);
 
 		switch (reason.kind) {
 			case InlineCompletionEndOfLifeReasonKind.Accepted: {
@@ -725,6 +802,38 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 			this.model.nextEditProvider.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
 		} else {
 			this.model.diagnosticsBasedProvider?.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
+		}
+	}
+
+	private _recordGhostTextOutcome(item: NesCompletionItem, reason: InlineCompletionEndOfLifeReason): void {
+		if (!this._ghostTextTrackingEnabled || !item.wasShown) {
+			return;
+		}
+
+		const ghostTextCtx = this._ghostTextItemKeys.get(item);
+		if (!ghostTextCtx) {
+			return; // not a ghost text suggestion
+		}
+
+		// Clear the pending state if this is the item we were tracking
+		if (this._pendingShownGhostText === ghostTextCtx) {
+			this._pendingShownGhostText = undefined;
+		}
+
+		switch (reason.kind) {
+			case InlineCompletionEndOfLifeReasonKind.Rejected:
+				this._ghostTextTracker.recordRejected(ghostTextCtx.docUri, ghostTextCtx.editKey);
+				break;
+			case InlineCompletionEndOfLifeReasonKind.Ignored:
+				this._ghostTextTracker.recordIgnored(ghostTextCtx.docUri, ghostTextCtx.editKey, {
+					cursorLine: ghostTextCtx.cursorLine,
+					cursorCharacter: ghostTextCtx.cursorCharacter,
+					documentVersion: ghostTextCtx.documentVersion,
+				});
+				break;
+			case InlineCompletionEndOfLifeReasonKind.Accepted:
+				this._ghostTextTracker.clearTracking(ghostTextCtx.docUri, ghostTextCtx.editKey);
+				break;
 		}
 	}
 }
