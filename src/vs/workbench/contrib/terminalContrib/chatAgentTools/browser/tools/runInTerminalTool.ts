@@ -2111,6 +2111,18 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// stops asking questions and lets the user finish interacting with the terminal.
 		let userIsReplyingDirectly = false;
 
+		const disposeNotification = () => this._backgroundNotifications.deleteAndDispose(termId);
+
+		// If the user manually stopped the agent, suppress background
+		// steering requests and tear down the notification listeners.
+		const isSessionCancelled = () => {
+			if (sessionRef.object.lastRequest?.response?.isCanceled) {
+				disposeNotification();
+				return true;
+			}
+			return false;
+		};
+
 		if (outputMonitor) {
 			let lastInputNeededOutput = '';
 			let lastInputNeededNotificationTime = 0;
@@ -2132,12 +2144,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					return;
 				}
 
-				// If the user manually stopped the agent, do not interject with
-				// new steering requests. Dispose the background notification so
-				// no further events fire.
-				if (sessionRef.object.lastRequest?.response?.isCanceled) {
-					this._logService.debug(`RunInTerminalTool: Suppressing input-needed notification for terminal ${termId} because session was cancelled`);
-					disposeNotification();
+				if (isSessionCancelled()) {
 					return;
 				}
 
@@ -2185,8 +2192,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 
 		store.add(sessionRef);
 
-		const disposeNotification = () => this._backgroundNotifications.deleteAndDispose(termId);
-
 		store.add(commandDetection.onCommandFinished(command => {
 			const execution = RunInTerminalTool._activeExecutions.get(termId);
 			if (!execution) {
@@ -2194,11 +2199,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				return;
 			}
 
-			// If the user manually stopped the agent, do not interject with
-			// new steering requests.
-			if (sessionRef.object.lastRequest?.response?.isCanceled) {
-				this._logService.debug(`RunInTerminalTool: Suppressing completion notification for terminal ${termId} because session was cancelled`);
-				disposeNotification();
+			if (isSessionCancelled()) {
 				return;
 			}
 
