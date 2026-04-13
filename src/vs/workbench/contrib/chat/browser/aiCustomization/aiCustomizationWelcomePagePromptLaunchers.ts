@@ -133,6 +133,21 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 					query = `/init ${value}`;
 				}
 				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
+
+				// Show confirmation and clear input
+				if (this.inputElement) {
+					this.inputElement.value = '';
+				}
+				inputRow.classList.add('sent');
+				submitBtn.style.display = 'none';
+				const sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
+				sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
+				setTimeout(() => {
+					sentLabel.remove();
+					submitBtn.style.display = '';
+					inputRow.classList.remove('sent');
+					this.inputElement?.focus();
+				}, 2000);
 			};
 			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
 			this._register(DOM.addDisposableListener(this.inputElement, 'keydown', (e: KeyboardEvent) => {
