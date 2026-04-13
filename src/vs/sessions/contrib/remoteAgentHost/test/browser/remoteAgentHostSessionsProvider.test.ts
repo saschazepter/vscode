@@ -13,6 +13,7 @@ import { runWithFakedTimers } from '../../../../../base/test/common/timeTravelSc
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from '../../../../../platform/agentHost/common/agentService.js';
 import type { ISessionAction, ITerminalAction } from '../../../../../platform/agentHost/common/state/protocol/action-origin.generated.js';
+import type { IResolveSessionConfigResult } from '../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { NotificationType } from '../../../../../platform/agentHost/common/state/protocol/notifications.js';
 import type { IAgentInfo, IRootState } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, type IActionEnvelope, type INotification } from '../../../../../platform/agentHost/common/state/sessionActions.js';
@@ -22,8 +23,8 @@ import { IFileDialogService } from '../../../../../platform/dialogs/common/dialo
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../platform/storage/common/storage.js';
-import { IChatWidgetService } from '../../../../../workbench/contrib/chat/browser/chat.js';
-import { IChatService, type ChatSendResult } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { IChatWidget, IChatWidgetService } from '../../../../../workbench/contrib/chat/browser/chat.js';
+import { IChatService, type ChatSendResult, type IChatSendRequestOptions } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSessionsService } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
@@ -49,6 +50,7 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 	private readonly _sessions = new Map<string, IAgentSessionMetadata>();
 	public disposedSessions: URI[] = [];
 	public dispatchedActions: { action: ISessionAction | ITerminalAction; clientId: string; clientSeq: number }[] = [];
+	public failResolveSessionConfig = false;
 
 	private _nextSeq = 0;
 
@@ -76,6 +78,14 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 		this.disposedSessions.push(session);
 		const rawId = AgentSession.id(session);
 		this._sessions.delete(rawId);
+	}
+
+	override async resolveSessionConfig(): Promise<IResolveSessionConfigResult> {
+		await Promise.resolve();
+		if (this.failResolveSessionConfig) {
+			throw new Error('resolveSessionConfig unavailable');
+		}
+		return { ready: true, schema: { type: 'object', properties: {} }, values: { isolation: 'worktree' } };
 	}
 
 	dispatchAction(action: ISessionAction | ITerminalAction, clientId: string, clientSeq: number): void {
@@ -125,7 +135,7 @@ function createSession(id: string, opts?: { provider?: string; summary?: string;
 	};
 }
 
-function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined }): RemoteAgentHostSessionsProvider {
+function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined; sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; openSession?: boolean }): RemoteAgentHostSessionsProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
 	instantiationService.stub(IFileDialogService, {});
@@ -136,10 +146,10 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	});
 	instantiationService.stub(IChatService, {
 		acquireOrLoadSession: async () => undefined,
-		sendRequest: async (): Promise<ChatSendResult> => ({ kind: 'sent' as const, data: {} as ChatSendResult extends { kind: 'sent'; data: infer D } ? D : never }),
+		sendRequest: overrides?.sendRequest ?? (async (): Promise<ChatSendResult> => ({ kind: 'sent' as const, data: {} as ChatSendResult extends { kind: 'sent'; data: infer D } ? D : never })),
 	});
 	instantiationService.stub(IChatWidgetService, {
-		openSession: async () => undefined,
+		openSession: async () => overrides?.openSession ? new class extends mock<IChatWidget>() { }() : undefined,
 	});
 	instantiationService.stub(ILanguageModelsService, {
 		lookupLanguageModel: () => undefined,
@@ -247,6 +257,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(ws.label, 'project [Test Host]');
 		assert.strictEqual(ws.repositories.length, 1);
 		assert.strictEqual(ws.repositories[0].uri.toString(), uri.toString());
+		assert.strictEqual(ws.repositories[0].detail, undefined);
 	});
 
 	// ---- Browse actions -------
@@ -335,10 +346,12 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			label: workspace?.label,
 			repository: workspace?.repositories[0]?.uri.toString(),
 			workingDirectory: workspace?.repositories[0]?.workingDirectory?.toString(),
+			detail: workspace?.repositories[0]?.detail,
 		}, {
-			label: 'vscode',
+			label: 'vscode [Test Host]',
 			repository: projectUri.toString(),
 			workingDirectory: workingDirectory.toString(),
+			detail: undefined,
 		});
 	}));
 
@@ -445,6 +458,23 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(session.workspace.get()?.label, 'my-project');
 		// sessionType should be the logical type, not the resource scheme
 		assert.strictEqual(session.sessionType, provider.sessionTypes[0].id);
+		assert.deepStrictEqual(provider.getSessionConfig(session.sessionId), { ready: false, schema: { type: 'object', properties: {} }, values: {} });
+	});
+
+	test('createNewSession clears session config when resolving config is unavailable', async () => {
+		connection.failResolveSessionConfig = true;
+		const provider = createProvider(disposables, connection);
+		const workspace = {
+			label: 'my-project',
+			icon: { id: 'remote' },
+			repositories: [{ uri: URI.parse('vscode-agent-host://auth/home/user/project'), workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
+			requiresWorkspaceTrust: false,
+		};
+
+		const session = provider.createNewSession(workspace);
+		await timeout(0);
+
+		assert.strictEqual(provider.getSessionConfig(session.sessionId), undefined);
 	});
 
 	test('getSessionByResource resolves current new session without listing it', () => {
@@ -467,6 +497,27 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			listedSessions: 0,
 			resolvedResource: session.resource.toString(),
 			resolvedWorkspaceLabel: 'my-project',
+		});
+	});
+
+	test('clearConnection clears pending new session config', () => {
+		const provider = createProvider(disposables, connection);
+		const workspace = {
+			label: 'my-project',
+			icon: { id: 'remote' },
+			repositories: [{ uri: URI.parse('vscode-agent-host://auth/home/user/project'), workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
+			requiresWorkspaceTrust: false,
+		};
+
+		const session = provider.createNewSession(workspace);
+		provider.clearConnection();
+
+		assert.deepStrictEqual({
+			resolved: provider.getSessionByResource(session.resource),
+			config: provider.getSessionConfig(session.sessionId),
+		}, {
+			resolved: undefined,
+			config: undefined,
 		});
 	});
 
@@ -707,6 +758,32 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		);
 	});
 
+	test('sendAndCreateChat forwards resolved session config to chat service', async () => {
+		const sendOptions: IChatSendRequestOptions[] = [];
+		const provider = createProvider(disposables, connection, {
+			openSession: true,
+			sendRequest: async (_resource, _message, options): Promise<ChatSendResult> => {
+				if (options) {
+					sendOptions.push(options);
+				}
+				connection.addSession(createSession('created-from-send', { summary: 'Created From Send' }));
+				return { kind: 'sent' as const, data: {} as ChatSendResult extends { kind: 'sent'; data: infer D } ? D : never };
+			},
+		});
+		const workspace = {
+			label: 'project',
+			icon: { id: 'remote' },
+			repositories: [{ uri: URI.parse('vscode-agent-host://auth/home/user/project'), workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
+			requiresWorkspaceTrust: false,
+		};
+		const session = provider.createNewSession(workspace);
+		await timeout(0);
+
+		await provider.sendAndCreateChat(session.sessionId, { query: 'hello' });
+
+		assert.deepStrictEqual(sendOptions.map(options => options.agentHostSessionConfig), [{ isolation: 'worktree' }]);
+	});
+
 	// ---- Session data adapter -------
 
 	test('session adapter has correct workspace from working directory', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
@@ -723,6 +800,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		const workspace = wsSession!.workspace.get();
 		assert.ok(workspace, 'Workspace should be populated');
 		assert.strictEqual(workspace!.label, 'myrepo [Test Host]');
+		assert.strictEqual(workspace!.repositories[0].detail, undefined);
 	}));
 
 	test('session adapter without working directory has no workspace', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {

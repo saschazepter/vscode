@@ -356,6 +356,7 @@ export class ProtocolServerHandler extends Disposable {
 					workingDirectory: params.workingDirectory ? URI.parse(params.workingDirectory) : undefined,
 					session: URI.parse(params.session),
 					fork,
+					config: params.config,
 				});
 			} catch (err) {
 				if (err instanceof ProtocolError) {
@@ -392,6 +393,22 @@ export class ProtocolServerHandler extends Disposable {
 				isDone: s.isDone,
 			}));
 			return { items };
+		},
+		resolveSessionConfig: async (_client, params) => {
+			return this._agentService.resolveSessionConfig({
+				provider: params.provider,
+				workingDirectory: params.workingDirectory ? URI.parse(params.workingDirectory) : undefined,
+				config: params.config,
+			});
+		},
+		sessionConfigCompletions: async (_client, params) => {
+			return this._agentService.sessionConfigCompletions({
+				provider: params.provider,
+				workingDirectory: params.workingDirectory ? URI.parse(params.workingDirectory) : undefined,
+				config: params.config,
+				property: params.property,
+				query: params.query,
+			});
 		},
 		fetchTurns: async (_client, params) => {
 			const state = this._stateManager.getSessionState(params.session);

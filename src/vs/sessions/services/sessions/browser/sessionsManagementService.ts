@@ -324,8 +324,12 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 	}
 
 	private setActiveSession(session: ISession | undefined): void {
-		if (this._activeSession.get()?.sessionId === session?.sessionId) {
+		const previousSession = this._activeSession.get();
+		if (previousSession?.sessionId === session?.sessionId) {
 			return;
+		}
+		if (previousSession?.status.get() === SessionStatus.Untitled) {
+			this._getProvider(previousSession)?.clearSessionConfig?.(previousSession.sessionId);
 		}
 
 		// Update context keys from session data

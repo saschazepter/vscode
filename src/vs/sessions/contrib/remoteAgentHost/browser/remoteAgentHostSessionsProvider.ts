@@ -21,6 +21,7 @@ import { AGENT_HOST_SCHEME, agentHostAuthority, toAgentHostUri } from '../../../
 import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
+import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import type { IRootState } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
@@ -33,6 +34,8 @@ import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '..
 import { ISessionChangeEvent, ISendRequestOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, ISessionType } from '../../../services/sessions/common/session.js';
 import { remoteAgentHostSessionTypeId } from '../common/remoteAgentHostSessionType.js';
+
+const DEFAULT_AGENT_PROVIDER = 'copilot';
 
 function toLocalProjectUri(uri: URI, connectionAuthority: string): URI {
 	return uri.scheme === Schemas.file ? toAgentHostUri(uri, connectionAuthority) : uri;
@@ -125,7 +128,7 @@ class RemoteSessionAdapter implements IChatData {
 		private readonly _providerLabel: string,
 	) {
 		const rawId = AgentSession.id(metadata.session);
-		this.agentProvider = AgentSession.provider(metadata.session) ?? 'copilot';
+		this.agentProvider = AgentSession.provider(metadata.session) ?? DEFAULT_AGENT_PROVIDER;
 		this.resource = URI.from({ scheme: resourceScheme, path: `/${rawId}` });
 		this.id = `${providerId}:${this.resource.toString()}`;
 		this.providerId = providerId;
@@ -214,6 +217,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 
 	private readonly _onDidReplaceSession = this._register(new Emitter<{ readonly from: ISession; readonly to: ISession }>());
 	readonly onDidReplaceSession: Event<{ readonly from: ISession; readonly to: ISession }> = this._onDidReplaceSession.event;
+	private readonly _onDidChangeSessionConfig = this._register(new Emitter<string>());
+	readonly onDidChangeSessionConfig = this._onDidChangeSessionConfig.event;
 
 	readonly browseActions: readonly ISessionWorkspaceBrowseAction[];
 
@@ -234,6 +239,10 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	private _currentNewSessionStatus: ISettableObservable<SessionStatus> | undefined;
 	/** Settable model for the current new session, kept to avoid unsafe cast from IObservable. */
 	private _currentNewSessionModelId: ISettableObservable<string | undefined> | undefined;
+	private readonly _newSessionWorkspaces = new Map<string, URI>();
+	private readonly _newSessionConfigs = new Map<string, IResolveSessionConfigResult>();
+	private readonly _newSessionAgentProviders = new Map<string, string>();
+	private readonly _newSessionConfigRequests = new Map<string, number>();
 
 	private _connection: IAgentConnection | undefined;
 	private _defaultDirectory: string | undefined;
@@ -392,6 +401,12 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		this._onDidDisconnect.fire();
 		this._connection = undefined;
 		this._defaultDirectory = undefined;
+		if (this._currentNewSession) {
+			this._clearNewSessionConfig(this._currentNewSession.id);
+			this._currentNewSession = undefined;
+		}
+		this._currentNewSessionStatus = undefined;
+		this._selectedModelId = undefined;
 
 		if (this._sessionTypes.length > 0) {
 			this._sessionTypes = [];
@@ -424,7 +439,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		return {
 			label: `${folderName} [${this.label}]`,
 			icon: Codicon.remote,
-			repositories: [{ uri, workingDirectory: undefined, detail: this.label, baseBranchName: undefined, baseBranchProtected: undefined }],
+			repositories: [{ uri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
 			requiresWorkspaceTrust: true,
 		};
 	}
@@ -504,6 +519,9 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		}
 
 		// Reset draft state from any prior unsent session
+		if (this._currentNewSession) {
+			this._clearNewSessionConfig(this._currentNewSession.id);
+		}
 		this._currentNewSession = undefined;
 		this._selectedModelId = undefined;
 		this._currentNewSessionModelId = undefined;
@@ -526,6 +544,10 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	 * casting away the readonly declaration on {@link IChatData.status}.
 	 */
 	private _buildNewSessionData(workspace: ISessionWorkspace, sessionType: ISessionType): { data: IChatData; status: ISettableObservable<SessionStatus>; modelId: ISettableObservable<string | undefined> } {
+		const workspaceUri = workspace.repositories[0]?.uri;
+		if (!workspaceUri) {
+			throw new Error('Workspace has no repository URI');
+		}
 		const resource = URI.from({ scheme: sessionType.id, path: `/untitled-${generateUuid()}` });
 		const status = observableValue<SessionStatus>(this, SessionStatus.Untitled);
 		const modelId = observableValue<string | undefined>(this, undefined);
@@ -550,7 +572,51 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			lastTurnEnd: observableValue(this, undefined),
 			gitHubInfo: observableValue(this, undefined),
 		};
+		const agentProvider = this._agentProviderFromSessionType(sessionType.id);
+		this._newSessionWorkspaces.set(data.id, workspaceUri);
+		this._newSessionAgentProviders.set(data.id, agentProvider);
+		this._newSessionConfigs.set(data.id, { ready: false, schema: { type: 'object', properties: {} }, values: {} });
+		this._onDidChangeSessionConfig.fire(data.id);
+		this._resolveSessionConfig(data.id, agentProvider, workspaceUri, undefined);
 		return { data, status, modelId };
+	}
+
+	getSessionConfig(sessionId: string): IResolveSessionConfigResult | undefined {
+		return this._newSessionConfigs.get(sessionId);
+	}
+
+	async setSessionConfigValue(sessionId: string, property: string, value: string): Promise<void> {
+		const workingDirectory = this._newSessionWorkspaces.get(sessionId);
+		if (!workingDirectory) {
+			return;
+		}
+		const current = this._newSessionConfigs.get(sessionId)?.values ?? {};
+		this._newSessionConfigs.set(sessionId, { ready: false, schema: { type: 'object', properties: {} }, values: { ...current, [property]: value } });
+		this._onDidChangeSessionConfig.fire(sessionId);
+		await this._resolveSessionConfig(sessionId, this._getAgentProviderForSession(sessionId), workingDirectory, { ...current, [property]: value });
+	}
+
+	async getSessionConfigCompletions(sessionId: string, property: string, query?: string): Promise<readonly ISessionConfigValueItem[]> {
+		const workingDirectory = this._newSessionWorkspaces.get(sessionId);
+		if (!workingDirectory || !this._connection) {
+			return [];
+		}
+		const result = await this._connection.sessionConfigCompletions({
+			provider: this._getAgentProviderForSession(sessionId),
+			workingDirectory,
+			config: this._newSessionConfigs.get(sessionId)?.values,
+			property,
+			query,
+		});
+		return result.items;
+	}
+
+	getCreateSessionConfig(sessionId: string): Record<string, string> | undefined {
+		return this._newSessionConfigs.get(sessionId)?.values;
+	}
+
+	clearSessionConfig(sessionId: string): void {
+		this._clearNewSessionConfig(sessionId);
 	}
 
 	/**
@@ -580,6 +646,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			throw new Error('Pending session has no workspace');
 		}
 
+		this._clearNewSessionConfig(prev.id);
 		const rebuilt = this._buildNewSessionData(workspace, newType);
 		this._selectedModelId = undefined;
 		this._currentNewSession = rebuilt.data;
@@ -702,6 +769,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			},
 			agentIdSilent: contribution?.type,
 			attachedContext,
+			agentHostSessionConfig: this.getCreateSessionConfig(chatId),
 		};
 
 		// Open chat widget
@@ -755,6 +823,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			if (committedSession) {
 				this._currentNewSession = undefined;
 				this._currentNewSessionModelId = undefined;
+				this._clearNewSessionConfig(chatId);
 				this._onDidReplaceSession.fire({ from: newSession, to: committedSession });
 				return committedSession;
 			}
@@ -767,7 +836,40 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		// Fallback: keep the temp session visible
 		this._currentNewSession = undefined;
 		this._currentNewSessionModelId = undefined;
+		this._clearNewSessionConfig(chatId);
 		return newSession;
+	}
+
+	private async _resolveSessionConfig(sessionId: string, agentProvider: string, workingDirectory: URI, config: Record<string, string> | undefined): Promise<void> {
+		if (!this._connection) {
+			return;
+		}
+		const request = (this._newSessionConfigRequests.get(sessionId) ?? 0) + 1;
+		this._newSessionConfigRequests.set(sessionId, request);
+		try {
+			const result = await this._connection.resolveSessionConfig({
+				provider: agentProvider,
+				workingDirectory,
+				config,
+			});
+			if (this._newSessionConfigRequests.get(sessionId) !== request) {
+				return;
+			}
+			this._newSessionConfigs.set(sessionId, result);
+		} catch {
+			if (this._newSessionConfigRequests.get(sessionId) !== request) {
+				return;
+			}
+			this._newSessionConfigs.delete(sessionId);
+		}
+		this._onDidChangeSessionConfig.fire(sessionId);
+	}
+
+	private _clearNewSessionConfig(sessionId: string): void {
+		this._newSessionWorkspaces.delete(sessionId);
+		this._newSessionConfigs.delete(sessionId);
+		this._newSessionAgentProviders.delete(sessionId);
+		this._newSessionConfigRequests.delete(sessionId);
 	}
 
 	// -- Private: Session Cache --
@@ -954,6 +1056,14 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		}
 	}
 
+	private _agentProviderFromSessionType(sessionType: string): string {
+		const prefix = `remote-${this._connectionAuthority}-`;
+		return sessionType.startsWith(prefix) ? sessionType.substring(prefix.length) : DEFAULT_AGENT_PROVIDER;
+	}
+
+	private _getAgentProviderForSession(sessionId: string): string {
+		return this._newSessionAgentProviders.get(sessionId) ?? DEFAULT_AGENT_PROVIDER;
+	}
 	// -- Private: Browse --
 
 	private async _browseForFolder(): Promise<ISessionWorkspace | undefined> {
