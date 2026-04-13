@@ -18,6 +18,7 @@ import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from
 import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { URI } from '../../../../base/common/uri.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 
@@ -237,137 +238,15 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				success = !!await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
 					setupStrategy: strategy
 				});
+			} else if (isWeb) {
+				// Web-only fallback: device code flow via the tunnel discovery
+				// auth proxy, then discover and connect to agent host tunnels.
+				const result = await this._runWebDeviceCodeSignIn(titleEl, subtitleEl);
+				success = result.success;
+				usedDeviceCodeFlow = result.usedDeviceCodeFlow;
 			} else {
-				// Fallback: use GitHub device code flow via the tunnel discovery
-				// auth proxy, which uses VS Code's production OAuth App client ID
-				// (trusted by Dev Tunnels). Works without a client secret.
-				this.logService.info('[sessions walkthrough] Chat setup command not available, starting device code flow');
-
-				try {
-					// Step 1: Request a device code
-					const codeResp = await fetch('/agents/api/hosts/auth/device/code', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-					});
-					if (!codeResp.ok) { throw new Error(`Device code request failed: ${codeResp.status}`); }
-					const codeData = await codeResp.json() as {
-						device_code: string;
-						user_code: string;
-						verification_uri: string;
-						interval: number;
-						expires_in: number;
-					};
-
-					// Step 2: Show the code to the user
-					titleEl.textContent = codeData.user_code;
-					titleEl.style.letterSpacing = '4px';
-					titleEl.style.fontFamily = 'monospace';
-					titleEl.style.userSelect = 'text';
-					titleEl.style.cursor = 'text';
-					subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", codeData.verification_uri);
-
-					// Open GitHub in new tab
-					this.openerService.open(URI.parse(codeData.verification_uri));
-
-					// Step 3: Poll for token
-					let pollingInterval = Math.max((codeData.interval || 5) * 1000, 5000);
-					const deadline = Date.now() + (codeData.expires_in || 900) * 1000;
-					let accessToken: string | undefined;
-
-					while (Date.now() < deadline) {
-						await new Promise(r => setTimeout(r, pollingInterval));
-						if (this._shouldAbortUpdate(titleEl, subtitleEl)) { return; }
-
-						const tokenResp = await fetch('/agents/api/hosts/auth/device/token', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ device_code: codeData.device_code }),
-						});
-						if (!tokenResp.ok) { continue; }
-						const tokenData = await tokenResp.json() as { access_token?: string; error?: string };
-
-						if (tokenData.access_token) {
-							accessToken = tokenData.access_token;
-							break;
-						}
-						if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
-							throw new Error(tokenData.error);
-						}
-						if (tokenData.error === 'slow_down') {
-							pollingInterval += 5000;
-						}
-						// authorization_pending → keep polling
-					}
-
-					if (accessToken) {
-						this.logService.info('[sessions walkthrough] Device code flow succeeded, discovering tunnels');
-
-						// Store token in secret storage for webHostDiscovery and
-						// IAuthenticationService. Also keep in localStorage for the
-						// webHostDiscovery polling fallback (secret storage may not
-						// be readable before extensions activate).
-						localStorage.setItem('sessions.tunnel.token', accessToken);
-
-						// Store as a GitHub auth session in secret storage so that
-						// IAuthenticationService.getSessions('github') finds it.
-						// This is the same format the github-authentication extension uses.
-						const authKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
-						try {
-							const existing = await this.secretStorageService.get(authKey);
-							const sessions = existing ? JSON.parse(existing) : [];
-							sessions.push({
-								id: crypto.randomUUID(),
-								accessToken,
-								scopes: ['user:email', 'read:org']
-							});
-							await this.secretStorageService.set(authKey, JSON.stringify(sessions));
-							this.logService.info('[sessions walkthrough] Stored GitHub auth session in secret storage');
-						} catch (e) {
-							this.logService.warn('[sessions walkthrough] Failed to store auth session:', e);
-						}
-
-						// Discover tunnels
-						const hostsResp = await fetch('/agents/api/hosts', {
-							headers: { 'Authorization': `Bearer ${accessToken}` },
-						});
-						if (hostsResp.ok) {
-							const hostsData = await hostsResp.json() as { hosts: { hostId: string; clusterId?: string; name: string; tunnelUrl: string; connectionToken?: string }[] };
-							this.logService.info(`[sessions walkthrough] Discovered ${hostsData.hosts?.length ?? 0} tunnels`);
-
-							// Connect to each discovered tunnel via relay proxy
-							for (const host of hostsData.hosts ?? []) {
-								const loc = mainWindow.location;
-								const wsScheme = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-								const params = new URLSearchParams({
-									tunnelId: host.hostId,
-									clusterId: host.clusterId ?? '',
-									token: accessToken,
-								});
-								const proxyAddress = `${wsScheme}//${loc.host}/agents/tunnel?${params.toString()}`;
-
-								try {
-									this.logService.info(`[sessions walkthrough] Connecting to ${host.name || host.hostId} via proxy`);
-									await this.remoteAgentHostService.addRemoteAgentHost({
-										name: host.name || host.hostId,
-										connectionToken: host.connectionToken,
-										connection: { type: RemoteAgentHostEntryType.WebSocket, address: proxyAddress },
-									});
-									this.logService.info(`[sessions walkthrough] Connected to ${host.name || host.hostId}!`);
-								} catch (connErr) {
-									this.logService.warn(`[sessions walkthrough] Failed to connect to ${host.name || host.hostId}:`, connErr);
-								}
-							}
-						}
-
-						success = true;
-						usedDeviceCodeFlow = true;
-					} else {
-						throw new Error('Device code expired');
-					}
-				} catch (err) {
-					this.logService.warn('[sessions walkthrough] Device code flow failed:', err);
-					success = false;
-				}
+				this.logService.warn('[sessions walkthrough] No setup command available and not running on web');
+				success = false;
 			}
 
 			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
@@ -435,6 +314,156 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			}
 			this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
 			this._renderSignIn();
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Web-only: Device Code Flow + Tunnel Discovery
+
+	/**
+	 * Runs the GitHub device code flow (web-only) via the vscode.dev auth
+	 * proxy, then discovers and connects to agent host tunnels. This is the
+	 * fallback path when the Copilot chat setup command is not available
+	 * (e.g. in OSS/web builds without full product configuration).
+	 */
+	private async _runWebDeviceCodeSignIn(titleEl: HTMLElement, subtitleEl: HTMLElement): Promise<{ success: boolean; usedDeviceCodeFlow: boolean }> {
+		this.logService.info('[sessions walkthrough] Chat setup command not available, starting device code flow');
+
+		try {
+			// Step 1: Request a device code
+			const codeResp = await fetch('/agents/api/hosts/auth/device/code', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			if (!codeResp.ok) { throw new Error(`Device code request failed: ${codeResp.status}`); }
+			const codeData = await codeResp.json() as {
+				device_code: string;
+				user_code: string;
+				verification_uri: string;
+				interval: number;
+				expires_in: number;
+			};
+
+			// Step 2: Show the code to the user
+			titleEl.textContent = codeData.user_code;
+			titleEl.style.letterSpacing = '4px';
+			titleEl.style.fontFamily = 'monospace';
+			titleEl.style.userSelect = 'text';
+			titleEl.style.cursor = 'text';
+			subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", codeData.verification_uri);
+
+			// Open GitHub in new tab
+			this.openerService.open(URI.parse(codeData.verification_uri));
+
+			// Step 3: Poll for token
+			const accessToken = await this._pollForDeviceCodeToken(codeData, titleEl, subtitleEl);
+
+			if (accessToken) {
+				this.logService.info('[sessions walkthrough] Device code flow succeeded, discovering tunnels');
+				await this._storeWebAuthToken(accessToken);
+				await this._discoverAndConnectTunnels(accessToken);
+				return { success: true, usedDeviceCodeFlow: true };
+			} else {
+				throw new Error('Device code expired');
+			}
+		} catch (err) {
+			this.logService.warn('[sessions walkthrough] Device code flow failed:', err);
+			return { success: false, usedDeviceCodeFlow: false };
+		}
+	}
+
+	private async _pollForDeviceCodeToken(
+		codeData: { device_code: string; interval: number; expires_in: number },
+		titleEl: HTMLElement,
+		subtitleEl: HTMLElement,
+	): Promise<string | undefined> {
+		let pollingInterval = Math.max((codeData.interval || 5) * 1000, 5000);
+		const deadline = Date.now() + (codeData.expires_in || 900) * 1000;
+
+		while (Date.now() < deadline) {
+			await new Promise(r => setTimeout(r, pollingInterval));
+			if (this._shouldAbortUpdate(titleEl, subtitleEl)) { return undefined; }
+
+			const tokenResp = await fetch('/agents/api/hosts/auth/device/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ device_code: codeData.device_code }),
+			});
+			if (!tokenResp.ok) { continue; }
+			const tokenData = await tokenResp.json() as { access_token?: string; error?: string };
+
+			if (tokenData.access_token) {
+				return tokenData.access_token;
+			}
+			if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
+				throw new Error(tokenData.error);
+			}
+			if (tokenData.error === 'slow_down') {
+				pollingInterval += 5000;
+			}
+			// authorization_pending → keep polling
+		}
+		return undefined;
+	}
+
+	/**
+	 * Store the GitHub token in localStorage (for webHostDiscovery polling
+	 * fallback) and in secret storage (so IAuthenticationService finds it).
+	 */
+	private async _storeWebAuthToken(accessToken: string): Promise<void> {
+		localStorage.setItem('sessions.tunnel.token', accessToken);
+
+		const authKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
+		try {
+			const existing = await this.secretStorageService.get(authKey);
+			const sessions = existing ? JSON.parse(existing) : [];
+			sessions.push({
+				id: crypto.randomUUID(),
+				accessToken,
+				scopes: ['user:email', 'read:org']
+			});
+			await this.secretStorageService.set(authKey, JSON.stringify(sessions));
+			this.logService.info('[sessions walkthrough] Stored GitHub auth session in secret storage');
+		} catch (e) {
+			this.logService.warn('[sessions walkthrough] Failed to store auth session:', e);
+		}
+	}
+
+	/**
+	 * Discover agent host tunnels and connect to each one via the relay proxy.
+	 */
+	private async _discoverAndConnectTunnels(accessToken: string): Promise<void> {
+		const hostsResp = await fetch('/agents/api/hosts', {
+			headers: { 'Authorization': `Bearer ${accessToken}` },
+		});
+		if (!hostsResp.ok) {
+			return;
+		}
+
+		const hostsData = await hostsResp.json() as { hosts: { hostId: string; clusterId?: string; name: string; tunnelUrl: string; connectionToken?: string }[] };
+		this.logService.info(`[sessions walkthrough] Discovered ${hostsData.hosts?.length ?? 0} tunnels`);
+
+		for (const host of hostsData.hosts ?? []) {
+			const loc = mainWindow.location;
+			const wsScheme = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+			const params = new URLSearchParams({
+				tunnelId: host.hostId,
+				clusterId: host.clusterId ?? '',
+				token: accessToken,
+			});
+			const proxyAddress = `${wsScheme}//${loc.host}/agents/tunnel?${params.toString()}`;
+
+			try {
+				this.logService.info(`[sessions walkthrough] Connecting to ${host.name || host.hostId} via proxy`);
+				await this.remoteAgentHostService.addRemoteAgentHost({
+					name: host.name || host.hostId,
+					connectionToken: host.connectionToken,
+					connection: { type: RemoteAgentHostEntryType.WebSocket, address: proxyAddress },
+				});
+				this.logService.info(`[sessions walkthrough] Connected to ${host.name || host.hostId}!`);
+			} catch (connErr) {
+				this.logService.warn(`[sessions walkthrough] Failed to connect to ${host.name || host.hostId}:`, connErr);
+			}
 		}
 	}
 

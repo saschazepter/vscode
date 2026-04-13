@@ -9,6 +9,7 @@ import { IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../p
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { mainWindow } from '../../../../base/browser/window.js';
+import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 
 interface IRegistryHost {
 	hostId: string;
@@ -18,19 +19,26 @@ interface IRegistryHost {
 	connectionToken?: string;
 }
 
+/** The secret storage key used by the walkthrough to store GitHub auth sessions. */
+const GITHUB_AUTH_SECRET_KEY = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
+
 /**
  * On web, discovers agent hosts from the vscode.dev host registry
  * and registers them with {@link IRemoteAgentHostService}.
  *
- * Polls localStorage for a GitHub token (stored by the welcome overlay's
- * device code flow) and queries the registry when a token becomes available.
+ * Reacts to GitHub auth token availability: checks localStorage and
+ * secret storage on startup, and listens for new tokens stored by the
+ * welcome overlay's device code flow.
  */
 class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'sessions.contrib.webHostDiscovery';
 
+	private _discovered = false;
+
 	constructor(
 		@IRemoteAgentHostService private readonly _remoteAgentHostService: IRemoteAgentHostService,
+		@ISecretStorageService private readonly _secretStorageService: ISecretStorageService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
@@ -39,16 +47,35 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 			return;
 		}
 
-		this._discoverHosts();
-	}
-
-	private async _discoverHosts(): Promise<void> {
-		// Wait for token — the device code flow in the walkthrough may take
-		// up to ~5 minutes for the user to authorize
-		const token = await this._waitForToken(300_000);
-		if (!token) {
+		// Check if a token is already available (returning user)
+		const existingToken = this._getLocalStorageToken();
+		if (existingToken) {
+			this._discoverHosts(existingToken);
 			return;
 		}
+
+		// No token yet — listen for when the walkthrough stores one
+		this._register(this._secretStorageService.onDidChangeSecret(key => {
+			if (key === GITHUB_AUTH_SECRET_KEY && !this._discovered) {
+				const token = this._getLocalStorageToken();
+				if (token) {
+					this._discoverHosts(token);
+				}
+			}
+		}));
+	}
+
+	private _getLocalStorageToken(): string | undefined {
+		return globalThis.localStorage?.getItem('sessions.tunnel.token') ??
+			globalThis.localStorage?.getItem('sessions.github.token') ??
+			undefined;
+	}
+
+	private async _discoverHosts(token: string): Promise<void> {
+		if (this._discovered) {
+			return;
+		}
+		this._discovered = true;
 
 		try {
 			const resp = await fetch('/agents/api/hosts', {
@@ -110,37 +137,6 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 		}
 	}
 
-	private _waitForToken(timeoutMs: number): Promise<string | undefined> {
-		return new Promise(resolve => {
-			// Check immediately — token may be stored under either key
-			const getToken = () =>
-				globalThis.localStorage?.getItem('sessions.tunnel.token') ??
-				globalThis.localStorage?.getItem('sessions.github.token');
-
-			const token = getToken();
-			if (token) {
-				resolve(token);
-				return;
-			}
-
-			// Poll every 2s until token appears or timeout
-			const interval = 2000;
-			let elapsed = 0;
-			const timer = mainWindow.setInterval(() => {
-				elapsed += interval;
-				const t = getToken();
-				if (t) {
-					mainWindow.clearInterval(timer);
-					resolve(t);
-				} else if (elapsed >= timeoutMs) {
-					mainWindow.clearInterval(timer);
-					resolve(undefined);
-				}
-			}, interval);
-
-			this._register({ dispose: () => mainWindow.clearInterval(timer) });
-		});
-	}
 }
 
 registerWorkbenchContribution2(WebHostDiscoveryContribution.ID, WebHostDiscoveryContribution, WorkbenchPhase.Eventually);
