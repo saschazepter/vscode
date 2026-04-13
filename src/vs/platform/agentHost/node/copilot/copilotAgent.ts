@@ -312,9 +312,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		const values: Record<string, string> = { isolation: isolationValue, autoApprove: autoApproveValue };
 		if (gitInfo) {
+			const branchForMode = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
 			values.branch = typeof params.config?.branch === 'string' && isolationValue === 'worktree'
 				? params.config.branch
-				: gitInfo.currentBranch;
+				: branchForMode;
 		}
 
 		const properties: IResolveSessionConfigResult['schema']['properties'] = {
@@ -350,13 +351,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		if (gitInfo) {
 			const branchReadOnly = isolationValue === 'folder';
+			const branchForMode = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
 			properties.branch = {
 				type: 'string',
 				title: localize('agentHost.sessionConfig.branch', "Branch"),
 				description: localize('agentHost.sessionConfig.branchDescription', "Base branch to work from"),
-				enum: [gitInfo.currentBranch],
-				enumLabels: [gitInfo.currentBranch],
-				default: gitInfo.currentBranch,
+				enum: [branchForMode],
+				enumLabels: [branchForMode],
+				default: branchForMode,
 				enumDynamic: !branchReadOnly,
 				readOnly: branchReadOnly,
 			};
@@ -642,13 +644,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return agentSession;
 	}
 
-	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string } | undefined> {
+	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: string } | undefined> {
 		if (!await this._gitService.isInsideWorkTree(workingDirectory)) {
 			return undefined;
 		}
 
 		const currentBranch = await this._gitService.getCurrentBranch(workingDirectory) ?? 'HEAD';
-		return { currentBranch };
+		const defaultBranch = await this._gitService.getDefaultBranch(workingDirectory) ?? currentBranch;
+		return { currentBranch, defaultBranch };
 	}
 
 	private async _getBranches(workingDirectory: URI, query?: string): Promise<string[]> {
