@@ -414,29 +414,40 @@ export class IssueReporterOverlay {
 	}
 
 	private updateToolbarActionsSlot(): void {
-		const shouldShowInToolbar = this.collapsed && (
-			this.currentStep === WizardStep.Screenshots ||
-			this.currentRecordingState === RecordingState.Recording
-		);
-
 		const actionsContainer = this.stepPages[WizardStep.Screenshots]?.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
-		if (!actionsContainer) {
-			return;
+		const actionsInToolbar = this.toolbarActionsSlot.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
+		const container = actionsContainer ?? actionsInToolbar;
+
+		// When collapsed on step 3, move the full actions bar to toolbar
+		const shouldMoveActions = this.collapsed && this.currentStep === WizardStep.Screenshots;
+
+		if (container) {
+			if (shouldMoveActions) {
+				if (container.parentElement !== this.toolbarActionsSlot) {
+					this.toolbarActionsSlot.appendChild(container);
+				}
+			} else {
+				if (container.parentElement !== this.stepPages[WizardStep.Screenshots]) {
+					const page = this.stepPages[WizardStep.Screenshots];
+					const screenshotContainer = page.querySelector('.wizard-screenshots');
+					if (screenshotContainer) {
+						page.insertBefore(container, screenshotContainer);
+					} else {
+						page.appendChild(container);
+					}
+				}
+			}
 		}
 
-		if (shouldShowInToolbar) {
-			if (actionsContainer.parentElement !== this.toolbarActionsSlot) {
-				this.toolbarActionsSlot.appendChild(actionsContainer);
+		// When recording (and not already showing full actions), show only the stop button in toolbar
+		if (!shouldMoveActions && this.currentRecordingState === RecordingState.Recording && this.recordBtn) {
+			if (this.recordBtn.parentElement !== this.toolbarActionsSlot) {
+				this.toolbarActionsSlot.appendChild(this.recordBtn);
 			}
-		} else {
-			if (actionsContainer.parentElement === this.toolbarActionsSlot) {
-				const page = this.stepPages[WizardStep.Screenshots];
-				const screenshotContainer = page.querySelector('.wizard-screenshots');
-				if (screenshotContainer) {
-					page.insertBefore(actionsContainer, screenshotContainer);
-				} else {
-					page.appendChild(actionsContainer);
-				}
+		} else if (!shouldMoveActions && this.recordBtn && this.recordBtn.parentElement === this.toolbarActionsSlot) {
+			// Move record button back to its container
+			if (container) {
+				container.appendChild(this.recordBtn);
 			}
 		}
 	}
