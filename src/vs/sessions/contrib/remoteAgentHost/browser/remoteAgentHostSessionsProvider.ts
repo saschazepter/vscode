@@ -211,6 +211,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	readonly id: string;
 	readonly label: string;
 	readonly icon: ThemeIcon = Codicon.remote;
+	readonly onDidChangeCapabilities = Event.None;
 	readonly capabilities = { multipleChatsPerSession: false };
 	readonly remoteAddress: string;
 	private _outputChannelId: string | undefined;
@@ -406,18 +407,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		return `${agentLabel} [${this.label}]`;
 	}
 
-	private _sessionTypeById(id: string, agentProvider: string): ISessionType {
-		const advertised = this.sessionTypes.find(t => t.id === id);
-		if (advertised) {
-			return advertised;
-		}
-		const contribution = this._chatSessionsService.getChatSessionContribution(id);
-		if (contribution) {
-			return { id, label: this._formatSessionTypeLabel(contribution.displayName), icon: Codicon.remote };
-		}
-		return { id, label: this._formatSessionTypeLabel(agentProvider), icon: Codicon.remote };
-	}
-
 	/**
 	 * Clear the connection, e.g. when the remote host disconnects.
 	 * Retains the provider registration so it remains visible in the UI.
@@ -477,24 +466,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 
 	// -- Sessions --
 
-	/**
-	 * Returns the session types offered to the session type picker.
-	 *
-	 * For the pending new (untitled) session, all of the host's advertised
-	 * agent types are returned so the user can pick one before sending the
-	 * first turn. For any existing session, only its current type is returned
-	 * — existing sessions are bound to the backend URI scheme of the agent
-	 * that created them and cannot be converted to a different agent.
-	 */
-	getSessionTypes(sessionId: string): ISessionType[] {
-		if (this._currentNewSession?.id === sessionId) {
-			return [...this.sessionTypes];
-		}
-		const rawId = this._rawIdFromChatId(sessionId);
-		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
-		if (cached) {
-			return [this._sessionTypeById(cached.sessionType, cached.agentProvider)];
-		}
+	getSessionTypes(repositoryUri: URI): ISessionType[] {
 		return [...this.sessionTypes];
 	}
 
@@ -530,18 +502,13 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 
 	private _currentNewSession: IChatData | undefined;
 
-	createNewSession(workspace: ISessionWorkspace): ISession {
+	createNewSession(workspaceUri: URI, sessionTypeId: string): ISession {
 		if (!this._connection) {
 			throw new Error(localize('notConnectedSession', "Cannot create session: not connected to remote agent host '{0}'.", this.label));
 		}
 
-		const workspaceUri = workspace.repositories[0]?.uri;
-		if (!workspaceUri) {
-			throw new Error('Workspace has no repository URI');
-		}
-
-		const defaultType = this._sessionTypes[0];
-		if (!defaultType) {
+		const sessionType = this.sessionTypes.find(t => t.id === sessionTypeId);
+		if (!sessionType) {
 			throw new Error(localize('noAgents', "Remote agent host '{0}' has not advertised any agents yet.", this.label));
 		}
 
@@ -553,7 +520,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		this._selectedModelId = undefined;
 		this._currentNewSessionModelId = undefined;
 
-		const built = this._buildNewSessionData(workspace, defaultType);
+		const sessionWorkspace = this.resolveWorkspace(workspaceUri);
+		const built = this._buildNewSessionData(sessionWorkspace, sessionType);
 		this._currentNewSession = built.data;
 		this._currentNewSessionStatus = built.status;
 		this._currentNewSessionModelId = built.modelId;
@@ -672,45 +640,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		this._clearNewSessionConfig(sessionId);
 	}
 
-	/**
-	 * Change the session type of the pending new session. Only supported
-	 * while the session is untitled — existing backend sessions are bound to
-	 * the agent that created them and cannot be converted.
-	 *
-	 * The rebuilt session has a new id/resource because the resource scheme
-	 * is the session type; we announce the swap via {@link onDidReplaceSession}
-	 * so {@link ISessionsManagementService} updates the active session to the
-	 * rebuilt one.
-	 */
-	setSessionType(sessionId: string, type: ISessionType): ISession {
-		const prev = this._currentNewSession;
-		if (!prev || prev.id !== sessionId) {
-			throw new Error(localize('cannotChangeExistingSessionType', "Cannot change session type on an existing remote agent host session."));
-		}
-		const newType = this._sessionTypes.find(t => t.id === type.id);
-		if (!newType) {
-			throw new Error(localize('unknownSessionType', "Session type '{0}' is not available on remote agent host '{1}'.", type.id, this.label));
-		}
-		if (newType.id === prev.sessionType) {
-			return this._chatToSession(prev);
-		}
-		const workspace = prev.workspace.get();
-		if (!workspace) {
-			throw new Error('Pending session has no workspace');
-		}
-
-		this._clearNewSessionConfig(prev.id);
-		const rebuilt = this._buildNewSessionData(workspace, newType);
-		this._selectedModelId = undefined;
-		this._currentNewSession = rebuilt.data;
-		this._currentNewSessionStatus = rebuilt.status;
-		this._currentNewSessionModelId = rebuilt.modelId;
-
-		const fromSession = this._chatToSession(prev);
-		const toSession = this._chatToSession(rebuilt.data);
-		this._onDidReplaceSession.fire({ from: fromSession, to: toSession });
-		return toSession;
-	}
 
 	setModel(sessionId: string, modelId: string): void {
 		if (this._currentNewSession?.id === sessionId) {

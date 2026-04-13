@@ -211,6 +211,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 	readonly id = LOCAL_PROVIDER_ID;
 	readonly label: string;
 	readonly icon: ThemeIcon = Codicon.vm;
+	readonly onDidChangeCapabilities = Event.None;
 	readonly capabilities = { multipleChatsPerSession: false };
 	private readonly _localLabel = localize('localAgentHostSessionTypeLocation', "Local");
 	private _hasRootStateSnapshot = false;
@@ -338,19 +339,6 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 			}));
 	}
 
-	private _sessionTypeById(id: string): ISessionType {
-		const advertised = this.sessionTypes.find(t => t.id === id);
-		if (advertised) {
-			return advertised;
-		}
-		const contribution = this._chatSessionsService.getChatSessionContribution(id);
-		if (contribution) {
-			return { id, label: this._formatSessionTypeLabel(contribution.displayName), icon: Codicon.vm };
-		}
-		const provider = id.startsWith('agent-host-') ? id.substring('agent-host-'.length) : id;
-		return { id, label: this._formatSessionTypeLabel(provider), icon: Codicon.vm };
-	}
-
 	// -- Workspaces --
 
 	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined): ISessionWorkspace | undefined {
@@ -369,15 +357,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 
 	// -- Sessions --
 
-	getSessionTypes(sessionId: string): ISessionType[] {
-		if (this._currentNewSession?.sessionId === sessionId) {
-			return [...this.sessionTypes];
-		}
-		const rawId = this._rawIdFromChatId(sessionId);
-		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
-		if (cached) {
-			return [this._sessionTypeById(cached.sessionType)];
-		}
+	getSessionTypes(repositoryUri: URI): ISessionType[] {
 		return [...this.sessionTypes];
 	}
 
@@ -411,8 +391,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 
 	// -- Session Lifecycle --
 
-	createNewSession(workspace: ISessionWorkspace): ISession {
-		const workspaceUri = workspace.repositories[0]?.uri;
+	createNewSession(workspaceUri: URI, sessionTypeId: string): ISession {
 		if (!workspaceUri) {
 			throw new Error('Workspace has no repository URI');
 		}
@@ -424,12 +403,13 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 		this._selectedModelId = undefined;
 		this._currentNewSessionModelId = undefined;
 
-		const defaultType = this.sessionTypes[0];
-		if (!defaultType) {
+		const sessionType = this.sessionTypes.find(t => t.id === sessionTypeId);
+		if (!sessionType) {
 			throw new Error(localize('noAgents', "Local agent host has not advertised any agents yet."));
 		}
 
-		return this._createNewSessionForType(workspace, defaultType);
+		const workspace = this.resolveWorkspace(workspaceUri);
+		return this._createNewSessionForType(workspace, sessionType);
 	}
 
 	private _createNewSessionForType(workspace: ISessionWorkspace, sessionType: ISessionType): ISession {
@@ -553,30 +533,6 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 
 	clearSessionConfig(sessionId: string): void {
 		this._clearNewSessionConfig(sessionId);
-	}
-
-	setSessionType(sessionId: string, type: ISessionType): ISession {
-		const prev = this._currentNewSession;
-		if (!prev || prev.sessionId !== sessionId) {
-			throw new Error(localize('cannotChangeExistingSessionType', "Cannot change session type on an existing local agent host session."));
-		}
-		const newType = this.sessionTypes.find(t => t.id === type.id);
-		if (!newType) {
-			throw new Error(localize('unknownSessionType', "Session type '{0}' is not available on local agent host.", type.id));
-		}
-		if (newType.id === prev.sessionType) {
-			return prev;
-		}
-		const workspace = prev.workspace.get();
-		if (!workspace) {
-			throw new Error('Pending session has no workspace');
-		}
-
-		this._clearNewSessionConfig(prev.sessionId);
-		const rebuilt = this._createNewSessionForType(workspace, newType);
-		this._selectedModelId = undefined;
-		this._onDidReplaceSession.fire({ from: prev, to: rebuilt });
-		return rebuilt;
 	}
 
 	setModel(sessionId: string, modelId: string): void {

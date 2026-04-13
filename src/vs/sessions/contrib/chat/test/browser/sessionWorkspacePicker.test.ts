@@ -40,6 +40,7 @@ function createMockProvider(id: string, opts?: {
 		label: `Provider ${id}`,
 		icon: Codicon.remote,
 		sessionTypes: [],
+		onDidChangeSessionTypes: Event.None,
 		connectionStatus: opts?.connectionStatus,
 		browseActions: [],
 		resolveWorkspace: (uri: URI): ISessionWorkspace => ({
@@ -51,7 +52,6 @@ function createMockProvider(id: string, opts?: {
 		onDidChangeSessions: Event.None,
 		getSessions: () => [],
 		createNewSession: () => { throw new Error('Not implemented'); },
-		setSessionType: () => { throw new Error('Not implemented'); },
 		getSessionTypes: () => [],
 		renameChat: async () => { },
 		setModel: () => { },
@@ -61,6 +61,7 @@ function createMockProvider(id: string, opts?: {
 		deleteChat: async () => { },
 		sendAndCreateChat: async () => { throw new Error('Not implemented'); },
 		capabilities: { multipleChatsPerSession: false },
+		onDidChangeCapabilities: Event.None,
 	};
 }
 
