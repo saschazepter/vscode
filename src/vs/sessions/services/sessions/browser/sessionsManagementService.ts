@@ -240,7 +240,6 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this.logService.info(`[SessionsManagement] openSession: ${sessionResource.toString()} provider=${sessionData.providerId}`);
 		this.isNewChatSessionContext.set(false);
 		this.setActiveSession(sessionData);
-		this.setRead(sessionData, true); // mark as read when opened
 
 		await this.chatWidgetService.openSession(sessionData.resource, ChatViewPaneTarget, { preserveFocus: options?.preserveFocus });
 	}
@@ -422,10 +421,6 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 
 	async renameChat(session: ISession, chatUri: URI, title: string): Promise<void> {
 		await this._getProvider(session)?.renameChat(session.sessionId, chatUri, title);
-	}
-
-	setRead(session: ISession, read: boolean): void {
-		this._getProvider(session)?.setRead(session.sessionId, read);
 	}
 }
 

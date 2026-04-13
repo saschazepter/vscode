@@ -72,7 +72,7 @@ suite('ActionListWidget', () => {
 		const widget = createActionListWidget(disposables, {
 			onFilter: async filter => {
 				filters.push(filter);
-				return [action(`${filter}-result`)];
+				return [action(`server-${filter === 'ma' ? 'ranked' : filter}-result`)];
 			},
 		});
 
@@ -80,7 +80,7 @@ suite('ActionListWidget', () => {
 		typeFilter(widget, 'ma');
 		assert.deepStrictEqual(filters, ['m', 'ma']);
 		await timeout(0);
-		assert.ok(widget.domNode.textContent?.includes('ma-result'));
+		assert.ok(widget.domNode.textContent?.includes('server-ranked-result'));
 	}));
 
 	test('ignores stale dynamic filter results', async () => {

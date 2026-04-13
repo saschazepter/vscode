@@ -790,8 +790,6 @@ export interface ISessionConfigValueItem {
 	label: string;
 	/** Optional secondary description */
 	description?: string;
-	/** Optional icon identifier */
-	icon?: string;
 }
 
 /**

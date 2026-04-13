@@ -53,15 +53,29 @@ interface IConfigPickerItem {
 	readonly value: string;
 	readonly label: string;
 	readonly description?: string;
-	readonly icon?: string;
 }
 
-function toActionItems(items: readonly IConfigPickerItem[], currentValue: string | undefined): IActionListItem<IConfigPickerItem>[] {
+function getConfigIcon(property: string, value: string | undefined): ThemeIcon | undefined {
+	if (property === 'isolation') {
+		if (value === 'folder') {
+			return Codicon.folder;
+		}
+		if (value === 'worktree') {
+			return Codicon.worktree;
+		}
+	}
+	if (property === 'branch') {
+		return Codicon.gitBranch;
+	}
+	return undefined;
+}
+
+function toActionItems(property: string, items: readonly IConfigPickerItem[], currentValue: string | undefined): IActionListItem<IConfigPickerItem>[] {
 	return items.map(item => ({
 		kind: ActionListItemKind.Action,
 		label: item.label,
 		description: item.description,
-		group: { title: '', icon: item.icon ? ThemeIcon.fromId(item.icon) : undefined },
+		group: { title: '', icon: getConfigIcon(property, item.value) },
 		item: { ...item, label: item.value === currentValue ? `${item.label} ${localize('selected', "(Selected)")}` : item.label },
 	}));
 }
@@ -158,15 +172,15 @@ class AgentHostSessionConfigPicker extends Disposable {
 			const value = resolvedConfig.values[property] ?? schema.default;
 			const slot = dom.append(this._container, dom.$('.sessions-chat-picker-slot'));
 			const trigger = renderPickerTrigger(slot, !!schema.readOnly, this._renderDisposables, () => this._showPicker(provider, session.sessionId, property, schema, trigger));
-			this._renderTrigger(trigger, schema, value);
+			this._renderTrigger(trigger, property, schema, value);
 		}
 	}
 
-	private _renderTrigger(trigger: HTMLElement, schema: ISessionConfigPropertySchema, value: string | undefined): void {
+	private _renderTrigger(trigger: HTMLElement, property: string, schema: ISessionConfigPropertySchema, value: string | undefined): void {
 		dom.clearNode(trigger);
-		const icon = this._getIcon(schema, value);
+		const icon = getConfigIcon(property, value);
 		if (icon) {
-			dom.append(trigger, renderIcon(ThemeIcon.fromId(icon)));
+			dom.append(trigger, renderIcon(icon));
 		}
 		const labelSpan = dom.append(trigger, dom.$('span.sessions-chat-dropdown-label'));
 		const label = this._getLabel(schema, value);
@@ -189,7 +203,7 @@ class AgentHostSessionConfigPicker extends Disposable {
 		}
 
 		const currentValue = provider.getSessionConfig?.(sessionId)?.values[property];
-		const actionItems = toActionItems(items, currentValue);
+		const actionItems = toActionItems(property, items, currentValue);
 
 		const delegate: IActionListDelegate<IConfigPickerItem> = {
 			onSelect: item => {
@@ -197,7 +211,7 @@ class AgentHostSessionConfigPicker extends Disposable {
 				provider.setSessionConfigValue?.(sessionId, property, item.value).catch(() => { /* best-effort */ });
 			},
 			onFilter: schema.enumDynamic && provider.getSessionConfigCompletions
-				? query => this._filterDelayer.trigger(async () => toActionItems(await this._getItems(provider, sessionId, property, schema, query), provider.getSessionConfig?.(sessionId)?.values[property]))
+				? query => this._filterDelayer.trigger(async () => toActionItems(property, await this._getItems(provider, sessionId, property, schema, query), provider.getSessionConfig?.(sessionId)?.values[property]))
 				: undefined,
 			onHide: () => trigger.focus(),
 		};
@@ -230,7 +244,6 @@ class AgentHostSessionConfigPicker extends Disposable {
 			value,
 			label: schema.enumLabels?.[index] ?? value,
 			description: schema.enumDescriptions?.[index],
-			icon: schema.enumIcons?.[index],
 		}));
 	}
 
@@ -239,7 +252,6 @@ class AgentHostSessionConfigPicker extends Disposable {
 			value: item.value,
 			label: item.label,
 			description: item.description,
-			icon: item.icon,
 		};
 	}
 
@@ -249,14 +261,6 @@ class AgentHostSessionConfigPicker extends Disposable {
 			return index >= 0 ? schema.enumLabels?.[index] ?? value : value;
 		}
 		return schema.title;
-	}
-
-	private _getIcon(schema: ISessionConfigPropertySchema, value: string | undefined): string | undefined {
-		if (typeof value !== 'string') {
-			return undefined;
-		}
-		const index = schema.enum?.indexOf(value) ?? -1;
-		return index >= 0 ? schema.enumIcons?.[index] : undefined;
 	}
 
 	private _getProvider(providerId: string): ISessionsProvider | undefined {

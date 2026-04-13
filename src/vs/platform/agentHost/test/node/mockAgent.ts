@@ -247,7 +247,6 @@ export class ScriptedMockAgent implements IAgent {
 						description: 'Base branch to work from',
 						enum: ['main'],
 						enumLabels: ['main'],
-						enumIcons: ['git-branch'],
 						default: 'main',
 						enumDynamic: isolation === 'worktree',
 						readOnly: isolation === 'folder',
@@ -264,7 +263,7 @@ export class ScriptedMockAgent implements IAgent {
 		}
 		const query = params.query?.toLowerCase() ?? '';
 		const branches = ['main', 'feature/config', 'release'].filter(branch => branch.toLowerCase().includes(query));
-		return { items: branches.map(branch => ({ value: branch, label: branch, icon: 'git-branch' })) };
+		return { items: branches.map(branch => ({ value: branch, label: branch })) };
 	}
 
 	async sendMessage(session: URI, prompt: string, _attachments?: IAgentAttachment[]): Promise<void> {

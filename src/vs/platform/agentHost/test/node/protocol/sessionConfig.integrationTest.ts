@@ -88,7 +88,7 @@ suite('Protocol WebSocket - Session Config', function () {
 		});
 
 		assert.deepStrictEqual(result, {
-			items: [{ value: 'feature/config', label: 'feature/config', icon: 'git-branch' }],
+			items: [{ value: 'feature/config', label: 'feature/config' }],
 		});
 	});
 

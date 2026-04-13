@@ -387,7 +387,7 @@ export interface ISessionSummary {
  *
  * Standard JSON Schema fields (`type`, `title`, `description`, `default`,
  * `enum`) allow validators to process the schema. Display extensions
- * (`enumLabels`, `enumDescriptions`, `enumIcons`) are parallel arrays that provide UI metadata for each `enum` value.
+ * (`enumLabels`, `enumDescriptions`) are parallel arrays that provide UI metadata for each `enum` value.
  *
  * @category Session Config Types
  */
@@ -406,8 +406,6 @@ export interface ISessionConfigPropertySchema {
 	enumLabels?: string[];
 	/** Display extension: description per enum value (parallel array) */
 	enumDescriptions?: string[];
-	/** Display extension: icon identifier per enum value (parallel array) */
-	enumIcons?: string[];
 	/**
 	 * Display extension: when `true`, the full set of allowed values is too large
 	 * to enumerate statically. The client SHOULD use `sessionConfigCompletions`

@@ -694,13 +694,13 @@ export class ActionListWidget<T> extends Disposable {
 				return;
 			}
 			this._allMenuItems = [...items];
-			this._applyFilter();
+			this._applyFilter(true);
 		}).catch(() => { /* best-effort */ });
 	}
 
-	private _applyFilter(): void {
-		const filterLower = this._filterText.toLowerCase();
-		const isFiltering = filterLower.length > 0;
+	private _applyFilter(skipTextFilter = false): void {
+		const filterLower = skipTextFilter ? '' : this._filterText.toLowerCase();
+		const isFiltering = !skipTextFilter && filterLower.length > 0;
 		const visible: IActionListItem<T>[] = [];
 
 		// Remember the focused item before splice

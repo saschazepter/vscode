@@ -321,7 +321,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 				enum: gitInfo ? ['folder', 'worktree'] : ['folder'],
 				enumLabels: gitInfo ? [localize('agentHost.sessionConfig.isolation.folder', "Folder"), localize('agentHost.sessionConfig.isolation.worktree', "Worktree")] : [localize('agentHost.sessionConfig.isolation.folder', "Folder")],
 				enumDescriptions: gitInfo ? [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder"), localize('agentHost.sessionConfig.isolation.worktreeDescription', "Create a Git worktree for isolation")] : [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder")],
-				enumIcons: gitInfo ? ['folder', 'worktree'] : ['folder'],
 				default: gitInfo ? 'worktree' : 'folder',
 				readOnly: !gitInfo,
 			},
@@ -335,7 +334,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 				description: localize('agentHost.sessionConfig.branchDescription', "Base branch to work from"),
 				enum: [gitInfo.currentBranch],
 				enumLabels: [gitInfo.currentBranch],
-				enumIcons: ['git-branch'],
 				default: gitInfo.currentBranch,
 				enumDynamic: !branchReadOnly,
 				readOnly: branchReadOnly,
@@ -355,7 +353,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 
 		const branches = await this._getBranches(params.workingDirectory, params.query);
-		return { items: branches.map(branch => ({ value: branch, label: branch, icon: 'git-branch' })) };
+		return { items: branches.map(branch => ({ value: branch, label: branch })) };
 	}
 
 	async setClientCustomizations(clientId: string, customizations: ICustomizationRef[], progress?: (results: ISyncedCustomization[]) => void): Promise<ISyncedCustomization[]> {
