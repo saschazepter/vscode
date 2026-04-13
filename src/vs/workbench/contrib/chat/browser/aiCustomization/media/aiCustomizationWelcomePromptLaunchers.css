@@ -129,8 +129,15 @@
 	outline-offset: -1px;
 }
 
+.ai-customization-management-editor .welcome-prompts-input-submit.welcome-prompts-input-submit-disabled {
+	opacity: 0.4;
+	cursor: default;
+	pointer-events: none;
+}
+
 .ai-customization-management-editor .welcome-prompts-input-row.sent {
 	justify-content: center;
+	cursor: pointer;
 }
 
 .ai-customization-management-editor .welcome-prompts-input-row.sent .welcome-prompts-input {
@@ -139,7 +146,7 @@
 
 .ai-customization-management-editor .welcome-prompts-sent-label {
 	font-size: 12px;
-	color: var(--vscode-testing-iconPassed, var(--vscode-descriptionForeground));
+	color: var(--vscode-descriptionForeground);
 	padding: 0 8px;
 	white-space: nowrap;
 	animation: welcomePromptsSentFadeIn 0.2s ease;

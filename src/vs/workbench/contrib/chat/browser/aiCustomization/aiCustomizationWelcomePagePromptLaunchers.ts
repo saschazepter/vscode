@@ -121,6 +121,23 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			const chevron = DOM.append(submitBtn, $('span.codicon.codicon-arrow-up'));
 			chevron.setAttribute('aria-hidden', 'true');
 
+			let sentLabel: HTMLElement | undefined;
+
+			const clearSentState = () => {
+				if (sentLabel) {
+					sentLabel.remove();
+					sentLabel = undefined;
+					submitBtn.style.display = '';
+					inputRow.classList.remove('sent');
+				}
+			};
+
+			const updateSubmitState = () => {
+				const hasValue = !!(this.inputElement?.value?.trim());
+				submitBtn.disabled = !hasValue;
+				submitBtn.classList.toggle('welcome-prompts-input-submit-disabled', !hasValue);
+			};
+
 			const submit = () => {
 				const value = this.inputElement?.value?.trim();
 				if (!value) {
@@ -134,21 +151,17 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				}
 				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
 
-				// Show confirmation and clear input
+				// Show confirmation and clear input — persists until user clicks back in
 				if (this.inputElement) {
 					this.inputElement.value = '';
 				}
+				updateSubmitState();
 				inputRow.classList.add('sent');
 				submitBtn.style.display = 'none';
-				const sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
+				sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
 				sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
-				setTimeout(() => {
-					sentLabel.remove();
-					submitBtn.style.display = '';
-					inputRow.classList.remove('sent');
-					this.inputElement?.focus();
-				}, 2000);
 			};
+
 			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
 			this._register(DOM.addDisposableListener(this.inputElement, 'keydown', (e: KeyboardEvent) => {
 				if (e.key === 'Enter') {
@@ -156,6 +169,17 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 					submit();
 				}
 			}));
+			this._register(DOM.addDisposableListener(this.inputElement, 'input', () => {
+				updateSubmitState();
+			}));
+			// Clicking anywhere in the row dismisses the sent state and restores the input
+			this._register(DOM.addDisposableListener(inputRow, 'click', () => {
+				if (sentLabel) {
+					clearSentState();
+					this.inputElement?.focus();
+				}
+			}));
+			updateSubmitState();
 		}
 
 		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-prompts-cards'));
