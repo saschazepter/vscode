@@ -37,6 +37,8 @@ export interface ISearchSubagentToolCallingLoopOptions extends IToolCallingLoopO
 	subAgentInvocationId?: string;
 	/** The tool_call_id from the parent agent's LLM response that triggered this subagent invocation. */
 	parentToolCallId?: string;
+	/** Thoroughness level for the search, passed through to the prompt when thoroughnessEnabled config is on. */
+	thoroughness?: 'quick' | 'medium' | 'thorough';
 }
 
 export class SearchSubagentToolCallingLoop extends ToolCallingLoop<ISearchSubagentToolCallingLoopOptions> {
@@ -109,14 +111,16 @@ export class SearchSubagentToolCallingLoop extends ToolCallingLoop<ISearchSubage
 
 	protected async buildPrompt(buildPromptContext: IBuildPromptContext, progress: Progress<ChatResponseReferencePart | ChatResponseProgressPart>, token: CancellationToken): Promise<IBuildPromptResult> {
 		const endpoint = await this.getEndpoint();
-		const maxSearchTurns = this._configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentToolCallLimit, this._experimentationService);
+		// Use the effective tool call limit from options (already adjusted for thoroughness in the tool)
+		const maxSearchTurns = this.options.toolCallLimit;
 		const renderer = PromptRenderer.create(
 			this.instantiationService,
 			endpoint,
 			SearchSubagentPrompt,
 			{
 				promptContext: buildPromptContext,
-				maxSearchTurns
+				maxSearchTurns,
+				thoroughness: this.options.thoroughness,
 			}
 		);
 		return await renderer.render(progress, token);
