@@ -450,6 +450,312 @@ describe('isModelCursorLineCompatible', () => {
 			)).toBe(false);
 		});
 	});
+
+	// ── Case sensitivity ───────────────────────────────────────────────────
+	// `startsWith` is case-sensitive by design — in code, `F` and `f` are
+	// different identifiers and should cancel.
+	// ────────────────────────────────────────────────────────────────────────
+
+	describe('case sensitivity', () => {
+
+		it('user typed uppercase, model starts with lowercase — cancel', () => {
+			//  original:  `let `
+			//  user typed `F` → current: `let F`
+			//  model:     `let function() {}`
+			//  → "function() {}".startsWith("F") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'let ',
+				'let F',
+				'let function() {}',
+			)).toBe(false);
+		});
+
+		it('user typed lowercase matching model lowercase — compatible', () => {
+			//  original:  `let `
+			//  user typed `f` → current: `let f`
+			//  model:     `let function() {}`
+			expect(isModelCursorLineCompatible(
+				'let ',
+				'let f',
+				'let function() {}',
+			)).toBe(true);
+		});
+	});
+
+	// ── Unicode / multi-byte characters ────────────────────────────────────
+
+	describe('unicode and multi-byte characters', () => {
+
+		it('user typed emoji, model produced ASCII — cancel', () => {
+			//  original:  `const x = `
+			//  user typed `🎉` → current: `const x = 🎉`
+			//  model:     `const x = 42;`
+			//  → "42;".startsWith("🎉") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'const x = ',
+				'const x = 🎉',
+				'const x = 42;',
+			)).toBe(false);
+		});
+
+		it('user typed emoji matching model — compatible', () => {
+			//  original:  `const x = `
+			//  user typed `🎉` → current: `const x = 🎉`
+			//  model:     `const x = 🎉🎊`
+			expect(isModelCursorLineCompatible(
+				'const x = ',
+				'const x = 🎉',
+				'const x = 🎉🎊',
+			)).toBe(true);
+		});
+
+		it('user typed CJK character, model produced different CJK — cancel', () => {
+			expect(isModelCursorLineCompatible(
+				'const s = "',
+				'const s = "你',
+				'const s = "世界"',
+			)).toBe(false);
+		});
+	});
+
+	// ── Replacement edge cases ─────────────────────────────────────────────
+
+	describe('replacement edge cases', () => {
+
+		it('user replaced text with shorter string, model replaced same region with compatible text', () => {
+			//  original:  `abcdef`
+			//  user replaced `cd` with `x` → current: `abxef`
+			//  model:     `abxyzef`  (replaced `cd` with `xyz`, starts with `x`)
+			expect(isModelCursorLineCompatible(
+				'abcdef',
+				'abxef',
+				'abxyzef',
+			)).toBe(true);
+		});
+
+		it('user replaced text with shorter string, model replaced same region differently — cancel', () => {
+			//  original:  `abcdef`
+			//  user replaced `cd` with `x` → current: `abxef`
+			//  model:     `abYZef`  (replaced `cd` with `YZ`)
+			//  → "YZ".startsWith("x") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'abcdef',
+				'abxef',
+				'abYZef',
+			)).toBe(false);
+		});
+
+		it('user replaced text with empty string (pure deletion), model replaced same region — cancel', () => {
+			//  original:  `abcdef`
+			//  user deleted `cd` → current: `abef`
+			//  model:     `abXYef`  (replaced `cd` with `XY`)
+			//  → isUserEditCompatibleWithModelEdit: replaced.length > 0, currentCursorLine !== modelCursorLine,
+			//    same start/end/replaced, but userEdit.inserted.length === 0 → false → cancel
+			expect(isModelCursorLineCompatible(
+				'abcdef',
+				'abef',
+				'abXYef',
+			)).toBe(false);
+		});
+
+		it('user replaced text, model replaced different region — cancel', () => {
+			//  original:  `hello world`
+			//  user replaced `hello` (0..5) with `hi` → current: `hi world`
+			//  model:     `hello earth`   (replaced `world` at 6..11)
+			//  → user edit range [0,5) is not within model edit range [6,11) → cancel
+			expect(isModelCursorLineCompatible(
+				'hello world',
+				'hi world',
+				'hello earth',
+			)).toBe(false);
+		});
+	});
+
+	// ── Auto-close pair: angle brackets ────────────────────────────────────
+
+	describe('auto-close pair: angle brackets', () => {
+
+		it('user typed < auto-closed to <>, model has <Component> — compatible', () => {
+			//  original:  `div`
+			//  user typed `<>` → current: `div<>`
+			//  model:     `div<Component>`
+			//  → userTypedText="<>", AUTO_CLOSE_PAIRS.has("<>") → true
+			//  → isSubsequenceOf("<>", "<Component>") → true → compatible
+			expect(isModelCursorLineCompatible(
+				'div',
+				'div<>',
+				'div<Component>',
+			)).toBe(true);
+		});
+
+		it('user typed < auto-closed to <>, model has no > — cancel', () => {
+			//  model:     `div<Component`  (no closing >)
+			expect(isModelCursorLineCompatible(
+				'div',
+				'div<>',
+				'div<Component',
+			)).toBe(false);
+		});
+	});
+
+	// ── Non-auto-close text that resembles pairs ───────────────────────────
+
+	describe('non-auto-close pair text', () => {
+
+		it('user typed (x) which is not an auto-close pair — cancel if model differs', () => {
+			//  original:  `foo`
+			//  user typed `(x)` → current: `foo(x)`
+			//  model:     `foo(a, b)`
+			//  → userTypedText = "(x)", not in AUTO_CLOSE_PAIRS
+			//  → "(a, b)".startsWith("(x)") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'foo',
+				'foo(x)',
+				'foo(a, b)',
+			)).toBe(false);
+		});
+
+		it('user typed (x) and model starts with (x — cancel because ) vs , diverges', () => {
+			//  original:  `foo`
+			//  user typed `(x)` → current: `foo(x)`
+			//  model:     `foo(x, y)`
+			//  → userTypedText = "(x)", modelNewText = "(x, y)"
+			//  → "(x, y)".startsWith("(x)") → false (position 2: ')' vs ',')
+			//  → "(x)" not in AUTO_CLOSE_PAIRS → no subsequence fallback
+			//  → cancel. User closed parens but model wants different content.
+			expect(isModelCursorLineCompatible(
+				'foo',
+				'foo(x)',
+				'foo(x, y)',
+			)).toBe(false);
+		});
+	});
+
+	// ── Model line is prefix of current line ───────────────────────────────
+
+	describe('model produced less than user typed', () => {
+
+		it('user typed more chars than model predicted — cancel', () => {
+			//  original:  `let `
+			//  user typed `abc` → current: `let abc`
+			//  model:     `let ab`  (model predicted fewer chars)
+			//  → userTypedText="abc", modelNewText="ab"
+			//  → "ab".startsWith("abc") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'let ',
+				'let abc',
+				'let ab',
+			)).toBe(false);
+		});
+	});
+
+	// ── Both user and model made identical changes ─────────────────────────
+
+	describe('identical changes', () => {
+
+		it('user and model both inserted the same text — compatible', () => {
+			//  original:  `foo`
+			//  user typed `bar` → current: `foobar`
+			//  model:     `foobar`
+			expect(isModelCursorLineCompatible(
+				'foo',
+				'foobar',
+				'foobar',
+			)).toBe(true);
+		});
+
+		it('user and model both replaced the same region identically — compatible', () => {
+			//  original:  `aXa`
+			//  user replaced `X` with `Y` → current: `aYa`
+			//  model:     `aYa`  (same)
+			expect(isModelCursorLineCompatible(
+				'aXa',
+				'aYa',
+				'aYa',
+			)).toBe(true);
+		});
+	});
+
+	// ── Net-zero edits ────────────────────────────────────────────────────
+
+	describe('net-zero edits', () => {
+
+		it('user backspaced and retyped same char — no change, trivially compatible', () => {
+			//  The net result is original === current → userEdit has no diff.
+			//  Detected by: replaced.length === 0 && inserted.length === 0 → true
+			expect(isModelCursorLineCompatible(
+				'hello',
+				'hello',
+				'completely different',
+			)).toBe(true);
+		});
+	});
+
+	// ── Substring vs prefix ────────────────────────────────────────────────
+
+	describe('user typed substring (not prefix) of model text', () => {
+
+		it('user typed middle portion of model insertion — cancel', () => {
+			//  original:  `x`
+			//  user typed `bc` → current: `xbc`
+			//  model:     `xabcd`
+			//  → userTypedText="bc", modelNewText="abcd"
+			//  → "abcd".startsWith("bc") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'x',
+				'xbc',
+				'xabcd',
+			)).toBe(false);
+		});
+
+		it('user typed suffix portion of model insertion — cancel', () => {
+			//  original:  `x`
+			//  user typed `cd` → current: `xcd`
+			//  model:     `xabcd`
+			//  → userTypedText="cd", modelNewText="abcd"
+			//  → "abcd".startsWith("cd") → false → cancel
+			expect(isModelCursorLineCompatible(
+				'x',
+				'xcd',
+				'xabcd',
+			)).toBe(false);
+		});
+	});
+
+	// ── Whitespace-only user edit at position model didn't touch ──────────
+
+	describe('whitespace edit outside model edit range', () => {
+
+		it('user added trailing space, model changed identifier — cancel', () => {
+			//  original:  `const x = 1;`
+			//  user typed ` ` at end → current: `const x = 1; `
+			//  model:     `const y = 1;`  (changed x→y at col 6-7)
+			//  → user edit at offset 13 (append), model edit at offset 6-7
+			//  → user offset outside model range → cancel
+			expect(isModelCursorLineCompatible(
+				'const x = 1;',
+				'const x = 1; ',
+				'const y = 1;',
+			)).toBe(false);
+		});
+	});
+
+	// ── User pure deletion, model also deleted same text ──────────────────
+
+	describe('user deletion matching model deletion', () => {
+
+		it('user deleted text, model deleted exact same text — compatible', () => {
+			//  original:  `foobar`
+			//  user deleted `bar` → current: `foo`
+			//  model:     `foo`
+			//  → currentCursorLine === modelCursorLine → true
+			expect(isModelCursorLineCompatible(
+				'foobar',
+				'foo',
+				'foo',
+			)).toBe(true);
+		});
+	});
 });
 
 // ============================================================================
@@ -582,6 +888,104 @@ describe('getCurrentCursorLine', () => {
 			const edit = insertAt(5, ' world');
 
 			expect(getCurrentCursorLine(t(doc), 0, edit)).toBe('hello world');
+		});
+	});
+
+	// ── Compound edits ────────────────────────────────────────────────────
+
+	describe('compound edits: line shift + cursor line modification', () => {
+
+		it('handles new line inserted above AND cursor line modified', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 1 = "bbb")
+			//  Edit 1: insert "\nNEW" at offset 3 (after "aaa") — shifts cursor line down
+			//  Edit 2: insert "X" at offset 4 (start of original "bbb")
+			//  New doc: "aaa\nNEW\nXbbb\nccc"
+			//  Cursor line 1 in original was "bbb", which now maps to "Xbbb".
+			const doc = 'aaa\nbbb\nccc';
+			const edit = StringEdit.create([
+				new StringReplacement(OffsetRange.emptyAt(3), '\nNEW'),
+				new StringReplacement(OffsetRange.emptyAt(4), 'X'),
+			]);
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('Xbbb');
+		});
+
+		it('handles line deleted above AND cursor line modified', () => {
+			//  Doc: "aaa\nbbb\nccc\nddd"  (cursor on line 3 = "ddd")
+			//  Edit 1: delete "bbb\n" (offsets 4..8), pulling cursor line up
+			//  Edit 2: insert "Z" at offset 12 (start of "ddd")
+			//  New doc: "aaa\nccc\nZddd"
+			const doc = 'aaa\nbbb\nccc\nddd';
+			const edit = StringEdit.create([
+				new StringReplacement(new OffsetRange(4, 8), ''),
+				new StringReplacement(OffsetRange.emptyAt(12), 'Z'),
+			]);
+
+			expect(getCurrentCursorLine(t(doc), 3, edit)).toBe('Zddd');
+		});
+	});
+
+	// ── Edit replaces cursor line with multiple lines ──────────────────────
+
+	describe('cursor line replaced with multiple lines', () => {
+
+		it('returns undefined when cursor line is entirely replaced by multi-line text', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 1 = "bbb", starts at offset 4)
+			//  Edit replaces "bbb" (offsets 4..7) with "X\nY\nZ"
+			//  The cursor line start offset (4) falls at the start of the replacement.
+			//  After applying, the offset maps to the beginning of the replacement text,
+			//  which is "X". The replacement range is [4, 7), and cursor line start is 4,
+			//  which is >= replacement start.
+			//  Actually cursor line start == replacement start, so it's not "inside" the
+			//  replacement by the check (replacement.replaceRange.start < cursorLineStartOffset
+			//  is false since 4 < 4 is false). So it falls through and delta stays 0.
+			//  mappedOffset = 4 + 0 = 4. In new doc "aaa\nX\nY\nZ\nccc", offset 4 is "X".
+			const doc = 'aaa\nbbb\nccc';
+			const edit = StringEdit.single(
+				new StringReplacement(new OffsetRange(4, 7), 'X\nY\nZ')
+			);
+
+			// The cursor line start coincides with the replacement start, so the
+			// mapping is unambiguous: offset 4 → "X" line.
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('X');
+		});
+	});
+
+	// ── Empty document ────────────────────────────────────────────────────
+
+	describe('empty document', () => {
+
+		it('empty single-line document, cursor on line 0, user types', () => {
+			const doc = '';
+			const edit = insertAt(0, 'hello');
+
+			expect(getCurrentCursorLine(t(doc), 0, edit)).toBe('hello');
+		});
+	});
+
+	// ── Edit at end of document ───────────────────────────────────────────
+
+	describe('edit at document end', () => {
+
+		it('cursor on last line, text appended after it', () => {
+			//  Doc: "aaa\nbbb"  (cursor on line 1 = "bbb")
+			//  Edit: append "XYZ" at offset 7 (end of "bbb")
+			//  New doc: "aaa\nbbbXYZ"
+			const doc = 'aaa\nbbb';
+			const edit = insertAt(7, 'XYZ');
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('bbbXYZ');
+		});
+
+		it('cursor on last line, new line appended after it', () => {
+			//  Doc: "aaa\nbbb"  (cursor on line 1 = "bbb")
+			//  Edit: append "\nccc" at offset 7
+			//  New doc: "aaa\nbbb\nccc"
+			//  Cursor line 1 should still be "bbb"
+			const doc = 'aaa\nbbb';
+			const edit = insertAt(7, '\nccc');
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('bbb');
 		});
 	});
 });
