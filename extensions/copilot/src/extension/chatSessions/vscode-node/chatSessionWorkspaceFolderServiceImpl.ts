@@ -186,7 +186,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		// If the repository is using a virtual file system, we need to
 		// disable rename detection to avoid expensive git operations
 		const noRenamesArg = repository.isUsingVirtualFileSystem
-			? ['-no-renames']
+			? ['--no-renames']
 			: [];
 
 		const mergeBaseArg = repositoryProperties.baseBranchName
