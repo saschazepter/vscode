@@ -432,6 +432,19 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 				return emptyList;
 			}
 
+			// If the edit was previously shown as ghost text, don't show it as an inline edit.
+			// It can still be served as ghost text (from cache) if the user returns.
+			if (!isInlineCompletion
+				&& isLlmCompletionInfo(suggestionInfo)
+				&& suggestionInfo.suggestion.result?.edit
+				&& this._configurationService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsRejectShownGhostText, this._expService)
+				&& this.model.nextEditProvider.wasShownAsGhostText(suggestionInfo.documentId, suggestionInfo.suggestion.result.edit)
+			) {
+				logger.trace('edit was previously shown as ghost text, not showing as inline edit');
+				this.telemetrySender.scheduleSendingEnhancedTelemetry(suggestionInfo.suggestion, telemetryBuilder);
+				return emptyList;
+			}
+
 			const menuCommands: InlineCompletionCommand[] = [];
 			if (this.inlineEditDebugComponent) {
 				menuCommands.push(...this.inlineEditDebugComponent.getCommands(logContext));
@@ -554,6 +567,13 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		} else {
 			this.model.diagnosticsBasedProvider?.handleShown(info.suggestion);
 		}
+
+		// Eagerly track ghost text edits at show time to avoid a race where the user
+		// moves the cursor, a new NES is triggered and passes the check,
+		// then the old ghost text's end-of-life callback fires too late.
+		// This is safe: if the user accepts the ghost text, the document changes and
+		// the tracking entry becomes stale for the new document state.
+		this._maybeTrackShownGhostText(completionItem);
 	}
 
 	public handleListEndOfLifetime(list: NesCompletionList, reason: InlineCompletionsDisposeReason): void {
@@ -725,6 +745,25 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 			this.model.nextEditProvider.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
 		} else {
 			this.model.diagnosticsBasedProvider?.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
+		}
+	}
+
+	/**
+	 * If the item is shown as ghost text (not an inline edit), eagerly track it
+	 * so the same suggestion is not shown again as an inline edit (but can still
+	 * be served as ghost text from cache if the user returns to the same position).
+	 * Called at show time to avoid a race with new NES requests triggered by cursor movement.
+	 */
+	private _maybeTrackShownGhostText(item: NesCompletionItem): void {
+		if (item.isInlineEdit) {
+			return;
+		}
+		if (!this._configurationService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsRejectShownGhostText, this._expService)) {
+			return;
+		}
+		const info = item.info;
+		if (isLlmCompletionInfo(info) && info.suggestion.result?.edit) {
+			this.model.nextEditProvider.trackShownAsGhostText(info.documentId, info.suggestion.result.edit);
 		}
 	}
 }

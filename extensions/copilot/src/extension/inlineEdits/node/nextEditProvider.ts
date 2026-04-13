@@ -163,6 +163,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	public readonly ID = this._statelessNextEditProvider.ID;
 
 	private readonly _rejectionCollector = this._register(new RejectionCollector(this._workspace, this._logService));
+	private readonly _ghostTextShownCollector = this._register(new RejectionCollector(this._workspace, this._logService));
 	private readonly _nextEditCache: NextEditCache;
 
 	private _pendingStatelessNextEditRequest: StatelessNextEditRequest<CachedOrRebasedEdit> | null = null;
@@ -1496,6 +1497,23 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	public clearCache() {
 		this._nextEditCache.clear();
 		this._rejectionCollector.clear();
+		this._ghostTextShownCollector.clear();
+	}
+
+	/**
+	 * Track an edit that was shown as ghost text (inline suggestion).
+	 * This allows {@link wasShownAsGhostText} to prevent the same edit from being
+	 * shown as an inline edit, while still allowing it to be served as ghost text again.
+	 */
+	public trackShownAsGhostText(docId: DocumentId, edit: StringReplacement): void {
+		this._ghostTextShownCollector.reject(docId, edit);
+	}
+
+	/**
+	 * Check if an edit was previously shown as ghost text.
+	 */
+	public wasShownAsGhostText(docId: DocumentId, edit: StringReplacement): boolean {
+		return this._ghostTextShownCollector.isRejected(docId, edit);
 	}
 }
 
