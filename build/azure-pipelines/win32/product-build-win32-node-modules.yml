@@ -20,7 +20,7 @@ jobs:
 
       - task: UsePythonVersion@0
         inputs:
-          version: "3.x"
+          versionSpec: "3.x"
           addToPath: true
 
       - template: ../distro/download-distro.yml@self
