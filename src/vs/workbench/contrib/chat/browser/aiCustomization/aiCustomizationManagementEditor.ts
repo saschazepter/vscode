@@ -70,7 +70,6 @@ import { IResolvedTextEditorModel, ITextModelService } from '../../../../../edit
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { getSimpleEditorOptions } from '../../../codeEditor/browser/simpleEditorOptions.js';
 import { IWorkingCopyService } from '../../../../services/workingCopy/common/workingCopyService.js';
-import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
@@ -309,11 +308,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private _editorContentChanged = false;
 	private _previousActiveHarnessId: string | undefined;
 
-	// Folder picker (sessions window only)
-	private folderPickerContainer: HTMLElement | undefined;
-	private folderPickerLabel: HTMLElement | undefined;
-	private folderPickerClearButton: HTMLElement | undefined;
-
 	// Harness dropdown
 	private harnessDropdownContainer: HTMLElement | undefined;
 	private harnessDropdownButton: HTMLElement | undefined;
@@ -341,7 +335,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@ITextModelService private readonly textModelService: ITextModelService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IWorkingCopyService private readonly workingCopyService: IWorkingCopyService,
-		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IHoverService private readonly hoverService: IHoverService,
 		@IModelService private readonly modelService: IModelService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
@@ -432,9 +425,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			layout: (width, _, height) => {
 				this.sidebarContainer.style.width = `${width}px`;
 				if (height !== undefined) {
-					const footerHeight = this.folderPickerContainer?.offsetHeight ?? 0;
-					const listHeight = height - 8 - footerHeight;
-					this.sectionsList.layout(listHeight, width);
+					this.sectionsList.layout(height - 8, width);
 				}
 			},
 		}, savedWidth, undefined, true);
@@ -617,10 +608,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}
 		}));
 
-		// Folder picker (sessions window only)
-		if (this.workspaceService.isSessionsWindow) {
-			this.createFolderPicker(sidebarContent);
-		}
 	}
 
 	private createSidebarHeader(sidebarContent: HTMLElement): void {
@@ -739,67 +726,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			getActions: () => actions,
 			getCheckedActionsRepresentation: () => 'radio',
 		});
-	}
-
-	private createFolderPicker(sidebarContent: HTMLElement): void {
-		const footer = this.folderPickerContainer = DOM.append(sidebarContent, $('.sidebar-folder-picker'));
-
-		const button = DOM.append(footer, $('button.folder-picker-button'));
-		button.setAttribute('aria-label', localize('browseFolder', "Browse folder"));
-
-		const folderIcon = DOM.append(button, $(`.codicon.codicon-${Codicon.folder.id}`));
-		folderIcon.classList.add('folder-picker-icon');
-
-		this.folderPickerLabel = DOM.append(button, $('span.folder-picker-label'));
-
-		this.folderPickerClearButton = DOM.append(footer, $('button.folder-picker-clear'));
-		this.folderPickerClearButton.setAttribute('aria-label', localize('clearFolderOverride', "Reset to session folder"));
-		DOM.append(this.folderPickerClearButton, $(`.codicon.codicon-${Codicon.close.id}`));
-
-		// Clicking the main button opens the folder dialog
-		this.editorDisposables.add(DOM.addDisposableListener(button, 'click', () => {
-			this.browseForFolder();
-		}));
-
-		// Clear button resets to session default
-		this.editorDisposables.add(DOM.addDisposableListener(this.folderPickerClearButton, 'click', () => {
-			this.workspaceService.clearOverrideProjectRoot();
-		}));
-
-		// Hover showing full path
-		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), button, () => {
-			const root = this.workspaceService.getActiveProjectRoot();
-			return root?.fsPath ?? '';
-		}));
-
-		// Keep label and clear button in sync with the active root
-		this.editorDisposables.add(autorun(reader => {
-			const root = this.workspaceService.activeProjectRoot.read(reader);
-			const hasOverride = this.workspaceService.hasOverrideProjectRoot.read(reader);
-			this.updateFolderPickerLabel(root, hasOverride);
-		}));
-	}
-
-	private updateFolderPickerLabel(root: URI | undefined, hasOverride: boolean): void {
-		if (this.folderPickerLabel) {
-			this.folderPickerLabel.textContent = root ? basename(root) : localize('noFolder', "No folder");
-		}
-		if (this.folderPickerClearButton) {
-			this.folderPickerClearButton.style.display = hasOverride ? '' : 'none';
-		}
-	}
-
-	private async browseForFolder(): Promise<void> {
-		const result = await this.fileDialogService.showOpenDialog({
-			canSelectFolders: true,
-			canSelectFiles: false,
-			canSelectMany: false,
-			title: localize('selectFolder', "Select Folder to Explore"),
-			defaultUri: this.workspaceService.getActiveProjectRoot(),
-		});
-		if (result?.[0]) {
-			this.workspaceService.setOverrideProjectRoot(result[0]);
-		}
 	}
 
 	private createWelcomePage(parent: HTMLElement): void {
