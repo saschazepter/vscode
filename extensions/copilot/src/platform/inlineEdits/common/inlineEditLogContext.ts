@@ -35,6 +35,7 @@ export interface MarkdownLoggable {
  * - `skipped`: request was skipped or fetch-cancelled
  * - `cancelled`: request was cancelled via CancellationToken (shown as skipped)
  * - `errored`: an error occurred
+ * - `previouslyRejected`: result matches a suggestion that was previously rejected
  */
 type LogContextOutcome = 'pending' | 'succeeded' | 'noSuggestions' | 'cached' | 'cachedFromGhostText' | 'skipped' | 'cancelled' | 'errored' | 'previouslyRejected';
 
