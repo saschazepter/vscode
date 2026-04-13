@@ -8,6 +8,7 @@ import { IObservable } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { ISession, ISessionType, ISessionWorkspace, ISessionWorkspaceBrowseAction } from './session.js';
 
@@ -55,6 +56,12 @@ export interface ISessionsProvider {
 	readonly icon: ThemeIcon;
 	/** Session types this provider supports. */
 	readonly sessionTypes: readonly ISessionType[];
+	/**
+	 * Optional. Fires when {@link sessionTypes} changes (e.g. a remote agent
+	 * host advertises a new agent at runtime). Providers with a statically
+	 * declared session type list can omit this.
+	 */
+	readonly onDidChangeSessionTypes?: Event<void>;
 	/** Capabilities supported by this provider. */
 	readonly capabilities: ISessionsProviderCapabilities;
 
@@ -109,8 +116,21 @@ export interface ISessionsProvider {
 	deleteSession(sessionId: string): Promise<void>;
 	/** Delete a single chat from a session. */
 	deleteChat(sessionId: string, chatUri: URI): Promise<void>;
-	/** Mark a session as read or unread. */
-	setRead(sessionId: string, read: boolean): void;
+
+	// -- Dynamic Session Config --
+
+	/** Optional. Fires when dynamic configuration for a new session changes. */
+	readonly onDidChangeSessionConfig?: Event<string>;
+	/** Optional. Returns the last resolved dynamic configuration for a new session. */
+	getSessionConfig?(sessionId: string): IResolveSessionConfigResult | undefined;
+	/** Optional. Sets one dynamic configuration property and re-resolves the schema. */
+	setSessionConfigValue?(sessionId: string, property: string, value: string): Promise<void>;
+	/** Optional. Returns dynamic completions for a configuration property. */
+	getSessionConfigCompletions?(sessionId: string, property: string, query?: string): Promise<readonly ISessionConfigValueItem[]>;
+	/** Optional. Returns the resolved config that should be sent to createSession. */
+	getCreateSessionConfig?(sessionId: string): Record<string, string> | undefined;
+	/** Optional. Clears dynamic configuration state for an abandoned new session. */
+	clearSessionConfig?(sessionId: string): void;
 
 	// -- Send --
 	/** Send a request, creating a new chat in the session. */
