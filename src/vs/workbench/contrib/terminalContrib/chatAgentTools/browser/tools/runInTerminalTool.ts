@@ -226,7 +226,11 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
+<<<<<<< HEAD
 - NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Use ${TerminalToolId.GetTerminalOutput} to check output before then
+=======
+- NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands complete or need input. Use ${TerminalToolId.GetTerminalOutput} to check output before then
+>>>>>>> 1e84feb49a4 (Fix #309523)
 
 Interactive Input Handling:
 - When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.
