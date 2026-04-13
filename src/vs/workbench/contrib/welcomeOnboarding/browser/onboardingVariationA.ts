@@ -32,6 +32,7 @@ import { IPathService } from '../../../services/path/common/pathService.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { InstallChatEvent, InstallChatClassification, ChatSetupStrategy } from '../../chat/browser/chatSetup/chatSetup.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -137,6 +138,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@IPathService private readonly pathService: IPathService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 	) {
 		super();
 
@@ -756,6 +758,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 					}
 					pill.classList.add('selected');
 					pill.setAttribute('aria-checked', 'true');
+					this.accessibilityService.alert(localize('onboarding.keymap.selected.alert', "{0} keyboard mapping selected", keymap.label));
 				}));
 			}
 			const selectedKeymapIndex = keymapOptions.findIndex(k => k.id === this.selectedKeymapId);
@@ -822,6 +825,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			}
 			card.classList.add('selected');
 			card.setAttribute('aria-checked', 'true');
+			this.accessibilityService.alert(localize('onboarding.theme.selected.alert', "{0} theme selected", theme.label));
 		}));
 
 		this.stepDisposables.add(addDisposableListener(card, EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -868,6 +872,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			const installBtn = this._registerStepFocusable(append(row, $<HTMLButtonElement>('button.onboarding-a-ext-install')));
 			installBtn.type = 'button';
 			installBtn.textContent = localize('onboarding.ext.install', "Install");
+			installBtn.setAttribute('aria-label', localize('onboarding.ext.install.aria', "Install {0}", ext.name));
 
 			this.stepDisposables.add(addDisposableListener(installBtn, EventType.CLICK, () => {
 				this._logAction('installExtension', undefined, ext.id);
@@ -877,6 +882,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 					() => {
 						installBtn.textContent = localize('onboarding.ext.installed', "Installed");
 						installBtn.classList.add('installed');
+						installBtn.setAttribute('aria-label', localize('onboarding.ext.installed.aria', "{0} installed", ext.name));
+						this.accessibilityService.alert(localize('onboarding.ext.installed.alert', "{0} has been installed", ext.name));
 					},
 					() => {
 						installBtn.textContent = localize('onboarding.ext.install', "Install");
@@ -1095,6 +1102,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 					c.setAttribute('aria-checked', c.dataset.id === option.id ? 'true' : 'false');
 				}
 				this._applyAiPreference(option.id);
+				this.accessibilityService.alert(localize('onboarding.aiPref.selected.alert', "{0} selected", option.label));
 			}));
 		}
 		const selectedAiIndex = ONBOARDING_AI_PREFERENCE_OPTIONS.findIndex(o => o.id === this.selectedAiMode);
@@ -1175,7 +1183,10 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	}
 
 	private _createFeatureCard(parent: HTMLElement, icon: ThemeIcon, title: string, description?: string): HTMLElement {
-		const card = append(parent, $('div.onboarding-a-feature-card'));
+		const card = this._registerStepFocusable(append(parent, $('div.onboarding-a-feature-card')));
+		card.setAttribute('tabindex', '0');
+		card.setAttribute('role', 'group');
+		card.setAttribute('aria-label', title);
 		const iconCol = append(card, $('div.onboarding-a-feature-icon'));
 		iconCol.appendChild(renderIcon(icon));
 		const textCol = append(card, $('div.onboarding-a-feature-text'));
