@@ -36,7 +36,7 @@ export interface MarkdownLoggable {
  * - `cancelled`: request was cancelled via CancellationToken (shown as skipped)
  * - `errored`: an error occurred
  */
-type LogContextOutcome = 'pending' | 'succeeded' | 'noSuggestions' | 'cached' | 'cachedFromGhostText' | 'skipped' | 'cancelled' | 'errored';
+type LogContextOutcome = 'pending' | 'succeeded' | 'noSuggestions' | 'cached' | 'cachedFromGhostText' | 'skipped' | 'cancelled' | 'errored' | 'previouslyRejected';
 
 export class InlineEditRequestLogContext {
 
@@ -377,6 +377,7 @@ export class InlineEditRequestLogContext {
 			case 'skipped':
 			case 'cancelled': return Icon.skipped;
 			case 'errored': return Icon.error;
+			case 'previouslyRejected': return Icon.thumbsdown;
 		}
 	}
 
@@ -398,6 +399,14 @@ export class InlineEditRequestLogContext {
 
 	public markAsNoSuggestions() {
 		this._setOutcome('noSuggestions');
+		this._isVisible = true;
+		this.fireDidChange();
+	}
+
+	public markAsPreviouslyRejected() {
+		// Direct assignment — bypasses _setOutcome guard because this transition
+		// legitimately overrides 'succeeded' when a fetched edit turns out to be rejected.
+		this._outcome = 'previouslyRejected';
 		this._isVisible = true;
 		this.fireDidChange();
 	}
