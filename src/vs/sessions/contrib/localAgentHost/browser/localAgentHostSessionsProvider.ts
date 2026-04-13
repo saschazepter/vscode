@@ -746,7 +746,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 			return;
 		}
 		// Filter schema to only include session-mutable properties
-		const mutableProperties: Record<string, typeof config.schema.properties[string]> = {};
+		const mutableProperties: IResolveSessionConfigResult['schema']['properties'] = {};
 		const mutableValues: Record<string, string> = {};
 		for (const [key, propSchema] of Object.entries(config.schema.properties)) {
 			if (propSchema.sessionMutable) {
