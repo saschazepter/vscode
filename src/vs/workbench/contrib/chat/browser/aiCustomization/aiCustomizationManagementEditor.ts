@@ -751,35 +751,38 @@ export class AICustomizationManagementEditor extends EditorPane {
 					}
 				},
 				prefillChat: async (query, options) => {
-					if (this.workspaceService.isSessionsWindow) {
-						const widget = this.chatWidgetService.lastFocusedWidget;
-						if (widget) {
-							this.chatWidgetService.reveal(widget).then(() => {
+					try {
+						if (this.workspaceService.isSessionsWindow) {
+							const widget = this.chatWidgetService.lastFocusedWidget;
+							if (widget) {
+								await this.chatWidgetService.reveal(widget);
 								widget.setInput(query);
 								widget.focusInput();
-							});
-						} else {
-							const sessionsViewId = 'workbench.view.sessions.chat';
-							this.viewsService.openView(sessionsViewId, true).then(view => {
+							} else {
+								const sessionsViewId = 'workbench.view.sessions.chat';
+								const view = await this.viewsService.openView(sessionsViewId, true);
 								const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
 								if (options?.isPartialQuery && chatView?.prefillInput) {
 									chatView.prefillInput(query);
 								} else if (chatView?.sendQuery) {
 									chatView.sendQuery(query);
 								}
-							});
+							}
+						} else {
+							if (options?.newChat) {
+								await this.commandService.executeCommand('workbench.action.chat.newChat');
+							}
+							this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
 						}
-					} else {
-						if (options?.newChat) {
-							await this.commandService.executeCommand('workbench.action.chat.newChat');
-						}
-						this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
+					} catch (err) {
+						onUnexpectedError(err);
 					}
 				},
 			},
 			this.commandService,
 			this.workspaceService,
 			this.configurationService,
+			this.hoverService,
 		));
 		this.welcomePage.rebuildCards(new Set(this.sections.map(s => s.id)));
 	}

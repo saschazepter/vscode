@@ -15,6 +15,8 @@ import { agentIcon, instructionsIcon, pluginIcon, skillIcon, hookIcon } from './
 import { IAICustomizationWorkspaceService, IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import type { IAICustomizationWelcomePageImplementation, IWelcomePageCallbacks } from './aiCustomizationWelcomePage.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 
 const $ = DOM.$;
 
@@ -83,6 +85,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 		private readonly callbacks: IWelcomePageCallbacks,
 		_commandService: ICommandService,
 		private readonly workspaceService: IAICustomizationWorkspaceService,
+		private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -114,7 +117,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 
 			const submitBtn = DOM.append(inputRow, $('button.welcome-prompts-input-submit'));
 			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Customize agent"));
-			submitBtn.title = localize('workflowSubmitTooltip', "Open in Chat");
+			this._register(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), submitBtn, localize('workflowSubmitTooltip', "Open in Chat")));
 			const chevron = DOM.append(submitBtn, $('span.codicon.codicon-arrow-up'));
 			chevron.setAttribute('aria-hidden', 'true');
 

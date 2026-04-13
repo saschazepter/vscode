@@ -11,6 +11,7 @@ import { AICustomizationManagementSection, AI_CUSTOMIZATION_WELCOME_PAGE_VARIANT
 import { IAICustomizationWorkspaceService, IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
 import { ClassicAICustomizationWelcomePage } from './aiCustomizationWelcomePageClassic.js';
 import { PromptLaunchersAICustomizationWelcomePage } from './aiCustomizationWelcomePagePromptLaunchers.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 
 const $ = DOM.$;
 
@@ -51,6 +52,7 @@ export class AICustomizationWelcomePage extends Disposable {
 		private readonly commandService: ICommandService,
 		private readonly workspaceService: IAICustomizationWorkspaceService,
 		private readonly configurationService: IConfigurationService,
+		private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -84,7 +86,7 @@ export class AICustomizationWelcomePage extends Disposable {
 	private createImplementation(): IAICustomizationWelcomePageImplementation {
 		switch (this.getVariant()) {
 			case 'promptLaunchers':
-				return new PromptLaunchersAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService, this.workspaceService);
+				return new PromptLaunchersAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService, this.workspaceService, this.hoverService);
 			case 'classic':
 			default:
 				return new ClassicAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService, this.workspaceService);
