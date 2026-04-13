@@ -26,7 +26,8 @@ import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbe
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
-import { ISendRequestOptions, ISessionChangeEvent, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
+import { ISendRequestOptions, ISessionChangeEvent } from '../../../services/sessions/common/sessionsProvider.js';
+import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
 import { IChat, ISession, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, type IGitHubInfo, ISessionType } from '../../../services/sessions/common/session.js';
 
 const LOCAL_PROVIDER_ID = 'local-agent-host';
@@ -206,7 +207,7 @@ class LocalSessionAdapter implements ISession {
  * - **sessionId** - `local-agent-host:agent-host-{provider}:///{rawId}` — the
  *   provider-scoped ID used by {@link ISessionsProvider}.
  */
-export class LocalAgentHostSessionsProvider extends Disposable implements ISessionsProvider {
+export class LocalAgentHostSessionsProvider extends Disposable implements IAgentHostSessionsProvider {
 
 	readonly id = LOCAL_PROVIDER_ID;
 	readonly label: string;

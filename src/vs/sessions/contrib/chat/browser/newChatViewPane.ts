@@ -39,6 +39,7 @@ import { localize } from '../../../../nls.js';
 import * as aria from '../../../../base/browser/ui/aria/aria.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import type { ISession } from '../../../services/sessions/common/session.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
@@ -570,7 +571,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 
 	private _watchSessionConfigProviders(): void {
 		for (const provider of this.sessionsProvidersService.getProviders()) {
-			if (!provider.onDidChangeSessionConfig || this._sessionConfigListeners.has(provider.id)) {
+			if (!isAgentHostProvider(provider) || this._sessionConfigListeners.has(provider.id)) {
 				continue;
 			}
 			this._sessionConfigListeners.set(provider.id, provider.onDidChangeSessionConfig(() => this._updateSendButtonState()));
@@ -579,7 +580,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 
 	private _isSessionConfigReady(session: ISession): boolean {
 		const provider = this.sessionsProvidersService.getProvider(session.providerId);
-		if (!provider?.getSessionConfig) {
+		if (!provider || !isAgentHostProvider(provider)) {
 			return true;
 		}
 		return provider.getSessionConfig(session.sessionId)?.ready ?? true;

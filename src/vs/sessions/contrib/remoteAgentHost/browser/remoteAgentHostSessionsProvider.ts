@@ -31,7 +31,8 @@ import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbe
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
-import { ISessionChangeEvent, ISendRequestOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
+import { ISessionChangeEvent, ISendRequestOptions } from '../../../services/sessions/common/sessionsProvider.js';
+import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, ISessionType, COPILOT_CLI_SESSION_TYPE } from '../../../services/sessions/common/session.js';
 import { remoteAgentHostSessionTypeId } from '../common/remoteAgentHostSessionType.js';
 
@@ -241,7 +242,7 @@ class RemoteSessionAdapter implements IChatData {
  * - Protocol operations (e.g. `disposeSession`) use the canonical agent session URI
  *   (`copilot:///abc123`), reconstructed via {@link AgentSession.uri}.
  */
-export class RemoteAgentHostSessionsProvider extends Disposable implements ISessionsProvider {
+export class RemoteAgentHostSessionsProvider extends Disposable implements IAgentHostSessionsProvider {
 
 	readonly id: string;
 	readonly label: string;
