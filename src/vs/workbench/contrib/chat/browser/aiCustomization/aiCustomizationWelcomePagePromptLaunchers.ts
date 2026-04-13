@@ -123,15 +123,6 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 
 			let sentLabel: HTMLElement | undefined;
 
-			const clearSentState = () => {
-				if (sentLabel) {
-					sentLabel.remove();
-					sentLabel = undefined;
-					submitBtn.style.display = '';
-					inputRow.classList.remove('sent');
-				}
-			};
-
 			const updateSubmitState = () => {
 				const hasValue = !!(this.inputElement?.value?.trim());
 				submitBtn.disabled = !hasValue;
@@ -149,17 +140,22 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				} else {
 					query = `/init ${value}`;
 				}
-				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
 
-				// Show confirmation and clear input — persists until user clicks back in
+				// Show confirmation immediately — before prefillChat so it's visible
+				// even if prefillChat navigates focus away from this editor
 				if (this.inputElement) {
 					this.inputElement.value = '';
 				}
 				updateSubmitState();
 				inputRow.classList.add('sent');
 				submitBtn.style.display = 'none';
+				if (sentLabel) {
+					sentLabel.remove();
+				}
 				sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
 				sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
+
+				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
 			};
 
 			this._register(DOM.addDisposableListener(submitBtn, 'click', e => { e.stopPropagation(); submit(); }));
@@ -171,12 +167,12 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			}));
 			this._register(DOM.addDisposableListener(this.inputElement, 'input', () => {
 				updateSubmitState();
-			}));
-			// Clicking anywhere in the row dismisses the sent state and restores the input
-			this._register(DOM.addDisposableListener(inputRow, 'click', () => {
+				// Typing restores the input row from sent state
 				if (sentLabel) {
-					clearSentState();
-					this.inputElement?.focus();
+					sentLabel.remove();
+					sentLabel = undefined;
+					submitBtn.style.display = '';
+					inputRow.classList.remove('sent');
 				}
 			}));
 			updateSubmitState();

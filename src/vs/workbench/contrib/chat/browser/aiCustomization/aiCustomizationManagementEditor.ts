@@ -87,7 +87,6 @@ import { ICustomizationHarnessService, CustomizationHarness, matchesWorkspaceSub
 import { ChatConfiguration } from '../../common/constants.js';
 import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
-import { IChatWidgetService } from '../chat.js';
 
 const $ = DOM.$;
 
@@ -352,7 +351,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
 		@IViewsService private readonly viewsService: IViewsService,
-		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -753,20 +751,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 				prefillChat: async (query, options) => {
 					try {
 						if (this.workspaceService.isSessionsWindow) {
-							const widget = this.chatWidgetService.lastFocusedWidget;
-							if (widget) {
-								await this.chatWidgetService.reveal(widget);
-								widget.setInput(query);
-								widget.focusInput();
-							} else {
-								const sessionsViewId = 'workbench.view.sessions.chat';
-								const view = await this.viewsService.openView(sessionsViewId, true);
-								const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
-								if (options?.isPartialQuery && chatView?.prefillInput) {
-									chatView.prefillInput(query);
-								} else if (chatView?.sendQuery) {
-									chatView.sendQuery(query);
-								}
+							const sessionsViewId = 'workbench.view.sessions.chat';
+							if (options?.newChat) {
+								// Open a new chat session — navigate to new-chat view without stealing focus
+								await this.commandService.executeCommand('workbench.action.sessions.newChat');
+							}
+							const view = await this.viewsService.openView(sessionsViewId, false /* don't steal focus */);
+							const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
+							if (options?.isPartialQuery && chatView?.prefillInput) {
+								chatView.prefillInput(query);
+							} else if (chatView?.sendQuery) {
+								chatView.sendQuery(query);
 							}
 						} else {
 							if (options?.newChat) {
