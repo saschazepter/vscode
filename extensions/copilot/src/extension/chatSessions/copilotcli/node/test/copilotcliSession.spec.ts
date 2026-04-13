@@ -175,11 +175,7 @@ function workspaceInfoFor(workingDirectory: Uri | undefined): IWorkspaceInfo {
 class UsageCapturingStream extends MockChatResponseStream {
 	public readonly usages: import('vscode').ChatResultUsage[] = [];
 	constructor() {
-		super(part => {
-			if (part.kind === 'usageReport') {
-				this.usages.push((part as any).usage);
-			}
-		});
+		super();
 	}
 	override usage(u: import('vscode').ChatResultUsage): void {
 		this.usages.push(u);
