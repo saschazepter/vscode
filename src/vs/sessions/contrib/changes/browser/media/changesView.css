@@ -490,6 +490,10 @@
 	transition: background-color 0.05s ease;
 }
 
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .monaco-icon-label > .monaco-icon-label-container > .monaco-icon-name-container > .label-name {
+	font-size: 12px;
+}
+
 .diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content:hover {
 	background: var(--vscode-list-hoverBackground);
 }
