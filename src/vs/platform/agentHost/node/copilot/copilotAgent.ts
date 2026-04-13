@@ -166,8 +166,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const projectByContext = new Map<string, Promise<IAgentSessionProjectInfo | undefined>>();
 		const result: IAgentSessionMetadata[] = await Promise.all(sessions.map(async s => {
 			const session = AgentSession.uri(this.id, s.sessionId);
-			const metadata = await this._readSessionMetadata(session);
-			let { project, resolved } = await this._readSessionProject(session);
+			const metadata = await this._readStoredSessionMetadata(session);
+			let { project, resolved } = metadata;
 			if (!resolved) {
 				project = await this._resolveSessionProject(s.context, projectLimiter, projectByContext);
 				this._storeSessionProjectResolution(session, project);
@@ -179,7 +179,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				...(project ? { project } : {}),
 				summary: s.summary,
 				model: metadata.model,
-				workingDirectory: typeof s.context?.cwd === 'string' ? URI.file(s.context.cwd) : undefined,
+				workingDirectory: typeof s.context?.cwd === 'string' ? URI.file(s.context.cwd) : metadata.workingDirectory,
 			};
 		}));
 		this._logService.info(`[Copilot] Found ${result.length} sessions`);
@@ -566,19 +566,21 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 	}
 
-	private async _readSessionProject(session: URI): Promise<{ project?: IAgentSessionProjectInfo; resolved: boolean }> {
+	private async _readStoredSessionMetadata(session: URI): Promise<{ model?: string; workingDirectory?: URI; project?: IAgentSessionProjectInfo; resolved: boolean }> {
 		const ref = await this._sessionDataService.tryOpenDatabase(session);
 		if (!ref) {
 			return { resolved: false };
 		}
 		try {
-			const [resolved, uri, displayName] = await Promise.all([
+			const [model, cwd, resolved, uri, displayName] = await Promise.all([
+				ref.object.getMetadata(CopilotAgent._META_MODEL),
+				ref.object.getMetadata(CopilotAgent._META_CWD),
 				ref.object.getMetadata(CopilotAgent._META_PROJECT_RESOLVED),
 				ref.object.getMetadata(CopilotAgent._META_PROJECT_URI),
 				ref.object.getMetadata(CopilotAgent._META_PROJECT_DISPLAY_NAME),
 			]);
 			const project = uri && displayName ? { uri: URI.parse(uri), displayName } : undefined;
-			return { project, resolved: resolved === 'true' || project !== undefined };
+			return { model, workingDirectory: cwd ? URI.parse(cwd) : undefined, project, resolved: resolved === 'true' || project !== undefined };
 		} finally {
 			ref.dispose();
 		}

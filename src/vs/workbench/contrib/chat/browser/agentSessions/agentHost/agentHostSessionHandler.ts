@@ -368,7 +368,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 				const sessionState = this._getSessionState(resolvedSession.toString());
 				if (sessionState) {
-					history.push(...turnsToHistory(sessionState.turns, this._config.agentId, this._toLanguageModelId(sessionResource, sessionState.summary.model)));
+					const modelId = this._toLanguageModelId(sessionResource, sessionState.summary.model);
+					history.push(...turnsToHistory(sessionState.turns, this._config.agentId, modelId));
 
 					// Enrich history with inner tool calls from subagent
 					// child sessions. Subscribes to each child session so
@@ -395,6 +396,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 							type: 'request',
 							prompt: sessionState.activeTurn.userMessage.text,
 							participant: this._config.agentId,
+							modelId,
 						});
 						history.push({
 							type: 'response',

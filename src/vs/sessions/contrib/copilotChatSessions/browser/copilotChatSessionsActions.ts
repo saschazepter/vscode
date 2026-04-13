@@ -223,7 +223,7 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 							provider?.setModel(session.sessionId, model.identifier);
 						}
 					},
-					getModels: () => getAvailableModels(languageModelsService, sessionsManagementService),
+					getModels: () => getAvailableModels(languageModelsService, sessionsManagementService.activeSession.get()),
 					useGroupedModelPicker: () => true,
 					showManageModelsAction: () => false,
 					showUnavailableFeatured: () => false,
@@ -237,7 +237,7 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 				const modelPicker = instantiationService.createInstance(EnhancedModelPickerActionItem, action, delegate, pickerOptions);
 
 				const updatePickerModel = (session: ISession | undefined, sessionModelId: string | undefined) => {
-					const models = getAvailableModels(languageModelsService, sessionsManagementService);
+					const models = getAvailableModels(languageModelsService, session);
 					modelPicker.setEnabled(models.length > 0);
 					currentModel.set(sessionModelId ? models.find(model => model.identifier === sessionModelId) : undefined, undefined);
 				};
@@ -278,9 +278,8 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 
 function getAvailableModels(
 	languageModelsService: ILanguageModelsService,
-	sessionsManagementService: ISessionsManagementService,
+	session: ISession | undefined,
 ): ILanguageModelChatMetadataAndIdentifier[] {
-	const session = sessionsManagementService.activeSession.get();
 	if (!session) {
 		return [];
 	}
