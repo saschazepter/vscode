@@ -14,7 +14,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IChatSessionFileChange, IChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { GitDiffChange, IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
-import { COPILOT_CLOUD_SESSION_TYPE } from '../../../services/sessions/common/session.js';
+import { COPILOT_CLOUD_SESSION_TYPE, IChat } from '../../../services/sessions/common/session.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IAgentFeedbackService } from '../../agentFeedback/browser/agentFeedbackService.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
@@ -38,6 +38,25 @@ function toIChatSessionFileChange2(changes: GitDiffChange[], originalRef: string
 		insertions: change.insertions,
 		deletions: change.deletions,
 	} satisfies IChatSessionFileChange2));
+}
+
+function sortChatByLastTurnEndDesc(chatA: IChat, chatB: IChat): number {
+	const chatALastTurnEnd = chatA.lastTurnEnd.get();
+	const chatBLastTurnEnd = chatB.lastTurnEnd.get();
+
+	if (!chatALastTurnEnd && !chatBLastTurnEnd) {
+		return 0;
+	}
+
+	if (!chatALastTurnEnd) {
+		return 1;
+	}
+
+	if (!chatBLastTurnEnd) {
+		return -1;
+	}
+
+	return chatBLastTurnEnd.getTime() - chatALastTurnEnd.getTime();
 }
 
 export interface ActiveSessionState {
@@ -129,8 +148,21 @@ export class ChangesViewModel extends Disposable {
 
 		// Active session last checkpoint ref
 		this.activeSessionLastCheckpointRefObs = derived(reader => {
-			const metadata = this._activeSessionMetadataObs.read(reader);
-			return metadata?.lastCheckpointRef as string | undefined;
+			const activeSessionChats = this.sessionManagementService.activeSession.read(reader)?.chats.read(reader);
+			if (!activeSessionChats || activeSessionChats.length === 0) {
+				return undefined;
+			}
+
+			// Session has only one chat
+			if (activeSessionChats.length === 1) {
+				const metadata = this._activeSessionMetadataObs.read(reader);
+				return metadata?.lastCheckpointRef as string | undefined;
+			}
+
+			// Session has multiple chats - find the last chat that completed
+			const chatsSortedByLastTurnEnd = activeSessionChats.toSorted(sortChatByLastTurnEndDesc);
+			const model = this.agentSessionsService.getSession(chatsSortedByLastTurnEnd[0].resource);
+			return model?.metadata?.lastCheckpointRef as string | undefined;
 		});
 
 		// Active session state
@@ -429,7 +461,7 @@ export class ChangesViewModel extends Disposable {
 
 	private async _getRepositoryChanges(repositoryPath: string, firstCheckpointRef: string, lastCheckpointRef: string): Promise<IChatSessionFileChange2[] | undefined> {
 		const repository = await this.gitService.openRepository(URI.file(repositoryPath));
-		const changes = await repository?.diffBetweenWithStats(firstCheckpointRef, lastCheckpointRef) ?? [];
+		const changes = await repository?.diffBetweenWithStats2(`${firstCheckpointRef}..${lastCheckpointRef}`) ?? [];
 		return toIChatSessionFileChange2(changes, firstCheckpointRef, lastCheckpointRef);
 	}
 
