@@ -548,7 +548,7 @@ suite('multi-workspace with additionalWorkspaces', () => {
 		};
 		workspaceService.getWorkspaceFolders().push(URI.file('/workspace'));
 		workspaceService.getWorkspaceFolders().push(URI.file('/workspace2'));
-		resolver = new CopilotCLIPromptResolver(imageSupport, logService, fileSystem, workspaceService, services.seal(), accessor.get(IIgnoreService), new MockSkillLocations());
+		resolver = new CopilotCLIPromptResolver(imageSupport, logService, fileSystem, workspaceService, services.seal(), accessor.get(IIgnoreService), new MockSkillLocations(), new MockExtensionContext() as unknown as IVSCodeExtensionContext);
 	});
 
 	afterEach(() => {
