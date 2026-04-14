@@ -148,7 +148,7 @@
 	margin: 0 auto !important;
 	display: inherit !important;
 	/* Align with panel (terminal) card margin */
-	padding: 4px 10px 10px 10px !important;
+	padding: 4px 10px !important;
 	box-sizing: border-box;
 }
 
@@ -186,6 +186,10 @@
 .agent-sessions-workbench .quick-input-list .monaco-scrollable-element > .monaco-list-rows,
 .agent-sessions-workbench .quick-input-tree .monaco-scrollable-element > .monaco-list-rows {
 	background-color: var(--vscode-sessionsPanel-background) !important;
+}
+
+.agent-sessions-workbench .quick-input-header {
+	border-radius: var(--vscode-cornerRadius-xLarge);
 }
 
 /* ---- Sessions Context Menus ---- */
