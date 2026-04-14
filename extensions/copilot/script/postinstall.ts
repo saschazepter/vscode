@@ -61,16 +61,16 @@ const treeSitterGrammars: ITreeSitterGrammar[] = [
 
 const REPO_ROOT = path.join(__dirname, '..');
 
+async function removeCopilotCLIShim() {
+	const shimsPath = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'shims.txt');
+	await fs.promises.rm(shimsPath, { force: true }).catch(() => { /* ignore */ });
+}
+
 /**
  * @github/copilot/sdk/index.js depends on @github/copilot/worker/*.js files.
  * We need to copy these files into the sdk directory to ensure they are available at runtime.
  */
 async function copyCopilotCliWorkerFiles() {
-	const shimsPath = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'shims.txt');
-	await fs.promises.rm(shimsPath, { force: true }).catch(() => { /* ignore */ });
-}
-
-async function removeCopilotCLIShim() {
 	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sharp');
 	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'sharp');
 
