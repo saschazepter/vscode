@@ -135,7 +135,7 @@ export interface IHarnessDescriptor {
 }
 
 /**
- * Represents a customization item provided by an external extension.
+ * Represents a customization item provided by any source.
  */
 export interface ICustomizationItem {
 	readonly uri: URI;
@@ -144,6 +144,8 @@ export interface ICustomizationItem {
 	readonly description?: string;
 	/** Storage origin (local, user, extension, plugin). Set by providers that know the source. */
 	readonly storage?: PromptsStorage;
+	/** Display name of the contributing extension (e.g. "GitHub Copilot Chat"). */
+	readonly extensionLabel?: string;
 	/** Server-reported loading status for this customization. */
 	readonly status?: 'loading' | 'loaded' | 'degraded' | 'error';
 	/** Human-readable status detail (e.g. error message or warning). */

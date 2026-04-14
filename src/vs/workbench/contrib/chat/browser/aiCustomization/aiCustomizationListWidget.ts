@@ -578,8 +578,6 @@ export class AICustomizationListWidget extends Disposable {
 			() => this.harnessService.getActiveDescriptor(),
 			this.promptsService,
 			this.workspaceService,
-			this.fileService,
-			this.pathService,
 			this.productService,
 		);
 		this.element = $('.ai-customization-list-widget');
@@ -1317,6 +1315,7 @@ export class AICustomizationListWidget extends Disposable {
 					: [
 						{ groupKey: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, description: localize('workspaceGroupDescription', "Customizations stored as files in your project folder and shared with your team via version control."), items: [] },
 						{ groupKey: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "Customizations stored locally on your machine in a central location. Private to you and available across all projects."), items: [] },
+						{ groupKey: 'agents', label: localize('agentsGroup', "Agents"), icon: agentIcon, description: localize('agentsGroupDescription', "Hooks defined in agent files."), items: [] },
 						{ groupKey: PromptsStorage.plugin, label: localize('pluginGroup', "Plugins"), icon: pluginIcon, description: localize('pluginGroupDescription', "Read-only customizations provided by installed plugins."), items: [] },
 						{ groupKey: PromptsStorage.extension, label: localize('extensionGroup', "Extensions"), icon: extensionIcon, description: localize('extensionGroupDescription', "Read-only customizations provided by installed extensions."), items: [] },
 						{ groupKey: BUILTIN_STORAGE, label: localize('builtinGroup', "Built-in"), icon: builtinIcon, description: localize('builtinGroupDescription', "Built-in customizations shipped with the application."), items: [] },
@@ -1516,6 +1515,7 @@ export class AICustomizationListWidget extends Disposable {
 			this.workspaceService,
 			{ allItems: this.allItems, displayEntries: this.displayEntries },
 			activeDescriptor,
+			this.promptsServiceItemProvider,
 		);
 	}
 }
