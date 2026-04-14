@@ -104,9 +104,12 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	private lastLayoutWidth = 0;
 	private savedAuxBarWidth = 0; // absolute width before diff preview was opened
 
-	// Full-width mode: saved visibility state to restore when exiting
+	// Full-width mode: saved state to restore when exiting
 	private savedSidebarVisible: boolean | undefined;
 	private savedChatBarVisible: boolean | undefined;
+	private savedDiffPreviewWidth: number | undefined;
+	private savedAuxBarWidthForFullWidth = 0;
+	private savedContentWidth = 0;
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -184,6 +187,8 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			const delta = e.currentX - e.startX;
 			const newWidth = Math.max(200, Math.min(sashStartWidth + delta, this.lastLayoutWidth - 270));
 			this.diffPreviewWidth = newWidth;
+			// Update saved content width so layout keeps content at the new size
+			this.savedContentWidth = Math.max(270, this.lastLayoutWidth - newWidth);
 			this.relayoutWithDiffPreview();
 		}));
 
@@ -211,20 +216,26 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			this.diffPreviewContainer.style.display = 'none';
 			this.diffPreviewSash.state = SashState.Disabled;
 			this.diffPreviewWidth = 0;
+			this.savedContentWidth = 0;
 			this.diffPreviewVisibleContextKey.set(false);
-			this.relayoutWithDiffPreview();
-			// Restore the aux bar to its original width before the preview was opened
+			// Restore the aux bar to its exact original width
 			if (this.savedAuxBarWidth > 0) {
 				const currentHeight = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).height;
 				this.layoutService.setSize(Parts.AUXILIARYBAR_PART, { width: this.savedAuxBarWidth, height: currentHeight });
 				this.savedAuxBarWidth = 0;
 			}
+			this.relayoutWithDiffPreview();
 		} else {
-			// Save the current aux bar width before expanding
+			// Save the current aux bar width and compute the current content width to preserve
 			this.savedAuxBarWidth = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).width;
-			// Expand aux bar
+			const borderTotal = 2;
+			this.savedContentWidth = this.savedAuxBarWidth - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
+
+			// Set the aux bar to exactly its current width + the diff preview width
+			const targetWidth = this.savedAuxBarWidth + DiffPreviewWidget.PREFERRED_WIDTH;
 			this.diffPreviewWidth = DiffPreviewWidget.PREFERRED_WIDTH;
-			this.layoutService.resizePart(Parts.AUXILIARYBAR_PART, DiffPreviewWidget.PREFERRED_WIDTH, 0);
+			const currentHeight = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).height;
+			this.layoutService.setSize(Parts.AUXILIARYBAR_PART, { width: targetWidth, height: currentHeight });
 			this.diffPreviewContainer.style.display = '';
 			this.diffPreviewWidget.show();
 			this.diffPreviewSash.state = SashState.Enabled;
@@ -267,23 +278,50 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		const isFullWidth = this.isDiffPreviewFullWidth;
 
 		if (isFullWidth) {
-			// Restore previous state
+			// Restore previous panel state first (grid redistributes space)
 			if (this.savedSidebarVisible !== undefined) {
 				this.layoutService.setPartHidden(!this.savedSidebarVisible, Parts.SIDEBAR_PART);
 			}
 			if (this.savedChatBarVisible !== undefined) {
 				this.layoutService.setPartHidden(!this.savedChatBarVisible, Parts.CHATBAR_PART);
 			}
+
+			// Restore the aux bar to its saved absolute size
+			if (this.savedAuxBarWidthForFullWidth > 0) {
+				const currentHeight = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).height;
+				this.layoutService.setSize(Parts.AUXILIARYBAR_PART, { width: this.savedAuxBarWidthForFullWidth, height: currentHeight });
+			}
+
+			// Restore diff preview width to what it was before full-width
+			this.diffPreviewWidth = this.savedDiffPreviewWidth ?? DiffPreviewWidget.PREFERRED_WIDTH;
+
 			this.savedSidebarVisible = undefined;
 			this.savedChatBarVisible = undefined;
+			this.savedDiffPreviewWidth = undefined;
+			this.savedAuxBarWidthForFullWidth = 0;
 			this.diffPreviewFullWidthContextKey.set(false);
+			this.relayoutWithDiffPreview();
 		} else {
-			// Save current state and hide sidebar + chatbar
+			// Save current state
+			this.savedDiffPreviewWidth = this.diffPreviewWidth;
+			this.savedAuxBarWidthForFullWidth = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).width;
 			this.savedSidebarVisible = this.layoutService.isVisible(Parts.SIDEBAR_PART);
 			this.savedChatBarVisible = this.layoutService.isVisible(Parts.CHATBAR_PART);
+
+			// Compute the current content width (changes section) to preserve it
+			const borderTotal = 2;
+			const currentAdjustedWidth = this.savedAuxBarWidthForFullWidth - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
+			const currentContentWidth = Math.max(270, currentAdjustedWidth - this.diffPreviewWidth);
+
+			// Hide sidebar + chatbar
 			this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
 			this.layoutService.setPartHidden(true, Parts.CHATBAR_PART);
 			this.diffPreviewFullWidthContextKey.set(true);
+
+			// The layout override handles expanding diffPreviewWidth in full-width mode
+			// using the saved content width
+			this.savedContentWidth = currentContentWidth;
+			this.relayoutWithDiffPreview();
 		}
 	}
 
@@ -441,7 +479,12 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Clamp diff preview width to available space
 		if (this.diffPreviewWidth > 0) {
-			this.diffPreviewWidth = Math.min(this.diffPreviewWidth, Math.max(200, adjustedWidth - 270));
+			if (this.savedContentWidth > 0) {
+				// Preserve the saved content width — diff preview takes the rest
+				this.diffPreviewWidth = Math.max(200, adjustedWidth - this.savedContentWidth);
+			} else {
+				this.diffPreviewWidth = Math.min(this.diffPreviewWidth, Math.max(200, adjustedWidth - 270));
+			}
 		}
 
 		if (this.diffPreviewWidth > 0 && this.diffPreviewContainer) {
