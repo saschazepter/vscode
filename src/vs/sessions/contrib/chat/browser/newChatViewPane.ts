@@ -57,6 +57,18 @@ import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/c
 import { ChatHistoryNavigator } from '../../../../workbench/contrib/chat/common/widget/chatWidgetHistoryService.js';
 import { IHistoryNavigationWidget } from '../../../../base/browser/history.js';
 import { registerAndCreateHistoryNavigationContext, IHistoryNavigationContext } from '../../../../platform/history/browser/contextScopedHistoryWidget.js';
+import { CopyPasteController } from '../../../../editor/contrib/dropOrPasteInto/browser/copyPasteController.js';
+import { DropIntoEditorController } from '../../../../editor/contrib/dropOrPasteInto/browser/dropIntoEditorController.js';
+import { EditorOptions } from '../../../../editor/common/config/editorOptions.js';
+import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
+import { COPY_MIME_TYPES, SerializedCopyData, getCopiedContext } from '../../../../workbench/contrib/chat/browser/widget/input/editor/chatPasteProviders.js';
+import { HierarchicalKind } from '../../../../base/common/hierarchicalKind.js';
+import { Mimes } from '../../../../base/common/mime.js';
+import { DocumentPasteContext, DocumentPasteEdit, DocumentPasteEditProvider, DocumentPasteEditsSession } from '../../../../editor/common/languages.js';
+import { ITextModel } from '../../../../editor/common/model.js';
+import { IRange } from '../../../../editor/common/core/range.js';
+import { IReadonlyVSDataTransfer } from '../../../../base/common/dataTransfer.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 
 const STORAGE_KEY_DRAFT_STATE = 'sessions.draftState';
@@ -134,6 +146,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		@IStorageService private readonly storageService: IStorageService,
 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
 	) {
 		super();
 		this._history = this._register(this.instantiationService.createInstance(ChatHistoryNavigator, ChatAgentLocation.Chat));
@@ -310,6 +323,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 			wrappingStrategy: 'advanced',
 			stickyScroll: { enabled: false },
 			renderWhitespace: 'none',
+			pasteAs: EditorOptions.pasteAs.defaultValue,
 			overflowWidgetsDomNode,
 			suggest: {
 				showIcons: true,
@@ -326,6 +340,8 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 				ContextMenuController.ID,
 				SuggestController.ID,
 				SnippetController2.ID,
+				CopyPasteController.ID,
+				DropIntoEditorController.ID,
 			]),
 		};
 
@@ -336,6 +352,13 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 
 		// Ensure suggest widget renders above the input (not clipped by container)
 		SuggestController.get(this._editor)?.forceRenderingAbove();
+
+		// Register paste provider for code context so users can copy code from
+		// editors and paste it as a context attachment in the new session input.
+		this._register(this.languageFeaturesService.documentPasteEditProvider.register(
+			{ scheme: 'sessions-chat', pattern: '*', hasAccessToAllModels: true },
+			new SessionsChatPasteTextProvider(this._contextAttachments, this.modelService)
+		));
 
 		// Update aria label when accessibility verbosity setting changes
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -810,6 +833,108 @@ export class NewChatViewPane extends ViewPane {
 	override dispose(): void {
 		this._widget?.saveState();
 		super.dispose();
+	}
+}
+
+// #endregion
+
+// #region --- Paste Provider for New Session Chat Input ---
+
+/**
+ * Paste provider that handles pasting code from editors into the new session
+ * chat input. When code is copied from a Monaco editor, it carries additional
+ * metadata (source URI and range) via a custom MIME type. This provider
+ * detects that metadata and attaches the copied code as a context attachment
+ * instead of inserting raw text.
+ */
+class SessionsChatPasteTextProvider implements DocumentPasteEditProvider {
+
+	public readonly kind = new HierarchicalKind('chat.attach.text');
+	public readonly providedPasteEditKinds = [this.kind];
+
+	public readonly copyMimeTypes = [];
+	public readonly pasteMimeTypes = [COPY_MIME_TYPES];
+
+	constructor(
+		private readonly contextAttachments: NewChatContextAttachments,
+		private readonly modelService: IModelService,
+	) { }
+
+	async provideDocumentPasteEdits(model: ITextModel, _ranges: readonly IRange[], dataTransfer: IReadonlyVSDataTransfer, _context: DocumentPasteContext, token: CancellationToken): Promise<DocumentPasteEditsSession | undefined> {
+		if (model.uri.scheme !== 'sessions-chat') {
+			return;
+		}
+
+		const text = dataTransfer.get(Mimes.text);
+		const editorData = dataTransfer.get('vscode-editor-data');
+		const additionalEditorData = dataTransfer.get(COPY_MIME_TYPES);
+
+		if (!editorData || !text || !additionalEditorData) {
+			return;
+		}
+
+		const textdata = await text.asString();
+		let metadata: { mode: string };
+		let additionalData: SerializedCopyData;
+		try {
+			metadata = JSON.parse(await editorData.asString());
+			additionalData = JSON.parse(await additionalEditorData.asString());
+		} catch {
+			return;
+		}
+
+		const sourceUri = URI.revive(additionalData.uri);
+		const start = additionalData.range.startLineNumber;
+		const end = additionalData.range.endLineNumber;
+		if (start === end) {
+			const textModel = this.modelService.getModel(sourceUri);
+			if (!textModel) {
+				return;
+			}
+
+			// Only attach as code context if the entire line was copied.
+			// Partial line selections (e.g. symbol names) fall through to default paste.
+			const lineContent = textModel.getLineContent(start);
+			if (lineContent !== textdata) {
+				return;
+			}
+		}
+
+		const copiedContext = getCopiedContext(textdata, sourceUri, metadata.mode, additionalData.range);
+
+		if (token.isCancellationRequested || !copiedContext) {
+			return;
+		}
+
+		// Deduplicate: skip if already attached
+		if (this.contextAttachments.attachments.some(a => a.id === copiedContext.id)) {
+			return;
+		}
+
+		const contextAttachments = this.contextAttachments;
+		const edit: DocumentPasteEdit = {
+			insertText: '',
+			title: localize('pastedCodeAttachment', 'Pasted Code Attachment'),
+			kind: this.kind,
+			handledMimeType: Mimes.text,
+			additionalEdit: {
+				edits: [{
+					resource: model.uri,
+					redo: () => {
+						contextAttachments.addAttachments(copiedContext);
+					},
+					undo: () => {
+						// Removal handled by the context attachments system
+					}
+				}]
+			}
+		};
+
+		edit.yieldTo = [{ kind: HierarchicalKind.Empty.append('text', 'plain') }];
+		return {
+			edits: [edit],
+			dispose: () => { },
+		};
 	}
 }
 

@@ -35,9 +35,9 @@ import { getDynamicVariablesForWidget } from '../../../attachments/chatVariables
 import { ChatDynamicVariableModel } from '../../../attachments/chatDynamicVariables.js';
 import { cleanupOldImages, createFileForMedia, resizeImage } from '../../../chatImageUtils.js';
 
-const COPY_MIME_TYPES = 'application/vnd.code.additional-editor-data';
+export const COPY_MIME_TYPES = 'application/vnd.code.additional-editor-data';
 
-interface SerializedCopyData {
+export interface SerializedCopyData {
 	readonly uri: UriComponents;
 	readonly range: IRange;
 }
@@ -402,7 +402,7 @@ export class PasteTextProvider implements DocumentPasteEditProvider {
 	}
 }
 
-function getCopiedContext(code: string, file: URI, language: string, range: IRange): IChatRequestPasteVariableEntry {
+export function getCopiedContext(code: string, file: URI, language: string, range: IRange): IChatRequestPasteVariableEntry {
 	const fileName = basename(file);
 	const start = range.startLineNumber;
 	const end = range.endLineNumber;
