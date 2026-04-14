@@ -110,6 +110,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 		const partStore = this._register(new DisposableStore());
 		let subPartDomNode: HTMLElement = document.createElement('div');
 		this.domNode.appendChild(subPartDomNode);
+		const hasContent = (node: HTMLElement) => node.childElementCount > 0 || !!node.textContent?.trim().length;
 
 		const render = () => {
 			partStore.clear();
@@ -123,6 +124,11 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 			this.subPart = partStore.add(this.createToolInvocationSubPart());
 			subPartDomNode.replaceWith(this.subPart.domNode);
 			subPartDomNode = this.subPart.domNode;
+
+			const hasSubPartContent = hasContent(this.subPart.domNode);
+			if (!hasSubPartContent && !this.mcpAppPart) {
+				dom.hide(this.domNode);
+			}
 
 			// Add class when displaying a confirmation widget
 			const isConfirmation = this.subPart instanceof ToolConfirmationSubPart ||
@@ -157,9 +163,14 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 					));
 					appDomNode.replaceWith(this.mcpAppPart.domNode);
 					appDomNode = this.mcpAppPart.domNode;
+					dom.show(this.domNode);
 				} else {
 					this.mcpAppPart = undefined;
 					dom.clearNode(appDomNode);
+					const hasSubPartContent = this.subPart ? hasContent(this.subPart.domNode) : false;
+					if (!hasSubPartContent) {
+						dom.hide(this.domNode);
+					}
 				}
 			}));
 		}
