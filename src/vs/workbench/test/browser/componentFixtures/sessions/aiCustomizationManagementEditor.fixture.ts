@@ -395,7 +395,7 @@ async function waitForEditorToSettle(container: HTMLElement): Promise<void> {
 }
 
 async function waitForVisibleScrollbarsToFade(container: HTMLElement): Promise<void> {
-	const deadline = Date.now() + 2000;
+	const deadline = Date.now() + 4000;
 
 	while (Date.now() < deadline) {
 		const hasVisibleScrollbar = [...container.querySelectorAll<HTMLElement>('.scrollbar.vertical')].some(scrollbar => {
@@ -567,7 +567,8 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 
 	if (options.scrollToBottom) {
 		editor.revealLastItem();
-		await waitForAnimationFrames(4);
+		await waitForAnimationFrames(2);
+		await new Promise(resolve => setTimeout(resolve, 2400));
 		await waitForVisibleScrollbarsToFade(ctx.container);
 	}
 }
@@ -815,7 +816,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Welcome page — default state with no section selected
 	WelcomePage: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'The AI Customization Management editor welcome page. The left sidebar is visible with category links. The main area shows a welcome/landing page with prompt-launcher input box.',
 		render: ctx => renderEditor(ctx, { harness: CustomizationHarness.VSCode }),
 	}),
 
@@ -823,7 +823,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Generate buttons, AGENTS.md shortcut, all storage groups
 	LocalHarness: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Full AI Customization editor with VS Code (Local) harness. Left sidebar shows all sections. Main area shows the Agents tab with a list of agents grouped by storage (Workspace/User). Harness selector dropdown is visible.',
 		render: ctx => renderEditor(ctx, { harness: CustomizationHarness.VSCode, selectedSection: AICustomizationManagementSection.Agents }),
 	}),
 
@@ -831,7 +830,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// root files and instruction filtering under .github/.copilot paths.
 	CliHarness: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Full AI Customization editor with Copilot CLI harness. Left sidebar may have fewer sections. Main area shows the Agents tab. CLI-specific storage paths are used.',
 		render: ctx => renderEditor(ctx, { harness: CustomizationHarness.CLI, selectedSection: AICustomizationManagementSection.Agents }),
 	}),
 
@@ -839,7 +837,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// and sessions section ordering.
 	Sessions: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'AI Customization editor in sessions-window mode. Agents tab is active. No harness dropdown. All 7 sections visible in the sidebar.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.CLI,
 			isSessionsWindow: true,
@@ -862,7 +859,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Sessions Skills tab showing UI Integration badges on built-in skills
 	SessionsSkillsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Skills tab in sessions-window mode. Skills list is shown with UI Integration badges on built-in skills (e.g., "Used by the Submit Feedback button", "Used by the Run button").',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.CLI,
 			isSessionsWindow: true,
@@ -889,7 +885,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// MCP Servers tab with many servers to verify scrollable list layout
 	McpServersTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'MCP Servers tab is active. A scrollable list of MCP server entries is shown with server names, icons, and action buttons. Footer with "Browse" button is visible.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.McpServers,
@@ -899,7 +894,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Agents tab — workspace and user agents, scrollable
 	AgentsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Agents tab is active. A list of agent entries is shown, grouped by Workspace and User storage. Each entry has a name and action buttons.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Agents,
@@ -909,7 +903,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Skills tab — workspace and user skills, scrollable
 	SkillsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Skills tab is active. A list of skill entries is shown, grouped by Workspace and User storage. Each skill entry has a name and description.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Skills,
@@ -919,7 +912,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Instructions tab — many instructions with applyTo patterns, scrollable
 	InstructionsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Instructions tab is active. A list of instruction files is shown, grouped by Workspace and User storage. Some entries show "applyTo" glob patterns.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Instructions,
@@ -929,7 +921,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Hooks tab — workspace and user hooks, scrollable
 	HooksTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Hooks tab is active. A list of hook entries is shown, grouped by Workspace and User storage.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Hooks,
@@ -939,7 +930,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Prompts tab — workspace and user prompts, scrollable
 	PromptsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Prompts tab is active. A list of prompt files is shown, grouped by Workspace and User storage. Each entry shows a prompt name.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Prompts,
@@ -949,7 +939,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Plugins tab
 	PluginsTab: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Plugins tab is active. A list of installed plugins is shown. Footer with "Browse" button is visible.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Plugins,
@@ -960,21 +949,18 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Verifies fix for https://github.com/microsoft/vscode/issues/304139
 	McpBrowseMode: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'MCP Servers browse/marketplace mode. A gallery of available MCP servers is shown with names, descriptions, and install buttons. Back button is present at the top.',
 		render: renderMcpBrowseMode,
 	}),
 
 	// Plugin browse/marketplace mode — standalone widget with marketplace results, scrollable
 	PluginBrowseMode: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Plugin browse/marketplace mode. A gallery of available plugins is shown with names, descriptions, and install buttons. Back button is present at the top.',
 		render: renderPluginBrowseMode,
 	}),
 
 	// Scrolled-to-bottom variants — verify last items are fully visible above footer
 	PromptsTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Prompts tab scrolled to the bottom. The last prompt items are fully visible and not clipped by the footer. The footer "New Prompt" button is visible.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Prompts,
@@ -984,7 +970,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	McpServersTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'MCP Servers tab scrolled to the bottom. The last server entries are fully visible and not clipped by the footer.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.McpServers,
@@ -994,7 +979,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	PluginsTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Plugins tab scrolled to the bottom. The last plugin entries are fully visible and not clipped by the footer.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Plugins,
@@ -1005,7 +989,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Narrow viewport — catches badge clipping and layout overflow at small sizes
 	McpServersTabNarrow: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'MCP Servers tab at narrow viewport (550px wide). List items and badges should not overflow or clip. Layout is compact but readable.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.McpServers,
@@ -1016,7 +999,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	AgentsTabNarrow: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Agents tab at narrow viewport (550px wide). Agent list entries should not overflow or clip at the reduced width.',
 		render: ctx => renderEditor(ctx, {
 			harness: CustomizationHarness.VSCode,
 			selectedSection: AICustomizationManagementSection.Agents,

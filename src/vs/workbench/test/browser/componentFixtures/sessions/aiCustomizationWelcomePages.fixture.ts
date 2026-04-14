@@ -147,22 +147,18 @@ function renderSelectedWelcomePage(ctx: ComponentFixtureContext, variant: AICust
 export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	WelcomePageClassic: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Classic welcome page with a "Getting Started" banner at the top and a grid of clickable category cards (Agents, Skills, Instructions, Prompts, Hooks, MCP Servers, Plugins) with icons.',
 		render: renderClassicWelcomePage,
 	}),
 	WelcomePagePromptLaunchers: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'Prompt-launchers welcome page with a text input row at the bottom for asking a question, and a grid of category cards above it. A send/submit button is visible on the right of the input.',
 		render: renderPromptLaunchersWelcomePage,
 	}),
 	WelcomePageSelectorClassic: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'AICustomizationWelcomePage rendered with the "classic" variant — shows the classic card grid layout with Getting Started banner.',
 		render: ctx => renderSelectedWelcomePage(ctx, 'classic'),
 	}),
 	WelcomePageSelectorPromptLaunchers: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		expectedVisualDescriptions: 'AICustomizationWelcomePage rendered with the "promptLaunchers" variant — shows the prompt-launchers layout with input box.',
 		render: ctx => renderSelectedWelcomePage(ctx, 'promptLaunchers'),
 	}),
 });

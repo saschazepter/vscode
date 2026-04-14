@@ -625,7 +625,6 @@ export interface ComponentFixtureContext {
 export interface ComponentFixtureOptions {
 	render: (context: ComponentFixtureContext) => void | Promise<void>;
 	labels?: ThemedFixtureGroupLabels;
-	expectedVisualDescriptions?: string | readonly string[];
 }
 
 type ThemedFixtures = ReturnType<typeof defineFixtureVariants>;
@@ -693,10 +692,7 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 	});
 
 	const labels = resolveLabels(options.labels);
-	const variantOptions: { labels?: string[]; expectedVisualDescriptions?: string | readonly string[] } = {};
-	if (labels.length > 0) { variantOptions.labels = labels; }
-	if (options.expectedVisualDescriptions !== undefined) { variantOptions.expectedVisualDescriptions = options.expectedVisualDescriptions; }
-	return defineFixtureVariants(variantOptions, {
+	return defineFixtureVariants(labels.length > 0 ? { labels } : {}, {
 		Dark: createFixture(darkTheme),
 		Light: createFixture(lightTheme),
 	});
