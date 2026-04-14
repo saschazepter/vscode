@@ -50,10 +50,6 @@ export class MockPromptsService implements IPromptsService {
 		this._slashCommands = commands;
 	}
 
-	fireSlashCommandsChanged(): void {
-		this._onDidChangeCustomAgents.fire();
-	}
-
 	setInstructions(instructions: readonly ChatInstruction[]): void {
 		this._instructions = instructions;
 		this._onDidChangeInstructions.fire();
