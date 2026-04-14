@@ -118,7 +118,7 @@ export class TerminalTelemetryContribution extends Disposable implements IWorkbe
 					? (isInAuxWindow ? 'editor-auxwindow' : 'editor')
 					: 'unknown'),
 
-			shellType: new TelemetryTrustedValue(instance.shellType ?? getSanitizedShellType(slc)),
+			shellType: new TelemetryTrustedValue(getSanitizedShellType(slc)),
 			promptType: new TelemetryTrustedValue(instance.capabilities.get(TerminalCapability.PromptTypeDetection)?.promptType),
 
 			isCustomPtyImplementation: !!slc.customPtyImplementation,
