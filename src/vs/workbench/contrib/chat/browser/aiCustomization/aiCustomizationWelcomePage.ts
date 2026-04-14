@@ -18,7 +18,6 @@ const $ = DOM.$;
 export interface IWelcomePageCallbacks {
 	selectSection(section: AICustomizationManagementSection): void;
 	selectSectionWithMarketplace(section: AICustomizationManagementSection): void;
-	closeEditor(): void;
 	/**
 	 * Prefill the chat input with a query. In the sessions window this
 	 * uses the sessions chat widget; in core VS Code it opens the chat view.

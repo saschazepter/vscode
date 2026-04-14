@@ -743,11 +743,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{
 				selectSection: (section) => this.selectSection(section),
 				selectSectionWithMarketplace: (section) => this.selectSection(section, { showMarketplace: true }),
-				closeEditor: () => {
-					if (this.input) {
-						this.group.closeEditor(this.input);
-					}
-				},
 				prefillChat: async (query, options) => {
 					try {
 						if (this.workspaceService.isSessionsWindow) {
@@ -767,7 +762,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 							if (options?.newChat) {
 								await this.commandService.executeCommand('workbench.action.chat.newChat');
 							}
-							this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
+							await this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
 						}
 					} catch (err) {
 						onUnexpectedError(err);
