@@ -115,6 +115,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	private savedDiffPreviewWidth: number | undefined;
 	private savedAuxBarWidthForFullWidth = 0;
 	private savedContentWidth = 0;
+	private pendingRestoreWidth = 0; // width to apply when aux bar is re-shown
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -199,6 +200,21 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Create the diff preview widget
 		this.diffPreviewWidget = this._register(this.instantiationService.createInstance(DiffPreviewWidget, this.diffPreviewContainer));
+
+		// When the aux bar is hidden externally (e.g. title bar toggle) while in
+		// full-width mode, restore the sidebar/chatbar and clean up diff preview state.
+		this._register(this.layoutService.onDidChangePartVisibility(e => {
+			if (e.partId === Parts.AUXILIARYBAR_PART && !e.visible && this.isDiffPreviewFullWidth) {
+				this.restoreFullWidthState();
+			}
+			// When the aux bar is re-shown, apply any pending width restore
+			if (e.partId === Parts.AUXILIARYBAR_PART && e.visible && this.pendingRestoreWidth > 0) {
+				const width = this.pendingRestoreWidth;
+				this.pendingRestoreWidth = 0;
+				const currentHeight = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).height;
+				this.layoutService.setSize(Parts.AUXILIARYBAR_PART, { width, height: currentHeight });
+			}
+		}));
 	}
 
 	/**
@@ -342,6 +358,53 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		if (this.diffPreviewWidget?.visible) {
 			this.diffPreviewWidget.revealFile(uri);
 		}
+	}
+
+	/**
+	 * Restore sidebar/chatbar visibility and tear down both full-width and diff
+	 * preview state. Called when the aux bar is hidden externally while in
+	 * full-width mode (e.g. title bar toggle).
+	 */
+	private restoreFullWidthState(): void {
+		// Capture saved visibility before clearing
+		const restoreSidebar = this.savedSidebarVisible;
+		const restoreChatBar = this.savedChatBarVisible;
+
+		// Save the original width to apply when the aux bar is re-shown
+		this.pendingRestoreWidth = this.savedAuxBarWidth;
+
+		// Reset full-width saved state immediately so context keys update
+		this.savedSidebarVisible = undefined;
+		this.savedChatBarVisible = undefined;
+		this.savedDiffPreviewWidth = undefined;
+		this.savedAuxBarWidthForFullWidth = 0;
+		this.diffPreviewFullWidthContextKey.set(false);
+
+		// Tear down the diff preview so it doesn't persist when re-shown
+		if (this.diffPreviewWidget && this.diffPreviewContainer && this.diffPreviewSash) {
+			this.diffPreviewWidget.hide();
+			this.diffPreviewContainer.style.display = 'none';
+			this.diffPreviewSash.state = SashState.Disabled;
+			this.diffPreviewWidth = 0;
+			this.savedContentWidth = 0;
+			this.diffPreviewVisibleContextKey.set(false);
+			this.savedAuxBarWidth = 0;
+		}
+
+		// Defer sidebar/chatbar restore to the next frame so the grid has
+		// finished processing the aux bar hide and won't over-allocate
+		// space to the restored parts.
+		dom.getWindow(this.element).requestAnimationFrame(() => {
+			if (restoreSidebar !== undefined) {
+				this.layoutService.setPartHidden(!restoreSidebar, Parts.SIDEBAR_PART);
+			}
+			if (restoreChatBar !== undefined) {
+				this.layoutService.setPartHidden(!restoreChatBar, Parts.CHATBAR_PART);
+			}
+			// Re-assert the aux bar is hidden — restoring other parts can
+			// trigger grid redistribution that re-shows it.
+			this.layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
+		});
 	}
 
 	/**
