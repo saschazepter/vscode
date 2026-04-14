@@ -32,8 +32,8 @@ export interface IPromptsService {
 	parseFile(uri: URI, token: CancellationToken): Promise<ParsedPromptFile>;
 
 	/**
- * An event that fires when the list of {@link customAgents custom agents} changes.
- */
+	 * An event that fires when the list of {@link customAgents custom agents} changes.
+	 */
 	readonly onDidChangeCustomAgents: Event<void>;
 
 	/**

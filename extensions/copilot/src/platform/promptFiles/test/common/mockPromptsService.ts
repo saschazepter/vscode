@@ -9,6 +9,7 @@ import { Emitter, Event } from '../../../../util/vs/base/common/event';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { PromptFileParser } from '../../../../util/vs/workbench/contrib/chat/common/promptSyntax/promptFileParser';
 import { IPromptsService, ParsedPromptFile } from '../../common/promptsService';
+import { ResourceMap } from '../../../../util/vs/base/common/map';
 
 export class MockPromptsService implements IPromptsService {
 	declare readonly _serviceBrand: undefined;
@@ -34,6 +35,7 @@ export class MockPromptsService implements IPromptsService {
 	private _skills: readonly ChatSkill[] = [];
 	private _hooks: readonly ChatHook[] = [];
 	private _plugins: readonly ChatPlugin[] = [];
+	private _fileContents = new ResourceMap<string>();
 
 	setCustomAgents(agents: readonly ChatCustomAgent[]): void {
 		this._customAgents = agents;
@@ -112,15 +114,13 @@ export class MockPromptsService implements IPromptsService {
 		return Promise.resolve(this._plugins);
 	}
 
-	private _fileContents = new Map<string, string>();
-
 	/** Register content so parseFile returns a parsed result for the given URI. */
 	setFileContent(uri: URI, content: string) {
-		this._fileContents.set(uri.toString(), content);
+		this._fileContents.set(uri, content);
 	}
 
 	parseFile(uri: URI, _token: CancellationToken): Promise<ParsedPromptFile> {
-		const content = this._fileContents.get(uri.toString()) ?? '';
+		const content = this._fileContents.get(uri) ?? '';
 		return Promise.resolve(new PromptFileParser().parse(uri, content));
 	}
 }

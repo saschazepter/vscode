@@ -362,31 +362,31 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 		return agents.map(agent => this.cloneAgent(agent));
 	}
 
-	private toCustomAgent(promptFile: vscode.ChatCustomAgent): CLIAgentInfo | undefined {
-		const agentName = getAgentFileNameFromFilePath(promptFile.uri);
-		const headerName = promptFile.name;
+	private toCustomAgent(customAgent: vscode.ChatCustomAgent): CLIAgentInfo | undefined {
+		const agentName = getAgentFileNameFromFilePath(customAgent.uri);
+		const headerName = customAgent.name;
 		const name = headerName === undefined || headerName === '' ? agentName : headerName;
 		if (!name) {
 			return undefined;
 		}
 
-		const tools = promptFile.tools?.filter(tool => !!tool) ?? [];
-		const model = promptFile.model?.[0];
+		const tools = customAgent.tools?.filter(tool => !!tool) ?? [];
+		const model = customAgent.model?.[0];
 
 		return {
 			agent: {
 				name,
 				displayName: name,
-				description: promptFile.description ?? '',
+				description: customAgent.description ?? '',
 				tools: tools.length > 0 ? tools : null,
 				prompt: async () => {
-					const pf = await this.promptsService.parseFile(promptFile.uri, CancellationToken.None);
+					const pf = await this.promptsService.parseFile(customAgent.uri, CancellationToken.None);
 					return pf.body?.getContent() ?? '';
 				},
-				disableModelInvocation: promptFile.disableModelInvocation ?? false,
+				disableModelInvocation: customAgent.disableModelInvocation ?? false,
 				...(model ? { model } : {}),
 			},
-			sourceUri: promptFile.uri,
+			sourceUri: customAgent.uri,
 		};
 	}
 

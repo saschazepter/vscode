@@ -145,19 +145,8 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			}
 
 			const name = instruction.name;
-
-			let pattern: string | undefined;
-			let description: string | undefined;
-			try {
-				const parsed = await this.promptsService.parseFile(uri, token);
-				pattern = parsed.header?.applyTo;
-				description = parsed.header?.description;
-			} catch (err) {
-				if (isCancellationError(err) || token.isCancellationRequested) {
-					throw err;
-				}
-				this.logService.debug(`[CopilotCLICustomizationProvider] failed to parse ${uri.toString()}: ${err}`);
-			}
+			const pattern = instruction.pattern;
+			const description = instruction.description;
 
 			if (pattern !== undefined) {
 				const badge = pattern === '**'
