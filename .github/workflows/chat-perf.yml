@@ -43,20 +43,18 @@ concurrency:
 env:
   # Only set when explicitly provided; otherwise scripts read config.jsonc
   BASELINE_COMMIT: ${{ inputs.baseline_commit || '' }}
-  TEST_COMMIT: ${{ inputs.test_commit || 'main' }}
+  TEST_COMMIT: ${{ inputs.test_commit || '' }}
   PERF_RUNS: ${{ inputs.runs || '' }}
   PERF_THRESHOLD: ${{ inputs.threshold || '' }}
 
 jobs:
   chat-perf:
-    name: Chat Perf – ${{ inputs.baseline_commit || 'config default' }} vs ${{ inputs.test_commit || 'main' }}
+    name: Chat Perf – ${{ inputs.baseline_commit || 'config default' }} vs ${{ inputs.test_commit || github.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout test commit
         uses: actions/checkout@v6
-        with:
-          ref: ${{ env.TEST_COMMIT }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
