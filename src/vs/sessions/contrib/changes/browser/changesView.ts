@@ -47,7 +47,7 @@ import { fillEditorsDragData } from '../../../../workbench/browser/dnd.js';
 import { ResourceLabels } from '../../../../workbench/browser/labels.js';
 import { ViewPane, IViewPaneOptions, ViewAction } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
-import { IViewDescriptorService, ViewContainerLocation } from '../../../../workbench/common/views.js';
+import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { CHAT_CATEGORY } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
@@ -57,7 +57,6 @@ import { IExtensionService } from '../../../../workbench/services/extensions/com
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../../workbench/services/panecomposite/browser/panecomposite.js';
 import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
-import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
@@ -75,7 +74,6 @@ import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
-
 
 const $ = dom.$;
 
@@ -603,9 +601,9 @@ export class ChangesViewPane extends ViewPane {
 				logChangesViewFileSelect(this.telemetryService, e.element.changeType);
 
 				// If diff preview is open, scroll to the file instead of opening modal
-				const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-				if (part instanceof AuxiliaryBarPart && part.isDiffPreviewVisible) {
-					part.revealInDiffPreview(e.element.uri);
+				const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
+				if (auxPart.isDiffPreviewVisible) {
+					auxPart.revealInDiffPreview(e.element.uri);
 					return;
 				}
 
@@ -732,24 +730,22 @@ export class ChangesViewPane extends ViewPane {
 	 * Toggle the diff preview pane on the auxiliary bar.
 	 */
 	toggleDiffPreview(): void {
-		const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-		if (part instanceof AuxiliaryBarPart) {
-			const changes = toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
-			part.toggleDiffPreview(changes);
-		}
+		const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
+		const changes = toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
+		auxPart.toggleDiffPreview(changes);
 	}
 
 	/**
 	 * Update diff preview content with the given files, or all changes if no files given.
 	 */
 	private updateDiffPreview(files?: readonly IChangesFileItem[]): void {
-		const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-		if (!(part instanceof AuxiliaryBarPart) || !part.isDiffPreviewVisible) {
+		const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
+		if (!auxPart.isDiffPreviewVisible) {
 			return;
 		}
 
 		const items = files ?? toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
-		part.setDiffPreviewFiles(items);
+		auxPart.setDiffPreviewFiles(items);
 	}
 
 	private getTreeRootInfo(items: readonly IChangesFileItem[]): IChangesTreeRootInfo | undefined {

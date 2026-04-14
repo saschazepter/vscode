@@ -6,13 +6,13 @@
 import * as dom from '../../../base/browser/dom.js';
 import { Dimension } from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { observableValue, ValueWithChangeEventFromObservable } from '../../../base/common/observable.js';
 import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import { IEditorProgressService } from '../../../platform/progress/common/progress.js';
+import { IEditorProgressService, IProgressRunner } from '../../../platform/progress/common/progress.js';
 import { ServiceCollection } from '../../../platform/instantiation/common/serviceCollection.js';
 import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
 import { ITextModelService } from '../../../editor/common/services/resolverService.js';
@@ -53,7 +53,7 @@ export class DiffPreviewWidget extends Disposable {
 	private readonly editorContainer: HTMLElement;
 
 	private multiDiffEditor: MultiDiffEditorWidget | undefined;
-	private viewModel: MultiDiffEditorViewModel | undefined;
+	private readonly _viewModel = this._register(new MutableDisposable<MultiDiffEditorViewModel>());
 	private readonly modelDisposables = this._register(new DisposableStore());
 
 	private readonly documentsObs = observableValue<readonly RefCounted<IDocumentDiffItem>[] | 'loading'>(this, []);
@@ -61,6 +61,7 @@ export class DiffPreviewWidget extends Disposable {
 	private currentWidth = 0;
 	private currentHeight = 0;
 	private _visible = false;
+	private _setFilesSeq = 0;
 
 	get visible(): boolean {
 		return this._visible;
@@ -122,9 +123,10 @@ export class DiffPreviewWidget extends Disposable {
 	 * Set the files to preview. Pass all changed files for a multi-diff view.
 	 */
 	async setFiles(files: readonly IDiffPreviewFile[]): Promise<void> {
+		const seq = ++this._setFilesSeq;
 		this.modelDisposables.clear();
 
-		this.logService.info(`[DiffPreviewWidget] setFiles called with ${files.length} files`);
+		this.logService.debug(`[DiffPreviewWidget] setFiles called with ${files.length} files`);
 
 		if (files.length === 0) {
 			this.documentsObs.set([], undefined);
@@ -146,7 +148,7 @@ export class DiffPreviewWidget extends Disposable {
 			this.modelDisposables.add(docDisposables);
 
 			try {
-				this.logService.info(`[DiffPreviewWidget] Resolving: modified=${file.uri.toString()}, original=${file.originalUri?.toString()}`);
+				this.logService.debug(`[DiffPreviewWidget] Resolving: modified=${file.uri.toString()}, original=${file.originalUri?.toString()}`);
 
 				const [originalRef, modifiedRef] = await Promise.all([
 					file.originalUri ? this.textModelService.createModelReference(file.originalUri) : undefined,
@@ -164,23 +166,29 @@ export class DiffPreviewWidget extends Disposable {
 				};
 
 				docs.push(RefCounted.createOfNonDisposable(item, docDisposables, this));
-				this.logService.info(`[DiffPreviewWidget] Successfully resolved file: ${file.uri.toString()}`);
+				this.logService.debug(`[DiffPreviewWidget] Successfully resolved file: ${file.uri.toString()}`);
 			} catch (e) {
 				this.logService.error(`[DiffPreviewWidget] Failed to resolve file: ${file.uri.toString()}`, e);
 				docDisposables.dispose();
 			}
 		}
 
-		this.logService.info(`[DiffPreviewWidget] Resolved ${docs.length}/${files.length} documents, dimensions: ${this.currentWidth}x${this.currentHeight}`);
+		// Discard results if a newer setFiles call has started
+		if (seq !== this._setFilesSeq) {
+			for (const doc of docs) {
+				doc.dispose();
+			}
+			return;
+		}
+
+		this.logService.debug(`[DiffPreviewWidget] Resolved ${docs.length}/${files.length} documents, dimensions: ${this.currentWidth}x${this.currentHeight}`);
 
 		this.documentsObs.set(docs, undefined);
 		this.updateViewModel();
 
 		// Re-layout now that the editor has content
 		if (this.multiDiffEditor && this.currentWidth > 0 && this.currentHeight > 0) {
-			const innerWidth = Math.max(0, this.currentWidth - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
-			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
+			this.multiDiffEditor.layout(this.getInnerDimension());
 		}
 	}
 
@@ -188,12 +196,12 @@ export class DiffPreviewWidget extends Disposable {
 	 * Reveal a specific file in the multi-diff view, expanding it if collapsed.
 	 */
 	revealFile(uri: URI): void {
-		if (!this.multiDiffEditor || !this.viewModel) {
+		if (!this.multiDiffEditor || !this._viewModel.value) {
 			return;
 		}
 
 		// Expand the item if it's collapsed
-		const items = this.viewModel.items.get();
+		const items = this._viewModel.value.items.get();
 		const item = items.find(i => i.modifiedUri?.toString() === uri.toString());
 		if (item && item.collapsed.get()) {
 			item.collapsed.set(false, undefined);
@@ -205,14 +213,22 @@ export class DiffPreviewWidget extends Disposable {
 	private static readonly HORIZONTAL_PADDING = 20; // 10px left + 10px right
 	private static readonly VERTICAL_PADDING = 20; // 10px top + 10px bottom
 
+	/**
+	 * Compute the inner dimensions available for the multi-diff editor.
+	 */
+	private getInnerDimension(): Dimension {
+		return new Dimension(
+			Math.max(0, this.currentWidth - DiffPreviewWidget.HORIZONTAL_PADDING),
+			Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT),
+		);
+	}
+
 	layout(width: number, height: number): void {
 		this.currentWidth = width;
 		this.currentHeight = height;
 
 		if (this.multiDiffEditor) {
-			const innerWidth = Math.max(0, width - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, height - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
-			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
+			this.multiDiffEditor.layout(this.getInnerDimension());
 		}
 	}
 
@@ -228,9 +244,8 @@ export class DiffPreviewWidget extends Disposable {
 			documents: new ValueWithChangeEventFromObservable(this.documentsObs),
 		};
 
-		this.viewModel?.dispose();
-		this.viewModel = this.multiDiffEditor!.createViewModel(model);
-		this.multiDiffEditor!.setViewModel(this.viewModel);
+		this._viewModel.value = this.multiDiffEditor!.createViewModel(model);
+		this.multiDiffEditor!.setViewModel(this._viewModel.value);
 	}
 
 	private ensureEditor(): void {
@@ -245,10 +260,10 @@ export class DiffPreviewWidget extends Disposable {
 			[IContextKeyService, scopedContextKeyService],
 			[IEditorProgressService, new class implements IEditorProgressService {
 				_serviceBrand: undefined;
-				show(_total: unknown, _delay?: unknown) {
+				show(totalOrInfinite: true | number, delay?: number): IProgressRunner {
 					return { total() { }, worked() { }, done() { } };
 				}
-				async showWhile(promise: Promise<unknown>): Promise<void> {
+				async showWhile(promise: Promise<unknown>, _delay?: number): Promise<void> {
 					await promise;
 				}
 			}],
@@ -261,9 +276,7 @@ export class DiffPreviewWidget extends Disposable {
 		));
 
 		if (this.currentWidth > 0 && this.currentHeight > 0) {
-			const innerWidth = Math.max(0, this.currentWidth - DiffPreviewWidget.HORIZONTAL_PADDING);
-			const innerHeight = Math.max(0, this.currentHeight - DiffPreviewWidget.VERTICAL_PADDING - DiffPreviewWidget.HEADER_HEIGHT);
-			this.multiDiffEditor.layout(new Dimension(innerWidth, innerHeight));
+			this.multiDiffEditor.layout(this.getInnerDimension());
 		}
 	}
 
@@ -293,13 +306,10 @@ export class DiffPreviewWidget extends Disposable {
 		if (this.multiDiffEditor) {
 			this.multiDiffEditor.setViewModel(undefined);
 		}
-		this.viewModel?.dispose();
-		this.viewModel = undefined;
+		this._viewModel.clear();
 	}
 
 	override dispose(): void {
-		this.viewModel?.dispose();
-		this.viewModel = undefined;
 		super.dispose();
 	}
 }

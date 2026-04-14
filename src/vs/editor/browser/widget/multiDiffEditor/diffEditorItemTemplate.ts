@@ -94,7 +94,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 		});
 		this._elements = h('div.multiDiffEntry', [
 			h('div.header@header', [
-				h('div.header-content', [
+				h('div.header-content@headerContent', [
 					h('div.collapse-button@collapseButton'),
 					h('div.file-path', [
 						// eslint-disable-next-line local/code-no-any-casts, @typescript-eslint/no-explicit-any
@@ -125,6 +125,8 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			? this._register(this._workbenchUIElementFactory.createResourceLabel(this._elements.secondaryPath))
 			: undefined;
 		this._dataStore = this._register(new DisposableStore());
+		// TODO: This is a global default affecting all MultiDiffEditorWidget consumers.
+		// Consider making this configurable via options before merging.
 		this._headerHeight = 32;
 		this._lastScrollTop = -1;
 		this._isSettingScrollTop = false;
@@ -140,6 +142,15 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 		}));
 
 		// Clicking anywhere in the header content (except actions) toggles collapse
+		const headerContent = this._elements.headerContent;
+		headerContent.setAttribute('role', 'button');
+		headerContent.tabIndex = 0;
+
+		this._register(autorun(reader => {
+			const collapsed = this._collapsed.read(reader);
+			headerContent.setAttribute('aria-expanded', String(!collapsed));
+		}));
+
 		this._register(addDisposableListener(this._elements.header, 'click', (e) => {
 			// Don't toggle if clicking on the actions toolbar or the collapse button itself
 			const target = e.target as HTMLElement;
@@ -147,6 +158,17 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 				return;
 			}
 			this._viewModel.get()?.collapsed.set(!this._collapsed.get(), undefined);
+		}));
+
+		this._register(addDisposableListener(this._elements.header, 'keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				const target = e.target as HTMLElement;
+				if (target.closest('.actions') || target.closest('.collapse-button')) {
+					return;
+				}
+				e.preventDefault();
+				this._viewModel.get()?.collapsed.set(!this._collapsed.get(), undefined);
+			}
 		}));
 
 		this._register(autorun(reader => {
@@ -253,6 +275,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			let isRenamed = false;
 			let isDeleted = false;
 			let isAdded = false;
+			let isModified = false;
 			let flag = '';
 			if (data.viewModel.modifiedUri && data.viewModel.originalUri && data.viewModel.modifiedUri.path !== data.viewModel.originalUri.path) {
 				flag = 'R';
@@ -263,10 +286,14 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			} else if (!data.viewModel.originalUri) {
 				flag = 'A';
 				isAdded = true;
+			} else {
+				flag = 'M';
+				isModified = true;
 			}
 			this._elements.status.classList.toggle('renamed', isRenamed);
 			this._elements.status.classList.toggle('deleted', isDeleted);
 			this._elements.status.classList.toggle('added', isAdded);
+			this._elements.status.classList.toggle('modified', isModified);
 			this._elements.status.innerText = flag;
 
 			this._resourceLabel2?.setUri(isRenamed ? data.viewModel.originalUri : undefined, { strikethrough: true });

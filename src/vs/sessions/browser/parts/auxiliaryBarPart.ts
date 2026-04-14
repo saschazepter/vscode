@@ -94,6 +94,11 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	readonly priority = LayoutPriority.Low;
 
+	// Layout constants
+	private static readonly MIN_DIFF_PREVIEW_WIDTH = 200;
+	private static readonly MIN_CONTENT_WIDTH = 270;
+	private static readonly BORDER_TOTAL = 2; // 1px border on each side
+
 	// Diff preview state
 	private diffPreviewContainer: HTMLElement | undefined;
 	private diffPreviewWidget: DiffPreviewWidget | undefined;
@@ -185,10 +190,10 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		}));
 		this._register(this.diffPreviewSash.onDidChange((e: ISashEvent) => {
 			const delta = e.currentX - e.startX;
-			const newWidth = Math.max(200, Math.min(sashStartWidth + delta, this.lastLayoutWidth - 270));
+			const newWidth = Math.max(AuxiliaryBarPart.MIN_DIFF_PREVIEW_WIDTH, Math.min(sashStartWidth + delta, this.lastLayoutWidth - AuxiliaryBarPart.MIN_CONTENT_WIDTH));
 			this.diffPreviewWidth = newWidth;
 			// Update saved content width so layout keeps content at the new size
-			this.savedContentWidth = Math.max(270, this.lastLayoutWidth - newWidth);
+			this.savedContentWidth = Math.max(AuxiliaryBarPart.MIN_CONTENT_WIDTH, this.lastLayoutWidth - newWidth);
 			this.relayoutWithDiffPreview();
 		}));
 
@@ -228,8 +233,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		} else {
 			// Save the current aux bar width and compute the current content width to preserve
 			this.savedAuxBarWidth = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).width;
-			const borderTotal = 2;
-			this.savedContentWidth = this.savedAuxBarWidth - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
+			this.savedContentWidth = this.savedAuxBarWidth - AuxiliaryBarPart.MARGIN_RIGHT - AuxiliaryBarPart.BORDER_TOTAL;
 
 			// Set the aux bar to exactly its current width + the diff preview width
 			const targetWidth = this.savedAuxBarWidth + DiffPreviewWidget.PREFERRED_WIDTH;
@@ -313,9 +317,8 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			this.savedChatBarVisible = this.layoutService.isVisible(Parts.CHATBAR_PART);
 
 			// Compute the current content width (changes section) to preserve it
-			const borderTotal = 2;
-			const currentAdjustedWidth = this.savedAuxBarWidthForFullWidth - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
-			const currentContentWidth = Math.max(270, currentAdjustedWidth - this.diffPreviewWidth);
+			const currentAdjustedWidth = this.savedAuxBarWidthForFullWidth - AuxiliaryBarPart.MARGIN_RIGHT - AuxiliaryBarPart.BORDER_TOTAL;
+			const currentContentWidth = Math.max(AuxiliaryBarPart.MIN_CONTENT_WIDTH, currentAdjustedWidth - this.diffPreviewWidth);
 
 			// Hide sidebar + chatbar
 			this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
@@ -477,10 +480,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		}
 
 		// Layout content with reduced dimensions to account for visual margins and border
-		const borderTotal = 2; // 1px border on each side
 		const marginLeft = (this.isDiffPreviewFullWidth) ? 10 : 0; // matches CSS .nosidebar.nochatbar margin-left
-		const adjustedWidth = width - AuxiliaryBarPart.MARGIN_RIGHT - marginLeft - borderTotal;
-		const adjustedHeight = height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal;
+		const adjustedWidth = width - AuxiliaryBarPart.MARGIN_RIGHT - marginLeft - AuxiliaryBarPart.BORDER_TOTAL;
+		const adjustedHeight = height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - AuxiliaryBarPart.BORDER_TOTAL;
 
 		// Store adjusted width for sash clamping
 		this.lastLayoutWidth = adjustedWidth;
@@ -489,9 +491,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		if (this.diffPreviewWidth > 0) {
 			if (this.savedContentWidth > 0) {
 				// Preserve the saved content width — diff preview takes the rest
-				this.diffPreviewWidth = Math.max(200, adjustedWidth - this.savedContentWidth);
+				this.diffPreviewWidth = Math.max(AuxiliaryBarPart.MIN_DIFF_PREVIEW_WIDTH, adjustedWidth - this.savedContentWidth);
 			} else {
-				this.diffPreviewWidth = Math.min(this.diffPreviewWidth, Math.max(200, adjustedWidth - 270));
+				this.diffPreviewWidth = Math.min(this.diffPreviewWidth, Math.max(AuxiliaryBarPart.MIN_DIFF_PREVIEW_WIDTH, adjustedWidth - AuxiliaryBarPart.MIN_CONTENT_WIDTH));
 			}
 		}
 
@@ -502,7 +504,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			this.diffPreviewWidget?.layout(this.diffPreviewWidth, adjustedHeight);
 
 			// Layout part content with reduced width (minus diff preview)
-			const contentWidth = Math.max(270, adjustedWidth - this.diffPreviewWidth);
+			const contentWidth = Math.max(AuxiliaryBarPart.MIN_CONTENT_WIDTH, adjustedWidth - this.diffPreviewWidth);
 			super.layout(contentWidth, adjustedHeight, top, left);
 
 			// Shift the title and content area to the right of the diff preview

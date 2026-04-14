@@ -97,7 +97,15 @@ export class AgenticPaneCompositePartService extends Disposable implements IPane
 		return this.getPartByLocation(viewContainerLocation).getLastActivePaneCompositeId();
 	}
 
-	getPartByLocation(viewContainerLocation: ViewContainerLocation): IPaneCompositePart {
+	/**
+	 * Get the auxiliary bar part with its concrete type.
+	 * Safe within the sessions window because we always register an AuxiliaryBarPart.
+	 */
+	getAuxiliaryBarPart(): AuxiliaryBarPart {
+		return this.getPartByLocation(ViewContainerLocation.AuxiliaryBar) as AuxiliaryBarPart;
+	}
+
+	private getPartByLocation(viewContainerLocation: ViewContainerLocation): IPaneCompositePart {
 		return assertReturnsDefined(this.paneCompositeParts.get(viewContainerLocation));
 	}
 

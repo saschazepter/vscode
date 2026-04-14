@@ -27,7 +27,6 @@ import { ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { ChangesViewPane } from './changesView.js';
 import { toIChangesFileItem } from './changesViewRenderer.js';
 import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
-import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
 import { Menus } from '../../../browser/menus.js';
 
 const openChangesViewActionOptions: IAction2Options = {
@@ -223,12 +222,10 @@ registerAction2(class ToggleDiffPreviewAction extends Action2 {
 		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
 		const viewsService = accessor.get(IViewsService);
 
-		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-		if (part instanceof AuxiliaryBarPart) {
-			const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
-			const files = view ? toIChangesFileItem(view.viewModel.activeSessionChangesObs.get()) : undefined;
-			part.toggleDiffPreview(files);
-		}
+		const auxPart = paneCompositeService.getAuxiliaryBarPart();
+		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+		const files = view ? toIChangesFileItem(view.viewModel.activeSessionChangesObs.get()) : undefined;
+		auxPart.toggleDiffPreview(files);
 	}
 });
 
@@ -244,6 +241,7 @@ registerAction2(class OpenDiffInModalAction extends Action2 {
 				id: MenuId.MultiDiffEditorFileToolbar,
 				group: 'navigation',
 				order: -10,
+				// Hidden for now — the action is wired up but the toolbar slot is not yet surfaced
 				when: ContextKeyExpr.false(),
 			}],
 		});
@@ -306,9 +304,9 @@ registerAction2(class CloseDiffPreviewAction extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
-		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-		if (part instanceof AuxiliaryBarPart && part.isDiffPreviewVisible) {
-			part.toggleDiffPreview();
+		const auxPart = paneCompositeService.getAuxiliaryBarPart();
+		if (auxPart.isDiffPreviewVisible) {
+			auxPart.toggleDiffPreview();
 		}
 	}
 });
@@ -331,9 +329,6 @@ registerAction2(class ToggleDiffPreviewFullWidthAction extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
-		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
-		if (part instanceof AuxiliaryBarPart) {
-			part.toggleFullWidth();
-		}
+		paneCompositeService.getAuxiliaryBarPart().toggleFullWidth();
 	}
 });

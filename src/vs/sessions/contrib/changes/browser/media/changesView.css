@@ -496,8 +496,33 @@
 	transition: background-color 0.05s ease;
 }
 
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .file-path {
+	align-items: center;
+}
+
 .diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .monaco-icon-label > .monaco-icon-label-container > .monaco-icon-name-container > .label-name {
 	font-size: 12px;
+}
+
+/* Status badge (A/M/D) styling to match changes view decoration badges */
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .status {
+	font-size: 11px;
+	font-weight: 600;
+	opacity: 0.9;
+	margin: 0 4px;
+	line-height: inherit;
+}
+
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .status.added {
+	color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .status.deleted {
+	color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
+
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content .status.modified {
+	color: var(--vscode-gitDecoration-modifiedResourceForeground);
 }
 
 .diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content:hover {

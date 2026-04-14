@@ -31,6 +31,7 @@
 
 .agent-sessions-workbench.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-center {
 	flex: 1;
+	/* !important needed to override the inline max-width set by the base titlebar layout */
 	max-width: none !important;
 }
 
