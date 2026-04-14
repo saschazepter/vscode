@@ -43,6 +43,16 @@
 	box-sizing: border-box;
 }
 
+/* When both sidebar and chatbar are hidden, add left margin for consistent spacing */
+.agent-sessions-workbench.nosidebar.nochatbar .part.auxiliarybar {
+	margin-left: 10px;
+}
+
+/* Suppress transitions during full-width toggle to avoid sliding */
+.agent-sessions-workbench .part.auxiliarybar.no-transition {
+	transition: none !important;
+}
+
 .agent-sessions-workbench .part.auxiliarybar > .content .pane-body {
 	background-color: var(--vscode-sessionsAuxiliaryBar-background);
 }

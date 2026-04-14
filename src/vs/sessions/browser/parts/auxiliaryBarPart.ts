@@ -275,7 +275,11 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			return;
 		}
 
+		const container = this.getContainer();
 		const isFullWidth = this.isDiffPreviewFullWidth;
+
+		// Suppress transitions during the layout change
+		container?.classList.add('no-transition');
 
 		if (isFullWidth) {
 			// Restore previous panel state first (grid redistributes space)
@@ -323,6 +327,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			this.savedContentWidth = currentContentWidth;
 			this.relayoutWithDiffPreview();
 		}
+
+		// Re-enable transitions after the layout settles
+		dom.getWindow(container ?? this.element).requestAnimationFrame(() => container?.classList.remove('no-transition'));
 	}
 
 	/**
@@ -471,7 +478,8 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Layout content with reduced dimensions to account for visual margins and border
 		const borderTotal = 2; // 1px border on each side
-		const adjustedWidth = width - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
+		const marginLeft = (this.isDiffPreviewFullWidth) ? 10 : 0; // matches CSS .nosidebar.nochatbar margin-left
+		const adjustedWidth = width - AuxiliaryBarPart.MARGIN_RIGHT - marginLeft - borderTotal;
 		const adjustedHeight = height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal;
 
 		// Store adjusted width for sash clamping
