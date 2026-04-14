@@ -58,8 +58,15 @@ export class AgentHostGitService implements IAgentHostGitService {
 		// Try to read the default branch from the remote HEAD reference
 		const remoteRef = (await this._runGit(workingDirectory, ['symbolic-ref', 'refs/remotes/origin/HEAD']))?.trim();
 		if (remoteRef) {
-			const prefix = 'refs/remotes/origin/';
-			return remoteRef.startsWith(prefix) ? remoteRef.substring(prefix.length) : remoteRef;
+			if (!remoteRef.startsWith('refs/remotes/origin/')) {
+				return remoteRef;
+			}
+
+			const branch = remoteRef.substring('refs/remotes/origin/'.length);
+			// Check whether a local branch exists; if not, use the remote-tracking ref
+			// so that 'git worktree add ... <startPoint>' resolves correctly.
+			const hasLocalBranch = (await this._runGit(workingDirectory, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) !== undefined;
+			return hasLocalBranch ? branch : `origin/${branch}`;
 		}
 		return undefined;
 	}
