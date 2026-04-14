@@ -71,7 +71,6 @@ type AgentStatusClickClassification = {
 
 // Action IDs
 const TOGGLE_CHAT_ACTION_ID = 'workbench.action.chat.toggle';
-const CHAT_SETUP_ACTION_ID = 'workbench.action.chat.triggerSetup';
 const OPEN_CHAT_QUOTA_EXCEEDED_DIALOG = 'workbench.action.chat.openQuotaExceededDialog';
 const QUICK_OPEN_ACTION_ID = 'workbench.action.quickOpenWithModes';
 
@@ -856,8 +855,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		const menuActions: IAction[] = Separator.join(...this._chatTitleBarMenu.getActions({ shouldForwardArgs: true }).map(([, actions]) => actions));
 
 		// Determine primary action based on entitlement state
-		// Special case 1: User is signed out (needs to sign in)
-		// Special case 2: User has exceeded quota (needs to upgrade)
+		// Special case: User has exceeded quota (needs to upgrade)
 		const chatSentiment = this.chatEntitlementService.sentiment;
 		const chatQuotaExceeded = this.chatEntitlementService.quotas.chat?.percentRemaining === 0;
 		const free = this.chatEntitlementService.entitlement === ChatEntitlement.Free;
