@@ -755,7 +755,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 							if (options?.newChat) {
 								await this.commandService.executeCommand('workbench.action.sessions.newChat');
 							}
-							const view = await this.viewsService.openView(sessionsViewId, false /* don't steal focus */);
+							const view = await this.viewsService.openView(sessionsViewId, options?.closeEditor ?? false);
 							const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
 							if (options?.isPartialQuery && chatView?.prefillInput) {
 								chatView.prefillInput(query);
