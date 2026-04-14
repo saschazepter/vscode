@@ -222,6 +222,14 @@ describe('handleExitPlanMode', () => {
 	// ---- plan file monitoring ----
 
 	describe('plan file monitoring', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
 		it('syncs saved plan changes to SDK session', async () => {
 			const planUri = URI.file('/session/plan.md');
 			const savedDoc = {
@@ -248,7 +256,7 @@ describe('handleExitPlanMode', () => {
 			} as unknown as TextDocumentChangeEvent);
 
 			// Allow debouncer to fire
-			await new Promise(r => setTimeout(r, 400));
+			await vi.advanceTimersByTimeAsync(150);
 
 			expect(session.writtenPlans).toEqual(['updated plan content']);
 
@@ -281,7 +289,7 @@ describe('handleExitPlanMode', () => {
 				contentChanges: [{ range: {} as any, rangeOffset: 0, rangeLength: 0, text: 'x' }],
 			} as unknown as TextDocumentChangeEvent);
 
-			await new Promise(r => setTimeout(r, 400));
+			await vi.advanceTimersByTimeAsync(150);
 
 			expect(session.writtenPlans).toEqual([]);
 
@@ -312,7 +320,7 @@ describe('handleExitPlanMode', () => {
 				contentChanges: [{ range: {} as any, rangeOffset: 0, rangeLength: 0, text: 'x' }],
 			} as unknown as TextDocumentChangeEvent);
 
-			await new Promise(r => setTimeout(r, 400));
+			await vi.advanceTimersByTimeAsync(150);
 
 			expect(session.writtenPlans).toEqual([]);
 
