@@ -18,6 +18,7 @@
  *   npm run perf:chat -- --scenario text-only         # single scenario
  *   npm run perf:chat -- --no-baseline                # skip baseline comparison
  *   npm run perf:chat -- --build 1.110.0 --baseline-build 1.115.0
+ *   npm run perf:chat -- --resume .chat-perf-data/2026-04-14/results.json --runs 3
  */
 
 const path = require('path');
@@ -25,7 +26,7 @@ const fs = require('fs');
 const {
 	ROOT, DATA_DIR, SCENARIOS, METRIC_DEFS,
 	resolveBuild, buildEnv, buildArgs, prepareRunDir,
-	robustStats, summarize, markDuration, launchVSCode,
+	robustStats, welchTTest, summarize, markDuration, launchVSCode,
 } = require('./common/utils');
 
 // -- CLI args ----------------------------------------------------------------
@@ -35,6 +36,7 @@ function parseArgs() {
 	const opts = {
 		runs: 5,
 		verbose: false,
+		ci: false,
 		/** @type {string[]} */
 		scenarios: [],
 		/** @type {string | undefined} */
@@ -45,6 +47,8 @@ function parseArgs() {
 		baselineBuild: '1.115.0',
 		saveBaseline: false,
 		threshold: 0.2,
+		/** @type {string | undefined} */
+		resume: undefined,
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -57,6 +61,8 @@ function parseArgs() {
 			case '--no-baseline': opts.baselineBuild = undefined; break;
 			case '--save-baseline': opts.saveBaseline = true; break;
 			case '--threshold': opts.threshold = parseFloat(args[++i]); break;
+			case '--resume': opts.resume = args[++i]; break;
+			case '--ci': opts.ci = true; break;
 			case '--help': case '-h':
 				console.log([
 					'Chat performance benchmark',
@@ -71,7 +77,10 @@ function parseArgs() {
 					'                       (default: 1.115.0; accepts "insiders", "1.100.0", commit hash)',
 					'  --no-baseline        Skip baseline comparison entirely',
 					'  --save-baseline     Save results as the new baseline (requires --baseline <path>)',
+					'  --resume <path>     Resume a previous run, adding more iterations to increase',
+					'                       confidence. Merges new runs with existing rawRuns data',
 					'  --threshold <frac>  Regression threshold fraction (default: 0.2 = 20%)',
+					'  --ci                CI mode: write Markdown summary to ci-summary.md',
 					'  --verbose           Print per-run details',
 					'',
 					'Scenarios: ' + SCENARIOS.join(', '),
@@ -128,7 +137,14 @@ function parseArgs() {
 async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, runDir, role) {
 	const { userDataDir, extDir, logsDir } = prepareRunDir(runIndex, mockServer);
 	const isDevBuild = !electronPath.includes('.vscode-test');
-	const buildLabel = isDevBuild ? 'dev' : path.basename(path.dirname(path.dirname(path.dirname(electronPath)))).replace(/^vscode-/, '');
+	// Extract a clean build label from the path.
+	// Dev:    .build/electron/Code - OSS.app/.../Code - OSS  → "dev"
+	// Stable: .vscode-test/vscode-darwin-arm64-1.115.0/Visual Studio Code.app/.../Electron → "1.115.0"
+	let buildLabel = 'dev';
+	if (!isDevBuild) {
+		const vscodeTestMatch = electronPath.match(/vscode-test\/vscode-[^/]*?-(\d+\.\d+\.\d+)/);
+		buildLabel = vscodeTestMatch ? vscodeTestMatch[1] : path.basename(electronPath);
+	}
 
 	// Create a per-run diagnostics directory: <runDir>/<role>-<build>/<scenario>-<i>/
 	const runDiagDir = path.join(runDir, `${role}-${buildLabel}`, runIndex.replace(/^baseline-/, ''));
@@ -337,16 +353,14 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
 		fs.writeFileSync(snapshotPath, snapshotChunks.join(''));
 
-		// Parse timing — always use client-side Date.now() for timeToFirstToken
-		// and timeToComplete so cross-build comparisons use the same method.
-		// Internal marks are reported separately for diagnostics.
+		// Parse timing — prefer internal code/chat/* marks (precise, in-process)
+		// with client-side Date.now() as fallback for older builds without marks.
 		const timeToUIUpdated = markDuration(chatMarks, 'request/start', 'request/uiUpdated');
-		const timeToFirstToken = firstResponseTime - submitTime;
+		const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
+		const timeToFirstToken = internalFirstToken >= 0 ? internalFirstToken : (firstResponseTime - submitTime);
 		const timeToComplete = responseCompleteTime - submitTime;
 		const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
 		const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
-		// Internal-mark TTFT (more precise, but only available on dev builds)
-		const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
 
 		// Parse GC/long tasks
 		let majorGCs = 0, minorGCs = 0, gcDurationMs = 0;
@@ -391,10 +405,291 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	}
 }
 
+// -- CI summary generation ---------------------------------------------------
+
+/**
+ * Generate a detailed Markdown summary table for CI.
+ * Printed to stdout and written to ci-summary.md.
+ *
+ * @param {Record<string, any>} jsonReport
+ * @param {Record<string, any> | null} baseline
+ * @param {{ threshold: number, runs: number, baselineBuild?: string, build?: string }} opts
+ */
+function generateCISummary(jsonReport, baseline, opts) {
+	const baseLabel = opts.baselineBuild || 'baseline';
+	const testLabel = opts.build || 'dev (local)';
+	const allMetrics = [
+		['timeToFirstToken', 'timing', 'ms'],
+		['timeToComplete', 'timing', 'ms'],
+		['layoutCount', 'rendering', ''],
+		['recalcStyleCount', 'rendering', ''],
+		['forcedReflowCount', 'rendering', ''],
+		['longTaskCount', 'rendering', ''],
+		['heapDelta', 'memory', 'MB'],
+		['gcDurationMs', 'memory', 'ms'],
+	];
+	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'recalcStyleCount', 'forcedReflowCount', 'longTaskCount']);
+
+	const lines = [];
+	const scenarios = Object.keys(jsonReport.scenarios);
+
+	lines.push(`# Chat Performance Comparison`);
+	lines.push('');
+	lines.push(`| | |`);
+	lines.push(`|---|---|`);
+	lines.push(`| **Baseline** | \`${baseLabel}\` |`);
+	lines.push(`| **Test** | \`${testLabel}\` |`);
+	lines.push(`| **Runs per scenario** | ${opts.runs} |`);
+	lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
+	lines.push(`| **Scenarios** | ${scenarios.length} |`);
+	lines.push(`| **Platform** | ${process.platform} / ${process.arch} |`);
+	lines.push('');
+
+	// Overall status
+	let totalRegressions = 0;
+	let totalImprovements = 0;
+
+	// Per-scenario tables
+	for (const scenario of scenarios) {
+		const current = jsonReport.scenarios[scenario];
+		const base = baseline?.scenarios?.[scenario];
+
+		lines.push(`## ${scenario}`);
+		lines.push('');
+
+		if (!base) {
+			lines.push('> No baseline data for this scenario.');
+			lines.push('');
+
+			// Show absolute values
+			lines.push('| Metric | Value | StdDev | CV | n |');
+			lines.push('|--------|------:|-------:|---:|--:|');
+			for (const [metric, group, unit] of allMetrics) {
+				const cur = current[group]?.[metric];
+				if (!cur) { continue; }
+				lines.push(`| ${metric} | ${cur.median}${unit} | \xb1${cur.stddev}${unit} | ${(cur.cv * 100).toFixed(0)}% | ${cur.n} |`);
+			}
+			lines.push('');
+			continue;
+		}
+
+		lines.push(`| Metric | Baseline | Test | Change | p-value | Verdict |`);
+		lines.push(`|--------|----------|------|--------|---------|---------|`);
+
+		for (const [metric, group, unit] of allMetrics) {
+			const cur = current[group]?.[metric];
+			const bas = base[group]?.[metric];
+			if (!cur || !bas || bas.median === null || bas.median === undefined) { continue; }
+
+			const change = bas.median !== 0 ? (cur.median - bas.median) / bas.median : 0;
+			const pct = `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
+			const isRegressionMetric = regressionMetricNames.has(metric);
+
+			// t-test
+			const curRaw = (current.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+			const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+			const ttest = welchTTest(basRaw, curRaw);
+			const pStr = ttest ? `${ttest.pValue}` : 'n/a';
+
+			let verdict = '';
+			if (isRegressionMetric) {
+				if (change > opts.threshold) {
+					if (!ttest) {
+						verdict = 'REGRESSION';
+						totalRegressions++;
+					} else if (ttest.significant) {
+						verdict = 'REGRESSION';
+						totalRegressions++;
+					} else {
+						verdict = 'noise';
+					}
+				} else if (change < -opts.threshold && ttest?.significant) {
+					verdict = 'improved';
+					totalImprovements++;
+				} else {
+					verdict = 'ok';
+				}
+			} else {
+				verdict = 'info';
+			}
+
+			const basStr = `${bas.median}${unit} \xb1${bas.stddev}${unit}`;
+			const curStr = `${cur.median}${unit} \xb1${cur.stddev}${unit}`;
+			lines.push(`| ${metric} | ${basStr} | ${curStr} | ${pct} | ${pStr} | ${verdict} |`);
+		}
+		lines.push('');
+	}
+
+	// Grand summary
+	lines.push('## Summary');
+	lines.push('');
+	if (totalRegressions > 0) {
+		lines.push(`**${totalRegressions} regression(s) detected** across ${scenarios.length} scenario(s).`);
+	} else if (totalImprovements > 0) {
+		lines.push(`**No regressions.** ${totalImprovements} improvement(s) detected.`);
+	} else {
+		lines.push(`**No significant changes** across ${scenarios.length} scenario(s).`);
+	}
+	lines.push('');
+
+	// Raw data per scenario
+	lines.push('<details><summary>Raw run data</summary>');
+	lines.push('');
+	for (const scenario of scenarios) {
+		const current = jsonReport.scenarios[scenario];
+		lines.push(`### ${scenario}`);
+		lines.push('');
+		lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | Heap Delta (MB) | Internal Marks |');
+		lines.push('|----:|----------:|--------------:|--------:|--------------:|----------------:|:--------------:|');
+		const runs = current.rawRuns || [];
+		for (let i = 0; i < runs.length; i++) {
+			const r = runs[i];
+			lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+		}
+		lines.push('');
+	}
+	if (baseline) {
+		for (const scenario of scenarios) {
+			const base = baseline.scenarios?.[scenario];
+			if (!base) { continue; }
+			lines.push(`### ${scenario} (baseline)`);
+			lines.push('');
+			lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | Heap Delta (MB) | Internal Marks |');
+			lines.push('|----:|----------:|--------------:|--------:|--------------:|----------------:|:--------------:|');
+			const runs = base.rawRuns || [];
+			for (let i = 0; i < runs.length; i++) {
+				const r = runs[i];
+				lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+			}
+			lines.push('');
+		}
+	}
+	lines.push('</details>');
+	lines.push('');
+
+	return lines.join('\n');
+}
+
 // -- Main --------------------------------------------------------------------
 
 async function main() {
 	const opts = parseArgs();
+
+	const { startServer } = require('./common/mock-llm-server');
+	const mockServer = await startServer(0);
+	console.log(`[chat-perf] Mock LLM server: ${mockServer.url}`);
+
+	// -- Resume mode --------------------------------------------------------
+	if (opts.resume) {
+		if (!fs.existsSync(opts.resume)) {
+			console.error(`[chat-perf] Resume file not found: ${opts.resume}`);
+			process.exit(1);
+		}
+		const prevResults = JSON.parse(fs.readFileSync(opts.resume, 'utf-8'));
+		const prevDir = path.dirname(opts.resume);
+
+		// Find the associated baseline JSON in the same directory
+		const baselineFiles = fs.readdirSync(prevDir).filter((/** @type {string} */ f) => f.startsWith('baseline-') && f.endsWith('.json'));
+		const baselineFile = baselineFiles.length > 0 ? path.join(prevDir, baselineFiles[0]) : null;
+		const prevBaseline = baselineFile ? JSON.parse(fs.readFileSync(baselineFile, 'utf-8')) : null;
+
+		// Determine which scenarios to resume (default: all from previous run)
+		const resumeScenarios = opts.scenarios.length > 0
+			? opts.scenarios.filter(s => prevResults.scenarios?.[s])
+			: Object.keys(prevResults.scenarios || {});
+
+		if (resumeScenarios.length === 0) {
+			console.error('[chat-perf] No matching scenarios found in previous results');
+			process.exit(1);
+		}
+
+		const testElectron = await resolveBuild(opts.build);
+		const baselineVersion = prevBaseline?.baselineBuildVersion;
+		const baselineElectron = baselineVersion ? await resolveBuild(baselineVersion) : null;
+
+		const runsToAdd = opts.runs;
+		console.log(`[chat-perf] Resuming from: ${opts.resume}`);
+		console.log(`[chat-perf] Adding ${runsToAdd} runs per scenario`);
+		console.log(`[chat-perf] Scenarios: ${resumeScenarios.join(', ')}`);
+		if (prevBaseline) {
+			console.log(`[chat-perf] Baseline: ${baselineVersion} (${prevBaseline.scenarios?.[resumeScenarios[0]]?.rawRuns?.length || 0} existing runs)`);
+		}
+		console.log('');
+
+		for (const scenario of resumeScenarios) {
+			console.log(`[chat-perf] === Resuming: ${scenario} ===`);
+			const prevTestRuns = prevResults.scenarios[scenario]?.rawRuns || [];
+			const prevBaseRuns = prevBaseline?.scenarios?.[scenario]?.rawRuns || [];
+
+			// Run additional test iterations
+			console.log(`[chat-perf]   Test build (${prevTestRuns.length} existing + ${runsToAdd} new)`);
+			for (let i = 0; i < runsToAdd; i++) {
+				const runIdx = `${scenario}-resume-${prevTestRuns.length + i}`;
+				console.log(`[chat-perf]     Run ${i + 1}/${runsToAdd}...`);
+				try {
+					const m = await runOnce(testElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'test');
+					prevTestRuns.push(m);
+					if (opts.verbose) {
+						const src = m.hasInternalMarks ? 'internal' : 'client-side';
+						console.log(`      [${src}] firstToken=${m.timeToFirstToken}ms, complete=${m.timeToComplete}ms`);
+					}
+				} catch (err) { console.error(`      Run ${i + 1} failed: ${err}`); }
+			}
+
+			// Run additional baseline iterations
+			if (baselineElectron && prevBaseline?.scenarios?.[scenario]) {
+				console.log(`[chat-perf]   Baseline build (${prevBaseRuns.length} existing + ${runsToAdd} new)`);
+				for (let i = 0; i < runsToAdd; i++) {
+					const runIdx = `baseline-${scenario}-resume-${prevBaseRuns.length + i}`;
+					console.log(`[chat-perf]     Run ${i + 1}/${runsToAdd}...`);
+					try {
+						const m = await runOnce(baselineElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'baseline');
+						prevBaseRuns.push(m);
+					} catch (err) { console.error(`      Run ${i + 1} failed: ${err}`); }
+				}
+			}
+
+			// Recompute stats with merged data
+			const sd = /** @type {any} */ ({ runs: prevTestRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: prevTestRuns });
+			for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(prevTestRuns.map((/** @type {any} */ r) => r[metric])); }
+			prevResults.scenarios[scenario] = sd;
+
+			if (prevBaseline?.scenarios?.[scenario]) {
+				const bsd = /** @type {any} */ ({ runs: prevBaseRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: prevBaseRuns });
+				for (const [metric, group] of METRIC_DEFS) { bsd[group][metric] = robustStats(prevBaseRuns.map((/** @type {any} */ r) => r[metric])); }
+				prevBaseline.scenarios[scenario] = bsd;
+			}
+			console.log(`[chat-perf]   Merged: test n=${prevTestRuns.length}${prevBaseRuns.length > 0 ? `, baseline n=${prevBaseRuns.length}` : ''}`);
+			console.log('');
+		}
+
+		// Write updated files back
+		prevResults.runsPerScenario = Math.max(prevResults.runsPerScenario || 0, ...Object.values(prevResults.scenarios).map((/** @type {any} */ s) => s.runs));
+		prevResults.lastResumed = new Date().toISOString();
+		fs.writeFileSync(opts.resume, JSON.stringify(prevResults, null, 2));
+		console.log(`[chat-perf] Updated results: ${opts.resume}`);
+
+		if (prevBaseline && baselineFile) {
+			prevBaseline.lastResumed = new Date().toISOString();
+			fs.writeFileSync(baselineFile, JSON.stringify(prevBaseline, null, 2));
+			// Also update cached baseline
+			const cachedPath = path.join(DATA_DIR, path.basename(baselineFile));
+			fs.writeFileSync(cachedPath, JSON.stringify(prevBaseline, null, 2));
+			console.log(`[chat-perf] Updated baseline: ${baselineFile}`);
+		}
+
+		// -- Re-run comparison with merged data --------------------------------
+		opts.baseline = baselineFile || undefined;
+		const jsonReport = prevResults;
+		jsonReport._resultsPath = opts.resume;
+
+		// Fall through to comparison logic below
+		await printComparison(jsonReport, opts);
+		await mockServer.close();
+		return;
+	}
+
+	// -- Normal (non-resume) flow -------------------------------------------
 	const electronPath = await resolveBuild(opts.build);
 
 	if (!fs.existsSync(electronPath)) {
@@ -402,10 +697,6 @@ async function main() {
 		console.error('Run "node build/lib/preLaunch.ts" first, or pass --build <path>');
 		process.exit(1);
 	}
-
-	const { startServer } = require('./common/mock-llm-server');
-	const mockServer = await startServer(0);
-	console.log(`[chat-perf] Mock LLM server: ${mockServer.url}`);
 
 	// Create a timestamped run directory for all output
 	const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -417,7 +708,7 @@ async function main() {
 	if (opts.baselineBuild) {
 		const baselineJsonPath = path.join(runDir, `baseline-${opts.baselineBuild}.json`);
 		const cachedPath = path.join(DATA_DIR, `baseline-${opts.baselineBuild}.json`);
-		const cachedBaseline = fs.existsSync(cachedPath)
+		const cachedBaseline = !opts.ci && fs.existsSync(cachedPath)
 			? JSON.parse(fs.readFileSync(cachedPath, 'utf-8'))
 			: null;
 
@@ -447,7 +738,7 @@ async function main() {
 				scenarios: /** @type {Record<string, any>} */ ({}),
 			};
 			for (const [scenario, results] of Object.entries(baselineResults)) {
-				const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {} });
+				const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
 				for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
 				baselineReport.scenarios[scenario] = sd;
 			}
@@ -519,6 +810,7 @@ async function main() {
 		jsonReport.scenarios[scenario] = sd;
 	}
 	fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
+	jsonReport._resultsPath = jsonPath;
 	console.log('');
 	console.log(`[chat-perf] Results written to ${jsonPath}`);
 
@@ -530,7 +822,20 @@ async function main() {
 	}
 
 	// -- Baseline comparison ---------------------------------------------
+	await printComparison(jsonReport, opts);
+
+	if (anyFailed) { process.exit(1); }
+	await mockServer.close();
+}
+
+/**
+ * Print baseline comparison and exit with code 1 if regressions found.
+ * @param {Record<string, any>} jsonReport
+ * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string }} opts
+ */
+async function printComparison(jsonReport, opts) {
 	let regressionFound = false;
+	let inconclusiveFound = false;
 	if (opts.baseline && fs.existsSync(opts.baseline)) {
 		const baseline = JSON.parse(fs.readFileSync(opts.baseline, 'utf-8'));
 		console.log('');
@@ -569,8 +874,29 @@ async function main() {
 				if (!cur || !bas || !bas.median) { continue; }
 				const change = (cur.median - bas.median) / bas.median;
 				const pct = `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
-				const flag = change > opts.threshold ? ' ← REGRESSION' : '';
-				if (change > opts.threshold) { scenarioRegression = true; regressionFound = true; }
+
+				// Statistical significance via Welch's t-test on raw run values
+				const curRaw = (current.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+				const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+				const ttest = welchTTest(basRaw, curRaw);
+
+				let flag = '';
+				if (change > opts.threshold) {
+					if (!ttest) {
+						flag = ' ← REGRESSION (n too small for significance test)';
+						scenarioRegression = true;
+						regressionFound = true;
+					} else if (ttest.significant) {
+						flag = ` ← REGRESSION (p=${ttest.pValue}, ${ttest.confidence} confidence)`;
+						scenarioRegression = true;
+						regressionFound = true;
+					} else {
+						flag = ` (likely noise — p=${ttest.pValue}, not significant)`;
+						inconclusiveFound = true;
+					}
+				} else if (ttest && change > 0 && ttest.significant && ttest.confidence === 'high') {
+					flag = ` (significant increase, p=${ttest.pValue})`;
+				}
 				diffs.push(`    ${metric}: ${bas.median}${unit} → ${cur.median}${unit} (${pct})${flag}`);
 			}
 			for (const [metric, group, unit] of infoMetrics) {
@@ -587,12 +913,48 @@ async function main() {
 
 		console.log('');
 		console.log(regressionFound
-			? `[chat-perf] REGRESSION DETECTED — exceeded ${(opts.threshold * 100).toFixed(0)}% threshold`
-			: `[chat-perf] All metrics within ${(opts.threshold * 100).toFixed(0)}% of baseline`);
+			? `[chat-perf] REGRESSION DETECTED — exceeded ${(opts.threshold * 100).toFixed(0)}% threshold with statistical significance`
+			: `[chat-perf] All metrics within ${(opts.threshold * 100).toFixed(0)}% of baseline (or not statistically significant)`);
+
+		if (inconclusiveFound && !regressionFound) {
+			// Find the results.json path to suggest in the hint
+			const resultsPath = Object.keys(jsonReport.scenarios).length > 0
+				? (jsonReport._resultsPath || opts.resume || 'path/to/results.json')
+				: 'path/to/results.json';
+			console.log('');
+			console.log('[chat-perf] Some metrics exceeded the threshold but were not statistically significant.');
+			console.log('[chat-perf] To increase confidence, add more runs with --resume:');
+			console.log(`[chat-perf]   npm run perf:chat -- --resume ${resultsPath} --runs 3`);
+		}
 	}
 
-	if (anyFailed || regressionFound) { process.exit(1); }
-	await mockServer.close();
+	// -- CI summary ------------------------------------------------------
+	if (opts.ci) {
+		const ciBaseline = opts.baseline && fs.existsSync(opts.baseline)
+			? JSON.parse(fs.readFileSync(opts.baseline, 'utf-8'))
+			: null;
+		const summary = generateCISummary(jsonReport, ciBaseline, {
+			threshold: opts.threshold,
+			runs: jsonReport.runsPerScenario || opts.runs,
+			baselineBuild: ciBaseline?.baselineBuildVersion || opts.baselineBuild,
+			build: opts.build,
+		});
+
+		// Write to file for GitHub Actions $GITHUB_STEP_SUMMARY
+		const summaryPath = path.join(DATA_DIR, 'ci-summary.md');
+		fs.writeFileSync(summaryPath, summary);
+		console.log(`[chat-perf] CI summary written to ${summaryPath}`);
+
+		// Also print the full summary table to stdout
+		console.log('');
+		console.log('==================================================================');
+		console.log('               CHAT PERF COMPARISON RESULTS                       ');
+		console.log('==================================================================');
+		console.log('');
+		console.log(summary);
+	}
+
+	if (regressionFound) { process.exit(1); }
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

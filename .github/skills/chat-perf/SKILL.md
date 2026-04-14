@@ -28,7 +28,7 @@ npm run perf:chat-leak -- --messages 20 --verbose
 
 ## Perf regression test
 
-**Script:** `scripts/chat-perf/test-chat-perf-regression.js`  
+**Script:** `scripts/chat-perf/test-chat-perf-regression.js`
 **npm:** `npm run perf:chat`
 
 Launches VS Code via Playwright Electron, opens the chat panel, sends a message with a mock LLM response, and measures timing, layout, and rendering metrics. By default, downloads VS Code 1.115.0 as a baseline, benchmarks it, then benchmarks the local dev build and compares.
@@ -42,6 +42,7 @@ Launches VS Code via Playwright Electron, opens the chat panel, sends a message 
 | `--build <path\|ver>` | local dev | Build to test. Accepts path or version (`1.110.0`, `insiders`). |
 | `--baseline-build <ver>` | `1.115.0` | Version to download and compare against. |
 | `--no-baseline` | — | Skip baseline comparison entirely. |
+| `--resume <path>` | — | Resume a previous run, adding more iterations to increase confidence. |
 | `--threshold <frac>` | `0.2` | Regression threshold (0.2 = flag if 20% slower). |
 | `--verbose` | — | Print per-run details including response content. |
 
@@ -52,10 +53,37 @@ Launches VS Code via Playwright Electron, opens the chat panel, sends a message 
 npm run perf:chat -- --build 1.110.0 --baseline-build 1.115.0 --runs 5
 ```
 
+### Resuming a run for more confidence
+
+When results exceed the threshold but aren't statistically significant, the tool prints a `--resume` hint. Use it to add more iterations to an existing run:
+
+```bash
+# Initial run with 3 iterations — may be inconclusive:
+npm run perf:chat -- --scenario text-only --runs 3
+
+# Add 3 more runs to the same results file (both test + baseline):
+npm run perf:chat -- --resume .chat-perf-data/2026-04-14T02-15-14/results.json --runs 3
+
+# Keep adding until confidence is reached:
+npm run perf:chat -- --resume .chat-perf-data/2026-04-14T02-15-14/results.json --runs 5
+```
+
+`--resume` loads the previous `results.json` and its associated `baseline-*.json`, runs N more iterations for both builds, merges rawRuns, recomputes stats, and re-runs the comparison. The updated files are written back in-place. You can resume multiple times — samples accumulate.
+
+### Statistical significance
+
+Regression detection uses **Welch's t-test** to avoid false positives from noisy measurements. A metric is only flagged as `REGRESSION` when it both exceeds the threshold AND is statistically significant (p < 0.05). Otherwise it's reported as `(likely noise — p=X, not significant)`.
+
+With typical variance (cv ≈ 20%), you need:
+- **n ≥ 5** per build to detect a 35% regression at 95% confidence
+- **n ≥ 10** per build to detect a 20% regression reliably
+
+Confidence levels reported: `high` (p < 0.01), `medium` (p < 0.05), `low` (p < 0.1), `none`.
+
 ### Exit codes
 
-- `0` — all metrics within threshold
-- `1` — regression detected or runs failed
+- `0` — all metrics within threshold, or exceeding threshold but not statistically significant
+- `1` — statistically significant regression detected, or all runs failed
 
 ### Scenarios
 
@@ -80,11 +108,11 @@ npm run perf:chat -- --build 1.110.0 --baseline-build 1.115.0 --runs 5
 
 ### Statistics
 
-Results use **IQR-based outlier removal** and **median** (not mean) to handle startup jitter. The **coefficient of variation (cv)** is reported — under 15% is stable, over 15% gets a ⚠ warning. Use 5+ runs to get stable results.
+Results use **IQR-based outlier removal** and **median** (not mean) to handle startup jitter. The **coefficient of variation (cv)** is reported — under 15% is stable, over 15% gets a ⚠ warning. Baseline comparison uses **Welch's t-test** on raw run values to determine statistical significance before flagging regressions. Use 5+ runs to get stable results.
 
 ## Memory leak check
 
-**Script:** `scripts/chat-perf/test-chat-mem-leaks.js`  
+**Script:** `scripts/chat-perf/test-chat-mem-leaks.js`
 **npm:** `npm run perf:chat-leak`
 
 Launches one VS Code session, sends N messages sequentially, forces GC between each, and measures renderer heap and DOM node count. Uses **linear regression** on the samples to compute per-message growth rate, which is compared against a threshold.

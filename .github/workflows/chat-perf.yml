@@ -1,0 +1,144 @@
+name: Chat Performance Comparison
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_commit:
+        description: 'Baseline commit SHA or version (e.g. "1.115.0", "abc1234")'
+        required: true
+        type: string
+      test_commit:
+        description: 'Test commit SHA or version (e.g. "main", "abc1234")'
+        required: true
+        type: string
+      runs:
+        description: 'Runs per scenario (default: 7 for statistical significance)'
+        required: false
+        type: number
+        default: 7
+      scenarios:
+        description: 'Comma-separated scenario list (empty = all)'
+        required: false
+        type: string
+        default: ''
+      threshold:
+        description: 'Regression threshold fraction (default: 0.2 = 20%)'
+        required: false
+        type: number
+        default: 0.2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chat-perf-${{ github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  chat-perf:
+    name: Chat Perf – ${{ inputs.baseline_commit }} vs ${{ inputs.test_commit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout test commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.test_commit }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y \
+            build-essential pkg-config \
+            libx11-dev libx11-xcb-dev libxkbfile-dev \
+            libnotify-bin libkrb5-dev \
+            xvfb sqlite3 \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libdrm2 libxcomposite1 libxdamage1 \
+            libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
+            libasound2 libxshmfence1 libgtk-3-0
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install build dependencies
+        run: npm ci
+        working-directory: build
+
+      - name: Transpile source
+        run: npm run transpile-client
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run chat perf comparison
+        id: perf
+        run: |
+          SCENARIO_ARGS=""
+          if [[ -n "${{ inputs.scenarios }}" ]]; then
+            IFS=',' read -ra SCENS <<< "${{ inputs.scenarios }}"
+            for s in "${SCENS[@]}"; do
+              SCENARIO_ARGS="$SCENARIO_ARGS --scenario $(echo "$s" | xargs)"
+            done
+          fi
+
+          xvfb-run node scripts/chat-perf/test-chat-perf-regression.js \
+            --baseline-build "${{ inputs.baseline_commit }}" \
+            --build "${{ inputs.test_commit }}" \
+            --runs ${{ inputs.runs }} \
+            --threshold ${{ inputs.threshold }} \
+            --ci \
+            $SCENARIO_ARGS \
+            2>&1 | tee perf-output.log
+
+          # Extract exit code from the script (tee masks it)
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [[ -f .chat-perf-data/ci-summary.md ]]; then
+            cat .chat-perf-data/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ No summary file generated. Check perf-output.log artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Zip diagnostic outputs
+        if: always()
+        run: |
+          # Find the most recent timestamped run directory
+          RUN_DIR=$(ls -td .chat-perf-data/20*/ 2>/dev/null | head -1)
+          if [[ -n "$RUN_DIR" ]]; then
+            # Zip everything: results JSON, CPU profiles, traces, heap snapshots
+            cd .chat-perf-data
+            zip -r ../chat-perf-artifacts.zip \
+              "$(basename "$RUN_DIR")"/ \
+              ci-summary.md \
+              baseline-*.json \
+              2>/dev/null || true
+            cd ..
+          fi
+
+      - name: Upload perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chat-perf-${{ inputs.baseline_commit }}-vs-${{ inputs.test_commit }}
+          path: |
+            chat-perf-artifacts.zip
+            perf-output.log
+          retention-days: 30
+
+      - name: Fail on regression
+        if: steps.perf.outcome == 'failure'
+        run: |
+          echo "::error::Chat performance regression detected. See job summary for details."
+          exit 1

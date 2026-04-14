@@ -400,6 +400,108 @@ function removeOutliers(values) {
 }
 
 /**
+ * Regularized incomplete beta function I_x(a, b) via continued fraction.
+ * Used for computing t-distribution CDF / p-values.
+ * @param {number} x
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+function betaIncomplete(x, a, b) {
+	if (x <= 0) { return 0; }
+	if (x >= 1) { return 1; }
+	// Use symmetry relation when x > (a+1)/(a+b+2) for better convergence
+	if (x > (a + 1) / (a + b + 2)) {
+		return 1 - betaIncomplete(1 - x, b, a);
+	}
+	// Log-beta via Stirling: lnBeta(a,b) = lnGamma(a)+lnGamma(b)-lnGamma(a+b)
+	const lnBeta = lnGamma(a) + lnGamma(b) - lnGamma(a + b);
+	const front = Math.exp(Math.log(x) * a + Math.log(1 - x) * b - lnBeta) / a;
+	// Lentz's continued fraction
+	const maxIter = 200;
+	const eps = 1e-14;
+	let c = 1, d = 1 - (a + b) * x / (a + 1);
+	if (Math.abs(d) < eps) { d = eps; }
+	d = 1 / d;
+	let result = d;
+	for (let m = 1; m <= maxIter; m++) {
+		// Even step
+		let num = m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m));
+		d = 1 + num * d; if (Math.abs(d) < eps) { d = eps; } d = 1 / d;
+		c = 1 + num / c; if (Math.abs(c) < eps) { c = eps; }
+		result *= d * c;
+		// Odd step
+		num = -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1));
+		d = 1 + num * d; if (Math.abs(d) < eps) { d = eps; } d = 1 / d;
+		c = 1 + num / c; if (Math.abs(c) < eps) { c = eps; }
+		const delta = d * c;
+		result *= delta;
+		if (Math.abs(delta - 1) < eps) { break; }
+	}
+	return front * result;
+}
+
+/**
+ * Log-gamma via Lanczos approximation.
+ * @param {number} z
+ * @returns {number}
+ */
+function lnGamma(z) {
+	const g = 7;
+	const coef = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+		771.32342877765313, -176.61502916214059, 12.507343278686905,
+		-0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+	if (z < 0.5) {
+		return Math.log(Math.PI / Math.sin(Math.PI * z)) - lnGamma(1 - z);
+	}
+	z -= 1;
+	let x = coef[0];
+	for (let i = 1; i < g + 2; i++) { x += coef[i] / (z + i); }
+	const t = z + g + 0.5;
+	return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+/**
+ * Two-tailed p-value from t-distribution.
+ * @param {number} t - t-statistic
+ * @param {number} df - degrees of freedom
+ * @returns {number}
+ */
+function tDistPValue(t, df) {
+	const x = df / (df + t * t);
+	return betaIncomplete(x, df / 2, 0.5);
+}
+
+/**
+ * Welch's t-test for two independent samples (unequal variance).
+ * @param {number[]} a - Sample 1 (e.g., baseline values)
+ * @param {number[]} b - Sample 2 (e.g., current values)
+ * @returns {{ t: number, df: number, pValue: number, significant: boolean, confidence: string } | null}
+ */
+function welchTTest(a, b) {
+	if (a.length < 2 || b.length < 2) { return null; }
+	const meanA = a.reduce((s, v) => s + v, 0) / a.length;
+	const meanB = b.reduce((s, v) => s + v, 0) / b.length;
+	const varA = a.reduce((s, v) => s + (v - meanA) ** 2, 0) / (a.length - 1);
+	const varB = b.reduce((s, v) => s + (v - meanB) ** 2, 0) / (b.length - 1);
+	const seA = varA / a.length;
+	const seB = varB / b.length;
+	const seDiff = Math.sqrt(seA + seB);
+	if (seDiff === 0) { return null; }
+	const t = (meanB - meanA) / seDiff;
+	// Welch-Satterthwaite degrees of freedom
+	const df = (seA + seB) ** 2 / ((seA ** 2) / (a.length - 1) + (seB ** 2) / (b.length - 1));
+	const pValue = tDistPValue(t, df);
+	const significant = pValue < 0.05;
+	let confidence;
+	if (pValue < 0.01) { confidence = 'high'; }
+	else if (pValue < 0.05) { confidence = 'medium'; }
+	else if (pValue < 0.1) { confidence = 'low'; }
+	else { confidence = 'none'; }
+	return { t: Math.round(t * 100) / 100, df: Math.round(df * 10) / 10, pValue: Math.round(pValue * 1000) / 1000, significant, confidence };
+}
+
+/**
  * Compute robust stats for a metric array.
  * @param {number[]} raw
  */
@@ -482,6 +584,7 @@ const METRIC_DEFS = [
 	['instructionCollectionTime', 'timing', 'ms'],
 	['agentInvokeTime', 'timing', 'ms'],
 	['heapDelta', 'memory', 'MB'],
+	['gcDurationMs', 'memory', 'ms'],
 	['layoutCount', 'rendering', ''],
 	['recalcStyleCount', 'rendering', ''],
 	['forcedReflowCount', 'rendering', ''],
@@ -504,6 +607,7 @@ module.exports = {
 	median,
 	removeOutliers,
 	robustStats,
+	welchTTest,
 	linearRegressionSlope,
 	summarize,
 	markDuration,
