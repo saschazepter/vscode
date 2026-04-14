@@ -196,7 +196,6 @@ const enum AllowedShellType {
 	Xonsh = 'xonsh',
 
 	// AI CLIs
-	// Detected via OSC title sequence;
 	Claude = 'claude',
 	Codex = 'codex',
 	Copilot = 'copilot',
