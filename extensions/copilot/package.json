@@ -1539,6 +1539,16 @@
 						"when": "github.copilot.sessionSearch.enabled"
 					},
 					{
+						"name": "chronicle:standup",
+						"description": "%copilot.chronicle.standup.description%",
+						"when": "github.copilot.sessionSearch.enabled"
+					},
+					{
+						"name": "chronicle:tips",
+						"description": "%copilot.chronicle.tips.description%",
+						"when": "github.copilot.sessionSearch.enabled"
+					},
+					{
 						"name": "explain",
 						"description": "%copilot.workspace.explain.description%"
 					},
@@ -4789,14 +4799,12 @@
 						"enum": [
 							"none",
 							"local",
-							"user",
-							"repo_and_user"
+							"user"
 						],
 						"enumDescriptions": [
 							"%github.copilot.config.sessionSearch.storageLevel.none%",
 							"%github.copilot.config.sessionSearch.storageLevel.local%",
-							"%github.copilot.config.sessionSearch.storageLevel.user%",
-							"%github.copilot.config.sessionSearch.storageLevel.repo_and_user%"
+							"%github.copilot.config.sessionSearch.storageLevel.user%"
 						],
 						"default": "none",
 						"scope": "resource",

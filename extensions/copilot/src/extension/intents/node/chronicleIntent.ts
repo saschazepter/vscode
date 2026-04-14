@@ -35,6 +35,7 @@ import { ChroniclePrompt } from '../../prompts/node/panel/chroniclePrompt';
 /** DuckDB-dialect sessions query (cloud uses DuckDB, not SQLite). */
 const SESSIONS_QUERY_DUCKDB = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
 	FROM sessions
+	WHERE updated_at >= now() - INTERVAL '1 day'
 	ORDER BY updated_at DESC
 	LIMIT 50`;
 
@@ -88,7 +89,8 @@ export class ChronicleIntent implements IIntent {
 			return {};
 		}
 
-		const { subcommand, rest } = this._parseSubcommand(request.prompt);
+		// Route by command name (e.g. 'chronicle:standup') or fall back to parsing the prompt
+		const { subcommand, rest } = this._resolveSubcommand(request);
 
 		switch (subcommand) {
 			case 'standup':
@@ -96,15 +98,31 @@ export class ChronicleIntent implements IIntent {
 			case 'tips':
 				return this._handleTips(rest, stream, request, token, conversation, documentContext, location, chatTelemetry);
 			case 'improve':
-				stream.markdown(l10n.t('`/chronicle {0}` is not yet implemented. Try `/chronicle standup` or `/chronicle tips`.', subcommand));
+				stream.markdown(l10n.t('`/chronicle {0}` is not yet implemented. Try `/chronicle:standup` or `/chronicle:tips`.', subcommand));
 				return {};
 			default:
 				return this._handleFreeForm(request.prompt ?? '', stream, request, token, conversation, documentContext, location, chatTelemetry);
 		}
 	}
 
-	private _parseSubcommand(prompt: string | undefined): { subcommand: ChronicleSubcommand | string; rest: string | undefined } {
-		const trimmed = prompt?.trim() ?? '';
+	/**
+	 * Resolve the subcommand from the request command (e.g. 'chronicle:standup')
+	 * or fall back to parsing the prompt text for backwards compatibility.
+	 */
+	private _resolveSubcommand(request: vscode.ChatRequest): { subcommand: ChronicleSubcommand | string; rest: string | undefined } {
+		// Prefer explicit command routing (e.g. /chronicle:standup)
+		if (request.command) {
+			const colonIdx = request.command.indexOf(':');
+			if (colonIdx !== -1) {
+				return {
+					subcommand: request.command.slice(colonIdx + 1).toLowerCase(),
+					rest: request.prompt?.trim() || undefined,
+				};
+			}
+		}
+
+		// Fall back to parsing the prompt (for bare /chronicle or /chronicle standup)
+		const trimmed = request.prompt?.trim() ?? '';
 		if (!trimmed) {
 			return { subcommand: 'standup', rest: undefined };
 		}

@@ -48,6 +48,8 @@ export const agentsToCommands: Partial<Record<Intent, Record<string, Intent>>> =
 		'setupTests': Intent.SetupTests,
 		'compact': Intent.Agent,
 		'chronicle': Intent.Chronicle,
+		'chronicle:standup': Intent.Chronicle,
+		'chronicle:tips': Intent.Chronicle,
 	},
 	[Intent.VSCode]: {
 		'search': Intent.Search,

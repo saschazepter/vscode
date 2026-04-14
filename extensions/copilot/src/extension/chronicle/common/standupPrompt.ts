@@ -16,9 +16,10 @@ export interface AnnotatedRef extends RefRow {
 	source: 'vscode' | 'cli' | 'cloud';
 }
 
-/** Sessions query — SQLite dialect, no time filter (demo) */
+/** Sessions query — SQLite dialect, last 24 hours */
 export const SESSIONS_QUERY_SQLITE = `SELECT id, summary, branch, repository, cwd, host_type, created_at, updated_at
 	FROM sessions
+	WHERE updated_at >= datetime('now', '-1 day')
 	ORDER BY updated_at DESC`;
 
 /** Build refs query for a list of session IDs */
@@ -77,7 +78,7 @@ export function buildStandupPrompt(
 
 	let prompt = `The user ran /chronicle standup. Generate a concise standup update from the pre-fetched data below.
 
-## Pre-fetched Session Data (last 7 days)
+## Pre-fetched Session Data (last 24 hours)
 
 ### Sessions (${sessions.length})
 ${sessionLines.join('\n')}
