@@ -1441,6 +1441,29 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 	}
 
 	/**
+	 * Removes a markdown edit pill child by its part ID (codeblocksPartId).
+	 * This cleans up the thinking container's internal bookkeeping
+	 * (appendedItemCount, diffStats, lazy items) when a pinned markdown
+	 * edit pill is being replaced by a re-rendered version.
+	 */
+	public removeEditPillByPartId(partId: string): void {
+		// Remove from lazy items if not yet materialized
+		const lazyIndex = this.lazyItems.findIndex(item => item.kind === 'tool' && item.toolInvocationId === partId);
+		if (lazyIndex !== -1) {
+			this.lazyItems.splice(lazyIndex, 1);
+		}
+
+		// Clean up diff stats for this pill
+		if (this.diffStatsByPartId.delete(partId)) {
+			this.updateAggregatedDiff();
+		}
+
+		this.appendedItemCount = Math.max(0, this.appendedItemCount - 1);
+		this.updateDropdownClickability();
+		this._onDidChangeHeight.fire();
+	}
+
+	/**
 	 * removes/re-establishes a lazy item from the thinking container
 	 * this is needed so we can check if there are confirmations still needed
 	 */
