@@ -830,5 +830,126 @@
 			"",
 			"THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
 		]
+	},
+	{
+		// Reason: No repository URL in npm metadata; package is part of the microsoft/dev-tunnels monorepo.
+		"name": "@microsoft/dev-tunnels-connections",
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
+	},
+	{
+		// Reason: No repository URL in npm metadata; package is part of the microsoft/dev-tunnels monorepo.
+		"name": "@microsoft/dev-tunnels-contracts",
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
+	},
+	{
+		// Reason: No repository URL in npm metadata; package is part of the microsoft/dev-tunnels monorepo.
+		"name": "@microsoft/dev-tunnels-management",
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
+	},
+	{
+		// Reason: Apache-2.0 LICENSE file at v6.1.1 uses the unfilled template placeholder
+		// "Copyright [yyyy] [name of copyright owner]". Author from package.json is "Google LLC".
+		"name": "gcp-metadata",
+		"prependLicenseText": [
+			"Copyright 2018 Google LLC"
+		]
+	},
+	{
+		// Reason: License file is named LICENCE.md (not LICENSE). Using URI pinned to v9.3.1 commit.
+		"name": "bignumber.js",
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/MikeMcl/bignumber.js/a7bc1f175c1e40db1abe8cebd52b60fc5381f487/LICENCE.md"
+	},
+	{
+		// Reason: No LICENSE file; full MIT license text is in README.md under the LICENSE heading.
+		"name": "brorand",
+		"fullLicenseText": [
+			"MIT License",
+			"",
+			"Copyright Fedor Indutny, 2014.",
+			"",
+			"Permission is hereby granted, free of charge, to any person obtaining a",
+			"copy of this software and associated documentation files (the",
+			"\"Software\"), to deal in the Software without restriction, including",
+			"without limitation the rights to use, copy, modify, merge, publish,",
+			"distribute, sublicense, and/or sell copies of the Software, and to permit",
+			"persons to whom the Software is furnished to do so, subject to the",
+			"following conditions:",
+			"",
+			"The above copyright notice and this permission notice shall be included",
+			"in all copies or substantial portions of the Software.",
+			"",
+			"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS",
+			"OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF",
+			"MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN",
+			"NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,",
+			"DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR",
+			"OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE",
+			"USE OR OTHER DEALINGS IN THE SOFTWARE."
+		]
+	},
+	{
+		// Reason: No LICENSE file; full MIT license text is in README.md under the LICENSE heading.
+		"name": "miller-rabin",
+		"fullLicenseText": [
+			"MIT License",
+			"",
+			"Copyright Fedor Indutny, 2014.",
+			"",
+			"Permission is hereby granted, free of charge, to any person obtaining a",
+			"copy of this software and associated documentation files (the",
+			"\"Software\"), to deal in the Software without restriction, including",
+			"without limitation the rights to use, copy, modify, merge, publish,",
+			"distribute, sublicense, and/or sell copies of the Software, and to permit",
+			"persons to whom the Software is furnished to do so, subject to the",
+			"following conditions:",
+			"",
+			"The above copyright notice and this permission notice shall be included",
+			"in all copies or substantial portions of the Software.",
+			"",
+			"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS",
+			"OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF",
+			"MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN",
+			"NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,",
+			"DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR",
+			"OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE",
+			"USE OR OTHER DEALINGS IN THE SOFTWARE."
+		]
+	},
+	{
+		// Reason: No LICENSE file in repo. BSD-2-Clause per package.json; author and
+		// year from initial commit (2013) and package.json author field.
+		"name": "emitter-listener",
+		"fullLicenseText": [
+			"Copyright (c) 2013, Forrest L Norvell <ogd@aoaioxxysz.net>",
+			"All rights reserved.",
+			"",
+			"Redistribution and use in source and binary forms, with or without",
+			"modification, are permitted provided that the following conditions are met:",
+			"",
+			"1. Redistributions of source code must retain the above copyright notice,",
+			"   this list of conditions and the following disclaimer.",
+			"",
+			"2. Redistributions in binary form must reproduce the above copyright notice,",
+			"   this list of conditions and the following disclaimer in the documentation",
+			"   and/or other materials provided with the distribution.",
+			"",
+			"THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+			"AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+			"IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE",
+			"ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE",
+			"LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR",
+			"CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF",
+			"SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS",
+			"INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN",
+			"CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)",
+			"ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE",
+			"POSSIBILITY OF SUCH DAMAGE."
+		]
+	},
+	{
+		// Reason: npm repository URL (crypto-browserify/randombytes) redirects to
+		// browserify/randombytes. Using canonical repo with pinned commit SHA.
+		"name": "randombytes",
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/browserify/randombytes/b4eb4126fccc503e375853ca7b3e96aaa34af9e6/LICENSE"
 	}
 ]
