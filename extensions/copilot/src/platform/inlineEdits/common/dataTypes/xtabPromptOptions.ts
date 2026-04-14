@@ -122,6 +122,7 @@ export enum AggressivenessLevel {
 /**
  * Controls the scope of the early divergence cancellation check.
  *
+ * - `Off`: disable early divergence cancellation checks.
  * - `Cursor`: only check the cursor line for divergence (original behavior).
  * - `EditWindow`: check every line in the edit window for divergence.
  */
@@ -129,6 +130,10 @@ export enum EarlyDivergenceCancellationMode {
 	Cursor = 'cursor',
 	EditWindow = 'editWindow',
 	Off = 'off',
+}
+
+export namespace EarlyDivergenceCancellationMode {
+	export const VALIDATOR = vEnum(EarlyDivergenceCancellationMode.Cursor, EarlyDivergenceCancellationMode.EditWindow, EarlyDivergenceCancellationMode.Off);
 }
 
 export namespace AggressivenessSetting {

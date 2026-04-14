@@ -51,6 +51,7 @@ import { Range } from '../../../util/vs/editor/common/core/range';
 import { LineRange } from '../../../util/vs/editor/common/core/ranges/lineRange';
 import { OffsetRange } from '../../../util/vs/editor/common/core/ranges/offsetRange';
 import { StringText } from '../../../util/vs/editor/common/core/text/abstractText';
+import { PositionOffsetTransformer } from '../../../util/vs/editor/common/core/text/positionToOffset';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { Position as VscodePosition } from '../../../vscodeTypes';
 import { DelaySession } from '../../inlineEdits/common/delay';
@@ -994,10 +995,23 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			// We check compatibility using `isModelLineCompatible`: the user's
 			// line change must be contained within the model's line change range
 			// and match via the helper's `startsWith` / auto-close subsequence rules.
-			// const earlyDivergenceCancellationRaw =
-			const earlyDivergenceMode = backwardCompatSetting<boolean | undefined, EarlyDivergenceCancellationMode>(
+			const earlyDivergenceMode = backwardCompatSetting<boolean | EarlyDivergenceCancellationMode | undefined, EarlyDivergenceCancellationMode>(
 				this.configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsXtabEarlyCursorLineDivergenceCancellation, this.expService),
-				(value) => (value === false || value === undefined) ? EarlyDivergenceCancellationMode.Off : (value === true ? EarlyDivergenceCancellationMode.Cursor : value)
+				(value) => {
+					switch (value) {
+						case false:
+						case undefined:
+							return EarlyDivergenceCancellationMode.Off;
+						case true:
+							return EarlyDivergenceCancellationMode.Cursor;
+						case EarlyDivergenceCancellationMode.Off:
+						case EarlyDivergenceCancellationMode.Cursor:
+						case EarlyDivergenceCancellationMode.EditWindow:
+							return value;
+						default:
+							return EarlyDivergenceCancellationMode.Off;
+					}
+				}
 			);
 
 			let lineDiverged = false;
@@ -1688,7 +1702,15 @@ async function* linesWithIntermediateEditDivergenceCheck(
 
 	const transformer = request.documentBeforeEdits.getTransformer();
 
+	// Precompute the post-edit document once to avoid O(lines * docSize) in EditWindow mode.
+	const currentDoc = intermediateEdit.apply(transformer.text);
+	const currentTransformer = new PositionOffsetTransformer(currentDoc);
+	const precomputed = { currentDoc, currentTransformer };
+
 	const shouldCheckLine = (lineIdx: number): boolean => {
+		if (lineIdx >= editWindowLines.length) {
+			return false;
+		}
 		switch (mode) {
 			case EarlyDivergenceCancellationMode.Cursor:
 				return lineIdx === cursorOriginalLinesOffset;
@@ -1701,7 +1723,7 @@ async function* linesWithIntermediateEditDivergenceCheck(
 	for await (const line of cleanedLinesStream) {
 		if (shouldCheckLine(lineIdx)) {
 			const docLineIdx = editWindowLineRange.start + lineIdx;
-			const currentLine = getCurrentLine(transformer, docLineIdx, intermediateEdit);
+			const currentLine = getCurrentLine(transformer, docLineIdx, intermediateEdit, precomputed);
 			if (currentLine !== undefined) {
 				const originalLine = editWindowLines[lineIdx];
 				if (currentLine !== originalLine // user changed this line

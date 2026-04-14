@@ -27,6 +27,7 @@ export function getCurrentLine(
 	originalDoc: PositionOffsetTransformer,
 	docLineIdx: number,
 	intermediateEdit: StringEdit,
+	precomputed?: { currentDoc: string; currentTransformer: PositionOffsetTransformer },
 ): string | undefined {
 	const lineNumber = docLineIdx + 1; // 1-based
 	const lineCount = originalDoc.textLength.lineCount + 1;
@@ -53,8 +54,8 @@ export function getCurrentLine(
 	}
 
 	const mappedOffset = lineStartOffset + delta;
-	const currentDoc = intermediateEdit.apply(originalDoc.text);
-	const currentTransformer = new PositionOffsetTransformer(currentDoc);
+	const currentDoc = precomputed?.currentDoc ?? intermediateEdit.apply(originalDoc.text);
+	const currentTransformer = precomputed?.currentTransformer ?? new PositionOffsetTransformer(currentDoc);
 
 	// Map the offset back to a position in the current document, then extract
 	// the full line content.
