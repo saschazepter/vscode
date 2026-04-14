@@ -301,8 +301,11 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 			shellArgs = Array.isArray(profiles?.[defaultProfileName]?.args) ? profiles![defaultProfileName].args! : [];
 		}
 
-		// Detect shell type from the resolved shell path
-		const shellBasename = path.basename(shellPath).toLowerCase().replace(/\.exe$/, '');
+		// Detect shell type from the resolved shell path basename,
+		// matching how getShellIntegrationInjection() does it in terminalEnvironment.ts
+		const shellBasename = process.platform === 'win32'
+			? path.basename(shellPath).toLowerCase()
+			: path.basename(shellPath);
 		const iconPath = COPILOT_ICON;
 
 		if (shellBasename === 'zsh' && this.shellScriptPath) {
@@ -314,7 +317,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.shellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if ((shellBasename === 'bash' || shellBasename.includes('bash')) && this.shellScriptPath) {
+		} else if ((shellBasename === 'bash' || shellBasename === 'bash.exe') && this.shellScriptPath) {
 			return {
 				shell: 'bash',
 				shellPath,
@@ -337,7 +340,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.shellScriptPath,
 				exitCommand: `; exit`
 			};
-		} else if (shellBasename === 'pwsh' && this.powershellScriptPath) {
+		} else if ((shellBasename === 'pwsh' || shellBasename === 'pwsh.exe') && this.powershellScriptPath) {
 			return {
 				shell: 'pwsh',
 				shellPath,
@@ -346,7 +349,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.powershellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (shellBasename === 'powershell' && this.powershellScriptPath) {
+		} else if ((shellBasename === 'powershell' || shellBasename === 'powershell.exe') && this.powershellScriptPath) {
 			return {
 				shell: 'powershell',
 				shellPath,
@@ -355,7 +358,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.powershellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (shellBasename === 'cmd' && this.shellScriptPath && configPlatform === 'windows') {
+		} else if ((shellBasename === 'cmd' || shellBasename === 'cmd.exe') && this.shellScriptPath && configPlatform === 'windows') {
 			return {
 				shell: 'cmd',
 				shellPath,
