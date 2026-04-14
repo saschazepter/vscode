@@ -59,7 +59,7 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 			return;
 		}
 
-		console.log('[WebHostDiscovery] Web detected, starting discovery...');
+		this._logService.info('[WebHostDiscovery] Web detected, starting discovery...');
 		this._discoverHosts();
 
 		// If the walkthrough handles auth, re-run discovery when a GitHub
@@ -113,7 +113,6 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 				}
 			}
 		} catch (err) {
-			console.log('[WebHostDiscovery] Discovery command failed (expected on desktop):', err);
 			this._logService.trace('[WebHostDiscovery] Discovery command not available:', err);
 		}
 	}
