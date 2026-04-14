@@ -92,7 +92,7 @@ export class CopilotCLIPromptResolver {
 				// Exclude plan prompt file from Core.
 				const directory = URI.file(path.dirname(promptFileUri.fsPath));
 				if (promptFileUri.fsPath.endsWith('plan.prompt.md') && path.basename(directory.fsPath) === 'prompts' && extUriBiasedIgnorePathCase.isEqualOrParent(this.extensionContext.extensionUri, directory)) {
-					return false;
+					return;
 				}
 			}
 			// GitHub pull request references
