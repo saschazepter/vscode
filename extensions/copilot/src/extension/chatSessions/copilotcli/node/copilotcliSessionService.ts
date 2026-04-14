@@ -79,6 +79,9 @@ export type ICreateSessionOptions = ISessionOptions & { sessionId?: string };
 export interface ICopilotCLISessionService {
 	readonly _serviceBrand: undefined;
 
+	/**
+	 * @deprecated Kept only for non-controller API
+	 */
 	onDidChangeSessions: Event<void>;
 	onDidDeleteSession: Event<string>;
 	onDidChangeSession: Event<ICopilotCLISessionItem>;
