@@ -12,6 +12,7 @@ import { getOrderedRepoInfosFromContext, IGitService, normalizeFetchUrl, RepoCon
 import { Change, Repository } from '../../../platform/git/vscode/git';
 import { ILogService } from '../../../platform/log/common/logService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
+import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
 import { IWorkspaceFileIndex } from '../../../platform/workspaceChunkSearch/node/workspaceFileIndex';
 
 // Create a mapping for the git status enum to put the actual status string in telemetry
@@ -372,12 +373,12 @@ export class RepoInfoTelemetry {
 				};
 			}
 
-			const rootPath = repoContext.rootUri.path.endsWith('/') ? repoContext.rootUri.path : repoContext.rootUri.path + '/';
+			const rootUri = repoContext.rootUri;
 			const fileRelativePaths = JSON.stringify(
-				changes.map(c => {
-					const filePath = c.uri.path;
-					return filePath.startsWith(rootPath) ? filePath.slice(rootPath.length) : filePath;
-				})
+				changes
+					.filter(c => extUriBiasedIgnorePathCase.isEqualOrParent(c.uri, rootUri))
+					.map(c => extUriBiasedIgnorePathCase.relativePath(rootUri, c.uri))
+					.filter((p): p is string => p !== undefined)
 			);
 
 			const diffsJSON = diffs.length > 0 ? JSON.stringify(diffs) : undefined;
