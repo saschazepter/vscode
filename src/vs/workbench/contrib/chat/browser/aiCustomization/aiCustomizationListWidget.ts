@@ -50,9 +50,7 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { AICustomizationItemNormalizer } from './aiCustomizationItemNormalizer.js';
-import { IAICustomizationItemSource, IAICustomizationListItem } from './aiCustomizationListItem.js';
-import { ProviderCustomizationItemSource } from './providerCustomizationItemSource.js';
+import { AICustomizationItemNormalizer, IAICustomizationItemSource, IAICustomizationListItem, ProviderCustomizationItemSource } from './aiCustomizationItemSource.js';
 import { PromptsServiceCustomizationItemProvider } from './promptsServiceCustomizationItemProvider.js';
 
 export { truncateToFirstLine } from './aiCustomizationListWidgetUtils.js';

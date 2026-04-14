@@ -18,19 +18,15 @@ import { HookType, HOOK_METADATA } from '../../common/promptSyntax/hookTypes.js'
 import { formatHookCommandLabel } from '../../common/promptSyntax/hookSchema.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
-import { IExternalCustomizationItem, IExternalCustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
+import { ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
-import { expandHookFileItems, getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSourceUtils.js';
-
-interface IPromptsServiceCustomizationItem extends IExternalCustomizationItem {
-	readonly storage?: PromptsStorage;
-}
+import { expandHookFileItems, getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
 
 /**
  * Adapts the rich promptsService model to the same provider-shaped items
  * contributed by external customization providers.
  */
-export class PromptsServiceCustomizationItemProvider implements IExternalCustomizationItemProvider {
+export class PromptsServiceCustomizationItemProvider implements ICustomizationItemProvider {
 
 	readonly onDidChange: Event<void>;
 
@@ -51,7 +47,7 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		);
 	}
 
-	async provideChatSessionCustomizations(token: CancellationToken): Promise<IExternalCustomizationItem[]> {
+	async provideChatSessionCustomizations(token: CancellationToken): Promise<ICustomizationItem[]> {
 		const itemSets = await Promise.all([
 			this.provideCustomizations(PromptsType.agent, token),
 			this.provideCustomizations(PromptsType.skill, token),
@@ -62,8 +58,8 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		return itemSets.flat();
 	}
 
-	async provideCustomizations(promptType: PromptsType, token: CancellationToken = CancellationToken.None): Promise<IExternalCustomizationItem[]> {
-		const items: IPromptsServiceCustomizationItem[] = [];
+	private async provideCustomizations(promptType: PromptsType, token: CancellationToken = CancellationToken.None): Promise<ICustomizationItem[]> {
+		const items: ICustomizationItem[] = [];
 		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
 		const extensionInfoByUri = new ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>();
 
@@ -157,15 +153,15 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 			await this.fetchPromptServiceInstructions(items, extensionInfoByUri, disabledUris, promptType);
 		}
 
-		return this.toProviderItems(this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType));
+		return this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType);
 	}
 
-	private async fetchPromptServiceHooks(items: IPromptsServiceCustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
+	private async fetchPromptServiceHooks(items: ICustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
 		const hookFiles = await this.promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
 
 		// Convert hook files to provider-shaped items for shared expansion.
 		// Plugin hooks are pre-expanded by plugin manifests and kept as-is.
-		const hookFileItems: IExternalCustomizationItem[] = hookFiles
+		const hookFileItems: ICustomizationItem[] = hookFiles
 			.filter(f => f.storage !== PromptsStorage.plugin)
 			.map(f => ({
 				uri: f.uri,
@@ -225,7 +221,7 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		}
 	}
 
-	private async fetchPromptServiceInstructions(items: IPromptsServiceCustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>, disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
+	private async fetchPromptServiceInstructions(items: ICustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>, disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
 		const instructionFiles = await this.promptsService.getInstructionFiles(CancellationToken.None);
 		for (const file of instructionFiles) {
 			if (file.extension) {
@@ -287,7 +283,7 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		}
 	}
 
-	private applyBuiltinGroupKeys(items: IPromptsServiceCustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>): IPromptsServiceCustomizationItem[] {
+	private applyBuiltinGroupKeys(items: ICustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>): ICustomizationItem[] {
 		return items.map(item => {
 			if (item.storage !== PromptsStorage.extension) {
 				return item;
@@ -306,9 +302,9 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		});
 	}
 
-	private applyLocalFilters(groupedItems: IPromptsServiceCustomizationItem[], promptType: PromptsType): IPromptsServiceCustomizationItem[] {
+	private applyLocalFilters(groupedItems: ICustomizationItem[], promptType: PromptsType): ICustomizationItem[] {
 		const filter = this.workspaceService.getStorageSourceFilter(promptType);
-		const withStorage = groupedItems.filter((item): item is IPromptsServiceCustomizationItem & { readonly storage: PromptsStorage } => item.storage !== undefined);
+		const withStorage = groupedItems.filter((item): item is ICustomizationItem & { readonly storage: PromptsStorage } => item.storage !== undefined);
 		const withoutStorage = groupedItems.filter(item => item.storage === undefined);
 		let items = [...applyStorageSourceFilter(withStorage, filter), ...withoutStorage];
 
@@ -342,13 +338,6 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		}
 
 		return items;
-	}
-
-	private toProviderItems(items: readonly IPromptsServiceCustomizationItem[]): IExternalCustomizationItem[] {
-		return items.map(({ storage, ...item }) => ({
-			...item,
-			groupKey: item.groupKey ?? storage,
-		}));
 	}
 
 }
