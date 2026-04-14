@@ -45,6 +45,9 @@ import { ICustomizationHarnessService } from '../../../common/customizationHarne
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { IStorageService, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
+import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
+import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
+import { IAgentHostSessionWorkingDirectoryResolver } from '../../../browser/agentSessions/agentHost/agentHostSessionWorkingDirectoryResolver.js';
 
 // ---- Mock agent host service ------------------------------------------------
 
@@ -187,6 +190,20 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 			},
 		};
 	}
+	override getSubscriptionUnmanaged<T>(_kind: StateComponents, resource: URI): IAgentSubscription<T> | undefined {
+		const entry = this._liveSubscriptions.get(resource.toString());
+		if (!entry) {
+			return undefined;
+		}
+		const self = this;
+		return {
+			get value() { return self._liveSubscriptions.get(resource.toString())?.state as unknown as T; },
+			get verifiedValue() { return self._liveSubscriptions.get(resource.toString())?.state as unknown as T; },
+			onDidChange: entry.emitter.event as unknown as Event<T>,
+			onWillApplyAction: Event.None,
+			onDidApplyAction: Event.None,
+		} satisfies IAgentSubscription<T>;
+	}
 	override dispatch(action: ISessionAction | ITerminalAction): void {
 		this.dispatchedActions.push({ action, clientId: this.clientId, clientSeq: this._nextSeq++ });
 		// Apply state-management actions optimistically so state-dependent
@@ -243,7 +260,7 @@ class MockChatAgentService extends mock<IChatAgentService>() {
 
 // ---- Helpers ----------------------------------------------------------------
 
-function createTestServices(disposables: DisposableStore) {
+function createTestServices(disposables: DisposableStore, workingDirectoryResolver?: { resolve(sessionResource: URI): URI | undefined }) {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
 	const agentHostService = new MockAgentHostService();
@@ -289,6 +306,17 @@ function createTestServices(disposables: DisposableStore) {
 	});
 	instantiationService.stub(IAgentPluginService, {
 		plugins: observableValue('plugins', []),
+	});
+	instantiationService.stub(ITerminalChatService, {
+		onDidContinueInBackground: Event.None,
+		registerTerminalInstanceWithToolSession: () => { },
+	});
+	instantiationService.stub(IAgentHostTerminalService, {
+		reviveTerminal: async () => undefined!,
+	});
+	instantiationService.stub(IAgentHostSessionWorkingDirectoryResolver, {
+		registerResolver: () => toDisposable(() => { }),
+		resolve: sessionResource => workingDirectoryResolver?.resolve(sessionResource),
 	});
 
 	return { instantiationService, agentHostService, chatAgentService };
@@ -1580,6 +1608,30 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
 			assert.strictEqual(agentHostService.createSessionCalls[0].workingDirectory?.toString(), URI.file('/custom/working/dir').toString());
+		}));
+
+		test('handler uses registered working directory resolver', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const resolvedWorkingDirectory = URI.file('/resolved/working/dir');
+			const { instantiationService, agentHostService } = createTestServices(disposables, {
+				resolve: () => resolvedWorkingDirectory,
+			});
+
+			const handler = disposables.add(instantiationService.createInstance(AgentHostSessionHandler, {
+				provider: 'copilot' as const,
+				agentId: 'workdir-resolver-test',
+				sessionType: 'workdir-resolver-test',
+				fullName: 'Test',
+				description: 'test',
+				connection: agentHostService,
+				connectionAuthority: 'local',
+			}));
+
+			const { turnPromise, session, turnId, fire } = await startTurn(handler, agentHostService, disposables);
+			fire({ type: 'session/turnComplete', session, turnId } as ISessionAction);
+			await turnPromise;
+
+			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
+			assert.strictEqual(agentHostService.createSessionCalls[0].workingDirectory?.toString(), resolvedWorkingDirectory.toString());
 		}));
 
 		test('handler passes vscode-agent-host URI as-is to createSession', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
