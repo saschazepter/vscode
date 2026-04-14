@@ -125,7 +125,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 		const session = this.sessionsService.activeSession.get();
 		const sessionUri = session?.resource;
 		const repo = session?.workspace.get()?.repositories[0];
-		if (!sessionUri || !repo?.uri) {
+		if (!repo?.uri) {
 			return;
 		}
 
@@ -143,7 +143,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 		const session = this.sessionsService.activeSession.get();
 		const sessionUri = session?.resource;
 		const repo = session?.workspace.get()?.repositories[0];
-		if (!sessionUri || !repo?.uri) {
+		if (!repo?.uri) {
 			return;
 		}
 
@@ -171,7 +171,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 * Commits a single file to the main repository and optionally the worktree.
 	 * Copies the file content between trees when needed.
 	 */
-	private async commitFileToRepos(sessionUri: URI, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
+	private async commitFileToRepos(sessionUri: URI | undefined, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
 		const relPath = this.getRelativePath(fileUri, repositoryUri, worktreeUri);
 		if (!relPath) {
 			return;
@@ -222,7 +222,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 * the worktree. The file is already deleted from disk before this is called;
 	 * `git add` on a deleted path stages the removal.
 	 */
-	private async commitDeletionToRepos(sessionUri: URI, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
+	private async commitDeletionToRepos(sessionUri: URI | undefined, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
 		const relPath = this.getRelativePath(fileUri, repositoryUri, worktreeUri);
 		if (!relPath) {
 			return;
