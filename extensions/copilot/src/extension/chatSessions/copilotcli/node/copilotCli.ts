@@ -85,8 +85,8 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 			});
 		this._register(this._authenticationService.onDidAuthenticationChange(() => {
 			// Auth changed which means models could've changed. Fire the event
-			this._onDidChange.fire();
 			this._availableModels = undefined;
+			this._onDidChange.fire();
 		}));
 	}
 	async resolveModel(modelId: string): Promise<string | undefined> {
