@@ -61,6 +61,7 @@ import { IMarkdownRendererService } from '../../platform/markdown/browser/markdo
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
+import { AgenticPaneCompositePartService } from './paneCompositePartService.js';
 
 //#region Workbench Options
 
@@ -399,6 +400,11 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		for (const [id, descriptor] of contributedServices) {
 			serviceCollection.set(id, descriptor);
 		}
+
+		// The sessions workbench depends on ChatBar-specific pane composite parts
+		// during block-startup contributions, so install the sessions descriptor
+		// explicitly instead of relying on global singleton import ordering.
+		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(AgenticPaneCompositePartService, []));
 
 		const instantiationService = new InstantiationService(serviceCollection, true);
 
