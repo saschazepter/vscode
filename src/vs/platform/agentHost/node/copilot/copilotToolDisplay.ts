@@ -39,6 +39,7 @@ const enum CopilotToolName {
 
 	View = 'view',
 	Edit = 'edit',
+	Create = 'create',
 	Write = 'write',
 	Grep = 'grep',
 	Glob = 'glob',
@@ -75,6 +76,7 @@ interface ICopilotGlobToolArgs {
 /** Set of tool names that perform file edits. */
 const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set([
 	CopilotToolName.Edit,
+	CopilotToolName.Create,
 	CopilotToolName.Write,
 	CopilotToolName.Patch,
 ]);
@@ -161,6 +163,7 @@ export function getToolDisplayName(toolName: string): string {
 		case CopilotToolName.ListPowerShell: return localize('toolName.listShells', "List Shells");
 		case CopilotToolName.View: return localize('toolName.view', "View File");
 		case CopilotToolName.Edit: return localize('toolName.edit', "Edit File");
+		case CopilotToolName.Create: return localize('toolName.create', "Create File");
 		case CopilotToolName.Write: return localize('toolName.write', "Write File");
 		case CopilotToolName.Grep: return localize('toolName.grep', "Search");
 		case CopilotToolName.Glob: return localize('toolName.glob', "Find Files");
@@ -195,6 +198,13 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 				return localize('toolInvoke.editFile', "Editing {0}", args.path);
 			}
 			return localize('toolInvoke.edit', "Editing file");
+		}
+		case CopilotToolName.Create: {
+			const args = parameters as ICopilotFileToolArgs | undefined;
+			if (args?.path) {
+				return localize('toolInvoke.createFile', "Creating {0}", args.path);
+			}
+			return localize('toolInvoke.create', "Creating file");
 		}
 		case CopilotToolName.Write: {
 			const args = parameters as ICopilotFileToolArgs | undefined;
@@ -250,6 +260,13 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 				return localize('toolComplete.editFile', "Edited {0}", args.path);
 			}
 			return localize('toolComplete.edit', "Edited file");
+		}
+		case CopilotToolName.Create: {
+			const args = parameters as ICopilotFileToolArgs | undefined;
+			if (args?.path) {
+				return localize('toolComplete.createFile', "Created {0}", args.path);
+			}
+			return localize('toolComplete.create', "Created file");
 		}
 		case CopilotToolName.Write: {
 			const args = parameters as ICopilotFileToolArgs | undefined;
