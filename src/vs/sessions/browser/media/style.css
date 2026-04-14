@@ -5,13 +5,13 @@
 
 /* ---- Sidebar & Auxiliary Bar Card Appearance ---- */
 
-.agent-sessions-workbench {
+.agent-sessions-workbench.experimental-shell-gradient-background {
 	position: relative;
 	isolation: isolate;
 	background: var(--vscode-sessionsSidebar-background);
 }
 
-.agent-sessions-workbench::before {
+.agent-sessions-workbench.experimental-shell-gradient-background::before {
 	content: '';
 	position: absolute;
 	inset: 0;
@@ -21,7 +21,7 @@
 }
 
 @supports (background: color-mix(in srgb, black 0%, white)) {
-	.agent-sessions-workbench::before {
+	.agent-sessions-workbench.experimental-shell-gradient-background::before {
 		background:
 			linear-gradient(
 				to bottom right,
@@ -33,7 +33,7 @@
 			var(--vscode-sessionsSidebar-background);
 	}
 
-	.monaco-workbench.vs.agent-sessions-workbench::before {
+	.monaco-workbench.vs.agent-sessions-workbench.experimental-shell-gradient-background::before {
 		background:
 			linear-gradient(
 				to bottom right,
@@ -45,7 +45,7 @@
 			var(--vscode-sessionsSidebar-background);
 	}
 
-	.monaco-workbench.vs-dark.agent-sessions-workbench::before {
+	.monaco-workbench.vs-dark.agent-sessions-workbench.experimental-shell-gradient-background::before {
 		background: linear-gradient(
 			to bottom right,
 			var(--vscode-sessionsSidebar-background) 0%,
@@ -56,12 +56,12 @@
 	}
 }
 
-.monaco-workbench.hc-black.agent-sessions-workbench::before,
-.monaco-workbench.hc-light.agent-sessions-workbench::before {
+.monaco-workbench.hc-black.agent-sessions-workbench.experimental-shell-gradient-background::before,
+.monaco-workbench.hc-light.agent-sessions-workbench.experimental-shell-gradient-background::before {
 	display: none;
 }
 
-.agent-sessions-workbench > .monaco-grid-view {
+.agent-sessions-workbench.experimental-shell-gradient-background > .monaco-grid-view {
 	position: relative;
 	z-index: 1;
 	background: transparent;
@@ -81,14 +81,14 @@
  *   Panel:          bottom=18, left=16, right=16
  */
 
-.agent-sessions-workbench .part.titlebar,
-.agent-sessions-workbench .part.sidebar,
-.agent-sessions-workbench .part.titlebar > .content,
-.agent-sessions-workbench .part.titlebar > .titlebar-container,
-.agent-sessions-workbench .part.titlebar > .sessions-titlebar-container,
-.agent-sessions-workbench .part.sidebar > .composite.title,
-.agent-sessions-workbench .part.sidebar > .content,
-.agent-sessions-workbench .part.sidebar > .sidebar-footer {
+.agent-sessions-workbench.experimental-shell-gradient-background .part.titlebar,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.sidebar,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.titlebar > .content,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.titlebar > .titlebar-container,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.titlebar > .sessions-titlebar-container,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.sidebar > .composite.title,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.sidebar > .content,
+.agent-sessions-workbench.experimental-shell-gradient-background .part.sidebar > .sidebar-footer {
 	background: transparent !important;
 }
 
