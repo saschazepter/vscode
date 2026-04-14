@@ -603,7 +603,7 @@ export class ChatStatusDashboard extends DomWidget {
 	private createIncludedIndicator(container: HTMLElement, label: string): void {
 		const includedContainer = container.appendChild($('div.included-indicator'));
 		includedContainer.appendChild($('span.included-label', undefined, label));
-		includedContainer.appendChild($('span.included-separator', undefined, '\u00B7'));
+		includedContainer.appendChild($('span.included-separator', { 'aria-hidden': 'true' }, '\u00B7'));
 		includedContainer.appendChild($('span.included-value', undefined, localize('includedWithPlan', "Included with your plan.")));
 	}
 
