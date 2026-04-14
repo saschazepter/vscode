@@ -469,7 +469,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		} satisfies { readonly [key: string]: unknown };
 	}
 
-	async provideChatSessionContent(resource: Uri, token: vscode.CancellationToken, context?: { readonly inputState: vscode.ChatSessionInputState; readonly sessionOptions: ReadonlyArray<{ optionId: string; value: string | vscode.ChatSessionProviderOptionItem }> }): Promise<vscode.ChatSession> {
+	async provideChatSessionContent(resource: Uri, token: vscode.CancellationToken, context?: { readonly inputState: vscode.ChatSessionInputState }): Promise<vscode.ChatSession> {
 		const stopwatch = new StopWatch();
 		try {
 			const copilotcliSessionId = SessionIdForCLI.parse(resource);
@@ -499,6 +499,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 					requestHandler: undefined,
 				};
 			} else {
+				this.newSessions.delete(resource);
 				// Fire-and-forget: detect PR when the user opens a session.
 				this._prDetectionService.detectPullRequest(copilotcliSessionId);
 
