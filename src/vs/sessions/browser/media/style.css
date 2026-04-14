@@ -5,6 +5,58 @@
 
 /* ---- Sidebar & Auxiliary Bar Card Appearance ---- */
 
+.agent-sessions-workbench {
+	position: relative;
+	isolation: isolate;
+	background: var(--vscode-sessionsSidebar-background);
+}
+
+.agent-sessions-workbench::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background: linear-gradient(
+		to bottom right,
+		var(--vscode-sessionsSidebar-background) 0%,
+		color-mix(in srgb, var(--vscode-button-background) 7%, var(--vscode-sessionsSidebar-background)) 58%,
+		color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sideBar-background)) 82%,
+		color-mix(in srgb, var(--vscode-button-background) 12%, var(--vscode-sessionsSidebar-background)) 100%
+	);
+}
+
+.monaco-workbench.vs.agent-sessions-workbench::before {
+	background: linear-gradient(
+		to bottom right,
+		var(--vscode-sessionsSidebar-background) 0%,
+		color-mix(in srgb, var(--vscode-button-background) 3%, var(--vscode-sessionsSidebar-background)) 60%,
+		color-mix(in srgb, var(--vscode-button-background) 4%, var(--vscode-sideBar-background)) 84%,
+		color-mix(in srgb, var(--vscode-button-background) 5%, var(--vscode-sessionsSidebar-background)) 100%
+	);
+}
+
+.monaco-workbench.vs-dark.agent-sessions-workbench::before {
+	background: linear-gradient(
+		to bottom right,
+		var(--vscode-sessionsSidebar-background) 0%,
+		color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sessionsSidebar-background)) 56%,
+		color-mix(in srgb, var(--vscode-button-background) 14%, var(--vscode-sideBar-background)) 82%,
+		color-mix(in srgb, var(--vscode-button-background) 18%, var(--vscode-sessionsSidebar-background)) 100%
+	);
+}
+
+.monaco-workbench.hc-black.agent-sessions-workbench::before,
+.monaco-workbench.hc-light.agent-sessions-workbench::before {
+	display: none;
+}
+
+.agent-sessions-workbench > .monaco-grid-view {
+	position: relative;
+	z-index: 1;
+	background: transparent;
+}
+
 /**
  * The auxiliary bar and panel use a card-like appearance with margins and border-radius
  * applied directly on the .part element. The grid allocates full space; CSS margin shrinks
@@ -19,13 +71,26 @@
  *   Panel:          bottom=18, left=16, right=16
  */
 
-.agent-sessions-workbench .part.sidebar {
-	background: var(--vscode-sessionsSidebar-background);
+.agent-sessions-workbench .part.titlebar,
+.agent-sessions-workbench .part.sidebar,
+.agent-sessions-workbench .part.titlebar > .content,
+.agent-sessions-workbench .part.titlebar > .titlebar-container,
+.agent-sessions-workbench .part.titlebar > .sessions-titlebar-container,
+.agent-sessions-workbench .part.sidebar > .composite.title,
+.agent-sessions-workbench .part.sidebar > .content,
+.agent-sessions-workbench .part.sidebar > .sidebar-footer {
+	background: transparent !important;
+	background-color: transparent !important;
+}
+
+.agent-sessions-workbench .part.chatbar,
+.agent-sessions-workbench .part.auxiliarybar,
+.agent-sessions-workbench .part.panel {
+	background: var(--part-background);
 }
 
 .agent-sessions-workbench .part.chatbar {
 	margin: 0 10px 0px 10px;
-	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
 	border-radius: 8px;
 	box-sizing: border-box;
@@ -37,7 +102,6 @@
 
 .agent-sessions-workbench .part.auxiliarybar {
 	margin: 0 10px 0px 0;
-	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
 	border-radius: 8px;
 	box-sizing: border-box;
@@ -49,7 +113,6 @@
 
 .agent-sessions-workbench .part.panel {
 	margin: 0 10px 10px 10px;
-	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
 	border-radius: 8px;
 	box-sizing: border-box;
@@ -57,11 +120,6 @@
 
 .agent-sessions-workbench:not(.nosidebar) .part.panel {
 	margin-left: 0;
-}
-
-/* Grid background matches the sessions sidebar background */
-.agent-sessions-workbench > .monaco-grid-view {
-	background-color: var(--vscode-sessionsSidebar-background);
 }
 
 .agent-sessions-workbench .monaco-sash:before {
