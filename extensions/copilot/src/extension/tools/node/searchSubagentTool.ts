@@ -35,7 +35,7 @@ export interface ISearchSubagentParams {
 	details: string;
 	/**
 	 * Optional thoroughness level that controls how many tool-call turns the subagent is allowed.
-	 * - 'normal' → base limit × 1    (default, balanced; sufficient for most cases)
+	 * - 'normal' → base limit × 1    (quick & balanced; sufficient for most cases)
 	 * - 'deep'   → base limit × 2    (broader exploration; only use when normal is not enough)
 	 * Only active when config.github.copilot.chat.searchSubagent.thoroughnessEnabled is true.
 	 */
@@ -73,7 +73,7 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 		return {
 			...tool,
 			description: tool.description
-				+ '\n- thoroughness (optional): Search thoroughness — \'normal\' (default, sufficient for most cases) or \'deep\' (more turns, broader exploration; only use when normal is clearly not enough).',
+				+ '\n- thoroughness (optional): Search thoroughness — \'normal\' (balanced and quick, sufficient for most cases) or \'deep\' (more turns, broader exploration; only use when normal is clearly not enough).',
 			inputSchema: {
 				...tool.inputSchema as Record<string, unknown>,
 				properties: {
@@ -81,7 +81,7 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 					thoroughness: {
 						type: 'string',
 						enum: ['normal', 'deep'],
-						description: 'Controls the search thoroughness and turn limit. \'normal\' is the default and sufficient for most searches. Only use \'deep\' when the task clearly requires broader exploration across many files.',
+						description: 'Controls the search thoroughness and turn limit. \'normal\' is balanced and quick, sufficient for most searches. Only use \'deep\' when the task clearly requires broader exploration across many files.',
 					},
 				},
 			},
