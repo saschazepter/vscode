@@ -94,7 +94,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this._register(this.workspaceService.onDidChangeWorkspaceFolders(() => this._onDidChange.fire()));
 	}
 
-	async provideChatSessionCustomizations(_token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
+	async provideChatSessionCustomizations(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: vscode.ChatSessionCustomizationItem[] = [];
 
 		// Agents: hybrid approach — file-based .claude/ agents merged with SDK-provided agents.
@@ -114,7 +114,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		}
 
 		// File-based agents from .claude/ paths — shown pre-session, deduplicated with SDK
-		for (const agent of await this.promptsService.getCustomAgents(CancellationToken.None)) {
+		for (const agent of await this.promptsService.getCustomAgents(token)) {
 			if (this.isClaudePath(agent.uri)) {
 				const name = agent.name;
 				if (!sdkAgentNames.has(name.toLowerCase())) {
@@ -137,7 +137,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 		// Skills from .claude/skills/ directories (user-defined SKILL.md files)
 		const skillItems: vscode.ChatSessionCustomizationItem[] = [];
-		for (const skill of await this.promptsService.getSkills(CancellationToken.None)) {
+		for (const skill of await this.promptsService.getSkills(token)) {
 			if (this.isClaudePath(skill.uri)) {
 				const item: vscode.ChatSessionCustomizationItem = {
 					uri: skill.uri,
