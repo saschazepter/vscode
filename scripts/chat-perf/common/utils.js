@@ -29,6 +29,8 @@ const SCENARIOS = [
 	'giant-codeblock',
 	'rapid-stream',
 	'file-links',
+	'tool-read-file',
+	'tool-edit-file',
 ];
 
 // -- Electron path resolution ------------------------------------------------
@@ -212,7 +214,19 @@ function prepareRunDir(runId, mockServer) {
 	const userDataDir = path.join(tmpBase, `run-${runId}`);
 	const extDir = path.join(DATA_DIR, 'extensions');
 	const logsDir = path.join(tmpBase, 'logs', `run-${runId}`);
-	fs.rmSync(userDataDir, { recursive: true, force: true });
+	// Retry rmSync to handle ENOTEMPTY race conditions from Electron cache locks
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			fs.rmSync(userDataDir, { recursive: true, force: true });
+			break;
+		} catch (err) {
+			if (attempt < 2 && err.code === 'ENOTEMPTY') {
+				require('child_process').execSync(`sleep 0.5`);
+			} else {
+				throw err;
+			}
+		}
+	}
 	fs.mkdirSync(userDataDir, { recursive: true });
 	fs.mkdirSync(extDir, { recursive: true });
 	fs.mkdirSync(logsDir, { recursive: true });

@@ -165,6 +165,8 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		await cdp.send('Performance.enable');
 		const heapBefore = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
 
+		// Stop any existing tracing session (stable builds may have one active)
+		try { await cdp.send('Tracing.end'); await new Promise(r => setTimeout(r, 200)); } catch { }
 		await cdp.send('Tracing.start', {
 			traceConfig: {
 				includedCategories: ['v8.gc', 'devtools.timeline'],
@@ -713,9 +715,36 @@ async function main() {
 			: null;
 
 		if (cachedBaseline?.baselineBuildVersion === opts.baselineBuild) {
-			console.log(`[chat-perf] Using cached baseline for ${opts.baselineBuild}`);
-			fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
-			opts.baseline = baselineJsonPath;
+			// Check if the cache covers all requested scenarios
+			const cachedScenarios = new Set(Object.keys(cachedBaseline.scenarios || {}));
+			const missingScenarios = opts.scenarios.filter((/** @type {string} */ s) => !cachedScenarios.has(s));
+
+			if (missingScenarios.length === 0) {
+				console.log(`[chat-perf] Using cached baseline for ${opts.baselineBuild}`);
+				fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
+				opts.baseline = baselineJsonPath;
+			} else {
+				console.log(`[chat-perf] Cached baseline missing scenarios: ${missingScenarios.join(', ')}`);
+				console.log(`[chat-perf] Running baseline for missing scenarios...`);
+				const baselineExePath = await resolveBuild(opts.baselineBuild);
+				for (const scenario of missingScenarios) {
+					/** @type {RunMetrics[]} */
+					const results = [];
+					for (let i = 0; i < opts.runs; i++) {
+						try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
+						catch (err) { console.error(`[chat-perf]   Baseline run ${i + 1} failed: ${err}`); }
+					}
+					if (results.length > 0) {
+						const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
+						for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
+						cachedBaseline.scenarios[scenario] = sd;
+					}
+				}
+				cachedBaseline.runsPerScenario = opts.runs;
+				fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
+				fs.writeFileSync(cachedPath, JSON.stringify(cachedBaseline, null, 2));
+				opts.baseline = baselineJsonPath;
+			}
 		} else {
 			const baselineExePath = await resolveBuild(opts.baselineBuild);
 			console.log(`[chat-perf] Benchmarking baseline build (${opts.baselineBuild})...`);
@@ -803,7 +832,7 @@ async function main() {
 
 	// -- JSON output -----------------------------------------------------
 	const jsonPath = path.join(runDir, 'results.json');
-	const jsonReport = { timestamp: new Date().toISOString(), platform: process.platform, runsPerScenario: opts.runs, scenarios: /** @type {Record<string, any>} */ ({}) };
+	const jsonReport = /** @type {{ timestamp: string, platform: NodeJS.Platform, runsPerScenario: number, scenarios: Record<string, any>, _resultsPath?: string }} */ ({ timestamp: new Date().toISOString(), platform: process.platform, runsPerScenario: opts.runs, scenarios: /** @type {Record<string, any>} */ ({}) });
 	for (const [scenario, results] of Object.entries(allResults)) {
 		const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
 		for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
@@ -831,7 +860,7 @@ async function main() {
 /**
  * Print baseline comparison and exit with code 1 if regressions found.
  * @param {Record<string, any>} jsonReport
- * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string }} opts
+ * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string, resume?: string }} opts
  */
 async function printComparison(jsonReport, opts) {
 	let regressionFound = false;

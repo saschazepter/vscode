@@ -16,88 +16,192 @@
  */
 
 const http = require('http');
+const path = require('path');
 const { EventEmitter } = require('events');
+
+const ROOT = path.join(__dirname, '..', '..', '..');
 
 // -- Scenario fixtures -------------------------------------------------------
 
-/** @type {Record<string, string[]>} */
-const SCENARIOS = {
-	'text-only': [
-		'Here is an explanation of the code you selected:\n\n',
-		'The function `processItems` iterates over the input array and applies a transformation to each element. ',
-		'It uses a `Map` to track previously seen values, which allows it to deduplicate results efficiently in O(n) time.\n\n',
-		'The algorithm works in a single pass: for every element, it computes the transformed value, ',
-		'checks membership in the set, and conditionally appends to the output array. ',
-		'This is a common pattern in data processing pipelines where uniqueness constraints must be maintained.\n\n',
-		'Edge cases to consider include empty arrays, duplicate transformations that produce the same key, ',
-		'and items where the transform function itself is expensive.\n\n',
-		'The time complexity is **O(n)** and the space complexity is **O(n)** in the worst case when all items are unique.\n',
-	],
-	'large-codeblock': [
-		'Here is the refactored implementation:\n\n',
-		'```typescript\n',
-		'import { EventEmitter } from "events";\n\n',
-		'interface CacheEntry<T> {\n  value: T;\n  expiresAt: number;\n  accessCount: number;\n}\n\n',
-		'export class LRUCache<K, V> {\n',
-		'  private readonly _map = new Map<K, CacheEntry<V>>();\n',
-		'  private readonly _emitter = new EventEmitter();\n\n',
-		'  constructor(\n    private readonly _maxSize: number,\n    private readonly _ttlMs: number = 60_000,\n  ) {}\n\n',
-		'  get(key: K): V | undefined {\n    const entry = this._map.get(key);\n    if (!entry) { return undefined; }\n',
-		'    if (Date.now() > entry.expiresAt) {\n      this._map.delete(key);\n      this._emitter.emit("evict", key);\n      return undefined;\n    }\n',
-		'    entry.accessCount++;\n    this._map.delete(key);\n    this._map.set(key, entry);\n    return entry.value;\n  }\n\n',
-		'  set(key: K, value: V): void {\n    if (this._map.size >= this._maxSize) {\n',
-		'      const oldest = this._map.keys().next().value;\n      if (oldest !== undefined) {\n        this._map.delete(oldest);\n        this._emitter.emit("evict", oldest);\n      }\n    }\n',
-		'    this._map.set(key, { value, expiresAt: Date.now() + this._ttlMs, accessCount: 0 });\n  }\n\n',
-		'  clear(): void { this._map.clear(); this._emitter.emit("clear"); }\n',
-		'  get size(): number { return this._map.size; }\n',
-		'  onEvict(listener: (key: K) => void): void { this._emitter.on("evict", listener); }\n}\n',
-		'```\n\n',
-		'The key changes:\n- Added TTL-based expiry with configurable timeout\n- LRU eviction uses Map insertion order\n- EventEmitter notifies on evictions for cache observability\n',
-	],
-	'many-small-chunks': (() => {
-		const chunks = ['Generating detailed analysis:\n\n'];
-		for (let i = 0; i < 200; i++) {
-			chunks.push(`Word${i} `);
+/**
+ * @typedef {{ content: string, delayMs: number }} StreamChunk
+ */
+
+/**
+ * A single model turn in a multi-turn scenario.
+ *
+ * @typedef {{
+ *   kind: 'tool-calls',
+ *   toolCalls: Array<{ toolNamePattern: RegExp, arguments: Record<string, any> }>,
+ * } | {
+ *   kind: 'content',
+ *   chunks: StreamChunk[],
+ * }} ModelTurn
+ */
+
+/**
+ * A multi-turn scenario — an ordered sequence of model turns.
+ * The mock server determines which turn to serve based on the number
+ * of assistant→tool round-trips already present in the conversation.
+ *
+ * @typedef {{
+ *   type: 'multi-turn',
+ *   turns: ModelTurn[],
+ * }} MultiTurnScenario
+ */
+
+/**
+ * @param {any} scenario
+ * @returns {scenario is MultiTurnScenario}
+ */
+function isMultiTurnScenario(scenario) {
+	return scenario && typeof scenario === 'object' && scenario.type === 'multi-turn';
+}
+
+/**
+ * Helper for building scenario chunk sequences with timing control.
+ */
+class ScenarioBuilder {
+	constructor() {
+		/** @type {StreamChunk[]} */
+		this.chunks = [];
+	}
+
+	/**
+	 * Emit a content chunk immediately (no delay before it).
+	 * @param {string} content
+	 * @returns {this}
+	 */
+	emit(content) {
+		this.chunks.push({ content, delayMs: 0 });
+		return this;
+	}
+
+	/**
+	 * Wait, then emit a content chunk — simulates network/token generation latency.
+	 * @param {number} ms - delay in milliseconds before this chunk
+	 * @param {string} content
+	 * @returns {this}
+	 */
+	wait(ms, content) {
+		this.chunks.push({ content, delayMs: ms });
+		return this;
+	}
+
+	/**
+	 * Emit multiple chunks with uniform inter-chunk delay.
+	 * @param {string[]} contents
+	 * @param {number} [delayMs=15] - delay between each chunk (default ~1 frame)
+	 * @returns {this}
+	 */
+	stream(contents, delayMs = 15) {
+		for (const content of contents) {
+			this.chunks.push({ content, delayMs });
 		}
-		chunks.push('\n\nAnalysis complete.\n');
-		return chunks;
+		return this;
+	}
+
+	/**
+	 * Emit multiple chunks with no delay (burst).
+	 * @param {string[]} contents
+	 * @returns {this}
+	 */
+	burst(contents) {
+		return this.stream(contents, 0);
+	}
+
+	/** @returns {StreamChunk[]} */
+	build() {
+		return this.chunks;
+	}
+}
+
+/** @type {Record<string, StreamChunk[] | MultiTurnScenario>} */
+const SCENARIOS = {
+	'text-only': new ScenarioBuilder()
+		.stream([
+			'Here is an explanation of the code you selected:\n\n',
+			'The function `processItems` iterates over the input array and applies a transformation to each element. ',
+			'It uses a `Map` to track previously seen values, which allows it to deduplicate results efficiently in O(n) time.\n\n',
+			'The algorithm works in a single pass: for every element, it computes the transformed value, ',
+			'checks membership in the set, and conditionally appends to the output array. ',
+			'This is a common pattern in data processing pipelines where uniqueness constraints must be maintained.\n\n',
+			'Edge cases to consider include empty arrays, duplicate transformations that produce the same key, ',
+			'and items where the transform function itself is expensive.\n\n',
+			'The time complexity is **O(n)** and the space complexity is **O(n)** in the worst case when all items are unique.\n',
+		], 20)
+		.build(),
+
+	'large-codeblock': new ScenarioBuilder()
+		.stream([
+			'Here is the refactored implementation:\n\n',
+			'```typescript\n',
+			'import { EventEmitter } from "events";\n\n',
+			'interface CacheEntry<T> {\n  value: T;\n  expiresAt: number;\n  accessCount: number;\n}\n\n',
+			'export class LRUCache<K, V> {\n',
+			'  private readonly _map = new Map<K, CacheEntry<V>>();\n',
+			'  private readonly _emitter = new EventEmitter();\n\n',
+			'  constructor(\n    private readonly _maxSize: number,\n    private readonly _ttlMs: number = 60_000,\n  ) {}\n\n',
+			'  get(key: K): V | undefined {\n    const entry = this._map.get(key);\n    if (!entry) { return undefined; }\n',
+			'    if (Date.now() > entry.expiresAt) {\n      this._map.delete(key);\n      this._emitter.emit("evict", key);\n      return undefined;\n    }\n',
+			'    entry.accessCount++;\n    this._map.delete(key);\n    this._map.set(key, entry);\n    return entry.value;\n  }\n\n',
+			'  set(key: K, value: V): void {\n    if (this._map.size >= this._maxSize) {\n',
+			'      const oldest = this._map.keys().next().value;\n      if (oldest !== undefined) {\n        this._map.delete(oldest);\n        this._emitter.emit("evict", oldest);\n      }\n    }\n',
+			'    this._map.set(key, { value, expiresAt: Date.now() + this._ttlMs, accessCount: 0 });\n  }\n\n',
+			'  clear(): void { this._map.clear(); this._emitter.emit("clear"); }\n',
+			'  get size(): number { return this._map.size; }\n',
+			'  onEvict(listener: (key: K) => void): void { this._emitter.on("evict", listener); }\n}\n',
+			'```\n\n',
+			'The key changes:\n- Added TTL-based expiry with configurable timeout\n- LRU eviction uses Map insertion order\n- EventEmitter notifies on evictions for cache observability\n',
+		], 20)
+		.build(),
+
+	'many-small-chunks': (() => {
+		const words = ['Generating detailed analysis:\n\n'];
+		for (let i = 0; i < 200; i++) { words.push(`Word${i} `); }
+		words.push('\n\nAnalysis complete.\n');
+		const b = new ScenarioBuilder();
+		b.stream(words, 5);
+		return b.build();
 	})(),
-	'mixed-content': [
-		'## Issue Found\n\n',
-		'The `DisposableStore` is not being disposed in the `deactivate` path, ',
-		'which can lead to memory leaks.\n\n',
-		'### Current Code\n\n',
-		'```typescript\nclass MyService {\n  private store = new DisposableStore();\n  // missing dispose!\n}\n```\n\n',
-		'### Suggested Fix\n\n',
-		'```typescript\nclass MyService extends Disposable {\n',
-		'  private readonly store = this._register(new DisposableStore());\n\n',
-		'  override dispose(): void {\n    this.store.dispose();\n    super.dispose();\n  }\n}\n```\n\n',
-		'This ensures the store is cleaned up when the service is disposed via the workbench lifecycle.\n',
-	],
+
+	'mixed-content': new ScenarioBuilder()
+		.stream([
+			'## Issue Found\n\n',
+			'The `DisposableStore` is not being disposed in the `deactivate` path, ',
+			'which can lead to memory leaks.\n\n',
+			'### Current Code\n\n',
+			'```typescript\nclass MyService {\n  private store = new DisposableStore();\n  // missing dispose!\n}\n```\n\n',
+			'### Suggested Fix\n\n',
+			'```typescript\nclass MyService extends Disposable {\n',
+			'  private readonly store = this._register(new DisposableStore());\n\n',
+			'  override dispose(): void {\n    this.store.dispose();\n    super.dispose();\n  }\n}\n```\n\n',
+			'This ensures the store is cleaned up when the service is disposed via the workbench lifecycle.\n',
+		], 20)
+		.build(),
 
 	// -- Stress-test scenarios --------------------------------------------
 
-	// ~500 lines of code across 10 fenced blocks — stresses syntax
-	// highlighting, code block rendering, and copy-button creation.
 	'many-codeblocks': (() => {
-		const chunks = ['Here are the implementations for each module:\n\n'];
+		const b = new ScenarioBuilder();
+		b.emit('Here are the implementations for each module:\n\n');
 		for (let i = 0; i < 10; i++) {
-			chunks.push(`### Module ${i + 1}: \`handler${i}.ts\`\n\n`);
-			chunks.push('```typescript\n');
+			b.wait(10, `### Module ${i + 1}: \`handler${i}.ts\`\n\n`);
+			b.emit('```typescript\n');
+			const lines = [];
 			for (let j = 0; j < 15; j++) {
-				chunks.push(`export function handle${i}_${j}(input: string): string {\n`);
-				chunks.push(`  const result = input.trim().split('').reverse().join('');\n`);
-				chunks.push(`  return \`[\${result}] processed by handler ${i}_${j}\`;\n`);
-				chunks.push('}\n\n');
+				lines.push(`export function handle${i}_${j}(input: string): string {\n`);
+				lines.push(`  const result = input.trim().split('').reverse().join('');\n`);
+				lines.push(`  return \`[\${result}] processed by handler ${i}_${j}\`;\n`);
+				lines.push('}\n\n');
 			}
-			chunks.push('```\n\n');
+			b.stream(lines, 5);
+			b.emit('```\n\n');
 		}
-		chunks.push('All modules implement the same pattern with unique handler IDs.\n');
-		return chunks;
+		b.emit('All modules implement the same pattern with unique handler IDs.\n');
+		return b.build();
 	})(),
 
-	// Very long prose — stresses markdown rendering, word wrapping,
-	// and layout with ~3000 words of continuous text.
 	'long-prose': (() => {
 		const sentences = [
 			'The architecture follows a layered dependency injection pattern where each service declares its dependencies through constructor parameters. ',
@@ -109,74 +213,74 @@ const SCENARIOS = {
 			'Contributors register their functionality through extension points, which are processed during the appropriate lifecycle phase. ',
 			'This contribution model allows features to be added without modifying the core workbench code, maintaining a clean separation of concerns. ',
 		];
-		const chunks = ['# Detailed Architecture Analysis\n\n'];
+		const b = new ScenarioBuilder();
+		b.emit('# Detailed Architecture Analysis\n\n');
 		for (let para = 0; para < 15; para++) {
-			chunks.push(`## Section ${para + 1}: ${['Overview', 'Design Patterns', 'Service Layer', 'Event System', 'State Management', 'Error Handling', 'Performance', 'Testing', 'Deployment', 'Monitoring', 'Security', 'Extensibility', 'Compatibility', 'Migration', 'Future Work'][para]}\n\n`);
-			for (let s = 0; s < 25; s++) {
-				chunks.push(sentences[s % sentences.length]);
-			}
-			chunks.push('\n\n');
+			b.wait(15, `## Section ${para + 1}: ${['Overview', 'Design Patterns', 'Service Layer', 'Event System', 'State Management', 'Error Handling', 'Performance', 'Testing', 'Deployment', 'Monitoring', 'Security', 'Extensibility', 'Compatibility', 'Migration', 'Future Work'][para]}\n\n`);
+			const paraSentences = [];
+			for (let s = 0; s < 25; s++) { paraSentences.push(sentences[s % sentences.length]); }
+			b.stream(paraSentences, 8);
+			b.emit('\n\n');
 		}
-		return chunks;
+		return b.build();
 	})(),
 
-	// Deeply nested markdown — headers, ordered/unordered lists, bold,
-	// italic, inline code, links, blockquotes. Exercises the full
-	// markdown renderer pipeline.
 	'rich-markdown': (() => {
-		const chunks = ['# Comprehensive Code Review Report\n\n'];
-		chunks.push('> **Summary**: Found 12 issues across 4 severity levels.\n\n');
+		const b = new ScenarioBuilder();
+		b.emit('# Comprehensive Code Review Report\n\n');
+		b.wait(15, '> **Summary**: Found 12 issues across 4 severity levels.\n\n');
 		for (let section = 0; section < 6; section++) {
-			chunks.push(`## ${section + 1}. ${['Critical Issues', 'Performance Concerns', 'Code Style', 'Documentation Gaps', 'Test Coverage', 'Security Review'][section]}\n\n`);
+			b.wait(10, `## ${section + 1}. ${['Critical Issues', 'Performance Concerns', 'Code Style', 'Documentation Gaps', 'Test Coverage', 'Security Review'][section]}\n\n`);
 			for (let item = 0; item < 5; item++) {
-				chunks.push(`${item + 1}. **Issue ${section * 5 + item + 1}**: \`${['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef'][item]}\` in \`src/components/Widget${item}.tsx\`\n`);
-				chunks.push(`   - Severity: ${['[Critical]', '[Warning]', '[Info]', '[Suggestion]', '[Note]'][item]}\n`);
-				chunks.push(`   - The current implementation uses *unnecessary re-renders* due to missing dependency arrays.\n`);
-				chunks.push(`   - See [React docs](https://react.dev/reference) and the [\`useMemo\` guide](https://react.dev/reference/react/useMemo).\n`);
-				chunks.push(`   - Fix: wrap in \`useCallback\` or extract to a ***separate memoized component***.\n\n`);
+				b.stream([
+					`${item + 1}. **Issue ${section * 5 + item + 1}**: \`${['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef'][item]}\` in \`src/components/Widget${item}.tsx\`\n`,
+					`   - Severity: ${['[Critical]', '[Warning]', '[Info]', '[Suggestion]', '[Note]'][item]}\n`,
+					`   - The current implementation uses *unnecessary re-renders* due to missing dependency arrays.\n`,
+					`   - See [React docs](https://react.dev/reference) and the [\`useMemo\` guide](https://react.dev/reference/react/useMemo).\n`,
+					`   - Fix: wrap in \`useCallback\` or extract to a ***separate memoized component***.\n\n`,
+				], 10);
 			}
-			chunks.push('---\n\n');
+			b.emit('---\n\n');
 		}
-		chunks.push('> *Report generated automatically. Please review all suggestions before applying.*\n');
-		return chunks;
+		b.emit('> *Report generated automatically. Please review all suggestions before applying.*\n');
+		return b.build();
 	})(),
 
-	// A huge single code block (~200 lines) — stresses the syntax
-	// highlighter and scroll virtualization within a code block.
 	'giant-codeblock': (() => {
-		const chunks = ['Here is the complete implementation:\n\n```typescript\n'];
-		chunks.push('import { Disposable, DisposableStore } from "vs/base/common/lifecycle";\n');
-		chunks.push('import { Emitter, Event } from "vs/base/common/event";\n');
-		chunks.push('import { URI } from "vs/base/common/uri";\n\n');
+		const b = new ScenarioBuilder();
+		b.emit('Here is the complete implementation:\n\n```typescript\n');
+		b.stream([
+			'import { Disposable, DisposableStore } from "vs/base/common/lifecycle";\n',
+			'import { Emitter, Event } from "vs/base/common/event";\n',
+			'import { URI } from "vs/base/common/uri";\n\n',
+		], 10);
 		for (let i = 0; i < 40; i++) {
-			chunks.push(`export class Service${i} extends Disposable {\n`);
-			chunks.push(`  private readonly _onDidChange = this._register(new Emitter<void>());\n`);
-			chunks.push(`  readonly onDidChange: Event<void> = this._onDidChange.event;\n\n`);
-			chunks.push(`  private _value: string = '';\n`);
-			chunks.push(`  get value(): string { return this._value; }\n\n`);
-			chunks.push(`  async update(uri: URI): Promise<void> {\n`);
-			chunks.push(`    this._value = uri.toString();\n`);
-			chunks.push(`    this._onDidChange.fire();\n`);
-			chunks.push(`  }\n`);
-			chunks.push('}\n\n');
+			b.stream([
+				`export class Service${i} extends Disposable {\n`,
+				`  private readonly _onDidChange = this._register(new Emitter<void>());\n`,
+				`  readonly onDidChange: Event<void> = this._onDidChange.event;\n\n`,
+				`  private _value: string = '';\n`,
+				`  get value(): string { return this._value; }\n\n`,
+				`  async update(uri: URI): Promise<void> {\n`,
+				`    this._value = uri.toString();\n`,
+				`    this._onDidChange.fire();\n`,
+				`  }\n`,
+				'}\n\n',
+			], 5);
 		}
-		chunks.push('```\n\nThis defines 40 service classes following the standard VS Code pattern.\n');
-		return chunks;
+		b.emit('```\n\nThis defines 40 service classes following the standard VS Code pattern.\n');
+		return b.build();
 	})(),
 
-	// 1000 very small chunks — stresses the streaming SSE pipeline
-	// and incremental DOM updates with high chunk frequency.
 	'rapid-stream': (() => {
-		const chunks = [];
-		for (let i = 0; i < 1000; i++) {
-			chunks.push(`w${i} `);
-		}
-		return chunks;
+		const b = new ScenarioBuilder();
+		const words = [];
+		for (let i = 0; i < 1000; i++) { words.push(`w${i} `); }
+		// Very fast inter-chunk delay to stress the streaming pipeline
+		b.stream(words, 2);
+		return b.build();
 	})(),
 
-	// Many file URI references — stresses link detection, file
-	// resolution, path rendering, hover providers, and inline
-	// anchor widget creation.
 	'file-links': (() => {
 		const files = [
 			'src/vs/workbench/contrib/chat/browser/chatListRenderer.ts',
@@ -192,24 +296,114 @@ const SCENARIOS = {
 			'src/vs/editor/browser/widget/codeEditor/editor.ts',
 			'src/vs/workbench/browser/parts/editor/editorGroupView.ts',
 		];
-		const chunks = ['I found references to the disposable pattern across the following files:\n\n'];
+		const b = new ScenarioBuilder();
+		b.emit('I found references to the disposable pattern across the following files:\n\n');
 		for (let i = 0; i < files.length; i++) {
 			const line = Math.floor(Math.random() * 500) + 1;
-			chunks.push(`${i + 1}. [${files[i]}](${files[i]}#L${line}) — `);
-			chunks.push(`Line ${line}: uses \`DisposableStore\` with ${Math.floor(Math.random() * 10) + 1} registrations\n`);
+			b.stream([
+				`${i + 1}. [${files[i]}](${files[i]}#L${line}) -- `,
+				`Line ${line}: uses \`DisposableStore\` with ${Math.floor(Math.random() * 10) + 1} registrations\n`,
+			], 15);
 		}
-		chunks.push('\nAdditionally, the following files import from `vs/base/common/lifecycle`:\n\n');
+		b.wait(10, '\nAdditionally, the following files import from `vs/base/common/lifecycle`:\n\n');
 		for (let i = 0; i < 20; i++) {
 			const depth = ['base', 'platform', 'editor', 'workbench'][i % 4];
 			const area = ['common', 'browser', 'node', 'electron-browser'][i % 4];
 			const name = ['service', 'provider', 'contribution', 'handler', 'manager'][i % 5];
 			const file = `src/vs/${depth}/${area}/${name}${i}.ts`;
-			chunks.push(`- [${file}](${file}#L${i * 10 + 5})`);
-			chunks.push(` — imports \`Disposable\`, \`DisposableStore\`\n`);
+			b.stream([
+				`- [${file}](${file}#L${i * 10 + 5})`,
+				` -- imports \`Disposable\`, \`DisposableStore\`\n`,
+			], 12);
 		}
-		chunks.push('\nTotal: 32 files reference the disposable pattern.\n');
-		return chunks;
+		b.emit('\nTotal: 32 files reference the disposable pattern.\n');
+		return b.build();
 	})(),
+
+	// -- Tool call scenarios -----------------------------------------------
+
+	'tool-read-file': /** @type {MultiTurnScenario} */ ({
+		type: 'multi-turn',
+		turns: [
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /read.?file/i,
+						arguments: {
+							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
+							offset: 1,
+							limit: 50,
+						},
+					},
+				],
+			},
+			{
+				kind: 'content',
+				chunks: new ScenarioBuilder()
+					.wait(20, 'I read the file `src/vs/base/common/lifecycle.ts`. Here is my analysis:\n\n')
+					.stream([
+						'The `Disposable` base class provides a standard lifecycle pattern for VS Code components. ',
+						'It maintains a `DisposableStore` internally via `this._store` and exposes `this._register()` ',
+						'for subclasses to track their own disposables.\n\n',
+						'Key patterns:\n',
+						'- **`_register()`** — adds a disposable to the internal store, ensuring cleanup on `dispose()`\n',
+						'- **`DisposableStore`** — a collection that disposes all contained items when itself disposed\n',
+						'- **`MutableDisposable`** — holds a single disposable that can be swapped; the old one is disposed automatically\n\n',
+						'The `toDisposable()` helper wraps a callback into an `IDisposable`, which is convenient for ',
+						'one-off cleanup like removing event listeners.\n',
+					], 20)
+					.build(),
+			},
+		],
+	}),
+
+	'tool-edit-file': /** @type {MultiTurnScenario} */ ({
+		type: 'multi-turn',
+		turns: [
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /read.?file/i,
+						arguments: {
+							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
+							offset: 1,
+							limit: 30,
+						},
+					},
+				],
+			},
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
+						arguments: {
+							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
+							oldString: '// perf-benchmark-marker',
+							newString: '// perf-benchmark-marker (updated)',
+							explanation: 'Update the benchmark marker comment',
+						},
+					},
+				],
+			},
+			{
+				kind: 'content',
+				chunks: new ScenarioBuilder()
+					.wait(20, 'I have read and edited `src/vs/base/common/lifecycle.ts`.\n\n')
+					.stream([
+						'The changes I made:\n',
+						'1. Read the file to understand its structure\n',
+						'2. Applied the edit to update the benchmark marker comment\n\n',
+						'The `Disposable` pattern in this file is the foundation of VS Code\'s lifecycle management. ',
+						'All components that own resources should extend `Disposable` and register their cleanup ',
+						'handlers via `this._register()`. This ensures proper teardown when the component is disposed.\n',
+					], 20)
+					.build(),
+			},
+		],
+	}),
 };
 
 const DEFAULT_SCENARIO = 'text-only';
@@ -249,6 +443,99 @@ function makeInitialChunk() {
 			index: 0,
 			delta: { role: 'assistant', content: '' },
 			finish_reason: null,
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a tool-call initial chunk (role only, no content).
+ */
+function makeToolCallInitialChunk() {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: { role: 'assistant', content: null },
+			finish_reason: null,
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a tool-call function-start chunk.
+ * @param {number} index - tool call index
+ * @param {string} callId - unique call ID
+ * @param {string} functionName - tool function name
+ */
+function makeToolCallStartChunk(index, callId, functionName) {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: {
+				tool_calls: [{
+					index,
+					id: callId,
+					type: 'function',
+					function: { name: functionName, arguments: '' },
+				}],
+			},
+			finish_reason: null,
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a tool-call arguments chunk.
+ * @param {number} index - tool call index
+ * @param {string} argsFragment - partial JSON arguments
+ */
+function makeToolCallArgsChunk(index, argsFragment) {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: {
+				tool_calls: [{
+					index,
+					function: { arguments: argsFragment },
+				}],
+			},
+			finish_reason: null,
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a tool-call finish chunk.
+ */
+function makeToolCallFinishChunk() {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: {},
+			finish_reason: 'tool_calls',
 			content_filter_results: {},
 		}],
 		usage: null,
@@ -505,16 +792,40 @@ function handleRequest(req, res) {
 /** Emitted when a scenario chat completion is fully served. */
 const serverEvents = new EventEmitter();
 
+/** @param {number} ms */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Count the number of completed assistant→tool round-trips in the conversation.
+ * Each round-trip = one assistant message with tool_calls followed by one or
+ * more tool result messages.
+ * @param {any[]} messages
+ * @returns {number}
+ */
+function countCompletedToolRoundTrips(messages) {
+	let roundTrips = 0;
+	for (const msg of messages) {
+		if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+			roundTrips++;
+		}
+	}
+	return roundTrips;
+}
+
 /**
  * @param {string} body
  * @param {http.ServerResponse} res
  */
-function handleChatCompletions(body, res) {
+async function handleChatCompletions(body, res) {
 	let scenarioId = DEFAULT_SCENARIO;
 	let isScenarioRequest = false;
+	/** @type {string[]} */
+	let requestToolNames = [];
+	/** @type {any[]} */
+	let messages = [];
 	try {
 		const parsed = JSON.parse(body);
-		const messages = parsed.messages || [];
+		messages = parsed.messages || [];
 		// Log user messages for debugging
 		const userMsgs = messages.filter((/** @type {any} */ m) => m.role === 'user');
 		if (userMsgs.length > 0) {
@@ -524,6 +835,14 @@ function handleChatCompletions(body, res) {
 			const ts = new Date().toISOString().slice(11, -1);
 			console.log(`[mock-llm]   ${ts} → ${messages.length} msgs, last user: "${lastContent}"`);
 		}
+		// Extract available tool names from the request's tools array
+		const tools = parsed.tools || [];
+		requestToolNames = tools.map((/** @type {any} */ t) => t.function?.name).filter(Boolean);
+		if (requestToolNames.length > 0) {
+			const ts = new Date().toISOString().slice(11, -1);
+			console.log(`[mock-llm]   ${ts} → ${requestToolNames.length} tools available: ${requestToolNames.join(', ')}`);
+		}
+
 		const lastUser = [...messages].reverse().find((/** @type {any} */ m) => m.role === 'user');
 		if (lastUser) {
 			// Extract scenario ID from user message content
@@ -540,7 +859,7 @@ function handleChatCompletions(body, res) {
 		}
 	} catch { }
 
-	const chunks = SCENARIOS[scenarioId] || SCENARIOS[DEFAULT_SCENARIO];
+	const scenario = SCENARIOS[scenarioId] || SCENARIOS[DEFAULT_SCENARIO];
 
 	res.writeHead(200, {
 		'Content-Type': 'text/event-stream',
@@ -549,24 +868,111 @@ function handleChatCompletions(body, res) {
 		'X-Request-Id': 'perf-benchmark-' + Date.now(),
 	});
 
-	// Initial role chunk
-	res.write(`data: ${JSON.stringify(makeInitialChunk())}\n\n`);
+	// Handle multi-turn scenarios — only when the request actually has tools.
+	// Ancillary requests (title generation, progress messages) also contain the
+	// [scenario:...] tag but don't send tools, so they fall through to content.
+	if (isMultiTurnScenario(scenario) && requestToolNames.length > 0) {
+		const roundTrips = countCompletedToolRoundTrips(messages);
+		const turnIndex = Math.min(roundTrips, scenario.turns.length - 1);
+		const turn = scenario.turns[turnIndex];
 
-	// Content chunks
-	for (const chunk of chunks) {
-		res.write(`data: ${JSON.stringify(makeChunk(chunk, 0, false))}\n\n`);
+		const ts = new Date().toISOString().slice(11, -1);
+		console.log(`[mock-llm]   ${ts} → multi-turn scenario ${scenarioId}, turn ${turnIndex + 1}/${scenario.turns.length} (${turn.kind}), ${roundTrips} round-trips in history`);
+
+		if (turn.kind === 'tool-calls') {
+			await streamToolCalls(res, turn.toolCalls, requestToolNames, scenarioId);
+			return;
+		}
+
+		// kind === 'content' — stream the final text response
+		await streamContent(res, turn.chunks, isScenarioRequest);
+		return;
 	}
 
-	// Finish chunk
-	res.write(`data: ${JSON.stringify(makeChunk('', 0, true))}\n\n`);
+	// Standard content-only scenario (or multi-turn scenario falling back for
+	// ancillary requests like title generation that don't include tools)
+	const chunks = isMultiTurnScenario(scenario)
+		? getFirstContentTurn(scenario)
+		: /** @type {StreamChunk[]} */ (scenario);
 
-	// Done
+	await streamContent(res, chunks, isScenarioRequest);
+}
+
+/**
+ * Get the chunks from the first content turn of a multi-turn scenario,
+ * used as fallback text for ancillary requests (title generation etc).
+ * @param {MultiTurnScenario} scenario
+ * @returns {StreamChunk[]}
+ */
+function getFirstContentTurn(scenario) {
+	for (const turn of scenario.turns) {
+		if (turn.kind === 'content') {
+			return turn.chunks;
+		}
+	}
+	return SCENARIOS[DEFAULT_SCENARIO];
+}
+
+/**
+ * Stream content chunks as a standard SSE response.
+ * @param {http.ServerResponse} res
+ * @param {StreamChunk[]} chunks
+ * @param {boolean} isScenarioRequest
+ */
+async function streamContent(res, chunks, isScenarioRequest) {
+	res.write(`data: ${JSON.stringify(makeInitialChunk())}\n\n`);
+
+	for (const chunk of chunks) {
+		if (chunk.delayMs > 0) { await sleep(chunk.delayMs); }
+		res.write(`data: ${JSON.stringify(makeChunk(chunk.content, 0, false))}\n\n`);
+	}
+
+	res.write(`data: ${JSON.stringify(makeChunk('', 0, true))}\n\n`);
 	res.write('data: [DONE]\n\n');
 	res.end();
 
 	if (isScenarioRequest) {
 		serverEvents.emit('scenarioCompletion');
 	}
+}
+
+/**
+ * Stream tool call chunks as an SSE response.
+ * @param {http.ServerResponse} res
+ * @param {Array<{ toolNamePattern: RegExp, arguments: Record<string, any> }>} toolCalls
+ * @param {string[]} requestToolNames
+ * @param {string} scenarioId
+ */
+async function streamToolCalls(res, toolCalls, requestToolNames, scenarioId) {
+	res.write(`data: ${JSON.stringify(makeToolCallInitialChunk())}\n\n`);
+
+	for (let i = 0; i < toolCalls.length; i++) {
+		const call = toolCalls[i];
+		const callId = `call_perf_${scenarioId}_${i}_${Date.now()}`;
+
+		// Find the matching tool name from the request's tools array
+		let toolName = requestToolNames.find(name => call.toolNamePattern.test(name));
+		if (!toolName) {
+			toolName = call.toolNamePattern.source.replace(/[\\.|?*+^${}()\[\]]/g, '');
+			console.warn(`[mock-llm]   No matching tool for pattern ${call.toolNamePattern}, using fallback: ${toolName}`);
+		}
+
+		// Stream tool call: start chunk, then arguments in fragments
+		res.write(`data: ${JSON.stringify(makeToolCallStartChunk(i, callId, toolName))}\n\n`);
+		await sleep(10);
+
+		const argsJson = JSON.stringify(call.arguments);
+		const fragmentSize = Math.max(20, Math.ceil(argsJson.length / 4));
+		for (let pos = 0; pos < argsJson.length; pos += fragmentSize) {
+			const fragment = argsJson.slice(pos, pos + fragmentSize);
+			res.write(`data: ${JSON.stringify(makeToolCallArgsChunk(i, fragment))}\n\n`);
+			await sleep(5);
+		}
+	}
+
+	res.write(`data: ${JSON.stringify(makeToolCallFinishChunk())}\n\n`);
+	res.write('data: [DONE]\n\n');
+	res.end();
 }
 
 /**

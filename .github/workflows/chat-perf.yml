@@ -1,6 +1,12 @@
 name: Chat Performance Comparison
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/chat-perf.yml'
+  schedule:
+    # Every Friday at 12:00 AM PT (07:00 UTC)
+    - cron: '0 7 * * 5'
   workflow_dispatch:
     inputs:
       baseline_commit:
@@ -34,16 +40,22 @@ concurrency:
   group: chat-perf-${{ github.run_id }}
   cancel-in-progress: true
 
+env:
+  BASELINE_COMMIT: ${{ inputs.baseline_commit || '1.115.0' }}
+  TEST_COMMIT: ${{ inputs.test_commit || 'main' }}
+  PERF_RUNS: ${{ inputs.runs || 7 }}
+  PERF_THRESHOLD: ${{ inputs.threshold || 0.2 }}
+
 jobs:
   chat-perf:
-    name: Chat Perf – ${{ inputs.baseline_commit }} vs ${{ inputs.test_commit }}
+    name: Chat Perf – ${{ inputs.baseline_commit || '1.115.0' }} vs ${{ inputs.test_commit || 'main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout test commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.test_commit }}
+          ref: ${{ env.TEST_COMMIT }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -90,15 +102,28 @@ jobs:
           fi
 
           xvfb-run node scripts/chat-perf/test-chat-perf-regression.js \
-            --baseline-build "${{ inputs.baseline_commit }}" \
-            --build "${{ inputs.test_commit }}" \
-            --runs ${{ inputs.runs }} \
-            --threshold ${{ inputs.threshold }} \
+            --baseline-build "${{ env.BASELINE_COMMIT }}" \
+            --build "${{ env.TEST_COMMIT }}" \
+            --runs ${{ env.PERF_RUNS }} \
+            --threshold ${{ env.PERF_THRESHOLD }} \
             --ci \
             $SCENARIO_ARGS \
             2>&1 | tee perf-output.log
 
           # Extract exit code from the script (tee masks it)
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Run memory leak check
+        id: leak
+        run: |
+          xvfb-run node scripts/chat-perf/test-chat-mem-leaks.js \
+            --build "${{ env.TEST_COMMIT }}" \
+            --messages 10 \
+            --threshold 2 \
+            --verbose \
+            2>&1 | tee leak-output.log
+
           exit ${PIPESTATUS[0]}
         continue-on-error: true
 
@@ -109,6 +134,15 @@ jobs:
             cat .chat-perf-data/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⚠️ No summary file generated. Check perf-output.log artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ -f .chat-perf-data/chat-perf-leak-results.json ]]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "## Memory Leak Check" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat .chat-perf-data/chat-perf-leak-results.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Zip diagnostic outputs
@@ -123,6 +157,7 @@ jobs:
               "$(basename "$RUN_DIR")"/ \
               ci-summary.md \
               baseline-*.json \
+              chat-perf-leak-results.json \
               2>/dev/null || true
             cd ..
           fi
@@ -131,14 +166,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chat-perf-${{ inputs.baseline_commit }}-vs-${{ inputs.test_commit }}
+          name: chat-perf-${{ env.BASELINE_COMMIT }}-vs-${{ env.TEST_COMMIT }}
           path: |
             chat-perf-artifacts.zip
             perf-output.log
+            leak-output.log
           retention-days: 30
 
       - name: Fail on regression
-        if: steps.perf.outcome == 'failure'
+        if: steps.perf.outcome == 'failure' || steps.leak.outcome == 'failure'
         run: |
-          echo "::error::Chat performance regression detected. See job summary for details."
+          if [[ "${{ steps.perf.outcome }}" == "failure" ]]; then
+            echo "::error::Chat performance regression detected. See job summary for details."
+          fi
+          if [[ "${{ steps.leak.outcome }}" == "failure" ]]; then
+            echo "::error::Chat memory leak detected. See leak-output.log for details."
+          fi
           exit 1
