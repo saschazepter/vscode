@@ -1484,10 +1484,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			// combine tool invocations into thinking part if needed. render the tool, but do not replace the working spinner with the new part's dom node since it is already inside the thinking part.
 			const lastThinking = this.getLastThinkingPart(renderedParts);
 			if (lastThinking && (partToRender.kind === 'toolInvocation' || partToRender.kind === 'toolInvocationSerialized' || partToRender.kind === 'markdownContent' || partToRender.kind === 'textEditGroup' || partToRender.kind === 'hook') && this.shouldPinPart(partToRender, element)) {
-				// Clean up the old part's state from the thinking container before
-				// creating the replacement. For markdown edit pills the old part's
-				// domNode was unwrapped from its thinking wrapper above but left in
-				// the DOM, and its appendedItemCount / diffStats entry leaked.
 				if (alreadyRenderedPart instanceof ChatMarkdownContentPart) {
 					lastThinking.removeEditPillByPartId(alreadyRenderedPart.codeblocksPartId);
 				}
@@ -1495,8 +1491,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				const newPart = this.renderChatContentPart(partToRender, templateData, context);
 				if (newPart) {
 					renderedParts[contentIndex] = newPart;
-					// Remove the old part's domNode — it has been disposed and must
-					// not remain in the thinking wrapper alongside the replacement.
 					alreadyRenderedPart?.domNode?.remove();
 				}
 				return;
