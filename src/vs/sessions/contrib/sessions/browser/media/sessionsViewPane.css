@@ -3,9 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.agent-sessions-viewpane {
+.agent-sessions-workbench .agent-sessions-viewpane {
 	background: transparent !important;
-	background-color: transparent !important;
 
 	.agent-sessions-container {
 		display: flex;
@@ -222,7 +221,6 @@
 .agent-sessions-workbench .part.sidebar > .content .monaco-list,
 .agent-sessions-workbench .part.sidebar > .content .monaco-list-rows {
 	background: transparent !important;
-	background-color: transparent !important;
 }
 
 /* Sessions-app-specific overrides for the agent sessions viewer.

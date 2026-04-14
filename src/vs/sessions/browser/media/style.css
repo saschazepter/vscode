@@ -17,33 +17,43 @@
 	inset: 0;
 	z-index: 0;
 	pointer-events: none;
-	background: linear-gradient(
-		to bottom right,
-		var(--vscode-sessionsSidebar-background) 0%,
-		color-mix(in srgb, var(--vscode-button-background) 7%, var(--vscode-sessionsSidebar-background)) 58%,
-		color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sideBar-background)) 82%,
-		color-mix(in srgb, var(--vscode-button-background) 12%, var(--vscode-sessionsSidebar-background)) 100%
-	);
+	background: var(--vscode-sessionsSidebar-background);
 }
 
-.monaco-workbench.vs.agent-sessions-workbench::before {
-	background: linear-gradient(
-		to bottom right,
-		var(--vscode-sessionsSidebar-background) 0%,
-		color-mix(in srgb, var(--vscode-button-background) 3%, var(--vscode-sessionsSidebar-background)) 60%,
-		color-mix(in srgb, var(--vscode-button-background) 4%, var(--vscode-sideBar-background)) 84%,
-		color-mix(in srgb, var(--vscode-button-background) 5%, var(--vscode-sessionsSidebar-background)) 100%
-	);
-}
+@supports (background: color-mix(in srgb, black 0%, white)) {
+	.agent-sessions-workbench::before {
+		background:
+			linear-gradient(
+				to bottom right,
+				transparent 0%,
+				color-mix(in srgb, var(--vscode-button-background) 7%, transparent) 58%,
+				color-mix(in srgb, var(--vscode-button-background) 10%, transparent) 82%,
+				color-mix(in srgb, var(--vscode-button-background) 12%, transparent) 100%
+			),
+			var(--vscode-sessionsSidebar-background);
+	}
 
-.monaco-workbench.vs-dark.agent-sessions-workbench::before {
-	background: linear-gradient(
-		to bottom right,
-		var(--vscode-sessionsSidebar-background) 0%,
-		color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sessionsSidebar-background)) 56%,
-		color-mix(in srgb, var(--vscode-button-background) 14%, var(--vscode-sideBar-background)) 82%,
-		color-mix(in srgb, var(--vscode-button-background) 18%, var(--vscode-sessionsSidebar-background)) 100%
-	);
+	.monaco-workbench.vs.agent-sessions-workbench::before {
+		background:
+			linear-gradient(
+				to bottom right,
+				transparent 0%,
+				color-mix(in srgb, var(--vscode-button-background) 2%, transparent) 45%,
+				color-mix(in srgb, var(--vscode-button-background) 10%, transparent) 75%,
+				color-mix(in srgb, var(--vscode-button-background) 20%, transparent) 100%
+			),
+			var(--vscode-sessionsSidebar-background);
+	}
+
+	.monaco-workbench.vs-dark.agent-sessions-workbench::before {
+		background: linear-gradient(
+			to bottom right,
+			var(--vscode-sessionsSidebar-background) 0%,
+			color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sessionsSidebar-background)) 56%,
+			color-mix(in srgb, var(--vscode-button-background) 14%, var(--vscode-sideBar-background)) 82%,
+			color-mix(in srgb, var(--vscode-button-background) 18%, var(--vscode-sessionsSidebar-background)) 100%
+		);
+	}
 }
 
 .monaco-workbench.hc-black.agent-sessions-workbench::before,
@@ -80,7 +90,6 @@
 .agent-sessions-workbench .part.sidebar > .content,
 .agent-sessions-workbench .part.sidebar > .sidebar-footer {
 	background: transparent !important;
-	background-color: transparent !important;
 }
 
 .agent-sessions-workbench .part.chatbar,
