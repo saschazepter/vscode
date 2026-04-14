@@ -16,7 +16,7 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../platform/context
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { ActiveSessionContextKeys, CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../common/changes.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
-import { DiffPreviewVisibleContext } from '../../../common/contextkeys.js';
+import { DiffPreviewVisibleContext, DiffPreviewFullWidthContext } from '../../../common/contextkeys.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
@@ -202,7 +202,10 @@ registerAction2(class ToggleDiffPreviewAction extends Action2 {
 			category: Categories.View,
 			precondition: IsSessionsWindowContext,
 			f1: true,
-			toggled: DiffPreviewVisibleContext,
+			toggled: {
+				condition: DiffPreviewVisibleContext,
+				icon: Codicon.openPreview,
+			},
 			menu: [{
 				id: MenuId.ChatEditingSessionTitleToolbar,
 				group: 'navigation',
@@ -306,6 +309,31 @@ registerAction2(class CloseDiffPreviewAction extends Action2 {
 		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
 		if (part instanceof AuxiliaryBarPart && part.isDiffPreviewVisible) {
 			part.toggleDiffPreview();
+		}
+	}
+});
+
+registerAction2(class ToggleDiffPreviewFullWidthAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.agentSessions.toggleDiffPreviewFullWidth',
+			title: localize2('toggleDiffPreviewFullWidth', "Toggle Full Width"),
+			icon: Codicon.screenFull,
+			f1: false,
+			precondition: DiffPreviewVisibleContext,
+			toggled: DiffPreviewFullWidthContext,
+			menu: [{
+				id: Menus.DiffPreviewToolbar,
+				group: 'navigation',
+				order: 2,
+			}],
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
+		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+		if (part instanceof AuxiliaryBarPart) {
+			part.toggleFullWidth();
 		}
 	}
 });

@@ -21,6 +21,7 @@ export const ChatSessionProviderIdContext = new RawContextKey<string>('chatSessi
 //#region < --- Diff Preview --- >
 
 export const DiffPreviewVisibleContext = new RawContextKey<boolean>('sessions.diffPreviewVisible', false);
+export const DiffPreviewFullWidthContext = new RawContextKey<boolean>('sessions.diffPreviewFullWidth', false);
 
 //#endregion
 

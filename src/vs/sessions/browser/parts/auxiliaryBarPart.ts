@@ -39,7 +39,7 @@ import { getFlatContextMenuActions } from '../../../platform/actions/browser/men
 import { IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
 import { DiffPreviewWidget, IDiffPreviewFile } from './diffPreviewWidget.js';
-import { DiffPreviewVisibleContext } from '../../common/contextkeys.js';
+import { DiffPreviewVisibleContext, DiffPreviewFullWidthContext } from '../../common/contextkeys.js';
 import { Sash, Orientation as SashOrientation, ISashEvent, SashState } from '../../../base/browser/ui/sash/sash.js';
 
 /**
@@ -100,7 +100,13 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	private diffPreviewSash: Sash | undefined;
 	private diffPreviewWidth = 0;
 	private diffPreviewVisibleContextKey: IContextKey<boolean>;
+	private diffPreviewFullWidthContextKey: IContextKey<boolean>;
 	private lastLayoutWidth = 0;
+	private savedAuxBarWidth = 0; // absolute width before diff preview was opened
+
+	// Full-width mode: saved visibility state to restore when exiting
+	private savedSidebarVisible: boolean | undefined;
+	private savedChatBarVisible: boolean | undefined;
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -149,6 +155,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		);
 
 		this.diffPreviewVisibleContextKey = DiffPreviewVisibleContext.bindTo(contextKeyService);
+		this.diffPreviewFullWidthContextKey = DiffPreviewFullWidthContext.bindTo(contextKeyService);
 	}
 
 	override create(parent: HTMLElement): void {
@@ -195,17 +202,27 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		const isVisible = this.diffPreviewContainer.style.display !== 'none';
 
 		if (isVisible) {
+			// If in full-width mode, restore panels first
+			if (this.isDiffPreviewFullWidth) {
+				this.toggleFullWidth();
+			}
 			// Hide
 			this.diffPreviewWidget.hide();
 			this.diffPreviewContainer.style.display = 'none';
 			this.diffPreviewSash.state = SashState.Disabled;
-			const previousWidth = this.diffPreviewWidth;
 			this.diffPreviewWidth = 0;
 			this.diffPreviewVisibleContextKey.set(false);
 			this.relayoutWithDiffPreview();
-			this.layoutService.resizePart(Parts.AUXILIARYBAR_PART, -previousWidth, 0);
+			// Restore the aux bar to its original width before the preview was opened
+			if (this.savedAuxBarWidth > 0) {
+				const currentHeight = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).height;
+				this.layoutService.setSize(Parts.AUXILIARYBAR_PART, { width: this.savedAuxBarWidth, height: currentHeight });
+				this.savedAuxBarWidth = 0;
+			}
 		} else {
-			// Expand aux bar first
+			// Save the current aux bar width before expanding
+			this.savedAuxBarWidth = this.layoutService.getSize(Parts.AUXILIARYBAR_PART).width;
+			// Expand aux bar
 			this.diffPreviewWidth = DiffPreviewWidget.PREFERRED_WIDTH;
 			this.layoutService.resizePart(Parts.AUXILIARYBAR_PART, DiffPreviewWidget.PREFERRED_WIDTH, 0);
 			this.diffPreviewContainer.style.display = '';
@@ -232,6 +249,42 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	get isDiffPreviewVisible(): boolean {
 		return this.diffPreviewWidget?.visible ?? false;
+	}
+
+	get isDiffPreviewFullWidth(): boolean {
+		return this.diffPreviewFullWidthContextKey.get() ?? false;
+	}
+
+	/**
+	 * Toggle full-width mode: hides sidebar and chatbar so the diff preview
+	 * fills the remaining space. Toggling again restores previous panel state.
+	 */
+	toggleFullWidth(): void {
+		if (!this.isDiffPreviewVisible) {
+			return;
+		}
+
+		const isFullWidth = this.isDiffPreviewFullWidth;
+
+		if (isFullWidth) {
+			// Restore previous state
+			if (this.savedSidebarVisible !== undefined) {
+				this.layoutService.setPartHidden(!this.savedSidebarVisible, Parts.SIDEBAR_PART);
+			}
+			if (this.savedChatBarVisible !== undefined) {
+				this.layoutService.setPartHidden(!this.savedChatBarVisible, Parts.CHATBAR_PART);
+			}
+			this.savedSidebarVisible = undefined;
+			this.savedChatBarVisible = undefined;
+			this.diffPreviewFullWidthContextKey.set(false);
+		} else {
+			// Save current state and hide sidebar + chatbar
+			this.savedSidebarVisible = this.layoutService.isVisible(Parts.SIDEBAR_PART);
+			this.savedChatBarVisible = this.layoutService.isVisible(Parts.CHATBAR_PART);
+			this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
+			this.layoutService.setPartHidden(true, Parts.CHATBAR_PART);
+			this.diffPreviewFullWidthContextKey.set(true);
+		}
 	}
 
 	/**

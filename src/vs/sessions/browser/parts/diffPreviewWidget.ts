@@ -185,12 +185,21 @@ export class DiffPreviewWidget extends Disposable {
 	}
 
 	/**
-	 * Reveal a specific file in the multi-diff view.
+	 * Reveal a specific file in the multi-diff view, expanding it if collapsed.
 	 */
 	revealFile(uri: URI): void {
-		if (this.multiDiffEditor) {
-			this.multiDiffEditor.reveal({ original: undefined, modified: uri });
+		if (!this.multiDiffEditor || !this.viewModel) {
+			return;
 		}
+
+		// Expand the item if it's collapsed
+		const items = this.viewModel.items.get();
+		const item = items.find(i => i.modifiedUri?.toString() === uri.toString());
+		if (item && item.collapsed.get()) {
+			item.collapsed.set(false, undefined);
+		}
+
+		this.multiDiffEditor.reveal({ original: undefined, modified: uri });
 	}
 
 	private static readonly HORIZONTAL_PADDING = 20; // 10px left + 10px right

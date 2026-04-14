@@ -45,6 +45,12 @@
 	border-radius: 4px;
 }
 
+/* Toggled state for view pane title toolbar actions (e.g. toggle diff preview) */
+.agent-sessions-workbench .part.auxiliarybar .title-actions .monaco-action-bar .action-item .action-label.checked {
+	background-color: var(--vscode-activityBarTop-activeBackground, color-mix(in srgb, var(--vscode-sideBarTitle-foreground) 10%, transparent));
+	border-radius: 4px;
+}
+
 /* Override base workbench monaco editor background in auxiliary bar content */
 .agent-sessions-workbench .part.auxiliarybar > .content .monaco-editor,
 .agent-sessions-workbench .part.auxiliarybar > .content .monaco-editor .margin,
