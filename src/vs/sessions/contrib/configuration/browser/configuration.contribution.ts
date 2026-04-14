@@ -63,7 +63,7 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'workbench.startupEditor': 'none',
 		'workbench.tips.enabled': false,
 		'workbench.layoutControl.type': 'toggles',
-		'workbench.editor.useModal': 'all',
+		'workbench.editor.useModal': 'off',
 		'workbench.panel.showLabels': false,
 		'workbench.colorTheme': ThemeSettingDefaults.COLOR_THEME_DARK,
 

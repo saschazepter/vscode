@@ -21,15 +21,11 @@ The Agent Sessions Workbench (`Workbench` in `sessions/browser/workbench.ts`) pr
 ```
 ┌─────────┬───────────────────────────────────────────────────────┐
 │         │                    Titlebar                           │
-│         ├────────────────────────────────────┬──────────────────┤
-│ Sidebar │              Chat Bar              │  Auxiliary Bar   │
-│         ├────────────────────────────────────┴──────────────────┤
+│         ├───────────────┬────────────────────┬──────────────────┤
+│ Sidebar │    Chat Bar   │       Editor       │  Auxiliary Bar   │
+│         ├───────────────┴────────────────────┴──────────────────┤
 │         │                      Panel                            │
 └─────────┴───────────────────────────────────────────────────────┘
-
-Editors open via MODAL_GROUP into the standard ModalEditorPart overlay
-(created on-demand by EditorParts.createModalEditorPart). The main
-editor part exists but is hidden (display:none) for future use.
 ```
 
 ### 2.2 Parts
@@ -40,10 +36,10 @@ editor part exists but is hidden (display:none) for future use.
 |------|-------------|----------|------------|----------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top of right section | Always visible | — |
 | Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
-| Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
-| Editor | `Parts.EDITOR_PART` | Hidden main part (not in grid); editors open via `MODAL_GROUP` into `ModalEditorPart` overlay | Hidden | — |
+| Chat Bar | `Parts.CHATBAR_PART` | Top-right section, left side | Visible | `ViewContainerLocation.ChatBar` |
+| Editor | `Parts.EDITOR_PART` | Top-right section, center | Hidden by default (auto-shown when editors open) | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
-| Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
+| Panel | `Parts.PANEL_PART` | Below Chat Bar, Editor, and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
 
 #### Excluded Parts
 
@@ -149,7 +145,7 @@ The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 
 ### 4.1 Grid Tree
 
-The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 4.3).
+The Editor part is in the top-right horizontal branch between Chat Bar and Auxiliary Bar.
 
 ```
 Orientation: HORIZONTAL (root)
@@ -158,51 +154,40 @@ Orientation: HORIZONTAL (root)
     ├── Titlebar (leaf, size: titleBarHeight)
     ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
     │   ├── Chat Bar (leaf, size: remaining width)
-    │   └── Auxiliary Bar (leaf, size: 300px default)
+    │   ├── Editor (leaf, size: 650px default, hidden by default)
+    │   └── Auxiliary Bar (leaf, size: 380px default)
     └── Panel (leaf, size: 300px default, hidden by default)
 ```
 
-This structure places the sidebar at the root level spanning the full window height. The titlebar, chat bar, auxiliary bar, and panel are all within the right section.
+This structure places the sidebar at the root level spanning the full window height. The titlebar, chat bar, editor, auxiliary bar, and panel are all within the right section.
 
 ### 4.2 Default Sizes
 
 | Part | Default Size |
 |------|--------------|
 | Sidebar | 300px width |
-| Auxiliary Bar | 300px width |
+| Auxiliary Bar | 380px width |
+| Editor | 650px width |
 | Chat Bar | Remaining space |
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
 
 The sessions sidebar can be resized down to a minimum width of 170px.
 
-### 4.3 Editor Modal
+### 4.3 Editor Visibility
 
-The main editor part is created but hidden (`display:none`). It exists for future use but is not currently visible. All editors are forced to open in the `ModalEditorPart` overlay via the standard `createModalEditorPart()` mechanism.
+The main editor part is created as a standard part in the top-right grid branch and starts hidden by default. It is automatically shown when an editor opens and hidden again when all editor groups are empty.
 
 #### How It Works
 
-The sessions configuration sets `workbench.editor.useModal` to `'all'` (in `contrib/configuration/browser/configuration.contribution.ts`). This causes `findGroup()` in `editorGroupFinder.ts` to redirect all editor opens (that do not specify an explicit preferred group) to `createModalEditorPart()`, which creates the standard workbench `ModalEditorPart` overlay on-demand.
-
-When the setting is `'all'`:
-- All editors without an explicit preferred group open in the modal editor part
-- The modal is not auto-closed when editors open without explicit `MODAL_GROUP` as preferred group
+The sessions configuration sets `workbench.editor.useModal` to `'off'` (in `contrib/configuration/browser/configuration.contribution.ts`), so editor opens go to the regular editor part instead of being forced into `ModalEditorPart`.
 
 #### Behavior
 
 | Trigger | Action |
 |---------|--------|
-| Any editor opens (no explicit group) | `ModalEditorPart` overlay created/reused automatically |
-| All editors closed in modal | Modal closes and is disposed |
-| Click backdrop | Close all editors, hide modal |
-| Press Escape | Close all editors, hide modal |
-
-#### Configuration
-
-The setting `workbench.editor.useModal` is an enum with three values:
-- `'off'`: Editors never open in a modal overlay
-- `'some'`: Certain editors (e.g. Settings, Keyboard Shortcuts) may open in a modal overlay when requested via `MODAL_GROUP`
-- `'all'`: All editors open in a modal overlay (used by agent sessions window)
+| Any editor opens | Editor part is shown (`setEditorHidden(false)`) |
+| Last editor closes | Editor part is hidden (`setEditorHidden(true)`) |
 
 
 ---
@@ -246,8 +231,8 @@ setPartHidden(hidden: boolean, part: Parts): void
 - **Panel Part:**
   - If the panel is maximized when hiding, it exits maximized state first
 - **Editor Part:**
-  - The main editor part is always hidden (`display:none`); `setEditorHidden()` is a no-op
-  - All editors open via `MODAL_GROUP` into the `ModalEditorPart` overlay, which manages its own lifecycle
+    - The editor part is managed by grid visibility via `setEditorHidden()`
+    - Editors open in the regular editor part (modal behavior is disabled by default)
 
 ### 6.2 Part Sizing
 
@@ -329,7 +314,7 @@ Applied to `mainContainer` based on part visibility:
 | Class | Applied When |
 |-------|--------------|
 | `nosidebar` | Sidebar is hidden |
-| `nomaineditorarea` | Editor part is hidden (always applied — main editor part is permanently hidden) |
+| `nomaineditorarea` | Editor part is hidden |
 | `noauxiliarybar` | Auxiliary bar is hidden |
 | `nochatbar` | Chat bar is hidden |
 | `nopanel` | Panel is hidden |
@@ -421,12 +406,13 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 
 ### 9.5 Part Borders and Card Appearance
 
-Parts manage their own border and background styling via the `updateStyles()` method. In the default light theme, the sessions workbench surface uses the off-white workbench/sidebar background while the card-like chat, auxiliary bar, and panel surfaces use the brighter editor background. Light themes also override the chat, auxiliary bar, and panel card border color in CSS to use `editorWidget.border`, giving those cards a darker outline. Dark and high-contrast mappings continue to use the existing part border tokens. These surfaces use a **card appearance** with CSS variables for background and border:
+Parts manage their own border and background styling via the `updateStyles()` method. In the default light theme, the sessions workbench surface uses the off-white workbench/sidebar background while the card-like chat, editor, auxiliary bar, and panel surfaces use the brighter editor background. Light themes also override the chat, editor, auxiliary bar, and panel card border color in CSS to use `editorWidget.border`, giving those cards a darker outline. Dark and high-contrast mappings continue to use the existing part border tokens. These surfaces use a **card appearance** with CSS variables for background and border:
 
 | Part | Styling | Notes |
 |------|---------|-------|
 | Sidebar | Right border via `SIDE_BAR_BORDER` / `contrastBorder` | Flush appearance, no card styling |
 | Chat Bar | Card appearance via CSS variables `--part-background` / `--part-border-color`, with a light-theme-only CSS border-color override | Uses `sessionsChatBarBackground`; light themes map the card to `editorBackground` and darken the outline with `editorWidget.border`, while dark and high-contrast themes keep the existing part border token behavior; margins create card offset |
+| Editor | Card appearance via editor surface and border tokens | Uses `editorBackground` and `editorWidget.border`; margins match the card spacing rhythm and rounded corners are clipped with `overflow: hidden` |
 | Auxiliary Bar | Card appearance via CSS variables `--part-background` / `--part-border-color`, with a light-theme-only CSS border-color override | Uses `sessionsAuxiliaryBarBackground` / `PANEL_BORDER`; default light themes map this card to `editorBackground` and darken the outline with `editorWidget.border`, while dark and high-contrast themes keep the existing sidebar-style surface; margins create card offset |
 | Panel | Card appearance via CSS variables `--part-background` / `--part-border-color`, with a light-theme-only CSS border-color override | Uses `sessionsPanelBackground` / `PANEL_BORDER`; default light themes map this card to `editorBackground` and darken the outline with `editorWidget.border`, while dark and high-contrast themes keep the existing sidebar-style surface; margins create card offset |
 
@@ -583,7 +569,7 @@ When modifying the Agent Sessions layout:
 2. `startup()` — Initialize services and layout
 3. `initServices()` — Set up service collection (including `TitleService`), register singleton services, set lifecycle to `Ready`
 4. `initLayout()` — Get services, register layout listeners
-5. `renderWorkbench()` — Create DOM, create parts, create hidden editor part, set up notifications
+5. `renderWorkbench()` — Create DOM, create parts, create editor part, set up notifications
 6. `createWorkbenchLayout()` — Build the grid structure
 7. `createWorkbenchManagement()` — (No-op in agent sessions layout)
 8. `layout()` — Perform initial layout
@@ -651,6 +637,9 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-14 | Updated Sessions editor and auxiliary bar card styling to remove the inner gap and render a single shared separator, so both surfaces read as one combined card. |
+| 2026-04-14 | Styled the Sessions editor part as a card (matching spacing rhythm, rounded corners, and border treatment) to align with chat, auxiliary bar, and panel visuals. |
+| 2026-04-14 | Restored the main editor part into the top-right grid branch (Chat Bar \| Editor \| Auxiliary Bar), kept it hidden by default until editors open, and changed sessions defaults to `workbench.editor.useModal: 'off'` so file opens render in the editor part instead of a forced modal overlay. |
 | 2026-04-10 | Updated the sessions titlebar widget so repository/worktree metadata truncates with ellipsis before the primary AI-generated session title when the command center gets narrow. |
 | 2026-04-10 | Updated workspace/repository section headers in the Sessions sidebar to keep their uppercase titles visible via ellipsis truncation so the section toolbar actions remain reachable when names are long. |
 | 2026-04-10 | Updated the Sessions view header so the sidebar "Sessions" label stays visible and truncates with ellipsis when space is tight instead of being hidden; documented the find-widget exception in the Sessions view spec. |

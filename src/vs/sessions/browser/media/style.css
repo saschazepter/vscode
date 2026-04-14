@@ -31,6 +31,20 @@
 	box-sizing: border-box;
 }
 
+.agent-sessions-workbench .part.editor {
+	margin: 0 0 0 0;
+	height: calc(100% - 10px) !important;
+	background: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+	border-right-width: 0;
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+	border-top-left-radius: 8px;
+	border-bottom-left-radius: 8px;
+	box-sizing: border-box;
+	overflow: hidden;
+}
+
 .agent-sessions-workbench:not(.nosidebar) .part.chatbar {
 	margin-left: 0;
 }
@@ -39,8 +53,16 @@
 	margin: 0 10px 0px 0;
 	background: var(--part-background);
 	border: 1px solid var(--part-border-color, transparent);
-	border-radius: 8px;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+	border-top-right-radius: 8px;
+	border-bottom-right-radius: 8px;
 	box-sizing: border-box;
+}
+
+.agent-sessions-workbench.nomaineditorarea .part.auxiliarybar {
+	border-top-left-radius: 8px;
+	border-bottom-left-radius: 8px;
 }
 
 .agent-sessions-workbench .part.auxiliarybar > .content .pane-body {
@@ -73,6 +95,7 @@
 }
 
 .monaco-workbench.vs.agent-sessions-workbench .part.chatbar,
+.monaco-workbench.vs.agent-sessions-workbench .part.editor,
 .monaco-workbench.vs.agent-sessions-workbench .part.auxiliarybar,
 .monaco-workbench.vs.agent-sessions-workbench .part.panel {
 	border-color: var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
@@ -142,6 +165,7 @@
 .agent-sessions-workbench .interactive-session .chat-input-container.focused {
 	border-color: var(--vscode-focusBorder) !important;
 }
+
 .agent-sessions-workbench .interactive-session .interactive-input-part {
 	width: 100%;
 	max-width: 950px;
@@ -204,6 +228,7 @@
 .agent-sessions-workbench .interactive-session .interactive-response .interactive-result-code-block {
 	border-color: var(--vscode-editorWidget-border, var(--vscode-widget-border));
 }
+
 /* ---- Modal Editor Block ---- */
 
 .agent-sessions-workbench .monaco-modal-editor-block {
@@ -292,6 +317,7 @@
 }
 
 @starting-style {
+
 	/* Shared starting values */
 	.agent-sessions-workbench .part.auxiliarybar,
 	.agent-sessions-workbench .part.panel,
@@ -329,6 +355,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
 	.agent-sessions-workbench .part.auxiliarybar,
 	.agent-sessions-workbench .part.panel,
 	.agent-sessions-workbench .part.chatbar {
