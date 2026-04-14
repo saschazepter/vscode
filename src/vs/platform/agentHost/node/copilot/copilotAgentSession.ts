@@ -120,7 +120,6 @@ function getPermissionDisplay(request: { kind: string;[key: string]: unknown }):
 				permissionKind: request.kind,
 			};
 		}
-		case 'create':
 		case 'write':
 			return {
 				confirmationTitle: localize('copilot.permission.write.title', "Write file"),
