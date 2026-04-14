@@ -745,10 +745,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 				selectSectionWithMarketplace: (section) => this.selectSection(section, { showMarketplace: true }),
 				prefillChat: async (query, options) => {
 					try {
+						// Close the editor first if requested — must happen before
+						// the chat command which may dispose the editor modal
+						if (options?.closeEditor && this.input) {
+							this.group.closeEditor(this.input);
+						}
 						if (this.workspaceService.isSessionsWindow) {
 							const sessionsViewId = 'workbench.view.sessions.chat';
 							if (options?.newChat) {
-								// Open a new chat session — navigate to new-chat view without stealing focus
 								await this.commandService.executeCommand('workbench.action.sessions.newChat');
 							}
 							const view = await this.viewsService.openView(sessionsViewId, false /* don't steal focus */);
@@ -763,9 +767,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 								await this.commandService.executeCommand('workbench.action.chat.newChat');
 							}
 							await this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
-						}
-						if (options?.closeEditor && this.input) {
-							this.group.closeEditor(this.input);
 						}
 					} catch (err) {
 						onUnexpectedError(err);
