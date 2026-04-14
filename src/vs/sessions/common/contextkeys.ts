@@ -20,8 +20,8 @@ export const ChatSessionProviderIdContext = new RawContextKey<string>('chatSessi
 
 //#region < --- Diff Preview --- >
 
-export const DiffPreviewVisibleContext = new RawContextKey<boolean>('sessions.diffPreviewVisible', false);
-export const DiffPreviewFullWidthContext = new RawContextKey<boolean>('sessions.diffPreviewFullWidth', false);
+export const DiffPreviewVisibleContext = new RawContextKey<boolean>('sessions.diffPreviewVisible', false, localize('diffPreviewVisible', "Whether the diff preview pane is visible"));
+export const DiffPreviewFullWidthContext = new RawContextKey<boolean>('sessions.diffPreviewFullWidth', false, localize('diffPreviewFullWidth', "Whether the diff preview pane is in full-width mode"));
 
 //#endregion
 

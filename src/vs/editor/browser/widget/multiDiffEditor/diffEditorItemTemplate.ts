@@ -125,9 +125,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			? this._register(this._workbenchUIElementFactory.createResourceLabel(this._elements.secondaryPath))
 			: undefined;
 		this._dataStore = this._register(new DisposableStore());
-		// TODO: This is a global default affecting all MultiDiffEditorWidget consumers.
-		// Consider making this configurable via options before merging.
-		this._headerHeight = 32;
+		this._headerHeight = this._workbenchUIElementFactory.headerHeight ?? 40;
 		this._lastScrollTop = -1;
 		this._isSettingScrollTop = false;
 
@@ -153,6 +151,9 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 
 		this._register(addDisposableListener(this._elements.header, 'click', (e) => {
 			// Don't toggle if clicking on the actions toolbar or the collapse button itself
+			if (e.defaultPrevented) {
+				return;
+			}
 			const target = e.target as HTMLElement;
 			if (target.closest('.actions') || target.closest('.collapse-button')) {
 				return;
@@ -162,6 +163,9 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 
 		this._register(addDisposableListener(this._elements.header, 'keydown', (e) => {
 			if (e.key === 'Enter' || e.key === ' ') {
+				if (e.defaultPrevented) {
+					return;
+				}
 				const target = e.target as HTMLElement;
 				if (target.closest('.actions') || target.closest('.collapse-button')) {
 					return;

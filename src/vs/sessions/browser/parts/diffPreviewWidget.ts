@@ -282,6 +282,7 @@ export class DiffPreviewWidget extends Disposable {
 
 	private createUIElementFactory(scopedInstantiationService: IInstantiationService): IWorkbenchUIElementFactory {
 		return {
+			headerHeight: 32,
 			createResourceLabel: (element: HTMLElement): IResourceLabel => {
 				const label = scopedInstantiationService.createInstance(ResourceLabel, element, {});
 				return {
@@ -307,9 +308,5 @@ export class DiffPreviewWidget extends Disposable {
 			this.multiDiffEditor.setViewModel(undefined);
 		}
 		this._viewModel.clear();
-	}
-
-	override dispose(): void {
-		super.dispose();
 	}
 }

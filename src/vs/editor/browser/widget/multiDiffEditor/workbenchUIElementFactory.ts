@@ -14,6 +14,11 @@ import { URI } from '../../../../base/common/uri.js';
  */
 export interface IWorkbenchUIElementFactory {
 	createResourceLabel?(element: HTMLElement): IResourceLabel;
+
+	/**
+	 * Height of the header bar for each diff entry. Defaults to 40.
+	 */
+	headerHeight?: number;
 }
 
 export interface IResourceLabel extends IDisposable {

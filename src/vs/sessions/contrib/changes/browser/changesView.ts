@@ -57,6 +57,7 @@ import { IExtensionService } from '../../../../workbench/services/extensions/com
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../../workbench/services/panecomposite/browser/panecomposite.js';
 import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
+import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
@@ -601,9 +602,8 @@ export class ChangesViewPane extends ViewPane {
 				logChangesViewFileSelect(this.telemetryService, e.element.changeType);
 
 				// If diff preview is open, scroll to the file instead of opening modal
-				const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
-				if (auxPart.isDiffPreviewVisible) {
-					auxPart.revealInDiffPreview(e.element.uri);
+				if (this.auxBarPart.isDiffPreviewVisible) {
+					this.auxBarPart.revealInDiffPreview(e.element.uri);
 					return;
 				}
 
@@ -727,25 +727,31 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	/**
+	 * Get the sessions auxiliary bar part.
+	 * Safe cast: the sessions window always registers AgenticPaneCompositePartService.
+	 */
+	private get auxBarPart(): AuxiliaryBarPart {
+		return (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
+	}
+
+	/**
 	 * Toggle the diff preview pane on the auxiliary bar.
 	 */
 	toggleDiffPreview(): void {
-		const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
 		const changes = toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
-		auxPart.toggleDiffPreview(changes);
+		this.auxBarPart.toggleDiffPreview(changes);
 	}
 
 	/**
 	 * Update diff preview content with the given files, or all changes if no files given.
 	 */
 	private updateDiffPreview(files?: readonly IChangesFileItem[]): void {
-		const auxPart = (this.paneCompositeService as AgenticPaneCompositePartService).getAuxiliaryBarPart();
-		if (!auxPart.isDiffPreviewVisible) {
+		if (!this.auxBarPart.isDiffPreviewVisible) {
 			return;
 		}
 
 		const items = files ?? toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
-		auxPart.setDiffPreviewFiles(items);
+		this.auxBarPart.setDiffPreviewFiles(items);
 	}
 
 	private getTreeRootInfo(items: readonly IChangesFileItem[]): IChangesTreeRootInfo | undefined {
