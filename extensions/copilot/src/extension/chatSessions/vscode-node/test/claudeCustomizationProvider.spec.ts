@@ -18,12 +18,12 @@ import { IClaudeRuntimeDataService } from '../../claude/common/claudeRuntimeData
 import { ClaudeCustomizationProvider } from '../claudeCustomizationProvider';
 import { MockPromptsService } from '../../../../platform/promptFiles/test/common/mockPromptsService';
 
-function mockAgent(uri: URI): vscode.ChatCustomAgent {
-	return { uri, name: '', source: 'local', userInvocable: true, disableModelInvocation: false } as vscode.ChatCustomAgent;
+function mockAgent(uri: URI, name: string): vscode.ChatCustomAgent {
+	return { uri, name, source: 'local', userInvocable: true, disableModelInvocation: false } as vscode.ChatCustomAgent;
 }
 
-function mockSkill(uri: URI): vscode.ChatSkill {
-	return { uri, name: '', source: 'local' } as vscode.ChatSkill;
+function mockSkill(uri: URI, name: string): vscode.ChatSkill {
+	return { uri, name, source: 'local' } as vscode.ChatSkill;
 }
 
 class FakeChatSessionCustomizationType {
@@ -182,7 +182,7 @@ describe('ClaudeCustomizationProvider', () => {
 		it('shows file-based agents from .claude/ paths before session starts', async () => {
 			mockWorkspaceService.setFolders([URI.file('/workspace')]);
 			mockPromptsService.setCustomAgents([
-				mockAgent(URI.file('/workspace/.claude/agents/my-agent.agent.md')),
+				mockAgent(URI.file('/workspace/.claude/agents/my-agent.agent.md'), 'my-agent'),
 			]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
@@ -198,7 +198,7 @@ describe('ClaudeCustomizationProvider', () => {
 				{ name: 'my-agent', description: 'SDK version' },
 			]);
 			mockPromptsService.setCustomAgents([
-				mockAgent(URI.file('/workspace/.claude/agents/my-agent.agent.md')),
+				mockAgent(URI.file('/workspace/.claude/agents/my-agent.agent.md'), 'my-agent'),
 			]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
@@ -211,8 +211,8 @@ describe('ClaudeCustomizationProvider', () => {
 		it('filters out file agents not under .claude/', async () => {
 			mockWorkspaceService.setFolders([URI.file('/workspace')]);
 			mockPromptsService.setCustomAgents([
-				mockAgent(URI.file('/workspace/.github/my-agent.agent.md')),
-				mockAgent(URI.file('/workspace/root.agent.md')),
+				mockAgent(URI.file('/workspace/.github/my-agent.agent.md'), 'my-agent'),
+				mockAgent(URI.file('/workspace/root.agent.md'), 'root-agent'),
 			]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
@@ -285,7 +285,7 @@ describe('ClaudeCustomizationProvider', () => {
 
 		it('returns skills under .claude/skills/', async () => {
 			const uri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
-			mockPromptsService.setSkills([mockSkill(uri)]);
+			mockPromptsService.setSkills([mockSkill(uri, 'my-skill')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
@@ -296,8 +296,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 		it('filters out skills not under .claude/', async () => {
 			mockPromptsService.setSkills([
-				mockSkill(URI.file('/workspace/.github/skills/copilot-skill/SKILL.md')),
-				mockSkill(URI.file('/workspace/.copilot/skills/other/SKILL.md')),
+				mockSkill(URI.file('/workspace/.github/skills/copilot-skill/SKILL.md'), 'copilot-skill'),
+				mockSkill(URI.file('/workspace/.copilot/skills/other/SKILL.md'), 'other-skill'),
 			]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
@@ -307,7 +307,7 @@ describe('ClaudeCustomizationProvider', () => {
 
 		it('includes skills from user home .claude/ directory', async () => {
 			const uri = URI.file('/home/user/.claude/skills/global-skill/SKILL.md');
-			mockPromptsService.setSkills([mockSkill(uri)]);
+			mockPromptsService.setSkills([mockSkill(uri, 'global-skill')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
@@ -320,7 +320,7 @@ describe('ClaudeCustomizationProvider', () => {
 			mockWorkspaceService.setFolders([URI.file('/workspace')]);
 			mockRuntimeDataService.setAgents([{ name: 'Explore', description: 'Agent' }]);
 			mockFileSystemService.setFile(URI.joinPath(URI.file('/workspace'), 'CLAUDE.md'), '# Instructions');
-			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/s/SKILL.md'))]);
+			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/s/SKILL.md'), 's')]);
 			mockFileSystemService.setFile(
 				URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json'),
 				JSON.stringify({ hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] } })
