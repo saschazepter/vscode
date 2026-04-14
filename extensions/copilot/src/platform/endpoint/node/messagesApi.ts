@@ -169,7 +169,7 @@ export function createMessagesRequestBody(accessor: ServicesAccessor, options: I
 	if (thinkingConfig && endpoint.supportsReasoningEffort?.length) {
 		const candidateEffort = configurationService.getConfig(ConfigKey.TeamInternal.AnthropicThinkingEffort)
 			?? reasoningEffort
-			?? (endpoint.supportsReasoningEffort.length === 1 ? endpoint.supportsReasoningEffort[0] : undefined);
+			?? (endpoint.supportsReasoningEffort.length === 1 ? endpoint.supportsReasoningEffort[0] : 'medium');
 		if (candidateEffort === 'low' || candidateEffort === 'medium' || candidateEffort === 'high') {
 			effort = candidateEffort;
 		}
