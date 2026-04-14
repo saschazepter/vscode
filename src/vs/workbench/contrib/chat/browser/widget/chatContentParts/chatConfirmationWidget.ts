@@ -335,10 +335,19 @@ abstract class BaseChatConfirmationWidget<T> extends Disposable {
 		this._domNode = elements.root;
 		this._buttonsDomNode = elements.buttons;
 
+		const titleMd = new MarkdownString('', { supportThemeIcons: true });
+		if (icon) {
+			titleMd.appendMarkdown(`$(${icon.id}) `);
+		}
+		if (typeof title === 'string') {
+			titleMd.appendText(title);
+		} else {
+			titleMd.appendMarkdown(title.value);
+		}
 		this._register(instantiationService.createInstance(
 			ChatQueryTitlePart,
 			elements.title,
-			new MarkdownString(icon ? `$(${icon.id}) ${typeof title === 'string' ? title : title.value}` : typeof title === 'string' ? title : title.value),
+			titleMd,
 			subtitle,
 		));
 
