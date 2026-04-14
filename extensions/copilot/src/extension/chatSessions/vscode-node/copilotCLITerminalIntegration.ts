@@ -349,7 +349,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.powershellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if ((shellBasename === 'powershell' || shellBasename === 'powershell.exe') && this.powershellScriptPath) {
+		} else if ((shellBasename === 'powershell' || shellBasename === 'powershell.exe') && this.powershellScriptPath && configPlatform === 'windows') {
 			return {
 				shell: 'powershell',
 				shellPath,
