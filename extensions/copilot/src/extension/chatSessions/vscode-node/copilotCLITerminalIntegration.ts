@@ -167,7 +167,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 			options.iconPath = shellPathAndArgs.iconPath ?? options.iconPath;
 		}
 
-		if (shellPathAndArgs && shellPathAndArgs.shell !== 'powershell' && shellPathAndArgs.shell !== 'pwsh') {
+		if (shellPathAndArgs && (shellPathAndArgs.shell !== 'powershell' && shellPathAndArgs.shell !== 'pwsh')) {
 			const terminal = await this.pythonTerminalService.createTerminal(options);
 			if (terminal) {
 				this._register(terminal);
