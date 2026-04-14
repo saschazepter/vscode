@@ -167,14 +167,14 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 					const result = await claudeWorktreeService.cleanupWorktreeOnArchive(sessionId);
 					logService.trace(`[Claude] Worktree cleanup for session ${sessionId}: ${result.cleaned ? 'cleaned' : result.reason}`);
 				} catch (error) {
-					logService.error(`[Claude] Failed to cleanup worktree for archived session ${sessionId}:`, error);
+					logService.error(error as Error, `[Claude] Failed to cleanup worktree for archived session ${sessionId}`);
 				}
 			} else {
 				try {
 					const result = await claudeWorktreeService.recreateWorktreeOnUnarchive(sessionId);
 					logService.trace(`[Claude] Worktree recreation for session ${sessionId}: ${result.recreated ? 'recreated' : result.reason}`);
 				} catch (error) {
-					logService.error(`[Claude] Failed to recreate worktree for unarchived session ${sessionId}:`, error);
+					logService.error(error as Error, `[Claude] Failed to recreate worktree for unarchived session ${sessionId}`);
 				}
 			}
 		}));

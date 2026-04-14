@@ -183,16 +183,19 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 	/**
 	 * Initializes a worktree for a new Claude session if isolation mode is 'worktree'.
 	 * This must be called during request handling (where stream and toolInvocationToken are available).
+	 *
+	 * @returns `true` if the request should continue, `false` if it should abort
+	 * (e.g., user cancelled the uncommitted-changes prompt or denied trust).
 	 */
 	private async _initializeWorktreeForNewSession(
 		sessionId: string,
 		stream: vscode.ChatResponseStream,
 		toolInvocationToken: vscode.ChatParticipantToolToken,
 		token: vscode.CancellationToken
-	): Promise<void> {
+	): Promise<boolean> {
 		const isolationMode = this._controller.getMetadata(sessionId)?.isolationMode;
 		if (isolationMode !== IsolationMode.Worktree) {
-			return;
+			return true;
 		}
 
 		const selectedFolder = this._controller.getMetadata(sessionId)?.cwd;
@@ -210,10 +213,16 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			token
 		);
 
+		if (folderInfo.cancelled || folderInfo.trusted === false) {
+			return false;
+		}
+
 		if (folderInfo.worktreeProperties) {
 			await this.worktreeService.setWorktreeProperties(sessionId, folderInfo.worktreeProperties);
 			this.logService.info(`[Claude] Created worktree for session ${sessionId}: ${folderInfo.worktreeProperties.worktreePath}`);
 		}
+
+		return true;
 	}
 
 	// #region Folder Option Helpers
@@ -298,8 +307,8 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 
 			// Initialize worktree for new sessions with worktree isolation
 			if (isNewSession) {
-				await this._initializeWorktreeForNewSession(effectiveSessionId, stream, request.toolInvocationToken, token);
-				if (token.isCancellationRequested) {
+				const shouldContinue = await this._initializeWorktreeForNewSession(effectiveSessionId, stream, request.toolInvocationToken, token);
+				if (token.isCancellationRequested || !shouldContinue) {
 					return {};
 				}
 			}
@@ -323,11 +332,13 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			const result = await this.claudeAgentManager.handleRequest(effectiveSessionId, request, context, stream, token, isNewSession, yieldRequested);
 			this._controller.updateItemStatus(effectiveSessionId, vscode.ChatSessionStatus.Completed, prompt);
 
-			// Auto-commit worktree changes after the turn completes
-			try {
-				await this.worktreeService.handleRequestCompleted(effectiveSessionId);
-			} catch (error) {
-				this.logService.warn(`[Claude] Failed to handle worktree request completion for session ${effectiveSessionId}: ${error}`);
+			// Auto-commit worktree changes after successful, non-cancelled turns
+			if (!token.isCancellationRequested) {
+				try {
+					await this.worktreeService.handleRequestCompleted(effectiveSessionId);
+				} catch (error) {
+					this.logService.error(error instanceof Error ? error : new Error(String(error)), `[Claude] Failed to handle worktree request completion for session ${effectiveSessionId}`);
+				}
 			}
 
 			// Clear usage handler after request completes
