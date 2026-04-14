@@ -45,7 +45,7 @@ export interface ICopilotCLITerminalIntegration extends Disposable {
 }
 
 type IShellInfo = {
-	shell: 'zsh' | 'bash' | 'pwsh' | 'powershell' | 'cmd';
+	shell: 'zsh' | 'bash' | 'pwsh' | 'powershell' | 'cmd' | 'fish';
 	shellPath: string;
 	shellArgs: string[];
 	iconPath?: ThemeIcon;
@@ -116,11 +116,17 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 
 		const provideTerminalProfile = async () => {
 			const shellInfo = await this.getShellInfo([]);
-			if (!shellInfo) {
-				return;
-			}
-			this.sendTerminalOpenTelemetry('new', shellInfo.shell, 'newFromTerminalProfile', 'panel');
 			const options = await getCommonTerminalOptions('GitHub Copilot CLI', this._authenticationService, this._otelService, 'panel');
+			this.sendTerminalOpenTelemetry('new', shellInfo?.shell ?? 'unknown', 'newFromTerminalProfile', 'panel');
+			if (!shellInfo) {
+				// Fallback: create a profile with the user's default shell.
+				// Copilot CLI should be in PATH via contributePath().
+				return new TerminalProfile({
+					...options,
+					titleTemplate: '${sequence}',
+					iconPath: COPILOT_ICON,
+				});
+			}
 			return new TerminalProfile({
 				...options,
 				titleTemplate: '${sequence}',
@@ -161,7 +167,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 			options.iconPath = shellPathAndArgs.iconPath ?? options.iconPath;
 		}
 
-		if (shellPathAndArgs && (shellPathAndArgs.shell !== 'powershell' && shellPathAndArgs.shell !== 'pwsh')) {
+		if (shellPathAndArgs && shellPathAndArgs.shell !== 'powershell' && shellPathAndArgs.shell !== 'pwsh') {
 			const terminal = await this.pythonTerminalService.createTerminal(options);
 			if (terminal) {
 				this._register(terminal);
@@ -219,8 +225,8 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 
 	private buildCommandForPythonTerminal(copilotCommand: string, cliArgs: string[], shellInfo: IShellInfo) {
 		let commandPrefix = '';
-		if (shellInfo.shell === 'zsh' || shellInfo.shell === 'bash') {
-			// Starting with empty space to hide from terminal history (only for bash and zsh which use &&)
+		if (shellInfo.shell === 'zsh' || shellInfo.shell === 'bash' || shellInfo.shell === 'fish') {
+			// Starting with empty space to hide from terminal history
 			commandPrefix = ' ';
 		}
 		if (shellInfo.shell === 'powershell' || shellInfo.shell === 'pwsh') {
@@ -282,47 +288,65 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 
 	private async getShellInfo(cliArgs: string[]): Promise<IShellInfo | undefined> {
 		const configPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
-		const defaultProfile = this.getDefaultShellProfile();
-		if (!defaultProfile) {
-			return;
+
+		// vscode.env.shell already resolves to the user's configured default terminal profile path,
+		// respecting the terminal.integrated.defaultProfile.* setting. Use it directly.
+		const shellPath = this.envService.shell;
+
+		// Look up the profile config only for args
+		const defaultProfileName = workspace.getConfiguration('terminal').get<string | undefined>(`integrated.defaultProfile.${configPlatform}`);
+		let shellArgs: string[] = [];
+		if (defaultProfileName) {
+			const profiles = workspace.getConfiguration('terminal').get<Record<string, { path?: string | string[]; args?: string[] }>>(`integrated.profiles.${configPlatform}`);
+			shellArgs = Array.isArray(profiles?.[defaultProfileName]?.args) ? profiles![defaultProfileName].args! : [];
 		}
-		const profiles = workspace.getConfiguration('terminal').get<Record<string, { path: string; args?: string[]; icon?: string }>>(`integrated.profiles.${configPlatform}`);
-		const profile = profiles ? profiles[defaultProfile] : undefined;
-		if (!profile) {
-			return;
-		}
+
+		// Detect shell type from the resolved shell path
+		const shellBasename = path.basename(shellPath).toLowerCase().replace(/\.exe$/, '');
 		const iconPath = COPILOT_ICON;
-		const shellArgs = Array.isArray(profile.args) ? profile.args : [];
-		const paths = profile.path ? (Array.isArray(profile.path) ? profile.path : [profile.path]) : [];
-		const shellPath = (await getFirstAvailablePath(paths)) || this.envService.shell;
-		if (defaultProfile === 'zsh' && this.shellScriptPath) {
+
+		if (shellBasename === 'zsh' && this.shellScriptPath) {
 			return {
 				shell: 'zsh',
-				shellPath: shellPath || 'zsh',
+				shellPath,
 				shellArgs: [`-ci${shellArgs.includes('-l') ? 'l' : ''}`, quoteArgsForShell(this.shellScriptPath, cliArgs)],
 				iconPath,
 				copilotCommand: this.shellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (defaultProfile === 'bash' && this.shellScriptPath) {
+		} else if ((shellBasename === 'bash' || shellBasename.includes('bash')) && this.shellScriptPath) {
 			return {
 				shell: 'bash',
-				shellPath: shellPath || 'bash',
+				shellPath,
 				shellArgs: [`-${shellArgs.includes('-l') ? 'l' : ''}ic`, quoteArgsForShell(this.shellScriptPath, cliArgs)],
 				iconPath,
 				copilotCommand: this.shellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (defaultProfile === 'pwsh' && this.powershellScriptPath && configPlatform !== 'windows') {
+		} else if (shellBasename === 'fish' && this.shellScriptPath) {
+			const fishArgs: string[] = [];
+			if (shellArgs.includes('-l')) {
+				fishArgs.push('-l');
+			}
+			fishArgs.push('-c', quoteArgsForShell(this.shellScriptPath, cliArgs));
+			return {
+				shell: 'fish',
+				shellPath,
+				shellArgs: fishArgs,
+				iconPath,
+				copilotCommand: this.shellScriptPath,
+				exitCommand: `; exit`
+			};
+		} else if (shellBasename === 'pwsh' && this.powershellScriptPath) {
 			return {
 				shell: 'pwsh',
-				shellPath: shellPath || 'pwsh',
+				shellPath,
 				shellArgs: ['-File', this.powershellScriptPath, ...cliArgs],
 				iconPath,
 				copilotCommand: this.powershellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (defaultProfile === 'PowerShell' && this.powershellScriptPath && configPlatform === 'windows' && shellPath) {
+		} else if (shellBasename === 'powershell' && this.powershellScriptPath) {
 			return {
 				shell: 'powershell',
 				shellPath,
@@ -331,35 +355,20 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.powershellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if (defaultProfile === 'Command Prompt' && this.shellScriptPath && configPlatform === 'windows') {
+		} else if (shellBasename === 'cmd' && this.shellScriptPath && configPlatform === 'windows') {
 			return {
 				shell: 'cmd',
-				shellPath: shellPath || 'cmd.exe',
+				shellPath,
 				shellArgs: ['/c', this.shellScriptPath, ...cliArgs],
 				iconPath,
 				copilotCommand: this.shellScriptPath,
 				exitCommand: '&& exit'
 			};
 		}
+
+		return undefined;
 	}
 
-	private getDefaultShellProfile(): string | undefined {
-		const configPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
-		const defaultProfile = workspace.getConfiguration('terminal').get<string | undefined>(`integrated.defaultProfile.${configPlatform}`);
-		if (defaultProfile) {
-			return defaultProfile === 'Windows PowerShell' ? 'PowerShell' : defaultProfile;
-		}
-		const shell = this.envService.shell;
-		switch (configPlatform) {
-			case 'osx':
-			case 'linux': {
-				return shell.includes('zsh') ? 'zsh' : shell.includes('bash') ? 'bash' : undefined;
-			}
-			case 'windows': {
-				return shell.includes('pwsh') ? 'PowerShell' : shell.includes('powershell') ? 'PowerShell' : undefined;
-			}
-		}
-	}
 }
 
 function quoteArgsForShell(shellScript: string, args: string[]): string {
@@ -403,41 +412,4 @@ async function getCommonTerminalOptions(name: string, authenticationService: IAu
 		};
 	}
 	return options;
-}
-
-const pathValidations = new Map<string, boolean>();
-async function getFirstAvailablePath(paths: string[]): Promise<string | undefined> {
-	for (const p of paths) {
-		// Sometimes we can have paths like `${env:HOME}\Systemycmd.exe` which need to be resolved
-		const resolvedPath = resolveEnvVariables(p);
-		if (pathValidations.get(resolvedPath) === true) {
-			return resolvedPath;
-		}
-		if (pathValidations.get(resolvedPath) === false) {
-			continue;
-		}
-		// Possible its just a command name without path
-		if (path.basename(p) === p) {
-			return p;
-		}
-		try {
-			const stat = await fs.stat(resolvedPath);
-			if (stat.isFile()) {
-				pathValidations.set(resolvedPath, true);
-				return resolvedPath;
-			}
-			pathValidations.set(resolvedPath, false);
-		} catch {
-			// Ignore errors and continue checking other paths
-			pathValidations.set(resolvedPath, false);
-		}
-	}
-	return undefined;
-}
-
-function resolveEnvVariables(value: string): string {
-	return value.replace(/\$\{env:([^}]+)\}/g, (match, envVarName) => {
-		const envValue = process.env[envVarName];
-		return envValue !== undefined ? envValue : match;
-	});
 }
