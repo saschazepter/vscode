@@ -25,12 +25,11 @@ import { McpService } from '../../common/mcpService.js';
 import { IMcpService } from '../../common/mcpTypes.js';
 import { MCP } from '../../common/modelContextProtocol.js';
 import { TestMcpMessageTransport, TestMcpRegistry } from './mcpRegistryTypes.js';
-import { IMcpAllowlistService, McpAllowlistState } from '../../../../../platform/mcp/common/mcpAllowlistService.js';
-import { observableValue } from '../../../../../base/common/observable.js';
+import { IMcpAllowListService, McpAllowListState } from '../../../../../platform/mcp/common/mcpAllowListService.js';
 
-const mcpAllowlistService: IMcpAllowlistService = {
+const mcpAllowlistService: IMcpAllowListService = {
 	_serviceBrand: undefined,
-	state: observableValue('test', McpAllowlistState.NotApplicable),
+	state: McpAllowListState.NotApplicable,
 	waitForReady: () => Promise.resolve(),
 	isAllowed: () => true,
 };
