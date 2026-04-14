@@ -204,8 +204,11 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		}
 		append(this.domNode, iconElement);
 
-		this.messageElement = $('span.progress-step');
-		append(this.domNode, this.messageElement);
+		// Structure must match CSS selector: .shimmer-progress .rendered-markdown.progress-step > p
+		const messageContainer = $('div.rendered-markdown.progress-step');
+		this.messageElement = $('p');
+		append(messageContainer, this.messageElement);
+		append(this.domNode, messageContainer);
 
 		if (!isComplete) {
 			this.domNode.classList.add('shimmer-progress');

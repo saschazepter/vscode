@@ -476,9 +476,6 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			if (this.textContainer) {
 				this._register(this.childResizeObserver.observe(this.textContainer));
 			}
-			if (this.workingSpinnerElement) {
-				this._register(this.childResizeObserver.observe(this.workingSpinnerElement));
-			}
 
 			// Cache wrapper scrollHeight post-layout via ResizeObserver to avoid forced reflows.
 			const wrapperResizeObserver = this._register(new DisposableResizeObserver((entries) => {

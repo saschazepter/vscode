@@ -33,9 +33,9 @@ export function formatTokenCount(count: number): string {
 			if (roundedValue === '1000') {
 				return `${(count / 1_000_000).toFixed(1)}M`;
 			}
-			return `${roundedValue}k`;
+			return `${roundedValue}K`;
 		}
-		return `${value.toFixed(1)}k`;
+		return `${value.toFixed(1)}K`;
 	}
 	return count.toString();
 }
