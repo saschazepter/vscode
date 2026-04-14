@@ -66,8 +66,13 @@ const REPO_ROOT = path.join(__dirname, '..');
  * We need to copy these files into the sdk directory to ensure they are available at runtime.
  */
 async function copyCopilotCliWorkerFiles() {
-	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'worker');
-	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'worker');
+	const shimsPath = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'shims.txt');
+	await fs.promises.rm(shimsPath, { force: true }).catch(() => { /* ignore */ });
+}
+
+async function removeCopilotCLIShim() {
+	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sharp');
+	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'sharp');
 
 	await copyCopilotCLIFolders(sourceDir, targetDir);
 }
@@ -173,6 +178,7 @@ async function main() {
 		'node_modules/@github/blackbird-external-ingest-utils/pkg/nodejs/external_ingest_utils_bg.wasm',
 	], 'dist');
 
+	await removeCopilotCLIShim();
 	await copyCopilotCliWorkerFiles();
 	await copyCopilotCliSharpFiles();
 	await copyCopilotCliDefinitionFiles();
