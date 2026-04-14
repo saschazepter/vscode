@@ -578,8 +578,6 @@ export class AICustomizationListWidget extends Disposable {
 			() => this.harnessService.getActiveDescriptor(),
 			this.promptsService,
 			this.workspaceService,
-			this.fileService,
-			this.pathService,
 			this.productService,
 		);
 		this.element = $('.ai-customization-list-widget');
@@ -1516,6 +1514,7 @@ export class AICustomizationListWidget extends Disposable {
 			this.workspaceService,
 			{ allItems: this.allItems, displayEntries: this.displayEntries },
 			activeDescriptor,
+			this.promptsServiceItemProvider,
 		);
 	}
 }

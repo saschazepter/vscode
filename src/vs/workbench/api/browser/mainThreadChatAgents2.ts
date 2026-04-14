@@ -747,8 +747,10 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	}
 
 	async $registerChatSessionCustomizationProvider(handle: number, chatSessionType: string, metadata: IChatSessionCustomizationProviderMetadataDto, extensionId: ExtensionIdentifier): Promise<void> {
-		if (this._environmentService.isSessionsWindow) {
-			this._logService.trace(`[MainThreadChatAgents2] Sessions window does not use the customization provider API, ignoring registration from ${extensionId.value}`);
+		// In the sessions window, only the Copilot CLI harness is accepted via the
+		// extension API. Other harnesses (e.g. Claude) are not shown in sessions.
+		// AHP remote servers register directly via registerExternalHarness.
+		if (this._environmentService.isSessionsWindow && chatSessionType !== 'copilotcli') {
 			return;
 		}
 
