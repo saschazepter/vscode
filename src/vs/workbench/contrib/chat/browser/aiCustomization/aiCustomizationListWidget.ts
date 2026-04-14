@@ -1887,20 +1887,9 @@ export class AICustomizationListWidget extends Disposable {
 	 * Empty groups are omitted. Collapsed groups show only their header.
 	 */
 	private buildGroupedEntries(groups: { groupKey: string; label: string; icon: ThemeIcon; description: string; items: IAICustomizationListItem[] }[]): void {
-		const hasSearchQuery = !!this.searchQuery.trim();
 		// Sort items within each group
 		for (const group of groups) {
-			group.items.sort((a, b) => {
-				if (hasSearchQuery) {
-					// Title matches rank before description-only matches
-					const aHasNameMatch = !!a.nameMatches;
-					const bHasNameMatch = !!b.nameMatches;
-					if (aHasNameMatch !== bHasNameMatch) {
-						return aHasNameMatch ? -1 : 1;
-					}
-				}
-				return a.name.localeCompare(b.name);
-			});
+			group.items.sort((a, b) => a.name.localeCompare(b.name));
 		}
 
 		this.displayEntries = [];
