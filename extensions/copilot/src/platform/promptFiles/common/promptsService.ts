@@ -43,7 +43,8 @@ export interface IPromptsService {
 	getCustomAgents(token: CancellationToken): Promise<readonly ChatCustomAgent[]>;
 
 	/**
-	 * Returns the parsed prompt files for the custom agent.
+	 * Returns the slash command prompt files. These are prompts and skills
+	 * from all sources (workspace, user, and extension-provided).
 	 */
 	getSlashCommands(token: CancellationToken): Promise<readonly ParsedPromptFile[]>;
 

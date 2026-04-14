@@ -48,8 +48,16 @@ export class MockPromptsService implements IPromptsService {
 		this._slashCommands = commands;
 	}
 
+	fireSlashCommandsChanged(): void {
+		this._onDidChangeCustomAgents.fire();
+	}
+
 	setInstructions(instructions: readonly ChatInstruction[]): void {
 		this._instructions = instructions;
+		this._onDidChangeInstructions.fire();
+	}
+
+	fireInstructionsChanged(): void {
 		this._onDidChangeInstructions.fire();
 	}
 
@@ -65,6 +73,10 @@ export class MockPromptsService implements IPromptsService {
 	setHooks(hooks: readonly ChatHook[]): void {
 		this._hooks = hooks;
 		this._onDidChangeHooks.fire();
+	}
+
+	firePluginsChanged(): void {
+		this._onDidChangePlugins.fire();
 	}
 
 	setPlugins(plugins: readonly ChatPlugin[]): void {
@@ -92,11 +104,23 @@ export class MockPromptsService implements IPromptsService {
 		return Promise.resolve(this._hooks);
 	}
 
+	fireHooksChanged(): void {
+		this._onDidChangeHooks.fire();
+	}
+
 	getPlugins(_token: CancellationToken): Promise<readonly ChatPlugin[]> {
 		return Promise.resolve(this._plugins);
 	}
 
+	private _fileContents = new Map<string, string>();
+
+	/** Register content so parseFile returns a parsed result for the given URI. */
+	setFileContent(uri: URI, content: string) {
+		this._fileContents.set(uri.toString(), content);
+	}
+
 	parseFile(uri: URI, _token: CancellationToken): Promise<ParsedPromptFile> {
-		return Promise.resolve(new PromptFileParser().parse(uri, ''));
+		const content = this._fileContents.get(uri.toString()) ?? '';
+		return Promise.resolve(new PromptFileParser().parse(uri, content));
 	}
 }

@@ -653,7 +653,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	protected async createSessionsOptions(options: ICreateSessionOptions & { mcpServers?: SessionOptions['mcpServers'] }): Promise<Readonly<SessionOptions>> {
 		const [agentInfos, skillLocations] = await Promise.all([
 			this.agents.getAgents(),
-			this.copilotCLISkills.getSkillsLocations(),
+			this.copilotCLISkills.getSkillsLocations(CancellationToken.None),
 		]);
 		const customAgents = agentInfos.map(i => i.agent);
 		const variablesContext = this._promptVariablesService.buildTemplateVariablesContext(options.sessionId, options.debugTargetSessionIds);
