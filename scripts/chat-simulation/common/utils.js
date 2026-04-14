@@ -7,6 +7,10 @@
 
 /**
  * Shared utilities for chat performance benchmarks and leak checks.
+ *
+ * Platform: macOS and Linux only. Windows is not supported — several
+ * utilities (`sqlite3`, `sleep`, `pkill`) are Unix-specific.
+ * CI runs on ubuntu-latest.
  */
 
 const path = require('path');
@@ -133,6 +137,8 @@ async function resolveBuild(buildArg) {
  * Pre-seed the VS Code storage database to prevent the
  * BuiltinChatExtensionEnablementMigration from disabling the copilot
  * extension on fresh user data directories.
+ *
+ * Requires `sqlite3` on PATH (pre-installed on macOS and Ubuntu).
  * @param {string} userDataDir
  */
 function preseedStorage(userDataDir) {

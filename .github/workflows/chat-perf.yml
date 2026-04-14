@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       test_commit:
-        description: 'Test commit SHA or version (e.g. "main", "abc1234")'
+        description: 'Test commit SHA or version (e.g. "1.115.0", "abc1234")'
         required: true
         type: string
       runs:
@@ -41,14 +41,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BASELINE_COMMIT: ${{ inputs.baseline_commit || '1.115.0' }}
+  # Only set when explicitly provided; otherwise scripts read config.jsonc
+  BASELINE_COMMIT: ${{ inputs.baseline_commit || '' }}
   TEST_COMMIT: ${{ inputs.test_commit || 'main' }}
-  PERF_RUNS: ${{ inputs.runs || 7 }}
-  PERF_THRESHOLD: ${{ inputs.threshold || 0.2 }}
+  PERF_RUNS: ${{ inputs.runs || '' }}
+  PERF_THRESHOLD: ${{ inputs.threshold || '' }}
 
 jobs:
   chat-perf:
-    name: Chat Perf – ${{ inputs.baseline_commit || '1.115.0' }} vs ${{ inputs.test_commit || 'main' }}
+    name: Chat Perf – ${{ inputs.baseline_commit || 'config default' }} vs ${{ inputs.test_commit || 'main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -101,12 +102,22 @@ jobs:
             done
           fi
 
-          xvfb-run node scripts/chat-perf/test-chat-perf-regression.js \
-            --baseline-build "${{ env.BASELINE_COMMIT }}" \
-            --build "${{ env.TEST_COMMIT }}" \
-            --runs ${{ env.PERF_RUNS }} \
-            --threshold ${{ env.PERF_THRESHOLD }} \
-            --ci \
+          PERF_ARGS="--ci"
+          if [[ -n "$BASELINE_COMMIT" ]]; then
+            PERF_ARGS="$PERF_ARGS --baseline-build $BASELINE_COMMIT"
+          fi
+          if [[ -n "$TEST_COMMIT" ]]; then
+            PERF_ARGS="$PERF_ARGS --build $TEST_COMMIT"
+          fi
+          if [[ -n "$PERF_RUNS" ]]; then
+            PERF_ARGS="$PERF_ARGS --runs $PERF_RUNS"
+          fi
+          if [[ -n "$PERF_THRESHOLD" ]]; then
+            PERF_ARGS="$PERF_ARGS --threshold $PERF_THRESHOLD"
+          fi
+
+          xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \
+            $PERF_ARGS \
             $SCENARIO_ARGS \
             2>&1 | tee perf-output.log
 
@@ -117,11 +128,13 @@ jobs:
       - name: Run memory leak check
         id: leak
         run: |
-          xvfb-run node scripts/chat-perf/test-chat-mem-leaks.js \
-            --build "${{ env.TEST_COMMIT }}" \
-            --messages 10 \
-            --threshold 2 \
-            --verbose \
+          LEAK_ARGS="--verbose"
+          if [[ -n "$TEST_COMMIT" ]]; then
+            LEAK_ARGS="$LEAK_ARGS --build $TEST_COMMIT"
+          fi
+
+          xvfb-run node scripts/chat-simulation/test-chat-mem-leaks.js \
+            $LEAK_ARGS \
             2>&1 | tee leak-output.log
 
           exit ${PIPESTATUS[0]}
@@ -130,18 +143,18 @@ jobs:
       - name: Write job summary
         if: always()
         run: |
-          if [[ -f .chat-perf-data/ci-summary.md ]]; then
-            cat .chat-perf-data/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f .chat-simulation-data/ci-summary.md ]]; then
+            cat .chat-simulation-data/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⚠️ No summary file generated. Check perf-output.log artifact." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [[ -f .chat-perf-data/chat-perf-leak-results.json ]]; then
+          if [[ -f .chat-simulation-data/chat-simulation-leak-results.json ]]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "## Memory Leak Check" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            cat .chat-perf-data/chat-perf-leak-results.json >> "$GITHUB_STEP_SUMMARY"
+            cat .chat-simulation-data/chat-simulation-leak-results.json >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -149,15 +162,15 @@ jobs:
         if: always()
         run: |
           # Find the most recent timestamped run directory
-          RUN_DIR=$(ls -td .chat-perf-data/20*/ 2>/dev/null | head -1)
+          RUN_DIR=$(ls -td .chat-simulation-data/20*/ 2>/dev/null | head -1)
           if [[ -n "$RUN_DIR" ]]; then
             # Zip everything: results JSON, CPU profiles, traces, heap snapshots
-            cd .chat-perf-data
+            cd .chat-simulation-data
             zip -r ../chat-perf-artifacts.zip \
               "$(basename "$RUN_DIR")"/ \
               ci-summary.md \
               baseline-*.json \
-              chat-perf-leak-results.json \
+              chat-simulation-leak-results.json \
               2>/dev/null || true
             cd ..
           fi
@@ -166,7 +179,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chat-perf-${{ env.BASELINE_COMMIT }}-vs-${{ env.TEST_COMMIT }}
+          name: chat-perf-${{ env.BASELINE_COMMIT || 'default-baseline' }}-vs-${{ env.TEST_COMMIT }}
           path: |
             chat-perf-artifacts.zip
             perf-output.log

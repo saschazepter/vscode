@@ -876,10 +876,11 @@ function startServer(port = 0) {
 		/** @type {Array<() => boolean>} */
 		let completionWaiters = [];
 
-		serverEvents.on('scenarioCompletion', () => {
+		const onCompletion = () => {
 			completions++;
 			completionWaiters = completionWaiters.filter(fn => !fn());
-		});
+		};
+		serverEvents.on('scenarioCompletion', onCompletion);
 
 		const server = http.createServer((req, res) => {
 			reqCount++;
@@ -894,6 +895,7 @@ function startServer(port = 0) {
 				port: actualPort,
 				url,
 				close: () => /** @type {Promise<void>} */(new Promise((resolve, reject) => {
+					serverEvents.removeListener('scenarioCompletion', onCompletion);
 					server.close(err => err ? reject(err) : resolve(undefined));
 				})),
 				/** Return total request count. */

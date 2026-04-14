@@ -460,8 +460,11 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		/** @type {Array<any>} */
 		const traceEvents = [];
 		cdp.on('Tracing.dataCollected', (/** @type {any} */ data) => { traceEvents.push(...data.value); });
+		const tracingComplete = new Promise(resolve => {
+			cdp.once('Tracing.tracingComplete', () => resolve(undefined));
+		});
 		await cdp.send('Tracing.end');
-		await new Promise(r => setTimeout(r, 500));
+		await tracingComplete;
 		const metricsAfter = await cdp.send('Performance.getMetrics');
 
 		// Save performance trace (Chrome DevTools format)

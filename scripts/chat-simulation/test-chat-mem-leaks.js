@@ -74,11 +74,12 @@ function parseArgs() {
  */
 async function runLeakCheck(electronPath, mockServer, messageCount, verbose) {
 	const { userDataDir, extDir, logsDir } = prepareRunDir('leak-check', mockServer);
+	const isDevBuild = !electronPath.includes('.vscode-test');
 
 	const vscode = await launchVSCode(
 		electronPath,
-		buildArgs(userDataDir, extDir, logsDir),
-		buildEnv(mockServer),
+		buildArgs(userDataDir, extDir, logsDir, { isDevBuild }),
+		buildEnv(mockServer, { isDevBuild }),
 		{ verbose },
 	);
 	const window = vscode.page;
@@ -136,12 +137,21 @@ async function runLeakCheck(electronPath, mockServer, messageCount, verbose) {
 			}, chatEditorSel);
 
 			const msg = `[scenario:text-only] Leak check message ${i + 1}`;
-			await window.evaluate(({ selector, text }) => {
-				// @ts-ignore — globalThis.driver is injected by --enable-smoke-test-driver
-				if (!globalThis.driver) { throw new Error('no driver'); }
+			const hasDriver = await window.evaluate(() =>
 				// @ts-ignore
-				return globalThis.driver.typeInEditor(selector, text);
-			}, { selector: inputSel, text: msg });
+				!!globalThis.driver?.typeInEditor
+			).catch(() => false);
+
+			if (hasDriver) {
+				await window.evaluate(({ selector, text }) => {
+					// @ts-ignore
+					return globalThis.driver.typeInEditor(selector, text);
+				}, { selector: inputSel, text: msg });
+			} else {
+				await window.click(inputSel);
+				await new Promise(r => setTimeout(r, 200));
+				await window.locator(inputSel).pressSequentially(msg, { delay: 0 });
+			}
 
 			const compBefore = mockServer.completionCount();
 			await window.keyboard.press('Enter');
