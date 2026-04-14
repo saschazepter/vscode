@@ -54,8 +54,8 @@ function makeFileAgentInfo(name: string, fileUri: URI, description = ''): CLIAge
 }
 
 /** Creates a ChatInstruction stub with the required name and source fields. */
-function makeInstruction(uri: URI, name: string): vscode.ChatInstruction {
-	return { uri, name, source: 'local' };
+function makeInstruction(uri: URI, name: string, pattern: string | undefined, description?: string): vscode.ChatInstruction {
+	return { uri, name, pattern, source: 'local', description };
 }
 
 /** Creates a ChatSkill stub, deriving the name from the parent directory for SKILL.md files. */
@@ -213,7 +213,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('returns instructions with on-demand groupKey when no applyTo pattern', async () => {
 			const uri = URI.file('/workspace/.github/copilot-instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'copilot-instructions')]);
+			mockPromptsService.setInstructions([makeInstruction(uri, 'copilot-instructions', undefined)]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			expect(items).toHaveLength(1);
@@ -244,7 +244,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('returns all matching types combined', async () => {
 			mockCopilotCLIAgents.setAgents([makeAgentInfo('explore', 'Explore')]);
-			mockPromptsService.setInstructions([makeInstruction(URI.file('/workspace/.github/b.instructions.md'), 'b instructions')]);
+			mockPromptsService.setInstructions([makeInstruction(URI.file('/workspace/.github/b.instructions.md'), 'b instructions', undefined)]);
 			mockPromptsService.setSkills([makeSkill(URI.file('/workspace/.github/skills/c/SKILL.md'), 'c')]);
 			mockPromptsService.setHooks([makeHook(URI.file('/workspace/.copilot/hooks/pre-commit.json'))]);
 			mockPromptsService.setPlugins([makePlugin(URI.file('/workspace/.copilot/plugins/my-plugin'))]);
@@ -297,7 +297,7 @@ describe('CopilotCLICustomizationProvider', () => {
 	describe('instruction groupKeys and badges', () => {
 		it('uses agent-instructions groupKey for copilot-instructions.md files', async () => {
 			const uri = URI.file('/workspace/.github/copilot-instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'copilot-instructions')]);
+			mockPromptsService.setInstructions([makeInstruction(uri, 'copilot-instructions', undefined)]);
 			mockCustomInstructionsService.setAgentInstructionUris([uri]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
@@ -354,13 +354,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('uses context-instructions groupKey with badge for instructions with applyTo pattern', async () => {
 			const uri = URI.file('/workspace/.github/style.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'style instructions')]);
-			mockPromptsService.setFileContent(uri, [
-				'---',
-				'applyTo: \'src/**/*.ts\'',
-				'---',
-				'Use TypeScript best practices.',
-			].join('\n'));
+			mockPromptsService.setInstructions([makeInstruction(uri, 'style instructions', 'src/**/*.ts')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
@@ -372,13 +366,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('uses "always added" badge when applyTo is **', async () => {
 			const uri = URI.file('/workspace/.github/global.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'global instructions')]);
-			mockPromptsService.setFileContent(uri, [
-				'---',
-				'applyTo: \'**\'',
-				'---',
-				'Global rules.',
-			].join('\n'));
+			mockPromptsService.setInstructions([makeInstruction(uri, 'global instructions', '**')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
@@ -390,13 +378,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('uses on-demand-instructions groupKey for instructions without applyTo', async () => {
 			const uri = URI.file('/workspace/.github/refactor.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'refactor instructions')]);
-			mockPromptsService.setFileContent(uri, [
-				'---',
-				'description: \'Refactoring guidelines\'',
-				'---',
-				'Prefer small functions.',
-			].join('\n'));
+			mockPromptsService.setInstructions([makeInstruction(uri, 'refactor instructions', undefined, 'Refactoring guidelines')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
@@ -408,14 +390,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('includes description from parsed header', async () => {
 			const uri = URI.file('/workspace/.github/testing.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'testing instructions')]);
-			mockPromptsService.setFileContent(uri, [
-				'---',
-				'applyTo: \'**/*.spec.ts\'',
-				'description: \'Testing standards\'',
-				'---',
-				'Write unit tests with vitest.',
-			].join('\n'));
+			mockPromptsService.setInstructions([makeInstruction(uri, 'testing instructions', '**/*.spec.ts', 'Testing standards')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
@@ -428,7 +403,7 @@ describe('CopilotCLICustomizationProvider', () => {
 			const agentUri = URI.file('/workspace/.github/copilot-instructions.md');
 			const contextUri = URI.file('/workspace/.github/style.instructions.md');
 			const onDemandUri = URI.file('/workspace/.github/refactor.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(agentUri, 'copilot instructions'), makeInstruction(contextUri, 'style instructions'), makeInstruction(onDemandUri, 'refactor instructions')]);
+			mockPromptsService.setInstructions([makeInstruction(agentUri, 'copilot instructions', undefined), makeInstruction(contextUri, 'style instructions', 'src/**'), makeInstruction(onDemandUri, 'refactor instructions', undefined)]);
 			mockCustomInstructionsService.setAgentInstructionUris([agentUri]);
 			mockPromptsService.setFileContent(contextUri, '---\napplyTo: \'src/**\'\n---\nStyle rules.');
 			mockPromptsService.setFileContent(onDemandUri, '---\ndescription: Refactoring\n---\nRefactor tips.');
@@ -453,7 +428,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 		it('falls back to on-demand-instructions when file has no YAML header', async () => {
 			const uri = URI.file('/workspace/.github/plain.instructions.md');
-			mockPromptsService.setInstructions([makeInstruction(uri, 'plain instructions')]);
+			mockPromptsService.setInstructions([makeInstruction(uri, 'plain instructions', undefined)]);
 			mockPromptsService.setFileContent(uri, 'Just plain text, no frontmatter.');
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);

@@ -837,10 +837,11 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		return { history, events };
 	}
 
-	private async createCustomAgentLookup(): Promise<Map<string, ChatCustomAgent>> {
+	private async createCustomAgentLookup(): Promise<Map<string, [ChatCustomAgent, Lazy<Promise<string>>]>> {
 		const agents = await this._promptsService.getCustomAgents(CancellationToken.None);
-		const lookup = new Map<string, ChatCustomAgent>();
+		const lookup = new Map<string, [ChatCustomAgent, Lazy<Promise<string>>]>();
 		for (const agent of agents) {
+			const lazyContent = new Lazy(() => this._promptsService.parseFile(agent.uri, CancellationToken.None).then(parsed => parsed.body?.getContent() ?? ''));
 			const keys = [
 				agent.name?.trim(),
 				agent.uri.toString(),
@@ -848,25 +849,26 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			];
 			for (const key of keys) {
 				if (key && !lookup.has(key)) {
-					lookup.set(key, agent);
+					lookup.set(key, [agent, lazyContent]);
 				}
 			}
 		}
 		return lookup;
 	}
 
-	private async resolveAgentModeInstructions(agentId: string | undefined, customAgentLookup: Map<string, ChatCustomAgent>): Promise<StoredModeInstructions | undefined> {
+	private async resolveAgentModeInstructions(agentId: string | undefined, customAgentLookup: Map<string, [ChatCustomAgent, Lazy<Promise<string>>]>): Promise<StoredModeInstructions | undefined> {
 		if (!agentId) {
 			return undefined;
 		}
-		const agent = customAgentLookup.get(agentId);
-		if (!agent) {
+		const agentEntry = customAgentLookup.get(agentId);
+		if (!agentEntry) {
 			return undefined;
 		}
+		const [agent, lazyContent] = agentEntry;
 		return {
 			uri: agent.uri.toString(),
 			name: agent.name?.trim() || agentId,
-			content: (await this._promptsService.parseFile(agent.uri, CancellationToken.None)).body?.getContent() ?? '',
+			content: await lazyContent.value,
 		};
 	}
 
