@@ -631,8 +631,8 @@ suite('git', () => {
 
 		test('AI co-author (Copilot)', function () {
 			assert.deepStrictEqual(
-				parseCoAuthors('Fix bug\n\nCo-authored-by: Copilot <copilot@github.com>'),
-				[{ name: 'Copilot', email: 'copilot@github.com' }]
+				parseCoAuthors('Fix bug\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'),
+				[{ name: 'Copilot', email: '223556219+Copilot@users.noreply.github.com' }]
 			);
 		});
 
