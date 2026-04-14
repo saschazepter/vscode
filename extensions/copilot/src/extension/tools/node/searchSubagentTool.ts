@@ -35,18 +35,16 @@ export interface ISearchSubagentParams {
 	details: string;
 	/**
 	 * Optional thoroughness level that controls how many tool-call turns the subagent is allowed.
-	 * - 'quick'   → base limit × 0.5  (fast, surface-level scan)
-	 * - 'medium'  → base limit × 1    (default, balanced)
-	 * - 'thorough'→ base limit × 2    (deep, exhaustive search)
+	 * - 'normal' → base limit × 1    (default, balanced; sufficient for most cases)
+	 * - 'deep'   → base limit × 2    (broader exploration; only use when normal is not enough)
 	 * Only active when config.github.copilot.chat.searchSubagent.thoroughnessEnabled is true.
 	 */
-	thoroughness?: 'quick' | 'medium' | 'thorough';
+	thoroughness?: 'normal' | 'deep';
 }
 
 const THOROUGHNESS_MULTIPLIERS: Record<NonNullable<ISearchSubagentParams['thoroughness']>, number> = {
-	quick: 0.5,
-	medium: 1,
-	thorough: 2,
+	normal: 1,
+	deep: 2,
 };
 
 function computeToolCallLimitForThoroughness(baseLimit: number, thoroughness: NonNullable<ISearchSubagentParams['thoroughness']>): number {
@@ -75,15 +73,15 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 		return {
 			...tool,
 			description: tool.description
-				+ '\n- thoroughness (optional): Search thoroughness — \'quick\' (fewer turns, fast scan), \'medium\' (default), or \'thorough\' (more turns, exhaustive).',
+				+ '\n- thoroughness (optional): Search thoroughness — \'normal\' (default, sufficient for most cases) or \'deep\' (more turns, broader exploration; only use when normal is clearly not enough).',
 			inputSchema: {
 				...tool.inputSchema as Record<string, unknown>,
 				properties: {
 					...(tool.inputSchema as { properties: Record<string, unknown> }).properties,
 					thoroughness: {
 						type: 'string',
-						enum: ['quick', 'medium', 'thorough'],
-						description: 'Controls the search thoroughness and turn limit. \'quick\' uses fewer turns (fast scan), \'medium\' is the default, \'thorough\' uses more turns for an exhaustive search.',
+						enum: ['normal', 'deep'],
+						description: 'Controls the search thoroughness and turn limit. \'normal\' is the default and sufficient for most searches. Only use \'deep\' when the task clearly requires broader exploration across many files.',
 					},
 				},
 			},

@@ -12,13 +12,12 @@ import { ChatToolCalls } from '../panel/toolCalling';
 export interface SearchSubagentPromptProps extends GenericBasePromptElementProps {
 	readonly maxSearchTurns: number;
 	/** Thoroughness level requested by the caller. Influences the speed vs. thoroughness guidance in the system prompt. */
-	readonly thoroughness?: 'quick' | 'medium' | 'thorough';
+	readonly thoroughness?: 'normal' | 'deep';
 }
 
 const THOROUGHNESS_GUIDANCE: Record<NonNullable<SearchSubagentPromptProps['thoroughness']>, string> = {
-	quick: 'Prioritize speed: parallelize as many tool calls as possible, stop as soon as you have a reasonable answer, and avoid deep file reads unless strictly necessary.',
-	medium: 'Use a balanced approach: parallelize where possible and stop when you have sufficient context.',
-	thorough: 'Be exhaustive: explore all plausible leads, read deeper into files, and verify findings before concluding.',
+	normal: 'Use a balanced approach: parallelize where possible and stop when you have sufficient context.',
+	deep: 'Go broad to narrow: start with semantic or glob search to discover relevant areas, then narrow with text search. Parallelize tool calls. Read files when you need full context.',
 };
 
 /**
