@@ -8,7 +8,7 @@ import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
 import { localize } from '../../../../nls.js';
-import { ICommandService, CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
@@ -180,24 +180,6 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				subtitleEl,
 				signInActions
 			)));
-
-			// Dev-only: show a "Use Device Code" button when the embedder
-			// registers the device code command. This produces an OAuth token
-			// that Dev Tunnels accepts (PATs don't work with Dev Tunnels).
-			if (CommandsRegistry.getCommand('_sessions.web.startDeviceCode')) {
-				const deviceCodeBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-compact.provider-github')) as HTMLButtonElement;
-				append(deviceCodeBtn, $('span.sessions-walkthrough-provider-label', undefined, localize('walkthrough.signin.deviceCode', "Use Device Code")));
-				providerButtons.push(deviceCodeBtn);
-				this.currentFocusableElements = [...providerButtons, ...this.disclaimerLinks];
-
-				stepDisposables.add(addDisposableListener(deviceCodeBtn, EventType.CLICK, () => this._runDeviceCodeSignIn(
-					providerButtons,
-					errorContainer,
-					titleEl,
-					subtitleEl,
-					signInActions
-				)));
-			}
 		} else {
 			// Desktop: each button uses a different ChatSetupStrategy
 			const providerStrategies = [
@@ -275,8 +257,8 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	/**
 	 * Web sign-in: uses IAuthenticationService to create a GitHub session.
 	 * On production vscode.dev this triggers an OAuth popup. On localhost
-	 * it triggers the PAT flow. For Dev Tunnels-compatible auth on localhost,
-	 * use the "Use Device Code" button instead.
+	 * the embedder's env-contributed auth provider handles the flow
+	 * (e.g. device code).
 	 */
 	private async _runSignInWeb(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
 		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
@@ -289,56 +271,6 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			this.complete();
 		} catch (err) {
 			this.logService.error('[sessions walkthrough] Web sign-in failed:', err);
-			await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
-		}
-	}
-
-	/**
-	 * Device code sign-in: uses the embedder's device code flow command to
-	 * obtain an OAuth token from VS Code's GitHub App. Shows the code in
-	 * the walkthrough UI while the user authorizes on github.com.
-	 */
-	private async _runDeviceCodeSignIn(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
-		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
-		if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-			return;
-		}
-
-		try {
-			const flowResult = await this.commandService.executeCommand<{
-				userCode: string;
-				verificationUri: string;
-			}>('_sessions.web.startDeviceCode');
-
-			if (!flowResult) {
-				await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
-				return;
-			}
-
-			// Show the device code in the walkthrough UI
-			titleEl.textContent = flowResult.userCode;
-			titleEl.style.letterSpacing = '4px';
-			titleEl.style.fontFamily = 'monospace';
-			titleEl.style.userSelect = 'text';
-			titleEl.style.cursor = 'text';
-			subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", flowResult.verificationUri);
-
-			// Open GitHub in a new tab
-			this.openerService.open(URI.parse(flowResult.verificationUri));
-
-			// Poll for token
-			const token = await this.commandService.executeCommand<string | undefined>('_sessions.web.pollDeviceCode');
-			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-				return;
-			}
-
-			if (token) {
-				this.complete();
-			} else {
-				await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
-			}
-		} catch (err) {
-			this.logService.error('[sessions walkthrough] Device code flow failed:', err);
 			await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
 		}
 	}
