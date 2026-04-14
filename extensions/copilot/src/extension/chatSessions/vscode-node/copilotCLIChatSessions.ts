@@ -883,7 +883,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 		}
 		const allResponsesEmpty = history.every(turn => {
 			if (turn instanceof vscode.ChatResponseTurn) {
-				// return turn.response.length === 0;
+				return turn.response.length === 0;
 			}
 			return true;
 		});
