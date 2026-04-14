@@ -118,6 +118,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background, internalOrg });
 
 		if (!url) {
+			this.setState(State.Idle(UpdateType.Archive));
 			return;
 		}
 
@@ -164,6 +165,11 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	private onUpdateAvailable(): void {
 		this.logService.trace('update#onUpdateAvailable - Electron autoUpdater reported update available');
 
+		if (this._suspended) {
+			this.logService.trace('update#onUpdateAvailable - suspended, ignoring');
+			return;
+		}
+
 		if (this.state.type !== StateType.CheckingForUpdates && this.state.type !== StateType.Overwriting) {
 			return;
 		}
@@ -172,7 +178,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	}
 
 	private onUpdateDownloaded(update: IUpdate): void {
-		if (this.state.type !== StateType.Downloading) {
+		if (this._suspended || this.state.type !== StateType.Downloading) {
 			return;
 		}
 
@@ -184,6 +190,11 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 	private onUpdateNotAvailable(): void {
 		this.logService.trace('update#onUpdateNotAvailable - Electron autoUpdater reported no update available');
+
+		if (this._suspended) {
+			this.logService.trace('update#onUpdateNotAvailable - suspended, ignoring');
+			return;
+		}
 
 		if (this.state.type !== StateType.CheckingForUpdates) {
 			return;
