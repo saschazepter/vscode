@@ -1,0 +1,598 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+// @ts-check
+
+/**
+ * Chat performance benchmark.
+ *
+ * Uses the real copilot extension with IS_SCENARIO_AUTOMATION=1 and a local
+ * mock LLM server. Measures the full stack: prompt building, context
+ * gathering, tool resolution, rendering, GC, and layout overhead.
+ *
+ * Usage:
+ *   npm run perf:chat                                 # all scenarios vs 1.115.0
+ *   npm run perf:chat -- --runs 10                    # 10 runs per scenario
+ *   npm run perf:chat -- --scenario text-only         # single scenario
+ *   npm run perf:chat -- --no-baseline                # skip baseline comparison
+ *   npm run perf:chat -- --build 1.110.0 --baseline-build 1.115.0
+ */
+
+const path = require('path');
+const fs = require('fs');
+const {
+	ROOT, DATA_DIR, SCENARIOS, METRIC_DEFS,
+	resolveBuild, buildEnv, buildArgs, prepareRunDir,
+	robustStats, summarize, markDuration, launchVSCode,
+} = require('./common/utils');
+
+// -- CLI args ----------------------------------------------------------------
+
+function parseArgs() {
+	const args = process.argv.slice(2);
+	const opts = {
+		runs: 5,
+		verbose: false,
+		/** @type {string[]} */
+		scenarios: [],
+		/** @type {string | undefined} */
+		build: undefined,
+		/** @type {string | undefined} */
+		baseline: undefined,
+		/** @type {string | undefined} */
+		baselineBuild: '1.115.0',
+		saveBaseline: false,
+		threshold: 0.2,
+	};
+	for (let i = 0; i < args.length; i++) {
+		switch (args[i]) {
+			case '--runs': opts.runs = parseInt(args[++i], 10); break;
+			case '--verbose': opts.verbose = true; break;
+			case '--scenario': case '-s': opts.scenarios.push(args[++i]); break;
+			case '--build': case '-b': opts.build = args[++i]; break;
+			case '--baseline': opts.baseline = args[++i]; break;
+			case '--baseline-build': opts.baselineBuild = args[++i]; break;
+			case '--no-baseline': opts.baselineBuild = undefined; break;
+			case '--save-baseline': opts.saveBaseline = true; break;
+			case '--threshold': opts.threshold = parseFloat(args[++i]); break;
+			case '--help': case '-h':
+				console.log([
+					'Chat performance benchmark',
+					'',
+					'Options:',
+					'  --runs <n>          Number of runs per scenario (default: 5)',
+					'  --scenario <id>     Scenario to run (repeatable; default: all)',
+					'  --build <path|ver>  Path to VS Code build, or a version to download',
+					'                       (e.g. "1.110.0", "insiders", commit hash; default: local dev)',
+					'  --baseline <path>   Compare against a baseline JSON file',
+					'  --baseline-build <v> Download a VS Code version and benchmark it as baseline',
+					'                       (default: 1.115.0; accepts "insiders", "1.100.0", commit hash)',
+					'  --no-baseline        Skip baseline comparison entirely',
+					'  --save-baseline     Save results as the new baseline (requires --baseline <path>)',
+					'  --threshold <frac>  Regression threshold fraction (default: 0.2 = 20%)',
+					'  --verbose           Print per-run details',
+					'',
+					'Scenarios: ' + SCENARIOS.join(', '),
+				].join('\n'));
+				process.exit(0);
+		}
+	}
+	if (opts.scenarios.length === 0) {
+		opts.scenarios = SCENARIOS;
+	}
+	return opts;
+}
+
+// -- Metrics -----------------------------------------------------------------
+
+/**
+ * @typedef {{
+ *   timeToUIUpdated: number,
+ *   timeToFirstToken: number,
+ *   timeToComplete: number,
+ *   instructionCollectionTime: number,
+ *   agentInvokeTime: number,
+ *   heapUsedBefore: number,
+ *   heapUsedAfter: number,
+ *   heapDelta: number,
+ *   majorGCs: number,
+ *   minorGCs: number,
+ *   gcDurationMs: number,
+ *   layoutCount: number,
+ *   recalcStyleCount: number,
+ *   forcedReflowCount: number,
+ *   longTaskCount: number,
+ *   hasInternalMarks: boolean,
+ *   responseHasContent: boolean,
+ *   internalFirstToken: number,
+ *   profilePath: string,
+ *   tracePath: string,
+ *   snapshotPath: string,
+ * }} RunMetrics
+ */
+
+// -- Single run --------------------------------------------------------------
+
+/**
+ * @param {string} electronPath
+ * @param {string} scenario
+ * @param {{ url: string, requestCount: () => number, waitForRequests: (n: number, ms: number) => Promise<void>, completionCount: () => number, waitForCompletion: (n: number, ms: number) => Promise<void> }} mockServer
+ * @param {boolean} verbose
+ * @param {string} runIndex
+ * @param {string} runDir - timestamped run directory for diagnostics
+ * @param {'baseline' | 'test'} role - whether this is a baseline or test run
+ * @returns {Promise<RunMetrics>}
+ */
+async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, runDir, role) {
+	const { userDataDir, extDir, logsDir } = prepareRunDir(runIndex, mockServer);
+	const isDevBuild = !electronPath.includes('.vscode-test');
+	const buildLabel = isDevBuild ? 'dev' : path.basename(path.dirname(path.dirname(path.dirname(electronPath)))).replace(/^vscode-/, '');
+
+	// Create a per-run diagnostics directory: <runDir>/<role>-<build>/<scenario>-<i>/
+	const runDiagDir = path.join(runDir, `${role}-${buildLabel}`, runIndex.replace(/^baseline-/, ''));
+	fs.mkdirSync(runDiagDir, { recursive: true });
+
+	const vscode = await launchVSCode(
+		electronPath,
+		buildArgs(userDataDir, extDir, logsDir, { isDevBuild }),
+		buildEnv(mockServer, { isDevBuild }),
+		{ verbose },
+	);
+	const window = vscode.page;
+
+	try {
+		await window.waitForSelector('.monaco-workbench', { timeout: 60_000 });
+
+		const cdp = await window.context().newCDPSession(window);
+		await cdp.send('Performance.enable');
+		const heapBefore = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
+
+		await cdp.send('Tracing.start', {
+			traceConfig: {
+				includedCategories: ['v8.gc', 'devtools.timeline'],
+				recordMode: 'recordContinuously',
+			}
+		});
+		const metricsBefore = await cdp.send('Performance.getMetrics');
+
+		// Open chat
+		const chatShortcut = process.platform === 'darwin' ? 'Control+Meta+KeyI' : 'Control+Alt+KeyI';
+		await window.keyboard.press(chatShortcut);
+
+		const CHAT_VIEW = 'div[id="workbench.panel.chat"]';
+		const chatEditorSel = `${CHAT_VIEW} .interactive-input-part .monaco-editor[role="code"]`;
+
+		await window.waitForSelector(CHAT_VIEW, { timeout: 15_000 });
+		await window.waitForFunction(
+			(selector) => Array.from(document.querySelectorAll(selector)).some(el => {
+				const rect = el.getBoundingClientRect();
+				return rect.width > 0 && rect.height > 0;
+			}),
+			chatEditorSel, { timeout: 15_000 },
+		);
+
+		// Dismiss dialogs
+		const dismissDialog = async () => {
+			for (const sel of ['.chat-setup-dialog', '.dialog-shadow', '.monaco-dialog-box']) {
+				const el = await window.$(sel);
+				if (el) { await window.keyboard.press('Escape'); await new Promise(r => setTimeout(r, 500)); break; }
+			}
+		};
+		await dismissDialog();
+
+		// Wait for extension activation
+		const reqsBefore = mockServer.requestCount();
+		try { await mockServer.waitForRequests(reqsBefore + 4, 30_000); } catch { }
+		if (verbose) {
+			console.log(`  [debug] Extension active (${mockServer.requestCount() - reqsBefore} new requests)`);
+		}
+
+		// Wait for model resolution
+		await new Promise(r => setTimeout(r, 3000));
+		await dismissDialog();
+
+		// Focus input
+		await window.click(chatEditorSel);
+		const focusStart = Date.now();
+		while (Date.now() - focusStart < 5_000) {
+			const focused = await window.evaluate((sel) => {
+				const el = document.querySelector(sel);
+				return el && (el.classList.contains('focused') || el.contains(document.activeElement));
+			}, chatEditorSel).catch(() => false);
+			if (focused) { break; }
+			await new Promise(r => setTimeout(r, 50));
+		}
+
+		// Type message — use the smoke-test driver's typeInEditor when available
+		// (dev builds), fall back to pressSequentially for stable/insiders builds.
+		const chatMessage = `[scenario:${scenario}] Explain how this code works`;
+		const actualInputSelector = await window.evaluate((editorSel) => {
+			const editor = document.querySelector(editorSel);
+			if (!editor) { throw new Error('Chat editor not found'); }
+			return editor.querySelector('.native-edit-context') ? editorSel + ' .native-edit-context' : editorSel + ' textarea';
+		}, chatEditorSel);
+
+		const hasDriver = await window.evaluate(() =>
+			// @ts-ignore
+			!!globalThis.driver?.typeInEditor
+		).catch(() => false);
+
+		if (hasDriver) {
+			await window.evaluate(({ selector, text }) => {
+				// @ts-ignore
+				return globalThis.driver.typeInEditor(selector, text);
+			}, { selector: actualInputSelector, text: chatMessage });
+		} else {
+			// Fallback: click the input element and use pressSequentially
+			await window.click(actualInputSelector);
+			await new Promise(r => setTimeout(r, 200));
+			await window.locator(actualInputSelector).pressSequentially(chatMessage, { delay: 0 });
+		}
+
+		// Start CPU profiler to capture call stacks during the interaction
+		await cdp.send('Profiler.enable');
+		await cdp.send('Profiler.start');
+
+		// Start polling for code/chat/* perf marks inside the renderer.
+		// The marks are emitted during the request and cleared immediately
+		// after RequestComplete in the same microtask. We poll rapidly from
+		// the page context to capture them before they're cleared.
+		await window.evaluate(() => {
+			// @ts-ignore
+			globalThis._chatPerfCapture = [];
+			// @ts-ignore
+			globalThis._chatPerfPollId = setInterval(() => {
+				// @ts-ignore
+				const marks = globalThis.MonacoPerformanceMarks?.getMarks() ?? [];
+				for (const m of marks) {
+					// @ts-ignore
+					if (m.name.startsWith('code/chat/') && !globalThis._chatPerfCapture.some(c => c.name === m.name)) {
+						// @ts-ignore
+						globalThis._chatPerfCapture.push({ name: m.name, startTime: m.startTime });
+					}
+				}
+			}, 16); // poll every frame (~60fps)
+		});
+
+		// Submit
+		const completionsBefore = mockServer.completionCount();
+		const submitTime = Date.now();
+		await window.keyboard.press('Enter');
+
+		// Wait for mock server to serve the response
+		try { await mockServer.waitForCompletion(completionsBefore + 1, 60_000); } catch { }
+		const firstResponseTime = Date.now();
+
+		// Wait for DOM response to settle
+		await dismissDialog();
+		const responseSelector = `${CHAT_VIEW} .interactive-item-container.interactive-response`;
+		await window.waitForFunction(
+			(sel) => {
+				const responses = document.querySelectorAll(sel);
+				if (responses.length === 0) { return false; }
+				return !responses[responses.length - 1].classList.contains('chat-response-loading');
+			},
+			responseSelector, { timeout: 30_000 },
+		);
+		const responseCompleteTime = Date.now();
+
+		// Stop CPU profiler and save the profile
+		const { profile } = /** @type {any} */ (await cdp.send('Profiler.stop'));
+		const profilePath = path.join(runDiagDir, 'profile.cpuprofile');
+		fs.writeFileSync(profilePath, JSON.stringify(profile));
+		if (verbose) {
+			console.log(`  [debug] CPU profile saved to ${profilePath}`);
+		}
+
+		const responseInfo = await window.evaluate((sel) => {
+			const responses = document.querySelectorAll(sel);
+			const last = responses[responses.length - 1];
+			if (!last) { return { hasContent: false, text: '' }; }
+			const text = last.textContent || '';
+			return { hasContent: text.trim().length > 0, text: text.substring(0, 200) };
+		}, responseSelector);
+
+		if (verbose) {
+			console.log(`  [debug] Response content (first 200 chars): ${responseInfo.text}`);
+			console.log(`  [debug] Client-side timing: firstResponse=${firstResponseTime - submitTime}ms, complete=${responseCompleteTime - submitTime}ms`);
+		}
+
+		// Collect perf marks from our polling capture and stop the poll
+		const chatMarks = await window.evaluate(() => {
+			// @ts-ignore
+			clearInterval(globalThis._chatPerfPollId);
+			// @ts-ignore
+			const marks = globalThis._chatPerfCapture ?? [];
+			// @ts-ignore
+			delete globalThis._chatPerfCapture;
+			// @ts-ignore
+			delete globalThis._chatPerfPollId;
+			return marks;
+		});
+		if (verbose && chatMarks.length > 0) {
+			console.log(`  [debug] chatMarks (${chatMarks.length}): ${chatMarks.map((/** @type {any} */ m) => m.name.split('/').slice(-1)[0]).join(', ')}`);
+		}
+
+		const heapAfter = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
+		/** @type {Array<any>} */
+		const traceEvents = [];
+		cdp.on('Tracing.dataCollected', (/** @type {any} */ data) => { traceEvents.push(...data.value); });
+		await cdp.send('Tracing.end');
+		await new Promise(r => setTimeout(r, 500));
+		const metricsAfter = await cdp.send('Performance.getMetrics');
+
+		// Save performance trace (Chrome DevTools format)
+		const tracePath = path.join(runDiagDir, 'trace.json');
+		fs.writeFileSync(tracePath, JSON.stringify({ traceEvents }));
+
+		// Take heap snapshot
+		const snapshotPath = path.join(runDiagDir, 'heap.heapsnapshot');
+		await cdp.send('HeapProfiler.enable');
+		const snapshotChunks = /** @type {string[]} */ ([]);
+		cdp.on('HeapProfiler.addHeapSnapshotChunk', (/** @type {any} */ params) => {
+			snapshotChunks.push(params.chunk);
+		});
+		await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+		fs.writeFileSync(snapshotPath, snapshotChunks.join(''));
+
+		// Parse timing — always use client-side Date.now() for timeToFirstToken
+		// and timeToComplete so cross-build comparisons use the same method.
+		// Internal marks are reported separately for diagnostics.
+		const timeToUIUpdated = markDuration(chatMarks, 'request/start', 'request/uiUpdated');
+		const timeToFirstToken = firstResponseTime - submitTime;
+		const timeToComplete = responseCompleteTime - submitTime;
+		const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
+		const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
+		// Internal-mark TTFT (more precise, but only available on dev builds)
+		const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
+
+		// Parse GC/long tasks
+		let majorGCs = 0, minorGCs = 0, gcDurationMs = 0;
+		for (const event of traceEvents) {
+			if (event.cat === 'v8.gc' || event.name === 'V8.GCFinalizeMC' || event.name === 'V8.GCScavenger') {
+				if (event.name?.includes('MC') || event.name?.includes('Major') || event.name === 'MajorGC') { majorGCs++; }
+				else if (event.name?.includes('Scavenger') || event.name?.includes('Minor') || event.name === 'MinorGC') { minorGCs++; }
+				if (event.dur) { gcDurationMs += event.dur / 1000; }
+			}
+		}
+		let longTaskCount = 0;
+		for (const event of traceEvents) {
+			if (event.name === 'RunTask' && event.dur && event.dur > 50_000) { longTaskCount++; }
+		}
+
+		/** @param {any} r @param {string} name */
+		function getMetric(r, name) {
+			const e = r.metrics?.find((/** @type {any} */ m) => m.name === name);
+			return e ? e.value : 0;
+		}
+
+		return {
+			timeToUIUpdated, timeToFirstToken, timeToComplete, instructionCollectionTime, agentInvokeTime,
+			heapUsedBefore: Math.round(heapBefore.usedSize / 1024 / 1024),
+			heapUsedAfter: Math.round(heapAfter.usedSize / 1024 / 1024),
+			heapDelta: Math.round((heapAfter.usedSize - heapBefore.usedSize) / 1024 / 1024),
+			majorGCs, minorGCs,
+			gcDurationMs: Math.round(gcDurationMs * 100) / 100,
+			layoutCount: getMetric(metricsAfter, 'LayoutCount') - getMetric(metricsBefore, 'LayoutCount'),
+			recalcStyleCount: getMetric(metricsAfter, 'RecalcStyleCount') - getMetric(metricsBefore, 'RecalcStyleCount'),
+			forcedReflowCount: getMetric(metricsAfter, 'ForcedStyleRecalcs') - getMetric(metricsBefore, 'ForcedStyleRecalcs'),
+			longTaskCount,
+			hasInternalMarks: chatMarks.length > 0,
+			responseHasContent: responseInfo.hasContent,
+			internalFirstToken,
+			profilePath,
+			tracePath,
+			snapshotPath,
+		};
+	} finally {
+		await vscode.close();
+	}
+}
+
+// -- Main --------------------------------------------------------------------
+
+async function main() {
+	const opts = parseArgs();
+	const electronPath = await resolveBuild(opts.build);
+
+	if (!fs.existsSync(electronPath)) {
+		console.error(`Electron not found at: ${electronPath}`);
+		console.error('Run "node build/lib/preLaunch.ts" first, or pass --build <path>');
+		process.exit(1);
+	}
+
+	const { startServer } = require('./common/mock-llm-server');
+	const mockServer = await startServer(0);
+	console.log(`[chat-perf] Mock LLM server: ${mockServer.url}`);
+
+	// Create a timestamped run directory for all output
+	const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+	const runDir = path.join(DATA_DIR, runTimestamp);
+	fs.mkdirSync(runDir, { recursive: true });
+	console.log(`[chat-perf] Output: ${runDir}`);
+
+	// -- Baseline build --------------------------------------------------
+	if (opts.baselineBuild) {
+		const baselineJsonPath = path.join(runDir, `baseline-${opts.baselineBuild}.json`);
+		const cachedPath = path.join(DATA_DIR, `baseline-${opts.baselineBuild}.json`);
+		const cachedBaseline = fs.existsSync(cachedPath)
+			? JSON.parse(fs.readFileSync(cachedPath, 'utf-8'))
+			: null;
+
+		if (cachedBaseline?.baselineBuildVersion === opts.baselineBuild) {
+			console.log(`[chat-perf] Using cached baseline for ${opts.baselineBuild}`);
+			fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
+			opts.baseline = baselineJsonPath;
+		} else {
+			const baselineExePath = await resolveBuild(opts.baselineBuild);
+			console.log(`[chat-perf] Benchmarking baseline build (${opts.baselineBuild})...`);
+			/** @type {Record<string, RunMetrics[]>} */
+			const baselineResults = {};
+			for (const scenario of opts.scenarios) {
+				/** @type {RunMetrics[]} */
+				const results = [];
+				for (let i = 0; i < opts.runs; i++) {
+					try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
+					catch (err) { console.error(`[chat-perf]   Baseline run ${i + 1} failed: ${err}`); }
+				}
+				if (results.length > 0) { baselineResults[scenario] = results; }
+			}
+			const baselineReport = {
+				timestamp: new Date().toISOString(),
+				baselineBuildVersion: opts.baselineBuild,
+				platform: process.platform,
+				runsPerScenario: opts.runs,
+				scenarios: /** @type {Record<string, any>} */ ({}),
+			};
+			for (const [scenario, results] of Object.entries(baselineResults)) {
+				const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {} });
+				for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
+				baselineReport.scenarios[scenario] = sd;
+			}
+			fs.writeFileSync(baselineJsonPath, JSON.stringify(baselineReport, null, 2));
+			// Cache at the top level for reuse across runs
+			fs.writeFileSync(cachedPath, JSON.stringify(baselineReport, null, 2));
+			opts.baseline = baselineJsonPath;
+		}
+		console.log('');
+	}
+
+	// -- Run benchmarks --------------------------------------------------
+	console.log(`[chat-perf] Electron: ${electronPath}`);
+	console.log(`[chat-perf] Runs per scenario: ${opts.runs}`);
+	console.log(`[chat-perf] Scenarios: ${opts.scenarios.join(', ')}`);
+	console.log('');
+
+	/** @type {Record<string, RunMetrics[]>} */
+	const allResults = {};
+	let anyFailed = false;
+
+	for (const scenario of opts.scenarios) {
+		console.log(`[chat-perf] === Scenario: ${scenario} ===`);
+		/** @type {RunMetrics[]} */
+		const results = [];
+		for (let i = 0; i < opts.runs; i++) {
+			console.log(`[chat-perf]   Run ${i + 1}/${opts.runs}...`);
+			try {
+				const metrics = await runOnce(electronPath, scenario, mockServer, opts.verbose, `${scenario}-${i}`, runDir, 'test');
+				results.push(metrics);
+				if (opts.verbose) {
+					const src = metrics.hasInternalMarks ? 'internal' : 'client-side';
+					console.log(`    [${src}] firstToken=${metrics.timeToFirstToken}ms, complete=${metrics.timeToComplete}ms, heap=delta${metrics.heapDelta}MB, longTasks=${metrics.longTaskCount}${metrics.hasInternalMarks ? `, internalTTFT=${metrics.internalFirstToken}ms` : ''}`);
+				}
+			} catch (err) { console.error(`    Run ${i + 1} failed: ${err}`); }
+		}
+		if (results.length === 0) { console.error(`[chat-perf]   All runs failed for scenario: ${scenario}`); anyFailed = true; }
+		else { allResults[scenario] = results; }
+		console.log('');
+	}
+
+	// -- Summary ---------------------------------------------------------
+	console.log('[chat-perf] ======================= Summary =======================');
+	for (const [scenario, results] of Object.entries(allResults)) {
+		console.log('');
+		console.log(`  -- ${scenario} (${results.length} runs) --`);
+		console.log('');
+		console.log('  Timing:');
+		console.log(summarize(results.map(r => r.timeToFirstToken), '  Request → First token ', 'ms'));
+		console.log(summarize(results.map(r => r.timeToComplete), '  Request → Complete    ', 'ms'));
+		console.log('');
+		console.log('  Rendering:');
+		console.log(summarize(results.map(r => r.layoutCount), '  Layouts               ', ''));
+		console.log(summarize(results.map(r => r.recalcStyleCount), '  Style recalcs         ', ''));
+		console.log(summarize(results.map(r => r.forcedReflowCount), '  Forced reflows        ', ''));
+		console.log(summarize(results.map(r => r.longTaskCount), '  Long tasks (>50ms)    ', ''));
+		console.log('');
+		console.log('  Memory:');
+		console.log(summarize(results.map(r => r.heapDelta), '  Heap delta            ', 'MB'));
+		console.log(summarize(results.map(r => r.gcDurationMs), '  GC duration           ', 'ms'));
+	}
+
+	// -- JSON output -----------------------------------------------------
+	const jsonPath = path.join(runDir, 'results.json');
+	const jsonReport = { timestamp: new Date().toISOString(), platform: process.platform, runsPerScenario: opts.runs, scenarios: /** @type {Record<string, any>} */ ({}) };
+	for (const [scenario, results] of Object.entries(allResults)) {
+		const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
+		for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
+		jsonReport.scenarios[scenario] = sd;
+	}
+	fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
+	console.log('');
+	console.log(`[chat-perf] Results written to ${jsonPath}`);
+
+	// -- Save baseline ---------------------------------------------------
+	if (opts.saveBaseline) {
+		if (!opts.baseline) { console.error('[chat-perf] --save-baseline requires --baseline <path>'); process.exit(1); }
+		fs.writeFileSync(opts.baseline, JSON.stringify(jsonReport, null, 2));
+		console.log(`[chat-perf] Baseline saved to ${opts.baseline}`);
+	}
+
+	// -- Baseline comparison ---------------------------------------------
+	let regressionFound = false;
+	if (opts.baseline && fs.existsSync(opts.baseline)) {
+		const baseline = JSON.parse(fs.readFileSync(opts.baseline, 'utf-8'));
+		console.log('');
+		console.log(`[chat-perf] =========== Baseline Comparison (threshold: ${(opts.threshold * 100).toFixed(0)}%) ===========`);
+		console.log(`[chat-perf] Baseline: ${baseline.baselineBuildVersion || baseline.timestamp}`);
+		console.log('');
+
+		// Metrics that trigger regression failure when they exceed the threshold
+		const regressionMetrics = [
+			// [metric, group, unit]
+			['timeToFirstToken', 'timing', 'ms'],
+			['timeToComplete', 'timing', 'ms'],
+			['layoutCount', 'rendering', ''],
+			['recalcStyleCount', 'rendering', ''],
+			['forcedReflowCount', 'rendering', ''],
+			['longTaskCount', 'rendering', ''],
+		];
+		// Informational metrics — shown in comparison but don't trigger failure
+		const infoMetrics = [
+			['heapDelta', 'memory', 'MB'],
+			['gcDurationMs', 'memory', 'ms'],
+		];
+
+		for (const scenario of Object.keys(jsonReport.scenarios)) {
+			const current = jsonReport.scenarios[scenario];
+			const base = baseline.scenarios?.[scenario];
+			if (!base) { console.log(`  ${scenario}: (no baseline)`); continue; }
+
+			/** @type {string[]} */
+			const diffs = [];
+			let scenarioRegression = false;
+
+			for (const [metric, group, unit] of regressionMetrics) {
+				const cur = current[group]?.[metric];
+				const bas = base[group]?.[metric];
+				if (!cur || !bas || !bas.median) { continue; }
+				const change = (cur.median - bas.median) / bas.median;
+				const pct = `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
+				const flag = change > opts.threshold ? ' ← REGRESSION' : '';
+				if (change > opts.threshold) { scenarioRegression = true; regressionFound = true; }
+				diffs.push(`    ${metric}: ${bas.median}${unit} → ${cur.median}${unit} (${pct})${flag}`);
+			}
+			for (const [metric, group, unit] of infoMetrics) {
+				const cur = current[group]?.[metric];
+				const bas = base[group]?.[metric];
+				if (!cur || !bas || bas.median === null || bas.median === undefined) { continue; }
+				const change = bas.median !== 0 ? (cur.median - bas.median) / bas.median : 0;
+				const pct = `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
+				diffs.push(`    ${metric}: ${bas.median}${unit} → ${cur.median}${unit} (${pct}) [info]`);
+			}
+			console.log(`  ${scenario}: ${scenarioRegression ? 'FAIL' : 'OK'}`);
+			diffs.forEach(d => console.log(d));
+		}
+
+		console.log('');
+		console.log(regressionFound
+			? `[chat-perf] REGRESSION DETECTED — exceeded ${(opts.threshold * 100).toFixed(0)}% threshold`
+			: `[chat-perf] All metrics within ${(opts.threshold * 100).toFixed(0)}% of baseline`);
+	}
+
+	if (anyFailed || regressionFound) { process.exit(1); }
+	await mockServer.close();
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
