@@ -9,7 +9,7 @@ import { CancellationToken, CancellationTokenSource } from '../../../../../../ba
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Event } from '../../../../../../base/common/event.js';
-import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
+import { escapeMarkdownSyntaxTokens, MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap, DisposableStore, MutableDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
 import { getMediaMime } from '../../../../../../base/common/mime.js';
@@ -621,7 +621,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		const partialInput = context.rawInput as Partial<IRunInTerminalInputParams> | undefined;
 		if (partialInput && typeof partialInput === 'object' && partialInput.command) {
 			const truncatedCommand = buildCommandDisplayText(partialInput.command);
-			const invocationMessage = new MarkdownString(localize('runInTerminal.streaming', "Running `{0}`", truncatedCommand));
+			const invocationMessage = new MarkdownString(localize('runInTerminal.streaming', "Running `{0}`", escapeMarkdownSyntaxTokens(truncatedCommand)));
 			return { invocationMessage };
 		}
 		return { invocationMessage: localize('runInTerminal.streaming.default', "Running command") };
@@ -826,7 +826,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				cdPrefix,
 			};
 
-			confirmationTitle = localize('runInTerminal.inDirectory', "Run `{0}` command within `{1}`?", shellType, directoryLabel);
+			confirmationTitle = localize('runInTerminal.inDirectory', "Run `{0}` command within `{1}`?", shellType, escapeMarkdownSyntaxTokens(directoryLabel));
 		} else {
 			toolSpecificData.confirmation = {
 				commandLine: commandToDisplay,
@@ -847,9 +847,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				};
 				if (extractedCd && toolSpecificData.confirmation?.cwdLabel) {
 					if (presenterResult.languageDisplayName) {
-						confirmationTitle = localize('runInTerminal.presentationOverride.inDirectory', "Run `{0}` command in `{1}` within `{2}`?", presenterResult.languageDisplayName, shellType, toolSpecificData.confirmation.cwdLabel);
+						confirmationTitle = localize('runInTerminal.presentationOverride.inDirectory', "Run `{0}` command in `{1}` within `{2}`?", presenterResult.languageDisplayName, shellType, escapeMarkdownSyntaxTokens(toolSpecificData.confirmation.cwdLabel));
 					} else {
-						confirmationTitle = localize('runInTerminal.presentationOverride.inDirectory.withoutLanguage', "Run command in `{0}` within `{1}`?", shellType, toolSpecificData.confirmation.cwdLabel);
+						confirmationTitle = localize('runInTerminal.presentationOverride.inDirectory.withoutLanguage', "Run command in `{0}` within `{1}`?", shellType, escapeMarkdownSyntaxTokens(toolSpecificData.confirmation.cwdLabel));
 					}
 				} else {
 					if (presenterResult.languageDisplayName) {
@@ -896,8 +896,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			? rawDisplayCommand.substring(0, 77) + '...'
 			: rawDisplayCommand;
 		const invocationMessage = toolSpecificData.commandLine.isSandboxWrapped
-			? new MarkdownString(localize('runInTerminal.invocation.sandbox', "Running `{0}` in sandbox", displayCommand))
-			: new MarkdownString(localize('runInTerminal.invocation', "Running `{0}`", displayCommand));
+			? new MarkdownString(localize('runInTerminal.invocation.sandbox', "Running `{0}` in sandbox", escapeMarkdownSyntaxTokens(displayCommand)))
+			: new MarkdownString(localize('runInTerminal.invocation', "Running `{0}`", escapeMarkdownSyntaxTokens(displayCommand)));
 
 		return {
 			invocationMessage,
@@ -1029,7 +1029,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				new MarkdownString(localize(
 					'runInTerminal.unsandboxed.autoRetry.confirmationMessage',
 					"`{0}`",
-					buildCommandDisplayText(command)
+					escapeMarkdownSyntaxTokens(buildCommandDisplayText(command))
 				)),
 				'',
 				localize('allow', 'Allow'),
@@ -1078,7 +1078,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			toolCallId,
 			toolName: localize('runInTerminalTool.displayName', 'Run in Terminal'),
 			isComplete,
-			invocationMessage: new MarkdownString(localize('runInTerminal.unsandboxed.autoRetry.invocation', "Running `{0}` outside the sandbox", displayCommand)),
+			invocationMessage: new MarkdownString(localize('runInTerminal.unsandboxed.autoRetry.invocation', "Running `{0}` outside the sandbox", escapeMarkdownSyntaxTokens(displayCommand))),
 			pastTenseMessage: toolResultMessage,
 			toolSpecificData,
 		};
