@@ -71,8 +71,8 @@ async function removeCopilotCLIShim() {
  * We need to copy these files into the sdk directory to ensure they are available at runtime.
  */
 async function copyCopilotCliWorkerFiles() {
-	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sharp');
-	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'sharp');
+	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'worker');
+	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'worker');
 
 	await copyCopilotCLIFolders(sourceDir, targetDir);
 }
