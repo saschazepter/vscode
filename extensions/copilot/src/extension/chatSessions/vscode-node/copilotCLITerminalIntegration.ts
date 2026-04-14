@@ -338,7 +338,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				shellArgs: fishArgs,
 				iconPath,
 				copilotCommand: this.shellScriptPath,
-				exitCommand: `; exit`
+				exitCommand: `; and exit`
 			};
 		} else if ((shellBasename === 'pwsh' || shellBasename === 'pwsh.exe') && this.powershellScriptPath) {
 			return {
