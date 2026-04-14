@@ -7,6 +7,7 @@ import { ok, strictEqual } from 'assert';
 import { Separator } from '../../../../../../base/common/actions.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { constObservable } from '../../../../../../base/common/observable.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { isLinux, isWindows, OperatingSystem } from '../../../../../../base/common/platform.js';
 import { count } from '../../../../../../base/common/strings.js';
@@ -150,6 +151,7 @@ suite('RunInTerminalTool', () => {
 			acquireExistingSession: () => ({
 				object: {
 					lastRequest: undefined,
+					lastRequestObs: constObservable(undefined),
 					onDidChange: Event.None,
 				},
 				dispose: () => { },
