@@ -25,7 +25,7 @@ product.overrides.json
 *.snap.actual
 *.tsbuildinfo
 .vscode-test
-.chat-perf-data
+.chat-simulation-data
 vscode-telemetry-docs/
 test-output.json
 test/componentFixtures/.screenshots/*

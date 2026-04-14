@@ -28,7 +28,7 @@ npm run perf:chat-leak -- --messages 20 --verbose
 
 ## Perf regression test
 
-**Script:** `scripts/chat-perf/test-chat-perf-regression.js`
+**Script:** `scripts/chat-simulation/test-chat-perf-regression.js`
 **npm:** `npm run perf:chat`
 
 Launches VS Code via Playwright Electron, opens the chat panel, sends a message with a mock LLM response, and measures timing, layout, and rendering metrics. By default, downloads VS Code 1.115.0 as a baseline, benchmarks it, then benchmarks the local dev build and compares.
@@ -62,10 +62,10 @@ When results exceed the threshold but aren't statistically significant, the tool
 npm run perf:chat -- --scenario text-only --runs 3
 
 # Add 3 more runs to the same results file (both test + baseline):
-npm run perf:chat -- --resume .chat-perf-data/2026-04-14T02-15-14/results.json --runs 3
+npm run perf:chat -- --resume .chat-simulation-data/2026-04-14T02-15-14/results.json --runs 3
 
 # Keep adding until confidence is reached:
-npm run perf:chat -- --resume .chat-perf-data/2026-04-14T02-15-14/results.json --runs 5
+npm run perf:chat -- --resume .chat-simulation-data/2026-04-14T02-15-14/results.json --runs 5
 ```
 
 `--resume` loads the previous `results.json` and its associated `baseline-*.json`, runs N more iterations for both builds, merges rawRuns, recomputes stats, and re-runs the comparison. The updated files are written back in-place. You can resume multiple times — samples accumulate.
@@ -112,7 +112,7 @@ Results use **IQR-based outlier removal** and **median** (not mean) to handle st
 
 ## Memory leak check
 
-**Script:** `scripts/chat-perf/test-chat-mem-leaks.js`
+**Script:** `scripts/chat-simulation/test-chat-mem-leaks.js`
 **npm:** `npm run perf:chat-leak`
 
 Launches one VS Code session, sends N messages sequentially, forces GC between each, and measures renderer heap and DOM node count. Uses **linear regression** on the samples to compute per-message growth rate, which is compared against a threshold.
@@ -141,7 +141,7 @@ Launches one VS Code session, sends N messages sequentially, forces GC between e
 ## Architecture
 
 ```
-scripts/chat-perf/
+scripts/chat-simulation/
 ├── common/
 │   ├── mock-llm-server.js    # Mock CAPI server matching @vscode/copilot-api URL structure
 │   └── utils.js              # Shared: paths, env setup, stats, launch helpers

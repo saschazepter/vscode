@@ -16,22 +16,7 @@ const http = require('http');
 const { execSync, spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
-const DATA_DIR = path.join(ROOT, '.chat-perf-data');
-
-const SCENARIOS = [
-	'text-only',
-	'large-codeblock',
-	'many-small-chunks',
-	'mixed-content',
-	'many-codeblocks',
-	'long-prose',
-	'rich-markdown',
-	'giant-codeblock',
-	'rapid-stream',
-	'file-links',
-	'tool-read-file',
-	'tool-edit-file',
-];
+const DATA_DIR = path.join(ROOT, '.chat-simulation-data');
 
 // -- Electron path resolution ------------------------------------------------
 
@@ -59,6 +44,22 @@ function isVersionString(value) {
 }
 
 /**
+ * Get the built-in extensions directory for a VS Code executable.
+ * @param {string} exePath
+ * @returns {string | undefined}
+ */
+function getBuiltinExtensionsDir(exePath) {
+	if (process.platform === 'darwin') {
+		const appDir = exePath.split('/Contents/')[0];
+		return path.join(appDir, 'Contents', 'Resources', 'app', 'extensions');
+	} else if (process.platform === 'linux') {
+		return path.join(path.dirname(exePath), 'resources', 'app', 'extensions');
+	} else {
+		return path.join(path.dirname(exePath), 'resources', 'app', 'extensions');
+	}
+}
+
+/**
  * Resolve a build arg to an executable path.
  * Version strings are downloaded via @vscode/test-electron.
  * @param {string | undefined} buildArg
@@ -69,29 +70,40 @@ async function resolveBuild(buildArg) {
 		return getElectronPath();
 	}
 	if (isVersionString(buildArg)) {
-		console.log(`[chat-perf] Downloading VS Code ${buildArg}...`);
+		console.log(`[chat-simulation] Downloading VS Code ${buildArg}...`);
 		const { downloadAndUnzipVSCode, resolveCliArgsFromVSCodeExecutablePath } = require('@vscode/test-electron');
 		const exePath = await downloadAndUnzipVSCode(buildArg);
-		console.log(`[chat-perf] Downloaded: ${exePath}`);
+		console.log(`[chat-simulation] Downloaded: ${exePath}`);
 
-		// Install the copilot extension into our shared extensions dir so it's
-		// available when we launch with --extensions-dir=DATA_DIR/extensions.
-		const extDir = path.join(DATA_DIR, 'extensions');
-		fs.mkdirSync(extDir, { recursive: true });
-		const [cli, ...cliArgs] = resolveCliArgsFromVSCodeExecutablePath(exePath);
-		const extId = 'GitHub.copilot';
-		console.log(`[chat-perf] Installing ${extId} into ${extDir}...`);
-		const { spawnSync } = require('child_process');
-		const result = spawnSync(cli, [...cliArgs, '--extensions-dir', extDir, '--install-extension', extId], {
-			encoding: 'utf-8',
-			stdio: 'pipe',
-			shell: process.platform === 'win32',
-			timeout: 120_000,
-		});
-		if (result.status !== 0) {
-			console.warn(`[chat-perf] Extension install exited with ${result.status}: ${(result.stderr || '').substring(0, 500)}`);
+		// Check if copilot is already bundled as a built-in extension
+		// (recent Insiders/Stable builds ship it in the app's extensions/ dir).
+		const builtinExtDir = getBuiltinExtensionsDir(exePath);
+		const hasCopilotBuiltin = builtinExtDir && fs.existsSync(builtinExtDir)
+			&& fs.readdirSync(builtinExtDir).some(e => e === 'copilot');
+
+		if (hasCopilotBuiltin) {
+			console.log(`[chat-simulation] Copilot is bundled as a built-in extension`);
 		} else {
-			console.log(`[chat-perf] ${extId} installed`);
+			// Install copilot-chat from the marketplace into our shared
+			// extensions dir so it's available when we launch with
+			// --extensions-dir=DATA_DIR/extensions.
+			const extDir = path.join(DATA_DIR, 'extensions');
+			fs.mkdirSync(extDir, { recursive: true });
+			const [cli, ...cliArgs] = resolveCliArgsFromVSCodeExecutablePath(exePath);
+			const extId = 'GitHub.copilot-chat';
+			console.log(`[chat-simulation] Installing ${extId} into ${extDir}...`);
+			const { spawnSync } = require('child_process');
+			const result = spawnSync(cli, [...cliArgs, '--extensions-dir', extDir, '--install-extension', extId], {
+				encoding: 'utf-8',
+				stdio: 'pipe',
+				shell: process.platform === 'win32',
+				timeout: 120_000,
+			});
+			if (result.status !== 0) {
+				console.warn(`[chat-simulation] Extension install exited with ${result.status}: ${(result.stderr || '').substring(0, 500)}`);
+			} else {
+				console.log(`[chat-simulation] ${extId} installed`);
+			}
 		}
 
 		return exePath;
@@ -111,7 +123,7 @@ function preseedStorage(userDataDir) {
 	const globalStorageDir = path.join(userDataDir, 'User', 'globalStorage');
 	fs.mkdirSync(globalStorageDir, { recursive: true });
 	const dbPath = path.join(globalStorageDir, 'state.vscdb');
-	execSync(`sqlite3 "${dbPath}" "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB); INSERT INTO ItemTable (key, value) VALUES ('builtinChatExtensionEnablementMigration', 'true');"`);
+	execSync(`sqlite3 "${dbPath}" "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB); INSERT INTO ItemTable (key, value) VALUES ('builtinChatExtensionEnablementMigration', 'true'); INSERT INTO ItemTable (key, value) VALUES ('chat.tools.global.autoApprove.optIn', 'true');"`);
 }
 
 // -- Launch helpers ----------------------------------------------------------
@@ -200,6 +212,9 @@ function writeSettings(userDataDir, mockServer) {
 		'chat.mcp.enabled': false,
 		'github.copilot.chat.githubMcpServer.enabled': false,
 		'github.copilot.chat.cli.mcp.enabled': false,
+		// Auto-approve all tool invocations (YOLO mode) so tool call
+		// scenarios don't block on confirmation dialogs.
+		'chat.tools.global.autoApprove': true,
 	}, null, '\t'));
 }
 
@@ -210,7 +225,7 @@ function writeSettings(userDataDir, mockServer) {
  * @returns {{ userDataDir: string, extDir: string, logsDir: string }}
  */
 function prepareRunDir(runId, mockServer) {
-	const tmpBase = path.join(os.tmpdir(), 'vscode-chat-perf');
+	const tmpBase = path.join(os.tmpdir(), 'vscode-chat-simulation');
 	const userDataDir = path.join(tmpBase, `run-${runId}`);
 	const extDir = path.join(DATA_DIR, 'extensions');
 	const logsDir = path.join(tmpBase, 'logs', `run-${runId}`);
@@ -220,10 +235,11 @@ function prepareRunDir(runId, mockServer) {
 			fs.rmSync(userDataDir, { recursive: true, force: true });
 			break;
 		} catch (err) {
-			if (attempt < 2 && err.code === 'ENOTEMPTY') {
+			const error = /** @type {NodeJS.ErrnoException} */ (err);
+			if (attempt < 2 && error.code === 'ENOTEMPTY') {
 				require('child_process').execSync(`sleep 0.5`);
 			} else {
-				throw err;
+				throw error;
 			}
 		}
 	}
@@ -380,7 +396,7 @@ async function launchVSCode(executable, launchArgs, env, opts = {}) {
 			// Kill crashpad handler — it self-daemonizes and outlives the
 			// parent. Wait briefly for it to detach, then kill by pattern.
 			await new Promise(r => setTimeout(r, 500));
-			try { execSync('pkill -9 -f crashpad_handler.*vscode-chat-perf', { stdio: 'ignore' }); }
+			try { execSync('pkill -9 -f crashpad_handler.*vscode-chat-simulation', { stdio: 'ignore' }); }
 			catch { }
 		},
 	};
@@ -608,7 +624,6 @@ const METRIC_DEFS = [
 module.exports = {
 	ROOT,
 	DATA_DIR,
-	SCENARIOS,
 	METRIC_DEFS,
 	getElectronPath,
 	isVersionString,

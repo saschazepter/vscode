@@ -18,16 +18,18 @@
  *   npm run perf:chat -- --scenario text-only         # single scenario
  *   npm run perf:chat -- --no-baseline                # skip baseline comparison
  *   npm run perf:chat -- --build 1.110.0 --baseline-build 1.115.0
- *   npm run perf:chat -- --resume .chat-perf-data/2026-04-14/results.json --runs 3
+ *   npm run perf:chat -- --resume .chat-simulation-data/2026-04-14/results.json --runs 3
  */
 
 const path = require('path');
 const fs = require('fs');
 const {
-	ROOT, DATA_DIR, SCENARIOS, METRIC_DEFS,
+	DATA_DIR, METRIC_DEFS,
 	resolveBuild, buildEnv, buildArgs, prepareRunDir,
 	robustStats, welchTTest, summarize, markDuration, launchVSCode,
 } = require('./common/utils');
+const { getUserTurns, getScenarioIds } = require('./common/mock-llm-server');
+const { registerPerfScenarios } = require('./common/perf-scenarios');
 
 // -- CLI args ----------------------------------------------------------------
 
@@ -83,13 +85,13 @@ function parseArgs() {
 					'  --ci                CI mode: write Markdown summary to ci-summary.md',
 					'  --verbose           Print per-run details',
 					'',
-					'Scenarios: ' + SCENARIOS.join(', '),
+					'Scenarios: ' + getScenarioIds().join(', '),
 				].join('\n'));
 				process.exit(0);
 		}
 	}
 	if (opts.scenarios.length === 0) {
-		opts.scenarios = SCENARIOS;
+		opts.scenarios = getScenarioIds();
 	}
 	return opts;
 }
@@ -156,6 +158,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		buildEnv(mockServer, { isDevBuild }),
 		{ verbose },
 	);
+	activeVSCode = vscode;
 	const window = vscode.page;
 
 	try {
@@ -294,7 +297,79 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			},
 			responseSelector, { timeout: 30_000 },
 		);
-		const responseCompleteTime = Date.now();
+		let responseCompleteTime = Date.now();
+
+		// -- User turn injection loop -----------------------------------------
+		// For multi-turn scenarios with user follow-ups, type each follow-up
+		// message and wait for the model's response to settle.
+		const userTurns = getUserTurns(scenario);
+		for (let ut = 0; ut < userTurns.length; ut++) {
+			const userTurn = userTurns[ut];
+			if (verbose) {
+				console.log(`  [debug] User follow-up ${ut + 1}/${userTurns.length}: "${userTurn.message}"`);
+			}
+
+			// Brief pause to let the UI settle between turns
+			await new Promise(r => setTimeout(r, 500));
+
+			// Focus the chat input
+			await window.click(chatEditorSel);
+			const utFocusStart = Date.now();
+			while (Date.now() - utFocusStart < 3_000) {
+				const focused = await window.evaluate((sel) => {
+					const el = document.querySelector(sel);
+					return el && (el.classList.contains('focused') || el.contains(document.activeElement));
+				}, chatEditorSel).catch(() => false);
+				if (focused) { break; }
+				await new Promise(r => setTimeout(r, 50));
+			}
+
+			// Type the follow-up message
+			if (hasDriver) {
+				await window.evaluate(({ selector, text }) => {
+					// @ts-ignore
+					return globalThis.driver.typeInEditor(selector, text);
+				}, { selector: actualInputSelector, text: userTurn.message });
+			} else {
+				await window.click(actualInputSelector);
+				await new Promise(r => setTimeout(r, 200));
+				await window.locator(actualInputSelector).pressSequentially(userTurn.message, { delay: 0 });
+			}
+
+			// Note current response count before submitting
+			const responseCountBefore = await window.evaluate((sel) => {
+				return document.querySelectorAll(sel).length;
+			}, responseSelector);
+
+			// Submit follow-up
+			const utCompBefore = mockServer.completionCount();
+			await window.keyboard.press('Enter');
+
+			// Wait for mock server to serve the response for this turn
+			try { await mockServer.waitForCompletion(utCompBefore + 1, 60_000); } catch { }
+
+			// Wait for a new response element to appear and settle
+			await dismissDialog();
+			await window.waitForFunction(
+				({ sel, prevCount }) => {
+					const responses = document.querySelectorAll(sel);
+					if (responses.length <= prevCount) { return false; }
+					return !responses[responses.length - 1].classList.contains('chat-response-loading');
+				},
+				{ sel: responseSelector, prevCount: responseCountBefore },
+				{ timeout: 30_000 },
+			);
+			responseCompleteTime = Date.now();
+
+			if (verbose) {
+				const utResponseInfo = await window.evaluate((sel) => {
+					const responses = document.querySelectorAll(sel);
+					const last = responses[responses.length - 1];
+					return last ? (last.textContent || '').substring(0, 150) : '(empty)';
+				}, responseSelector);
+				console.log(`  [debug] Follow-up response (first 150 chars): ${utResponseInfo}`);
+			}
+		}
 
 		// Stop CPU profiler and save the profile
 		const { profile } = /** @type {any} */ (await cdp.send('Profiler.stop'));
@@ -403,6 +478,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			snapshotPath,
 		};
 	} finally {
+		activeVSCode = null;
 		await vscode.close();
 	}
 }
@@ -572,19 +648,41 @@ function generateCISummary(jsonReport, baseline, opts) {
 	return lines.join('\n');
 }
 
+// -- Cleanup on SIGINT/SIGTERM -----------------------------------------------
+
+/** @type {{ close: () => Promise<void> } | null} */
+let activeVSCode = null;
+/** @type {{ close: () => Promise<void> } | null} */
+let activeMockServer = null;
+
+function installSignalHandlers() {
+	const cleanup = async () => {
+		console.log('\n[chat-simulation] Caught interrupt, cleaning up...');
+		try { await activeVSCode?.close(); } catch { }
+		try { await activeMockServer?.close(); } catch { }
+		process.exit(130);
+	};
+	process.on('SIGINT', cleanup);
+	process.on('SIGTERM', cleanup);
+}
+
 // -- Main --------------------------------------------------------------------
 
 async function main() {
+	registerPerfScenarios();
 	const opts = parseArgs();
+
+	installSignalHandlers();
 
 	const { startServer } = require('./common/mock-llm-server');
 	const mockServer = await startServer(0);
-	console.log(`[chat-perf] Mock LLM server: ${mockServer.url}`);
+	activeMockServer = mockServer;
+	console.log(`[chat-simulation] Mock LLM server: ${mockServer.url}`);
 
 	// -- Resume mode --------------------------------------------------------
 	if (opts.resume) {
 		if (!fs.existsSync(opts.resume)) {
-			console.error(`[chat-perf] Resume file not found: ${opts.resume}`);
+			console.error(`[chat-simulation] Resume file not found: ${opts.resume}`);
 			process.exit(1);
 		}
 		const prevResults = JSON.parse(fs.readFileSync(opts.resume, 'utf-8'));
@@ -601,7 +699,7 @@ async function main() {
 			: Object.keys(prevResults.scenarios || {});
 
 		if (resumeScenarios.length === 0) {
-			console.error('[chat-perf] No matching scenarios found in previous results');
+			console.error('[chat-simulation] No matching scenarios found in previous results');
 			process.exit(1);
 		}
 
@@ -610,24 +708,24 @@ async function main() {
 		const baselineElectron = baselineVersion ? await resolveBuild(baselineVersion) : null;
 
 		const runsToAdd = opts.runs;
-		console.log(`[chat-perf] Resuming from: ${opts.resume}`);
-		console.log(`[chat-perf] Adding ${runsToAdd} runs per scenario`);
-		console.log(`[chat-perf] Scenarios: ${resumeScenarios.join(', ')}`);
+		console.log(`[chat-simulation] Resuming from: ${opts.resume}`);
+		console.log(`[chat-simulation] Adding ${runsToAdd} runs per scenario`);
+		console.log(`[chat-simulation] Scenarios: ${resumeScenarios.join(', ')}`);
 		if (prevBaseline) {
-			console.log(`[chat-perf] Baseline: ${baselineVersion} (${prevBaseline.scenarios?.[resumeScenarios[0]]?.rawRuns?.length || 0} existing runs)`);
+			console.log(`[chat-simulation] Baseline: ${baselineVersion} (${prevBaseline.scenarios?.[resumeScenarios[0]]?.rawRuns?.length || 0} existing runs)`);
 		}
 		console.log('');
 
 		for (const scenario of resumeScenarios) {
-			console.log(`[chat-perf] === Resuming: ${scenario} ===`);
+			console.log(`[chat-simulation] === Resuming: ${scenario} ===`);
 			const prevTestRuns = prevResults.scenarios[scenario]?.rawRuns || [];
 			const prevBaseRuns = prevBaseline?.scenarios?.[scenario]?.rawRuns || [];
 
 			// Run additional test iterations
-			console.log(`[chat-perf]   Test build (${prevTestRuns.length} existing + ${runsToAdd} new)`);
+			console.log(`[chat-simulation]   Test build (${prevTestRuns.length} existing + ${runsToAdd} new)`);
 			for (let i = 0; i < runsToAdd; i++) {
 				const runIdx = `${scenario}-resume-${prevTestRuns.length + i}`;
-				console.log(`[chat-perf]     Run ${i + 1}/${runsToAdd}...`);
+				console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 				try {
 					const m = await runOnce(testElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'test');
 					prevTestRuns.push(m);
@@ -640,10 +738,10 @@ async function main() {
 
 			// Run additional baseline iterations
 			if (baselineElectron && prevBaseline?.scenarios?.[scenario]) {
-				console.log(`[chat-perf]   Baseline build (${prevBaseRuns.length} existing + ${runsToAdd} new)`);
+				console.log(`[chat-simulation]   Baseline build (${prevBaseRuns.length} existing + ${runsToAdd} new)`);
 				for (let i = 0; i < runsToAdd; i++) {
 					const runIdx = `baseline-${scenario}-resume-${prevBaseRuns.length + i}`;
-					console.log(`[chat-perf]     Run ${i + 1}/${runsToAdd}...`);
+					console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 					try {
 						const m = await runOnce(baselineElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'baseline');
 						prevBaseRuns.push(m);
@@ -661,7 +759,7 @@ async function main() {
 				for (const [metric, group] of METRIC_DEFS) { bsd[group][metric] = robustStats(prevBaseRuns.map((/** @type {any} */ r) => r[metric])); }
 				prevBaseline.scenarios[scenario] = bsd;
 			}
-			console.log(`[chat-perf]   Merged: test n=${prevTestRuns.length}${prevBaseRuns.length > 0 ? `, baseline n=${prevBaseRuns.length}` : ''}`);
+			console.log(`[chat-simulation]   Merged: test n=${prevTestRuns.length}${prevBaseRuns.length > 0 ? `, baseline n=${prevBaseRuns.length}` : ''}`);
 			console.log('');
 		}
 
@@ -669,7 +767,7 @@ async function main() {
 		prevResults.runsPerScenario = Math.max(prevResults.runsPerScenario || 0, ...Object.values(prevResults.scenarios).map((/** @type {any} */ s) => s.runs));
 		prevResults.lastResumed = new Date().toISOString();
 		fs.writeFileSync(opts.resume, JSON.stringify(prevResults, null, 2));
-		console.log(`[chat-perf] Updated results: ${opts.resume}`);
+		console.log(`[chat-simulation] Updated results: ${opts.resume}`);
 
 		if (prevBaseline && baselineFile) {
 			prevBaseline.lastResumed = new Date().toISOString();
@@ -677,7 +775,7 @@ async function main() {
 			// Also update cached baseline
 			const cachedPath = path.join(DATA_DIR, path.basename(baselineFile));
 			fs.writeFileSync(cachedPath, JSON.stringify(prevBaseline, null, 2));
-			console.log(`[chat-perf] Updated baseline: ${baselineFile}`);
+			console.log(`[chat-simulation] Updated baseline: ${baselineFile}`);
 		}
 
 		// -- Re-run comparison with merged data --------------------------------
@@ -704,7 +802,7 @@ async function main() {
 	const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 	const runDir = path.join(DATA_DIR, runTimestamp);
 	fs.mkdirSync(runDir, { recursive: true });
-	console.log(`[chat-perf] Output: ${runDir}`);
+	console.log(`[chat-simulation] Output: ${runDir}`);
 
 	// -- Baseline build --------------------------------------------------
 	if (opts.baselineBuild) {
@@ -720,19 +818,19 @@ async function main() {
 			const missingScenarios = opts.scenarios.filter((/** @type {string} */ s) => !cachedScenarios.has(s));
 
 			if (missingScenarios.length === 0) {
-				console.log(`[chat-perf] Using cached baseline for ${opts.baselineBuild}`);
+				console.log(`[chat-simulation] Using cached baseline for ${opts.baselineBuild}`);
 				fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
 				opts.baseline = baselineJsonPath;
 			} else {
-				console.log(`[chat-perf] Cached baseline missing scenarios: ${missingScenarios.join(', ')}`);
-				console.log(`[chat-perf] Running baseline for missing scenarios...`);
+				console.log(`[chat-simulation] Cached baseline missing scenarios: ${missingScenarios.join(', ')}`);
+				console.log(`[chat-simulation] Running baseline for missing scenarios...`);
 				const baselineExePath = await resolveBuild(opts.baselineBuild);
 				for (const scenario of missingScenarios) {
 					/** @type {RunMetrics[]} */
 					const results = [];
 					for (let i = 0; i < opts.runs; i++) {
 						try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
-						catch (err) { console.error(`[chat-perf]   Baseline run ${i + 1} failed: ${err}`); }
+						catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 					}
 					if (results.length > 0) {
 						const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
@@ -747,7 +845,7 @@ async function main() {
 			}
 		} else {
 			const baselineExePath = await resolveBuild(opts.baselineBuild);
-			console.log(`[chat-perf] Benchmarking baseline build (${opts.baselineBuild})...`);
+			console.log(`[chat-simulation] Benchmarking baseline build (${opts.baselineBuild})...`);
 			/** @type {Record<string, RunMetrics[]>} */
 			const baselineResults = {};
 			for (const scenario of opts.scenarios) {
@@ -755,7 +853,7 @@ async function main() {
 				const results = [];
 				for (let i = 0; i < opts.runs; i++) {
 					try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
-					catch (err) { console.error(`[chat-perf]   Baseline run ${i + 1} failed: ${err}`); }
+					catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 				}
 				if (results.length > 0) { baselineResults[scenario] = results; }
 			}
@@ -780,9 +878,9 @@ async function main() {
 	}
 
 	// -- Run benchmarks --------------------------------------------------
-	console.log(`[chat-perf] Electron: ${electronPath}`);
-	console.log(`[chat-perf] Runs per scenario: ${opts.runs}`);
-	console.log(`[chat-perf] Scenarios: ${opts.scenarios.join(', ')}`);
+	console.log(`[chat-simulation] Electron: ${electronPath}`);
+	console.log(`[chat-simulation] Runs per scenario: ${opts.runs}`);
+	console.log(`[chat-simulation] Scenarios: ${opts.scenarios.join(', ')}`);
 	console.log('');
 
 	/** @type {Record<string, RunMetrics[]>} */
@@ -790,11 +888,11 @@ async function main() {
 	let anyFailed = false;
 
 	for (const scenario of opts.scenarios) {
-		console.log(`[chat-perf] === Scenario: ${scenario} ===`);
+		console.log(`[chat-simulation] === Scenario: ${scenario} ===`);
 		/** @type {RunMetrics[]} */
 		const results = [];
 		for (let i = 0; i < opts.runs; i++) {
-			console.log(`[chat-perf]   Run ${i + 1}/${opts.runs}...`);
+			console.log(`[chat-simulation]   Run ${i + 1}/${opts.runs}...`);
 			try {
 				const metrics = await runOnce(electronPath, scenario, mockServer, opts.verbose, `${scenario}-${i}`, runDir, 'test');
 				results.push(metrics);
@@ -804,13 +902,13 @@ async function main() {
 				}
 			} catch (err) { console.error(`    Run ${i + 1} failed: ${err}`); }
 		}
-		if (results.length === 0) { console.error(`[chat-perf]   All runs failed for scenario: ${scenario}`); anyFailed = true; }
+		if (results.length === 0) { console.error(`[chat-simulation]   All runs failed for scenario: ${scenario}`); anyFailed = true; }
 		else { allResults[scenario] = results; }
 		console.log('');
 	}
 
 	// -- Summary ---------------------------------------------------------
-	console.log('[chat-perf] ======================= Summary =======================');
+	console.log('[chat-simulation] ======================= Summary =======================');
 	for (const [scenario, results] of Object.entries(allResults)) {
 		console.log('');
 		console.log(`  -- ${scenario} (${results.length} runs) --`);
@@ -841,13 +939,13 @@ async function main() {
 	fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
 	jsonReport._resultsPath = jsonPath;
 	console.log('');
-	console.log(`[chat-perf] Results written to ${jsonPath}`);
+	console.log(`[chat-simulation] Results written to ${jsonPath}`);
 
 	// -- Save baseline ---------------------------------------------------
 	if (opts.saveBaseline) {
-		if (!opts.baseline) { console.error('[chat-perf] --save-baseline requires --baseline <path>'); process.exit(1); }
+		if (!opts.baseline) { console.error('[chat-simulation] --save-baseline requires --baseline <path>'); process.exit(1); }
 		fs.writeFileSync(opts.baseline, JSON.stringify(jsonReport, null, 2));
-		console.log(`[chat-perf] Baseline saved to ${opts.baseline}`);
+		console.log(`[chat-simulation] Baseline saved to ${opts.baseline}`);
 	}
 
 	// -- Baseline comparison ---------------------------------------------
@@ -868,8 +966,8 @@ async function printComparison(jsonReport, opts) {
 	if (opts.baseline && fs.existsSync(opts.baseline)) {
 		const baseline = JSON.parse(fs.readFileSync(opts.baseline, 'utf-8'));
 		console.log('');
-		console.log(`[chat-perf] =========== Baseline Comparison (threshold: ${(opts.threshold * 100).toFixed(0)}%) ===========`);
-		console.log(`[chat-perf] Baseline: ${baseline.baselineBuildVersion || baseline.timestamp}`);
+		console.log(`[chat-simulation] =========== Baseline Comparison (threshold: ${(opts.threshold * 100).toFixed(0)}%) ===========`);
+		console.log(`[chat-simulation] Baseline: ${baseline.baselineBuildVersion || baseline.timestamp}`);
 		console.log('');
 
 		// Metrics that trigger regression failure when they exceed the threshold
@@ -942,8 +1040,8 @@ async function printComparison(jsonReport, opts) {
 
 		console.log('');
 		console.log(regressionFound
-			? `[chat-perf] REGRESSION DETECTED — exceeded ${(opts.threshold * 100).toFixed(0)}% threshold with statistical significance`
-			: `[chat-perf] All metrics within ${(opts.threshold * 100).toFixed(0)}% of baseline (or not statistically significant)`);
+			? `[chat-simulation] REGRESSION DETECTED — exceeded ${(opts.threshold * 100).toFixed(0)}% threshold with statistical significance`
+			: `[chat-simulation] All metrics within ${(opts.threshold * 100).toFixed(0)}% of baseline (or not statistically significant)`);
 
 		if (inconclusiveFound && !regressionFound) {
 			// Find the results.json path to suggest in the hint
@@ -951,9 +1049,9 @@ async function printComparison(jsonReport, opts) {
 				? (jsonReport._resultsPath || opts.resume || 'path/to/results.json')
 				: 'path/to/results.json';
 			console.log('');
-			console.log('[chat-perf] Some metrics exceeded the threshold but were not statistically significant.');
-			console.log('[chat-perf] To increase confidence, add more runs with --resume:');
-			console.log(`[chat-perf]   npm run perf:chat -- --resume ${resultsPath} --runs 3`);
+			console.log('[chat-simulation] Some metrics exceeded the threshold but were not statistically significant.');
+			console.log('[chat-simulation] To increase confidence, add more runs with --resume:');
+			console.log(`[chat-simulation]   npm run perf:chat -- --resume ${resultsPath} --runs 3`);
 		}
 	}
 
@@ -972,7 +1070,7 @@ async function printComparison(jsonReport, opts) {
 		// Write to file for GitHub Actions $GITHUB_STEP_SUMMARY
 		const summaryPath = path.join(DATA_DIR, 'ci-summary.md');
 		fs.writeFileSync(summaryPath, summary);
-		console.log(`[chat-perf] CI summary written to ${summaryPath}`);
+		console.log(`[chat-simulation] CI summary written to ${summaryPath}`);
 
 		// Also print the full summary table to stdout
 		console.log('');

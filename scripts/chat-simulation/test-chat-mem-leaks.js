@@ -190,15 +190,17 @@ async function main() {
 	}
 
 	const { startServer } = require('./common/mock-llm-server');
+	const { registerPerfScenarios } = require('./common/perf-scenarios');
+	registerPerfScenarios();
 	const mockServer = await startServer(0);
 
-	console.log(`[chat-perf] Leak check: ${opts.messages} messages, threshold ${opts.leakThresholdMB}MB/msg`);
-	console.log(`[chat-perf] Build: ${electronPath}`);
+	console.log(`[chat-simulation] Leak check: ${opts.messages} messages, threshold ${opts.leakThresholdMB}MB/msg`);
+	console.log(`[chat-simulation] Build: ${electronPath}`);
 	console.log('');
 
 	const result = await runLeakCheck(electronPath, mockServer, opts.messages, opts.verbose);
 
-	console.log('[chat-perf] =================== Leak Check Results ===================');
+	console.log('[chat-simulation] =================== Leak Check Results ===================');
 	console.log('');
 	console.log(`  Heap samples (MB): ${result.heapSamples.join(' → ')}`);
 	console.log(`  DOM node samples:  ${result.domNodeSamples.join(' → ')}`);
@@ -210,16 +212,16 @@ async function main() {
 	console.log('');
 
 	// Write JSON
-	const jsonPath = path.join(DATA_DIR, 'chat-perf-leak-results.json');
+	const jsonPath = path.join(DATA_DIR, 'chat-simulation-leak-results.json');
 	fs.writeFileSync(jsonPath, JSON.stringify({ timestamp: new Date().toISOString(), ...result }, null, 2));
-	console.log(`[chat-perf] Results written to ${jsonPath}`);
+	console.log(`[chat-simulation] Results written to ${jsonPath}`);
 
 	const leaked = result.leakPerMessageMB > opts.leakThresholdMB;
 	console.log('');
 	if (leaked) {
-		console.log(`[chat-perf] LEAK DETECTED — ${result.leakPerMessageMB}MB/msg exceeds ${opts.leakThresholdMB}MB/msg threshold`);
+		console.log(`[chat-simulation] LEAK DETECTED — ${result.leakPerMessageMB}MB/msg exceeds ${opts.leakThresholdMB}MB/msg threshold`);
 	} else {
-		console.log(`[chat-perf] No leak detected (${result.leakPerMessageMB}MB/msg < ${opts.leakThresholdMB}MB/msg)`);
+		console.log(`[chat-simulation] No leak detected (${result.leakPerMessageMB}MB/msg < ${opts.leakThresholdMB}MB/msg)`);
 	}
 
 	await mockServer.close();

@@ -28,7 +28,7 @@ const ROOT = path.join(__dirname, '..', '..', '..');
  */
 
 /**
- * A single model turn in a multi-turn scenario.
+ * A single turn in a multi-turn scenario.
  *
  * @typedef {{
  *   kind: 'tool-calls',
@@ -36,17 +36,55 @@ const ROOT = path.join(__dirname, '..', '..', '..');
  * } | {
  *   kind: 'content',
  *   chunks: StreamChunk[],
- * }} ModelTurn
+ * } | {
+ *   kind: 'thinking',
+ *   thinkingChunks: StreamChunk[],
+ *   chunks: StreamChunk[],
+ * } | {
+ *   kind: 'user',
+ *   message: string,
+ * }} ScenarioTurn
  */
 
 /**
- * A multi-turn scenario — an ordered sequence of model turns.
- * The mock server determines which turn to serve based on the number
+ * A scenario turn produced by the model.
+ *
+ * @typedef {{
+ *   kind: 'tool-calls',
+ *   toolCalls: Array<{ toolNamePattern: RegExp, arguments: Record<string, any> }>,
+ * } | {
+ *   kind: 'content',
+ *   chunks: StreamChunk[],
+ * } | {
+ *   kind: 'thinking',
+ *   thinkingChunks: StreamChunk[],
+ *   chunks: StreamChunk[],
+ * }} ModelScenarioTurn
+ */
+
+/**
+ * A model turn that emits content chunks.
+ *
+ * @typedef {{
+ *   kind: 'content',
+ *   chunks: StreamChunk[],
+ * } | {
+ *   kind: 'thinking',
+ *   thinkingChunks: StreamChunk[],
+ *   chunks: StreamChunk[],
+ * }} ContentScenarioTurn
+ */
+
+/**
+ * A multi-turn scenario — an ordered sequence of turns.
+ * The mock server determines which model turn to serve based on the number
  * of assistant→tool round-trips already present in the conversation.
+ * User turns are skipped by the server and instead injected by the test
+ * harness, which types them into the chat input and presses Enter.
  *
  * @typedef {{
  *   type: 'multi-turn',
- *   turns: ModelTurn[],
+ *   turns: ScenarioTurn[],
  * }} MultiTurnScenario
  */
 
@@ -117,296 +155,20 @@ class ScenarioBuilder {
 }
 
 /** @type {Record<string, StreamChunk[] | MultiTurnScenario>} */
-const SCENARIOS = {
-	'text-only': new ScenarioBuilder()
-		.stream([
-			'Here is an explanation of the code you selected:\n\n',
-			'The function `processItems` iterates over the input array and applies a transformation to each element. ',
-			'It uses a `Map` to track previously seen values, which allows it to deduplicate results efficiently in O(n) time.\n\n',
-			'The algorithm works in a single pass: for every element, it computes the transformed value, ',
-			'checks membership in the set, and conditionally appends to the output array. ',
-			'This is a common pattern in data processing pipelines where uniqueness constraints must be maintained.\n\n',
-			'Edge cases to consider include empty arrays, duplicate transformations that produce the same key, ',
-			'and items where the transform function itself is expensive.\n\n',
-			'The time complexity is **O(n)** and the space complexity is **O(n)** in the worst case when all items are unique.\n',
-		], 20)
-		.build(),
-
-	'large-codeblock': new ScenarioBuilder()
-		.stream([
-			'Here is the refactored implementation:\n\n',
-			'```typescript\n',
-			'import { EventEmitter } from "events";\n\n',
-			'interface CacheEntry<T> {\n  value: T;\n  expiresAt: number;\n  accessCount: number;\n}\n\n',
-			'export class LRUCache<K, V> {\n',
-			'  private readonly _map = new Map<K, CacheEntry<V>>();\n',
-			'  private readonly _emitter = new EventEmitter();\n\n',
-			'  constructor(\n    private readonly _maxSize: number,\n    private readonly _ttlMs: number = 60_000,\n  ) {}\n\n',
-			'  get(key: K): V | undefined {\n    const entry = this._map.get(key);\n    if (!entry) { return undefined; }\n',
-			'    if (Date.now() > entry.expiresAt) {\n      this._map.delete(key);\n      this._emitter.emit("evict", key);\n      return undefined;\n    }\n',
-			'    entry.accessCount++;\n    this._map.delete(key);\n    this._map.set(key, entry);\n    return entry.value;\n  }\n\n',
-			'  set(key: K, value: V): void {\n    if (this._map.size >= this._maxSize) {\n',
-			'      const oldest = this._map.keys().next().value;\n      if (oldest !== undefined) {\n        this._map.delete(oldest);\n        this._emitter.emit("evict", oldest);\n      }\n    }\n',
-			'    this._map.set(key, { value, expiresAt: Date.now() + this._ttlMs, accessCount: 0 });\n  }\n\n',
-			'  clear(): void { this._map.clear(); this._emitter.emit("clear"); }\n',
-			'  get size(): number { return this._map.size; }\n',
-			'  onEvict(listener: (key: K) => void): void { this._emitter.on("evict", listener); }\n}\n',
-			'```\n\n',
-			'The key changes:\n- Added TTL-based expiry with configurable timeout\n- LRU eviction uses Map insertion order\n- EventEmitter notifies on evictions for cache observability\n',
-		], 20)
-		.build(),
-
-	'many-small-chunks': (() => {
-		const words = ['Generating detailed analysis:\n\n'];
-		for (let i = 0; i < 200; i++) { words.push(`Word${i} `); }
-		words.push('\n\nAnalysis complete.\n');
-		const b = new ScenarioBuilder();
-		b.stream(words, 5);
-		return b.build();
-	})(),
-
-	'mixed-content': new ScenarioBuilder()
-		.stream([
-			'## Issue Found\n\n',
-			'The `DisposableStore` is not being disposed in the `deactivate` path, ',
-			'which can lead to memory leaks.\n\n',
-			'### Current Code\n\n',
-			'```typescript\nclass MyService {\n  private store = new DisposableStore();\n  // missing dispose!\n}\n```\n\n',
-			'### Suggested Fix\n\n',
-			'```typescript\nclass MyService extends Disposable {\n',
-			'  private readonly store = this._register(new DisposableStore());\n\n',
-			'  override dispose(): void {\n    this.store.dispose();\n    super.dispose();\n  }\n}\n```\n\n',
-			'This ensures the store is cleaned up when the service is disposed via the workbench lifecycle.\n',
-		], 20)
-		.build(),
-
-	// -- Stress-test scenarios --------------------------------------------
-
-	'many-codeblocks': (() => {
-		const b = new ScenarioBuilder();
-		b.emit('Here are the implementations for each module:\n\n');
-		for (let i = 0; i < 10; i++) {
-			b.wait(10, `### Module ${i + 1}: \`handler${i}.ts\`\n\n`);
-			b.emit('```typescript\n');
-			const lines = [];
-			for (let j = 0; j < 15; j++) {
-				lines.push(`export function handle${i}_${j}(input: string): string {\n`);
-				lines.push(`  const result = input.trim().split('').reverse().join('');\n`);
-				lines.push(`  return \`[\${result}] processed by handler ${i}_${j}\`;\n`);
-				lines.push('}\n\n');
-			}
-			b.stream(lines, 5);
-			b.emit('```\n\n');
-		}
-		b.emit('All modules implement the same pattern with unique handler IDs.\n');
-		return b.build();
-	})(),
-
-	'long-prose': (() => {
-		const sentences = [
-			'The architecture follows a layered dependency injection pattern where each service declares its dependencies through constructor parameters. ',
-			'This approach ensures that circular dependencies are detected at compile time rather than at runtime, which significantly reduces debugging overhead. ',
-			'When a service is instantiated, the instantiation service resolves all of its dependencies recursively, creating a directed acyclic graph of service instances. ',
-			'Each service is a singleton within its scope, meaning that multiple consumers of the same service interface receive the same instance. ',
-			'The workbench lifecycle manages the creation and disposal of these services through well-defined phases: creation, restoration, and eventual shutdown. ',
-			'During the restoration phase, services that persist state across sessions reload their data from storage, which may involve asynchronous operations. ',
-			'Contributors register their functionality through extension points, which are processed during the appropriate lifecycle phase. ',
-			'This contribution model allows features to be added without modifying the core workbench code, maintaining a clean separation of concerns. ',
-		];
-		const b = new ScenarioBuilder();
-		b.emit('# Detailed Architecture Analysis\n\n');
-		for (let para = 0; para < 15; para++) {
-			b.wait(15, `## Section ${para + 1}: ${['Overview', 'Design Patterns', 'Service Layer', 'Event System', 'State Management', 'Error Handling', 'Performance', 'Testing', 'Deployment', 'Monitoring', 'Security', 'Extensibility', 'Compatibility', 'Migration', 'Future Work'][para]}\n\n`);
-			const paraSentences = [];
-			for (let s = 0; s < 25; s++) { paraSentences.push(sentences[s % sentences.length]); }
-			b.stream(paraSentences, 8);
-			b.emit('\n\n');
-		}
-		return b.build();
-	})(),
-
-	'rich-markdown': (() => {
-		const b = new ScenarioBuilder();
-		b.emit('# Comprehensive Code Review Report\n\n');
-		b.wait(15, '> **Summary**: Found 12 issues across 4 severity levels.\n\n');
-		for (let section = 0; section < 6; section++) {
-			b.wait(10, `## ${section + 1}. ${['Critical Issues', 'Performance Concerns', 'Code Style', 'Documentation Gaps', 'Test Coverage', 'Security Review'][section]}\n\n`);
-			for (let item = 0; item < 5; item++) {
-				b.stream([
-					`${item + 1}. **Issue ${section * 5 + item + 1}**: \`${['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef'][item]}\` in \`src/components/Widget${item}.tsx\`\n`,
-					`   - Severity: ${['[Critical]', '[Warning]', '[Info]', '[Suggestion]', '[Note]'][item]}\n`,
-					`   - The current implementation uses *unnecessary re-renders* due to missing dependency arrays.\n`,
-					`   - See [React docs](https://react.dev/reference) and the [\`useMemo\` guide](https://react.dev/reference/react/useMemo).\n`,
-					`   - Fix: wrap in \`useCallback\` or extract to a ***separate memoized component***.\n\n`,
-				], 10);
-			}
-			b.emit('---\n\n');
-		}
-		b.emit('> *Report generated automatically. Please review all suggestions before applying.*\n');
-		return b.build();
-	})(),
-
-	'giant-codeblock': (() => {
-		const b = new ScenarioBuilder();
-		b.emit('Here is the complete implementation:\n\n```typescript\n');
-		b.stream([
-			'import { Disposable, DisposableStore } from "vs/base/common/lifecycle";\n',
-			'import { Emitter, Event } from "vs/base/common/event";\n',
-			'import { URI } from "vs/base/common/uri";\n\n',
-		], 10);
-		for (let i = 0; i < 40; i++) {
-			b.stream([
-				`export class Service${i} extends Disposable {\n`,
-				`  private readonly _onDidChange = this._register(new Emitter<void>());\n`,
-				`  readonly onDidChange: Event<void> = this._onDidChange.event;\n\n`,
-				`  private _value: string = '';\n`,
-				`  get value(): string { return this._value; }\n\n`,
-				`  async update(uri: URI): Promise<void> {\n`,
-				`    this._value = uri.toString();\n`,
-				`    this._onDidChange.fire();\n`,
-				`  }\n`,
-				'}\n\n',
-			], 5);
-		}
-		b.emit('```\n\nThis defines 40 service classes following the standard VS Code pattern.\n');
-		return b.build();
-	})(),
-
-	'rapid-stream': (() => {
-		const b = new ScenarioBuilder();
-		const words = [];
-		for (let i = 0; i < 1000; i++) { words.push(`w${i} `); }
-		// Very fast inter-chunk delay to stress the streaming pipeline
-		b.stream(words, 2);
-		return b.build();
-	})(),
-
-	'file-links': (() => {
-		const files = [
-			'src/vs/workbench/contrib/chat/browser/chatListRenderer.ts',
-			'src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts',
-			'src/vs/workbench/contrib/chat/browser/widget/input/chatInputPart.ts',
-			'src/vs/workbench/contrib/chat/common/chatPerf.ts',
-			'src/vs/base/common/lifecycle.ts',
-			'src/vs/base/common/event.ts',
-			'src/vs/platform/instantiation/common/instantiation.ts',
-			'src/vs/workbench/services/extensions/common/abstractExtensionService.ts',
-			'src/vs/workbench/api/common/extHostLanguageModels.ts',
-			'src/vs/workbench/contrib/chat/common/languageModels.ts',
-			'src/vs/editor/browser/widget/codeEditor/editor.ts',
-			'src/vs/workbench/browser/parts/editor/editorGroupView.ts',
-		];
-		const b = new ScenarioBuilder();
-		b.emit('I found references to the disposable pattern across the following files:\n\n');
-		for (let i = 0; i < files.length; i++) {
-			const line = Math.floor(Math.random() * 500) + 1;
-			b.stream([
-				`${i + 1}. [${files[i]}](${files[i]}#L${line}) -- `,
-				`Line ${line}: uses \`DisposableStore\` with ${Math.floor(Math.random() * 10) + 1} registrations\n`,
-			], 15);
-		}
-		b.wait(10, '\nAdditionally, the following files import from `vs/base/common/lifecycle`:\n\n');
-		for (let i = 0; i < 20; i++) {
-			const depth = ['base', 'platform', 'editor', 'workbench'][i % 4];
-			const area = ['common', 'browser', 'node', 'electron-browser'][i % 4];
-			const name = ['service', 'provider', 'contribution', 'handler', 'manager'][i % 5];
-			const file = `src/vs/${depth}/${area}/${name}${i}.ts`;
-			b.stream([
-				`- [${file}](${file}#L${i * 10 + 5})`,
-				` -- imports \`Disposable\`, \`DisposableStore\`\n`,
-			], 12);
-		}
-		b.emit('\nTotal: 32 files reference the disposable pattern.\n');
-		return b.build();
-	})(),
-
-	// -- Tool call scenarios -----------------------------------------------
-
-	'tool-read-file': /** @type {MultiTurnScenario} */ ({
-		type: 'multi-turn',
-		turns: [
-			{
-				kind: 'tool-calls',
-				toolCalls: [
-					{
-						toolNamePattern: /read.?file/i,
-						arguments: {
-							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
-							offset: 1,
-							limit: 50,
-						},
-					},
-				],
-			},
-			{
-				kind: 'content',
-				chunks: new ScenarioBuilder()
-					.wait(20, 'I read the file `src/vs/base/common/lifecycle.ts`. Here is my analysis:\n\n')
-					.stream([
-						'The `Disposable` base class provides a standard lifecycle pattern for VS Code components. ',
-						'It maintains a `DisposableStore` internally via `this._store` and exposes `this._register()` ',
-						'for subclasses to track their own disposables.\n\n',
-						'Key patterns:\n',
-						'- **`_register()`** — adds a disposable to the internal store, ensuring cleanup on `dispose()`\n',
-						'- **`DisposableStore`** — a collection that disposes all contained items when itself disposed\n',
-						'- **`MutableDisposable`** — holds a single disposable that can be swapped; the old one is disposed automatically\n\n',
-						'The `toDisposable()` helper wraps a callback into an `IDisposable`, which is convenient for ',
-						'one-off cleanup like removing event listeners.\n',
-					], 20)
-					.build(),
-			},
-		],
-	}),
-
-	'tool-edit-file': /** @type {MultiTurnScenario} */ ({
-		type: 'multi-turn',
-		turns: [
-			{
-				kind: 'tool-calls',
-				toolCalls: [
-					{
-						toolNamePattern: /read.?file/i,
-						arguments: {
-							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
-							offset: 1,
-							limit: 30,
-						},
-					},
-				],
-			},
-			{
-				kind: 'tool-calls',
-				toolCalls: [
-					{
-						toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
-						arguments: {
-							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
-							oldString: '// perf-benchmark-marker',
-							newString: '// perf-benchmark-marker (updated)',
-							explanation: 'Update the benchmark marker comment',
-						},
-					},
-				],
-			},
-			{
-				kind: 'content',
-				chunks: new ScenarioBuilder()
-					.wait(20, 'I have read and edited `src/vs/base/common/lifecycle.ts`.\n\n')
-					.stream([
-						'The changes I made:\n',
-						'1. Read the file to understand its structure\n',
-						'2. Applied the edit to update the benchmark marker comment\n\n',
-						'The `Disposable` pattern in this file is the foundation of VS Code\'s lifecycle management. ',
-						'All components that own resources should extend `Disposable` and register their cleanup ',
-						'handlers via `this._register()`. This ensures proper teardown when the component is disposed.\n',
-					], 20)
-					.build(),
-			},
-		],
-	}),
-};
+const SCENARIOS = /** @type {Record<string, StreamChunk[] | MultiTurnScenario>} */ ({});
 
 const DEFAULT_SCENARIO = 'text-only';
+
+/**
+ * @returns {StreamChunk[]}
+ */
+function getDefaultScenarioChunks() {
+	const scenario = SCENARIOS[DEFAULT_SCENARIO];
+	if (isMultiTurnScenario(scenario)) {
+		throw new Error(`Default scenario '${DEFAULT_SCENARIO}' must be content-only`);
+	}
+	return scenario;
+}
 
 // -- SSE chunk builder -------------------------------------------------------
 
@@ -536,6 +298,47 @@ function makeToolCallFinishChunk() {
 			index: 0,
 			delta: {},
 			finish_reason: 'tool_calls',
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a thinking (chain-of-thought summary) chunk.
+ * Uses the `cot_summary` field in the delta, matching the Copilot API wire format.
+ * @param {string} text - thinking text fragment
+ */
+function makeThinkingChunk(text) {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: { cot_summary: text },
+			finish_reason: null,
+			content_filter_results: {},
+		}],
+		usage: null,
+	};
+}
+
+/**
+ * Build a thinking ID chunk (sent after thinking text to close the block).
+ * @param {string} cotId - unique chain-of-thought ID
+ */
+function makeThinkingIdChunk(cotId) {
+	return {
+		id: 'chatcmpl-perf-benchmark',
+		object: 'chat.completion.chunk',
+		created: Math.floor(Date.now() / 1000),
+		model: MODEL,
+		choices: [{
+			index: 0,
+			delta: { cot_id: cotId },
+			finish_reason: null,
 			content_filter_results: {},
 		}],
 		usage: null,
@@ -796,20 +599,54 @@ const serverEvents = new EventEmitter();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Count the number of completed assistant→tool round-trips in the conversation.
- * Each round-trip = one assistant message with tool_calls followed by one or
- * more tool result messages.
+ * Count the number of model turns already completed in the conversation.
+ * A model turn is one of:
+ *   - An assistant message with tool_calls (tool-calls turn)
+ *   - An assistant message with content but no tool_calls (content/thinking turn)
+ * The first assistant message after each user message counts as a new model
+ * turn. User turns in the scenario are detected by counting user messages
+ * beyond the initial one.
  * @param {any[]} messages
  * @returns {number}
  */
-function countCompletedToolRoundTrips(messages) {
-	let roundTrips = 0;
+function countCompletedModelTurns(messages) {
+	let turns = 0;
 	for (const msg of messages) {
-		if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-			roundTrips++;
+		if (msg.role === 'assistant') {
+			turns++;
 		}
 	}
-	return roundTrips;
+	return turns;
+}
+
+/**
+ * Count user messages in the conversation (including the initial one).
+ * @param {any[]} messages
+ * @returns {number}
+ */
+function countUserMessages(messages) {
+	return messages.filter((/** @type {any} */ m) => m.role === 'user').length;
+}
+
+/**
+ * Compute the model-turn index for the current request given the scenario's
+ * turn list. User turns are skipped (they're handled by the test harness)
+ * and do not consume a model turn index.
+ *
+ * The algorithm counts completed assistant messages in the conversation
+ * history (each one = one served model turn), then maps that to the
+ * n-th model turn in the scenario (skipping user turns).
+ *
+ * @param {ScenarioTurn[]} turns
+ * @param {any[]} messages
+ * @returns {{ turn: ModelScenarioTurn, turnIndex: number }}
+ */
+function resolveCurrentTurn(turns, messages) {
+	const completedModelTurns = countCompletedModelTurns(messages);
+	// Build the model-only turn list (skip user turns)
+	const modelTurns = /** @type {ModelScenarioTurn[]} */ (turns.filter(t => t.kind !== 'user'));
+	const idx = Math.min(completedModelTurns, modelTurns.length - 1);
+	return { turn: modelTurns[idx], turnIndex: idx };
 }
 
 /**
@@ -843,18 +680,20 @@ async function handleChatCompletions(body, res) {
 			console.log(`[mock-llm]   ${ts} → ${requestToolNames.length} tools available: ${requestToolNames.join(', ')}`);
 		}
 
-		const lastUser = [...messages].reverse().find((/** @type {any} */ m) => m.role === 'user');
-		if (lastUser) {
-			// Extract scenario ID from user message content
-			const content = typeof lastUser.content === 'string'
-				? lastUser.content
-				: Array.isArray(lastUser.content)
-					? lastUser.content.map((/** @type {any} */ c) => c.text || '').join('')
+		// Search all user messages for the scenario tag (not just the last one,
+		// since follow-up user messages in multi-turn scenarios won't have it).
+		for (const msg of messages) {
+			if (msg.role !== 'user') { continue; }
+			const content = typeof msg.content === 'string'
+				? msg.content
+				: Array.isArray(msg.content)
+					? msg.content.map((/** @type {any} */ c) => c.text || '').join('')
 					: '';
 			const match = content.match(/\[scenario:([^\]]+)\]/);
 			if (match && SCENARIOS[match[1]]) {
 				scenarioId = match[1];
 				isScenarioRequest = true;
+				break;
 			}
 		}
 	} catch { }
@@ -872,15 +711,19 @@ async function handleChatCompletions(body, res) {
 	// Ancillary requests (title generation, progress messages) also contain the
 	// [scenario:...] tag but don't send tools, so they fall through to content.
 	if (isMultiTurnScenario(scenario) && requestToolNames.length > 0) {
-		const roundTrips = countCompletedToolRoundTrips(messages);
-		const turnIndex = Math.min(roundTrips, scenario.turns.length - 1);
-		const turn = scenario.turns[turnIndex];
+		const { turn, turnIndex } = resolveCurrentTurn(scenario.turns, messages);
+		const modelTurnCount = scenario.turns.filter(t => t.kind !== 'user').length;
 
 		const ts = new Date().toISOString().slice(11, -1);
-		console.log(`[mock-llm]   ${ts} → multi-turn scenario ${scenarioId}, turn ${turnIndex + 1}/${scenario.turns.length} (${turn.kind}), ${roundTrips} round-trips in history`);
+		console.log(`[mock-llm]   ${ts} → multi-turn scenario ${scenarioId}, model turn ${turnIndex + 1}/${modelTurnCount} (${turn.kind}), ${countCompletedModelTurns(messages)} completed turns in history`);
 
 		if (turn.kind === 'tool-calls') {
 			await streamToolCalls(res, turn.toolCalls, requestToolNames, scenarioId);
+			return;
+		}
+
+		if (turn.kind === 'thinking') {
+			await streamThinkingThenContent(res, turn.thinkingChunks, turn.chunks, isScenarioRequest);
 			return;
 		}
 
@@ -905,12 +748,19 @@ async function handleChatCompletions(body, res) {
  * @returns {StreamChunk[]}
  */
 function getFirstContentTurn(scenario) {
+	/** @type {ContentScenarioTurn | undefined} */
+	let contentTurn;
 	for (const turn of scenario.turns) {
 		if (turn.kind === 'content') {
-			return turn.chunks;
+			contentTurn = turn;
+			break;
+		}
+		if (turn.kind === 'thinking') {
+			contentTurn = turn;
+			break;
 		}
 	}
-	return SCENARIOS[DEFAULT_SCENARIO];
+	return contentTurn?.chunks ?? getDefaultScenarioChunks();
 }
 
 /**
@@ -923,6 +773,44 @@ async function streamContent(res, chunks, isScenarioRequest) {
 	res.write(`data: ${JSON.stringify(makeInitialChunk())}\n\n`);
 
 	for (const chunk of chunks) {
+		if (chunk.delayMs > 0) { await sleep(chunk.delayMs); }
+		res.write(`data: ${JSON.stringify(makeChunk(chunk.content, 0, false))}\n\n`);
+	}
+
+	res.write(`data: ${JSON.stringify(makeChunk('', 0, true))}\n\n`);
+	res.write('data: [DONE]\n\n');
+	res.end();
+
+	if (isScenarioRequest) {
+		serverEvents.emit('scenarioCompletion');
+	}
+}
+
+/**
+ * Stream thinking chunks followed by content chunks as an SSE response.
+ * Thinking is emitted as `cot_summary` deltas, then a `cot_id` to close the
+ * thinking block, followed by standard content deltas.
+ * @param {http.ServerResponse} res
+ * @param {StreamChunk[]} thinkingChunks
+ * @param {StreamChunk[]} contentChunks
+ * @param {boolean} isScenarioRequest
+ */
+async function streamThinkingThenContent(res, thinkingChunks, contentChunks, isScenarioRequest) {
+	res.write(`data: ${JSON.stringify(makeInitialChunk())}\n\n`);
+
+	// Stream thinking text
+	for (const chunk of thinkingChunks) {
+		if (chunk.delayMs > 0) { await sleep(chunk.delayMs); }
+		res.write(`data: ${JSON.stringify(makeThinkingChunk(chunk.content))}\n\n`);
+	}
+
+	// Close thinking block with ID
+	const cotId = `cot_perf_${Date.now()}`;
+	res.write(`data: ${JSON.stringify(makeThinkingIdChunk(cotId))}\n\n`);
+	await sleep(10);
+
+	// Stream content
+	for (const chunk of contentChunks) {
 		if (chunk.delayMs > 0) { await sleep(chunk.delayMs); }
 		res.write(`data: ${JSON.stringify(makeChunk(chunk.content, 0, false))}\n\n`);
 	}
@@ -1048,6 +936,8 @@ function startServer(port = 0) {
 
 // Allow running standalone for testing: node scripts/mock-llm-server.js
 if (require.main === module) {
+	const { registerPerfScenarios } = require('./perf-scenarios');
+	registerPerfScenarios();
 	const port = parseInt(process.argv[2] || '0', 10);
 	startServer(port).then((/** @type {any} */ handle) => {
 		console.log(`Mock LLM server listening at ${handle.url}`);
@@ -1055,4 +945,56 @@ if (require.main === module) {
 	});
 }
 
-module.exports = { startServer, SCENARIOS };
+/**
+ * Get the user follow-up messages for a scenario, in order.
+ * Returns an array of { message, afterModelTurn } objects where afterModelTurn
+ * is the 0-based index of the model turn after which this user message should
+ * be injected.
+ * @param {string} scenarioId
+ * @returns {Array<{ message: string, afterModelTurn: number }>}
+ */
+function getUserTurns(scenarioId) {
+	const scenario = SCENARIOS[scenarioId];
+	if (!isMultiTurnScenario(scenario)) { return []; }
+	const result = [];
+	let modelTurnsSeen = 0;
+	for (const turn of scenario.turns) {
+		if (turn.kind === 'user') {
+			result.push({ message: turn.message, afterModelTurn: modelTurnsSeen });
+		} else {
+			modelTurnsSeen++;
+		}
+	}
+	return result;
+}
+
+/**
+ * Get the total number of model turns (non-user turns) in a scenario.
+ * @param {string} scenarioId
+ * @returns {number}
+ */
+function getModelTurnCount(scenarioId) {
+	const scenario = SCENARIOS[scenarioId];
+	if (!isMultiTurnScenario(scenario)) { return 1; }
+	return scenario.turns.filter(t => t.kind !== 'user').length;
+}
+
+/**
+ * Register a scenario dynamically. Test files call this to add
+ * scenarios that are only relevant to them.
+ * @param {string} id - unique scenario identifier
+ * @param {StreamChunk[] | MultiTurnScenario} definition - scenario data
+ */
+function registerScenario(id, definition) {
+	SCENARIOS[id] = definition;
+}
+
+/**
+ * Return the IDs of all currently registered scenarios.
+ * @returns {string[]}
+ */
+function getScenarioIds() {
+	return Object.keys(SCENARIOS);
+}
+
+module.exports = { startServer, SCENARIOS, ScenarioBuilder, registerScenario, getScenarioIds, getUserTurns, getModelTurnCount };
