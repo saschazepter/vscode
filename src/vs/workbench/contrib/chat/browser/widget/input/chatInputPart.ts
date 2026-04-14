@@ -637,7 +637,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			const newOptions: IEditorOptions = {};
 			if (e.affectsConfiguration(ChatConfiguration.GlobalAutoApprove)) {
-				this.setPermissionLevel(this.getPermittedPermissionLevel(this._currentPermissionLevel.get()));
+				this.setPermissionLevel(this._currentPermissionLevel.get());
 			}
 			if (e.affectsConfiguration(ChatConfiguration.DefaultPermissionLevel)) {
 				if (this._chatSessionIsEmpty) {
@@ -822,7 +822,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	private getDefaultPermissionLevel(): ChatPermissionLevel {
 		const level = this.configurationService.getValue<string>(ChatConfiguration.DefaultPermissionLevel);
-		return this.getPermittedPermissionLevel(isChatPermissionLevel(level) ? level : ChatPermissionLevel.Default);
+		return isChatPermissionLevel(level) ? level : ChatPermissionLevel.Default;
 	}
 
 	private getPermittedPermissionLevel(level: ChatPermissionLevel): ChatPermissionLevel {

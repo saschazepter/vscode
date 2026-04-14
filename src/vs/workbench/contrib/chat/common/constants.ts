@@ -92,10 +92,10 @@ export enum ChatPermissionLevel {
 	Autopilot = 'autopilot'
 }
 
+const chatPermissionLevels = new Set<string>(Object.values(ChatPermissionLevel));
+
 export function isChatPermissionLevel(level: string | undefined): level is ChatPermissionLevel {
-	return level === ChatPermissionLevel.Default
-		|| level === ChatPermissionLevel.AutoApprove
-		|| level === ChatPermissionLevel.Autopilot;
+	return level !== undefined && chatPermissionLevels.has(level);
 }
 
 /**
