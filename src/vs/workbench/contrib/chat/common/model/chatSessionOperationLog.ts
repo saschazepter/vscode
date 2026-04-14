@@ -150,6 +150,7 @@ const requestSchema = Adapt.object<IChatRequestModel, ISerializableChatRequestDa
 	contentReferences: Adapt.v(m => m.response?.contentReferences, objectsEqual),
 	codeCitations: Adapt.v(m => m.response?.codeCitations, objectsEqual),
 	timeSpentWaiting: Adapt.v(m => m.response?.timestamp), // based on response timestamp
+	completionTokens: Adapt.v(m => m.response?.usage?.completionTokens),
 	modeInfo: Adapt.v(m => m.modeInfo, objectsEqual),
 	isSystemInitiated: Adapt.v(m => m.isSystemInitiated),
 	systemInitiatedLabel: Adapt.v(m => m.systemInitiatedLabel),

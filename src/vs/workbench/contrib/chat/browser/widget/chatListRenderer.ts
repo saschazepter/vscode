@@ -13,7 +13,6 @@ import { CachedListVirtualDelegate, IListElementRenderDetails } from '../../../.
 import { ITreeNode, ITreeRenderer } from '../../../../../base/browser/ui/tree/tree.js';
 import { IAction } from '../../../../../base/common/actions.js';
 import { coalesce, distinct } from '../../../../../base/common/arrays.js';
-import { findLast } from '../../../../../base/common/arraysFind.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
 import { canceledName } from '../../../../../base/common/errors.js';
@@ -111,7 +110,6 @@ import { isAgentHostTarget } from '../agentSessions/agentSessions.js';
 const $ = dom.$;
 
 const COPILOT_USERNAME = 'GitHub Copilot';
-const WORKING_CAUGHT_UP_DEBOUNCE_MS = 50;
 
 export interface IChatListItemTemplate {
 	currentElement?: ChatTreeItem;
@@ -1025,8 +1023,20 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private shouldShowWorkingProgress(element: IChatResponseViewModel, partsToRender: IChatRendererContent[], moreContentAvailable: boolean, templateData: IChatListItemTemplate): IChatWorkingProgress | undefined {
-		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal' || element.isComplete || !checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
+		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal' || !checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
 			return undefined;
+		}
+
+		const workingState = {
+			confirmationAdjustedTimestamp: element.confirmationAdjustedTimestamp,
+			usageObs: element.usageObs,
+			isComplete: element.isComplete,
+			completedAt: element.model.completedAt,
+		};
+
+		// For completed responses, show past-tense summary
+		if (element.isComplete) {
+			return { kind: 'working', state: workingState };
 		}
 
 		// Show confirmation progress while a non-subagent confirmation carousel is active above the input.
@@ -1052,65 +1062,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 		}
 
-		// Don't show working if a streaming tool invocation is already present
-		if (partsToRender.some(part => part.kind === 'toolInvocation' && IChatToolInvocation.isStreaming(part))) {
-			return undefined;
-		}
-
-		// Don't show working spinner when there's an in-progress MCP tool - MCP tools have their own progress indicator
-		if (partsToRender.some(part => part.kind === 'toolInvocation' && !IChatToolInvocation.isComplete(part) && isMcpToolInvocation(part))) {
-			return undefined;
-		}
-
-		// Show if no content, only "used references", ends with a complete tool call, or ends with complete text edits and there is no incomplete tool call (edits are still being applied some time after they are all generated)
-		const lastPart = findLast(partsToRender, part => part.kind !== 'markdownContent' || part.content.value.trim().length > 0);
-
-
-		// never show working progress when there is an active thinking piece
-		const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
-		if (lastThinking) {
-			return undefined;
-		}
-
-		// Never show working when the last part is a tool invocation that is attached to thinking,
-		// or *will be* attached to thinking during the upcoming render pass
-		if (lastPart && (lastPart.kind === 'toolInvocation' || lastPart.kind === 'toolInvocationSerialized')) {
-			if (lastPart.isAttachedToThinking) {
-				return undefined;
-			}
-			const collapsedToolsMode = this.configService.getValue<CollapsedToolsDisplayMode>('chat.agent.thinking.collapsedTools');
-			if (collapsedToolsMode !== CollapsedToolsDisplayMode.Off && this.shouldPinPart(lastPart, isResponseVM(element) ? element : undefined)) {
-				return undefined;
-			}
-		}
-
-
-		const hasRenderedThinkingPart = (templateData.renderedParts ?? []).some(part => part instanceof ChatThinkingContentPart);
-		const hasEditPillMarkdown = partsToRender.some(part => part.kind === 'markdownContent' && this.hasEditCodeblockUri(part));
-		if (hasRenderedThinkingPart && hasEditPillMarkdown) {
-			return undefined;
-		}
-
-		// Don't show working spinner when there's any active subagent - subagents have their own progress indicator
-		if (this.getSubagentPart(templateData.renderedParts)) {
-			return undefined;
-		}
-
-		if (
-			!lastPart ||
-			lastPart.kind === 'references' ||
-			(lastPart.kind === 'markdownContent' && !moreContentAvailable && this.hasBeenCaughtUpLongEnough(element)) ||
-			((lastPart.kind === 'toolInvocation' || lastPart.kind === 'toolInvocationSerialized') && (IChatToolInvocation.isComplete(lastPart) || IChatToolInvocation.isEffectivelyHidden(lastPart))) ||
-			((lastPart.kind === 'textEditGroup' || lastPart.kind === 'notebookEditGroup') && lastPart.done && !partsToRender.some(part => part.kind === 'toolInvocation' && !IChatToolInvocation.isComplete(part))) ||
-			(lastPart.kind === 'progressTask' && lastPart.deferred.isSettled) ||
-			lastPart.kind === 'mcpServersStarting' ||
-			lastPart.kind === 'disabledClaudeHooks' ||
-			lastPart.kind === 'hook'
-		) {
-			return { kind: 'working' };
-		}
-
-		return undefined;
+		// Always show working progress for in-progress responses (with time + tokens)
+		return { kind: 'working', state: workingState };
 	}
 
 	private getPendingToolConfirmationCount(parts: ReadonlyArray<IChatRendererContent | IChatProgressResponseContent>, includeSubagentConfirmations: boolean): number {
@@ -1208,17 +1161,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			this.workingProgressConfirmationEndListeners.delete(toolInvocation);
 			disposable.dispose();
 		});
-	}
-
-	/**
-	 *  Adds a debounce on when to show "working" shimmer.
-	 */
-	private hasBeenCaughtUpLongEnough(element: IChatResponseViewModel): boolean {
-		const lastRenderTime = element.renderData?.lastRenderTime;
-		if (typeof lastRenderTime !== 'number' || lastRenderTime === 0) {
-			return false;
-		}
-		return (Date.now() - lastRenderTime) >= WORKING_CAUGHT_UP_DEBOUNCE_MS;
 	}
 
 

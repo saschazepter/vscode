@@ -296,6 +296,7 @@ export interface IChatResponseModel {
 	readonly followups?: IChatFollowup[] | undefined;
 	readonly result?: IChatAgentResult;
 	readonly usage?: IChatUsage;
+	readonly usageObs: IObservable<IChatUsage | undefined>;
 	readonly codeBlockInfos: ICodeBlockInfo[] | undefined;
 
 	initializeCodeBlockInfos(codeBlockInfo: ICodeBlockInfo[]): void;
@@ -1051,7 +1052,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 	private _modelState = observableValue<ResponseModelStateT>(this, { value: ResponseModelState.Pending });
 	private _vote?: ChatAgentVoteDirection;
 	private _result?: IChatAgentResult;
-	private _usage?: IChatUsage;
+	private readonly _usageObs = observableValue<IChatUsage | undefined>(this, undefined);
 	private _shouldBeRemovedOnSend: IChatRequestDisablement | undefined;
 	public readonly isCompleteAddedRequest: boolean;
 	private readonly _shouldBeBlocked = observableValue<boolean>(this, false);
@@ -1138,7 +1139,11 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 	}
 
 	public get usage(): IChatUsage | undefined {
-		return this._usage;
+		return this._usageObs.get();
+	}
+
+	public get usageObs(): IObservable<IChatUsage | undefined> {
+		return this._usageObs;
 	}
 
 	public get username(): string {
@@ -1370,7 +1375,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 	}
 
 	setUsage(usage: IChatUsage): void {
-		this._usage = usage;
+		this._usageObs.set(usage, undefined);
 		this._onDidChange.fire(defaultChatResponseModelChangeReason);
 	}
 
@@ -1453,6 +1458,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			codeCitations: this.codeCitations,
 			timestamp: this._timestamp,
 			timeSpentWaiting: (pendingConfirmation ? Date.now() - pendingConfirmation.startedWaitingAt : 0) + this._timeSpentWaitingAccumulator,
+			completionTokens: this.usage?.completionTokens,
 		} satisfies WithDefinedProps<ISerializableChatResponseData>;
 	}
 }
@@ -1539,6 +1545,7 @@ interface ISerializableChatResponseData {
 	contentReferences?: ReadonlyArray<IChatContentReference>;
 	codeCitations?: ReadonlyArray<IChatCodeCitation>;
 	timeSpentWaiting?: number;
+	completionTokens?: number;
 }
 
 export type SerializedChatResponsePart = IMarkdownString | IChatResponseProgressFileTreeData | IChatContentInlineReference | IChatAgentMarkdownContentWithVulnerability | IChatThinkingPart | IChatProgressResponseContentSerialized | IChatQuestionCarousel | IChatDisabledClaudeHooksPart;
@@ -2479,6 +2486,9 @@ export class ChatModel extends Disposable implements IChatModel {
 				codeBlockInfos: raw.responseMarkdownInfo?.map<ICodeBlockInfo>(info => ({ suggestionId: info.suggestionId })),
 			});
 			request.response.shouldBeRemovedOnSend = raw.isHidden ? { requestId: raw.requestId } : raw.shouldBeRemovedOnSend;
+			if (raw.completionTokens) {
+				request.response.setUsage({ kind: 'usage', promptTokens: 0, completionTokens: raw.completionTokens });
+			}
 			if (raw.usedContext) { // @ulugbekna: if this's a new vscode sessions, doc versions are incorrect anyway?
 				request.response.applyReference(revive(raw.usedContext));
 			}

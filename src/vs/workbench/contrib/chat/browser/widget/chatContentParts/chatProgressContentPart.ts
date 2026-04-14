@@ -3,19 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, append } from '../../../../../../base/browser/dom.js';
+import { $, append, getWindow } from '../../../../../../base/browser/dom.js';
 import { IRenderedMarkdown, renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
 import { alert } from '../../../../../../base/browser/ui/aria/aria.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { stripIcons } from '../../../../../../base/common/iconLabels.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { autorun } from '../../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { localize } from '../../../../../../nls.js';
 import { IChatProgressMessage, IChatTask, IChatTaskSerialized, IChatToolInvocation, IChatToolInvocationSerialized } from '../../../common/chatService/chatService.js';
-import { IChatRendererContent, IChatWorkingProgress, isResponseVM } from '../../../common/model/chatViewModel.js';
+import { IChatRendererContent, IChatWorkingProgress, IChatWorkingProgressState, isResponseVM } from '../../../common/model/chatViewModel.js';
+import { formatElapsedTime, formatTokenCount } from '../../../common/chatProgressFormatting.js';
 import { ChatTreeItem } from '../../chat.js';
 import { renderFileWidgets } from './chatInlineAnchorWidget.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
@@ -165,8 +167,12 @@ export class ChatProgressSubPart extends Disposable {
 	}
 }
 
-export class ChatWorkingProgressContentPart extends ChatProgressContentPart implements IChatContentPart {
+export class ChatWorkingProgressContentPart extends Disposable implements IChatContentPart {
+	public readonly domNode: HTMLElement;
+	private readonly messageElement: HTMLElement;
 	private explicitContent: IMarkdownString | undefined;
+	private readonly label: string;
+	private timerHandle: ReturnType<typeof setInterval> | undefined;
 
 	constructor(
 		workingProgress: IChatWorkingProgress,
@@ -177,30 +183,151 @@ export class ChatWorkingProgressContentPart extends ChatProgressContentPart impl
 		@IConfigurationService configurationService: IConfigurationService,
 		@ILanguageModelToolsService languageModelToolsService: ILanguageModelToolsService
 	) {
-		const explicitContent = workingProgress.content;
+		super();
+		this.explicitContent = workingProgress.content;
 		const defaultLabel = localize('workingMessage', "Working");
 		const pool = buildPhrasePool([defaultLabel], configurationService);
-		const label = pool[Math.floor(Math.random() * pool.length)];
+		this.label = pool[Math.floor(Math.random() * pool.length)];
 
-		const progressMessage: IChatProgressMessage = {
-			kind: 'progressMessage',
-			content: explicitContent ?? new MarkdownString().appendText(label)
-		};
-		super(progressMessage, chatContentMarkdownRenderer, context, undefined, undefined, undefined, undefined, true, instantiationService, chatMarkdownAnchorService, configurationService);
-		this.explicitContent = explicitContent;
+		// Build the DOM
+		this.domNode = $('.progress-container');
+		const iconElement = $('div');
+		const state = workingProgress.state;
+		const isComplete = state?.isComplete ?? false;
+
+		if (isComplete) {
+			iconElement.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
+		} else {
+			iconElement.classList.add(...ThemeIcon.asClassNameArray(ThemeIcon.modify(Codicon.loading, 'spin')));
+		}
+		append(this.domNode, iconElement);
+
+		this.messageElement = $('span.progress-step');
+		append(this.domNode, this.messageElement);
+
+		if (!isComplete) {
+			this.domNode.classList.add('shimmer-progress');
+		}
+
+		if (state) {
+			this.initializeWithState(state, context);
+		} else {
+			// No state provided — show explicit content or label
+			this.messageElement.textContent = this.explicitContent
+				? renderAsPlaintext(this.explicitContent)
+				: this.label;
+		}
+
 		this._register(languageModelToolsService.onDidPrepareToolCallBecomeUnresponsive(e => {
 			if (isEqual(context.element.sessionResource, e.sessionResource)) {
-				this.updateMessage(new MarkdownString(localize('toolCallUnresponsive', "Waiting for tool '{0}' to respond...", e.toolData.displayName)));
+				this.updateWorkingContent(new MarkdownString(localize('toolCallUnresponsive', "Waiting for tool '{0}' to respond...", e.toolData.displayName)));
+			}
+		}));
+	}
+
+	private initializeWithState(state: IChatWorkingProgressState, context: IChatContentPartRenderContext): void {
+		if (state.isComplete) {
+			// Past tense: show final elapsed time and tokens
+			this.renderCompletedProgress(state);
+		} else {
+			// Active: start timer and observe tokens
+			this.startLiveProgress(state);
+		}
+	}
+
+	private renderCompletedProgress(state: IChatWorkingProgressState): void {
+		const elapsed = state.completedAt
+			? state.completedAt - state.confirmationAdjustedTimestamp.get()
+			: 0;
+		const usage = state.usageObs.get();
+		const timeStr = formatElapsedTime(elapsed);
+		const tokens = usage?.completionTokens;
+
+		if (tokens) {
+			this.messageElement.textContent = localize(
+				'workedForWithTokens',
+				"Worked for {0} \u00b7 {1} tokens",
+				timeStr,
+				formatTokenCount(tokens)
+			);
+		} else {
+			this.messageElement.textContent = localize(
+				'workedFor',
+				"Worked for {0}",
+				timeStr
+			);
+		}
+	}
+
+	private startLiveProgress(state: IChatWorkingProgressState): void {
+		let lastTokenText = '';
+
+		const updateDisplay = () => {
+			// If explicit content was set (e.g., tool unresponsive), show that instead
+			if (this.explicitContent) {
+				return;
+			}
+
+			const now = Date.now();
+			const adjustedTimestamp = state.confirmationAdjustedTimestamp.get();
+			const elapsed = Math.max(0, now - adjustedTimestamp);
+			const timeStr = formatElapsedTime(elapsed);
+			const usage = state.usageObs.get();
+			const tokens = usage?.completionTokens;
+
+			if (tokens) {
+				const tokenStr = formatTokenCount(tokens);
+				this.messageElement.textContent = localize(
+					'workingWithTimeAndTokens',
+					"{0} ({1} \u00b7 {2} tokens)",
+					this.label,
+					timeStr,
+					tokenStr
+				);
+				lastTokenText = tokenStr;
+			} else {
+				this.messageElement.textContent = localize(
+					'workingWithTime',
+					"{0} ({1})",
+					this.label,
+					timeStr
+				);
+			}
+		};
+
+		// Initial render
+		updateDisplay();
+
+		// Update every second for the timer
+		const targetWindow = getWindow(this.domNode);
+		this.timerHandle = targetWindow.setInterval(updateDisplay, 1000);
+		this._register({
+			dispose: () => {
+				if (this.timerHandle !== undefined) {
+					targetWindow.clearInterval(this.timerHandle);
+					this.timerHandle = undefined;
+				}
+			}
+		});
+
+		// Also react to token usage changes via observable
+		this._register(autorun(reader => {
+			const usage = state.usageObs.read(reader);
+			if (usage?.completionTokens) {
+				const newTokenText = formatTokenCount(usage.completionTokens);
+				if (newTokenText !== lastTokenText) {
+					updateDisplay();
+				}
 			}
 		}));
 	}
 
 	updateWorkingContent(content: IMarkdownString): void {
 		this.explicitContent = content;
-		this.updateMessage(content);
+		this.messageElement.textContent = renderAsPlaintext(content);
 	}
 
-	override hasSameContent(other: IChatRendererContent, followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {
+	hasSameContent(other: IChatRendererContent, followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {
 		return other.kind === 'working' && other.content?.value === this.explicitContent?.value;
 	}
 }

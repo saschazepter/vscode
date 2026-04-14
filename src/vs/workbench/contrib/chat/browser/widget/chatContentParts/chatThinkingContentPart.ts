@@ -247,7 +247,6 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private isUpdatingDimensions: boolean = false;
 	private lastKnownContentHeight: number = 0;
 	private lastKnownScrollTop: number = 0;
-	private titleShimmerSpan: HTMLElement | undefined;
 	private titleDetailContainer: HTMLElement | undefined;
 	private readonly _externalResourceWidget: ChatThinkingExternalResourceWidget;
 	private readonly _titleDetailRendered = this._register(new MutableDisposable<IRenderedMarkdown>());
@@ -347,11 +346,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		}
 
 		if (!this.fixedScrollingMode && !this.streamingCompleted && !this.element.isComplete && this._collapseButton) {
-			const labelElement = this._collapseButton.labelElement;
-			labelElement.textContent = '';
-			this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
-			this.titleShimmerSpan.textContent = extractedTitle;
-			labelElement.appendChild(this.titleShimmerSpan);
+			// Title is set statically; progress is handled by the outer working progress indicator
 		}
 
 		if (this.fixedScrollingMode) {
@@ -457,16 +452,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			this.renderMarkdown(this.currentThinkingValue);
 		}
 
-		// Create the persistent working spinner element only if still streaming
-		if (!this.streamingCompleted && !this.element.isComplete) {
-			this.workingSpinnerElement = $('.chat-thinking-item.chat-thinking-spinner-item');
-			const spinnerIcon = createThinkingIcon(Codicon.circleFilled);
-			this.workingSpinnerElement.appendChild(spinnerIcon);
-			this.workingSpinnerLabel = $('span.chat-thinking-spinner-label');
-			this.workingSpinnerLabel.textContent = this.getRandomWorkingMessage(WorkingMessageCategory.Thinking);
-			this.workingSpinnerElement.appendChild(this.workingSpinnerLabel);
-			this.wrapper.appendChild(this.workingSpinnerElement);
-		}
+		// Working spinner removed — progress is handled by the outer working progress indicator
 
 		// wrap content in scrollable element for fixed scrolling mode
 		if (this.fixedScrollingMode) {
@@ -1959,7 +1945,6 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 				labelElement.appendChild(plainSpan);
 				this._collapseButton.element.ariaLabel = title;
 			}
-			this.titleShimmerSpan = undefined;
 			this.titleDetailContainer = undefined;
 			this._titleDetailRendered.clear();
 			this.currentTitle = title;
@@ -1976,13 +1961,11 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 
 		const labelElement = this._collapseButton.labelElement;
 
-		// Ensure the persistent shimmer span exists
-		if (!this.titleShimmerSpan || !this.titleShimmerSpan.parentElement) {
-			labelElement.textContent = '';
-			this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
-			labelElement.appendChild(this.titleShimmerSpan);
-		}
-		this.titleShimmerSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
+		// Set static prefix (no shimmer animation — progress is handled by outer working progress)
+		labelElement.textContent = '';
+		const prefixSpan = $('span');
+		prefixSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
+		labelElement.appendChild(prefixSpan);
 
 		// Dispose previous detail rendering
 		this._titleDetailRendered.clear();
