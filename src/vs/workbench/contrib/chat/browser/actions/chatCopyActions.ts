@@ -58,6 +58,7 @@ class ChatCopyActionViewItem extends MenuEntryActionViewItem {
 		this.label.style.backgroundImage = '';
 		this.label.classList.remove('icon');
 		this.label.textContent = '';
+		this.label.setAttribute('aria-hidden', 'true');
 
 		const iconContainer = dom.append(this.label, dom.$('.chat-copy-action-icons'));
 		const copyIcon = dom.append(iconContainer, dom.$('.chat-copy-action-icon.chat-copy-action-icon-copy'));
@@ -75,6 +76,12 @@ class ChatCopyActionViewItem extends MenuEntryActionViewItem {
 		return this.copied
 			? localize('interactive.copyItem.copied', "Copied")
 			: super.getTooltip();
+	}
+
+	protected override updateAriaLabel(): void {
+		this.element?.setAttribute('aria-label', this.copied
+			? localize('interactive.copyItem.copiedAriaLabel', "Copied")
+			: localize('interactive.copyItem.ariaLabel', "Copy"));
 	}
 
 	protected override updateClass(): void {
@@ -97,7 +104,7 @@ class ChatCopyActionViewItem extends MenuEntryActionViewItem {
 
 	private bindActionRunner(actionRunner: IActionRunner): void {
 		this.actionRunnerListener.value = actionRunner.onDidRun(e => {
-			if (e.action.id !== CopyItemActionId || e.error) {
+			if (e.action !== this.action || e.error) {
 				return;
 			}
 
@@ -122,13 +129,13 @@ export class ChatCopyActionRendering extends Disposable implements IWorkbenchCon
 	) {
 		super();
 
-		const disposable = actionViewItemService.register(MenuId.ChatMessageFooter, CopyItemActionId, (action, options) => {
+		const disposable = this._register(actionViewItemService.register(MenuId.ChatMessageFooter, CopyItemActionId, (action, options) => {
 			if (!(action instanceof MenuItemAction)) {
 				return undefined;
 			}
 
 			return instantiationService.createInstance(ChatCopyActionViewItem, action, options);
-		});
+		}));
 
 		markAsSingleton(disposable);
 	}
