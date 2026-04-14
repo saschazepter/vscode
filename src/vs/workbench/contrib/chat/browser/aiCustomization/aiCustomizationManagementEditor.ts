@@ -764,6 +764,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 							}
 							await this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
 						}
+						if (options?.closeEditor && this.input) {
+							this.group.closeEditor(this.input);
+						}
 					} catch (err) {
 						onUnexpectedError(err);
 					}

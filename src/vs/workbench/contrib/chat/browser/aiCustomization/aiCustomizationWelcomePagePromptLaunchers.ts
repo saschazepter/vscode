@@ -231,7 +231,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 					e.stopPropagation();
 					if (this.workspaceService.isSessionsWindow) {
 						const typeLabel = category.label.toLowerCase().replace(/s$/, '');
-						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true, newChat: true });
+						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true, newChat: true, closeEditor: true });
 					} else {
 						this.workspaceService.generateCustomization(category.promptType!);
 					}

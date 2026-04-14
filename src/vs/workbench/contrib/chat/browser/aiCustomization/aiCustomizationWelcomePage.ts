@@ -24,8 +24,9 @@ export interface IWelcomePageCallbacks {
 	 *
 	 * @param options.newChat When true, always opens a new chat instead of
 	 * reusing the active one.
+	 * @param options.closeEditor When true, close the customizations editor after sending.
 	 */
-	prefillChat(query: string, options?: { isPartialQuery?: boolean; newChat?: boolean }): void;
+	prefillChat(query: string, options?: { isPartialQuery?: boolean; newChat?: boolean; closeEditor?: boolean }): void;
 }
 
 export interface IAICustomizationWelcomePageImplementation extends IDisposable {
