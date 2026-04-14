@@ -1,6 +1,9 @@
-# Chat Performance Testing
+---
+name: chat-perf
+description: Run chat perf benchmarks and memory leak checks against the local dev build or any published VS Code version. Use when investigating chat rendering regressions, validating perf-sensitive changes to chat UI, or checking for memory leaks in the chat response pipeline.
+---
 
-Run chat perf benchmarks and memory leak checks against the local dev build or any published VS Code version. Use when investigating chat rendering regressions, validating perf-sensitive changes to chat UI, or checking for memory leaks in the chat response pipeline.
+# Chat Performance Testing
 
 ## When to use
 
@@ -38,12 +41,16 @@ Launches VS Code via Playwright Electron, opens the chat panel, sends a message 
 | Flag | Default | Description |
 |---|---|---|
 | `--runs <n>` | `5` | Runs per scenario. More = more stable. Use 5+ for CI. |
-| `--scenario <id>` | all | Scenario to test (repeatable). See scenarios below. |
-| `--build <path\|ver>` | local dev | Build to test. Accepts path or version (`1.110.0`, `insiders`). |
-| `--baseline-build <ver>` | `1.115.0` | Version to download and compare against. |
+| `--scenario <id>` / `-s` | all | Scenario to test (repeatable). See `common/perf-scenarios.js`. |
+| `--build <path\|ver>` / `-b` | local dev | Build to test. Accepts path or version (`1.110.0`, `insiders`, commit hash). |
+| `--baseline <path>` | — | Compare against a previously saved baseline JSON file. |
+| `--baseline-build <ver>` | `1.115.0` | Version to download and benchmark as baseline. |
 | `--no-baseline` | — | Skip baseline comparison entirely. |
+| `--save-baseline` | — | Save results as the new baseline (requires `--baseline <path>`). |
 | `--resume <path>` | — | Resume a previous run, adding more iterations to increase confidence. |
 | `--threshold <frac>` | `0.2` | Regression threshold (0.2 = flag if 20% slower). |
+| `--no-cache` | — | Ignore cached baseline data, always run fresh. |
+| `--ci` | — | CI mode: write Markdown summary to `ci-summary.md` (implies `--no-cache`). |
 | `--verbose` | — | Print per-run details including response content. |
 
 ### Comparing two remote builds
@@ -87,18 +94,13 @@ Confidence levels reported: `high` (p < 0.01), `medium` (p < 0.05), `low` (p < 0
 
 ### Scenarios
 
-| ID | What it stresses |
-|---|---|
-| `text-only` | Baseline — plain text response |
-| `large-codeblock` | Single TypeScript block with syntax highlighting |
-| `many-codeblocks` | 10 fenced code blocks (~600 lines) |
-| `many-small-chunks` | 200 small SSE chunks |
-| `mixed-content` | Markdown with headers, code blocks, prose |
-| `long-prose` | ~3000 words across 15 sections |
-| `rich-markdown` | Nested lists, bold, italic, links, blockquotes |
-| `giant-codeblock` | Single 200-line TypeScript block |
-| `rapid-stream` | 1000 tiny SSE chunks |
-| `file-links` | 32 file URI references with line anchors |
+Scenarios are defined in `scripts/chat-simulation/common/perf-scenarios.js` and registered via `registerPerfScenarios()`. There are three categories:
+
+- **Content-only** — plain streaming responses (e.g. `text-only`, `large-codeblock`, `rapid-stream`)
+- **Tool-call** — multi-turn scenarios with tool invocations (e.g. `tool-read-file`, `tool-edit-file`)
+- **Multi-turn user** — multi-turn conversations with user follow-ups, thinking blocks (e.g. `thinking-response`, `multi-turn-user`, `long-conversation`)
+
+Run `npm run perf:chat -- --help` to see the full list of registered scenario IDs.
 
 ### Metrics collected
 
@@ -121,8 +123,8 @@ Launches one VS Code session, sends N messages sequentially, forces GC between e
 
 | Flag | Default | Description |
 |---|---|---|
-| `--messages <n>` | `10` | Number of messages to send. More = more accurate slope. |
-| `--build <path\|ver>` | local dev | Build to test. |
+| `--messages <n>` / `-n` | `10` | Number of messages to send. More = more accurate slope. |
+| `--build <path\|ver>` / `-b` | local dev | Build to test. |
 | `--threshold <MB>` | `2` | Max per-message heap growth in MB. |
 | `--verbose` | — | Print per-message heap/DOM counts. |
 
@@ -144,7 +146,10 @@ Launches one VS Code session, sends N messages sequentially, forces GC between e
 scripts/chat-simulation/
 ├── common/
 │   ├── mock-llm-server.js    # Mock CAPI server matching @vscode/copilot-api URL structure
+│   ├── perf-scenarios.js     # Built-in scenario definitions (content, tool-call, multi-turn)
 │   └── utils.js              # Shared: paths, env setup, stats, launch helpers
+├── config.jsonc              # Default config (baseline version, runs, thresholds)
+├── fixtures/                 # TypeScript fixture files used by tool-call scenarios
 ├── test-chat-perf-regression.js
 └── test-chat-mem-leaks.js
 ```
@@ -163,6 +168,6 @@ The copilot extension connects to this server via `IS_SCENARIO_AUTOMATION=1` mod
 
 ### Adding a scenario
 
-1. Add a new entry to the `SCENARIOS` object in `common/mock-llm-server.js` — an array of string chunks that will be streamed as SSE
-2. Add the scenario ID to the `SCENARIOS` array in `common/utils.js`
+1. Add a new entry to the appropriate object (`CONTENT_SCENARIOS`, `TOOL_CALL_SCENARIOS`, or `MULTI_TURN_SCENARIOS`) in `common/perf-scenarios.js` using the `ScenarioBuilder` API from `common/mock-llm-server.js`
+2. The scenario is auto-registered by `registerPerfScenarios()` — no manual ID list to update
 3. Run: `npm run perf:chat -- --scenario your-new-scenario --runs 1 --no-baseline --verbose`

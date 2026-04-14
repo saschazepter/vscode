@@ -289,25 +289,43 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			}
 		});
 
-		// Start polling for code/chat/* perf marks inside the renderer.
-		// The marks are emitted during the request and cleared immediately
-		// after RequestComplete in the same microtask. We poll rapidly from
-		// the page context to capture them before they're cleared.
+		// Use a PerformanceObserver to capture code/chat/* marks as they're
+		// emitted. This is event-driven (no polling) and captures marks
+		// even if they're cleared immediately after emission.
 		await window.evaluate(() => {
 			// @ts-ignore
 			globalThis._chatPerfCapture = [];
-			// @ts-ignore
-			globalThis._chatPerfPollId = setInterval(() => {
+			try {
 				// @ts-ignore
-				const marks = globalThis.MonacoPerformanceMarks?.getMarks() ?? [];
-				for (const m of marks) {
-					// @ts-ignore
-					if (m.name.startsWith('code/chat/') && !globalThis._chatPerfCapture.some(c => c.name === m.name)) {
-						// @ts-ignore
-						globalThis._chatPerfCapture.push({ name: m.name, startTime: m.startTime });
+				globalThis._chatPerfObserver = new PerformanceObserver((list) => {
+					for (const entry of list.getEntries()) {
+						if (entry.name.startsWith('code/chat/')) {
+							const timeOrigin = performance.timeOrigin ?? 0;
+							// @ts-ignore
+							globalThis._chatPerfCapture.push({
+								name: entry.name,
+								startTime: Math.round(timeOrigin + entry.startTime),
+							});
+						}
 					}
-				}
-			}, 16); // poll every frame (~60fps)
+				});
+				// @ts-ignore
+				globalThis._chatPerfObserver.observe({ type: 'mark', buffered: false });
+			} catch {
+				// PerformanceObserver not available — fall back to polling
+				// @ts-ignore
+				globalThis._chatPerfPollId = setInterval(() => {
+					// @ts-ignore
+					const marks = globalThis.MonacoPerformanceMarks?.getMarks() ?? [];
+					for (const m of marks) {
+						// @ts-ignore
+						if (m.name.startsWith('code/chat/') && !globalThis._chatPerfCapture.some(c => c.name === m.name)) {
+							// @ts-ignore
+							globalThis._chatPerfCapture.push({ name: m.name, startTime: m.startTime });
+						}
+					}
+				}, 16);
+			}
 		});
 
 		// Submit
@@ -425,14 +443,18 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			console.log(`  [debug] Client-side timing: firstResponse=${firstResponseTime - submitTime}ms, complete=${responseCompleteTime - submitTime}ms`);
 		}
 
-		// Collect perf marks from our polling capture and stop the poll
+		// Collect perf marks and tear down the observer/poll
 		const chatMarks = await window.evaluate(() => {
 			// @ts-ignore
-			clearInterval(globalThis._chatPerfPollId);
+			if (globalThis._chatPerfObserver) { globalThis._chatPerfObserver.disconnect(); }
+			// @ts-ignore
+			if (globalThis._chatPerfPollId) { clearInterval(globalThis._chatPerfPollId); }
 			// @ts-ignore
 			const marks = globalThis._chatPerfCapture ?? [];
 			// @ts-ignore
 			delete globalThis._chatPerfCapture;
+			// @ts-ignore
+			delete globalThis._chatPerfObserver;
 			// @ts-ignore
 			delete globalThis._chatPerfPollId;
 			return marks;
