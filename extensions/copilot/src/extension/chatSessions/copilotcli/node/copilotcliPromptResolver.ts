@@ -24,6 +24,7 @@ import { getWorkingDirectory, isIsolationEnabled, IWorkspaceInfo } from '../../c
 import { ICopilotCLIImageSupport, isImageMimeType } from './copilotCLIImageSupport';
 import { ICopilotCLISkills } from './copilotCLISkills';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
+import { IVSCodeExtensionContext } from '../../../../platform/extContext/common/extensionContext';
 
 export class CopilotCLIPromptResolver {
 	constructor(
@@ -34,6 +35,7 @@ export class CopilotCLIPromptResolver {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IIgnoreService private readonly ignoreService: IIgnoreService,
 		@ICopilotCLISkills private readonly skillsService: ICopilotCLISkills,
+		@IVSCodeExtensionContext private readonly extensionContext: IVSCodeExtensionContext,
 	) { }
 
 	/**
@@ -84,8 +86,15 @@ export class CopilotCLIPromptResolver {
 			}
 			// No need to include skill prompt files as an attachment if CLI already knows about them.
 			const promptFileUri = isPromptFile(variable) ? variable.value : undefined;
-			if (promptFileUri && knownSkillLocations.some(loc => extUriBiasedIgnorePathCase.isEqualOrParent(promptFileUri, loc))) {
-				return;
+			if (promptFileUri) {
+				if (knownSkillLocations.some(loc => extUriBiasedIgnorePathCase.isEqualOrParent(promptFileUri, loc))) {
+					return;
+				}
+				// Exclude plan prompt file from Core.
+				const directory = URI.file(path.dirname(promptFileUri.fsPath));
+				if (promptFileUri.fsPath.endsWith('plan.prompt.md') && path.basename(directory.fsPath) === 'prompts' && extUriBiasedIgnorePathCase.isEqualOrParent(this.extensionContext.extensionUri, directory)) {
+					return;
+				}
 			}
 			// GitHub pull request references
 			if (isGitHubPullRequestReference(variable.reference)) {

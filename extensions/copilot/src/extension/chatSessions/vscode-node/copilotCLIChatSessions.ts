@@ -371,13 +371,13 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		sessionId: string,
 		worktreeProperties: Awaited<ReturnType<IChatSessionWorktreeService['getWorktreeProperties']>>,
 		workingDirectory: vscode.Uri | undefined,
-	): Promise<vscode.ChatSessionChangedFile2[]> {
-		const changes: vscode.ChatSessionChangedFile2[] = [];
+	): Promise<vscode.ChatSessionChangedFile[]> {
+		const changes: vscode.ChatSessionChangedFile[] = [];
 		if (worktreeProperties?.repositoryPath && await vscode.workspace.isResourceTrusted(vscode.Uri.file(worktreeProperties.repositoryPath))) {
 			changes.push(...(await this.copilotCLIWorktreeManagerService.getWorktreeChanges(sessionId) ?? []));
 		} else if (workingDirectory && await vscode.workspace.isResourceTrusted(workingDirectory)) {
 			const workspaceChanges = await this._workspaceFolderService.getWorkspaceChanges(sessionId) ?? [];
-			changes.push(...workspaceChanges.map(change => new vscode.ChatSessionChangedFile2(
+			changes.push(...workspaceChanges.map(change => new vscode.ChatSessionChangedFile(
 				vscode.Uri.file(change.filePath),
 				change.originalFilePath
 					? toGitUri(vscode.Uri.file(change.originalFilePath), 'HEAD')
