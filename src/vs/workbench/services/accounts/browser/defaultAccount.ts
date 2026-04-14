@@ -576,12 +576,13 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 							}
 						}
 						policyData.mcpAllowlistEntries = allowlistEntries.length > 0 ? allowlistEntries : undefined;
-					} else {
-						policyData.mcpAllowlistEntries = undefined;
 					}
+					// When using cached registry data, allRegistries is not available —
+					// preserve the existing mcpAllowlistEntries from the cached policyData.
 				} else {
 					policyData.mcpRegistryUrl = undefined;
 					policyData.mcpAccess = undefined;
+					policyData.mcpAllowlistEntries = undefined;
 				}
 			}
 

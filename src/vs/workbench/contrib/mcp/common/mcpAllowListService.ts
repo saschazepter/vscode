@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DeferredPromise, LazyStatefulPromise, raceCancellation } from '../../../../base/common/async.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { DeferredPromise, disposableTimeout, LazyStatefulPromise, raceCancellation } from '../../../../base/common/async.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { intersection } from '../../../../base/common/collections.js';
 import { IMcpAllowlistEntry } from '../../../../base/common/defaultAccount.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -23,6 +23,7 @@ import { IGitService } from '../../git/common/gitService.js';
 import { parseRemoteUrl } from '../../git/common/utils.js';
 
 const ALLOWLIST_CACHE_KEY = 'mcp.enterprise.allowlist.cache';
+const ALLOWLIST_REFETCH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
  * A list of allowed MCP server fingerprints, or undefined if the allow list is not applicable.
@@ -71,6 +72,8 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 
 	private readyDeferred = new DeferredPromise<void>();
 	private allowList: AllowList;
+	private fetchCts?: CancellationTokenSource;
+	private readonly refreshTimer = this._register(new MutableDisposable());
 
 	private _state = McpAllowListState.Unavailable;
 	public get state() {
@@ -94,7 +97,7 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 
 		this._register(this.defaultAccountService.onDidChangePolicyData(() => this.loadPolicy()));
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadPolicy()));
-		this.loadPolicy();
+		void this.loadPolicy();
 	}
 
 	/**
@@ -145,27 +148,61 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 	}
 
 	/**
-	 * Loads the allow list from cache or registry and updates the service state.
+	 * Loads or refreshes the allow list. On initial/policy load, resets state and
+	 * deferred gate. On background refresh, keeps existing data on failure.
 	 */
-	private async loadPolicy() {
-		try {
-			this.state = McpAllowListState.Loading;
-			this.allowList = await this.loadMergedAllowList(CancellationToken.None);
-			this.state = this.allowList === undefined ? McpAllowListState.NotApplicable : McpAllowListState.Ready;
-			this.readyDeferred.complete();
-		} catch (error) {
-			this.logService.error('[McpAllowlist] Failed to load allowlist:', error);
-			this.state = McpAllowListState.Unavailable;
-			this.readyDeferred.cancel();
+	private async loadPolicy(isRefresh = false) {
+		if (isRefresh && this.state === McpAllowListState.Loading) {
+			return;
 		}
+
+		this.fetchCts?.dispose(true);
+		const cts = this.fetchCts = new CancellationTokenSource();
+
+		if (!isRefresh) {
+			this.refreshTimer.clear();
+			this.state = McpAllowListState.Loading;
+			if (this.readyDeferred.isSettled) {
+				this.readyDeferred.complete();
+				this.readyDeferred = new DeferredPromise<void>();
+			}
+		}
+
+		try {
+			const result = await this.loadMergedAllowList(cts.token);
+			if (cts.token.isCancellationRequested) {
+				return;
+			}
+
+			this.allowList = result;
+			this.state = result === undefined ? McpAllowListState.NotApplicable : McpAllowListState.Ready;
+		} catch (error) {
+			if (cts.token.isCancellationRequested) {
+				return;
+			}
+
+			if (isRefresh) {
+				this.logService.debug('[McpAllowlist] Background refresh failed, keeping existing data:', error);
+			} else {
+				this.logService.error('[McpAllowlist] Failed to load allowlist:', error);
+				this.state = McpAllowListState.Unavailable;
+			}
+		}
+
+		if (!isRefresh) {
+			this.readyDeferred.complete();
+		}
+
+		this.refreshTimer.value = disposableTimeout(() => this.loadPolicy(true), ALLOWLIST_REFETCH_INTERVAL_MS);
 	}
 
 	/**
-	 * Loads fingreprints from cache and (if authToken is specified) by fetching from the registry.
+	 * Loads fingerprints from cache and (if authToken is specified) by fetching from the registry.
 	 */
 	private async loadMergedAllowList(token: CancellationToken): Promise<AllowList> {
 		const authToken = new LazyStatefulPromise<string>(() => this.getAuthToken(token));
 		let result: AllowList = undefined;
+		let lastError: Error | undefined = undefined;
 
 		for (const { entry, repo } of this.listRegistryQueries()) {
 			if (token.isCancellationRequested) {
@@ -177,8 +214,12 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 				result = this.mergeAllowLists(result, current);
 			} catch (error) {
 				this.logService.debug(`[McpAllowlist] Error loading allowlist for ${entry.ownerLogin}${repo ? `/${repo}` : ''}:`, error);
-				throw error;
+				lastError = error;
 			}
+		}
+
+		if (lastError) {
+			throw lastError;
 		}
 
 		return result;
