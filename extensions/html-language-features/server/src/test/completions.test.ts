@@ -62,15 +62,19 @@ export async function testCompletionFor(value: string, expected: { count?: numbe
 	const languageModes = getLanguageModes({ css: true, javascript: true }, workspace, ClientCapabilities.LATEST, getNodeFileFS());
 	const mode = languageModes.getModeAtPosition(document, position)!;
 
-	const list = await mode.doComplete!(document, position, context);
+	try {
+		const list = await mode.doComplete!(document, position, context);
 
-	if (expected.count) {
-		assert.strictEqual(list.items.length, expected.count);
-	}
-	if (expected.items) {
-		for (const item of expected.items) {
-			assertCompletion(list, item, document);
+		if (expected.count) {
+			assert.strictEqual(list.items.length, expected.count);
 		}
+		if (expected.items) {
+			for (const item of expected.items) {
+				assertCompletion(list, item, document);
+			}
+		}
+	} finally {
+		languageModes.dispose();
 	}
 }
 

@@ -38,10 +38,14 @@ suite('HTML Embedded Formatting', () => {
 			formatOptions = FormattingOptions.create(2, true);
 		}
 
-		const result = await format(languageModes, document, range, formatOptions, undefined, { css: true, javascript: true });
+		try {
+			const result = await format(languageModes, document, range, formatOptions, undefined, { css: true, javascript: true });
 
-		const actual = TextDocument.applyEdits(document, result);
-		assert.strictEqual(actual, expected, message);
+			const actual = TextDocument.applyEdits(document, result);
+			assert.strictEqual(actual, expected, message);
+		} finally {
+			languageModes.dispose();
+		}
 	}
 
 	async function assertFormatWithFixture(fixtureName: string, expectedPath: string, options?: any, formatOptions?: FormattingOptions): Promise<void> {

@@ -4,8 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { run } from 'node:test';
-import { spec } from 'node:test/reporters';
+import { spec, junit } from 'node:test/reporters';
 import path from 'node:path';
+import fs from 'node:fs';
+import { PassThrough } from 'node:stream';
 import glob from 'glob';
 
 const testRoot = import.meta.dirname;
@@ -19,5 +21,22 @@ const stream = run({
 
 let failed = 0;
 stream.on('test:fail', () => failed++);
-stream.compose(spec).pipe(process.stdout);
-stream.on('close', () => process.exit(failed ? 1 : 0));
+
+const ciOutputDir = process.env.BUILD_ARTIFACTSTAGINGDIRECTORY || process.env.GITHUB_WORKSPACE;
+if (ciOutputDir) {
+	const suite = 'Integration HTML Extension Tests';
+	const xmlPath = path.join(ciOutputDir, `test-results/${process.platform}-${process.arch}-${suite.toLowerCase().replace(/[^\w]/g, '-')}-results.xml`);
+	fs.mkdirSync(path.dirname(xmlPath), { recursive: true });
+
+	const specBranch = new PassThrough({ objectMode: true });
+	const junitBranch = new PassThrough({ objectMode: true });
+	stream.on('data', chunk => { specBranch.write(chunk); junitBranch.write(chunk); });
+	stream.on('end', () => { specBranch.end(); junitBranch.end(); });
+
+	specBranch.compose(spec).pipe(process.stdout);
+	const fileStream = junitBranch.compose(junit).pipe(fs.createWriteStream(xmlPath));
+	stream.on('close', () => fileStream.on('finish', () => process.exit(failed ? 1 : 0)));
+} else {
+	stream.compose(spec).pipe(process.stdout);
+	stream.on('close', () => process.exit(failed ? 1 : 0));
+}
