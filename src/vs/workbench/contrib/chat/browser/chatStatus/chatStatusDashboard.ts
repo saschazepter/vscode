@@ -248,8 +248,9 @@ export class ChatStatusDashboard extends DomWidget {
 			tabContentContainer.appendChild(usageContent);
 			tabContentContainer.appendChild(inlineSuggestionsContent);
 
-			this.renderUsageContent(usageContent, token);
-			this.renderInlineSuggestionsContent(inlineSuggestionsContent, token);
+			const updatePromise = this.chatEntitlementService.update(token);
+			this.renderUsageContent(usageContent, token, updatePromise);
+			this.renderInlineSuggestionsContent(inlineSuggestionsContent, token, updatePromise);
 		} else if (hasUsageSection) {
 			this.renderUsageContent(this.element, token);
 		} else if (hasInlineSuggestionsSection) {
@@ -258,8 +259,8 @@ export class ChatStatusDashboard extends DomWidget {
 
 		// Chat sessions (below tabs)
 		{
-			const inProgress = this.chatSessionsService.getInProgress();
-			if (inProgress.some(item => item.count > 0)) {
+			const inProgress = this.chatSessionsService.getInProgress().filter(item => item.count > 0);
+			if (inProgress.length > 0) {
 
 				this.element.appendChild($('hr'));
 				this.renderHeader(this.element, this._store, localize('chatAgentSessionsTitle', "Agent Sessions"), toAction({
@@ -273,15 +274,13 @@ export class ChatStatusDashboard extends DomWidget {
 					}
 				}));
 
-				for (const { chatSessionType, count } of inProgress) {
-					if (count > 0) {
-						const displayName = this.getDisplayNameForChatSessionType(chatSessionType);
-						if (displayName) {
-							const text = '$(loading~spin) ' + localize('inProgressChatSession', "{0} in progress", displayName);
-							const chatSessionsElement = this.element.appendChild($('div.description'));
-							const parts = renderLabelWithIcons(text);
-							chatSessionsElement.append(...parts);
-						}
+				for (const { chatSessionType } of inProgress) {
+					const displayName = this.getDisplayNameForChatSessionType(chatSessionType);
+					if (displayName) {
+						const text = '$(loading~spin) ' + localize('inProgressChatSession', "{0} in progress", displayName);
+						const chatSessionsElement = this.element.appendChild($('div.description'));
+						const parts = renderLabelWithIcons(text);
+						chatSessionsElement.append(...parts);
 					}
 				}
 			}
@@ -342,7 +341,7 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
-	private renderUsageContent(container: HTMLElement, token: CancellationToken): void {
+	private renderUsageContent(container: HTMLElement, token: CancellationToken, updatePromise?: Promise<void>): void {
 		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
 
 		if (chatQuota || premiumChatQuota) {
@@ -361,7 +360,7 @@ export class ChatStatusDashboard extends DomWidget {
 			}
 
 			(async () => {
-				await this.chatEntitlementService.update(token);
+				await (updatePromise ?? this.chatEntitlementService.update(token));
 				if (token.isCancellationRequested) {
 					return;
 				}
@@ -382,7 +381,7 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
-	private renderInlineSuggestionsContent(container: HTMLElement, token: CancellationToken): void {
+	private renderInlineSuggestionsContent(container: HTMLElement, token: CancellationToken, updatePromise?: Promise<void>): void {
 		// Completions quota
 		{
 			const { completions: completionsQuota } = this.chatEntitlementService.quotas;
@@ -392,7 +391,7 @@ export class ChatStatusDashboard extends DomWidget {
 				} else {
 					const completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), false);
 					(async () => {
-						await this.chatEntitlementService.update(token);
+						await (updatePromise ?? this.chatEntitlementService.update(token));
 						if (token.isCancellationRequested) {
 							return;
 						}
@@ -412,9 +411,10 @@ export class ChatStatusDashboard extends DomWidget {
 			this.createSettings(container, this._store);
 		}
 
+		const providers = (!this.options?.disableModelSelection || !this.options?.disableProviderOptions) ? this.languageFeaturesService.inlineCompletionsProvider.allNoModel() : undefined;
+
 		// Model Selection (editor-specific)
-		if (!this.options?.disableModelSelection) {
-			const providers = this.languageFeaturesService.inlineCompletionsProvider.allNoModel();
+		if (!this.options?.disableModelSelection && providers) {
 			const provider = providers.find(p => p.modelInfo && p.modelInfo.models.length > 0);
 
 			if (provider) {
@@ -442,8 +442,7 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 
 		// Provider Options (editor-specific)
-		if (!this.options?.disableProviderOptions) {
-			const providers = this.languageFeaturesService.inlineCompletionsProvider.allNoModel();
+		if (!this.options?.disableProviderOptions && providers) {
 			for (const provider of providers) {
 				if (provider.providerOptions && provider.providerOptions.length > 0) {
 					for (const option of provider.providerOptions) {
@@ -513,7 +512,7 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
-	private runCommandAndClose(commandOrFn: string | Function, ...args: unknown[]): void {
+	private runCommandAndClose(commandOrFn: string | ((...args: unknown[]) => void), ...args: unknown[]): void {
 		if (typeof commandOrFn === 'function') {
 			commandOrFn(...args);
 		} else {
