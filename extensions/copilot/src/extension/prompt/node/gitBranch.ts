@@ -42,7 +42,8 @@ export class GitBranchNameGenerator {
 		const parentChatSessionId = sessionResource ? sessionResourceToId(URI.from(sessionResource)) : undefined;
 
 		const endpoint = await this.endpointProvider.getChatEndpoint('copilot-fast');
-		const command = firstRequest.command ? `/${firstRequest.command} ` : '';
+		const normalizedCommand = firstRequest.command?.trim().replace(/^\/+/, '') ?? '';
+		const command = normalizedCommand ? `/${normalizedCommand} ` : '';
 		const userRequest = `${command}${firstRequest.prompt}`;
 		const { messages } = await renderPromptElement(this.instantiationService, endpoint, GitBranchPrompt, { userRequest });
 
