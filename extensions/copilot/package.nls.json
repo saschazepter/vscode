@@ -477,7 +477,7 @@
 	"github.copilot.config.searchSubagent.useAgenticProxy": "Use the agentic proxy for the search subagent tool.",
 	"github.copilot.config.searchSubagent.model": "Model to use for the search subagent. When useAgenticProxy is enabled, defaults to 'agentic-search-v3'. Otherwise defaults to the main agent model.",
 	"github.copilot.config.searchSubagent.toolCallLimit": "Maximum number of tool calls the search subagent can make during exploration.",
-	"github.copilot.config.searchSubagent.thoroughnessEnabled": "Enable the thoroughness parameter on the search subagent tool. When enabled, the caller can pass 'quick', 'medium', or 'thorough' to adjust the number of allowed tool-call turns (0.5×, 1×, or 2× the base toolCallLimit respectively).",
+	"github.copilot.config.searchSubagent.thoroughnessEnabled": "Enable the thoroughness parameter on the search subagent tool. When enabled, the caller can pass 'normal' or 'deep' to adjust the number of allowed tool-call turns (1× or 2× the base toolCallLimit respectively).",
 	"copilot.tools.executionSubagent.name": "Execution Subagent",
 	"copilot.tools.executionSubagent.description": "Launch an execution-focused subagent that runs one or more terminal commands to accomplish a task. It is designed to select an efficient summary of the terminal outputs to return to the main agent context.",
 	"github.copilot.config.executionSubagent.enabled": "Enable the Execution Subagent tool in Copilot Chat. The Execution Subagent is designed to run terminal commands to accomplish an execution-based task.",
