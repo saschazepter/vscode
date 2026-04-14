@@ -15,7 +15,6 @@ import { IWorkspaceService } from '../../../platform/workspace/common/workspaceS
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
-import { basename } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { ClaudeFolderInfo } from '../claude/common/claudeFolderInfo';
@@ -28,8 +27,9 @@ import { IClaudeCodeSessionService } from '../claude/node/sessionParser/claudeCo
 import { IClaudeCodeSessionInfo } from '../claude/node/sessionParser/claudeSessionSchema';
 import { IClaudeSlashCommandService } from '../claude/vscode-node/claudeSlashCommandService';
 import { IChatSessionWorktreeService } from '../common/chatSessionWorktreeService';
-import { FolderRepositoryMRUEntry, IFolderRepositoryManager, IsolationMode } from '../common/folderRepositoryManager';
+import { IFolderRepositoryManager, IsolationMode } from '../common/folderRepositoryManager';
 import { buildChatHistory } from './chatHistoryBuilder';
+import { getSelectedSessionOptions, ISessionOptionGroupBuilder } from './sessionOptionGroupBuilder';
 
 const permissionModes: ReadonlySet<string> = new Set<PermissionMode>(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk']);
 
@@ -44,9 +44,6 @@ import '../claude/vscode-node/toolPermissionHandlers/index';
 import '../claude/vscode-node/mcpServers/index';
 
 const PERMISSION_MODE_OPTION_ID = 'permissionMode';
-const FOLDER_OPTION_ID = 'folder';
-const ISOLATION_MODE_OPTION_ID = 'isolation';
-const MAX_MRU_ENTRIES = 10;
 
 export class ClaudeChatSessionContentProvider extends Disposable implements vscode.ChatSessionContentProvider {
 	private readonly _onDidChangeChatSessionOptions = this._register(new Emitter<vscode.ChatSessionOptionChangeEvent>());
@@ -75,9 +72,10 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		@IClaudeSlashCommandService private readonly slashCommandService: IClaudeSlashCommandService,
 		@IFolderRepositoryManager private readonly folderRepositoryManager: IFolderRepositoryManager,
 		@IChatSessionWorktreeService private readonly worktreeService: IChatSessionWorktreeService,
+		@ISessionOptionGroupBuilder private readonly _optionGroupBuilder: ISessionOptionGroupBuilder,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@INativeEnvService private readonly envService: INativeEnvService,
-		@IGitService gitService: IGitService,
+		@IGitService private readonly gitService: IGitService,
 		@IClaudeCodeSdkService sdkService: IClaudeCodeSdkService,
 		@ILogService private readonly logService: ILogService,
 	) {
@@ -96,6 +94,9 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			this._onDidChangeChatSessionProviderOptions.fire();
 		}));
 
+		// Wire up the new input state API (dynamic dropdowns with locking support)
+		this._initializeInputState();
+
 		// Listen for state changes and notify UI only if value actually changed from local selection
 		this._register(this.sessionStateService.onDidChangeSessionState(e => {
 			const updates: { optionId: string; value: string }[] = [];
@@ -110,6 +111,97 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			}
 		}));
 	}
+
+	// #region Input State (dynamic dropdown management)
+
+	/**
+	 * Wires up `getChatSessionInputState` on the underlying controller,
+	 * delegating to `SessionOptionGroupBuilder` for dynamic dropdown groups
+	 * (isolation, repository/folder, branch). This replaces the old
+	 * `provideChatSessionProviderOptions` approach with proper support for
+	 * locking dropdowns on first message and dynamic branch selection.
+	 */
+	private _initializeInputState(): void {
+		const newInputStates: WeakRef<vscode.ChatSessionInputState>[] = [];
+		const controller = this._controller.rawController;
+
+		controller.getChatSessionInputState = async (sessionResource, context, token) => {
+			const isExistingSession = sessionResource && await this.sessionService.getSession(sessionResource, token);
+			if (isExistingSession) {
+				const groups = await this._optionGroupBuilder.buildExistingSessionInputStateGroups(sessionResource, token);
+				// Add permission mode group for existing sessions
+				this._addPermissionModeGroup(groups, sessionResource, true);
+				return controller.createChatSessionInputState(groups);
+			} else {
+				const groups = await this._optionGroupBuilder.provideChatSessionProviderOptionGroups(context.previousInputState);
+				// Add permission mode group for new sessions
+				this._addPermissionModeGroup(groups, undefined, false);
+				const state = controller.createChatSessionInputState(groups);
+				// Only wire dynamic updates for new sessions (existing sessions are fully locked).
+				newInputStates.push(new WeakRef(state));
+				state.onDidChange(() => {
+					void this._optionGroupBuilder.handleInputStateChange(state);
+				});
+				return state;
+			}
+		};
+
+		// Refresh new-session dropdown groups when git or workspace state changes
+		const refreshActiveInputState = () => {
+			// Sweep stale WeakRefs before iterating
+			for (let i = newInputStates.length - 1; i >= 0; i--) {
+				if (!newInputStates[i].deref()) {
+					newInputStates.splice(i, 1);
+				}
+			}
+			for (const weakRef of newInputStates) {
+				const state = weakRef.deref();
+				if (state) {
+					void this._optionGroupBuilder.rebuildInputState(state);
+				}
+			}
+		};
+		this._register(this.gitService.onDidFinishInitialization(refreshActiveInputState));
+		this._register(this.gitService.onDidOpenRepository(refreshActiveInputState));
+		this._register(this.gitService.onDidCloseRepository(refreshActiveInputState));
+		this._register(this.workspaceService.onDidChangeWorkspaceFolders(refreshActiveInputState));
+	}
+
+	/**
+	 * Add the permission mode option group to an existing set of groups.
+	 * Permission mode is Claude-specific and not managed by SessionOptionGroupBuilder.
+	 */
+	private _addPermissionModeGroup(groups: vscode.ChatSessionProviderOptionGroup[], sessionResource: vscode.Uri | undefined, locked: boolean): void {
+		const permissionModeItems: vscode.ChatSessionProviderOptionItem[] = [
+			{ id: 'default', name: l10n.t('Ask before edits'), icon: new vscode.ThemeIcon('shield') },
+			{ id: 'acceptEdits', name: l10n.t('Edit automatically'), icon: new vscode.ThemeIcon('edit') },
+			{ id: 'plan', name: l10n.t('Plan mode'), icon: new vscode.ThemeIcon('lightbulb') },
+		];
+		if (this.configurationService.getConfig(ConfigKey.ClaudeAgentAllowDangerouslySkipPermissions)) {
+			permissionModeItems.push({ id: 'bypassPermissions', name: l10n.t('Bypass all permissions'), icon: new vscode.ThemeIcon('warning') });
+		}
+
+		let selectedMode: string;
+		if (sessionResource) {
+			const sessionId = ClaudeSessionUri.getSessionId(sessionResource);
+			selectedMode = this.getPermissionModeForSession(sessionId);
+		} else {
+			selectedMode = this._lastUsedPermissionMode;
+		}
+
+		const selectedItem = permissionModeItems.find(item => item.id === selectedMode) ?? permissionModeItems[0];
+		const selected = locked ? { ...selectedItem, locked: true } : selectedItem;
+
+		groups.unshift({
+			id: PERMISSION_MODE_OPTION_ID,
+			name: l10n.t('Permission Mode'),
+			description: l10n.t('Pick Permission Mode'),
+			items: locked ? permissionModeItems.map(item => ({ ...item, locked: true })) : permissionModeItems,
+			selected,
+		});
+	}
+
+	// #endregion
 
 	/**
 	 * Gets the permission mode for a session
@@ -225,56 +317,6 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		return true;
 	}
 
-	// #region Folder Option Helpers
-
-	private _isEmptyWorkspace(): boolean {
-		return this.workspaceService.getWorkspaceFolders().length === 0;
-	}
-
-	private async _getFolderOptionItems(): Promise<vscode.ChatSessionProviderOptionItem[]> {
-		const workspaceFolders = this.workspaceService.getWorkspaceFolders();
-
-		if (this._isEmptyWorkspace()) {
-			const mruEntries = await this.folderRepositoryManager.getFolderMRU();
-			return mruToFolderOptionItems(mruEntries).slice(0, MAX_MRU_ENTRIES);
-		}
-
-		return workspaceFolders.map(folder => ({
-			id: folder.fsPath,
-			name: this.workspaceService.getWorkspaceFolderName(folder),
-			icon: new vscode.ThemeIcon('folder'),
-		}));
-	}
-
-	private async _getDefaultFolderForSession(sessionId: string): Promise<URI | undefined> {
-		// Check in-memory selection first
-		const selected = this._controller.getMetadata(sessionId)?.cwd;
-		if (selected) {
-			return selected;
-		}
-
-		const defaultFolder = await this._getDefaultFolder();
-		if (defaultFolder) {
-			this._controller.setMetadata(sessionId, { cwd: defaultFolder });
-		}
-		return defaultFolder;
-	}
-
-	private async _getDefaultFolder(): Promise<URI | undefined> {
-		const workspaceFolders = this.workspaceService.getWorkspaceFolders();
-		if (workspaceFolders.length > 0) {
-			return workspaceFolders[0];
-		}
-
-		const mru = await this.folderRepositoryManager.getFolderMRU();
-		if (mru.length > 0) {
-			return mru[0].folder;
-		}
-
-		// No suitable default folder found
-		return undefined;
-	}
-
 	// #endregion
 
 	// #region Chat Participant Handler
@@ -305,11 +347,44 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			const existingSession = await this.sessionService.getSession(sessionUri, token);
 			const isNewSession = !existingSession;
 
+			// Lock all dropdown groups on first message (prevents changing isolation/branch/folder mid-session)
+			if (isNewSession) {
+				this._optionGroupBuilder.lockInputStateGroups(chatSessionContext.inputState);
+			}
+
+			// Read selected options from input state (new API)
+			const selectedOptions = getSelectedSessionOptions(chatSessionContext.inputState);
+			const selectedPermissionMode = this._getPermissionModeFromInputState(chatSessionContext.inputState);
+
+			// Store selected options in metadata for the session
+			if (isNewSession) {
+				const isolationMode = selectedOptions.isolation ?? IsolationMode.Worktree;
+				const folder = selectedOptions.folder;
+				this._controller.setMetadata(effectiveSessionId, {
+					isolationMode,
+					cwd: folder,
+					permissionMode: selectedPermissionMode,
+				});
+				if (selectedPermissionMode) {
+					this._lastUsedPermissionMode = selectedPermissionMode;
+				}
+			}
+
 			// Initialize worktree for new sessions with worktree isolation
 			if (isNewSession) {
 				const shouldContinue = await this._initializeWorktreeForNewSession(effectiveSessionId, stream, request.toolInvocationToken, token);
 				if (token.isCancellationRequested || !shouldContinue) {
+					// Unlock dropdowns so the user can adjust and retry
+					await this._optionGroupBuilder.rebuildInputState(chatSessionContext.inputState);
 					return {};
+				}
+			}
+
+			// Update branch in input state after worktree creation
+			if (isNewSession) {
+				const worktreeProperties = await this.worktreeService.getWorktreeProperties(effectiveSessionId);
+				if (worktreeProperties?.branchName) {
+					this._optionGroupBuilder.updateBranchInInputState(chatSessionContext.inputState, worktreeProperties.branchName);
 				}
 			}
 
@@ -348,166 +423,34 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		};
 	}
 
+	/**
+	 * Read the selected permission mode from the input state groups.
+	 */
+	private _getPermissionModeFromInputState(inputState: vscode.ChatSessionInputState): PermissionMode | undefined {
+		const group = inputState.groups.find(g => g.id === PERMISSION_MODE_OPTION_ID);
+		const selectedId = group?.selected?.id;
+		if (selectedId && isPermissionMode(selectedId)) {
+			return selectedId;
+		}
+		return undefined;
+	}
+
 	// #endregion
 
-	async provideChatSessionProviderOptions(): Promise<vscode.ChatSessionProviderOptions> {
-		const permissionModeItems: vscode.ChatSessionProviderOptionItem[] = [
-			{ id: 'default', name: l10n.t('Ask before edits') },
-			{ id: 'acceptEdits', name: l10n.t('Edit automatically') },
-			{ id: 'plan', name: l10n.t('Plan mode') },
-		];
-
-		// Add bypass permissions option if enabled via setting
-		if (this.configurationService.getConfig(ConfigKey.ClaudeAgentAllowDangerouslySkipPermissions)) {
-			permissionModeItems.push({ id: 'bypassPermissions', name: l10n.t('Bypass all permissions') });
-		}
-
-		const optionGroups: vscode.ChatSessionProviderOptionGroup[] = [
-			{
-				id: PERMISSION_MODE_OPTION_ID,
-				name: l10n.t('Permission Mode'),
-				description: l10n.t('Pick Permission Mode'),
-				items: permissionModeItems,
-			},
-			{
-				id: ISOLATION_MODE_OPTION_ID,
-				name: l10n.t('Isolation'),
-				description: l10n.t('Pick Isolation Mode'),
-				items: [
-					{ id: IsolationMode.Worktree, name: l10n.t('Worktree') },
-					{ id: IsolationMode.Workspace, name: l10n.t('Workspace') },
-				],
-			}
-		];
-
-		// Add folder option based on workspace type:
-		// - Single-root (1 folder): no folder option (implicit)
-		// - Multi-root (2+ folders): show workspace folders
-		// - Empty workspace (0 folders): show MRU folders + browse command
-		const workspaceFolders = this.workspaceService.getWorkspaceFolders();
-		if (workspaceFolders.length !== 1) {
-			const folderItems = await this._getFolderOptionItems();
-			const folderGroup: vscode.ChatSessionProviderOptionGroup = {
-				id: FOLDER_OPTION_ID,
-				name: l10n.t('Folder'),
-				description: l10n.t('Pick Folder'),
-				items: folderItems,
-			};
-			optionGroups.unshift(folderGroup);
-		}
-
-		return { optionGroups, newSessionOptions: await this._getNewSessionOptions(workspaceFolders) };
-	}
-
-	private async _getNewSessionOptions(workspaceFolders: readonly URI[]): Promise<Record<string, string | vscode.ChatSessionProviderOptionItem>> {
-		const newSessionOptions: Record<string, string | vscode.ChatSessionProviderOptionItem> = {};
-
-		newSessionOptions[PERMISSION_MODE_OPTION_ID] = this._lastUsedPermissionMode;
-		newSessionOptions[ISOLATION_MODE_OPTION_ID] = IsolationMode.Worktree;
-
-		if (workspaceFolders.length !== 1) {
-			const defaultFolder = await this._getDefaultFolder();
-			if (defaultFolder) {
-				newSessionOptions[FOLDER_OPTION_ID] = defaultFolder.fsPath;
-			}
-		}
-
-		return newSessionOptions;
-	}
-
-	async provideHandleOptionsChange(resource: vscode.Uri, updates: ReadonlyArray<vscode.ChatSessionOptionUpdate>, _token: vscode.CancellationToken): Promise<void> {
-		const sessionId = ClaudeSessionUri.getSessionId(resource);
-		let hadUpdate = false;
-		for (const update of updates) {
-			if (update.optionId === PERMISSION_MODE_OPTION_ID) {
-				if (!update.value || !isPermissionMode(update.value)) {
-					continue;
-				}
-				// Store locally; committed to session state service when handling the next request
-				this._controller.setMetadata(sessionId, { permissionMode: update.value });
-				this._lastUsedPermissionMode = update.value;
-				hadUpdate = true;
-			} else if (update.optionId === FOLDER_OPTION_ID && typeof update.value === 'string') {
-				this._controller.setMetadata(sessionId, { cwd: URI.file(update.value) });
-				hadUpdate = true;
-			} else if (update.optionId === ISOLATION_MODE_OPTION_ID && typeof update.value === 'string') {
-				const isolationMode = update.value === IsolationMode.Worktree ? IsolationMode.Worktree : IsolationMode.Workspace;
-				this._controller.setMetadata(sessionId, { isolationMode });
-				hadUpdate = true;
-			}
-		}
-		if (hadUpdate) {
-			this._onDidChangeChatSessionProviderOptions.fire();
-		}
-	}
-
 	async provideChatSessionContent(sessionResource: vscode.Uri, token: vscode.CancellationToken): Promise<vscode.ChatSession> {
-		const sessionId = ClaudeSessionUri.getSessionId(sessionResource);
 		const existingSession = await this.sessionService.getSession(sessionResource, token);
 		const history = existingSession ?
 			buildChatHistory(existingSession) :
 			[];
-
-		const permissionMode = this.getPermissionModeForSession(sessionId);
-
-		const options: Record<string, string | vscode.ChatSessionProviderOptionItem> = {};
-		options[PERMISSION_MODE_OPTION_ID] = permissionMode;
-
-		// For existing sessions with worktree, lock the isolation option
-		const worktreeProperties = await this.worktreeService.getWorktreeProperties(sessionId);
-		if (existingSession && worktreeProperties) {
-			options[ISOLATION_MODE_OPTION_ID] = {
-				id: IsolationMode.Worktree,
-				name: l10n.t('Worktree'),
-				locked: true,
-			};
-		} else if (existingSession) {
-			options[ISOLATION_MODE_OPTION_ID] = {
-				id: IsolationMode.Workspace,
-				name: l10n.t('Workspace'),
-				locked: true,
-			};
-		} else {
-			options[ISOLATION_MODE_OPTION_ID] = IsolationMode.Worktree;
-		}
-
-		// Include folder option if applicable (multi-root or empty workspace)
-		const workspaceFolders = this.workspaceService.getWorkspaceFolders();
-		if (workspaceFolders.length !== 1) {
-			const defaultFolder = await this._getDefaultFolderForSession(sessionId);
-			if (defaultFolder) {
-				// For existing sessions, lock the folder option
-				if (existingSession) {
-					options[FOLDER_OPTION_ID] = {
-						id: defaultFolder.fsPath,
-						name: this.workspaceService.getWorkspaceFolderName(defaultFolder)
-							|| basename(defaultFolder),
-						icon: new vscode.ThemeIcon('folder'),
-						locked: true,
-					};
-				} else {
-					options[FOLDER_OPTION_ID] = defaultFolder.fsPath;
-				}
-			}
-		}
 
 		return {
 			title: existingSession?.label,
 			history,
 			activeResponseCallback: undefined,
 			requestHandler: undefined,
-			options,
 		};
 	}
 
-}
-
-function mruToFolderOptionItems(mruItems: readonly FolderRepositoryMRUEntry[]): vscode.ChatSessionProviderOptionItem[] {
-	return mruItems.map(item => ({
-		id: item.folder.fsPath,
-		name: basename(item.folder),
-		icon: new vscode.ThemeIcon(item.repository ? 'repo' : 'folder'),
-	}));
 }
 
 /**
@@ -524,6 +467,13 @@ export class ClaudeChatSessionItemController extends Disposable {
 	 */
 	get onDidChangeChatSessionItemState() {
 		return this._controller.onDidChangeChatSessionItemState;
+	}
+
+	/**
+	 * Exposes the underlying controller for input state API wiring.
+	 */
+	get rawController(): vscode.ChatSessionItemController {
+		return this._controller;
 	}
 
 	constructor(
@@ -548,23 +498,8 @@ export class ClaudeChatSessionItemController extends Disposable {
 			);
 			item.iconPath = new vscode.ThemeIcon('claude');
 			item.timing = { created: Date.now() };
-			const permissionModeOptionValue = context.sessionOptions?.find(o => o.optionId === PERMISSION_MODE_OPTION_ID)?.value;
-			const permissionMode = typeof permissionModeOptionValue === 'string' ? permissionModeOptionValue : permissionModeOptionValue?.id;
-			const folderOptionValue = context.sessionOptions?.find(o => o.optionId === FOLDER_OPTION_ID)?.value;
-			const folder = typeof folderOptionValue === 'string'
-				? URI.file(folderOptionValue)
-				: folderOptionValue?.id
-					? URI.file(folderOptionValue.id)
-					: undefined;
-			const isolationOptionValue = context.sessionOptions?.find(o => o.optionId === ISOLATION_MODE_OPTION_ID)?.value;
-			const isolationMode = (typeof isolationOptionValue === 'string' ? isolationOptionValue : isolationOptionValue?.id) === IsolationMode.Worktree
-				? IsolationMode.Worktree
-				: IsolationMode.Workspace;
-			item.metadata = {
-				permissionMode,
-				cwd: folder,
-				isolationMode,
-			};
+			// Metadata (permissionMode, cwd, isolationMode) is set by the request handler
+			// when it reads from inputState — no need to read from sessionOptions here.
 			this._controller.items.add(item);
 			return item;
 		};

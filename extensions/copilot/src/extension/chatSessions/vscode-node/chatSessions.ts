@@ -146,6 +146,8 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[IFolderRepositoryManager, new SyncDescriptor(ClaudeFolderRepositoryManager)],
 				[IChatPromptFileService, new SyncDescriptor(ChatPromptFileService)],
 				[IClaudeRuntimeDataService, new SyncDescriptor(ClaudeRuntimeDataService)],
+				[IChatFolderMruService, new SyncDescriptor(CopilotCLIFolderMruService)],
+				[ISessionOptionGroupBuilder, new SyncDescriptor(SessionOptionGroupBuilder)],
 			));
 		const claudeAgentManager = this._register(claudeAgentInstaService.createInstance(ClaudeAgentManager));
 		const claudeModels = claudeAgentInstaService.invokeFunction(accessor => accessor.get(IClaudeCodeModels));
