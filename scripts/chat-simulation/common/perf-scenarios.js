@@ -488,6 +488,125 @@ const MULTI_TURN_SCENARIOS = {
 			},
 		],
 	}),
+	// Stress test: 20+ turn conversation to expose DOM growth, scroll
+	// performance, and memory accumulation over a long session.
+	'long-conversation': /** @type {import('./mock-llm-server').MultiTurnScenario} */ ((() => {
+		const topics = [
+			{ question: 'How does the Disposable pattern work?', heading: 'Disposable Pattern', content: 'The `Disposable` base class provides lifecycle management. Subclasses call `this._register()` to track child disposables that are cleaned up automatically when `dispose()` is called.' },
+			{ question: 'What about DisposableStore?', heading: 'DisposableStore', content: '`DisposableStore` aggregates multiple `IDisposable` instances and disposes them all at once. It tracks whether it has already been disposed and throws if you try to add after disposal.' },
+			{ question: 'How does the Event system work?', heading: 'Event System', content: 'The `Emitter<T>` class implements the observer pattern. `Event.once()`, `Event.map()`, `Event.filter()`, and `Event.debounce()` provide functional combinators for composing event streams.' },
+			{ question: 'Explain dependency injection', heading: 'Dependency Injection', content: 'Services are injected through constructor parameters decorated with service identifiers. The `IInstantiationService` resolves dependencies recursively, creating singletons within each scope.' },
+			{ question: 'What is the contribution model?', heading: 'Contribution Model', content: 'Features register functionality through extension points like `Registry.as<IWorkbenchContributionsRegistry>()`. Contributions are instantiated during specific lifecycle phases.' },
+			{ question: 'How does the editor handle text models?', heading: 'Text Models', content: 'The `TextModel` class manages document content with line-based storage. It supports undo/redo stacks, bracket matching, tokenization, and change tracking via edit operations.' },
+			{ question: 'Explain the extension host architecture', heading: 'Extension Host', content: 'Extensions run in a separate process (or worker) called the extension host. Communication happens via an RPC protocol over `IPC`. The main process proxies API calls back to the workbench.' },
+			{ question: 'How does file watching work?', heading: 'File Watching', content: 'The `IFileService` supports correlated and shared file watchers. Correlated watchers are preferred as they track specific resources. The underlying implementation uses `chokidar` or `parcel/watcher`.' },
+			{ question: 'What about the tree widget?', heading: 'Tree Widget', content: 'The `AsyncDataTree` and `ObjectTree` provide virtualized tree rendering. They support filtering, sorting, keyboard navigation, and accessibility. The `ITreeRenderer` interface handles element rendering.' },
+			{ question: 'How does the settings editor work?', heading: 'Settings Editor', content: 'Settings are declared in `package.json` contribution points. The settings editor reads the configuration registry, groups settings by category, and renders appropriate input controls for each type.' },
+		];
+
+		/** @type {import('./mock-llm-server').ScenarioTurn[]} */
+		const turns = [];
+
+		// Turn 1: Initial model response (no user turn needed before the first)
+		const firstTopic = topics[0];
+		turns.push({
+			kind: 'content',
+			chunks: new ScenarioBuilder()
+				.wait(20, `## ${firstTopic.heading}\n\n`)
+				.stream([
+					`${firstTopic.content}\n\n`,
+					'Here is a typical example:\n\n',
+					'```typescript\n',
+					'class MyService extends Disposable {\n',
+					'  private readonly _onDidChange = this._register(new Emitter<void>());\n',
+					'  readonly onDidChange: Event<void> = this._onDidChange.event;\n\n',
+					'  constructor(@IFileService private readonly fileService: IFileService) {\n',
+					'    super();\n',
+					'    this._register(fileService.onDidFilesChange(e => this._handleChange(e)));\n',
+					'  }\n',
+					'}\n',
+					'```\n\n',
+					'Would you like to know more about any specific aspect?\n',
+				], 15)
+				.build(),
+		});
+
+		// Turns 2..N: alternating user follow-up + model response
+		for (let i = 1; i < topics.length; i++) {
+			const topic = topics[i];
+
+			// User follow-up
+			turns.push({ kind: 'user', message: topic.question });
+
+			// Model response — vary content type to stress different renderers
+			const b = new ScenarioBuilder();
+			b.wait(20, `## ${topic.heading}\n\n`);
+
+			// Main explanation
+			const sentences = topic.content.split('. ');
+			b.stream(sentences.map(s => s.endsWith('.') ? s + ' ' : s + '. '), 12);
+			b.emit('\n\n');
+
+			if (i % 3 === 0) {
+				// Every 3rd response: large code block
+				b.emit('```typescript\n');
+				for (let j = 0; j < 8; j++) {
+					b.stream([
+						`export class ${topic.heading.replace(/\s/g, '')}Part${j} extends Disposable {\n`,
+						`  private readonly _state = new Map<string, unknown>();\n\n`,
+						`  process(input: string): string {\n`,
+						`    const cached = this._state.get(input);\n`,
+						`    if (cached) { return String(cached); }\n`,
+						`    const result = input.split('').reverse().join('');\n`,
+						`    this._state.set(input, result);\n`,
+						`    return result;\n`,
+						`  }\n`,
+						'}\n\n',
+					], 5);
+				}
+				b.emit('```\n\n');
+			} else if (i % 3 === 1) {
+				// Every 3rd+1 response: bullet list with bold + inline code
+				b.emit('Key points to remember:\n\n');
+				for (let j = 0; j < 6; j++) {
+					b.stream([
+						`${j + 1}. **Point ${j + 1}**: The \`${topic.heading.replace(/\s/g, '')}${j}\` `,
+						`component uses the standard pattern with \`_register()\` for lifecycle. `,
+						`It handles edge cases like ${['empty input', 'null references', 'concurrent access', 'circular deps', 'timeout expiry', 'disposal races'][j]}.\n`,
+					], 10);
+				}
+				b.emit('\n');
+			} else {
+				// Every 3rd+2 response: mixed prose + small code snippet
+				b.stream([
+					'This pattern is used extensively throughout the codebase. ',
+					'The key insight is that resources are always tracked from creation, ',
+					'ensuring no leaks even in error paths. ',
+					'The ownership chain is explicit and follows the component hierarchy.\n\n',
+				], 12);
+				b.emit('Quick example:\n\n```typescript\n');
+				b.stream([
+					`const store = new DisposableStore();\n`,
+					`store.add(event.on(() => { /* handler */ }));\n`,
+					`store.add(watcher.watch(uri));\n`,
+					`// Later: store.dispose(); // cleans up everything\n`,
+				], 8);
+				b.emit('```\n\n');
+			}
+
+			b.stream([
+				`That covers the essentials of **${topic.heading}**. `,
+				'Let me know if you want to dive deeper into any of these concepts.\n',
+			], 15);
+
+			turns.push({
+				kind: 'content',
+				chunks: b.build(),
+			});
+		}
+
+		return { type: 'multi-turn', turns };
+	})()),
 };
 
 // -- Registration helper ------------------------------------------------------

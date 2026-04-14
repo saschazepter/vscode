@@ -115,6 +115,7 @@ function parseArgs() {
  *   heapUsedBefore: number,
  *   heapUsedAfter: number,
  *   heapDelta: number,
+ *   heapDeltaPostGC: number,
  *   majorGCs: number,
  *   minorGCs: number,
  *   gcDurationMs: number,
@@ -122,6 +123,11 @@ function parseArgs() {
  *   recalcStyleCount: number,
  *   forcedReflowCount: number,
  *   longTaskCount: number,
+ *   longAnimationFrameCount: number,
+ *   longAnimationFrameTotalMs: number,
+ *   frameCount: number,
+ *   compositeLayers: number,
+ *   paintCount: number,
  *   hasInternalMarks: boolean,
  *   responseHasContent: boolean,
  *   internalFirstToken: number,
@@ -262,6 +268,26 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		// Start CPU profiler to capture call stacks during the interaction
 		await cdp.send('Profiler.enable');
 		await cdp.send('Profiler.start');
+
+		// Install a PerformanceObserver for Long Animation Frames (LoAF)
+		// to capture frame-level jank that longTaskCount alone misses.
+		await window.evaluate(() => {
+			// @ts-ignore
+			globalThis._chatLoAFEntries = [];
+			try {
+				// @ts-ignore
+				globalThis._chatLoAFObserver = new PerformanceObserver((list) => {
+					for (const entry of list.getEntries()) {
+						// @ts-ignore
+						globalThis._chatLoAFEntries.push({ duration: entry.duration, startTime: entry.startTime });
+					}
+				});
+				// @ts-ignore
+				globalThis._chatLoAFObserver.observe({ type: 'long-animation-frame', buffered: false });
+			} catch {
+				// long-animation-frame not supported in this build — metrics will be 0
+			}
+		});
 
 		// Start polling for code/chat/* perf marks inside the renderer.
 		// The marks are emitted during the request and cleared immediately
@@ -415,6 +441,21 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			console.log(`  [debug] chatMarks (${chatMarks.length}): ${chatMarks.map((/** @type {any} */ m) => m.name.split('/').slice(-1)[0]).join(', ')}`);
 		}
 
+		// Collect Long Animation Frame entries and tear down the observer
+		const loafData = await window.evaluate(() => {
+			// @ts-ignore
+			if (globalThis._chatLoAFObserver) { globalThis._chatLoAFObserver.disconnect(); }
+			// @ts-ignore
+			const entries = globalThis._chatLoAFEntries ?? [];
+			// @ts-ignore
+			delete globalThis._chatLoAFEntries;
+			// @ts-ignore
+			delete globalThis._chatLoAFObserver;
+			const count = entries.length;
+			const totalMs = entries.reduce((/** @type {number} */ sum, /** @type {any} */ e) => sum + e.duration, 0);
+			return { count, totalMs };
+		});
+
 		const heapAfter = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
 		/** @type {Array<any>} */
 		const traceEvents = [];
@@ -446,14 +487,23 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
 		const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
 
-		// Parse GC/long tasks
+		// Parse GC events from trace.
+		// Use the trace-event category and phase fields which are stable
+		// across V8 versions, rather than matching event name substrings.
 		let majorGCs = 0, minorGCs = 0, gcDurationMs = 0;
 		for (const event of traceEvents) {
-			if (event.cat === 'v8.gc' || event.name === 'V8.GCFinalizeMC' || event.name === 'V8.GCScavenger') {
-				if (event.name?.includes('MC') || event.name?.includes('Major') || event.name === 'MajorGC') { majorGCs++; }
-				else if (event.name?.includes('Scavenger') || event.name?.includes('Minor') || event.name === 'MinorGC') { minorGCs++; }
-				if (event.dur) { gcDurationMs += event.dur / 1000; }
-			}
+			const isGC = event.cat === 'v8.gc'
+				|| event.cat === 'devtools.timeline,v8'
+				|| (typeof event.cat === 'string' && event.cat.split(',').some((/** @type {string} */ c) => c.trim() === 'v8.gc'));
+			if (!isGC) { continue; }
+			// Only count complete ('X') or duration-begin ('B') events to
+			// avoid double-counting begin/end pairs.
+			if (event.ph && event.ph !== 'X' && event.ph !== 'B') { continue; }
+			const name = event.name || '';
+			if (/Major|MarkCompact|MSC|MC|IncrementalMarking|FinalizeMC/i.test(name)) { majorGCs++; }
+			else if (/Minor|Scaveng/i.test(name)) { minorGCs++; }
+			else { minorGCs++; } // default unknown GC events to minor
+			if (event.dur) { gcDurationMs += event.dur / 1000; }
 		}
 		let longTaskCount = 0;
 		for (const event of traceEvents) {
@@ -471,12 +521,30 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			heapUsedBefore: Math.round(heapBefore.usedSize / 1024 / 1024),
 			heapUsedAfter: Math.round(heapAfter.usedSize / 1024 / 1024),
 			heapDelta: Math.round((heapAfter.usedSize - heapBefore.usedSize) / 1024 / 1024),
+			heapDeltaPostGC: await (async () => {
+				// Force a full GC then measure heap to get deterministic retained-memory delta.
+				// --js-flags=--expose-gc is not required: CDP's Runtime.evaluate can call gc()
+				// when includeCommandLineAPI is true.
+				try {
+					await cdp.send('Runtime.evaluate', { expression: 'gc()', awaitPromise: false, includeCommandLineAPI: true });
+					await new Promise(r => setTimeout(r, 200));
+					const heapPostGC = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
+					return Math.round((heapPostGC.usedSize - heapBefore.usedSize) / 1024 / 1024);
+				} catch {
+					return -1; // gc() not available in this build
+				}
+			})(),
 			majorGCs, minorGCs,
 			gcDurationMs: Math.round(gcDurationMs * 100) / 100,
 			layoutCount: getMetric(metricsAfter, 'LayoutCount') - getMetric(metricsBefore, 'LayoutCount'),
 			recalcStyleCount: getMetric(metricsAfter, 'RecalcStyleCount') - getMetric(metricsBefore, 'RecalcStyleCount'),
 			forcedReflowCount: getMetric(metricsAfter, 'ForcedStyleRecalcs') - getMetric(metricsBefore, 'ForcedStyleRecalcs'),
 			longTaskCount,
+			longAnimationFrameCount: loafData.count,
+			longAnimationFrameTotalMs: Math.round(loafData.totalMs * 100) / 100,
+			frameCount: getMetric(metricsAfter, 'FrameCount') - getMetric(metricsBefore, 'FrameCount'),
+			compositeLayers: getMetric(metricsAfter, 'CompositeLayers') - getMetric(metricsBefore, 'CompositeLayers'),
+			paintCount: getMetric(metricsAfter, 'PaintCount') - getMetric(metricsBefore, 'PaintCount'),
 			hasInternalMarks: chatMarks.length > 0,
 			responseHasContent: responseInfo.hasContent,
 			internalFirstToken,
@@ -510,10 +578,16 @@ function generateCISummary(jsonReport, baseline, opts) {
 		['recalcStyleCount', 'rendering', ''],
 		['forcedReflowCount', 'rendering', ''],
 		['longTaskCount', 'rendering', ''],
+		['longAnimationFrameCount', 'rendering', ''],
+		['longAnimationFrameTotalMs', 'rendering', 'ms'],
+		['frameCount', 'rendering', ''],
+		['compositeLayers', 'rendering', ''],
+		['paintCount', 'rendering', ''],
 		['heapDelta', 'memory', 'MB'],
+		['heapDeltaPostGC', 'memory', 'MB'],
 		['gcDurationMs', 'memory', 'ms'],
 	];
-	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'recalcStyleCount', 'forcedReflowCount', 'longTaskCount']);
+	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'recalcStyleCount', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
 
 	const lines = [];
 	const scenarios = Object.keys(jsonReport.scenarios);
@@ -624,12 +698,12 @@ function generateCISummary(jsonReport, baseline, opts) {
 		const current = jsonReport.scenarios[scenario];
 		lines.push(`### ${scenario}`);
 		lines.push('');
-		lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | Heap Delta (MB) | Internal Marks |');
-		lines.push('|----:|----------:|--------------:|--------:|--------------:|----------------:|:--------------:|');
+		lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | LoAF Count | LoAF (ms) | Frames | Heap Delta (MB) | Internal Marks |');
+		lines.push('|----:|----------:|--------------:|--------:|--------------:|-----------:|----------:|-------:|----------------:|:--------------:|');
 		const runs = current.rawRuns || [];
 		for (let i = 0; i < runs.length; i++) {
 			const r = runs[i];
-			lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+			lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs ?? '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
 		}
 		lines.push('');
 	}
@@ -639,12 +713,12 @@ function generateCISummary(jsonReport, baseline, opts) {
 			if (!base) { continue; }
 			lines.push(`### ${scenario} (baseline)`);
 			lines.push('');
-			lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | Heap Delta (MB) | Internal Marks |');
-			lines.push('|----:|----------:|--------------:|--------:|--------------:|----------------:|:--------------:|');
+			lines.push('| Run | TTFT (ms) | Complete (ms) | Layouts | Style Recalcs | LoAF Count | LoAF (ms) | Frames | Heap Delta (MB) | Internal Marks |');
+			lines.push('|----:|----------:|--------------:|--------:|--------------:|-----------:|----------:|-------:|----------------:|:--------------:|');
 			const runs = base.rawRuns || [];
 			for (let i = 0; i < runs.length; i++) {
 				const r = runs[i];
-				lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+				lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs ?? '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
 			}
 			lines.push('');
 		}
@@ -944,9 +1018,15 @@ async function main() {
 		console.log(summarize(results.map(r => r.recalcStyleCount), '  Style recalcs         ', ''));
 		console.log(summarize(results.map(r => r.forcedReflowCount), '  Forced reflows        ', ''));
 		console.log(summarize(results.map(r => r.longTaskCount), '  Long tasks (>50ms)    ', ''));
+		console.log(summarize(results.map(r => r.longAnimationFrameCount), '  Long anim. frames     ', ''));
+		console.log(summarize(results.map(r => r.longAnimationFrameTotalMs), '  LoAF total duration   ', 'ms'));
+		console.log(summarize(results.map(r => r.frameCount), '  Frames                ', ''));
+		console.log(summarize(results.map(r => r.compositeLayers), '  Composite layers      ', ''));
+		console.log(summarize(results.map(r => r.paintCount), '  Paints                ', ''));
 		console.log('');
 		console.log('  Memory:');
 		console.log(summarize(results.map(r => r.heapDelta), '  Heap delta            ', 'MB'));
+		console.log(summarize(results.map(r => r.heapDeltaPostGC), '  Heap delta (post-GC)  ', 'MB'));
 		console.log(summarize(results.map(r => r.gcDurationMs), '  GC duration           ', 'ms'));
 	}
 

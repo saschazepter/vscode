@@ -630,11 +630,17 @@ const METRIC_DEFS = [
 	['instructionCollectionTime', 'timing', 'ms'],
 	['agentInvokeTime', 'timing', 'ms'],
 	['heapDelta', 'memory', 'MB'],
+	['heapDeltaPostGC', 'memory', 'MB'],
 	['gcDurationMs', 'memory', 'ms'],
 	['layoutCount', 'rendering', ''],
 	['recalcStyleCount', 'rendering', ''],
 	['forcedReflowCount', 'rendering', ''],
 	['longTaskCount', 'rendering', ''],
+	['longAnimationFrameCount', 'rendering', ''],
+	['longAnimationFrameTotalMs', 'rendering', 'ms'],
+	['frameCount', 'rendering', ''],
+	['compositeLayers', 'rendering', ''],
+	['paintCount', 'rendering', ''],
 ];
 
 module.exports = {
