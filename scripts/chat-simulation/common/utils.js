@@ -18,6 +18,22 @@ const { execSync, spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..', '..');
 const DATA_DIR = path.join(ROOT, '.chat-simulation-data');
 
+// -- Config loading ----------------------------------------------------------
+
+/** @param {string} text */
+function stripJsoncComments(text) { return text.replace(/\/\/.*/g, '').replace(/\/\*[\s\S]*?\*\//g, ''); }
+
+/**
+ * Load a namespaced section from config.jsonc.
+ * @param {string} section - Top-level key (e.g. 'perfRegression', 'memLeaks')
+ * @returns {Record<string, any>}
+ */
+function loadConfig(section) {
+	const raw = fs.readFileSync(path.join(__dirname, '..', 'config.jsonc'), 'utf-8');
+	const config = JSON.parse(stripJsoncComments(raw));
+	return config[section] ?? {};
+}
+
 // -- Electron path resolution ------------------------------------------------
 
 function getElectronPath() {
@@ -625,6 +641,7 @@ module.exports = {
 	ROOT,
 	DATA_DIR,
 	METRIC_DEFS,
+	loadConfig,
 	getElectronPath,
 	isVersionString,
 	resolveBuild,

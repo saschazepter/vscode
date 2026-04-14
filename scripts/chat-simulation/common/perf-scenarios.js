@@ -15,7 +15,7 @@
 const path = require('path');
 const { ScenarioBuilder, registerScenario } = require('./mock-llm-server');
 
-const ROOT = path.join(__dirname, '..', '..', '..');
+const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
 // -- Content-only scenarios ---------------------------------------------------
 
@@ -232,14 +232,14 @@ const TOOL_CALL_SCENARIOS = {
 	// a real agent gathering context before answering.
 	'tool-read-file': /** @type {import('./mock-llm-server').MultiTurnScenario} */ ((() => {
 		const filesToRead = [
-			'src/vs/base/common/lifecycle.ts',
-			'src/vs/base/common/event.ts',
-			'src/vs/base/common/uri.ts',
-			'src/vs/base/common/errors.ts',
-			'src/vs/base/common/async.ts',
-			'src/vs/base/common/strings.ts',
-			'src/vs/base/common/arrays.ts',
-			'src/vs/base/common/types.ts',
+			'lifecycle.ts',
+			'event.ts',
+			'uri.ts',
+			'errors.ts',
+			'async.ts',
+			'strings.ts',
+			'arrays.ts',
+			'types.ts',
 		];
 		// Round 1: parallel read of first 4 files
 		// Round 2: parallel read of next 4 files
@@ -251,14 +251,14 @@ const TOOL_CALL_SCENARIOS = {
 					kind: 'tool-calls',
 					toolCalls: filesToRead.slice(0, 4).map(f => ({
 						toolNamePattern: /read.?file/i,
-						arguments: { filePath: path.join(ROOT, f), startLine: 1, endLine: 50 },
+						arguments: { filePath: path.join(FIXTURES_DIR, f), startLine: 1, endLine: 50 },
 					})),
 				},
 				{
 					kind: 'tool-calls',
 					toolCalls: filesToRead.slice(4).map(f => ({
 						toolNamePattern: /read.?file/i,
-						arguments: { filePath: path.join(ROOT, f), startLine: 1, endLine: 50 },
+						arguments: { filePath: path.join(FIXTURES_DIR, f), startLine: 1, endLine: 50 },
 					})),
 				},
 				{
@@ -296,9 +296,9 @@ const TOOL_CALL_SCENARIOS = {
 	// a real agent reading context and making multiple edits.
 	'tool-edit-file': /** @type {import('./mock-llm-server').MultiTurnScenario} */ ((() => {
 		const readFiles = [
-			'src/vs/base/common/lifecycle.ts',
-			'src/vs/base/common/event.ts',
-			'src/vs/base/common/errors.ts',
+			'lifecycle.ts',
+			'event.ts',
+			'errors.ts',
 		];
 		return {
 			type: 'multi-turn',
@@ -308,7 +308,7 @@ const TOOL_CALL_SCENARIOS = {
 					kind: 'tool-calls',
 					toolCalls: readFiles.map(f => ({
 						toolNamePattern: /read.?file/i,
-						arguments: { filePath: path.join(ROOT, f), startLine: 1, endLine: 40 },
+						arguments: { filePath: path.join(FIXTURES_DIR, f), startLine: 1, endLine: 40 },
 					})),
 				},
 				// Round 2: edit 2 files in parallel
@@ -318,7 +318,7 @@ const TOOL_CALL_SCENARIOS = {
 						{
 							toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
 							arguments: {
-								filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
+								filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
 								oldString: '// perf-benchmark-marker',
 								newString: '// perf-benchmark-marker (updated)',
 								explanation: 'Update the benchmark marker comment in lifecycle.ts',
@@ -327,7 +327,7 @@ const TOOL_CALL_SCENARIOS = {
 						{
 							toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
 							arguments: {
-								filePath: path.join(ROOT, 'src/vs/base/common/event.ts'),
+								filePath: path.join(FIXTURES_DIR, 'event.ts'),
 								oldString: '// perf-benchmark-marker',
 								newString: '// perf-benchmark-marker (updated)',
 								explanation: 'Update the benchmark marker comment in event.ts',
@@ -399,7 +399,7 @@ const MULTI_TURN_SCENARIOS = {
 					{
 						toolNamePattern: /read.?file/i,
 						arguments: {
-							filePath: path.join(ROOT, 'src/vs/base/common/lifecycle.ts'),
+							filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
 							offset: 1,
 							limit: 50,
 						},

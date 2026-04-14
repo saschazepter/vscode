@@ -1,0 +1,19 @@
+{
+	"perfRegression": {
+		// VS Code version, "insiders", or a commit hash (7-40 hex chars)
+		"baselineBuild": "1.115.0",
+
+		// Number of benchmark iterations per scenario
+		"runsPerScenario": 5,
+
+		// Fraction above baseline that triggers a regression (0.2 = 20%)
+		"regressionThreshold": 0.2
+	},
+	"memLeaks": {
+		// Number of chat messages to send during the leak check
+		"messages": 10,
+
+		// Max acceptable heap growth per message in MB
+		"leakThresholdMB": 2
+	}
+}

@@ -24,21 +24,26 @@
 const path = require('path');
 const fs = require('fs');
 const {
-	DATA_DIR, METRIC_DEFS,
+	DATA_DIR, METRIC_DEFS, loadConfig,
 	resolveBuild, buildEnv, buildArgs, prepareRunDir,
 	robustStats, welchTTest, summarize, markDuration, launchVSCode,
 } = require('./common/utils');
 const { getUserTurns, getScenarioIds } = require('./common/mock-llm-server');
 const { registerPerfScenarios } = require('./common/perf-scenarios');
 
+// -- Config (edit config.jsonc to change defaults) ---------------------------
+
+const CONFIG = loadConfig('perfRegression');
+
 // -- CLI args ----------------------------------------------------------------
 
 function parseArgs() {
 	const args = process.argv.slice(2);
 	const opts = {
-		runs: 5,
+		runs: CONFIG.runsPerScenario ?? 5,
 		verbose: false,
 		ci: false,
+		noCache: false,
 		/** @type {string[]} */
 		scenarios: [],
 		/** @type {string | undefined} */
@@ -46,9 +51,9 @@ function parseArgs() {
 		/** @type {string | undefined} */
 		baseline: undefined,
 		/** @type {string | undefined} */
-		baselineBuild: '1.115.0',
+		baselineBuild: CONFIG.baselineBuild ?? '1.115.0',
 		saveBaseline: false,
-		threshold: 0.2,
+		threshold: CONFIG.regressionThreshold ?? 0.2,
 		/** @type {string | undefined} */
 		resume: undefined,
 	};
@@ -64,7 +69,8 @@ function parseArgs() {
 			case '--save-baseline': opts.saveBaseline = true; break;
 			case '--threshold': opts.threshold = parseFloat(args[++i]); break;
 			case '--resume': opts.resume = args[++i]; break;
-			case '--ci': opts.ci = true; break;
+			case '--no-cache': opts.noCache = true; break;
+			case '--ci': opts.ci = true; opts.noCache = true; break;
 			case '--help': case '-h':
 				console.log([
 					'Chat performance benchmark',
@@ -82,7 +88,8 @@ function parseArgs() {
 					'  --resume <path>     Resume a previous run, adding more iterations to increase',
 					'                       confidence. Merges new runs with existing rawRuns data',
 					'  --threshold <frac>  Regression threshold fraction (default: 0.2 = 20%)',
-					'  --ci                CI mode: write Markdown summary to ci-summary.md',
+					'  --no-cache          Ignore cached baseline data, always run fresh',
+					'  --ci                CI mode: write Markdown summary to ci-summary.md (implies --no-cache)',
 					'  --verbose           Print per-run details',
 					'',
 					'Scenarios: ' + getScenarioIds().join(', '),
@@ -808,7 +815,7 @@ async function main() {
 	if (opts.baselineBuild) {
 		const baselineJsonPath = path.join(runDir, `baseline-${opts.baselineBuild}.json`);
 		const cachedPath = path.join(DATA_DIR, `baseline-${opts.baselineBuild}.json`);
-		const cachedBaseline = !opts.ci && fs.existsSync(cachedPath)
+		const cachedBaseline = !opts.noCache && fs.existsSync(cachedPath)
 			? JSON.parse(fs.readFileSync(cachedPath, 'utf-8'))
 			: null;
 
@@ -817,24 +824,39 @@ async function main() {
 			const cachedScenarios = new Set(Object.keys(cachedBaseline.scenarios || {}));
 			const missingScenarios = opts.scenarios.filter((/** @type {string} */ s) => !cachedScenarios.has(s));
 
-			if (missingScenarios.length === 0) {
+			// Also check if cached scenarios have fewer runs than requested
+			const shortScenarios = opts.scenarios.filter((/** @type {string} */ s) => {
+				const cached = cachedBaseline.scenarios?.[s];
+				return cached && (cached.rawRuns?.length || 0) < opts.runs;
+			});
+
+			if (missingScenarios.length === 0 && shortScenarios.length === 0) {
 				console.log(`[chat-simulation] Using cached baseline for ${opts.baselineBuild}`);
 				fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
 				opts.baseline = baselineJsonPath;
 			} else {
-				console.log(`[chat-simulation] Cached baseline missing scenarios: ${missingScenarios.join(', ')}`);
-				console.log(`[chat-simulation] Running baseline for missing scenarios...`);
+				const scenariosToRun = [...new Set([...missingScenarios, ...shortScenarios])];
+				if (missingScenarios.length > 0) {
+					console.log(`[chat-simulation] Cached baseline missing scenarios: ${missingScenarios.join(', ')}`);
+				}
+				if (shortScenarios.length > 0) {
+					console.log(`[chat-simulation] Cached baseline needs more runs for: ${shortScenarios.map((/** @type {string} */ s) => `${s} (${cachedBaseline.scenarios[s].rawRuns?.length || 0}/${opts.runs})`).join(', ')}`);
+				}
+				console.log(`[chat-simulation] Running baseline for ${scenariosToRun.length} scenario(s)...`);
 				const baselineExePath = await resolveBuild(opts.baselineBuild);
-				for (const scenario of missingScenarios) {
+				for (const scenario of scenariosToRun) {
+					const existingRuns = cachedBaseline.scenarios?.[scenario]?.rawRuns || [];
+					const runsNeeded = opts.runs - existingRuns.length;
 					/** @type {RunMetrics[]} */
-					const results = [];
-					for (let i = 0; i < opts.runs; i++) {
-						try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
+					const newResults = [];
+					for (let i = 0; i < runsNeeded; i++) {
+						try { newResults.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${existingRuns.length + i}`, runDir, 'baseline')); }
 						catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 					}
-					if (results.length > 0) {
-						const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
-						for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
+					const allRuns = [...existingRuns, ...newResults];
+					if (allRuns.length > 0) {
+						const sd = /** @type {any} */ ({ runs: allRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: allRuns });
+						for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(allRuns.map((/** @type {any} */ r) => r[metric])); }
 						cachedBaseline.scenarios[scenario] = sd;
 					}
 				}
@@ -1010,9 +1032,8 @@ async function printComparison(jsonReport, opts) {
 				let flag = '';
 				if (change > opts.threshold) {
 					if (!ttest) {
-						flag = ' ← REGRESSION (n too small for significance test)';
-						scenarioRegression = true;
-						regressionFound = true;
+						flag = ' ← possible regression (n too small for significance test)';
+						inconclusiveFound = true;
 					} else if (ttest.significant) {
 						flag = ` ← REGRESSION (p=${ttest.pValue}, ${ttest.confidence} confidence)`;
 						scenarioRegression = true;
@@ -1048,10 +1069,37 @@ async function printComparison(jsonReport, opts) {
 			const resultsPath = Object.keys(jsonReport.scenarios).length > 0
 				? (jsonReport._resultsPath || opts.resume || 'path/to/results.json')
 				: 'path/to/results.json';
+			// Estimate required runs from the observed effect size and variance
+			// using power analysis for Welch's t-test (alpha=0.05, 80% power).
+			// n_per_group = 2 * ((z_alpha/2 + z_beta) / d)^2 where d = Cohen's d
+			let maxNeeded = 0;
+			for (const scenario of Object.keys(jsonReport.scenarios)) {
+				const current = jsonReport.scenarios[scenario];
+				const base = baseline.scenarios?.[scenario];
+				if (!base) { continue; }
+				for (const [metric, group] of [['timeToFirstToken', 'timing'], ['timeToComplete', 'timing'], ['layoutCount', 'rendering'], ['recalcStyleCount', 'rendering']]) {
+					const curRaw = (current.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+					const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+					if (curRaw.length < 2 || basRaw.length < 2) { continue; }
+					const meanA = basRaw.reduce((/** @type {number} */ s, /** @type {number} */ v) => s + v, 0) / basRaw.length;
+					const meanB = curRaw.reduce((/** @type {number} */ s, /** @type {number} */ v) => s + v, 0) / curRaw.length;
+					const varA = basRaw.reduce((/** @type {number} */ s, /** @type {number} */ v) => s + (v - meanA) ** 2, 0) / (basRaw.length - 1);
+					const varB = curRaw.reduce((/** @type {number} */ s, /** @type {number} */ v) => s + (v - meanB) ** 2, 0) / (curRaw.length - 1);
+					const pooledSD = Math.sqrt((varA + varB) / 2);
+					if (pooledSD === 0) { continue; }
+					const d = Math.abs(meanB - meanA) / pooledSD;
+					if (d === 0) { continue; }
+					// z_0.025 = 1.96, z_0.2 = 0.842
+					const nPerGroup = Math.ceil(2 * ((1.96 + 0.842) / d) ** 2);
+					const currentN = Math.min(curRaw.length, basRaw.length);
+					maxNeeded = Math.max(maxNeeded, nPerGroup - currentN);
+				}
+			}
+			const suggestedRuns = Math.max(1, Math.min(maxNeeded, 20));
 			console.log('');
 			console.log('[chat-simulation] Some metrics exceeded the threshold but were not statistically significant.');
 			console.log('[chat-simulation] To increase confidence, add more runs with --resume:');
-			console.log(`[chat-simulation]   npm run perf:chat -- --resume ${resultsPath} --runs 3`);
+			console.log(`[chat-simulation]   npm run perf:chat -- --resume ${resultsPath} --runs ${suggestedRuns}`);
 		}
 	}
 

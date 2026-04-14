@@ -22,21 +22,25 @@
 const fs = require('fs');
 const path = require('path');
 const {
-	DATA_DIR,
+	DATA_DIR, loadConfig,
 	resolveBuild, buildEnv, buildArgs, prepareRunDir,
 	linearRegressionSlope, launchVSCode,
 } = require('./common/utils');
+
+// -- Config (edit config.jsonc to change defaults) ---------------------------
+
+const CONFIG = loadConfig('memLeaks');
 
 // -- CLI args ----------------------------------------------------------------
 
 function parseArgs() {
 	const args = process.argv.slice(2);
 	const opts = {
-		messages: 10,
+		messages: CONFIG.messages ?? 10,
 		verbose: false,
 		/** @type {string | undefined} */
 		build: undefined,
-		leakThresholdMB: 2,
+		leakThresholdMB: CONFIG.leakThresholdMB ?? 2,
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
