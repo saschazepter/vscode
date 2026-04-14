@@ -17,7 +17,6 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
@@ -117,7 +116,6 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
-		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -133,43 +131,43 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 			return;
 		}
 
+		if (isWeb) {
+			// On web, show the walkthrough if the user is not authenticated.
+			// Auth is handled by the walkthrough's GitHub button via
+			// IAuthenticationService. Discovery runs separately after auth.
+			this._checkWebAuth();
+			return;
+		}
 		const isFirstLaunch = !this.storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false);
 		if (isFirstLaunch) {
-			if (isWeb) {
-				// On web, check if a GitHub session already exists (e.g. from a
-				// redirect-based OAuth flow that stored a token before the workbench
-				// booted). If so, persist completion and skip the walkthrough.
-				this._hasExistingWebGitHubSession().then(hasSession => {
-					if (hasSession) {
-						this.logService.info('[sessions welcome] GitHub session found, skipping walkthrough');
-						this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
-						return;
-					}
-					this.showWalkthrough();
-				});
-			} else {
-				this.showWalkthrough();
-			}
+			this.showWalkthrough();
 		} else {
 			this.showWalkthroughIfNeeded();
 		}
 	}
 
+	/**
+	 * Web-only: check if the user has a GitHub session. If not, show the
+	 * walkthrough so they can sign in. If they're already authenticated,
+	 * skip the walkthrough and let discovery handle the rest.
+	 */
+	private async _checkWebAuth(): Promise<void> {
+		try {
+			const sessions = await this.authenticationService.getSessions('github');
+			if (sessions.length > 0) {
+				this.logService.info('[sessions welcome] GitHub session found on web, skipping walkthrough');
+				this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+				return;
+			}
+		} catch {
+			// Provider not available yet — show walkthrough
+		}
+		this.showWalkthrough();
+	}
+
 	private showWalkthroughIfNeeded(): void {
 		if (this._needsChatSetup()) {
-			if (isWeb) {
-				// On web, check if user already has a GitHub session (e.g. from a
-				// previous device code flow). If so, skip the walkthrough — the
-				// entitlement state may never flip in OSS/web builds without
-				// Copilot product config.
-				this._hasExistingWebGitHubSession().then(hasSession => {
-					if (!hasSession) {
-						this.showWalkthrough();
-					}
-				});
-			} else {
-				this.showWalkthrough();
-			}
+			this.showWalkthrough();
 		} else {
 			this.watchEntitlementState();
 		}
@@ -203,43 +201,6 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 	private _needsChatSetup(includeUnknown: boolean = true): boolean {
 		return needsChatSetup(this.chatEntitlementService, includeUnknown);
-	}
-
-	/**
-	 * Web-only check for an existing GitHub session stored by the vscode.dev
-	 * bootstrap (before extensions activate). On desktop, returns false — auth
-	 * extensions handle sessions natively.
-	 */
-	private async _hasExistingWebGitHubSession(): Promise<boolean> {
-		if (!isWeb) {
-			return false;
-		}
-
-		// Check secret storage directly for GitHub auth sessions stored by
-		// the vscode.dev sessions bootstrap (before extensions activate).
-		// The key format matches what the github-authentication extension uses.
-		try {
-			const key = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
-			const raw = await this.secretStorageService.get(key);
-			if (raw) {
-				const sessions = JSON.parse(raw);
-				if (Array.isArray(sessions) && sessions.length > 0) {
-					return true;
-				}
-			}
-		} catch (e) {
-			this.logService.warn('[sessions welcome] Error checking secret storage:', e);
-		}
-
-		// Fallback: try the authentication service (may not work if extensions
-		// haven't loaded yet)
-		try {
-			const sessions = await this.authenticationService.getSessions('github');
-			return sessions.length > 0;
-		} catch (e) {
-			this.logService.warn('[sessions welcome] authService.getSessions failed:', e);
-			return false;
-		}
 	}
 
 	private showWalkthrough(): void {

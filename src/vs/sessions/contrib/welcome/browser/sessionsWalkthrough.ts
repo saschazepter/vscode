@@ -7,20 +7,18 @@ import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
-import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { ICommandService, CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
-import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
+import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
+import { URI } from '../../../../base/common/uri.js';
 import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
-import { URI } from '../../../../base/common/uri.js';
-import { isWeb } from '../../../../base/common/platform.js';
-import { IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
+import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 
 export type WalkthroughOutcome = 'completed' | 'dismissed';
 
@@ -58,10 +56,9 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	constructor(
 		container: HTMLElement,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
+		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IExtensionService private readonly extensionService: IExtensionService,
-		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
-		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IProductService private readonly productService: IProductService,
 		@ILogService private readonly logService: ILogService,
@@ -139,19 +136,27 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const githubBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-primary.provider-github')) as HTMLButtonElement;
 		append(githubBtn, $('span.sessions-walkthrough-provider-label', undefined, localize('walkthrough.signin.github', "Continue with GitHub")));
 
-		const googleBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-icon-only.provider-google')) as HTMLButtonElement;
-		googleBtn.setAttribute('aria-label', localize('walkthrough.signin.google', "Continue with Google"));
-		googleBtn.title = localize('walkthrough.signin.google', "Continue with Google");
+		// Desktop-only provider buttons
+		let providerButtons: HTMLButtonElement[];
+		if (isWeb) {
+			providerButtons = [githubBtn];
+		} else {
+			const googleBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-icon-only.provider-google')) as HTMLButtonElement;
+			googleBtn.setAttribute('aria-label', localize('walkthrough.signin.google', "Continue with Google"));
+			googleBtn.title = localize('walkthrough.signin.google', "Continue with Google");
 
-		const appleBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-icon-only.provider-apple')) as HTMLButtonElement;
-		appleBtn.setAttribute('aria-label', localize('walkthrough.signin.apple', "Continue with Apple"));
-		appleBtn.title = localize('walkthrough.signin.apple', "Continue with Apple");
+			const appleBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-icon-only.provider-apple')) as HTMLButtonElement;
+			appleBtn.setAttribute('aria-label', localize('walkthrough.signin.apple', "Continue with Apple"));
+			appleBtn.title = localize('walkthrough.signin.apple', "Continue with Apple");
 
-		const enterpriseProviderName = this.productService.defaultChatAgent?.provider?.enterprise?.name || 'GHE';
-		const enterpriseBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-compact.provider-enterprise')) as HTMLButtonElement;
-		enterpriseBtn.setAttribute('aria-label', localize('walkthrough.signin.enterprise', "Continue with {0}", enterpriseProviderName));
-		enterpriseBtn.title = localize('walkthrough.signin.enterprise', "Continue with {0}", enterpriseProviderName);
-		append(enterpriseBtn, $('span.sessions-walkthrough-provider-label', undefined, enterpriseProviderName));
+			const enterpriseProviderName = this.productService.defaultChatAgent?.provider?.enterprise?.name || 'GHE';
+			const enterpriseBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-compact.provider-enterprise')) as HTMLButtonElement;
+			enterpriseBtn.setAttribute('aria-label', localize('walkthrough.signin.enterprise', "Continue with {0}", enterpriseProviderName));
+			enterpriseBtn.title = localize('walkthrough.signin.enterprise', "Continue with {0}", enterpriseProviderName);
+			append(enterpriseBtn, $('span.sessions-walkthrough-provider-label', undefined, enterpriseProviderName));
+
+			providerButtons = [githubBtn, googleBtn, appleBtn, enterpriseBtn];
+		}
 
 		// Error feedback below providers
 		const errorContainer = append(this.footerContainer, $('p.sessions-walkthrough-error'));
@@ -164,24 +169,54 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			}
 		}, 0, stepDisposables);
 
-		const providerButtons = [githubBtn, googleBtn, appleBtn, enterpriseBtn];
 		this.currentFocusableElements = [...providerButtons, ...this.disclaimerLinks];
-		const providerStrategies = [
-			ChatSetupStrategy.SetupWithoutEnterpriseProvider,
-			ChatSetupStrategy.SetupWithGoogleProvider,
-			ChatSetupStrategy.SetupWithAppleProvider,
-			ChatSetupStrategy.SetupWithEnterpriseProvider,
-		];
-		for (let i = 0; i < providerButtons.length; i++) {
-			const strategy = providerStrategies[i];
-			stepDisposables.add(addDisposableListener(providerButtons[i], EventType.CLICK, () => this._runSignIn(
+
+		if (isWeb) {
+			// Web: GitHub button uses IAuthenticationService directly
+			stepDisposables.add(addDisposableListener(githubBtn, EventType.CLICK, () => this._runSignInWeb(
 				providerButtons,
 				errorContainer,
-				strategy,
 				titleEl,
 				subtitleEl,
 				signInActions
 			)));
+
+			// Dev-only: show a "Use Device Code" button when the embedder
+			// registers the device code command. This produces an OAuth token
+			// that Dev Tunnels accepts (PATs don't work with Dev Tunnels).
+			if (CommandsRegistry.getCommand('_sessions.web.startDeviceCode')) {
+				const deviceCodeBtn = append(providerRow, $('button.sessions-walkthrough-provider-btn.sessions-walkthrough-provider-compact.provider-github')) as HTMLButtonElement;
+				append(deviceCodeBtn, $('span.sessions-walkthrough-provider-label', undefined, localize('walkthrough.signin.deviceCode', "Use Device Code")));
+				providerButtons.push(deviceCodeBtn);
+				this.currentFocusableElements = [...providerButtons, ...this.disclaimerLinks];
+
+				stepDisposables.add(addDisposableListener(deviceCodeBtn, EventType.CLICK, () => this._runDeviceCodeSignIn(
+					providerButtons,
+					errorContainer,
+					titleEl,
+					subtitleEl,
+					signInActions
+				)));
+			}
+		} else {
+			// Desktop: each button uses a different ChatSetupStrategy
+			const providerStrategies = [
+				ChatSetupStrategy.SetupWithoutEnterpriseProvider,
+				ChatSetupStrategy.SetupWithGoogleProvider,
+				ChatSetupStrategy.SetupWithAppleProvider,
+				ChatSetupStrategy.SetupWithEnterpriseProvider,
+			];
+			for (let i = 0; i < providerButtons.length; i++) {
+				const strategy = providerStrategies[i];
+				stepDisposables.add(addDisposableListener(providerButtons[i], EventType.CLICK, () => this._runSignIn(
+					providerButtons,
+					errorContainer,
+					strategy,
+					titleEl,
+					subtitleEl,
+					signInActions
+				)));
+			}
 		}
 	}
 
@@ -196,6 +231,119 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	}
 
 	private async _runSignIn(providerButtons: HTMLButtonElement[], error: HTMLElement, strategy: ChatSetupStrategy, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
+		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
+		if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+			return;
+		}
+
+		try {
+			const success = await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
+				setupStrategy: strategy
+			});
+
+			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+				return;
+			}
+
+			if (success) {
+				titleEl.textContent = localize('walkthrough.signingIn', "Finishing setup\u2026");
+				subtitleEl.textContent = localize('walkthrough.finishingSubtitle', "Getting everything ready for you.");
+
+				this.logService.info('[sessions walkthrough] Restarting extension host after setup');
+				const stopped = await this.extensionService.stopExtensionHosts(
+					localize('walkthrough.restart', "Completing Agents setup")
+				);
+				if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+					return;
+				}
+				if (stopped) {
+					await this.extensionService.startExtensionHosts();
+					if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+						return;
+					}
+				}
+				this.complete();
+			} else {
+				await this._showErrorAndReset(error, localize('walkthrough.canceledError', "Sign-in was canceled. Please try again."));
+			}
+		} catch (err) {
+			this.logService.error('[sessions walkthrough] Sign-in failed:', err);
+			await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
+		}
+	}
+
+	/**
+	 * Web sign-in: uses IAuthenticationService to create a GitHub session.
+	 * On production vscode.dev this triggers an OAuth popup. On localhost
+	 * it triggers the PAT flow. For Dev Tunnels-compatible auth on localhost,
+	 * use the "Use Device Code" button instead.
+	 */
+	private async _runSignInWeb(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
+		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
+		if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+			return;
+		}
+
+		try {
+			await this.authenticationService.createSession('github', ['repo', 'user:email', 'read:user'], { activateImmediate: true });
+			this.complete();
+		} catch (err) {
+			this.logService.error('[sessions walkthrough] Web sign-in failed:', err);
+			await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
+		}
+	}
+
+	/**
+	 * Device code sign-in: uses the embedder's device code flow command to
+	 * obtain an OAuth token from VS Code's GitHub App. Shows the code in
+	 * the walkthrough UI while the user authorizes on github.com.
+	 */
+	private async _runDeviceCodeSignIn(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
+		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
+		if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+			return;
+		}
+
+		try {
+			const flowResult = await this.commandService.executeCommand<{
+				userCode: string;
+				verificationUri: string;
+			}>('_sessions.web.startDeviceCode');
+
+			if (!flowResult) {
+				await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
+				return;
+			}
+
+			// Show the device code in the walkthrough UI
+			titleEl.textContent = flowResult.userCode;
+			titleEl.style.letterSpacing = '4px';
+			titleEl.style.fontFamily = 'monospace';
+			titleEl.style.userSelect = 'text';
+			titleEl.style.cursor = 'text';
+			subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", flowResult.verificationUri);
+
+			// Open GitHub in a new tab
+			this.openerService.open(URI.parse(flowResult.verificationUri));
+
+			// Poll for token
+			const token = await this.commandService.executeCommand<string | undefined>('_sessions.web.pollDeviceCode');
+			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+				return;
+			}
+
+			if (token) {
+				this.complete();
+			} else {
+				await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
+			}
+		} catch (err) {
+			this.logService.error('[sessions walkthrough] Device code flow failed:', err);
+			await this._showErrorAndReset(error, localize('walkthrough.signInError', "Something went wrong. Please try again."));
+		}
+	}
+
+	private async _fadeToProgress(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
 		// Disable all provider buttons
 		for (const btn of providerButtons) {
 			btn.disabled = true;
@@ -226,243 +374,24 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 		// Fade back in
 		this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
-
-		try {
-			let success: boolean;
-			let usedDeviceCodeFlow = false;
-
-			// Try the standard chat setup command first. Fall back to the
-			// web device-code flow only when the command is unavailable.
-			try {
-				success = !!await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
-					setupStrategy: strategy
-				});
-			} catch (cmdErr) {
-				if (!isWeb) {
-					throw cmdErr;
-				}
-				// Web-only fallback: device code flow via the tunnel discovery
-				// auth proxy, then discover and connect to agent host tunnels.
-				this.logService.info('[sessions walkthrough] Chat setup command failed, starting device code flow', cmdErr);
-				const result = await this._runWebDeviceCodeSignIn(titleEl, subtitleEl);
-				success = result.success;
-				usedDeviceCodeFlow = result.usedDeviceCodeFlow;
-			}
-
-			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-				return;
-			}
-
-			if (success) {
-				if (!usedDeviceCodeFlow) {
-					// Only restart extension hosts for the Copilot setup command path.
-					// The device code flow already connected to the agent host directly,
-					// and restarting would tear down that connection.
-					titleEl.textContent = localize('walkthrough.signingIn', "Finishing setup\u2026");
-					subtitleEl.textContent = localize('walkthrough.finishingSubtitle', "Getting everything ready for you.");
-
-					this.logService.info('[sessions walkthrough] Restarting extension host after setup');
-					const stopped = await this.extensionService.stopExtensionHosts(
-						localize('walkthrough.restart', "Completing Agents setup")
-					);
-					if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-						return;
-					}
-					if (stopped) {
-						await this.extensionService.startExtensionHosts();
-						if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-							return;
-						}
-					}
-				}
-
-				this.complete();
-			} else {
-				// Show cancellation feedback, then reset to sign-in
-				error.textContent = localize('walkthrough.canceledError', "Sign-in was canceled. Please try again.");
-				error.style.display = '';
-				await this._wait(resetMessageDuration);
-				if (this._shouldAbortUpdate(error)) {
-					return;
-				}
-				error.style.display = 'none';
-
-				this.contentContainer.classList.add('sessions-walkthrough-fade-out');
-				await this._wait(fadeDuration);
-				if (!this.overlay.isConnected) {
-					return;
-				}
-				this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
-				this._renderSignIn();
-			}
-		} catch (err) {
-			this.logService.error('[sessions walkthrough] Sign-in failed:', err);
-
-			// Show error feedback, then reset to sign-in
-			error.textContent = localize('walkthrough.signInError', "Something went wrong. Please try again.");
-			error.style.display = '';
-			await this._wait(resetMessageDuration);
-			if (this._shouldAbortUpdate(error)) {
-				return;
-			}
-			error.style.display = 'none';
-
-			this.contentContainer.classList.add('sessions-walkthrough-fade-out');
-			await this._wait(fadeDuration);
-			if (!this.overlay.isConnected) {
-				return;
-			}
-			this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
-			this._renderSignIn();
-		}
 	}
 
-	// ------------------------------------------------------------------
-	// Web-only: Device Code Flow + Tunnel Discovery
-
-	/**
-	 * Runs the GitHub device code flow (web-only) via the vscode.dev auth
-	 * proxy, then discovers and connects to agent host tunnels. This is the
-	 * fallback path when the Copilot chat setup command is not available
-	 * (e.g. in OSS/web builds without full product configuration).
-	 */
-	private async _runWebDeviceCodeSignIn(titleEl: HTMLElement, subtitleEl: HTMLElement): Promise<{ success: boolean; usedDeviceCodeFlow: boolean }> {
-		this.logService.info('[sessions walkthrough] Chat setup command not available, starting device code flow');
-
-		try {
-			// Step 1: Request a device code
-			const codeResp = await fetch('/agents/api/hosts/auth/device/code', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-			});
-			if (!codeResp.ok) { throw new Error(`Device code request failed: ${codeResp.status}`); }
-			const codeData = await codeResp.json() as {
-				device_code: string;
-				user_code: string;
-				verification_uri: string;
-				interval: number;
-				expires_in: number;
-			};
-
-			// Step 2: Show the code to the user
-			titleEl.textContent = codeData.user_code;
-			titleEl.style.letterSpacing = '4px';
-			titleEl.style.fontFamily = 'monospace';
-			titleEl.style.userSelect = 'text';
-			titleEl.style.cursor = 'text';
-			subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", codeData.verification_uri);
-
-			// Open GitHub in new tab
-			this.openerService.open(URI.parse(codeData.verification_uri));
-
-			// Step 3: Poll for token
-			const accessToken = await this._pollForDeviceCodeToken(codeData, titleEl, subtitleEl);
-
-			if (accessToken) {
-				this.logService.info('[sessions walkthrough] Device code flow succeeded, discovering tunnels');
-				await this._storeWebAuthToken(accessToken);
-				await this._discoverAndConnectTunnels(accessToken);
-				return { success: true, usedDeviceCodeFlow: true };
-			} else {
-				throw new Error('Device code expired');
-			}
-		} catch (err) {
-			this.logService.warn('[sessions walkthrough] Device code flow failed:', err);
-			return { success: false, usedDeviceCodeFlow: false };
-		}
-	}
-
-	private async _pollForDeviceCodeToken(
-		codeData: { device_code: string; interval: number; expires_in: number },
-		titleEl: HTMLElement,
-		subtitleEl: HTMLElement,
-	): Promise<string | undefined> {
-		let pollingInterval = Math.max((codeData.interval || 5) * 1000, 5000);
-		const deadline = Date.now() + (codeData.expires_in || 900) * 1000;
-
-		while (Date.now() < deadline) {
-			await new Promise(r => setTimeout(r, pollingInterval));
-			if (this._shouldAbortUpdate(titleEl, subtitleEl)) { return undefined; }
-
-			const tokenResp = await fetch('/agents/api/hosts/auth/device/token', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ device_code: codeData.device_code }),
-			});
-			if (!tokenResp.ok) { continue; }
-			const tokenData = await tokenResp.json() as { access_token?: string; error?: string };
-
-			if (tokenData.access_token) {
-				return tokenData.access_token;
-			}
-			if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
-				throw new Error(tokenData.error);
-			}
-			if (tokenData.error === 'slow_down') {
-				pollingInterval += 5000;
-			}
-			// authorization_pending → keep polling
-		}
-		return undefined;
-	}
-
-	/**
-	 * Store the GitHub token in localStorage (for webHostDiscovery polling
-	 * fallback) and in secret storage (so IAuthenticationService finds it).
-	 */
-	private async _storeWebAuthToken(accessToken: string): Promise<void> {
-		const authKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
-		try {
-			const existing = await this.secretStorageService.get(authKey);
-			const sessions = existing ? JSON.parse(existing) : [];
-			sessions.push({
-				id: crypto.randomUUID(),
-				accessToken,
-				scopes: ['user:email', 'read:org']
-			});
-			await this.secretStorageService.set(authKey, JSON.stringify(sessions));
-			this.logService.info('[sessions walkthrough] Stored GitHub auth session in secret storage');
-		} catch (e) {
-			this.logService.warn('[sessions walkthrough] Failed to store auth session:', e);
-		}
-	}
-
-	/**
-	 * Discover agent host tunnels and connect to each one via the relay proxy.
-	 */
-	private async _discoverAndConnectTunnels(accessToken: string): Promise<void> {
-		const hostsResp = await fetch('/agents/api/hosts', {
-			headers: { 'Authorization': `Bearer ${accessToken}` },
-		});
-		if (!hostsResp.ok) {
+	private async _showErrorAndReset(error: HTMLElement, message: string): Promise<void> {
+		error.textContent = message;
+		error.style.display = '';
+		await this._wait(resetMessageDuration);
+		if (this._shouldAbortUpdate(error)) {
 			return;
 		}
+		error.style.display = 'none';
 
-		const hostsData = await hostsResp.json() as { hosts: { hostId: string; clusterId?: string; name: string; tunnelUrl: string; connectionToken?: string }[] };
-		this.logService.info(`[sessions walkthrough] Discovered ${hostsData.hosts?.length ?? 0} tunnels`);
-
-		for (const host of hostsData.hosts ?? []) {
-			const loc = mainWindow.location;
-			const wsScheme = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-			const params = new URLSearchParams({
-				tunnelId: host.hostId,
-				clusterId: host.clusterId ?? '',
-				token: accessToken,
-			});
-			const proxyAddress = `${wsScheme}//${loc.host}/agents/tunnel?${params.toString()}`;
-
-			try {
-				this.logService.info(`[sessions walkthrough] Connecting to ${host.name || host.hostId} via proxy`);
-				await this.remoteAgentHostService.addRemoteAgentHost({
-					name: host.name || host.hostId,
-					connectionToken: host.connectionToken,
-					connection: { type: RemoteAgentHostEntryType.WebSocket, address: proxyAddress },
-				});
-				this.logService.info(`[sessions walkthrough] Connected to ${host.name || host.hostId}!`);
-			} catch (connErr) {
-				this.logService.warn(`[sessions walkthrough] Failed to connect to ${host.name || host.hostId}:`, connErr);
-			}
+		this.contentContainer.classList.add('sessions-walkthrough-fade-out');
+		await this._wait(fadeDuration);
+		if (!this.overlay.isConnected) {
+			return;
 		}
+		this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
+		this._renderSignIn();
 	}
 
 	// ------------------------------------------------------------------

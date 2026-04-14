@@ -138,7 +138,7 @@ import '../workbench/contrib/preferences/browser/keyboardLayoutPicker.js';
 import '../workbench/contrib/debug/browser/extensionHostDebugService.js';
 import '../workbench/contrib/welcomeBanner/browser/welcomeBanner.contribution.js';
 
-// Web-specific host discovery from registry
+// Web host discovery — calls embedder's discovery command to find agent hosts
 import './contrib/webHostDiscovery/browser/webHostDiscovery.contribution.js';
 
 // Remote agent host session provider — discovers agents and registers sessions

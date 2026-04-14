@@ -4,40 +4,52 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { isWeb } from '../../../../base/common/platform.js';
-import { mainWindow } from '../../../../base/browser/window.js';
+import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
+import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 
-interface IRegistryHost {
-	hostId: string;
-	clusterId?: string;
-	name: string;
-	tunnelUrl: string;
-	connectionToken?: string;
+/**
+ * Well-known command ID that the embedder (e.g. vscode.dev) registers via
+ * `workbenchOptions.commands` to handle auth and tunnel discovery.
+ *
+ * The command is expected to:
+ * 1. Ensure the user is authenticated (triggering OAuth if needed)
+ * 2. Discover available agent host tunnels
+ * 3. Return an array of host descriptors: `{ name, address, connectionToken? }[]`
+ *
+ * If the command is not registered (e.g. running on desktop or a different
+ * embedder), discovery is silently skipped.
+ */
+const DISCOVER_HOSTS_COMMAND = '_sessions.web.discoverHosts';
+
+interface IDiscoveredHost {
+	readonly name: string;
+	readonly address: string;
+	readonly connectionToken?: string;
 }
 
-/** The secret storage key used by the walkthrough to store GitHub auth sessions. */
-const GITHUB_AUTH_SECRET_KEY = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
-
 /**
- * On web, discovers agent hosts from the vscode.dev host registry
- * and registers them with {@link IRemoteAgentHostService}.
+ * On web, discovers agent hosts by calling the embedder's discovery command.
+ * The embedder handles auth and tunnel resolution; this contribution only
+ * receives the results and feeds them into {@link IRemoteAgentHostService}.
  *
- * Reacts to GitHub auth token availability in secret storage: checks on
- * startup and listens for new tokens stored by the welcome overlay's
- * device code flow.
+ * This decouples core from any specific embedder (vscode.dev, github.dev, etc.)
+ * — the contract is a single well-known command ID.
  */
 class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'sessions.contrib.webHostDiscovery';
 
-	private _discovered = false;
-
 	constructor(
+		@ICommandService private readonly _commandService: ICommandService,
 		@IRemoteAgentHostService private readonly _remoteAgentHostService: IRemoteAgentHostService,
+		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
+		@IExtensionService private readonly _extensionService: IExtensionService,
 		@ISecretStorageService private readonly _secretStorageService: ISecretStorageService,
 		@ILogService private readonly _logService: ILogService,
 	) {
@@ -47,108 +59,64 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 			return;
 		}
 
-		// Check if a token is already available (returning user)
-		this._getSecretStorageToken().then(token => {
-			if (token && !this._discovered) {
-				this._discoverHosts(token);
-			}
-		});
+		console.log('[WebHostDiscovery] Web detected, starting discovery...');
+		this._discoverHosts();
 
-		// Listen for when the walkthrough stores a new token
+		// If the walkthrough handles auth, re-run discovery when a GitHub
+		// session becomes available (onDidChangeSessions fires after login).
+		this._register(this._authenticationService.onDidChangeSessions(e => {
+			if (e.providerId === 'github') {
+				this._logService.info('[WebHostDiscovery] GitHub sessions changed, retrying discovery...');
+				this._discoverHosts();
+			}
+		}));
+
+		// Also listen for secret storage changes — the device code flow
+		// writes tokens directly to secret storage, bypassing the extension.
+		const githubAuthKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
 		this._register(this._secretStorageService.onDidChangeSecret(key => {
-			if (key === GITHUB_AUTH_SECRET_KEY && !this._discovered) {
-				this._getSecretStorageToken().then(token => {
-					if (token && !this._discovered) {
-						this._discoverHosts(token);
-					}
-				});
+			if (key === githubAuthKey) {
+				this._logService.info('[WebHostDiscovery] Secret storage auth changed, retrying discovery...');
+				this._discoverHosts();
 			}
 		}));
 	}
 
-	/**
-	 * Read the GitHub access token from secret storage. The walkthrough stores
-	 * auth sessions in the same format as the github-authentication extension.
-	 */
-	private async _getSecretStorageToken(): Promise<string | undefined> {
-		try {
-			const raw = await this._secretStorageService.get(GITHUB_AUTH_SECRET_KEY);
-			if (raw) {
-				const sessions = JSON.parse(raw) as { accessToken?: string }[];
-				if (Array.isArray(sessions) && sessions.length > 0 && sessions[0].accessToken) {
-					return sessions[0].accessToken;
-				}
-			}
-		} catch {
-			// Secret storage not available or parse error
-		}
-		return undefined;
-	}
-
-	private async _discoverHosts(token: string): Promise<void> {
-		if (this._discovered) {
-			return;
-		}
-		this._discovered = true;
+	private async _discoverHosts(): Promise<void> {
+		// Wait for extensions to activate — the github-authentication
+		// extension needs to be running before we can create sessions.
+		await this._extensionService.whenInstalledExtensionsRegistered();
 
 		try {
-			const resp = await fetch('/agents/api/hosts', {
-				headers: { 'Authorization': `Bearer ${token}` }
-			});
+			const hosts = await this._commandService.executeCommand<IDiscoveredHost[]>(DISCOVER_HOSTS_COMMAND);
 
-			if (!resp.ok) {
-				this._logService.warn(`[WebHostDiscovery] Registry returned ${resp.status}`);
+			if (!hosts || !Array.isArray(hosts) || hosts.length === 0) {
+				this._logService.info('[WebHostDiscovery] No hosts discovered');
 				return;
 			}
 
-			const data = await resp.json() as { hosts?: IRegistryHost[] };
-			const hosts = data.hosts ?? [];
-
-			if (hosts.length === 0) {
-				return;
-			}
+			this._logService.info(`[WebHostDiscovery] Discovered ${hosts.length} host(s), registering...`);
 
 			for (const host of hosts) {
-				// Route through the tunnel relay proxy which uses the Dev Tunnels
-				// SDK server-side to connect to private tunnels
-				const wsScheme = mainWindow.location.protocol === 'https:' ? 'wss:' : 'ws:';
-				const params = new URLSearchParams({
-					tunnelId: host.hostId,
-					clusterId: host.clusterId ?? '',
-					token: token,
-				});
-				const address = `${wsScheme}//${mainWindow.location.host}/agents/tunnel?${params.toString()}`;
-
-				const name = host.name || host.hostId;
-
+				if (!host.name || !host.address) {
+					continue;
+				}
 				try {
 					await this._remoteAgentHostService.addRemoteAgentHost({
-						name,
+						name: host.name,
 						connectionToken: host.connectionToken,
-						connection: { type: RemoteAgentHostEntryType.WebSocket, address },
+						connection: { type: RemoteAgentHostEntryType.WebSocket, address: host.address },
 					});
-
-					// Push GitHub token to the agent host for Copilot API access.
-					const connection = this._remoteAgentHostService.getConnection(address);
-					if (connection && token) {
-						try {
-							await connection.authenticate({
-								resource: 'https://api.github.com',
-								token: token
-							});
-						} catch (authErr) {
-							this._logService.warn(`[WebHostDiscovery] Failed to push token to ${name}:`, authErr);
-						}
-					}
-				} catch (e) {
-					this._logService.warn(`[WebHostDiscovery] Failed to add host ${name}:`, e);
+					this._logService.info(`[WebHostDiscovery] Registered host: ${host.name}`);
+				} catch (err) {
+					this._logService.warn(`[WebHostDiscovery] Failed to register host ${host.name}:`, err);
 				}
 			}
-		} catch (e) {
-			this._logService.warn('[WebHostDiscovery] Host discovery failed:', e);
+		} catch (err) {
+			console.log('[WebHostDiscovery] Discovery command failed (expected on desktop):', err);
+			this._logService.trace('[WebHostDiscovery] Discovery command not available:', err);
 		}
 	}
-
 }
 
 registerWorkbenchContribution2(WebHostDiscoveryContribution.ID, WebHostDiscoveryContribution, WorkbenchPhase.Eventually);
