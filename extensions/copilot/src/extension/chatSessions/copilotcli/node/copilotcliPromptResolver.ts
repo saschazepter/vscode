@@ -94,7 +94,6 @@ export class CopilotCLIPromptResolver {
 				if (promptFileUri.fsPath.endsWith('plan.prompt.md') && path.basename(directory.fsPath) === 'prompts' && extUriBiasedIgnorePathCase.isEqualOrParent(this.extensionContext.extensionUri, directory)) {
 					return false;
 				}
-				return;
 			}
 			// GitHub pull request references
 			if (isGitHubPullRequestReference(variable.reference)) {
