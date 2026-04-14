@@ -435,6 +435,12 @@
 	flex-shrink: 0;
 }
 
+/* Toggled state for diff preview toolbar actions */
+.diff-preview-widget > .diff-preview-header > .diff-preview-header-toolbar .action-label.checked {
+	background-color: var(--vscode-activityBarTop-activeBackground, color-mix(in srgb, var(--vscode-sideBarTitle-foreground) 10%, transparent));
+	border-radius: 4px;
+}
+
 .diff-preview-widget > .diff-preview-editor {
 	flex: 1;
 	min-height: 0;
