@@ -2216,6 +2216,24 @@ suite('RunInTerminalTool', () => {
 	});
 
 	suite('ConfirmTerminalCommandTool', () => {
+		async function invokeConfirmTool(tool: RunInTerminalTool, original: string, userEdited?: string) {
+			const invocation: IToolInvocation = {
+				callId: 'test-call-id',
+				toolId: 'confirmTerminalCommand',
+				parameters: {},
+				context: undefined,
+				toolSpecificData: {
+					kind: 'terminal',
+					commandLine: {
+						original,
+						userEdited,
+					},
+					language: 'bash',
+				} as IChatTerminalToolInvocationData
+			} as IToolInvocation;
+			return tool.invoke(invocation, () => Promise.resolve(0), { report: () => { } }, CancellationToken.None);
+		}
+
 		test('should require confirmation when sandbox is enabled but sandbox rewriting is disabled', async () => {
 			sandboxEnabled = true;
 
@@ -2261,21 +2279,7 @@ suite('RunInTerminalTool', () => {
 			const { ConfirmTerminalCommandTool } = await import('../../browser/tools/runInTerminalConfirmationTool.js');
 			const confirmTool = store.add(instantiationService.createInstance(ConfirmTerminalCommandTool));
 
-			const invocation: IToolInvocation = {
-				callId: 'test-call-id',
-				toolId: 'confirmTerminalCommand',
-				parameters: {},
-				context: undefined,
-				toolSpecificData: {
-					kind: 'terminal',
-					commandLine: {
-						original: 'echo hello',
-					},
-					language: 'bash',
-				} as IChatTerminalToolInvocationData
-			} as IToolInvocation;
-
-			const result = await confirmTool.invoke(invocation, () => Promise.resolve(0), { report: () => { } }, CancellationToken.None);
+			const result = await invokeConfirmTool(confirmTool, 'echo hello');
 			strictEqual(result.content[0].kind, 'text');
 			strictEqual((result.content[0] as { kind: 'text'; value: string }).value, 'The user approved the command.');
 		});
@@ -2284,22 +2288,7 @@ suite('RunInTerminalTool', () => {
 			const { ConfirmTerminalCommandTool } = await import('../../browser/tools/runInTerminalConfirmationTool.js');
 			const confirmTool = store.add(instantiationService.createInstance(ConfirmTerminalCommandTool));
 
-			const invocation: IToolInvocation = {
-				callId: 'test-call-id',
-				toolId: 'confirmTerminalCommand',
-				parameters: {},
-				context: undefined,
-				toolSpecificData: {
-					kind: 'terminal',
-					commandLine: {
-						original: 'echo hello',
-						userEdited: 'echo stop',
-					},
-					language: 'bash',
-				} as IChatTerminalToolInvocationData
-			} as IToolInvocation;
-
-			const result = await confirmTool.invoke(invocation, () => Promise.resolve(0), { report: () => { } }, CancellationToken.None);
+			const result = await invokeConfirmTool(confirmTool, 'echo hello', 'echo stop');
 			strictEqual(result.content[0].kind, 'text');
 			const textValue = (result.content[0] as { kind: 'text'; value: string }).value;
 			ok(textValue.includes('echo stop'), 'Result should contain the edited command');
@@ -2310,22 +2299,7 @@ suite('RunInTerminalTool', () => {
 			const { ConfirmTerminalCommandTool } = await import('../../browser/tools/runInTerminalConfirmationTool.js');
 			const confirmTool = store.add(instantiationService.createInstance(ConfirmTerminalCommandTool));
 
-			const invocation: IToolInvocation = {
-				callId: 'test-call-id',
-				toolId: 'confirmTerminalCommand',
-				parameters: {},
-				context: undefined,
-				toolSpecificData: {
-					kind: 'terminal',
-					commandLine: {
-						original: 'echo hello',
-						userEdited: 'echo hello',
-					},
-					language: 'bash',
-				} as IChatTerminalToolInvocationData
-			} as IToolInvocation;
-
-			const result = await confirmTool.invoke(invocation, () => Promise.resolve(0), { report: () => { } }, CancellationToken.None);
+			const result = await invokeConfirmTool(confirmTool, 'echo hello', 'echo hello');
 			strictEqual(result.content[0].kind, 'text');
 			strictEqual((result.content[0] as { kind: 'text'; value: string }).value, 'The user approved the command.');
 		});
