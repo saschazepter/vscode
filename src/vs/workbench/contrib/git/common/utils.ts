@@ -7,28 +7,6 @@ import { equalsIgnoreCase } from '../../../../base/common/strings.js';
 import { URI } from '../../../../base/common/uri.js';
 import { GitRemote, GitRepositoryState } from './gitService.js';
 
-export function hasGitHubRemotes(repositoryState: GitRepositoryState): boolean {
-	const hosts = ['github.com', 'ghe.com'];
-	const remotes = getOrderedRemotes(repositoryState!)
-		.filter(remote => !!remote.fetchUrl)
-		.map(remote => parseRemoteUrl(remote.fetchUrl!));
-
-	for (const remote of remotes) {
-		if (!remote?.host) {
-			continue;
-		}
-
-		if (
-			hosts.some(host => equalsIgnoreCase(remote.host, host)) ||
-			hosts.some(host => remote.host.endsWith(host))
-		) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 function getOrderedRemotes(repositoryState: GitRepositoryState): readonly GitRemote[] {
 	if (repositoryState.remotes.length < 2) {
 		return repositoryState.remotes;
@@ -106,4 +84,40 @@ function parseRemoteUrl(fetchUrl: string): { host: string; rawHost: string; path
 	} catch (err) {
 		return undefined;
 	}
+}
+
+export function getGitHubRepoInfoFromRepository(repositoryState: GitRepositoryState): { owner: string; repo: string; host: string; remoteUrl: string } | undefined {
+	for (const remote of getOrderedRemotes(repositoryState)) {
+		if (remote.fetchUrl) {
+			const gitHubInfo = getGithubRepoIdFromFetchUrl(remote.fetchUrl);
+			if (gitHubInfo) {
+				return { ...gitHubInfo, remoteUrl: remote.fetchUrl };
+			}
+		}
+	}
+
+	return undefined;
+}
+
+export function getGithubRepoIdFromFetchUrl(fetchUrl: string): { owner: string; repo: string; host: string } | undefined {
+	const parsed = parseRemoteUrl(fetchUrl);
+	if (!parsed) {
+		return undefined;
+	}
+
+	const topLevelUrls = ['github.com', 'ghe.com'];
+	const matchedHost = topLevelUrls.find(topLevelUrl => parsed.host === topLevelUrl || parsed.host.endsWith('.' + topLevelUrl));
+	if (!matchedHost) {
+		return undefined;
+	}
+
+	// Determine the actual web-accessible hostname
+	// For ghe.com subdomains, use the raw host (e.g., 'myco.ghe.com')
+	// For github.com, always use 'github.com' (SSH aliases like 'alias-github.com' should map to github.com)
+	const webHost = matchedHost === 'ghe.com'
+		? parsed.rawHost
+		: 'github.com';
+
+	const pathMatch = parsed.path.match(/^\/?([^/]+)\/([^/]+?)(\/|\.git\/?)?$/i);
+	return pathMatch ? { owner: pathMatch[1], repo: pathMatch[2], host: webHost } : undefined;
 }
