@@ -85,6 +85,7 @@ import { IUpdateService } from '../../platform/update/common/update.js';
 import { UpdateChannel } from '../../platform/update/common/updateIpc.js';
 import { AbstractUpdateService } from '../../platform/update/electron-main/abstractUpdateService.js';
 import { CrossAppUpdateCoordinator } from '../../platform/update/electron-main/crossAppUpdateIpc.js';
+import { MacOSCrossAppSecretSharing } from '../../platform/secrets/electron-main/macOSCrossAppSecretSharing.js';
 import { DarwinUpdateService } from '../../platform/update/electron-main/updateService.darwin.js';
 import { LinuxUpdateService } from '../../platform/update/electron-main/updateService.linux.js';
 import { SnapUpdateService } from '../../platform/update/electron-main/updateService.snap.js';
@@ -1251,6 +1252,19 @@ export class CodeApplication extends Disposable {
 		const updateChannel = new UpdateChannel(effectiveUpdateService);
 		mainProcessElectronServer.registerChannel('update', updateChannel);
 
+		// Cross-app secret sharing (macOS only, demand-driven)
+		if (isMacintosh) {
+			this._register(new MacOSCrossAppSecretSharing(
+				accessor.get(IStorageMainService),
+				accessor.get(IEncryptionMainService),
+				accessor.get(IStateService),
+				this.logService,
+				this.environmentMainService,
+				accessor.get(ILaunchMainService),
+				this.lifecycleMainService,
+			));
+		}
+
 		// Metered Connection
 		const meteredConnectionChannel = new MeteredConnectionChannel(accessor.get(IMeteredConnectionService) as MeteredConnectionMainService);
 		mainProcessElectronServer.registerChannel(METERED_CONNECTION_CHANNEL, meteredConnectionChannel);
@@ -1359,6 +1373,14 @@ export class CodeApplication extends Disposable {
 
 		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
 		const args = this.environmentMainService.args;
+
+		// If launched solely for cross-app secret sharing, don't open any windows
+		if (args['share-secrets-with-agents-app']) {
+			const hasOtherArgs = args._.length > 0 || args['folder-uri'] || args['file-uri'];
+			if (!hasOtherArgs) {
+				return [];
+			}
+		}
 
 		// Handle agents window first based on context
 		if ((process as INodeProcess).isEmbeddedApp || (args['agents'] && this.productService.quality !== 'stable')) {

@@ -17,6 +17,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { DisablementReason, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
@@ -29,6 +30,9 @@ import { UpdateTooltip } from './updateTooltip.js';
 
 const UPDATE_TITLE_BAR_ACTION_ID = 'workbench.actions.updateIndicator';
 const UPDATE_TITLE_BAR_CONTEXT = new RawContextKey<boolean>('updateTitleBar', false);
+
+const DISABLED_REMINDER_LAST_SHOWN_KEY = 'update/disabledReminderLastShown';
+const DISABLED_REMINDER_PERIOD = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 const ACTIONABLE_STATES: readonly StateType[] = [StateType.AvailableForDownload, StateType.Downloaded, StateType.Ready];
 const DETAILED_STATES: readonly StateType[] = [...ACTIONABLE_STATES, StateType.CheckingForUpdates, StateType.Downloading, StateType.Updating, StateType.Overwriting];
@@ -67,6 +71,7 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IHostService private readonly hostService: IHostService,
 		@IInstantiationService instantiationService: IInstantiationService,
+		@IStorageService private readonly storageService: IStorageService,
 		@IUpdateService updateService: IUpdateService,
 	) {
 		super();
@@ -123,7 +128,10 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			case StateType.Disabled:
 				if (startup) {
 					const reason = this.state.reason;
-					showTooltip = reason === DisablementReason.InvalidConfiguration || reason === DisablementReason.RunningAsAdmin;
+					if (reason === DisablementReason.InvalidConfiguration || reason === DisablementReason.RunningAsAdmin) {
+						const lastShown = this.storageService.getNumber(DISABLED_REMINDER_LAST_SHOWN_KEY, StorageScope.APPLICATION);
+						showTooltip = lastShown === undefined || (Date.now() - lastShown) >= DISABLED_REMINDER_PERIOD;
+					}
 				}
 				break;
 			case StateType.Idle:
@@ -143,6 +151,9 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			this.tooltipVisible = true;
 			this.context.set(true);
 			this.entry?.showTooltip();
+			if (this.state.type === StateType.Disabled) {
+				this.storageService.store(DISABLED_REMINDER_LAST_SHOWN_KEY, Date.now(), StorageScope.APPLICATION, StorageTarget.MACHINE);
+			}
 		}
 	}
 

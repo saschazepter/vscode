@@ -138,6 +138,24 @@ interface LatestCompactionOutput {
 	readonly outputIndex: number;
 }
 
+type CompactionResponseOutputItem = OpenAI.Responses.ResponseOutputItem & OpenAIContextManagementResponse;
+
+interface CompactionItemInChunk {
+	readonly item: OpenAIContextManagementResponse;
+	readonly outputIndex: number | undefined;
+}
+
+interface ResponseStreamEventWithOutputItem {
+	readonly item: unknown;
+	readonly output_index: number;
+}
+
+interface ResponseStreamEventWithResponseOutput {
+	readonly response: {
+		readonly output: OpenAI.Responses.ResponseOutputItem[];
+	};
+}
+
 function resolveWebSocketStatefulMarker(accessor: ServicesAccessor, options: ICreateEndpointBodyOptions): string | undefined {
 	if (options.ignoreStatefulMarker || !options.useWebSocket || !options.conversationId) {
 		return undefined;
@@ -519,8 +537,24 @@ function responseFunctionOutputToRawContents(output: string | OpenAI.Responses.R
 	return coalesce(output.map(responseContentToRawContent));
 }
 
-function isCompactionOutputItem(item: OpenAI.Responses.ResponseOutputItem): boolean {
-	return item.type.toString() === openAIContextManagementCompactionType;
+function isCompactionItem(value: unknown): value is OpenAIContextManagementResponse {
+	return typeof value === 'object' && value !== null && 'type' in value && String(value.type) === openAIContextManagementCompactionType;
+}
+
+function hasOutputItem(chunk: OpenAI.Responses.ResponseStreamEvent): chunk is OpenAI.Responses.ResponseStreamEvent & ResponseStreamEventWithOutputItem {
+	return 'item' in chunk && 'output_index' in chunk && typeof chunk.output_index === 'number';
+}
+
+function hasResponseOutput(chunk: OpenAI.Responses.ResponseStreamEvent): chunk is OpenAI.Responses.ResponseStreamEvent & ResponseStreamEventWithResponseOutput {
+	return 'response' in chunk && Array.isArray(chunk.response.output);
+}
+
+function getOutputItemIndex(chunk: ResponseStreamEventWithOutputItem): number {
+	return chunk.output_index;
+}
+
+function isCompactionOutputItem(item: OpenAI.Responses.ResponseOutputItem): item is CompactionResponseOutputItem {
+	return isCompactionItem(item);
 }
 
 function getLatestCompactionOutput(output: OpenAI.Responses.ResponseOutputItem[], preferredOutputIndex: number | undefined): LatestCompactionOutput | undefined {
@@ -528,7 +562,7 @@ function getLatestCompactionOutput(output: OpenAI.Responses.ResponseOutputItem[]
 	for (let idx = output.length - 1; idx >= 0; idx--) {
 		const item = output[idx];
 		if (isCompactionOutputItem(item)) {
-			latestCompactionOutput = { item: item as unknown as OpenAIContextManagementResponse, outputIndex: idx };
+			latestCompactionOutput = { item, outputIndex: idx };
 			break;
 		}
 	}
@@ -536,7 +570,7 @@ function getLatestCompactionOutput(output: OpenAI.Responses.ResponseOutputItem[]
 	if (preferredOutputIndex !== undefined) {
 		const preferredItem = output[preferredOutputIndex];
 		if (preferredItem && isCompactionOutputItem(preferredItem) && (!latestCompactionOutput || preferredOutputIndex >= latestCompactionOutput.outputIndex)) {
-			return { item: preferredItem as unknown as OpenAIContextManagementResponse, outputIndex: preferredOutputIndex };
+			return { item: preferredItem, outputIndex: preferredOutputIndex };
 		}
 	}
 
@@ -615,11 +649,61 @@ export class OpenAIResponsesProcessor {
 		@ILogService private readonly logService: ILogService,
 	) { }
 
+	private getCompactionItemsInChunk(chunk: OpenAI.Responses.ResponseStreamEvent): CompactionItemInChunk[] {
+		const compactionItems: CompactionItemInChunk[] = [];
+
+		if (hasOutputItem(chunk) && isCompactionItem(chunk.item)) {
+			const outputIndex = getOutputItemIndex(chunk);
+			compactionItems.push({ item: chunk.item, outputIndex });
+		}
+
+		if (hasResponseOutput(chunk)) {
+			for (let idx = 0; idx < chunk.response.output.length; idx++) {
+				const item = chunk.response.output[idx];
+				if (isCompactionItem(item)) {
+					compactionItems.push({ item, outputIndex: idx });
+				}
+			}
+		}
+
+		return compactionItems;
+	}
+
+	private captureCompactionItem(item: OpenAIContextManagementResponse, outputIndex: number | undefined, onProgress: (delta: IResponseDelta) => undefined): void {
+		if (outputIndex !== undefined && this.latestCompactionOutputIndex !== undefined && outputIndex < this.latestCompactionOutputIndex) {
+			return;
+		}
+
+		const previousCompactionItem = this.latestCompactionItem;
+		this.sawCompactionMessage = true;
+		this.latestCompactionOutputIndex = outputIndex ?? this.latestCompactionOutputIndex;
+		this.latestCompactionItem = item;
+
+		if (previousCompactionItem?.id === item.id && previousCompactionItem.encrypted_content === item.encrypted_content) {
+			return;
+		}
+
+		onProgress({
+			text: '',
+			contextManagement: {
+				type: openAIContextManagementCompactionType,
+				id: item.id,
+				encrypted_content: item.encrypted_content,
+			}
+		});
+	}
+
 	public push(chunk: OpenAI.Responses.ResponseStreamEvent, _onProgress: FinishedCallback): ChatCompletion | undefined {
 		const onProgress = (delta: IResponseDelta): undefined => {
 			this.textAccumulator += delta.text;
 			_onProgress(this.textAccumulator, 0, delta);
 		};
+		const compactionItems = this.getCompactionItemsInChunk(chunk);
+		if (chunk.type !== 'response.completed') {
+			for (const { item, outputIndex } of compactionItems) {
+				this.captureCompactionItem(item, outputIndex, onProgress);
+			}
+		}
 
 		switch (chunk.type) {
 			case 'error':
@@ -662,23 +746,6 @@ export class OpenAIResponsesProcessor {
 				return;
 			}
 			case 'response.output_item.done':
-				if (chunk.item.type.toString() === openAIContextManagementCompactionType) {
-					const compactionItem = chunk.item as unknown as OpenAIContextManagementResponse;
-					if (this.latestCompactionOutputIndex !== undefined && chunk.output_index < this.latestCompactionOutputIndex) {
-						return;
-					}
-					this.latestCompactionOutputIndex = chunk.output_index;
-					this.latestCompactionItem = compactionItem;
-					this.sawCompactionMessage = true;
-					return onProgress({
-						text: '',
-						contextManagement: {
-							type: openAIContextManagementCompactionType,
-							id: compactionItem.id,
-							encrypted_content: compactionItem.encrypted_content,
-						}
-					});
-				}
 				if (chunk.item.type === 'function_call') {
 					this.toolCallInfo.delete(chunk.output_index);
 					onProgress({
