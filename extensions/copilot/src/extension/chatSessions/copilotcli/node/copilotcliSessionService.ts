@@ -9,7 +9,7 @@ import { createReadStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { devNull, EOL } from 'node:os';
 import { createInterface } from 'node:readline';
-import type { ChatRequest, ChatSessionItem } from 'vscode';
+import type { ChatCustomAgent, ChatRequest, ChatSessionItem } from 'vscode';
 import { IChatDebugFileLoggerService } from '../../../../platform/chat/common/chatDebugFileLoggerService';
 import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
 import { INativeEnvService } from '../../../../platform/env/common/envService';
@@ -19,7 +19,7 @@ import { RelativePattern } from '../../../../platform/filesystem/common/fileType
 import { ILogService } from '../../../../platform/log/common/logService';
 import { deriveCopilotCliOTelEnv } from '../../../../platform/otel/common/agentOTelEnv';
 import { IOTelService } from '../../../../platform/otel/common/otelService';
-import { ParsedPromptFile } from '../../../../platform/promptFiles/common/promptsService';
+import { IPromptsService } from '../../../../platform/promptFiles/common/promptsService';
 import { IWorkspaceService } from '../../../../platform/workspace/common/workspaceService';
 import { createServiceIdentifier } from '../../../../util/common/services';
 import { coalesce } from '../../../../util/vs/base/common/arrays';
@@ -36,7 +36,6 @@ import { IInstantiationService } from '../../../../util/vs/platform/instantiatio
 import { ChatRequestTurn2, ChatResponseTurn2, ChatSessionStatus, Uri } from '../../../../vscodeTypes';
 import { IPromptVariablesService } from '../../../prompt/node/promptVariablesService';
 import { IAgentSessionsWorkspace } from '../../common/agentSessionsWorkspace';
-import { IChatPromptFileService } from '../../common/chatPromptFileService';
 import { IChatSessionMetadataStore, RequestDetails, StoredModeInstructions } from '../../common/chatSessionMetadataStore';
 import { IChatSessionWorkspaceFolderService } from '../../common/chatSessionWorkspaceFolderService';
 import { IChatSessionWorktreeService } from '../../common/chatSessionWorktreeService';
@@ -171,7 +170,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		@IOTelService private readonly _otelService: IOTelService,
 		@IPromptVariablesService private readonly _promptVariablesService: IPromptVariablesService,
 		@IChatDebugFileLoggerService private readonly _debugFileLogger: IChatDebugFileLoggerService,
-		@IChatPromptFileService private readonly _chatPromptFileService: IChatPromptFileService,
+		@IPromptsService private readonly _promptsService: IPromptsService,
 	) {
 		super();
 		this.monitorSessionFiles();
@@ -798,14 +797,14 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		const [agentId, storedDetails] = await Promise.all([agentIdPromise, requestDetailsPromise]);
 
 		// Build lookup from copilotRequestId → RequestDetails for the callback
-		const customAgentLookup = this.createCustomAgentLookup();
+		const customAgentLookup = await this.createCustomAgentLookup();
 		const legacyMappings: RequestDetails[] = [];
 		const detailsByCopilotId = new Map<string, RequestIdDetails>();
-		const defaultModeInstructions = agentId ? this.resolveAgentModeInstructions(agentId, customAgentLookup) : undefined;
+		const defaultModeInstructions = agentId ? await this.resolveAgentModeInstructions(agentId, customAgentLookup) : undefined;
 
 		for (const d of storedDetails) {
 			if (d.copilotRequestId) {
-				const modeInstructions = d.modeInstructions ?? this.resolveAgentModeInstructions(d.agentId, customAgentLookup) ?? defaultModeInstructions;
+				const modeInstructions = d.modeInstructions ?? await this.resolveAgentModeInstructions(d.agentId, customAgentLookup) ?? defaultModeInstructions;
 				detailsByCopilotId.set(d.copilotRequestId, { requestId: d.vscodeRequestId, toolIdEditMap: d.toolIdEditMap, modeInstructions });
 			}
 		}
@@ -838,12 +837,12 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		return { history, events };
 	}
 
-	private createCustomAgentLookup(): Map<string, ParsedPromptFile> {
-		const agents = this._chatPromptFileService.customAgentPromptFiles;
-		const lookup = new Map<string, ParsedPromptFile>();
+	private async createCustomAgentLookup(): Promise<Map<string, ChatCustomAgent>> {
+		const agents = await this._promptsService.getCustomAgents(CancellationToken.None);
+		const lookup = new Map<string, ChatCustomAgent>();
 		for (const agent of agents) {
 			const keys = [
-				agent.header?.name?.trim(),
+				agent.name?.trim(),
 				agent.uri.toString(),
 				getAgentFileNameFromFilePath(agent.uri),
 			];
@@ -856,7 +855,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		return lookup;
 	}
 
-	private resolveAgentModeInstructions(agentId: string | undefined, customAgentLookup: Map<string, ParsedPromptFile>): StoredModeInstructions | undefined {
+	private async resolveAgentModeInstructions(agentId: string | undefined, customAgentLookup: Map<string, ChatCustomAgent>): Promise<StoredModeInstructions | undefined> {
 		if (!agentId) {
 			return undefined;
 		}
@@ -866,8 +865,8 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 		return {
 			uri: agent.uri.toString(),
-			name: agent.header?.name?.trim() || agentId,
-			content: agent.body?.getContent() ?? '',
+			name: agent.name?.trim() || agentId,
+			content: (await this._promptsService.parseFile(agent.uri, CancellationToken.None)).body?.getContent() ?? '',
 		};
 	}
 
