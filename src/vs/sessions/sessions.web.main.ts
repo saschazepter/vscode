@@ -138,8 +138,11 @@ import '../workbench/contrib/preferences/browser/keyboardLayoutPicker.js';
 import '../workbench/contrib/debug/browser/extensionHostDebugService.js';
 import '../workbench/contrib/welcomeBanner/browser/welcomeBanner.contribution.js';
 
-// Web host discovery — calls embedder's discovery command to find agent hosts
-import './contrib/webHostDiscovery/browser/webHostDiscovery.contribution.js';
+// Web tunnel agent host — discovers tunnels via Dev Tunnels REST API and connects via relay
+import './contrib/remoteAgentHost/browser/webTunnelAgentHostService.contribution.js';
+
+// Tunnel agent host — reconciles discovered tunnels into session providers
+import './contrib/remoteAgentHost/browser/tunnelAgentHost.contribution.js';
 
 // Remote agent host session provider — discovers agents and registers sessions
 import './contrib/remoteAgentHost/browser/remoteAgentHost.contribution.js';
