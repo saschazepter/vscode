@@ -298,7 +298,8 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 		let shellArgs: string[] = [];
 		if (defaultProfileName) {
 			const profiles = workspace.getConfiguration('terminal').get<Record<string, { path?: string | string[]; args?: string[] }>>(`integrated.profiles.${configPlatform}`);
-			shellArgs = Array.isArray(profiles?.[defaultProfileName]?.args) ? profiles![defaultProfileName].args! : [];
+			const profileArgs = profiles?.[defaultProfileName]?.args;
+			shellArgs = Array.isArray(profileArgs) ? profileArgs : [];
 		}
 
 		// Detect shell type from the resolved shell path basename,
