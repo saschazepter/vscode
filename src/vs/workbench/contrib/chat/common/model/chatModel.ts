@@ -2486,7 +2486,7 @@ export class ChatModel extends Disposable implements IChatModel {
 				codeBlockInfos: raw.responseMarkdownInfo?.map<ICodeBlockInfo>(info => ({ suggestionId: info.suggestionId })),
 			});
 			request.response.shouldBeRemovedOnSend = raw.isHidden ? { requestId: raw.requestId } : raw.shouldBeRemovedOnSend;
-			if (raw.completionTokens) {
+			if (typeof raw.completionTokens === 'number') {
 				request.response.setUsage({ kind: 'usage', promptTokens: 0, completionTokens: raw.completionTokens });
 			}
 			if (raw.usedContext) { // @ulugbekna: if this's a new vscode sessions, doc versions are incorrect anyway?

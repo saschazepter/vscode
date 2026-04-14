@@ -172,7 +172,8 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	private readonly messageElement: HTMLElement;
 	private explicitContent: IMarkdownString | undefined;
 	private readonly label: string;
-	private timerHandle: ReturnType<typeof setInterval> | undefined;
+	private readonly isCompleteState: boolean;
+	private timerHandle: number | undefined;
 
 	constructor(
 		workingProgress: IChatWorkingProgress,
@@ -194,6 +195,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		const iconElement = $('div');
 		const state = workingProgress.state;
 		const isComplete = state?.isComplete ?? false;
+		this.isCompleteState = isComplete;
 
 		if (isComplete) {
 			iconElement.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
@@ -243,7 +245,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		const timeStr = formatElapsedTime(elapsed);
 		const tokens = usage?.completionTokens;
 
-		if (tokens) {
+		if (typeof tokens === 'number') {
 			this.messageElement.textContent = localize(
 				'workedForWithTokens',
 				"Worked for {0} \u00b7 {1} tokens",
@@ -275,7 +277,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 			const usage = state.usageObs.get();
 			const tokens = usage?.completionTokens;
 
-			if (tokens) {
+			if (typeof tokens === 'number') {
 				const tokenStr = formatTokenCount(tokens);
 				this.messageElement.textContent = localize(
 					'workingWithTimeAndTokens',
@@ -313,7 +315,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		// Also react to token usage changes via observable
 		this._register(autorun(reader => {
 			const usage = state.usageObs.read(reader);
-			if (usage?.completionTokens) {
+			if (typeof usage?.completionTokens === 'number') {
 				const newTokenText = formatTokenCount(usage.completionTokens);
 				if (newTokenText !== lastTokenText) {
 					updateDisplay();
@@ -328,6 +330,13 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	}
 
 	hasSameContent(other: IChatRendererContent, followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {
-		return other.kind === 'working' && other.content?.value === this.explicitContent?.value;
+		if (other.kind !== 'working') {
+			return false;
+		}
+		// Re-render when completion state changes (in-progress → complete)
+		if (other.state?.isComplete !== this.isCompleteState) {
+			return false;
+		}
+		return other.content?.value === this.explicitContent?.value;
 	}
 }

@@ -28,7 +28,14 @@ export function formatTokenCount(count: number): string {
 		return `${(count / 1_000_000).toFixed(1)}M`;
 	} else if (count >= 1000) {
 		const value = count / 1000;
-		return value >= 10 ? `${value.toFixed(0)}k` : `${value.toFixed(1)}k`;
+		if (value >= 10) {
+			const roundedValue = value.toFixed(0);
+			if (roundedValue === '1000') {
+				return `${(count / 1_000_000).toFixed(1)}M`;
+			}
+			return `${roundedValue}k`;
+		}
+		return `${value.toFixed(1)}k`;
 	}
 	return count.toString();
 }
