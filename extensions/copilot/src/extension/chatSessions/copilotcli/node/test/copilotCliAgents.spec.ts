@@ -98,7 +98,7 @@ describe('CopilotCLIAgents', () => {
 	}
 
 	function createAgents(options: { sdkAgentsByCall: ReadonlyArray<ReadonlyArray<SweCustomAgent>>; customAgents?: PromptFileInfo[] }): { agents: CopilotCLIAgents; promptsService: MockPromptsService; sdk: ICopilotCLISDK } {
-		const promptsService = new MockPromptsService();
+		const promptsService = disposables.add(new MockPromptsService());
 		if (options.customAgents) {
 			const customAgents = [];
 			for (const ca of options.customAgents) {

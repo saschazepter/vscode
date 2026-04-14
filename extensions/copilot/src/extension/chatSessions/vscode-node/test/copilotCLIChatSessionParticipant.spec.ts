@@ -398,7 +398,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 			}
 		} as unknown as IInstantiationService;
 		customSessionTitleService = new CustomSessionTitleService(new MockExtensionContext() as unknown as IVSCodeExtensionContext, accessor.get(IInstantiationService), logService, new MockChatSessionMetadataStore());
-		sessionService = disposables.add(new CopilotCLISessionService(logService, sdk, instantiationService, new NullNativeEnvService(), fileSystem, mcpHandler, new NullCopilotCLIAgents(), workspaceService, customSessionTitleService, accessor.get(IConfigurationService), new MockSkillLocations(), delegationService, new MockChatSessionMetadataStore(), { _serviceBrand: undefined, isAgentSessionsWorkspace: false } as IAgentSessionsWorkspace, workspaceFolderService, worktree, new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' })), new NullPromptVariablesService(), new NullChatDebugFileLoggerService(), new MockPromptsService()));
+		sessionService = disposables.add(new CopilotCLISessionService(logService, sdk, instantiationService, new NullNativeEnvService(), fileSystem, mcpHandler, new NullCopilotCLIAgents(), workspaceService, customSessionTitleService, accessor.get(IConfigurationService), new MockSkillLocations(), delegationService, new MockChatSessionMetadataStore(), { _serviceBrand: undefined, isAgentSessionsWorkspace: false } as IAgentSessionsWorkspace, workspaceFolderService, worktree, new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' })), new NullPromptVariablesService(), new NullChatDebugFileLoggerService(), disposables.add(new MockPromptsService())));
 
 		manager = await sessionService.getSessionManager() as unknown as MockCliSdkSessionManager;
 		contentProvider = new class extends mock<CopilotCLIChatSessionContentProvider>() {
@@ -436,7 +436,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 			workspaceFolderService,
 			telemetry,
 			logger,
-			new MockPromptsService(),
+			disposables.add(new MockPromptsService()),
 			delegationService,
 			folderRepositoryManager,
 			configurationService,
@@ -794,7 +794,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 			workspaceFolderService,
 			telemetry,
 			logService,
-			new MockPromptsService(),
+			disposables.add(new MockPromptsService()),
 			new class extends mock<IChatDelegationSummaryService>() {
 				override async summarize(_context: vscode.ChatContext, _token: vscode.CancellationToken): Promise<string | undefined> {
 					return undefined;
@@ -1907,7 +1907,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 				workspaceFolderService,
 				telemetry,
 				logService,
-				new MockPromptsService(),
+				disposables.add(new MockPromptsService()),
 				nullDelegationService,
 				folderRepositoryManager,
 				configurationService,
@@ -2040,7 +2040,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 				workspaceFolderService,
 				telemetry,
 				logService,
-				new MockPromptsService(),
+				disposables.add(new MockPromptsService()),
 				new (mock<IChatDelegationSummaryService>())(),
 				folderRepositoryManager,
 				configurationService,

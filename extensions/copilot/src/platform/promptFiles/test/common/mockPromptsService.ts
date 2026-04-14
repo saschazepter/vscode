@@ -6,27 +6,28 @@
 import type { ChatCustomAgent, ChatHook, ChatInstruction, ChatPlugin, ChatSkill } from 'vscode';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { Emitter, Event } from '../../../../util/vs/base/common/event';
+import { Disposable } from '../../../../util/vs/base/common/lifecycle';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { PromptFileParser } from '../../../../util/vs/workbench/contrib/chat/common/promptSyntax/promptFileParser';
 import { IPromptsService, ParsedPromptFile } from '../../common/promptsService';
 import { ResourceMap } from '../../../../util/vs/base/common/map';
 
-export class MockPromptsService implements IPromptsService {
+export class MockPromptsService extends Disposable implements IPromptsService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidChangeCustomAgents = new Emitter<void>();
+	private readonly _onDidChangeCustomAgents = this._register(new Emitter<void>());
 	readonly onDidChangeCustomAgents: Event<void> = this._onDidChangeCustomAgents.event;
 
-	private readonly _onDidChangeInstructions = new Emitter<void>();
+	private readonly _onDidChangeInstructions = this._register(new Emitter<void>());
 	readonly onDidChangeInstructions: Event<void> = this._onDidChangeInstructions.event;
 
-	private readonly _onDidChangeSkills = new Emitter<void>();
+	private readonly _onDidChangeSkills = this._register(new Emitter<void>());
 	readonly onDidChangeSkills: Event<void> = this._onDidChangeSkills.event;
 
-	private readonly _onDidChangeHooks = new Emitter<void>();
+	private readonly _onDidChangeHooks = this._register(new Emitter<void>());
 	readonly onDidChangeHooks: Event<void> = this._onDidChangeHooks.event;
 
-	private readonly _onDidChangePlugins = new Emitter<void>();
+	private readonly _onDidChangePlugins = this._register(new Emitter<void>());
 	readonly onDidChangePlugins: Event<void> = this._onDidChangePlugins.event;
 
 	private _customAgents: readonly ChatCustomAgent[] = [];

@@ -69,7 +69,7 @@ describe('CopilotCLISkills', () => {
 			? new class extends NullNativeEnvService { override get userHome() { return options.userHome!; } }()
 			: new NullNativeEnvService();
 
-		const promptsService = new MockPromptsService();
+		const promptsService = disposables.add(new MockPromptsService());
 		if (options?.skills) {
 			promptsService.setSkills(options.skills);
 		}
@@ -239,7 +239,7 @@ describe('CopilotCLISkills', () => {
 		const configService = new InMemoryConfigurationService(baseConfigurationService);
 		configService.setNonExtensionConfig(SKILLS_LOCATION_KEY, 'not-an-object');
 
-		const mockPromptsService = new MockPromptsService();
+		const mockPromptsService = disposables.add(new MockPromptsService());
 		const skillsService = new CopilotCLISkillsConstructor(
 			logService,
 			{} as unknown,
