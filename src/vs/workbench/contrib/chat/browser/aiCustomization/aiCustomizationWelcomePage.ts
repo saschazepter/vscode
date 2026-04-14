@@ -18,15 +18,15 @@ const $ = DOM.$;
 export interface IWelcomePageCallbacks {
 	selectSection(section: AICustomizationManagementSection): void;
 	selectSectionWithMarketplace(section: AICustomizationManagementSection): void;
+	closeEditor(): void;
 	/**
 	 * Prefill the chat input with a query. In the sessions window this
 	 * uses the sessions chat widget; in core VS Code it opens the chat view.
 	 *
 	 * @param options.newChat When true, always opens a new chat instead of
 	 * reusing the active one.
-	 * @param options.closeEditor When true, close the customizations editor after sending.
 	 */
-	prefillChat(query: string, options?: { isPartialQuery?: boolean; newChat?: boolean; closeEditor?: boolean }): void;
+	prefillChat(query: string, options?: { isPartialQuery?: boolean; newChat?: boolean }): void;
 }
 
 export interface IAICustomizationWelcomePageImplementation extends IDisposable {

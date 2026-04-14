@@ -229,9 +229,10 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				generateBtn.textContent = localize('new', "New...");
 				this.cardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', e => {
 					e.stopPropagation();
+					this.callbacks.closeEditor();
 					if (this.workspaceService.isSessionsWindow) {
 						const typeLabel = category.label.toLowerCase().replace(/s$/, '');
-						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true, newChat: true, closeEditor: true });
+						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true, newChat: true });
 					} else {
 						this.workspaceService.generateCustomization(category.promptType!);
 					}

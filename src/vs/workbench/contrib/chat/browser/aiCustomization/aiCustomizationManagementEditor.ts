@@ -743,19 +743,19 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{
 				selectSection: (section) => this.selectSection(section),
 				selectSectionWithMarketplace: (section) => this.selectSection(section, { showMarketplace: true }),
+				closeEditor: () => {
+					if (this.input) {
+						this.group.closeEditor(this.input);
+					}
+				},
 				prefillChat: async (query, options) => {
 					try {
-						// Close the editor first if requested — must happen before
-						// the chat command which may dispose the editor modal
-						if (options?.closeEditor && this.input) {
-							this.group.closeEditor(this.input);
-						}
 						if (this.workspaceService.isSessionsWindow) {
 							const sessionsViewId = 'workbench.view.sessions.chat';
 							if (options?.newChat) {
 								await this.commandService.executeCommand('workbench.action.sessions.newChat');
 							}
-							const view = await this.viewsService.openView(sessionsViewId, options?.closeEditor ?? false);
+							const view = await this.viewsService.openView(sessionsViewId, true);
 							const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
 							if (options?.isPartialQuery && chatView?.prefillInput) {
 								chatView.prefillInput(query);
