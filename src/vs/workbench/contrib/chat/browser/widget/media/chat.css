@@ -2624,6 +2624,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 	.rendered-markdown.progress-step {
 		white-space: normal;
+		display: flex;
+		align-items: baseline;
 
 		& > p {
 			color: var(--vscode-descriptionForeground);
@@ -2633,6 +2635,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			code {
 				font-size: var(--vscode-chat-font-size-body-xs);
 			}
+		}
+
+		& > span {
+			color: var(--vscode-descriptionForeground);
+			font-size: var(--vscode-chat-font-size-body-s);
 		}
 
 		.chat-inline-anchor-widget {

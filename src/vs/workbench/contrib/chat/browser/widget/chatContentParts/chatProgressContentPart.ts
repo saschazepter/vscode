@@ -169,7 +169,8 @@ export class ChatProgressSubPart extends Disposable {
 
 export class ChatWorkingProgressContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
-	private readonly messageElement: HTMLElement;
+	private readonly labelElement: HTMLElement;
+	private readonly statsElement: HTMLElement;
 	private explicitContent: IMarkdownString | undefined;
 	private readonly label: string;
 	private readonly isCompleteState: boolean;
@@ -204,10 +205,12 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		}
 		append(this.domNode, iconElement);
 
-		// Structure must match CSS selector: .shimmer-progress .rendered-markdown.progress-step > p
+		// Structure: .progress-container > .rendered-markdown.progress-step > p (shimmered label) + span (stats, no shimmer)
 		const messageContainer = $('div.rendered-markdown.progress-step');
-		this.messageElement = $('p');
-		append(messageContainer, this.messageElement);
+		this.labelElement = $('p');
+		this.statsElement = $('span');
+		append(messageContainer, this.labelElement);
+		append(messageContainer, this.statsElement);
 		append(this.domNode, messageContainer);
 
 		if (!isComplete) {
@@ -218,7 +221,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 			this.initializeWithState(state, context);
 		} else {
 			// No state provided — show explicit content or label
-			this.messageElement.textContent = this.explicitContent
+			this.labelElement.textContent = this.explicitContent
 				? renderAsPlaintext(this.explicitContent)
 				: this.label;
 		}
@@ -248,18 +251,12 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		const timeStr = formatElapsedTime(elapsed);
 		const tokens = usage?.completionTokens;
 
+		this.labelElement.textContent = localize('workedFor', "Worked for {0}", timeStr);
 		if (typeof tokens === 'number') {
-			this.messageElement.textContent = localize(
-				'workedForWithTokens',
-				"Worked for {0} \u00b7 {1} tokens",
-				timeStr,
+			this.statsElement.textContent = localize(
+				'workedForTokensSuffix',
+				" \u00b7 {0} tokens",
 				formatTokenCount(tokens)
-			);
-		} else {
-			this.messageElement.textContent = localize(
-				'workedFor',
-				"Worked for {0}",
-				timeStr
 			);
 		}
 	}
@@ -280,23 +277,14 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 			const usage = state.usageObs.get();
 			const tokens = usage?.completionTokens;
 
+			// Label gets shimmer, stats do not
+			this.labelElement.textContent = this.label;
 			if (typeof tokens === 'number') {
 				const tokenStr = formatTokenCount(tokens);
-				this.messageElement.textContent = localize(
-					'workingWithTimeAndTokens',
-					"{0} ({1} \u00b7 {2} tokens)",
-					this.label,
-					timeStr,
-					tokenStr
-				);
+				this.statsElement.textContent = ` (${timeStr} \u00b7 ${tokenStr} tokens)`;
 				lastTokenText = tokenStr;
 			} else {
-				this.messageElement.textContent = localize(
-					'workingWithTime',
-					"{0} ({1})",
-					this.label,
-					timeStr
-				);
+				this.statsElement.textContent = ` (${timeStr})`;
 			}
 		};
 
@@ -329,7 +317,8 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 
 	updateWorkingContent(content: IMarkdownString): void {
 		this.explicitContent = content;
-		this.messageElement.textContent = renderAsPlaintext(content);
+		this.labelElement.textContent = renderAsPlaintext(content);
+		this.statsElement.textContent = '';
 	}
 
 	hasSameContent(other: IChatRendererContent, followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {
