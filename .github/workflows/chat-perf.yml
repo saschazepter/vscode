@@ -4,18 +4,15 @@ on:
   pull_request:
     paths:
       - '.github/workflows/chat-perf.yml'
-  schedule:
-    # Nightly at 12:00 AM PT (07:00 UTC)
-    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       baseline_commit:
         description: 'Baseline commit SHA or version (e.g. "1.115.0", "abc1234")'
-        required: true
+        required: false
         type: string
       test_commit:
         description: 'Test commit SHA or version (e.g. "1.115.0", "abc1234")'
-        required: true
+        required: false
         type: string
       runs:
         description: 'Runs per scenario (default: 7 for statistical significance)'
