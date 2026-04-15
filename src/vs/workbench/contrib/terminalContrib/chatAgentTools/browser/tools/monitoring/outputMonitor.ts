@@ -253,13 +253,14 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 	private async _handleIdleState(token: CancellationToken): Promise<{ resources?: ILinkLocation[]; shouldContinuePolling: boolean; output?: string }> {
 		const output = this._execution.getOutput();
-		this._logService.trace(`OutputMonitor: Idle output summary: len=${output.length}, lastLine=${this._formatLastLineForLog(output)}`);
 
-		// Use only the tail of the output for pattern detection. All detect*
-		// functions match prompts near the end of the buffer (using $ anchors
-		// or normalized-string includes). Slicing avoids unnecessary O(n) regex
-		// scanning over potentially large terminal scrollback.
+		// Use only the tail of the output for logging and pattern detection. All
+		// detect* functions match prompts near the end of the buffer (using $
+		// anchors or normalized-string includes), and the idle summary only
+		// needs the last line. Slicing avoids unnecessary work over potentially
+		// large terminal scrollback.
 		const outputTail = output.slice(-1000);
+		this._logService.trace(`OutputMonitor: Idle output summary: len=${output.length}, lastLine=${this._formatLastLineForLog(outputTail)}`);
 
 		if (detectsNonInteractiveHelpPattern(outputTail)) {
 			this._logService.trace('OutputMonitor: Idle -> non-interactive help pattern detected, stopping');
@@ -370,17 +371,18 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 				waited += waitTime;
 				currentInterval = Math.min(currentInterval * 2, maxInterval);
 				const currentOutput = execution.getOutput();
+				const currentTail = currentOutput.slice(-1000);
 
-				if (detectsNonInteractiveHelpPattern(currentOutput)) {
+				if (detectsNonInteractiveHelpPattern(currentTail)) {
 					this._logService.trace(`OutputMonitor: waitForIdle -> non-interactive help detected (waited=${waited}ms)`);
 					this._state = OutputMonitorState.Idle;
 					this._setupIdleInputListener();
 					return this._state;
 				}
 
-				const promptResult = detectsInputRequiredPattern(currentOutput);
+				const promptResult = detectsInputRequiredPattern(currentTail);
 				if (promptResult) {
-					this._logService.trace(`OutputMonitor: waitForIdle -> input-required pattern detected (waited=${waited}ms, lastLine=${this._formatLastLineForLog(currentOutput)})`);
+					this._logService.trace(`OutputMonitor: waitForIdle -> input-required pattern detected (waited=${waited}ms, lastLine=${this._formatLastLineForLog(currentTail)})`);
 					this._state = OutputMonitorState.Idle;
 					this._setupIdleInputListener();
 					return this._state;
@@ -397,7 +399,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 				const isActive = execution.isActive ? await execution.isActive() : undefined;
 				this._logService.trace(`OutputMonitor: waitForIdle check: waited=${waited}ms, recentlyIdle=${recentlyIdle}, isActive=${isActive}`);
 				if (recentlyIdle && isActive !== true) {
-					this._logService.trace(`OutputMonitor: waitForIdle -> recentlyIdle && !active (waited=${waited}ms, lastLine=${this._formatLastLineForLog(currentOutput)})`);
+					this._logService.trace(`OutputMonitor: waitForIdle -> recentlyIdle && !active (waited=${waited}ms, lastLine=${this._formatLastLineForLog(currentTail)})`);
 					this._state = OutputMonitorState.Idle;
 					this._setupIdleInputListener();
 					return this._state;
