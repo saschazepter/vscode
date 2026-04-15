@@ -19,6 +19,7 @@ import { createServiceIdentifier } from '../../../util/common/services';
 import { disposableTimeout } from '../../../util/vs/base/common/async';
 import { Disposable, DisposableStore } from '../../../util/vs/base/common/lifecycle';
 import * as path from '../../../util/vs/base/common/path';
+import { windowsToGitBashPath } from '../../../util/vs/workbench/contrib/terminalContrib/suggest/browser/terminalGitBashHelpers';
 import { PythonTerminalService } from './copilotCLIPythonTerminalService';
 import { CopilotCLITerminalLinkProvider, SessionDirResolver } from './copilotCLITerminalLinkProvider';
 
@@ -116,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File "${this.powershellScriptPath}" %*
 			// the existing .bat shim, which routes through cmd.exe -> PowerShell where
 			// console stdin works correctly. The path uses MSYS form (e.g. /c/Users/...)
 			// since MSYS path translation does not apply inside `bash -c` strings.
-			const posixBatPath = toMsysPath(this.shellScriptPath);
+			const posixBatPath = windowsToGitBashPath(this.shellScriptPath);
 			const copilotBashScript = `#!/bin/sh\nexec "${posixBatPath}" "$@"\n`;
 			this.posixShellScriptPath = path.join(storageLocation, COPILOT_CLI_COMMAND);
 			await fs.writeFile(this.posixShellScriptPath, copilotBashScript);
@@ -340,7 +341,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 			// On Windows (Git Bash), use the POSIX shim and reference it by its MSYS path,
 			// since the path lives inside the `-ic` shell-string and is not translated by MSYS.
 			const scriptPath = configPlatform === 'windows' ? this.posixShellScriptPath! : this.shellScriptPath!;
-			const bashScriptPath = configPlatform === 'windows' ? toMsysPath(scriptPath) : scriptPath;
+			const bashScriptPath = configPlatform === 'windows' ? windowsToGitBashPath(scriptPath) : scriptPath;
 			return {
 				shell: 'bash',
 				shellPath,
@@ -408,15 +409,6 @@ function quoteArgsForShell(shellScript: string, args: string[]): string {
 
 	const escapedArgs = args.map(escapeArg);
 	return args.length ? `${escapeArg(shellScript)} ${escapedArgs.join(' ')}` : escapeArg(shellScript);
-}
-
-/**
- * Convert a Windows path (e.g. `C:\Users\foo\bar`) to MSYS / Git Bash form
- * (e.g. `/c/Users/foo/bar`). MSYS only translates standalone argv entries,
- * so paths embedded inside `bash -c "..."` strings must be converted manually.
- */
-function toMsysPath(p: string): string {
-	return p.replace(/^([a-zA-Z]):/, (_m, drive: string) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
 }
 
 async function getCommonTerminalOptions(name: string, authenticationService: IAuthenticationService, otelService: IOTelService, location: TerminalOpenLocation = 'editor'): Promise<TerminalOptions> {
