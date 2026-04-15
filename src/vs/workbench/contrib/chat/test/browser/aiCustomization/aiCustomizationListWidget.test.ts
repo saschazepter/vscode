@@ -4,9 +4,25 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { DeferredPromise } from '../../../../../../base/common/async.js';
+import { CancellationToken } from '../../../../../../base/common/cancellation.js';
+import { Event } from '../../../../../../base/common/event.js';
+import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
+import { observableValue } from '../../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
+import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
+import { AICustomizationListWidget } from '../../../browser/aiCustomization/aiCustomizationListWidget.js';
 import { extractExtensionIdFromPath, getCustomizationSecondaryText, truncateToFirstLine } from '../../../browser/aiCustomization/aiCustomizationListWidgetUtils.js';
+import { AICustomizationManagementSection, IAICustomizationWorkspaceService } from '../../../common/aiCustomizationWorkspaceService.js';
+import { ICustomizationHarnessService, ICustomizationItem, IHarnessDescriptor, IStorageSourceFilter } from '../../../common/customizationHarnessService.js';
+import { ContributionEnablementState } from '../../../common/enablement.js';
+import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
+import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+import { Codicon } from '../../../../../../base/common/codicons.js';
+import { ResourceMap } from '../../../../../../base/common/map.js';
 
 suite('aiCustomizationListWidget', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -112,6 +128,135 @@ suite('aiCustomizationListWidget', () => {
 				extractExtensionIdFromPath('/workspace/extensions/my-extension/SKILL.md'),
 				undefined
 			);
+		});
+	});
+
+	suite('dispose-during-async guards', () => {
+
+		let disposables: DisposableStore;
+		let instaService: TestInstantiationService;
+		let fetchDeferred: DeferredPromise<ICustomizationItem[] | undefined>;
+
+		function createMockHarnessDescriptor(): IHarnessDescriptor {
+			return {
+				id: 'test',
+				label: 'Test',
+				icon: Codicon.settingsGear,
+				getStorageSourceFilter: (): IStorageSourceFilter => ({ sources: [PromptsStorage.local, PromptsStorage.user] }),
+				itemProvider: {
+					onDidChange: Event.None,
+					provideChatSessionCustomizations: (_token: CancellationToken) => {
+						return fetchDeferred.p;
+					},
+				},
+			};
+		}
+
+		setup(() => {
+			disposables = new DisposableStore();
+			fetchDeferred = new DeferredPromise();
+			const descriptor = createMockHarnessDescriptor();
+
+			instaService = workbenchInstantiationService({}, disposables);
+
+			instaService.stub(IPromptsService, {
+				onDidChangeCustomAgents: Event.None,
+				onDidChangeSlashCommands: Event.None,
+				onDidChangeSkills: Event.None,
+				onDidChangeHooks: Event.None,
+				onDidChangeInstructions: Event.None,
+				listPromptFiles: async () => [],
+				getCustomAgents: async () => [],
+				findAgentSkills: async () => [],
+				getHooks: async () => undefined,
+				getInstructionFiles: async () => [],
+				getDisabledPromptFiles: () => new ResourceMap(),
+			});
+
+			instaService.stub(IAICustomizationWorkspaceService, {
+				activeProjectRoot: observableValue('test', undefined),
+				getActiveProjectRoot: () => undefined,
+				managementSections: [AICustomizationManagementSection.Agents],
+				isSessionsWindow: false,
+				welcomePageFeatures: { showGettingStartedBanner: false },
+				getStorageSourceFilter: () => ({ sources: [] }),
+				getSkillUIIntegrations: () => new Map(),
+				hasOverrideProjectRoot: observableValue('test', false),
+				commitFiles: async () => { },
+				deleteFiles: async () => { },
+				generateCustomization: async () => { },
+				setOverrideProjectRoot: () => { },
+				clearOverrideProjectRoot: () => { },
+			});
+
+			instaService.stub(ICustomizationHarnessService, {
+				activeHarness: observableValue('test', 'test'),
+				availableHarnesses: observableValue('test', [descriptor]),
+				setActiveHarness: () => { },
+				getStorageSourceFilter: () => ({ sources: [] }),
+				getActiveDescriptor: () => descriptor,
+				registerExternalHarness: () => ({ dispose() { } }),
+			});
+
+			instaService.stub(IAgentPluginService, {
+				plugins: observableValue('test', []),
+				enablementModel: {
+					readEnabled: () => ContributionEnablementState.EnabledProfile,
+					setEnabled: () => { },
+					remove: () => { },
+				},
+			});
+
+			instaService.stub(ICommandService, {
+				executeCommand: async () => undefined,
+				onWillExecuteCommand: Event.None,
+				onDidExecuteCommand: Event.None,
+			});
+		});
+
+		teardown(() => {
+			// Resolve any pending deferred to avoid hanging promises.
+			if (!fetchDeferred.isSettled) {
+				fetchDeferred.complete(undefined);
+			}
+			disposables.dispose();
+		});
+
+		test('refresh does not throw when disposed during loadItems', async () => {
+			const widget = disposables.add(instaService.createInstance(AICustomizationListWidget));
+
+			// Start refresh — loadItems will await fetchItemsForSection
+			// which blocks on our deferred
+			const refreshPromise = widget.refresh();
+
+			// Dispose before async completes
+			widget.dispose();
+
+			// Resolve the deferred — this should not cause an error
+			// because the disposal guard prevents updateAddButton() from running
+			await fetchDeferred.complete(undefined);
+			await refreshPromise;
+		});
+
+		test('setSection does not throw when disposed during loadItems', async () => {
+			const widget = disposables.add(instaService.createInstance(AICustomizationListWidget));
+
+			const setSectionPromise = widget.setSection(AICustomizationManagementSection.Instructions);
+			widget.dispose();
+
+			await fetchDeferred.complete(undefined);
+			await setSectionPromise;
+		});
+
+		test('generateDebugReport returns empty string when disposed during loadItems', async () => {
+			const widget = disposables.add(instaService.createInstance(AICustomizationListWidget));
+
+			const reportPromise = widget.generateDebugReport();
+			widget.dispose();
+
+			await fetchDeferred.complete(undefined);
+			const result = await reportPromise;
+			assert.strictEqual(result, '');
 		});
 	});
 });
