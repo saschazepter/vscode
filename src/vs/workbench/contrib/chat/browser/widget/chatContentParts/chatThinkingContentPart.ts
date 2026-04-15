@@ -464,6 +464,19 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}));
 			this._register(this.scrollableElement.onScroll(e => this.handleScroll(e.scrollTop)));
 
+			// Watch for DOM mutations (child additions/removals) in the wrapper
+			// so we always scroll to bottom when new content appears. This replaces
+			// the old working-spinner sentinel that served as a scroll anchor.
+			const mutationObserver = new MutationObserver(() => {
+				if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
+					return;
+				}
+				this.refreshContentHeight();
+				this.updateScrollDimensionsFromCache();
+			});
+			mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
+			this._register({ dispose: () => mutationObserver.disconnect() });
+
 			// Observe child elements for resizes (e.g. terminal output growing)
 			// so we can update scroll dimensions when the wrapper box is pinned at max-height.
 			this.childResizeObserver = this._register(new DisposableResizeObserver(() => {
