@@ -98,6 +98,7 @@ export class IssueReporterOverlay {
 	private readonly model: IssueReporterModel;
 	private visible = false;
 	private floatingBar: HTMLElement | undefined;
+	private submitted = false;
 
 	constructor(
 		private readonly data: IssueReporterData,
@@ -540,12 +541,18 @@ export class IssueReporterOverlay {
 	}
 
 	private goBack(): void {
+		if (this.submitted) {
+			return;
+		}
 		if (this.currentStep > WizardStep.Describe) {
 			this.setStep(this.currentStep - 1);
 		}
 	}
 
 	private goNext(): void {
+		if (this.submitted && this.currentStep !== WizardStep.Review) {
+			return;
+		}
 		if (this.currentStep === WizardStep.Describe) {
 			const desc = this.descriptionTextarea.value.trim();
 			if (!desc) {
@@ -1020,7 +1027,14 @@ export class IssueReporterOverlay {
 		return this.floatingBar?.offsetHeight ?? 0;
 	}
 
-	hasUserInput(): boolean {
+	hasUnsavedChanges(): boolean {
+		if (this.submitted) {
+			return false;
+		}
+		return this.hasUserInput();
+	}
+
+	private hasUserInput(): boolean {
 		return !!(
 			this.descriptionTextarea.value.trim() ||
 			this.titleInput.value.trim() ||
@@ -1028,6 +1042,29 @@ export class IssueReporterOverlay {
 			this.screenshots.length > 0 ||
 			this.recordings.length > 0
 		);
+	}
+
+	/** Mark as submitted — locks navigation and disables discard dialog */
+	markAsSubmitted(): void {
+		this.submitted = true;
+	}
+
+	/** Show a "Close" button next to the submit button after successful submission */
+	showCloseButton(): void {
+		this.backButton.style.display = 'none';
+
+		// Add close button next to the existing preview button
+		const nav = this.nextButton.parentElement;
+		if (nav && !nav.querySelector('.wizard-close-btn')) {
+			const closeBtn = append(nav, $('div.wizard-nav-btn.wizard-close-btn'));
+			closeBtn.setAttribute('role', 'button');
+			closeBtn.setAttribute('tabindex', '0');
+			const closeLbl = append(closeBtn, $('span'));
+			closeLbl.textContent = localize('closeTab', "Close");
+			this.disposables.add(addDisposableListener(closeBtn, EventType.CLICK, () => {
+				this._onDidClose.fire();
+			}));
+		}
 	}
 
 	getWizardHeight(): number {

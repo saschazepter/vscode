@@ -99,7 +99,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		this.inputDisposables.add(this.wizard);
 
 		// Let the input check wizard state for close confirmation
-		input.hasUserInputFn = () => this.wizard?.hasUserInput() ?? false;
+		input.hasUserInputFn = () => this.wizard?.hasUnsavedChanges() ?? false;
 
 		// Close the editor tab when the user discards
 		this.inputDisposables.add(this.wizard.onDidClose(() => {
@@ -215,7 +215,12 @@ export class IssueReporterEditorPane extends EditorPane {
 			if (!this.wizard) {
 				return;
 			}
-			await (this.issueFormService as IssueFormService).submitIssue(this.wizard, data, title, body);
+			const opened = await (this.issueFormService as IssueFormService).submitIssue(this.wizard, data, title, body);
+			if (opened) {
+				// User opened the link — mark as submitted and show close button
+				this.wizard.markAsSubmitted();
+				this.wizard.showCloseButton();
+			}
 		}));
 	}
 

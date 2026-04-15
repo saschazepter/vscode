@@ -54,6 +54,9 @@ export class IssueFormService implements IIssueFormService {
 	protected release: string = '';
 	protected type: string = '';
 
+	/** Cache of already-uploaded attachments: key (data URL or file path) → upload result */
+	private readonly uploadCache = new Map<string, import('./githubUploadService.js').IGitHubUploadResult>();
+
 	constructor(
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
 		@IAuxiliaryWindowService protected readonly auxiliaryWindowService: IAuxiliaryWindowService,
@@ -91,10 +94,10 @@ export class IssueFormService implements IIssueFormService {
 
 	protected openEditorTabReporter(data: IssueReporterData): void {
 		const input = this.instantiationService.createInstance(IssueReporterEditorInput, data);
-		this.editorService.openEditor(input);
+		this.editorService.openEditor(input, { pinned: true });
 	}
 
-	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<void> {
+	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<boolean> {
 		const screenshots = wizard.getScreenshots();
 		const recordings = wizard.getRecordings();
 
@@ -122,32 +125,45 @@ export class IssueFormService implements IIssueFormService {
 			try {
 				const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
 
-				const filesToUpload: { name: string; bytes: Uint8Array; contentType: string }[] = [];
+				// Collect files, keyed for cache lookup
+				const filesToProcess: { key: string; name: string; bytes: Uint8Array; contentType: string }[] = [];
 				for (let i = 0; i < screenshots.length; i++) {
-					const bytes = this.dataUrlToBytes(screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl);
+					const dataUrl = screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl;
+					const bytes = this.dataUrlToBytes(dataUrl);
 					if (bytes) {
-						filesToUpload.push({ name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
+						filesToProcess.push({ key: dataUrl, name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
 					}
 				}
 				for (const rec of recordings) {
 					const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
 					const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
 					const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-					filesToUpload.push({ name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
+					filesToProcess.push({ key: rec.filePath, name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
 				}
 
-				if (filesToUpload.length > 0) {
-					for (let i = 0; i < filesToUpload.length; i++) {
+				if (filesToProcess.length > 0) {
+					for (let i = 0; i < filesToProcess.length; i++) {
 						wizard.setAttachmentUploadState(i, 'pending');
 					}
 
 					const uploadResults: import('./githubUploadService.js').IGitHubUploadResult[] = [];
-					for (let i = 0; i < filesToUpload.length; i++) {
+					for (let i = 0; i < filesToProcess.length; i++) {
+						const file = filesToProcess[i];
+						const cached = this.uploadCache.get(file.key);
+						if (cached) {
+							uploadResults.push(cached);
+							wizard.setAttachmentUploadState(i, 'done');
+							this.logService.info(`[IssueFormService] Skipped re-upload (cached): ${file.name}`);
+							continue;
+						}
+
 						wizard.setAttachmentUploadState(i, 'uploading');
-						const file = filesToUpload[i];
 						const result = await this.githubUploadService.uploadViaMobileApi(
 							data.githubAccessToken, repoId, [file]
 						);
+						for (const r of result) {
+							this.uploadCache.set(file.key, r);
+						}
 						uploadResults.push(...result);
 						wizard.setAttachmentUploadState(i, 'done');
 					}
@@ -176,12 +192,12 @@ export class IssueFormService implements IIssueFormService {
 		if (url.length > 7500) {
 			const shouldWrite = await this.showClipboardDialog();
 			if (!shouldWrite) {
-				return;
+				return false;
 			}
 			url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
 		}
 
-		await this.openerService.open(URI.parse(url));
+		return this.openerService.open(URI.parse(url));
 	}
 
 	private dataUrlToBytes(dataUrl: string): Uint8Array | undefined {
