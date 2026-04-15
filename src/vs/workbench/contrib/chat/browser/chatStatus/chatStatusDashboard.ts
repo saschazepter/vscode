@@ -10,11 +10,11 @@ import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { renderLabelWithIcons } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { IAction, toAction, WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification } from '../../../../../base/common/actions.js';
-import { cancelOnDispose } from '../../../../../base/common/cancellation.js';
+import { CancellationToken, cancelOnDispose } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { safeIntl } from '../../../../../base/common/date.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { MutableDisposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { parseLinkedText } from '../../../../../base/common/linkedText.js';
 import { language } from '../../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
@@ -39,16 +39,12 @@ import { DomWidget } from '../../../../../platform/domWidget/browser/domWidget.j
 import { EditorResourceAccessor, SideBySideEditor } from '../../../../common/editor.js';
 import { IChatEntitlementService, ChatEntitlementService, ChatEntitlement, IQuotaSnapshot, getChatPlanName } from '../../../../services/chat/common/chatEntitlementService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
-import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { isNewUser } from './chatStatus.js';
 import { IChatStatusItemService, ChatStatusEntry } from './chatStatusItemService.js';
 import product from '../../../../../platform/product/common/product.js';
 import { contrastBorder, inputValidationErrorBorder, inputValidationInfoBorder, inputValidationWarningBorder, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { Color } from '../../../../../base/common/color.js';
-import { IViewsService } from '../../../../services/views/common/viewsService.js';
-import { ChatViewId } from '../chat.js';
 import { isCompletionsEnabled } from '../../../../../editor/common/services/completionsEnablement.js';
-import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
 
 const defaultChat = product.defaultChatAgent;
 
@@ -138,7 +134,6 @@ export class ChatStatusDashboard extends DomWidget {
 	private readonly dateFormatter = safeIntl.DateTimeFormat(language, { year: 'numeric', month: 'long', day: 'numeric' });
 	private readonly dateTimeFormatter = safeIntl.DateTimeFormat(language, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' });
 	private readonly quotaPercentageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 0 });
-	private readonly quotaOverageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 
 	constructor(
 		private readonly options: IChatStatusDashboardOptions | undefined,
@@ -153,11 +148,9 @@ export class ChatStatusDashboard extends DomWidget {
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ITextResourceConfigurationService private readonly textResourceConfigurationService: ITextResourceConfigurationService,
 		@IInlineCompletionsService private readonly inlineCompletionsService: IInlineCompletionsService,
-		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
-		@IViewsService private readonly viewService: IViewsService,
 	) {
 		super();
 
@@ -188,7 +181,7 @@ export class ChatStatusDashboard extends DomWidget {
 		const usageTab = tabBar.appendChild($('div.chat-status-tab.active'));
 		usageTab.textContent = localize('usageTab', "Usage");
 		const inlineSuggestionsTab = tabBar.appendChild($('div.chat-status-tab'));
-		inlineSuggestionsTab.textContent = localize('inlineSuggestionsTab', "Inline Suggestions");
+		inlineSuggestionsTab.textContent = localize('quickSettingsTab', "Quick Settings");
 
 		// --- Tab content containers ---
 		const usageContent = this.element.appendChild($('div.chat-status-tab-content.active'));
@@ -215,14 +208,13 @@ export class ChatStatusDashboard extends DomWidget {
 		this.renderSignupSection();
 	}
 
-	private renderUsageTab(container: HTMLElement, token: { readonly isCancellationRequested: boolean }): void {
+	private renderUsageTab(container: HTMLElement, token: CancellationToken): void {
 		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
 		if (chatQuota || completionsQuota || premiumChatQuota) {
 
-			const completionsQuotaIndicator = completionsQuota && (completionsQuota.total > 0 || completionsQuota.unlimited) ? this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), false) : undefined;
-			const chatQuotaIndicator = chatQuota && (chatQuota.total > 0 || chatQuota.unlimited) ? this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), false) : undefined;
-			const premiumChatLabel = premiumChatQuota?.overageEnabled && !premiumChatQuota?.unlimited ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
-			const premiumChatQuotaIndicator = premiumChatQuota && (premiumChatQuota.total > 0 || premiumChatQuota.unlimited) ? this.createQuotaIndicator(container, this._store, premiumChatQuota, premiumChatLabel, true) : undefined;
+			const completionsQuotaIndicator = completionsQuota && (completionsQuota.total > 0 || completionsQuota.unlimited) ? this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions")) : undefined;
+			const chatQuotaIndicator = chatQuota && (chatQuota.total > 0 || chatQuota.unlimited) ? this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages")) : undefined;
+			const premiumChatQuotaIndicator = premiumChatQuota && (premiumChatQuota.total > 0 || premiumChatQuota.unlimited) ? this.createQuotaIndicator(container, this._store, premiumChatQuota, localize('premiumChatsLabel', "Premium requests")) : undefined;
 
 			if (resetDate) {
 				container.appendChild($('div.description', undefined, localize('limitQuota', "Allowance resets {0}.", resetDateHasTime ? this.dateTimeFormatter.value.format(new Date(resetDate)) : this.dateFormatter.value.format(new Date(resetDate)))));
@@ -255,12 +247,21 @@ export class ChatStatusDashboard extends DomWidget {
 
 		// Anonymous Indicator
 		else if (this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed) {
-			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('completionsLabel', "Inline Suggestions"), false);
-			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('chatsLabel', "Chat messages"), false);
+			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('completionsLabel', "Inline Suggestions"));
+			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('chatsLabel', "Chat messages"));
 		}
 	}
 
 	private renderInlineSuggestionsTab(container: HTMLElement): void {
+		// Contributed status items (e.g. Workspace Index)
+		if (!this.options?.disableContributions) {
+			for (const item of this.chatStatusItemService.getEntries()) {
+				const { element, disposables } = this.renderContributedChatStatusItem(item);
+				container.appendChild(element);
+				this._store.add(disposables);
+			}
+		}
+
 		// Settings
 		if (!this.options?.disableInlineSuggestionsSettings) {
 			this.createSettings(container, this._store);
@@ -381,18 +382,6 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
-	private getDisplayNameForChatSessionType(chatSessionType: string): string | undefined {
-		if (chatSessionType === AgentSessionProviders.Local) {
-			return localize('chat.session.inProgress.local', "Local Agent");
-		} else if (chatSessionType === AgentSessionProviders.Background) {
-			return localize('chat.session.inProgress.background', "Background Agent");
-		} else if (chatSessionType === AgentSessionProviders.Cloud) {
-			return localize('chat.session.inProgress.cloud', "Cloud Agent");
-		} else {
-			return this.chatSessionsService.getChatSessionContribution(chatSessionType)?.displayName;
-		}
-	}
-
 	private canUseChat(): boolean {
 		if (!this.chatEntitlementService.sentiment.completed || this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted) {
 			return false; // chat not completed or not enabled
@@ -473,10 +462,9 @@ export class ChatStatusDashboard extends DomWidget {
 		this.hoverService.hideHover(true);
 	}
 
-	private createQuotaIndicator(container: HTMLElement, disposables: DisposableStore, quota: IQuotaSnapshot | string, label: string, supportsOverage: boolean): (quota: IQuotaSnapshot | string) => void {
+	private createQuotaIndicator(container: HTMLElement, disposables: DisposableStore, quota: IQuotaSnapshot | string, label: string): (quota: IQuotaSnapshot | string) => void {
 		const quotaValue = $('span.quota-value');
 		const quotaBit = $('div.quota-bit');
-		const overageLabel = $('span.overage-label');
 
 		const quotaIndicator = container.appendChild($('div.quota-indicator', undefined,
 			$('div.quota-label', undefined,
@@ -485,17 +473,8 @@ export class ChatStatusDashboard extends DomWidget {
 			),
 			$('div.quota-bar', undefined,
 				quotaBit
-			),
-			$('div.description', undefined,
-				overageLabel
 			)
 		));
-
-		if (supportsOverage && (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus)) {
-			const manageOverageButton = disposables.add(new Button(quotaIndicator, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
-			manageOverageButton.label = localize('enableAdditionalUsage', "Manage paid premium requests");
-			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
-		}
 
 		const update = (quota: IQuotaSnapshot | string) => {
 			quotaIndicator.classList.remove('error');
@@ -512,35 +491,16 @@ export class ChatStatusDashboard extends DomWidget {
 				quotaValue.textContent = quota;
 			} else if (quota.unlimited) {
 				quotaValue.textContent = localize('quotaUnlimited', "Included");
-			} else if (quota.overageCount) {
-				quotaValue.textContent = localize('quotaDisplayWithOverage', "+{0} requests", this.quotaOverageFormatter.value.format(quota.overageCount));
 			} else {
 				quotaValue.textContent = localize('quotaDisplay', "{0}%", this.quotaPercentageFormatter.value.format(usedPercentage));
 			}
 
 			quotaBit.style.width = `${usedPercentage}%`;
 
-			const overageEnabled = supportsOverage && typeof quota !== 'string' && quota?.overageEnabled;
-			if (usedPercentage >= 90 && !overageEnabled) {
+			if (usedPercentage >= 90) {
 				quotaIndicator.classList.add('error');
-			} else if (usedPercentage >= 75 && !overageEnabled) {
+			} else if (usedPercentage >= 75) {
 				quotaIndicator.classList.add('warning');
-			}
-
-			if (supportsOverage) {
-				if (typeof quota !== 'string' && quota.unlimited) {
-					overageLabel.textContent = '';
-				} else if (typeof quota !== 'string' && quota?.overageEnabled) {
-					overageLabel.replaceChildren(
-						localize('additionalUsageApprovedLine1', "Additional premium requests approved."),
-						$('br'),
-						localize('additionalUsageApprovedLine2', "You can continue after the included premium requests limit reaches 100%.")
-					);
-				} else {
-					overageLabel.textContent = localize('additionalUsageDisabled', "Additional paid premium requests disabled.");
-				}
-			} else {
-				overageLabel.textContent = '';
 			}
 		};
 

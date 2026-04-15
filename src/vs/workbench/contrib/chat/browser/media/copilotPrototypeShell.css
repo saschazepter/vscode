@@ -3,176 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.monaco-workbench.copilot-prototype-shell .editor-group-watermark,
-.monaco-workbench.copilot-prototype-shell .editor-group-watermark * {
-	display: none !important;
+/* Coin controller view pane in sidebar */
+.copilot-prototype-coin-view {
+	overflow: auto;
 }
 
-.monaco-workbench.copilot-prototype-shell .part.editor:empty,
-.monaco-workbench.copilot-prototype-shell .part.titlebar {
-	display: none !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items {
-	flex-grow: 1;
-	min-width: 0;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > .statusbar-item:not(#chat\.prototypeCoinStatusBarEntry) {
-	display: none;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items {
-	margin-left: auto;
-	justify-content: flex-end;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > .statusbar-item:not(#chat\.statusBarEntry):not(#chat\.prototypeDashboardEntry) {
-	display: none;
-}
-
-/* Hide the real Copilot status entry, show our prototype dashboard entry */
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.statusBarEntry {
-	display: none;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > #chat\.prototypeCoinStatusBarEntry {
-	margin-right: auto;
-	color: var(--vscode-editorWarning-foreground);
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > #chat\.prototypeCoinStatusBarEntry .codicon {
-	color: inherit;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.prototypeDashboardEntry .codicon-copilot-warning {
-	color: var(--vscode-editorWarning-foreground);
-}
-
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.prototypeDashboardEntry .codicon-copilot-error {
-	color: var(--vscode-editorError-foreground);
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar {
-	border-left: none;
-}
-
-/* Hide the aux bar composite title label and non-essential action buttons */
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-label {
-	display: none !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .composite-bar-container {
-	display: none !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item {
-	display: none !important;
-}
-
-/* Keep only close and maximize buttons, pushed to the right */
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-close),
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-screen-full),
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-screen-normal) {
-	display: flex !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions {
-	margin-left: auto !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-header,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-title-container,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .agent-sessions-container,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-welcome {
-	display: none !important;
-}
-
-/* Hide input toolbar chrome (pickers, plus, gear, overflow) but keep the send/execute button */
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-toolbar {
-	display: none !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-secondary-toolbar {
-	display: none !important;
-}
-
-/* Make the input a single compact line with send button inline */
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-container {
-	display: flex !important;
-	flex-direction: row !important;
-	align-items: center;
-	padding: 4px 6px !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-toolbars {
-	display: flex !important;
-	align-items: center;
-	justify-content: flex-end;
-	width: 100%;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-execute-toolbar {
-	display: flex !important;
-	margin-left: auto;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-editor-container {
-	flex: 1;
-	min-width: 0;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-body.chat-view-welcome-visible > .interactive-session {
-	display: flex !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-body.chat-view-welcome-visible > .chat-view-welcome {
-	display: none !important;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-viewpane,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-controls-container,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session {
-	height: 100%;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-controls-container {
-	justify-content: center;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session {
-	max-width: 700px;
-	width: 100%;
-	margin: 0 auto;
-	padding: 16px 20px;
-	box-sizing: border-box;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-input-part {
-	margin: 0;
-	margin-top: auto;
-	margin-bottom: auto;
-	width: 100%;
-}
-
-/* When there are messages, let the conversation flow naturally from the top */
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session:has(.interactive-list .monaco-list-row) {
-	justify-content: flex-start;
-}
-
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session:has(.interactive-list .monaco-list-row) .interactive-input-part {
-	margin-top: auto;
-	margin-bottom: 0;
+.copilot-prototype-coin-view .copilot-prototype-coin-widget {
+	padding: 8px;
 }
 
 .copilot-prototype-coin-widget {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: 6px;
 	padding: 8px;
+	font-size: 11px;
 }
 
 .monaco-hover .hover-contents:has(.copilot-prototype-coin-widget) {
@@ -181,7 +26,8 @@
 
 .copilot-prototype-coin-widget-title {
 	font-weight: 600;
-	margin-bottom: 4px;
+	font-size: 11px;
+	margin-bottom: 2px;
 }
 
 .copilot-prototype-coin-tabs {
@@ -212,22 +58,22 @@
 
 .copilot-prototype-coin-grid {
 	display: grid;
-	gap: 4px;
+	gap: 2px;
 	align-items: center;
 }
 
 .copilot-prototype-coin-grid-corner {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--vscode-descriptionForeground);
-	padding: 2px 6px 2px 0;
+	padding: 2px 4px 2px 0;
 	white-space: nowrap;
 }
 
 .copilot-prototype-coin-grid-col-header {
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 600;
 	text-align: center;
-	padding: 2px 4px;
+	padding: 2px 2px;
 	white-space: nowrap;
 }
 
@@ -243,8 +89,8 @@
 }
 
 .copilot-prototype-coin-grid-row-header {
-	font-size: 10px;
-	padding: 2px 6px 2px 0;
+	font-size: 9px;
+	padding: 2px 4px 2px 0;
 	white-space: nowrap;
 	color: var(--vscode-foreground);
 }
@@ -257,17 +103,24 @@
 }
 
 .copilot-prototype-coin-grid-cell .monaco-button {
-	min-width: 24px;
-	min-height: 20px;
+	min-width: 20px;
+	min-height: 18px;
 	width: 100%;
-	padding: 2px 4px;
+	padding: 1px 3px;
 	border-radius: 3px;
+	font-size: 10px;
 }
 
 .copilot-prototype-coin-grid-cell .monaco-button.red {
 	background-color: #d9534f !important;
 	border-color: #d9534f !important;
 	opacity: 0.7;
+}
+
+.copilot-prototype-coin-grid-cell .monaco-button.green {
+	background-color: #3d8b57 !important;
+	border-color: #3d8b57 !important;
+	opacity: 0.85;
 }
 
 /* ---- Dashboard (two-tab billing view — status bar tooltip) ---- */
@@ -477,6 +330,12 @@
 	margin-bottom: 10px;
 }
 
+.copilot-prototype-dashboard-cards > .copilot-prototype-dashboard-card:first-child:not(:last-child) {
+	margin-bottom: 4px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+}
+
 .copilot-prototype-dashboard-card {
 	flex: 1;
 	min-width: 0;
@@ -684,9 +543,11 @@
 	align-items: center;
 	gap: 8px;
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: normal;
 	color: var(--vscode-foreground);
 	margin-bottom: 6px;
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
 }
 
 .copilot-prototype-dashboard-section-included {
@@ -891,13 +752,44 @@
 	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
 }
 
+/* Workspace Index (mock) */
+.copilot-prototype-dashboard-ws-index {
+	padding: 6px;
+	border-radius: var(--vscode-cornerRadius-small);
+	border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
+	margin-bottom: 8px;
+}
+
+.copilot-prototype-dashboard-ws-index-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.copilot-prototype-dashboard-ws-index-label {
+	font-weight: 600;
+	font-size: 12px;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-dashboard-ws-index-status {
+	font-size: 11px;
+	color: var(--vscode-charts-green, #89d185);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
 .copilot-prototype-dashboard-settings-grid {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 0 8px;
 	margin-top: 8px;
-	padding-top: 8px;
-	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+}
+
+.copilot-prototype-dashboard-settings-grid:first-child {
+	margin-top: 0;
 }
 
 .copilot-prototype-dashboard-settings-col {
@@ -1192,6 +1084,11 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
+}
+
+.copilot-prototype-chat-banner-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
 }
 
 .copilot-prototype-chat-banner-percent {
