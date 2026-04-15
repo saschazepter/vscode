@@ -23,7 +23,6 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
 import { IIssueFormService } from '../common/issue.js';
@@ -45,7 +44,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
-		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IRecordingService private readonly recordingService: IRecordingService,
 		@IScreenshotService private readonly screenshotService: IScreenshotService,
 		@ILogService private readonly logService: ILogService,
@@ -92,7 +90,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Create the wizard — renders inside this container
 		this.wizard = new IssueReporterOverlay(
 			data,
-			this.layoutService,
 			this.recordingService.isSupported,
 			this.container,
 		);
@@ -118,41 +115,31 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire screenshot capture
 		this.inputDisposables.add(this.wizard.onDidRequestScreenshot(async () => {
 			try {
-				const fullDataUrl = await this.screenshotService.captureScreenshot();
-				if (!fullDataUrl || !this.wizard) {
+				// Hide the floating bar so it doesn't appear in the screenshot
+				this.wizard?.hideFloatingBar();
+
+				// Small delay to let the bar disappear before capture
+				await new Promise(r => setTimeout(r, 100));
+
+				const dataUrl = await this.screenshotService.captureScreenshot();
+
+				// Keep bar hidden for a moment — the annotation editor opens anyway
+				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
+
+				if (!dataUrl || !this.wizard) {
 					return;
 				}
 
-				const fullImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-					const img = new Image();
-					img.onload = () => resolve(img);
-					img.onerror = reject;
-					img.src = fullDataUrl;
+				const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+					const image = new Image();
+					image.onload = () => resolve(image);
+					image.onerror = reject;
+					image.src = dataUrl;
 				});
 
-				// Crop out the capture strip from the top
-				const stripHeight = this.wizard.getCaptureStripHeight();
-				const dpr = window.devicePixelRatio ?? 1;
-				const cropY = Math.round(stripHeight * dpr);
-				const cropHeight = fullImg.naturalHeight - cropY;
-
-				if (cropHeight <= 0) {
-					this.wizard.addScreenshot({ dataUrl: fullDataUrl, width: fullImg.naturalWidth, height: fullImg.naturalHeight });
-					return;
-				}
-
-				const canvas = document.createElement('canvas');
-				canvas.width = fullImg.naturalWidth;
-				canvas.height = cropHeight;
-				const ctx = canvas.getContext('2d');
-				if (!ctx) {
-					return;
-				}
-				ctx.drawImage(fullImg, 0, cropY, fullImg.naturalWidth, cropHeight, 0, 0, fullImg.naturalWidth, cropHeight);
-				const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-
-				this.wizard.addScreenshot({ dataUrl: croppedDataUrl, width: fullImg.naturalWidth, height: cropHeight });
+				this.wizard.addScreenshot({ dataUrl, width: img.naturalWidth, height: img.naturalHeight });
 			} catch (err) {
+				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
 				this.logService.error('[IssueReporterEditorPane] Screenshot failed:', err);
 			}
 		}));

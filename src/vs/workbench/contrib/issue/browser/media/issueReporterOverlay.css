@@ -6,19 +6,11 @@
 /*
  * Issue Reporter — Wizard UI (editor tab mode).
  * The wizard renders inside an editor pane container.
- * A capture strip is inserted as a body sibling on step 3.
- * layout.ts detects 'issue-reporter-active' on parent and subtracts sibling heights.
+ * A floating capture bar appears on step 3.
  */
 
 .spacer {
 	flex: 1;
-}
-
-/* Applied to body when the capture strip is visible (step 3) */
-body.issue-reporter-active {
-	display: flex !important;
-	flex-direction: column !important;
-	overflow: hidden !important;
 }
 
 /* ═══════════════════════════════════════════════
@@ -52,40 +44,58 @@ body.issue-reporter-active {
 	height: 100%;
 }
 
-/* ── Capture Strip (body sibling bar in tab mode, pushes workbench down like titlebar mode) ── */
-.wizard-capture-strip {
-	flex-shrink: 0;
+/* ── Floating Capture Bar (debug toolbar style) ── */
+.wizard-floating-bar {
+	position: fixed;
+	top: 35px;
+	right: 30%;
+	z-index: 2520;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px 4px 2px;
+	border-radius: var(--vscode-cornerRadius-large, 6px);
+	background: var(--vscode-debugToolBar-background, var(--vscode-editor-background, #1e1e1e));
+	border: 1px solid var(--vscode-debugToolBar-border, transparent);
+	box-shadow: var(--vscode-shadow-lg, 0 2px 8px rgba(0, 0, 0, 0.4));
+	-webkit-app-region: no-drag;
+	user-select: none;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, sans-serif;
+	font-size: 13px;
+	color: var(--vscode-foreground, #ccc);
+}
+
+.wizard-floating-drag {
+	cursor: grab;
+	width: 20px;
+	opacity: 0.5;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: 10px;
-	padding: 6px 16px;
-	background: var(--vscode-titleBar-activeBackground, #181818);
-	color: var(--vscode-titleBar-activeForeground, #ccc);
-	-webkit-app-region: drag;
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, sans-serif;
-	font-size: 13px;
 }
 
-.wizard-capture-strip > * {
-	-webkit-app-region: no-drag;
+.wizard-floating-drag.dragged {
+	cursor: grabbing;
 }
 
-.wizard-capture-strip-group {
+.wizard-floating-bar .wizard-nav-btn {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 10px;
+	font-size: 12px;
+	line-height: 1;
+}
+
+.wizard-floating-bar .wizard-nav-btn > * {
 	display: flex;
 	align-items: center;
-	gap: 4px;
 }
 
-.wizard-capture-strip-delay-label {
-	font-size: 12px;
-	opacity: 0.7;
-	white-space: nowrap;
-}
-
-.wizard-capture-strip-delay {
-	height: 22px;
-	padding: 0 4px;
+.wizard-floating-delay {
+	height: 24px;
+	padding: 0 6px;
 	border: 1px solid var(--vscode-input-border, #555);
 	border-radius: 4px;
 	background: var(--vscode-input-background, #3c3c3c);
@@ -95,26 +105,10 @@ body.issue-reporter-active {
 	outline: none;
 }
 
-.wizard-capture-strip .wizard-nav-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-}
-
-.wizard-capture-strip .wizard-nav-btn .codicon {
-	line-height: 1;
-}
-
-/* Dim other strip controls during recording */
-.wizard-capture-strip.wizard-strip-recording .wizard-capture-strip-group,
-.wizard-capture-strip.wizard-strip-recording .wizard-capture-btn {
-	opacity: 0.3;
-	pointer-events: none;
-}
-
-.wizard-capture-strip.wizard-strip-recording .wizard-record-btn {
-	opacity: 1;
-	pointer-events: auto;
+/* Recording state in floating bar */
+.wizard-floating-bar .wizard-nav-btn.recording {
+	color: var(--vscode-testing-iconErrored, #f14c4c);
+	animation: recording-pulse 1.5s ease-in-out infinite;
 }
 
 /* ── Toolbar ── */

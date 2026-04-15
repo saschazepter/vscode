@@ -11,7 +11,6 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
 import { RecordingState } from './recordingService.js';
@@ -102,7 +101,6 @@ export class IssueReporterOverlay {
 
 	constructor(
 		private readonly data: IssueReporterData,
-		private readonly layoutService: IWorkbenchLayoutService,
 		private readonly recordingSupported: boolean = false,
 		private readonly container: HTMLElement,
 	) {
@@ -365,24 +363,24 @@ export class IssueReporterOverlay {
 	private captureStripRecordElapsed: HTMLElement | undefined;
 
 	private createFloatingCaptureBar(): void {
-		const workbenchContainer = this.layoutService.mainContainer;
-		const targetWindow = getWindow(workbenchContainer);
+		const targetWindow = getWindow(this.container);
 		const body = targetWindow.document.body;
 
-		this.floatingBar = $('div.wizard-capture-strip');
+		this.floatingBar = $('div.wizard-floating-bar');
+
+		// Drag handle
+		const dragArea = append(this.floatingBar, $('div.wizard-floating-drag'));
+		dragArea.appendChild(renderIcon(Codicon.gripper));
 
 		// Delay dropdown
-		const delayGroup = append(this.floatingBar, $('div.wizard-capture-strip-group'));
-		const delayLabel = append(delayGroup, $('label.wizard-capture-strip-delay-label'));
-		delayLabel.textContent = localize('delay', "Delay:");
-		const delaySelect = append(delayGroup, $('select.wizard-capture-strip-delay')) as HTMLSelectElement;
-		const delayOptions = [
+		const delaySelect = append(this.floatingBar, $('select.wizard-floating-delay')) as HTMLSelectElement;
+		delaySelect.title = localize('captureDelay', "Capture delay");
+		for (const opt of [
 			{ label: localize('noDelay', "No delay"), value: 0 },
-			{ label: localize('threeSeconds', "3 seconds"), value: 3 },
-			{ label: localize('fiveSeconds', "5 seconds"), value: 5 },
-			{ label: localize('tenSeconds', "10 seconds"), value: 10 },
-		];
-		for (const opt of delayOptions) {
+			{ label: '3s', value: 3 },
+			{ label: '5s', value: 5 },
+			{ label: '10s', value: 10 },
+		]) {
 			const option = delaySelect.ownerDocument.createElement('option');
 			option.value = String(opt.value);
 			option.textContent = opt.label;
@@ -443,17 +441,45 @@ export class IssueReporterOverlay {
 			}));
 		}
 
-		// Insert as body sibling before the workbench (like titlebar mode)
-		// and use the same layout mechanism to push the workbench down
-		body.insertBefore(this.floatingBar, workbenchContainer);
+		body.appendChild(this.floatingBar);
 
 		// Only visible on step 3
-		this.updateCaptureStripVisibility();
+		this.floatingBar.style.display = this.currentStep === WizardStep.Screenshots ? '' : 'none';
+
+		// Dragging
+		let dragStartX = 0;
+		let dragStartY = 0;
+		let barStartX = 0;
+		let barStartY = 0;
+
+		const onPointerMove = (e: PointerEvent) => {
+			const dx = e.clientX - dragStartX;
+			const dy = e.clientY - dragStartY;
+			this.floatingBar!.style.left = `${barStartX + dx}px`;
+			this.floatingBar!.style.top = `${barStartY + dy}px`;
+			this.floatingBar!.style.right = 'auto';
+		};
+
+		const onPointerUp = () => {
+			dragArea.classList.remove('dragged');
+			targetWindow.document.removeEventListener('pointermove', onPointerMove);
+			targetWindow.document.removeEventListener('pointerup', onPointerUp);
+		};
+
+		this.disposables.add(addDisposableListener(dragArea, EventType.POINTER_DOWN, (e: PointerEvent) => {
+			e.preventDefault();
+			dragArea.classList.add('dragged');
+			dragStartX = e.clientX;
+			dragStartY = e.clientY;
+			const rect = this.floatingBar!.getBoundingClientRect();
+			barStartX = rect.left;
+			barStartY = rect.top;
+			targetWindow.document.addEventListener('pointermove', onPointerMove);
+			targetWindow.document.addEventListener('pointerup', onPointerUp);
+		}));
 
 		this.disposables.add(toDisposable(() => {
 			this.floatingBar?.remove();
-			body.classList.remove('issue-reporter-active');
-			this.layoutService.layout();
 		}));
 	}
 
@@ -461,14 +487,7 @@ export class IssueReporterOverlay {
 		if (!this.floatingBar) {
 			return;
 		}
-		const workbenchContainer = this.layoutService.mainContainer;
-		const targetWindow = getWindow(workbenchContainer);
-		const body = targetWindow.document.body;
-		const shouldShow = this.currentStep === WizardStep.Screenshots;
-
-		this.floatingBar.style.display = shouldShow ? '' : 'none';
-		body.classList.toggle('issue-reporter-active', shouldShow);
-		this.layoutService.layout();
+		this.floatingBar.style.display = this.currentStep === WizardStep.Screenshots ? '' : 'none';
 	}
 
 	// ── Step 4: Review & Submit ──
@@ -1023,8 +1042,16 @@ export class IssueReporterOverlay {
 		return this.wizardPanel;
 	}
 
-	getCaptureStripHeight(): number {
-		return this.floatingBar?.offsetHeight ?? 0;
+	hideFloatingBar(): void {
+		if (this.floatingBar) {
+			this.floatingBar.style.display = 'none';
+		}
+	}
+
+	showFloatingBar(): void {
+		if (this.floatingBar && this.currentStep === WizardStep.Screenshots) {
+			this.floatingBar.style.display = '';
+		}
 	}
 
 	hasUnsavedChanges(): boolean {
@@ -1095,10 +1122,13 @@ export class IssueReporterOverlay {
 				}, 1000);
 			}
 
-			// Update capture strip record button
-			if (this.captureStripRecordBtn && this.captureStripRecordLbl) {
+			// Update floating bar record button
+			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.classList.add('recording');
-				this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
+				this.captureStripRecordBtn.title = localize('stopRecording', "Stop recording");
+				if (this.captureStripRecordLbl) {
+					this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
+				}
 				if (this.captureStripRecordElapsed) {
 					this.captureStripRecordElapsed.style.display = '';
 					this.captureStripRecordElapsed.textContent = '0:00';
@@ -1121,10 +1151,13 @@ export class IssueReporterOverlay {
 				this.recordingElapsedTimer = undefined;
 			}
 
-			// Update capture strip record button
-			if (this.captureStripRecordBtn && this.captureStripRecordLbl) {
+			// Update floating bar record button
+			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.classList.remove('recording');
-				this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+				this.captureStripRecordBtn.title = localize('recordVideo', "Record video");
+				if (this.captureStripRecordLbl) {
+					this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+				}
 				if (this.captureStripRecordElapsed) {
 					this.captureStripRecordElapsed.style.display = 'none';
 				}
