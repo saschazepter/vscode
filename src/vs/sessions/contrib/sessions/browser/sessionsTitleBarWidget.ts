@@ -174,11 +174,6 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 			if (repoLabel) {
 				const detailsEl = $('span.agent-sessions-titlebar-details');
 
-				const separator1 = $('span.agent-sessions-titlebar-separator');
-				separator1.textContent = '\u00B7';
-				separator1.setAttribute('aria-hidden', 'true');
-				detailsEl.appendChild(separator1);
-
 				const repoEl = $('span.agent-sessions-titlebar-repo');
 				repoEl.textContent = repoDetailLabel ? `${repoLabel} (${repoDetailLabel})` : repoLabel;
 				detailsEl.appendChild(repoEl);
