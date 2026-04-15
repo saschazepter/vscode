@@ -255,7 +255,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	let extHostInspector = null;
 	/** @type {{ usedSize: number, totalSize: number } | null} */
 	let extHostHeapBefore = null;
-	/** @type {Omit<RunMetrics, 'majorGCs' | 'minorGCs' | 'gcDurationMs' | 'longTaskCount' | 'timeToUIUpdated' | 'timeToFirstToken' | 'timeToComplete' | 'instructionCollectionTime' | 'agentInvokeTime' | 'hasInternalMarks' | 'internalFirstToken'> | null} */
+	/** @type {Omit<RunMetrics, 'majorGCs' | 'minorGCs' | 'gcDurationMs' | 'longTaskCount' | 'longAnimationFrameCount' | 'longAnimationFrameTotalMs' | 'timeToUIUpdated' | 'timeToFirstToken' | 'timeToComplete' | 'instructionCollectionTime' | 'agentInvokeTime' | 'hasInternalMarks' | 'internalFirstToken'> | null} */
 	let partialMetrics = null;
 	// Timing vars hoisted for access in post-close trace parsing
 	let submitTime = 0;
@@ -364,26 +364,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		// Start CPU profiler to capture call stacks during the interaction
 		await cdp.send('Profiler.enable');
 		await cdp.send('Profiler.start');
-
-		// Install a PerformanceObserver for Long Animation Frames (LoAF)
-		// to capture frame-level jank that longTaskCount alone misses.
-		await window.evaluate(() => {
-			// @ts-ignore
-			globalThis._chatLoAFEntries = [];
-			try {
-				// @ts-ignore
-				globalThis._chatLoAFObserver = new PerformanceObserver((list) => {
-					for (const entry of list.getEntries()) {
-						// @ts-ignore
-						globalThis._chatLoAFEntries.push({ duration: entry.duration, startTime: entry.startTime });
-					}
-				});
-				// @ts-ignore
-				globalThis._chatLoAFObserver.observe({ type: 'long-animation-frame', buffered: false });
-			} catch {
-				// long-animation-frame not supported in this build — metrics will be 0
-			}
-		});
 
 		// Submit
 		const completionsBefore = mockServer.completionCount();
@@ -505,21 +485,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			console.log(`  [debug] Client-side timing: firstResponse=${firstResponseTime - submitTime}ms, complete=${responseCompleteTime - submitTime}ms`);
 		}
 
-		// Collect Long Animation Frame entries and tear down the observer
-		const loafData = await window.evaluate(() => {
-			// @ts-ignore
-			if (globalThis._chatLoAFObserver) { globalThis._chatLoAFObserver.disconnect(); }
-			// @ts-ignore
-			const entries = globalThis._chatLoAFEntries ?? [];
-			// @ts-ignore
-			delete globalThis._chatLoAFEntries;
-			// @ts-ignore
-			delete globalThis._chatLoAFObserver;
-			const count = entries.length;
-			const totalMs = entries.reduce((/** @type {number} */ sum, /** @type {any} */ e) => sum + e.duration, 0);
-			return { count, totalMs };
-		});
-
 		const heapAfter = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
 		const metricsAfter = await cdp.send('Performance.getMetrics');
 
@@ -617,8 +582,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			layoutCount: getMetric(metricsAfter, 'LayoutCount') - getMetric(metricsBefore, 'LayoutCount'),
 			recalcStyleCount: getMetric(metricsAfter, 'RecalcStyleCount') - getMetric(metricsBefore, 'RecalcStyleCount'),
 			forcedReflowCount: getMetric(metricsAfter, 'ForcedStyleRecalcs') - getMetric(metricsBefore, 'ForcedStyleRecalcs'),
-			longAnimationFrameCount: loafData.count,
-			longAnimationFrameTotalMs: Math.round(loafData.totalMs * 100) / 100,
 			frameCount: getMetric(metricsAfter, 'FrameCount') - getMetric(metricsBefore, 'FrameCount'),
 			compositeLayers: getMetric(metricsAfter, 'CompositeLayers') - getMetric(metricsBefore, 'CompositeLayers'),
 			paintCount: getMetric(metricsAfter, 'PaintCount') - getMetric(metricsBefore, 'PaintCount'),
@@ -693,6 +656,30 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		if (event.name === 'RunTask' && event.dur && event.dur > 50_000) { longTaskCount++; }
 	}
 
+	// Parse Long Animation Frame (LoAF) events from devtools.timeline trace.
+	// AnimationFrame events use async flow pairs (ph:'s' start, ph:'f' finish)
+	// with matching ids. Compute duration from each s→f pair.
+	let longAnimationFrameCount = 0;
+	let longAnimationFrameTotalMs = 0;
+	{
+		/** @type {Map<number, number>} */
+		const frameStarts = new Map();
+		for (const event of traceEvents) {
+			if (event.cat === 'devtools.timeline' && event.name === 'AnimationFrame') {
+				if (event.ph === 's') {
+					frameStarts.set(event.id, event.ts);
+				} else if (event.ph === 'f' && frameStarts.has(event.id)) {
+					const durationMs = (event.ts - frameStarts.get(event.id)) / 1000;
+					frameStarts.delete(event.id);
+					if (durationMs > 50) {
+						longAnimationFrameCount++;
+						longAnimationFrameTotalMs += durationMs;
+					}
+				}
+			}
+		}
+	}
+
 	return {
 		...partialMetrics,
 		timeToUIUpdated, timeToFirstToken, timeToComplete, instructionCollectionTime, agentInvokeTime,
@@ -701,6 +688,8 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		majorGCs, minorGCs,
 		gcDurationMs: Math.round(gcDurationMs * 100) / 100,
 		longTaskCount,
+		longAnimationFrameCount,
+		longAnimationFrameTotalMs: Math.round(longAnimationFrameTotalMs * 100) / 100,
 	};
 }
 
@@ -970,6 +959,7 @@ function generateCISummary(jsonReport, baseline, opts) {
 			else if (v.verdict === 'improved') { verdictDisplay = '\u2B06\uFE0F improved'; }
 			else if (v.verdict === 'ok') { verdictDisplay = '\u2705 ok'; }
 			else if (v.verdict === 'noise') { verdictDisplay = '\uD83C\uDF2B\uFE0F noise'; }
+			else if (v.verdict === 'info') { verdictDisplay = '\u2139\uFE0F'; }
 			lines.push(`| ${v.metric} | ${v.basStr} | ${v.curStr} | ${pct} | ${v.pValue} | ${verdictDisplay} |`);
 		}
 		lines.push('');

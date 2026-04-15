@@ -55,6 +55,7 @@ function parseArgs() {
 		iterations: CONFIG.iterations ?? 3,
 		messages: CONFIG.messages ?? 5,
 		verbose: false,
+		ci: false,
 		/** @type {string | undefined} */
 		build: undefined,
 		leakThresholdMB: CONFIG.leakThresholdMB ?? 5,
@@ -64,6 +65,7 @@ function parseArgs() {
 			case '--iterations': opts.iterations = parseInt(args[++i], 10); break;
 			case '--messages': case '-n': opts.messages = parseInt(args[++i], 10); break;
 			case '--verbose': opts.verbose = true; break;
+			case '--ci': opts.ci = true; break;
 			case '--build': case '-b': opts.build = args[++i]; break;
 			case '--threshold': opts.leakThresholdMB = parseFloat(args[++i]); break;
 			case '--help': case '-h':
@@ -73,6 +75,7 @@ function parseArgs() {
 					'Options:',
 					'  --iterations <n>    Number of open→work→reset cycles (default: 3)',
 					'  --messages <n>      Messages to send per iteration (default: 5)',
+					'  --ci                CI mode: write Markdown summary to ci-summary.md',
 					'  --build <path|ver>  Path to VS Code build or version to download',
 					'  --threshold <MB>    Max total residual heap growth in MB (default: 5)',
 					'  --verbose           Print per-step details',
@@ -413,8 +416,51 @@ async function main() {
 		console.log(`[chat-simulation] No leak detected (${result.totalResidualMB}MB residual < ${opts.leakThresholdMB}MB threshold)`);
 	}
 
+	if (opts.ci) {
+		const summary = generateLeakCISummary(result, opts);
+		const summaryPath = path.join(DATA_DIR, 'ci-summary-leak.md');
+		fs.writeFileSync(summaryPath, summary);
+		console.log(`[chat-simulation] CI summary written to ${summaryPath}`);
+	}
+
 	await mockServer.close();
 	process.exit(leaked ? 1 : 0);
+}
+
+/**
+ * Generate a Markdown summary for CI, matching the perf script pattern.
+ * @param {{ baseline: { heapMB: number, domNodes: number }, final: { heapMB: number, domNodes: number }, totalResidualMB: number, totalResidualNodes: number, iterations: { beforeHeapMB: number, afterHeapMB: number, deltaHeapMB: number, beforeDomNodes: number, afterDomNodes: number, deltaDomNodes: number }[] }} result
+ * @param {{ leakThresholdMB: number, iterations: number }} opts
+ */
+function generateLeakCISummary(result, opts) {
+	const leaked = result.totalResidualMB > opts.leakThresholdMB;
+	const verdict = leaked ? '\u274C **LEAK DETECTED**' : '\u2705 **No leak detected**';
+	const lines = [];
+	lines.push('## Memory Leak Check');
+	lines.push('');
+	lines.push('| | |');
+	lines.push('|---|---|');
+	lines.push(`| **Verdict** | ${verdict} |`);
+	lines.push(`| **Threshold** | ${opts.leakThresholdMB} MB |`);
+	lines.push(`| **Iterations** | ${opts.iterations} (+ 1 warmup) |`);
+	lines.push(`| **Scenarios per iteration** | ${getScenarioIds().length} |`);
+	lines.push('');
+	lines.push('| Phase | Heap (MB) | DOM Nodes |');
+	lines.push('|-------|----------:|----------:|');
+	lines.push(`| Baseline (post-warmup) | ${result.baseline.heapMB} | ${result.baseline.domNodes} |`);
+	for (let i = 0; i < result.iterations.length; i++) {
+		const it = result.iterations[i];
+		const sign = it.deltaHeapMB > 0 ? '+' : '';
+		const domSign = it.deltaDomNodes > 0 ? '+' : '';
+		lines.push(`| Iteration ${i + 1} | ${it.afterHeapMB} (${sign}${it.deltaHeapMB}) | ${it.afterDomNodes} (${domSign}${it.deltaDomNodes}) |`);
+	}
+	lines.push(`| **Final** | **${result.final.heapMB}** | **${result.final.domNodes}** |`);
+	lines.push('');
+	const sign = result.totalResidualMB > 0 ? '+' : '';
+	const domSign = result.totalResidualNodes > 0 ? '+' : '';
+	lines.push(`**Total residual growth:** ${sign}${result.totalResidualMB} MB heap, ${domSign}${result.totalResidualNodes} DOM nodes`);
+	lines.push('');
+	return lines.join('\n');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
