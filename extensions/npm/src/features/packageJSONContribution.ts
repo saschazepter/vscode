@@ -330,10 +330,11 @@ export class PackageJSONContribution implements IJSONContribution {
 		if (stdout) {
 			try {
 				const content = JSON.parse(stdout);
+				const version = content['version'];
 				return {
 					description: content['description'],
 					version: content['version'],
-					time: content['time']?.[content['version']],
+					time: version ? content['time']?.[version] : undefined,
 					homepage: content['homepage']
 				};
 			} catch (e) {
