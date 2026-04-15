@@ -1305,7 +1305,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				commandDetection!,
 				executionOptions.persistentSession
 			);
-			// NOTE: The shell integration banner decision is deferred to after command execution
+			// The shell integration banner decision is deferred to after command execution
 			// completes (see below). This gives SI time to arrive — on Windows PowerShell 5.1,
 			// cold-loading PSReadLine can push `HasRichCommandDetection` past the initial wait
 			// timeout, and checking here would incorrectly show the banner.
@@ -1684,9 +1684,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		}
 
 		// Re-check shell integration quality now that command execution has completed.
-		// By this point SI has had enough time to arrive even on slow shells (e.g. Windows
-		// PowerShell 5.1 + accessibility mode with cold-loading PSReadLine). Only set the
-		// banner if toolResultMessage hasn't already been set (e.g. by the alt-buffer path).
+		// Only set the banner if toolResultMessage hasn't already been set (e.g. by the alt-buffer path).
 		this._terminalToolCreator.refreshShellIntegrationQuality(toolTerminal);
 		this._logService.info(`RunInTerminalTool: shellIntegrationQuality=${toolTerminal.shellIntegrationQuality} at banner decision time`);
 		if (!toolResultMessage && toolTerminal.shellIntegrationQuality === ShellIntegrationQuality.None) {
