@@ -378,29 +378,26 @@ jobs:
           path: leak-results
         continue-on-error: true
 
-      - name: Write job summary
+      - name: Generate unified summary
         run: |
-          # Merge ci-summary.md files from all groups (they may be in nested dirs)
-          SUMMARIES=$(find perf-results -name 'ci-summary.md' 2>/dev/null)
-          if [[ -n "$SUMMARIES" ]]; then
-            for f in $SUMMARIES; do
-              cat "$f" >> "$GITHUB_STEP_SUMMARY"
-              echo "" >> "$GITHUB_STEP_SUMMARY"
-            done
-          else
-            echo "⚠️ No summary files generated. Check perf-output.log artifacts." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
+          LEAK_ARG=""
           if [[ -f leak-results/.chat-simulation-data/ci-summary-leak.md ]]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            cat leak-results/.chat-simulation-data/ci-summary-leak.md >> "$GITHUB_STEP_SUMMARY"
+            LEAK_ARG="--leak-summary leak-results/.chat-simulation-data/ci-summary-leak.md"
           fi
 
-      - name: Zip diagnostic outputs
+          node scripts/chat-simulation/merge-ci-summary.js \
+            --results-dir perf-results \
+            --output ci-summary.md \
+            $LEAK_ARG
+
+          cat ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect diagnostic outputs
         run: |
           mkdir -p collected
+          cp ci-summary.md collected/
 
-          # Collect perf logs from all groups (preserve group name to avoid overwrite)
+          # Collect perf logs from all groups
           for f in perf-results/perf-results-*/perf-output.log; do
             GROUP=$(basename "$(dirname "$f")")
             cp "$f" "collected/perf-output-${GROUP}.log" 2>/dev/null || true
@@ -426,12 +423,22 @@ jobs:
             cp leak-results/.chat-simulation-data/chat-simulation-leak-results.json collected/
           fi
 
-      - name: Upload combined artifacts
+      - name: Upload results
         uses: actions/upload-artifact@v7
         with:
-          name: chat-perf-${{ env.BASELINE_COMMIT || 'default-baseline' }}-vs-${{ env.TEST_COMMIT }}
+          name: chat-perf-results
           path: collected/
           retention-days: 30
+
+      - name: Delete intermediate artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            build-output
+            perf-results-*
+            leak-results
+          failOnError: false
 
       - name: Fail on regression
         if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true && needs.leak-check.result == 'failure')

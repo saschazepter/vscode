@@ -158,19 +158,6 @@ function exceedsThreshold(threshold, change, absoluteDelta) {
 	return change > threshold.value;
 }
 
-/**
- * Format a threshold for display.
- * @param {MetricThreshold} threshold
- * @param {string} unit
- * @returns {string}
- */
-function formatThreshold(threshold, unit) {
-	if (threshold.type === 'absolute') {
-		return `${threshold.value}${unit}`;
-	}
-	return `${(threshold.value * 100).toFixed(0)}%`;
-}
-
 // -- Metrics -----------------------------------------------------------------
 
 /**
@@ -669,7 +656,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 				if (event.ph === 's') {
 					frameStarts.set(event.id, event.ts);
 				} else if (event.ph === 'f' && frameStarts.has(event.id)) {
-					const durationMs = (event.ts - frameStarts.get(event.id)) / 1000;
+					const durationMs = (event.ts - /** @type {number} */(frameStarts.get(event.id))) / 1000;
 					frameStarts.delete(event.id);
 					if (durationMs > 50) {
 						longAnimationFrameCount++;
@@ -979,7 +966,8 @@ function generateCISummary(jsonReport, baseline, opts) {
 		const runs = current.rawRuns || [];
 		for (let i = 0; i < runs.length; i++) {
 			const r = runs[i];
-			lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs ?? '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+			const round2 = (/** @type {number} */ v) => Math.round(v * 100) / 100;
+			lines.push(`| ${i + 1} | ${round2(r.timeToFirstToken)} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs !== null && r.longAnimationFrameTotalMs !== undefined ? round2(r.longAnimationFrameTotalMs) : '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
 		}
 		lines.push('');
 	}
@@ -994,7 +982,8 @@ function generateCISummary(jsonReport, baseline, opts) {
 			const runs = base.rawRuns || [];
 			for (let i = 0; i < runs.length; i++) {
 				const r = runs[i];
-				lines.push(`| ${i + 1} | ${r.timeToFirstToken} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs ?? '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
+				const round2 = (/** @type {number} */ v) => Math.round(v * 100) / 100;
+				lines.push(`| ${i + 1} | ${round2(r.timeToFirstToken)} | ${r.timeToComplete} | ${r.layoutCount} | ${r.recalcStyleCount} | ${r.longAnimationFrameCount ?? '-'} | ${r.longAnimationFrameTotalMs !== null && r.longAnimationFrameTotalMs !== undefined ? round2(r.longAnimationFrameTotalMs) : '-'} | ${r.frameCount ?? '-'} | ${r.heapDelta} | ${r.hasInternalMarks ? 'yes' : 'no'} |`);
 			}
 			lines.push('');
 		}

@@ -636,15 +636,6 @@ function countCompletedModelTurns(messages) {
 }
 
 /**
- * Count user messages in the conversation (including the initial one).
- * @param {any[]} messages
- * @returns {number}
- */
-function countUserMessages(messages) {
-	return messages.filter((/** @type {any} */ m) => m.role === 'user').length;
-}
-
-/**
  * Compute the model-turn index for the current request given the scenario's
  * turn list. User turns are skipped (they're handled by the test harness)
  * and do not consume a model turn index.
