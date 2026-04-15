@@ -2149,6 +2149,11 @@
 				"category": "Copilot CLI"
 			},
 			{
+				"command": "agents.github.copilot.cli.deleteSessions",
+				"title": "%github.copilot.command.deleteAgentSession%",
+				"category": "Copilot CLI"
+			},
+			{
 				"command": "github.copilot.cli.sessions.resumeInTerminal",
 				"title": "%github.copilot.command.cli.sessions.resumeInTerminal%",
 				"icon": "$(terminal)",
