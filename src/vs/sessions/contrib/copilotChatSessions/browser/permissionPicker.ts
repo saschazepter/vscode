@@ -193,7 +193,6 @@ export class PermissionPicker extends Disposable {
 			undefined,
 			[],
 			{
-				getAriaLabel: (item) => item.label ?? '',
 				getWidgetAriaLabel: () => localize('permissionPicker.ariaLabel', "Permission Picker"),
 			},
 			listOptions,
