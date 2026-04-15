@@ -381,7 +381,6 @@
 	-webkit-background-clip: text;
 	-webkit-text-fill-color: transparent;
 	animation: session-title-shimmer 3s linear infinite;
-	will-change: background-position;
 }
 
 @media (prefers-reduced-motion: reduce) {
