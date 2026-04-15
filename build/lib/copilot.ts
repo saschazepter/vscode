@@ -42,6 +42,33 @@ function toNodePlatformArch(platform: string, arch: string): { nodePlatform: str
 }
 
 /**
+ * Removes all subdirectories under `parentDir` that do not match
+ * `targetPlatformArch` (e.g. `win32-x64`). Non-directory entries are left
+ * untouched. If `parentDir` does not exist the function is a no-op.
+ *
+ * Used to strip prebuilt native binary directories for platforms other than
+ * the current build target before packaging.
+ *
+ * @param parentDir Absolute path to the parent directory whose children should
+ *   be pruned (e.g. `…/sdk/prebuilds` or `…/sdk/ripgrep/bin`).
+ * @param targetPlatformArch The sole subdirectory name to keep, in the form
+ *   `{process.platform}-{process.arch}` (e.g. `win32-x64`, `darwin-arm64`).
+ */
+function pruneNonTargetPlatformDirs(parentDir: string, targetPlatformArch: string): void {
+	if (!fs.existsSync(parentDir)) {
+		return;
+	}
+
+	for (const entry of fs.readdirSync(parentDir, { withFileTypes: true })) {
+		if (!entry.isDirectory() || entry.name === targetPlatformArch) {
+			continue;
+		}
+
+		fs.rmSync(path.join(parentDir, entry.name), { recursive: true, force: true });
+	}
+}
+
+/**
  * Returns a glob filter that strips @github/copilot platform packages
  * for architectures other than the build target.
  *
@@ -110,7 +137,8 @@ export function copyCopilotNativeDeps(platform: string, arch: string, nodeModule
 }
 
 /**
- * Materializes copilot CLI shims directly inside the built-in copilot extension.
+ * Materializes copilot CLI shims directly inside the built-in copilot extension
+ * and removes any prebuilt native binaries that belong to other platforms.
  *
  * This is used when copilot is shipped as a built-in extension so startup does
  * not need to create shims at runtime. The destination layout matches the
@@ -119,8 +147,21 @@ export function copyCopilotNativeDeps(platform: string, arch: string, nodeModule
  * - ripgrep:  node_modules/@github/copilot/sdk/ripgrep/bin/{platform-arch}
  * - marker:   node_modules/@github/copilot/shims.txt
  *
+ * Before copying the target-platform binaries, any existing subdirectories
+ * under `sdk/prebuilds` and `sdk/ripgrep/bin` that do not match the target
+ * platform-arch are pruned via {@link pruneNonTargetPlatformDirs}. This
+ * ensures the final build only ships native binaries for the requested
+ * platform (e.g. only `win32-x64` for a Windows x64 build).
+ *
  * Failures throw to fail the build because built-in packaging must guarantee
  * these artifacts are present.
+ *
+ * @param platform The VS Code build platform (e.g. `win32`, `darwin`, `linux`, `alpine`).
+ * @param arch The VS Code build architecture (e.g. `x64`, `arm64`, `armhf`).
+ * @param builtInCopilotExtensionDir Absolute path to the built-in copilot
+ *   extension directory inside the packaged app.
+ * @param appNodeModulesDir Absolute path to the app-level `node_modules`
+ *   directory, used as the source for `node-pty` and `@vscode/ripgrep` binaries.
  */
 export function prepareBuiltInCopilotExtensionShims(platform: string, arch: string, builtInCopilotExtensionDir: string, appNodeModulesDir: string): void {
 	const { nodePlatform, nodeArch } = toNodePlatformArch(platform, arch);
@@ -129,6 +170,7 @@ export function prepareBuiltInCopilotExtensionShims(platform: string, arch: stri
 	const extensionNodeModules = path.join(builtInCopilotExtensionDir, 'node_modules');
 	const copilotBase = path.join(extensionNodeModules, '@github', 'copilot');
 	const copilotSdkBase = path.join(copilotBase, 'sdk');
+	const copilotSdkPrebuildsDir = path.join(copilotSdkBase, 'prebuilds');
 	if (!fs.existsSync(copilotSdkBase)) {
 		throw new Error(`[prepareBuiltInCopilotExtensionShims] Copilot SDK directory not found at ${copilotSdkBase}`);
 	}
@@ -148,6 +190,8 @@ export function prepareBuiltInCopilotExtensionShims(platform: string, arch: stri
 	const shimMarkerPath = path.join(copilotBase, 'shims.txt');
 
 	try {
+		pruneNonTargetPlatformDirs(copilotSdkPrebuildsDir, platformArch);
+
 		fs.mkdirSync(nodePtyDest, { recursive: true });
 		fs.cpSync(nodePtySource, nodePtyDest, { recursive: true });
 
