@@ -55,6 +55,8 @@ function parseArgs() {
 		baselineBuild: CONFIG.baselineBuild ?? '1.115.0',
 		saveBaseline: false,
 		threshold: CONFIG.regressionThreshold ?? 0.2,
+		/** @type {Record<string, number | string>} */
+		metricThresholds: CONFIG.metricThresholds ?? {},
 		/** @type {string | undefined} */
 		resume: undefined,
 	};
@@ -102,6 +104,71 @@ function parseArgs() {
 		opts.scenarios = getScenarioIds();
 	}
 	return opts;
+}
+
+/**
+ * @typedef {{ type: 'fraction', value: number } | { type: 'absolute', value: number }} MetricThreshold
+ */
+
+/**
+ * Parse a metric threshold value from config.
+ * - A number is treated as a fraction (e.g. 0.2 = 20%).
+ * - A string like "100ms" or "5" is treated as an absolute delta.
+ * @param {number | string} raw
+ * @returns {MetricThreshold}
+ */
+function parseMetricThreshold(raw) {
+	if (typeof raw === 'number') {
+		return { type: 'fraction', value: raw };
+	}
+	// Strip unit suffix (ms, MB, etc.) and parse the number
+	const num = parseFloat(raw);
+	if (isNaN(num)) {
+		throw new Error(`Invalid metric threshold: ${raw}`);
+	}
+	return { type: 'absolute', value: num };
+}
+
+/**
+ * Get the regression threshold for a specific metric.
+ * Uses per-metric override from config if available, otherwise the global threshold.
+ * @param {ReturnType<typeof parseArgs>} opts
+ * @param {string} metric
+ * @returns {MetricThreshold}
+ */
+function getMetricThreshold(opts, metric) {
+	const raw = opts.metricThresholds[metric];
+	if (raw !== undefined) {
+		return parseMetricThreshold(raw);
+	}
+	return { type: 'fraction', value: opts.threshold };
+}
+
+/**
+ * Check whether a change exceeds the threshold.
+ * @param {MetricThreshold} threshold
+ * @param {number} change - fractional change (e.g. 0.5 = 50% increase)
+ * @param {number} absoluteDelta - absolute difference (cur.median - bas.median)
+ * @returns {boolean}
+ */
+function exceedsThreshold(threshold, change, absoluteDelta) {
+	if (threshold.type === 'absolute') {
+		return absoluteDelta > threshold.value;
+	}
+	return change > threshold.value;
+}
+
+/**
+ * Format a threshold for display.
+ * @param {MetricThreshold} threshold
+ * @param {string} unit
+ * @returns {string}
+ */
+function formatThreshold(threshold, unit) {
+	if (threshold.type === 'absolute') {
+		return `${threshold.value}${unit}`;
+	}
+	return `${(threshold.value * 100).toFixed(0)}%`;
 }
 
 // -- Metrics -----------------------------------------------------------------
@@ -681,7 +748,7 @@ function formatCompareLink(base, test) {
  *
  * @param {Record<string, any>} jsonReport
  * @param {Record<string, any> | null} baseline
- * @param {{ threshold: number, runs: number, baselineBuild?: string, build?: string }} opts
+ * @param {{ threshold: number, metricThresholds: Record<string, number | string>, runs: number, baselineBuild?: string, build?: string }} opts
  */
 function generateCISummary(jsonReport, baseline, opts) {
 	const baseLabel = opts.baselineBuild || 'baseline';
@@ -738,16 +805,18 @@ function generateCISummary(jsonReport, baseline, opts) {
 				const ttest = welchTTest(basRaw, curRaw);
 				const pStr = ttest ? `${ttest.pValue}` : 'n/a';
 
+				const metricThreshold = getMetricThreshold(opts, metric);
+				const absoluteDelta = cur.median - bas.median;
 				let verdict = '';
 				if (isRegressionMetric) {
-					if (change > opts.threshold) {
+					if (exceedsThreshold(metricThreshold, change, absoluteDelta)) {
 						if (!ttest || ttest.significant) {
 							verdict = 'REGRESSION';
 							totalRegressions++;
 						} else {
 							verdict = 'noise';
 						}
-					} else if (change < -opts.threshold && ttest?.significant) {
+					} else if (exceedsThreshold(metricThreshold, -change, -absoluteDelta) && ttest?.significant) {
 						verdict = 'improved';
 						totalImprovements++;
 					} else {
@@ -784,7 +853,19 @@ function generateCISummary(jsonReport, baseline, opts) {
 		lines.push(`| **Diff** | ${compareLink} |`);
 	}
 	lines.push(`| **Runs per scenario** | ${opts.runs} |`);
-	lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
+	const overrides = Object.entries(opts.metricThresholds || {}).filter(([, v]) => {
+		const parsed = parseMetricThreshold(v);
+		return parsed.type !== 'fraction' || parsed.value !== opts.threshold;
+	});
+	if (overrides.length > 0) {
+		const overrideStr = overrides.map(([k, v]) => {
+			const parsed = parseMetricThreshold(v);
+			return `${k}: ${parsed.type === 'absolute' ? `${parsed.value}${k.includes('Ms') || k.includes('Time') || k.includes('time') ? 'ms' : ''}` : `${(parsed.value * 100).toFixed(0)}%`}`;
+		}).join(', ');
+		lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% (${overrideStr}) |`);
+	} else {
+		lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
+	}
 	lines.push(`| **Scenarios** | ${scenarios.length} |`);
 	lines.push(`| **Platform** | ${process.platform} / ${process.arch} |`);
 	lines.push('');
@@ -1324,8 +1405,10 @@ async function printComparison(jsonReport, opts) {
 				const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
 				const ttest = welchTTest(basRaw, curRaw);
 
+				const metricThreshold = getMetricThreshold(opts, metric);
+				const absoluteDelta = cur.median - bas.median;
 				let flag = '';
-				if (change > opts.threshold) {
+				if (exceedsThreshold(metricThreshold, change, absoluteDelta)) {
 					if (!ttest) {
 						flag = ' ← possible regression (n too small for significance test)';
 						inconclusiveFound = true;
@@ -1405,6 +1488,7 @@ async function printComparison(jsonReport, opts) {
 			: null;
 		const summary = generateCISummary(jsonReport, ciBaseline, {
 			threshold: opts.threshold,
+			metricThresholds: opts.metricThresholds,
 			runs: jsonReport.runsPerScenario || opts.runs,
 			baselineBuild: ciBaseline?.baselineBuildVersion || opts.baselineBuild,
 			build: opts.build,
