@@ -45,12 +45,6 @@ export class GPT5CopilotIdentityRule extends PromptElement {
 
 export class HiddenModelBCopilotIdentityRule extends PromptElement {
 
-	constructor(
-		props: any,
-	) {
-		super(props);
-	}
-
 	render() {
 		return (
 			<>
