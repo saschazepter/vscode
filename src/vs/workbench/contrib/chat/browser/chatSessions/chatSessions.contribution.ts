@@ -1036,7 +1036,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		}
 
 		let session: IChatSession;
-		const newSessionOptionGroups = isUntitledChatSession(sessionResource) ? await this.getNewChatSessionInputState(resolvedType) : undefined;
+		const newSessionOptionGroups = isUntitledChatSession(sessionResource) ? await this.getNewChatSessionInputState(resolvedType, sessionResource) : undefined;
 		if (isUntitledChatSession(sessionResource) && newSessionOptionGroups) {
 			const options: ChatSessionOptionsMap = new Map();
 			for (const group of newSessionOptionGroups) {
@@ -1169,10 +1169,10 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		return this._sessionTypeOptions.get(chatSessionType);
 	}
 
-	public async getNewChatSessionInputState(chatSessionType: string): Promise<readonly IChatSessionProviderOptionGroup[] | undefined> {
+	public async getNewChatSessionInputState(chatSessionType: string, sessionResource: URI): Promise<readonly IChatSessionProviderOptionGroup[] | undefined> {
 		const controllerData = this._itemControllers.get(chatSessionType);
 		if (controllerData?.controller.getNewChatSessionInputState) {
-			const groups = await controllerData.controller.getNewChatSessionInputState(CancellationToken.None);
+			const groups = await controllerData.controller.getNewChatSessionInputState(sessionResource, CancellationToken.None);
 			if (groups?.length) {
 				this._sessionTypeOptions.set(chatSessionType, [...groups]);
 				this._onDidChangeOptionGroups.fire(chatSessionType);

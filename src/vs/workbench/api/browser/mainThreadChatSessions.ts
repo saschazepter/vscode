@@ -492,8 +492,8 @@ class MainThreadChatSessionItemController extends Disposable implements IChatSes
 		}
 	}
 
-	async getNewChatSessionInputState(token: CancellationToken): Promise<readonly IChatSessionProviderOptionGroup[] | undefined> {
-		const optionGroups = await this._proxy.$provideChatSessionInputState(this._handle, undefined, token);
+	async getNewChatSessionInputState(sessionResource: URI, token: CancellationToken): Promise<readonly IChatSessionProviderOptionGroup[] | undefined> {
+		const optionGroups = await this._proxy.$provideChatSessionInputState(this._handle, sessionResource, token);
 		if (!optionGroups?.length) {
 			return undefined;
 		}
