@@ -33,7 +33,7 @@ import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../base/common/uri.js';
-import { isWindows } from '../../../../base/common/platform.js';
+import { isWindows, isMacintosh } from '../../../../base/common/platform.js';
 import { UpdateHoverWidget } from './updateHoverWidget.js';
 import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusDashboard.js';
@@ -125,7 +125,7 @@ async function runSessionsUpdateAction(
 ): Promise<void> {
 	if (state.type === StateType.AvailableForDownload) {
 		const isInsiderOrExploration = productService.quality === 'insider' || productService.quality === 'exploration';
-		const hasCrossAppCoordinator = isWindows && isInsiderOrExploration;
+		const hasCrossAppCoordinator = (isWindows || isMacintosh) && isInsiderOrExploration;
 		if (!hasCrossAppCoordinator) {
 			const { confirmed } = await dialogService.confirm({
 				message: localize('sessionsUpdateFromVSCode.title', "Update from VS Code"),
@@ -304,11 +304,18 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		this.refreshAccount();
 	}
 
+	override setFocusable(_focusable: boolean): void {
+		// Don't let the ActionBar remove focusability - this widget must
+		// always be reachable via Tab even when a sibling item is hidden.
+	}
+
 	override render(container: HTMLElement): void {
 		super.render(container);
 
 		this.container = container;
 		container.classList.add('sessions-account-titlebar-widget');
+		container.setAttribute('role', 'button');
+		container.tabIndex = 0;
 
 		this.iconElement = append(container, $('.sessions-account-titlebar-widget-icon'));
 		this.labelElement = append(container, $('span.sessions-account-titlebar-widget-label'));
@@ -418,6 +425,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 				this.isMenuVisible = false;
 				this.container?.classList.remove('menu-visible');
 				this.renderState();
+				this.container?.focus();
 			}
 		});
 
@@ -617,6 +625,7 @@ class TitleBarUpdateWidget extends BaseActionViewItem {
 
 		this.container = container;
 		container.classList.add('sessions-update-titlebar-widget');
+		container.setAttribute('role', 'button');
 
 		this.labelElement = append(container, $('span.sessions-update-titlebar-widget-label'));
 		this.hoverAttachment.value = this.updateHoverWidget.attachTo(container);
@@ -679,8 +688,10 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 		super();
 
 		// Titlebar update widget (to the right of separator, left of account badge)
+		let updateWidget: TitleBarUpdateWidget | undefined;
 		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarUpdateWidgetAction, (action, options) => {
-			return instantiationService.createInstance(TitleBarUpdateWidget, action, options);
+			updateWidget = instantiationService.createInstance(TitleBarUpdateWidget, action, options);
+			return updateWidget;
 		}, undefined));
 
 		this._register(registerAction2(class extends Action2 {
@@ -698,13 +709,15 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 			}
 
 			async run(): Promise<void> {
-				// Handled by the custom view item
+				updateWidget?.onClick();
 			}
 		}));
 
 		// Titlebar account widget (rightmost in titlebar)
+		let accountWidget: TitleBarAccountWidget | undefined;
 		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarAccountWidgetAction, (action, options) => {
-			return instantiationService.createInstance(TitleBarAccountWidget, action, options);
+			accountWidget = instantiationService.createInstance(TitleBarAccountWidget, action, options);
+			return accountWidget;
 		}, undefined));
 
 		this._register(registerAction2(class extends Action2 {
@@ -721,7 +734,7 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 			}
 
 			async run(): Promise<void> {
-				// Handled by the custom view item
+				accountWidget?.onClick();
 			}
 		}));
 

@@ -28,7 +28,7 @@ import { IChatService, type ChatSendResult, type IChatSendRequestOptions } from 
 import { IChatSessionsService } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
-import { SessionStatus } from '../../../../services/sessions/common/session.js';
+import { SessionStatus, COPILOT_CLI_SESSION_TYPE } from '../../../../services/sessions/common/session.js';
 import { remoteAgentHostSessionTypeId } from '../../common/remoteAgentHostSessionType.js';
 import { RemoteAgentHostSessionsProvider, type IRemoteAgentHostSessionsProviderConfig } from '../../browser/remoteAgentHostSessionsProvider.js';
 
@@ -51,6 +51,7 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 	public disposedSessions: URI[] = [];
 	public dispatchedActions: { action: ISessionAction | ITerminalAction; clientId: string; clientSeq: number }[] = [];
 	public failResolveSessionConfig = false;
+	public resolveSessionConfigResult: IResolveSessionConfigResult = { schema: { type: 'object', properties: {} }, values: { isolation: 'worktree' } };
 
 	private _nextSeq = 0;
 
@@ -85,7 +86,7 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 		if (this.failResolveSessionConfig) {
 			throw new Error('resolveSessionConfig unavailable');
 		}
-		return { ready: true, schema: { type: 'object', properties: {} }, values: { isolation: 'worktree' } };
+		return this.resolveSessionConfigResult;
 	}
 
 	dispatchAction(action: ISessionAction | ITerminalAction, clientId: string, clientSeq: number): void {
@@ -166,6 +167,21 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	return provider;
 }
 
+async function waitForSessionConfig(provider: RemoteAgentHostSessionsProvider, sessionId: string, predicate: (config: IResolveSessionConfigResult | undefined) => boolean): Promise<void> {
+	if (predicate(provider.getSessionConfig(sessionId))) {
+		return;
+	}
+
+	await new Promise<void>(resolve => {
+		const disposable = provider.onDidChangeSessionConfig(changedSessionId => {
+			if (changedSessionId === sessionId && predicate(provider.getSessionConfig(sessionId))) {
+				disposable.dispose();
+				resolve();
+			}
+		});
+	});
+}
+
 function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?: { provider?: string; title?: string; model?: string; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {
 	const provider = opts?.provider ?? 'copilot';
 	const sessionUri = AgentSession.uri(provider, rawId);
@@ -216,14 +232,14 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(provider.id, 'agenthost-10.0.0.1__8080');
 		assert.strictEqual(provider.label, 'My Host');
 		assert.strictEqual(provider.sessionTypes.length, 1);
-		assert.strictEqual(provider.sessionTypes[0].id, remoteAgentHostSessionTypeId('10.0.0.1__8080', 'copilot'));
+		assert.strictEqual(provider.sessionTypes[0].id, COPILOT_CLI_SESSION_TYPE);
 		assert.strictEqual(provider.sessionTypes[0].label, 'Copilot [My Host]');
 	});
 
 	test('session types update when the host advertises additional agents', () => {
 		const provider = createProvider(disposables, connection, { address: '10.0.0.1:8080', connectionName: 'My Host' });
 		assert.deepStrictEqual(provider.sessionTypes.map(t => t.id), [
-			remoteAgentHostSessionTypeId('10.0.0.1__8080', 'copilot'),
+			COPILOT_CLI_SESSION_TYPE,
 		]);
 
 		let changes = 0;
@@ -236,7 +252,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 
 		assert.strictEqual(changes, 1);
 		assert.deepStrictEqual(provider.sessionTypes.map(t => ({ id: t.id, label: t.label })), [
-			{ id: remoteAgentHostSessionTypeId('10.0.0.1__8080', 'copilot'), label: 'Copilot [My Host]' },
+			{ id: COPILOT_CLI_SESSION_TYPE, label: 'Copilot [My Host]' },
 			{ id: remoteAgentHostSessionTypeId('10.0.0.1__8080', 'openai'), label: 'OpenAI [My Host]' },
 		]);
 	});
@@ -298,7 +314,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.deepStrictEqual(
 			sessions.map(s => ({ title: s.title.get(), sessionType: s.sessionType })).sort((a, b) => a.title.localeCompare(b.title)),
 			[
-				{ title: 'Copilot Session', sessionType: remoteAgentHostSessionTypeId('localhost__4321', 'copilot') },
+				{ title: 'Copilot Session', sessionType: COPILOT_CLI_SESSION_TYPE },
 				{ title: 'OpenAI Session', sessionType: remoteAgentHostSessionTypeId('localhost__4321', 'openai') },
 			],
 		);
@@ -451,7 +467,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(session.workspace.get()?.label, 'project [Test Host]');
 		// sessionType should be the logical type, not the resource scheme
 		assert.strictEqual(session.sessionType, provider.sessionTypes[0].id);
-		assert.deepStrictEqual(provider.getSessionConfig(session.sessionId), { ready: false, schema: { type: 'object', properties: {} }, values: {} });
+		assert.deepStrictEqual(provider.getSessionConfig(session.sessionId), { schema: { type: 'object', properties: {} }, values: {} });
 	});
 
 	test('createNewSession clears session config when resolving config is unavailable', async () => {
@@ -657,6 +673,18 @@ suite('RemoteAgentHostSessionsProvider', () => {
 	}));
 
 	// ---- Send -------
+
+	test('new session stays loading when required config is missing', async () => {
+		connection.resolveSessionConfigResult = {
+			schema: { type: 'object', required: ['branch'], properties: { branch: { type: 'string', title: 'Branch', enum: ['main'] } } },
+			values: {},
+		};
+		const provider = createProvider(disposables, connection);
+		const session = provider.createNewSession(URI.parse('vscode-agent-host://auth/home/user/project'), provider.sessionTypes[0].id);
+		await waitForSessionConfig(provider, session.sessionId, config => config?.schema.required?.includes('branch') === true);
+
+		assert.strictEqual(session.loading.get(), true);
+	});
 
 	test('sendAndCreateChat throws for unknown session', async () => {
 		const provider = createProvider(disposables, connection);
