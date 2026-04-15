@@ -31,7 +31,6 @@ import { IssueFormService } from './issueFormService.js';
 
 /**
  * Editor pane that hosts the issue reporter wizard inside an editor tab.
- * Used when `issueReporter.experimental.issueReportingWizard.displayMode` is `'tab'`.
  */
 export class IssueReporterEditorPane extends EditorPane {
 
@@ -90,13 +89,12 @@ export class IssueReporterEditorPane extends EditorPane {
 			return;
 		}
 
-		// Create the wizard in "embedded" mode — renders inside this container
-		// instead of inserting itself into document.body as a flex sibling.
+		// Create the wizard — renders inside this container
 		this.wizard = new IssueReporterOverlay(
 			data,
 			this.layoutService,
 			this.recordingService.isSupported,
-			{ embedded: true, container: this.container },
+			this.container,
 		);
 		this.inputDisposables.add(this.wizard);
 

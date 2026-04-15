@@ -35,13 +35,6 @@ export interface IScreenshot {
 	annotatedDataUrl?: string;
 }
 
-export interface IssueReporterOverlayOptions {
-	/** When true, the wizard renders inside the given container instead of as a body-level flex sibling. */
-	readonly embedded?: boolean;
-	/** Container element to render into when embedded. */
-	readonly container?: HTMLElement;
-}
-
 export class IssueReporterOverlay {
 
 	private readonly disposables = new DisposableStore();
@@ -96,7 +89,6 @@ export class IssueReporterOverlay {
 	private backButton!: HTMLElement;
 	private nextButton!: HTMLElement;
 	private nextShortcutBadge!: HTMLElement;
-	private discardButton!: HTMLElement;
 
 	// Progress dots
 	private readonly progressDots: HTMLElement[] = [];
@@ -105,21 +97,13 @@ export class IssueReporterOverlay {
 	private readonly screenshots: IScreenshot[] = [];
 	private readonly model: IssueReporterModel;
 	private visible = false;
-	private animating = false;
-	private resizeSash!: HTMLElement;
-
-	// Collapse/expand toggle
-	private collapsed = false;
-	private wasCollapsedBeforeRecording = false;
-	private collapseToggle!: HTMLElement;
-	private toolbarActionsSlot!: HTMLElement;
 	private floatingBar: HTMLElement | undefined;
 
 	constructor(
 		private readonly data: IssueReporterData,
 		private readonly layoutService: IWorkbenchLayoutService,
 		private readonly recordingSupported: boolean = false,
-		private readonly options: IssueReporterOverlayOptions = {},
+		private readonly container: HTMLElement,
 	) {
 		this.model = new IssueReporterModel({
 			...data,
@@ -150,33 +134,7 @@ export class IssueReporterOverlay {
 		this.stepIndicator = append(progressArea, $('span.wizard-step-indicator'));
 		this.stepLabel = append(progressArea, $('span.wizard-step-label'));
 
-		// Collapse/expand toggle (stays in toolbar)
-		this.collapseToggle = append(toolbar, $('div.wizard-nav-btn.primary.wizard-collapse-toggle'));
-		this.collapseToggle.setAttribute('role', 'button');
-		this.collapseToggle.setAttribute('tabindex', '0');
-		this.collapseToggle.setAttribute('aria-label', localize('toggleCollapse', "Toggle compact mode"));
-		const collapseIcon = append(this.collapseToggle, $('span.wizard-collapse-icon'));
-		collapseIcon.appendChild(renderIcon(Codicon.chevronUp));
-		const collapseLabel = append(this.collapseToggle, $('span.wizard-collapse-label'));
-		collapseLabel.textContent = localize('minimize', "Minimize");
-		const minimizeShortcut = append(this.collapseToggle, $('span.wizard-shortcut-badge'));
-		minimizeShortcut.textContent = isMacintosh ? '\u2318M' : 'Ctrl+M';
-
-		// Slot for screenshot/record buttons when collapsed on step 3
-		this.toolbarActionsSlot = append(toolbar, $('div.wizard-toolbar-actions-slot'));
-
 		append(toolbar, $('div.spacer'));
-
-		this.discardButton = append(toolbar, $('div.wizard-discard'));
-		this.discardButton.textContent = localize('discardFeedback', "Discard feedback");
-		this.discardButton.setAttribute('role', 'button');
-		this.discardButton.setAttribute('tabindex', '0');
-
-		// Hide minimize and discard in embedded mode (editor tab)
-		if (this.options.embedded) {
-			this.collapseToggle.style.display = 'none';
-			this.discardButton.style.display = 'none';
-		}
 
 		// ── Step content area ──
 		this.stepContainer = append(this.wizardPanel, $('div.wizard-step-container'));
@@ -213,10 +171,6 @@ export class IssueReporterOverlay {
 
 		this.registerEventHandlers();
 		this.updateStepUI();
-
-		// ── Resize sash ──
-		this.resizeSash = $('div.wizard-resize-sash');
-		this.setupResizeSash();
 	}
 
 	// ── Step 1: Describe ──
@@ -400,11 +354,9 @@ export class IssueReporterOverlay {
 
 		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
 
-		// In embedded mode, hide inline actions and create a floating capture bar
-		if (this.options.embedded) {
-			actions.style.display = 'none';
-			this.createFloatingCaptureBar();
-		}
+		// Hide inline actions and use the floating capture bar instead
+		actions.style.display = 'none';
+		this.createFloatingCaptureBar();
 	}
 
 	private captureStripRecordBtn: HTMLElement | undefined;
@@ -545,102 +497,7 @@ export class IssueReporterOverlay {
 		append(page, $('div.wizard-review-details'));
 	}
 
-	private toggleCollapsed(): void {
-		this.collapsed = !this.collapsed;
-		this.wizardPanel.classList.toggle('wizard-collapsed', this.collapsed);
-
-		// Update toggle icon and label
-		const icon = this.collapseToggle.querySelector('.wizard-collapse-icon');
-		const label = this.collapseToggle.querySelector('.wizard-collapse-label');
-		if (icon) {
-			icon.textContent = '';
-			icon.appendChild(renderIcon(this.collapsed ? Codicon.chevronDown : Codicon.chevronUp));
-		}
-		if (label) {
-			label.textContent = this.collapsed
-				? localize('expand', "Expand")
-				: localize('minimize', "Minimize");
-		}
-
-		// Move screenshot/record buttons to toolbar slot when collapsed on step 3
-		this.updateToolbarActionsSlot();
-
-		if (this.collapsed) {
-			this.wizardPanel.style.height = '';
-			this.wizardPanel.style.maxHeight = '';
-			this.resizeSash.style.display = 'none';
-		} else {
-			this.resizeSash.style.display = '';
-		}
-		this.layoutService.layout();
-
-		// Keep focus on the toggle so shortcuts continue to work
-		this.collapseToggle.focus();
-	}
-
-	private updateToolbarActionsSlot(): void {
-		// In embedded mode, the capture strip handles all media controls
-		if (this.options.embedded) {
-			return;
-		}
-
-		const actionsContainer = this.stepPages[WizardStep.Screenshots]?.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
-		const actionsInToolbar = this.toolbarActionsSlot.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
-		const container = actionsContainer ?? actionsInToolbar;
-
-		// When collapsed on step 3, move the full actions bar to toolbar
-		const shouldMoveActions = this.collapsed && this.currentStep === WizardStep.Screenshots;
-
-		if (container) {
-			if (shouldMoveActions) {
-				if (container.parentElement !== this.toolbarActionsSlot) {
-					this.toolbarActionsSlot.appendChild(container);
-				}
-			} else {
-				if (container.parentElement !== this.stepPages[WizardStep.Screenshots]) {
-					const page = this.stepPages[WizardStep.Screenshots];
-					const screenshotContainer = page.querySelector('.wizard-screenshots');
-					if (screenshotContainer) {
-						page.insertBefore(container, screenshotContainer);
-					} else {
-						page.appendChild(container);
-					}
-				}
-			}
-		}
-
-		// When recording (and not already showing full actions), show only the stop button in toolbar
-		if (!shouldMoveActions && this.currentRecordingState === RecordingState.Recording && this.recordBtn) {
-			if (this.recordBtn.parentElement !== this.toolbarActionsSlot) {
-				this.toolbarActionsSlot.appendChild(this.recordBtn);
-			}
-		} else if (!shouldMoveActions && this.recordBtn && this.recordBtn.parentElement === this.toolbarActionsSlot) {
-			// Move record button back to its container
-			if (container) {
-				container.appendChild(this.recordBtn);
-			}
-		}
-	}
-
 	private registerEventHandlers(): void {
-		// Collapse toggle
-		this.disposables.add(addDisposableListener(this.collapseToggle, EventType.CLICK, () => this.toggleCollapsed()));
-		this.disposables.add(addDisposableListener(this.collapseToggle, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
-				e.preventDefault();
-				this.toggleCollapsed();
-			}
-		}));
-
-		// Discard
-		this.disposables.add(addDisposableListener(this.discardButton, EventType.CLICK, () => this.close()));
-		this.disposables.add(addDisposableListener(this.discardButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
-				e.preventDefault();
-				this.close();
-			}
-		}));
-
 		// Back
 		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => this.goBack()));
 		this.disposables.add(addDisposableListener(this.backButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -680,71 +537,15 @@ export class IssueReporterOverlay {
 				}
 			}
 		}));
-
-		// Ctrl+M to toggle minimize
-		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'm' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
-				e.stopPropagation();
-				this.toggleCollapsed();
-			}
-		}));
-	}
-
-	private getContentHeight(): number {
-		// Measure the natural height the wizard needs to display all its content
-		const toolbar = this.wizardPanel.querySelector('.wizard-toolbar') as HTMLElement | null;
-		const nav = this.wizardPanel.querySelector('.wizard-nav') as HTMLElement | null;
-		const stepContainer = this.stepContainer;
-		if (!toolbar || !nav || !stepContainer) {
-			return 400;
-		}
-		const currentPage = this.stepPages[this.currentStep];
-		return toolbar.offsetHeight + currentPage.scrollHeight + nav.offsetHeight;
-	}
-
-	private setupResizeSash(): void {
-		let startY = 0;
-		let startHeight = 0;
-
-		const onPointerMove = (e: PointerEvent) => {
-			const delta = e.clientY - startY;
-			const maxContentHeight = this.getContentHeight();
-			const newHeight = Math.max(150, Math.min(startHeight + delta, maxContentHeight, window.innerHeight - 100));
-			this.wizardPanel.style.height = `${newHeight}px`;
-			this.wizardPanel.style.maxHeight = 'none';
-			this.layoutService.layout();
-		};
-
-		const onPointerUp = () => {
-			document.removeEventListener('pointermove', onPointerMove);
-			document.removeEventListener('pointerup', onPointerUp);
-			document.body.classList.remove('wizard-resizing');
-		};
-
-		this.disposables.add(addDisposableListener(this.resizeSash, EventType.POINTER_DOWN, (e: PointerEvent) => {
-			e.preventDefault();
-			startY = e.clientY;
-			startHeight = this.wizardPanel.offsetHeight;
-			document.body.classList.add('wizard-resizing');
-			document.addEventListener('pointermove', onPointerMove);
-			document.addEventListener('pointerup', onPointerUp);
-		}));
 	}
 
 	private goBack(): void {
-		if (this.collapsed) {
-			return;
-		}
 		if (this.currentStep > WizardStep.Describe) {
 			this.setStep(this.currentStep - 1);
 		}
 	}
 
 	private goNext(): void {
-		if (this.collapsed) {
-			return;
-		}
 		if (this.currentStep === WizardStep.Describe) {
 			const desc = this.descriptionTextarea.value.trim();
 			if (!desc) {
@@ -791,7 +592,6 @@ export class IssueReporterOverlay {
 		}, 250);
 
 		this.updateStepUI();
-		this.updateToolbarActionsSlot();
 
 		if (step === WizardStep.Describe) {
 			this.descriptionTextarea.focus();
@@ -870,10 +670,7 @@ export class IssueReporterOverlay {
 			this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		}
 
-		// Show/hide toolbar media controls
-		this.updateToolbarActionsSlot();
-
-		// Show/hide capture strip (only on step 3 in embedded mode)
+		// Show/hide capture strip (only on step 3)
 		this.updateCaptureStripVisibility();
 	}
 
@@ -1036,92 +833,15 @@ export class IssueReporterOverlay {
 		}
 		this.visible = true;
 
-		if (this.options.embedded && this.options.container) {
-			// Embedded mode: render inside the provided container (e.g. editor tab)
-			this.wizardPanel.classList.add('open', 'wizard-embedded');
-			this.wizardPanel.style.maxHeight = 'none';
-			append(this.options.container, this.wizardPanel);
-			this.descriptionTextarea.focus();
-			return;
-		}
-
-		const workbenchContainer = this.layoutService.mainContainer;
-		const targetWindow = getWindow(workbenchContainer);
-		const body = targetWindow.document.body;
-
-		body.classList.add('issue-reporter-active');
-
-		// Insert wizard panel BEFORE the workbench, sash between them
-		body.insertBefore(this.wizardPanel, workbenchContainer);
-		body.insertBefore(this.resizeSash, workbenchContainer);
-
-		// Animate open: panel starts collapsed, then expands
-		this.animating = true;
-		requestAnimationFrame(() => {
-			this.wizardPanel.classList.add('open');
-			this.layoutService.layout();
-
-			const onTransitionEnd = () => {
-				this.wizardPanel.removeEventListener('transitionend', onTransitionEnd);
-				this.animating = false;
-				this.layoutService.layout();
-			};
-			this.wizardPanel.addEventListener('transitionend', onTransitionEnd);
-		});
-
+		this.wizardPanel.classList.add('open', 'wizard-embedded');
+		this.wizardPanel.style.maxHeight = 'none';
+		append(this.container, this.wizardPanel);
 		this.descriptionTextarea.focus();
-
-		this.disposables.add(toDisposable(() => {
-			this.wizardPanel.remove();
-			this.resizeSash.remove();
-			body.classList.remove('issue-reporter-active');
-			this.layoutService.layout();
-			this.visible = false;
-		}));
 	}
 
 	close(): void {
-		if (this.options.embedded) {
-			// In embedded mode, just fire close — the editor pane handles cleanup
-			this.visible = false;
-			this._onDidClose.fire();
-			return;
-		}
-
-		if (!this.visible || this.animating) {
-			return;
-		}
-
-		this.animating = true;
-		this.wizardPanel.classList.remove('open');
-		this.wizardPanel.style.height = '';
-		this.wizardPanel.style.maxHeight = '';
-
-		let cleaned = false;
-		const cleanup = () => {
-			if (cleaned) {
-				return;
-			}
-			cleaned = true;
-			this.wizardPanel.removeEventListener('transitionend', onTransitionEnd);
-			this.wizardPanel.remove();
-			this.resizeSash.remove();
-			const targetWindow = getWindow(this.layoutService.mainContainer);
-			targetWindow.document.body.classList.remove('issue-reporter-active');
-			this.layoutService.layout();
-			this.visible = false;
-			this.animating = false;
-			this._onDidClose.fire();
-		};
-		const onTransitionEnd = () => cleanup();
-		this.wizardPanel.addEventListener('transitionend', onTransitionEnd);
-
-		// Safety net: if transitionend never fires (e.g. transition from max-height:none),
-		// force cleanup after the expected transition duration + buffer.
-		const targetWindow = getWindow(this.wizardPanel);
-		targetWindow.setTimeout(cleanup, 500);
-
-		this.layoutService.layout();
+		this.visible = false;
+		this._onDidClose.fire();
 	}
 
 	private getTotalAttachments(): number {
@@ -1177,11 +897,7 @@ export class IssueReporterOverlay {
 			img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
 
 			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-				if (this.options.embedded) {
-					this._onDidRequestOpenScreenshot.fire(screenshot);
-				} else {
-					this.openAnnotationEditor(i);
-				}
+				this._onDidRequestOpenScreenshot.fire(screenshot);
 			}));
 
 			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
@@ -1315,21 +1031,13 @@ export class IssueReporterOverlay {
 	}
 
 	getWizardHeight(): number {
-		return this.wizardPanel.offsetHeight + this.resizeSash.offsetHeight;
+		return this.wizardPanel.offsetHeight;
 	}
 
 	setRecordingState(state: RecordingState): void {
 		this.currentRecordingState = state;
 
 		if (state === RecordingState.Recording) {
-			// Auto-minimize when starting recording from expanded state (titlebar mode only)
-			if (!this.options.embedded) {
-				this.wasCollapsedBeforeRecording = this.collapsed;
-				if (!this.collapsed) {
-					this.toggleCollapsed();
-				}
-			}
-
 			// Switch to recording mode: disable all wizard UI except stop button
 			this.wizardPanel.classList.add('wizard-recording');
 			if (this.recordBtn) {
@@ -1387,15 +1095,7 @@ export class IssueReporterOverlay {
 			if (this.floatingBar) {
 				this.floatingBar.classList.remove('wizard-strip-recording');
 			}
-
-			// Restore expanded state if we auto-minimized for recording (titlebar mode only)
-			if (!this.options.embedded && !this.wasCollapsedBeforeRecording && this.collapsed) {
-				this.toggleCollapsed();
-			}
 		}
-
-		// Keep record button accessible in toolbar when collapsed and recording
-		this.updateToolbarActionsSlot();
 	}
 
 	addRecording(filePath: string, durationMs: number, thumbnailDataUrl?: string): void {

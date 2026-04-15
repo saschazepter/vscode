@@ -1704,7 +1704,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				this.contextService.getWorkbenchState() === WorkbenchState.EMPTY ? DEFAULT_EMPTY_WINDOW_DIMENSIONS : DEFAULT_WORKSPACE_WINDOW_DIMENSIONS // running with fallback to ensure no error is thrown (https://github.com/microsoft/vscode/issues/240242)
 			);
 
-			// Issue Reporter mode: reduce dimensions to account for header/footer siblings
+			// Issue Reporter mode: reduce dimensions to account for header/footer siblings (capture strip)
 			if (this.parent.classList.contains('issue-reporter-active')) {
 				let siblingHeight = 0;
 				for (const child of Array.from(this.parent.children)) {

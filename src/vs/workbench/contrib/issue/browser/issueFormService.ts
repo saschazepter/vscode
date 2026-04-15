@@ -25,7 +25,7 @@ import { IIssueFormService, IssueReporterData } from '../common/issue.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import BaseHtml from './issueReporterPage.js';
 import { IssueWebReporter } from './issueReporterService.js';
-import { IRecordingService, RecordingState } from './recordingService.js';
+import { IRecordingService } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
 import { IGitHubUploadService } from './githubUploadService.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
@@ -33,7 +33,6 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import './media/issueReporter.css';
 
@@ -54,9 +53,6 @@ export class IssueFormService implements IIssueFormService {
 	protected arch: string = '';
 	protected release: string = '';
 	protected type: string = '';
-
-	private overlayDisposables: DisposableStore | undefined;
-	private overlay: IssueReporterOverlay | undefined;
 
 	constructor(
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
@@ -83,136 +79,19 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
-		const wizardConfig = this.configurationService.getValue<{ enabled?: boolean; displayMode?: string }>('issueReporter.experimental.issueReportingWizard');
+		const wizardConfig = this.configurationService.getValue<{ enabled?: boolean }>('issueReporter.experimental.issueReportingWizard');
 		const useWizard = wizardConfig?.enabled ?? false;
 		if (!useWizard) {
 			this.openAuxIssueReporterLegacy(data);
 			return;
 		}
 
-		const displayMode = wizardConfig?.displayMode ?? 'titlebar';
-		if (displayMode === 'tab') {
-			this.openEditorTabReporter(data);
-		} else {
-			this.openOverlayReporter(data);
-		}
+		this.openEditorTabReporter(data);
 	}
 
 	protected openEditorTabReporter(data: IssueReporterData): void {
 		const input = this.instantiationService.createInstance(IssueReporterEditorInput, data);
 		this.editorService.openEditor(input);
-	}
-
-	protected openOverlayReporter(data: IssueReporterData): void {
-		// If already open, close first
-		this.closeOverlay();
-
-		this.overlayDisposables = new DisposableStore();
-
-		this.overlay = new IssueReporterOverlay(
-			data,
-			this.layoutService as import('../../../services/layout/browser/layoutService.js').IWorkbenchLayoutService,
-			this.recordingService.isSupported,
-		);
-		this.overlayDisposables.add(this.overlay);
-
-		// Handle close
-		this.overlayDisposables.add(this.overlay.onDidClose(() => {
-			this.closeOverlay();
-		}));
-
-		// Handle screenshot request — capture full page, then crop out the wizard area
-		this.overlayDisposables.add(this.overlay.onDidRequestScreenshot(async () => {
-			try {
-				// Capture the entire window (includes wizard + workbench)
-				const fullDataUrl = await this.screenshotService.captureScreenshot();
-				if (!fullDataUrl || !this.overlay) {
-					return;
-				}
-
-				// Load full image to get dimensions
-				const fullImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-					const img = new Image();
-					img.onload = () => resolve(img);
-					img.onerror = reject;
-					img.src = fullDataUrl;
-				});
-
-				// Calculate wizard height in device pixels to crop it out
-				const wizardHeight = this.overlay.getWizardHeight();
-				const dpr = window.devicePixelRatio ?? 1;
-				const cropY = Math.round(wizardHeight * dpr);
-				const cropHeight = fullImg.naturalHeight - cropY;
-
-				if (cropHeight <= 0) {
-					return;
-				}
-
-				// Crop using canvas
-				const canvas = document.createElement('canvas');
-				canvas.width = fullImg.naturalWidth;
-				canvas.height = cropHeight;
-				const ctx = canvas.getContext('2d');
-				if (!ctx) {
-					return;
-				}
-				ctx.drawImage(fullImg, 0, cropY, fullImg.naturalWidth, cropHeight, 0, 0, fullImg.naturalWidth, cropHeight);
-				const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-
-				this.overlay.addScreenshot({
-					dataUrl: croppedDataUrl,
-					width: fullImg.naturalWidth,
-					height: cropHeight,
-				});
-			} catch (err) {
-				this.logService.error('[IssueFormService] Screenshot failed:', err);
-			}
-		}));
-
-		// Handle recording start
-		this.overlayDisposables.add(this.overlay.onDidRequestStartRecording(async () => {
-			try {
-				await this.recordingService.startRecording('video/mp4');
-				this.overlay?.setRecordingState(RecordingState.Recording);
-			} catch (err) {
-				this.logService.error('[IssueFormService] Failed to start recording:', err);
-				this.overlay?.setRecordingState(RecordingState.Idle);
-			}
-		}));
-
-		// Handle recording stop
-		this.overlayDisposables.add(this.overlay.onDidRequestStopRecording(async () => {
-			const recordingData = await this.recordingService.stopRecording();
-			if (recordingData) {
-				await this.saveRecordingToUserData(recordingData);
-			}
-			this.overlay?.setRecordingState(RecordingState.Idle);
-		}));
-
-		// Handle external recording stop (max duration / OS stop sharing)
-		this.overlayDisposables.add(this.recordingService.onDidChangeState(state => {
-			if (state === RecordingState.Stopped) {
-				this.recordingService.stopRecording().then(d => {
-					if (d) {
-						this.saveRecordingToUserData(d);
-					}
-					this.overlay?.setRecordingState(RecordingState.Idle);
-				});
-			}
-		}));
-
-		// Handle open recording — use openerService to open with OS default player
-		this.overlayDisposables.add(this.overlay.onDidRequestOpenRecording(filePath => {
-			this.openerService.open(URI.file(filePath));
-		}));
-
-		// Handle submit
-		this.overlayDisposables.add(this.overlay.onDidSubmit(async ({ title, body }) => {
-			await this.submitIssue(this.overlay!, data, title, body);
-			this.closeOverlay();
-		}));
-
-		this.overlay.show();
 	}
 
 	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<void> {
@@ -319,91 +198,7 @@ export class IssueFormService implements IIssueFormService {
 		return bytes;
 	}
 
-	private closeOverlay(): void {
-		if (this.recordingService.state === RecordingState.Recording) {
-			this.recordingService.discardRecording();
-		}
-		this.overlayDisposables?.dispose();
-		this.overlayDisposables = undefined;
-		this.overlay = undefined;
-	}
-
-	private async saveRecordingToUserData(data: import('./recordingService.js').IRecordingData): Promise<void> {
-		try {
-			const extension = data.mimeType.includes('mp4') ? 'mp4' : 'webm';
-			const fileName = `vscode-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
-			const target = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings', fileName);
-
-			const arrayBuffer = await data.blob.arrayBuffer();
-			await this.fileService.writeFile(target, VSBuffer.wrap(new Uint8Array(arrayBuffer)));
-			this.logService.info(`[IssueFormService] Recording saved to ${target.toString()}`);
-
-			const thumbnailDataUrl = await this.generateVideoThumbnail(data.blob, data.mimeType);
-			this.overlay?.addRecording(target.fsPath, data.durationMs, thumbnailDataUrl);
-		} catch (err) {
-			this.logService.error('[IssueFormService] Failed to save recording:', err);
-		}
-	}
-
-	private generateVideoThumbnail(blob: Blob, _mimeType: string): Promise<string | undefined> {
-		return new Promise(resolve => {
-			const timeout = setTimeout(() => {
-				cleanup();
-				resolve(undefined);
-			}, 5000);
-
-			let cleaned = false;
-			const cleanup = () => {
-				if (cleaned) {
-					return;
-				}
-				cleaned = true;
-				clearTimeout(timeout);
-				URL.revokeObjectURL(url);
-				video.remove();
-			};
-
-			const url = URL.createObjectURL(blob);
-			const video = document.createElement('video');
-			video.muted = true;
-			video.preload = 'auto';
-			video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
-			document.body.appendChild(video);
-			video.src = url;
-
-			video.addEventListener('loadeddata', () => {
-				video.currentTime = Math.min(0.5, video.duration / 2);
-			}, { once: true });
-
-			video.addEventListener('seeked', () => {
-				try {
-					const canvas = document.createElement('canvas');
-					canvas.width = video.videoWidth;
-					canvas.height = video.videoHeight;
-					const ctx = canvas.getContext('2d');
-					if (ctx) {
-						ctx.drawImage(video, 0, 0);
-						const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-						cleanup();
-						resolve(dataUrl);
-					} else {
-						cleanup();
-						resolve(undefined);
-					}
-				} catch {
-					cleanup();
-					resolve(undefined);
-				}
-			}, { once: true });
-
-			video.addEventListener('error', () => {
-				cleanup();
-				resolve(undefined);
-			}, { once: true });
-		});
-	}
-
-	/** @deprecated Use openOverlayReporter instead. Kept for web fallback. */
+	/** @deprecated Kept for web fallback when wizard is not enabled. */
 	async openAuxIssueReporterLegacy(data: IssueReporterData): Promise<void> {
 		await this.openAuxIssueReporter(data);
 
@@ -521,7 +316,6 @@ export class IssueFormService implements IIssueFormService {
 	//#region used by issue reporter
 
 	async closeReporter(): Promise<void> {
-		this.closeOverlay();
 		this.issueReporterWindow?.close();
 	}
 
@@ -580,10 +374,6 @@ export class IssueFormService implements IIssueFormService {
 		if (data.extensionId && this.extensionIdentifierSet.has(data.extensionId)) {
 			this.currentData = data;
 			this.issueReporterWindow?.focus();
-			return true;
-		}
-
-		if (this.overlay?.isVisible()) {
 			return true;
 		}
 

@@ -4,58 +4,44 @@
  *--------------------------------------------------------------------------------------------*/
 
 /*
- * Issue Reporter — Wizard UI.
- * body becomes flex column. The wizard panel is inserted BEFORE the workbench.
+ * Issue Reporter — Wizard UI (editor tab mode).
+ * The wizard renders inside an editor pane container.
+ * A capture strip is inserted as a body sibling on step 3.
  * layout.ts detects 'issue-reporter-active' on parent and subtracts sibling heights.
- * The wizard panel animates open/close via max-height transition.
  */
 
+.spacer {
+	flex: 1;
+}
+
+/* Applied to body when the capture strip is visible (step 3) */
 body.issue-reporter-active {
 	display: flex !important;
 	flex-direction: column !important;
 	overflow: hidden !important;
 }
 
-.spacer {
-	flex: 1;
-}
-
 /* ═══════════════════════════════════════════════
-   Wizard Panel — the top section that pushes
-   the workbench down
+   Wizard Panel — renders inside the editor tab
    ═══════════════════════════════════════════════ */
 .issue-reporter-wizard {
-	flex-shrink: 0;
 	display: flex;
 	flex-direction: column;
-	max-height: 0;
-	overflow: hidden;
-	transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+	max-height: none;
+	overflow: visible;
+	height: 100%;
 	background: var(--vscode-editor-background, #1e1e1e);
 	font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, sans-serif;
 	font-size: 13px;
 	color: var(--vscode-foreground, #ccc);
 }
 
-.issue-reporter-wizard.open {
-	max-height: 60vh;
-	overflow: visible;
-}
-
-/* ── Embedded mode (editor tab) ── */
-.issue-reporter-wizard.wizard-embedded {
-	max-height: none;
-	overflow: visible;
-	height: 100%;
-	transition: none;
-}
-
-.issue-reporter-wizard.wizard-embedded .wizard-toolbar {
+.issue-reporter-wizard .wizard-toolbar {
 	-webkit-app-region: no-drag;
 	padding-right: 0;
 }
 
-.issue-reporter-wizard.wizard-embedded .wizard-step-container {
+.issue-reporter-wizard .wizard-step-container {
 	flex: 1;
 	overflow: auto;
 }
@@ -131,42 +117,15 @@ body.issue-reporter-active {
 	pointer-events: auto;
 }
 
-/* ── Resize Sash ── */
-.wizard-resize-sash {
-	flex-shrink: 0;
-	height: 6px;
-	cursor: ns-resize;
-	background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder, #007acc));
-	opacity: 0.5;
-	transition: opacity 0.15s ease;
-	z-index: 1;
-}
-
-.wizard-resize-sash:hover,
-body.wizard-resizing .wizard-resize-sash {
-	opacity: 1;
-}
-
-body.wizard-resizing {
-	cursor: ns-resize !important;
-	user-select: none !important;
-}
-
 /* ── Toolbar ── */
 .wizard-toolbar {
 	display: flex;
 	align-items: center;
 	gap: 8px;
 	padding: 8px 16px;
-	padding-right: 140px;
 	background: var(--vscode-titleBar-activeBackground, #3c3c3c);
 	border-bottom: 1px solid var(--vscode-panel-border, #444);
-	-webkit-app-region: drag;
 	flex-shrink: 0;
-}
-
-.wizard-toolbar > * {
-	-webkit-app-region: no-drag;
 }
 
 /* Progress area */
@@ -216,54 +175,6 @@ body.wizard-resizing {
 	font-size: 12px;
 	white-space: nowrap;
 	color: var(--vscode-titleBar-activeForeground, #999);
-}
-
-.wizard-discard {
-	font-size: 12px;
-	cursor: pointer;
-	color: var(--vscode-titleBar-activeForeground, #999);
-	white-space: nowrap;
-	padding: 4px 8px;
-	border-radius: 3px;
-}
-
-.wizard-discard:hover {
-	color: var(--vscode-titleBar-activeForeground, #ccc);
-	background: rgba(255, 255, 255, 0.08);
-}
-
-/* ── Collapse Toggle Button ── */
-.wizard-collapse-toggle {
-	flex-shrink: 0;
-}
-
-.wizard-collapse-icon {
-	display: flex;
-	align-items: center;
-	font-size: 14px;
-}
-
-/* ── Toolbar Actions Slot (for collapsed screenshot step) ── */
-.wizard-toolbar-actions-slot {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.wizard-toolbar-actions-slot:empty {
-	display: none;
-}
-
-/* ── Collapsed Mode ── */
-.issue-reporter-wizard.wizard-collapsed .wizard-step-container,
-.issue-reporter-wizard.wizard-collapsed .wizard-nav {
-	display: none !important;
-}
-
-.issue-reporter-wizard.wizard-collapsed {
-	max-height: none !important;
-	height: auto !important;
-	overflow: hidden;
 }
 
 /* ── Step Container ── */
@@ -1059,22 +970,13 @@ body.wizard-resizing {
 	pointer-events: none;
 }
 
-.wizard-recording .wizard-toolbar .wizard-progress-area,
-.wizard-recording .wizard-toolbar .wizard-collapse-toggle,
-.wizard-recording .wizard-toolbar .wizard-discard {
+.wizard-recording .wizard-toolbar .wizard-progress-area {
 	opacity: 0.3;
 }
 
 .wizard-recording .wizard-nav {
 	pointer-events: none;
 	opacity: 0.3;
-}
-
-/* Keep toolbar actions slot (record/stop button) interactive during recording */
-.wizard-recording .wizard-toolbar .wizard-toolbar-actions-slot,
-.wizard-recording .wizard-toolbar .wizard-toolbar-actions-slot .wizard-record-btn {
-	pointer-events: auto;
-	opacity: 1;
 }
 
 /* Dim step content individually so the actions row stays full opacity */
