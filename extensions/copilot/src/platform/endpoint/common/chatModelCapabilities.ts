@@ -392,8 +392,12 @@ export const TOOL_SEARCH_SUPPORTED_MODELS = [
  * Returns true if the model supports the tool search tool.
  * Provider-agnostic: add additional model prefixes here as other providers adopt tool search.
  */
-export function modelSupportsToolSearch(modelId: string): boolean {
-	return TOOL_SEARCH_SUPPORTED_MODELS.some(prefix => modelId.toLowerCase().startsWith(prefix));
+export function modelSupportsToolSearch(model: LanguageModelChat | IChatEndpoint | string): boolean {
+	const modelId = typeof model === 'string' ? model : getModelId(model);
+	if (TOOL_SEARCH_SUPPORTED_MODELS.some(prefix => modelId.toLowerCase().startsWith(prefix))) {
+		return true;
+	}
+	return typeof model !== 'string' && isHiddenModelG(model);
 }
 
 /**

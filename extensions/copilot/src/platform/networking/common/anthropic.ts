@@ -174,7 +174,7 @@ export function isAnthropicToolSearchEnabled(
 ): boolean {
 	const supportsIt = typeof endpoint === 'string'
 		? modelSupportsToolSearch(endpoint)
-		: endpoint.supportsToolSearch ?? modelSupportsToolSearch(endpoint.model);
+		: endpoint.supportsToolSearch ?? modelSupportsToolSearch(endpoint);
 	if (!supportsIt) {
 		return false;
 	}
