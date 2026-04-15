@@ -333,7 +333,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (isEnterprise) {
 			switch (state) {
 				case 'Overage Approached':
-					return localize('bannerEntMonthlyApproach', "You've used most of your Monthly Limit. It resets May 1. Contact your administrator for more information.");
+					return localize('bannerEntMonthlyApproach', "You've used most of your Monthly Limit. It resets May 1 at 10:00 AM. Contact your administrator for more information.");
 				default:
 					return undefined;
 			}
@@ -347,7 +347,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 					}
 					return localize('bannerSessionApproachOverageInfo', "You're approaching your Five-Hour Limit. Your Overage Budget will be used once it's reached.");
 				}
-				return localize('bannerSessionApproach', "You've used most of your Five-Hour Limit. It resets at 10:00am.");
+				return localize('bannerSessionApproach', "You've used most of your Five-Hour Limit. It resets at 10:00 AM.");
 			case 'Session Reached':
 				if (hasOverage) {
 					if (this._limitedOverageView) {
@@ -363,7 +363,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 					}
 					return localize('bannerWeeklyApproachOverageInfo', "You're approaching your Weekly Limit. Your Overage Budget will be used once it's reached.");
 				}
-				return localize('bannerWeeklyApproach', "You've used most of your Weekly Limit. It resets April 6.");
+				return localize('bannerWeeklyApproach', "You've used most of your Weekly Limit. It resets April 6 at 10:00 AM.");
 			case 'Weekly Reached':
 				if (hasOverage) {
 					if (this._limitedOverageView) {
@@ -540,6 +540,21 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (!this._bannerElement.parentElement) {
 			protoContainer.appendChild(this._bannerElement);
 			protoContainer.style.display = '';
+			this.setChatInputOverlap(true);
+		}
+	}
+
+	private setChatInputOverlap(enabled: boolean): void {
+		const container = this.layoutService.getContainer(mainWindow);
+		const chatInput = container.querySelector('.part.auxiliarybar .interactive-input-part .chat-input-container') as HTMLElement | null; // eslint-disable-line no-restricted-syntax
+		if (chatInput) {
+			if (enabled) {
+				chatInput.style.position = 'relative';
+				chatInput.style.zIndex = '1';
+			} else {
+				chatInput.style.position = '';
+				chatInput.style.zIndex = '';
+			}
 		}
 	}
 
@@ -556,18 +571,18 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const hasOverage = this._activeSku === 'Pro/Pro+' || this._activeSku === 'Max';
 
 		if (isEnterprise && state === 'Overage Approached') {
-			return { label: localize('gaugeMonthlyLimit', "Monthly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1") };
+			return { label: localize('gaugeMonthlyLimit', "Monthly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1 at 10:00 AM") };
 		}
 
 		// For SKUs with overage, approached = info with hint, reached = info with "using overage budget"
 		if (hasOverage) {
 			switch (state) {
 				case 'Session Approached':
-					return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'info', resetLabel: localize('resetsAt10am', "Resets at 10:00am") };
+					return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'info', resetLabel: localize('resetsAt10am', "Resets at 10:00 AM") };
 				case 'Session Reached':
 					return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'info', resetLabel: localize('nowUsingOverageBudget', "Now using overage budget") };
 				case 'Weekly Approached':
-					return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'info', resetLabel: localize('resetsOnApr6', "Resets April 6") };
+					return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'info', resetLabel: localize('resetsOnApr6', "Resets April 6 at 10:00 AM") };
 				case 'Weekly Reached':
 					return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'info', resetLabel: localize('nowUsingOverageBudget', "Now using overage budget") };
 			}
@@ -575,13 +590,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		switch (state) {
 			case 'Session Approached':
-				return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsAt10am', "Resets at 10:00am") };
+				return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsAt10am', "Resets at 10:00 AM") };
 			case 'Session Reached':
-				return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsAt10am', "Resets at 10:00am") };
+				return { label: localize('gaugeFiveHourLimit', "Five-Hour Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsAt10am', "Resets at 10:00 AM") };
 			case 'Weekly Approached':
-				return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnApr6', "Resets April 6") };
+				return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnApr6', "Resets April 6 at 10:00 AM") };
 			case 'Weekly Reached':
-				return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnApr6', "Resets April 6") };
+				return { label: localize('gaugeWeeklyLimit', "Weekly Limit"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnApr6', "Resets April 6 at 10:00 AM") };
 			case 'Overage Approached':
 				if (this._limitedOverageView) {
 					return undefined; // No overage % available in limited view
@@ -599,6 +614,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			this._bannerElement = undefined;
 			if (protoContainer && protoContainer.children.length === 0) {
 				(protoContainer as HTMLElement).style.display = 'none';
+				this.setChatInputOverlap(false);
 			}
 		}
 	}
@@ -610,6 +626,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			this._warningCardElement = undefined;
 			if (protoContainer && protoContainer.children.length === 0) {
 				(protoContainer as HTMLElement).style.display = 'none';
+				this.setChatInputOverlap(false);
 			}
 		}
 	}
@@ -689,6 +706,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this._warningCardElement = card;
 		protoContainer.appendChild(card);
 		protoContainer.style.display = '';
+		this.setChatInputOverlap(true);
 	}
 
 	private getInlineWarningContent(): { title: string; description: string; buttonLabel?: string; secondaryButtonLabel?: string; budgetButtons?: string[] } | undefined {
@@ -699,7 +717,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (isEnterprise && state === 'Overage Reached') {
 			return {
 				title: localize('inlineEntMonthlyReachedTitle', "You've reached your Monthly Limit."),
-				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1. Contact your administrator for more information."),
+				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1 at 10:00 AM. Contact your administrator for more information."),
 			};
 		}
 
@@ -707,7 +725,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			if (sku === 'Edu/Free') {
 				return {
 					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
-					description: localize('inlineSessionReachedDescFree', "Resets at 10:00am, or upgrade to increase your limits."),
+					description: localize('inlineSessionReachedDescFree', "Resets at 10:00 AM, or upgrade to increase your limits."),
 					buttonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
@@ -722,13 +740,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				}
 				return {
 					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
-					description: localize('inlineSessionReachedDescProNoO', "Resets at 10:00am. Set up an overage budget to continue."),
+					description: localize('inlineSessionReachedDescProNoO', "Resets at 10:00 AM. Set up an overage budget to continue."),
 					buttonLabel: localize('configureBudget', "Configure Budget"),
 				};
 			}
 			return {
 				title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
-				description: localize('inlineSessionReachedDescPro', "Resets at 10:00am."),
+				description: localize('inlineSessionReachedDescPro', "Resets at 10:00 AM."),
 				buttonLabel: localize('learnMore', "Learn more"),
 			};
 		}
@@ -737,7 +755,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			if (sku === 'Edu/Free') {
 				return {
 					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
-					description: localize('inlineWeeklyReachedDescFree', "Resets April 6, or upgrade to increase your limits."),
+					description: localize('inlineWeeklyReachedDescFree', "Resets April 6 at 10:00 AM, or upgrade to increase your limits."),
 					buttonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
@@ -752,13 +770,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				}
 				return {
 					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
-					description: localize('inlineWeeklyReachedDescProNoO', "Resets April 6. Set up an overage budget to continue."),
+					description: localize('inlineWeeklyReachedDescProNoO', "Resets April 6 at 10:00 AM. Set up an overage budget to continue."),
 					buttonLabel: localize('configureBudget', "Configure Budget"),
 				};
 			}
 			return {
 				title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
-				description: localize('inlineWeeklyReachedDescPro', "Resets April 6. Increase Overage Budget to continue using premium models."),
+				description: localize('inlineWeeklyReachedDescPro', "Resets April 6 at 10:00 AM. Increase Overage Budget to continue using premium models."),
 				buttonLabel: localize('increaseBudget', "Increase Budget"),
 			};
 		}
@@ -1288,7 +1306,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (!isPro) {
 			this.createCard(cards, {
 				name: localize('cardInlineSuggestions', "Inline Suggestions"),
-				resetLabel: localize('cardResetMay1Inline', "Resets May 1"),
+				resetLabel: localize('cardResetMay1Inline', "Resets May 1 at 10:00 AM"),
 				percent: 12,
 			});
 		}
@@ -1299,7 +1317,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const sessionPct = (state === 'Session Approached') ? 75 : (state === 'Session Reached' || state === 'Weekly Reached') ? 100 : (state === 'Session Reset' || state === 'Weekly Reset') ? 0 : 18;
 			this.createCard(cards, {
 				name: localize('cardFiveHour', "Five-Hour Limit"),
-				resetLabel: localize('cardResetAt10', "Resets at 10:00am"),
+				resetLabel: localize('cardResetAt10', "Resets at 10:00 AM"),
 				percent: sessionPct,
 				severity: sessionSeverity,
 				highlight: !!sessionSeverity,
@@ -1312,7 +1330,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const weeklyPct = (state === 'Weekly Approached') ? 75 : (state === 'Weekly Reached') ? 100 : (state === 'Weekly Reset') ? 0 : 56;
 		this.createCard(cards, {
 			name: localize('cardWeekly', "Weekly Limit"),
-			resetLabel: localize('cardResetApr6', "Resets April 6"),
+			resetLabel: localize('cardResetApr6', "Resets April 6 at 10:00 AM"),
 			percent: weeklyPct,
 			severity: weeklySeverity,
 			highlight: !!weeklySeverity,
@@ -1394,7 +1412,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const sessionHighlight = state === 'Session Approached';
 			this.createCard(cards, {
 				name: localize('cardFiveHour', "Five-Hour Limit"),
-				resetLabel: localize('cardResetAt10', "Resets at 10:00am"),
+				resetLabel: localize('cardResetAt10', "Resets at 10:00 AM"),
 				percent: sessionPct,
 				severity: sessionHighlight ? 'info' : undefined,
 				highlight: sessionHighlight,
@@ -1408,7 +1426,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const weeklyHighlight = state === 'Weekly Approached';
 		this.createCard(cards, {
 			name: localize('cardWeekly', "Weekly Limit"),
-			resetLabel: localize('cardResetApr6', "Resets April 6"),
+			resetLabel: localize('cardResetApr6', "Resets April 6 at 10:00 AM"),
 			percent: weeklyPct,
 			severity: weeklyHighlight ? 'info' : undefined,
 			highlight: weeklyHighlight,
@@ -1421,7 +1439,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const overageStatusBadge = isOverageInUse ? localize('badgeInUse', "In use") : localize('badgeNotInUse', "Not in use");
 		this.createCard(cards, {
 			name: localize('cardRunover', "Overage Budget"),
-			resetLabel: localize('cardResetMay1', "Resets May 1"),
+			resetLabel: localize('cardResetMay1', "Resets May 1 at 10:00 AM"),
 			percent: overagePct,
 			severity: overageSev,
 			disabled: !isOverageInUse && state !== 'Overage Reset',
@@ -1495,7 +1513,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const sessionDisabled = state === 'Session Reached' || state === 'Weekly Reached' || isOverageState;
 			this.createCard(cards, {
 				name: localize('cardFiveHour', "Five-Hour Limit"),
-				resetLabel: localize('cardResetAt10', "Resets at 10:00am"),
+				resetLabel: localize('cardResetAt10', "Resets at 10:00 AM"),
 				percent: sessionPct,
 				severity: sessionHighlight ? 'info' : undefined,
 				highlight: sessionHighlight,
@@ -1511,7 +1529,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const weeklyDisabled = state === 'Weekly Reached' || state === 'Session Reached' || isOverageState;
 		this.createCard(cards, {
 			name: localize('cardWeekly', "Weekly Limit"),
-			resetLabel: localize('cardResetApr6', "Resets April 6"),
+			resetLabel: localize('cardResetApr6', "Resets April 6 at 10:00 AM"),
 			percent: weeklyPct,
 			severity: weeklyHighlight ? 'info' : undefined,
 			highlight: weeklyHighlight,
@@ -1614,7 +1632,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const monthlySev = (_state === 'Overage Approached') ? 'warning' as const : (_state === 'Overage Reached') ? 'error' as const : undefined;
 			this.createCard(cards, {
 				name: localize('cardMonthlyLimit', "Monthly Limit"),
-				resetLabel: localize('cardResetMay1Monthly', "Resets May 1"),
+				resetLabel: localize('cardResetMay1Monthly', "Resets May 1 at 10:00 AM"),
 				percent: monthlyPct,
 				severity: monthlySev,
 				highlight: !!monthlySev,
@@ -1889,9 +1907,9 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 	private getBannerMessage(state: string): string | undefined {
 		switch (state) {
 			case 'Premium Approached':
-				return localize('cmBannerPremiumApproach', "You've used most of your premium request allowance. It resets May 1.");
+				return localize('cmBannerPremiumApproach', "You've used most of your premium request allowance. It resets May 1 at 10:00 AM.");
 			case 'Chat Approached':
-				return localize('cmBannerChatApproach', "You've used most of your chat message allowance. It resets May 1.");
+				return localize('cmBannerChatApproach', "You've used most of your chat message allowance. It resets May 1 at 10:00 AM.");
 			default:
 				return undefined;
 		}
@@ -1900,13 +1918,13 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 	private getBannerGaugeInfo(state: string): { label: string; percentLabel: string; percent: number; severity: string; resetLabel: string } | undefined {
 		switch (state) {
 			case 'Premium Approached':
-				return { label: localize('cmGaugePremium', "Premium Requests"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1") };
+				return { label: localize('cmGaugePremium', "Premium Requests"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1 at 10:00 AM") };
 			case 'Premium Exhausted':
-				return { label: localize('cmGaugePremium', "Premium Requests"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnMay1', "Resets May 1") };
+				return { label: localize('cmGaugePremium', "Premium Requests"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnMay1', "Resets May 1 at 10:00 AM") };
 			case 'Chat Approached':
-				return { label: localize('cmGaugeChat', "Chat Messages"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1") };
+				return { label: localize('cmGaugeChat', "Chat Messages"), percentLabel: localize('gaugeUsed75Lc', "75% used"), percent: 75, severity: 'warning', resetLabel: localize('resetsOnMay1', "Resets May 1 at 10:00 AM") };
 			case 'Chat Exhausted':
-				return { label: localize('cmGaugeChat', "Chat Messages"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnMay1', "Resets May 1") };
+				return { label: localize('cmGaugeChat', "Chat Messages"), percentLabel: localize('gaugeUsed100Lc', "100% used"), percent: 100, severity: 'error', resetLabel: localize('resetsOnMay1', "Resets May 1 at 10:00 AM") };
 			default:
 				return undefined;
 		}
@@ -2007,6 +2025,21 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 		if (!this._bannerElement.parentElement) {
 			protoContainer.appendChild(this._bannerElement);
 			protoContainer.style.display = '';
+			this.setChatInputOverlap(true);
+		}
+	}
+
+	private setChatInputOverlap(enabled: boolean): void {
+		const container = this.layoutService.getContainer(mainWindow);
+		const chatInput = container.querySelector('.part.auxiliarybar .interactive-input-part .chat-input-container') as HTMLElement | null; // eslint-disable-line no-restricted-syntax
+		if (chatInput) {
+			if (enabled) {
+				chatInput.style.position = 'relative';
+				chatInput.style.zIndex = '1';
+			} else {
+				chatInput.style.position = '';
+				chatInput.style.zIndex = '';
+			}
 		}
 	}
 
@@ -2021,7 +2054,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 			const p = this._bannerElement.parentElement;
 			this._bannerElement.remove();
 			this._bannerElement = undefined;
-			if (p && p.children.length === 0) { (p as HTMLElement).style.display = 'none'; }
+			if (p && p.children.length === 0) { (p as HTMLElement).style.display = 'none'; this.setChatInputOverlap(false); }
 		}
 	}
 
@@ -2030,7 +2063,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 			const p = this._warningCardElement.parentElement;
 			this._warningCardElement.remove();
 			this._warningCardElement = undefined;
-			if (p && p.children.length === 0) { (p as HTMLElement).style.display = 'none'; }
+			if (p && p.children.length === 0) { (p as HTMLElement).style.display = 'none'; this.setChatInputOverlap(false); }
 		}
 	}
 
@@ -2077,6 +2110,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 		this._warningCardElement = card;
 		protoContainer.appendChild(card);
 		protoContainer.style.display = '';
+		this.setChatInputOverlap(true);
 	}
 
 	private getWarningContent(): { title: string; description: string; buttonLabel?: string } | undefined {
@@ -2087,20 +2121,20 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 			if (sku === 'Free') {
 				return {
 					title: localize('cmWarnPremiumTitle', "You've reached your premium request limit."),
-					description: localize('cmWarnPremiumDescFree', "Resets May 1, or upgrade to increase your limits."),
+					description: localize('cmWarnPremiumDescFree', "Resets May 1 at 10:00 AM, or upgrade to increase your limits."),
 					buttonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
 			return {
 				title: localize('cmWarnPremiumTitle', "You've reached your premium request limit."),
-				description: localize('cmWarnPremiumDescPro', "Resets May 1, or purchase additional premium requests."),
+				description: localize('cmWarnPremiumDescPro', "Resets May 1 at 10:00 AM, or purchase additional premium requests."),
 				buttonLabel: localize('managePremium', "Manage paid premium requests"),
 			};
 		}
 		if (state === 'Chat Exhausted') {
 			return {
 				title: localize('cmWarnChatTitle', "You've reached your chat message limit."),
-				description: localize('cmWarnChatDescFree', "Resets May 1, or upgrade to increase your limits."),
+				description: localize('cmWarnChatDescFree', "Resets May 1 at 10:00 AM, or upgrade to increase your limits."),
 				buttonLabel: localize('upgrade', "Upgrade"),
 			};
 		}
@@ -2188,7 +2222,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 		if (isFree) {
 			this.createCard(cards, {
 				name: localize('cmCardInline', "Inline Suggestions"),
-				resetLabel: localize('cmResetMay1', "Resets May 1"),
+				resetLabel: localize('cmResetMay1', "Resets May 1 at 10:00 AM"),
 				percent: 12,
 			});
 		}
@@ -2200,7 +2234,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 		const premiumSev = state === 'Premium Approached' ? 'warning' as const : state === 'Premium Exhausted' ? 'error' as const : undefined;
 		this.createCard(cards, {
 			name: localize('cmCardPremium', "Premium Requests"),
-			resetLabel: localize('cmResetMay1', "Resets May 1"),
+			resetLabel: localize('cmResetMay1', "Resets May 1 at 10:00 AM"),
 			percent: premiumPct,
 			severity: premiumSev,
 			highlight: !!premiumSev,
@@ -2215,7 +2249,7 @@ class CopilotCurrentModelStatusBarContribution extends Disposable implements IWo
 				: state === 'Chat Exhausted' ? 'error' as const : undefined;
 			this.createCard(cards, {
 				name: localize('cmCardChat', "Chat Messages"),
-				resetLabel: localize('cmResetMay1', "Resets May 1"),
+				resetLabel: localize('cmResetMay1', "Resets May 1 at 10:00 AM"),
 				percent: chatPct,
 				severity: chatSev,
 				highlight: !!chatSev,
