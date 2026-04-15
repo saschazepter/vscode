@@ -891,7 +891,8 @@ export class ClaudeFolderRepositoryManager extends FolderRepositoryManager {
 		@IWorkspaceService workspaceService: IWorkspaceService,
 		@ILogService logService: ILogService,
 		@IToolsService toolsService: IToolsService,
-		@IClaudeSessionStateService private readonly sessionStateService: IClaudeSessionStateService
+		@IClaudeSessionStateService private readonly sessionStateService: IClaudeSessionStateService,
+		@IFileSystemService private readonly fileSystem: IFileSystemService
 	) {
 		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService);
 	}
@@ -901,7 +902,10 @@ export class ClaudeFolderRepositoryManager extends FolderRepositoryManager {
 	 */
 	protected async getSessionFallbackFolder(sessionId: string): Promise<vscode.Uri | undefined> {
 		const folderInfo = this.sessionStateService.getFolderInfoForSession(sessionId);
-		return folderInfo ? vscode.Uri.file(folderInfo.cwd) : undefined;
+		if (folderInfo && (await checkPathExists(vscode.Uri.file(folderInfo.cwd), this.fileSystem))) {
+			return vscode.Uri.file(folderInfo.cwd);
+		}
+		return undefined;
 	}
 }
 

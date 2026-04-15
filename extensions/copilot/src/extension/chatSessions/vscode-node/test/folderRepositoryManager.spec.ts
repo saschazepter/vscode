@@ -1068,6 +1068,7 @@ describe('ClaudeFolderRepositoryManager', () => {
 	let toolsService: FakeToolsService;
 	let sessionStateService: IClaudeSessionStateService;
 	let folderInfoMap: Map<string, ClaudeFolderInfo>;
+	let fileSystem: MockFileSystemService;
 
 	beforeEach(() => {
 		worktreeService = new FakeChatSessionWorktreeService();
@@ -1081,6 +1082,7 @@ describe('ClaudeFolderRepositoryManager', () => {
 			override error = vi.fn();
 		}();
 		toolsService = new FakeToolsService();
+		fileSystem = new MockFileSystemService();
 
 		folderInfoMap = new Map();
 		sessionStateService = new class extends mock<IClaudeSessionStateService>() {
@@ -1096,7 +1098,8 @@ describe('ClaudeFolderRepositoryManager', () => {
 			workspaceService,
 			logService,
 			toolsService,
-			sessionStateService
+			sessionStateService,
+			fileSystem
 		);
 	});
 
@@ -1141,10 +1144,22 @@ describe('ClaudeFolderRepositoryManager', () => {
 			const token = disposables.add(new CancellationTokenSource()).token;
 
 			folderInfoMap.set(sessionId, { cwd: '/claude/project', additionalDirectories: [] });
+			await fileSystem.createDirectory(URI.file('/claude/project'));
 
 			const result = await manager.getFolderRepository(sessionId, undefined, token);
 
 			expect(result.folder?.fsPath).toBe(vscode.Uri.file('/claude/project').fsPath);
+		});
+
+		it('returns empty result when fallback folder does not exist', async () => {
+			const sessionId = 'test-session';
+			const token = disposables.add(new CancellationTokenSource()).token;
+
+			folderInfoMap.set(sessionId, { cwd: '/nonexistent/path', additionalDirectories: [] });
+
+			const result = await manager.getFolderRepository(sessionId, undefined, token);
+
+			expect(result.folder).toBeUndefined();
 		});
 
 		it('returns empty result when no folder info available', async () => {
