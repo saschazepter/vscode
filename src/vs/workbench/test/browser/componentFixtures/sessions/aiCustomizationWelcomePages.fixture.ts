@@ -14,7 +14,6 @@ import { AICustomizationManagementSection } from '../../../../contrib/chat/brows
 import { IAICustomizationWorkspaceService, IStorageSourceFilter } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
 import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { AICustomizationWelcomePage } from '../../../../contrib/chat/browser/aiCustomization/aiCustomizationWelcomePage.js';
-import { PromptLaunchersAICustomizationWelcomePage } from '../../../../contrib/chat/browser/aiCustomization/aiCustomizationWelcomePagePromptLaunchers.js';
 import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from '../fixtureUtils.js';
 import { NullHoverService } from '../../../../../platform/hover/test/browser/nullHoverService.js';
 
@@ -82,25 +81,6 @@ function createHost(container: HTMLElement): HTMLElement {
 	return DOM.append(content, DOM.$('.content-inner'));
 }
 
-function renderPromptLaunchersWelcomePage(ctx: ComponentFixtureContext): void {
-	const host = createHost(ctx.container);
-	const workspaceService = createMockWorkspaceService();
-	const page = ctx.disposableStore.add(new PromptLaunchersAICustomizationWelcomePage(
-		host,
-		workspaceService.welcomePageFeatures,
-		{
-			selectSection: () => { },
-			selectSectionWithMarketplace: () => { },
-			closeEditor: () => { },
-			prefillChat: () => { },
-		},
-		createMockCommandService(),
-		workspaceService,
-		NullHoverService,
-	));
-	page.rebuildCards(visibleSections);
-}
-
 function renderWelcomePage(ctx: ComponentFixtureContext): void {
 	const host = createHost(ctx.container);
 	const workspaceService = createMockWorkspaceService();
@@ -121,10 +101,6 @@ function renderWelcomePage(ctx: ComponentFixtureContext): void {
 }
 
 export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
-	WelcomePagePromptLaunchers: defineComponentFixture({
-		labels: { kind: 'screenshot' },
-		render: renderPromptLaunchersWelcomePage,
-	}),
 	WelcomePage: defineComponentFixture({
 		labels: { kind: 'screenshot' },
 		render: renderWelcomePage,

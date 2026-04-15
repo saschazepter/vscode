@@ -40,7 +40,7 @@ export interface IAICustomizationWelcomePageImplementation extends IDisposable {
  */
 export class AICustomizationWelcomePage extends Disposable {
 
-	private readonly implementation: PromptLaunchersAICustomizationWelcomePage;
+	private readonly implementation: IAICustomizationWelcomePageImplementation;
 
 	readonly container: HTMLElement;
 
