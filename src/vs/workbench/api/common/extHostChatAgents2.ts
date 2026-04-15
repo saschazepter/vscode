@@ -531,6 +531,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			source: dto.source,
 			extensionId: dto.extensionId,
 			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			enablement: dto.enablement,
 			argumentHint: dto.argumentHint,
 			tools: dto.tools,
 			model: dto.model,
@@ -547,6 +548,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			source: dto.source,
 			extensionId: dto.extensionId,
 			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			enablement: dto.enablement,
 			pattern: dto.pattern,
 		});
 	}
@@ -559,6 +561,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			source: dto.source,
 			extensionId: dto.extensionId,
 			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			enablement: dto.enablement,
 			userInvocable: dto.userInvocable,
 		});
 	}
@@ -571,6 +574,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			source: dto.source,
 			extensionId: dto.extensionId,
 			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			enablement: dto.enablement,
 			argumentHint: dto.argumentHint,
 			userInvocable: dto.userInvocable,
 		});

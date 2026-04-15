@@ -72,6 +72,14 @@ export const SKILL_PROVIDER_ACTIVATION_EVENT = 'onSkillProvider';
 export interface IPromptFileContext { }
 
 /**
+ * Enablement metadata attached to a contributed customization resource.
+ */
+export interface IPromptFileEnablement {
+	readonly sessionTypes?: readonly string[];
+	readonly configurationKeys?: readonly string[];
+}
+
+/**
  * Represents a prompt file resource from an external provider.
  */
 export interface IPromptFileResource {
@@ -87,6 +95,10 @@ export interface IPromptFileResource {
 	 * Optional externally provided prompt command description.
 	 */
 	readonly description?: string;
+	/**
+	 * Optional enablement metadata describing when this resource should be offered.
+	 */
+	readonly enablement?: IPromptFileEnablement;
 }
 
 /**
@@ -145,6 +157,8 @@ export interface IPromptPathBase {
 	readonly name?: string;
 
 	readonly description?: string;
+
+	readonly enablement?: IPromptFileEnablement;
 }
 
 export interface IExtensionPromptPath extends IPromptPathBase {
@@ -276,6 +290,11 @@ export interface ICustomAgent {
 	 * when this expression evaluates to true against a scoped context.
 	 */
 	readonly when?: ContextKeyExpression;
+
+	/**
+	 * Optional enablement metadata describing when this agent should be offered.
+	 */
+	readonly enablement?: IPromptFileEnablement;
 }
 
 export interface IAgentInstructions {
@@ -296,6 +315,7 @@ export interface IChatPromptSlashCommand {
 	readonly extension?: IExtensionDescription;
 	readonly pluginUri?: URI;
 	readonly when: ContextKeyExpression | undefined;
+	readonly enablement?: IPromptFileEnablement;
 }
 
 export interface IResolvedChatPromptSlashCommand extends IChatPromptSlashCommand {
@@ -348,6 +368,7 @@ export interface IInstructionFile {
 	 * when this expression evaluates to true against a scoped context.
 	 */
 	readonly when?: ContextKeyExpression;
+	readonly enablement?: IPromptFileEnablement;
 }
 
 /**
@@ -381,6 +402,7 @@ export interface IAgentSkill {
 	 * Optional extension metadata describing where this skill originated.
 	 */
 	readonly extension?: IExtensionDescription;
+	readonly enablement?: IPromptFileEnablement;
 }
 
 /**
@@ -601,7 +623,7 @@ export interface IPromptsService extends IDisposable {
 	 * Internal: register a contributed file. Returns a disposable that removes the contribution.
 	 * Not intended for extension authors; used by contribution point handler.
 	 */
-	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string): IDisposable;
+	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string, enablement?: IPromptFileEnablement): IDisposable;
 
 
 	getPromptLocationLabel(promptPath: IPromptPath): string;

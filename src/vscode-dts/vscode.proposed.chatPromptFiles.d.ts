@@ -14,6 +14,14 @@ declare module 'vscode' {
 	export type ChatResourceSource = 'local' | 'user' | 'extension' | 'plugin';
 
 	/**
+	 * Enablement metadata attached to a chat customization contribution.
+	 */
+	export interface ChatResourceEnablement {
+		readonly sessionTypes?: readonly string[];
+		readonly configurationKeys?: readonly string[];
+	}
+
+	/**
 	 * Represents a chat-related resource, such as a custom agent, instructions, prompt file, skill, or slash command.
 	 */
 	export interface ChatResource {
@@ -21,6 +29,11 @@ declare module 'vscode' {
 		 * Uri to the chat resource. This is typically a `.agent.md`, `.instructions.md`, `.prompt.md`, or `SKILL.md` file.
 		 */
 		readonly uri: Uri;
+
+		/**
+		 * Optional enablement metadata that describes when the resource should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
 	}
 
 	/**
@@ -46,6 +59,11 @@ declare module 'vscode' {
 		 * Where the custom agent was loaded from.
 		 */
 		readonly source: ChatResourceSource;
+
+		/**
+		 * Optional enablement metadata that describes when the custom agent should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -108,6 +126,11 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
+		 * Optional enablement metadata that describes when the instruction should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
+
+		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
 		 */
 		readonly extensionId?: string;
@@ -148,6 +171,11 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
+		 * Optional enablement metadata that describes when the skill should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
+
+		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
 		 */
 		readonly extensionId?: string;
@@ -186,6 +214,11 @@ declare module 'vscode' {
 		 * Where the chat resource was loaded from.
 		 */
 		readonly source: ChatResourceSource;
+
+		/**
+		 * Optional enablement metadata that describes when the slash command should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -385,7 +418,7 @@ declare module 'vscode' {
 		 * Provide the list of currently available hook configuration files. These are JSON files that define lifecycle hooks from all sources (workspace, user, and extension-provided).
 		 * @param token A cancellation token.
 		 */
-		export function getHooks(token: CancellationToken): Thenable<readonly ChatResource[]>;
+		export function getHooks(token: CancellationToken): Thenable<readonly ChatHook[]>;
 
 		/**
 		 * An event that fires when the list of {@link plugins plugins} changes.
@@ -397,7 +430,7 @@ declare module 'vscode' {
 		 * Provide the list of currently installed agent plugins.
 		 * @param token A cancellation token.
 		 */
-		export function getPlugins(token: CancellationToken): Thenable<readonly ChatResource[]>;
+		export function getPlugins(token: CancellationToken): Thenable<readonly ChatPlugin[]>;
 
 		/**
 		 * Register a provider for custom agents.
