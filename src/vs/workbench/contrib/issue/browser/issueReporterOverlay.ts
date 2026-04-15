@@ -577,6 +577,11 @@ export class IssueReporterOverlay {
 	}
 
 	private updateToolbarActionsSlot(): void {
+		// In embedded mode, the capture strip handles all media controls
+		if (this.options.embedded) {
+			return;
+		}
+
 		const actionsContainer = this.stepPages[WizardStep.Screenshots]?.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
 		const actionsInToolbar = this.toolbarActionsSlot.querySelector('.wizard-screenshot-actions') as HTMLElement | null;
 		const container = actionsContainer ?? actionsInToolbar;
