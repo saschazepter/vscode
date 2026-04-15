@@ -6,6 +6,7 @@
 import { URI } from '../../../../base/common/uri.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorCloseHandler } from '../../../common/editor/editorInput.js';
+import { EditorInputCapabilities, GroupIdentifier } from '../../../common/editor.js';
 import { ConfirmResult, IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IssueReporterData } from '../common/issue.js';
 import { localize } from '../../../../nls.js';
@@ -78,5 +79,13 @@ export class IssueReporterEditorInput extends EditorInput {
 
 	override matches(other: EditorInput | unknown): boolean {
 		return other instanceof IssueReporterEditorInput;
+	}
+
+	override get capabilities(): EditorInputCapabilities {
+		return EditorInputCapabilities.Singleton | EditorInputCapabilities.Readonly;
+	}
+
+	override canMove(_sourceGroup: GroupIdentifier, _targetGroup: GroupIdentifier): true | string {
+		return localize('cannotMoveIssueReporter', "The issue reporter cannot be moved to another window.");
 	}
 }
