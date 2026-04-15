@@ -355,11 +355,7 @@ export class TestFailureTool implements IToolImpl {
 	) { }
 
 	async invoke(invocation: IToolInvocation, countTokens: CountTokensCallback, progress: ToolProgress, token: CancellationToken): Promise<IToolResult> {
-		const result = this._testResultService.results.find(r => {
-			const failCount = r.counts[TestResultState.Errored] + r.counts[TestResultState.Failed];
-			return failCount > 0;
-		});
-
+		const result = this._testResultService.results.find(r => r.tasks.length > 0);
 		if (!result) {
 			return {
 				content: [{ kind: 'text', value: 'No test failures were found yet, call the runTests tool to run tests and find failures.' }],
