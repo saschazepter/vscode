@@ -125,11 +125,17 @@ export function getResponsesApiCompactionThresholdFromBody(body: Pick<IEndpointB
 	return undefined;
 }
 
-type ResponseInputAssistantMessageWithPhase = Omit<OpenAI.Responses.ResponseOutputMessage, 'id' | 'status' | 'content'> & {
-	content: Array<Pick<OpenAI.Responses.ResponseOutputText, 'type' | 'text'>>;
+interface ResponseInputAssistantTextContentPart {
+	type: 'output_text';
+	text: string;
+}
+
+interface ResponseInputAssistantMessageWithPhase {
+	type: 'message';
 	role: 'assistant';
+	content: ResponseInputAssistantTextContentPart[];
 	phase?: string;
-};
+}
 
 interface ResponseOutputItemWithPhase {
 	phase?: string;
