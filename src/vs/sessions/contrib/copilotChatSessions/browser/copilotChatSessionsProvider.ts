@@ -1268,15 +1268,13 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		this._refreshSessionCache();
 	}
 
-	async renameChat(sessionId: string, _chatUri: URI, title: string): Promise<void> {
-		const agentSession = this._findAgentSession(sessionId);
-		if (agentSession) {
-			if (agentSession.providerType === CopilotCLISessionType.id) {
-				this.commandService.executeCommand('github.copilot.cli.sessions.setTitle', { resource: agentSession.resource }, title);
-			} else {
-				this.chatService.setChatSessionTitle(agentSession.resource, title);
-			}
+	async renameChat(sessionId: string, chatUri: URI, title: string): Promise<void> {
+		const agentSession = this.agentSessionsService.getSession(chatUri);
+		if (agentSession?.providerType === CopilotCLISessionType.id) {
+			await this.commandService.executeCommand('github.copilot.cli.sessions.setTitle', { resource: chatUri }, title);
+			return;
 		}
+		throw new Error('Renaming is only supported for Copilot CLI sessions');
 	}
 
 	async deleteChat(sessionId: string, chatUri: URI): Promise<void> {
@@ -1604,6 +1602,25 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			this._sessionCache.delete(key);
 			this._groupModel.removeChat(newChatSession.id);
 			throw new Error('[DefaultCopilotProvider] Failed to open chat widget for subsequent chat');
+		}
+
+		// Load session model with selected options
+		const modelRef = await this.chatService.acquireOrLoadSession(newChatSession.resource, ChatAgentLocation.Chat, CancellationToken.None);
+		if (modelRef) {
+			const model = modelRef.object;
+			if (newChatSession.selectedModelId) {
+				const languageModel = this.languageModelsService.lookupLanguageModel(newChatSession.selectedModelId);
+				if (languageModel) {
+					model.inputModel.setState({ selectedModel: { identifier: newChatSession.selectedModelId, metadata: languageModel } });
+				}
+			}
+			if (newChatSession.chatMode) {
+				model.inputModel.setState({ mode: { id: newChatSession.chatMode.id, kind: newChatSession.chatMode.kind } });
+			}
+			if (newChatSession.selectedOptions.size > 0) {
+				this.chatSessionsService.updateSessionOptions(newChatSession.resource, newChatSession.selectedOptions);
+			}
+			modelRef.dispose();
 		}
 
 		// Send request
