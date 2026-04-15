@@ -82,7 +82,7 @@ class TestSessionService extends mock<ICopilotCLISessionService>() {
 		throw new Error('Not implemented');
 	});
 	override forkSession = vi.fn(async () => 'forked-session');
-	override tryGetPartialSesionHistory = vi.fn(async () => undefined);
+	override tryGetPartialSessionHistory = vi.fn(async () => undefined);
 	override getChatHistory = vi.fn(async () => []);
 }
 
