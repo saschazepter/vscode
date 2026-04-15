@@ -607,7 +607,7 @@ export class ChangesViewPane extends ViewPane {
 				}
 
 				// Open multi-file diff editor
-				this._openMultiFileDiffEditor(e.element.uri);
+				void this._openMultiFileDiffEditor(e.element.uri);
 			}));
 		}
 
