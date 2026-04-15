@@ -101,11 +101,11 @@ function darwinBundleDocumentTypes(types: { [name: string]: string | string[] },
 	});
 }
 
-const { electronVersion } = util.getElectronVersion();
+const { electronVersion, msBuildId } = util.getElectronVersion();
 
 export const config = {
 	version: electronVersion,
-	tag: 'v39.8.7-13826954-dev',
+	tag: product.electronRepository ? `v${electronVersion}-${msBuildId}` : undefined,
 	productAppName: product.nameLong,
 	companyName: 'Microsoft Corporation',
 	copyright: 'Copyright (C) 2026 Microsoft. All rights reserved',
