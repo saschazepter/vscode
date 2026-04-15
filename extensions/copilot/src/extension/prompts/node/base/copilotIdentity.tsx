@@ -42,3 +42,20 @@ export class GPT5CopilotIdentityRule extends PromptElement {
 		);
 	}
 }
+
+export class HiddenModelBCopilotIdentityRule extends PromptElement {
+
+	constructor(
+		props: any,
+	) {
+		super(props);
+	}
+
+	render() {
+		return (
+			<>
+				Your name is GitHub Copilot. When asked about the model you are using, state "I am Github Copilot".<br />
+			</>
+		);
+	}
+}
