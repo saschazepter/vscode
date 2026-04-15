@@ -154,6 +154,8 @@ export class OverlayLayoutElement implements IDisposable {
 				ws.setProperty('left', '0');
 				ws.setProperty('right', '0');
 				ws.setProperty('bottom', '0');
+				ws.setProperty('width', '');
+				ws.setProperty('height', '');
 				this._clippingAnchor = undefined;
 			}
 		} else {
