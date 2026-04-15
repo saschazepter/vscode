@@ -6,7 +6,7 @@
 import { Sequencer } from '../../../../base/common/async.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
-import { derivedOpts, IObservable, runOnChange } from '../../../../base/common/observable.js';
+import { autorun, derivedOpts, IObservable, runOnChange } from '../../../../base/common/observable.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -45,31 +45,34 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 			return this._sessionManagementService.activeSession.read(reader);
 		});
 
-		// Session changed (save previous + apply current)
-		this._register(runOnChange(activeSession, (_, previousSession) => {
-			if (!previousSession || previousSession.status.get() === SessionStatus.Untitled) {
+		this._register(autorun(reader => {
+			const _useModalConfig = this._useModalConfigObs.read(reader);
+			if (_useModalConfig === 'all') {
 				return;
 			}
 
-			this._saveWorkingSet(previousSession.resource);
-		}));
+			// Session changed (save)
+			reader.store.add(runOnChange(activeSession, (_, previousSession) => {
+				if (!previousSession || previousSession.status.read(undefined) === SessionStatus.Untitled) {
+					return;
+				}
 
-		// Workspace folders changes (apply)
-		this._register(this._workspaceContextService.onDidChangeWorkspaceFolders(() => {
-			const activeSessionResource = activeSession.get()?.resource;
-			if (!activeSessionResource) {
-				return;
-			}
+				this._saveWorkingSet(previousSession.resource);
+			}));
 
-			void this._applyWorkingSet(activeSessionResource);
+			// Workspace folders changes (apply)
+			reader.store.add(this._workspaceContextService.onDidChangeWorkspaceFolders(() => {
+				const activeSessionResource = activeSession.read(undefined)?.resource;
+				if (!activeSessionResource) {
+					return;
+				}
+
+				void this._applyWorkingSet(activeSessionResource);
+			}));
 		}));
 	}
 
 	private _saveWorkingSet(sessionResource: URI): void {
-		if (this._useModalConfigObs.get() === 'all') {
-			return;
-		}
-
 		const existingWorkingSet = this._workingSets.get(sessionResource);
 		if (existingWorkingSet) {
 			this._editorGroupsService.deleteWorkingSet(existingWorkingSet);
@@ -80,10 +83,6 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 	}
 
 	private async _applyWorkingSet(sessionResource: URI): Promise<void> {
-		if (this._useModalConfigObs.get() === 'all') {
-			return;
-		}
-
 		const workingSet: IEditorWorkingSet | 'empty' = this._workingSets.get(sessionResource) ?? 'empty';
 		const preserveFocus = this._layoutService.hasFocus(Parts.PANEL_PART);
 
