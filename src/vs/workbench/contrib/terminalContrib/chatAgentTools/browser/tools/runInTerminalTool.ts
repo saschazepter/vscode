@@ -24,7 +24,7 @@ import { IInstantiationService, type ServicesAccessor } from '../../../../../../
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { ICommandDetectionCapability, TerminalCapability } from '../../../../../../platform/terminal/common/capabilities/capabilities.js';
-import { ITerminalLogService, ITerminalProfile, TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
+import { ITerminalLogService, ITerminalProfile } from '../../../../../../platform/terminal/common/terminal.js';
 import { IRemoteAgentService } from '../../../../../services/remote/common/remoteAgentService.js';
 import { TerminalToolConfirmationStorageKeys } from '../../../../chat/browser/widget/chatContentParts/toolInvocationParts/chatTerminalToolConfirmationSubPart.js';
 import { IChatService, ChatRequestQueueKind, ElicitationState, type IChatExternalToolInvocationUpdate, type IChatTerminalToolInvocationData } from '../../../../chat/common/chatService/chatService.js';
@@ -1305,12 +1305,10 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				commandDetection!,
 				executionOptions.persistentSession
 			);
-			const isShellIntegrationEnabled = this._configurationService.getValue(TerminalSettingId.ShellIntegrationEnabled) === true;
-			const shouldShowEnableShellIntegrationMessage = toolTerminal.shellIntegrationQuality === ShellIntegrationQuality.None && !isShellIntegrationEnabled;
-			this._logService.info(`Anthony -> RunInTerminalTool: shellIntegrationQuality=${toolTerminal.shellIntegrationQuality}, isShellIntegrationEnabled=${isShellIntegrationEnabled}, showEnableShellIntegrationMessage=${shouldShowEnableShellIntegrationMessage}`);
-			if (shouldShowEnableShellIntegrationMessage) {
-				toolResultMessage = '$(info) Enable [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) to improve command detection';
-			}
+			// NOTE: The shell integration banner decision is deferred to after command execution
+			// completes (see below). This gives SI time to arrive — on Windows PowerShell 5.1,
+			// cold-loading PSReadLine can push `HasRichCommandDetection` past the initial wait
+			// timeout, and checking here would incorrectly show the banner.
 			this._logService.info(`RunInTerminalTool: Using \`${execution.strategy.type}\` execute strategy for command \`${command}\``);
 			store.add(execution);
 			RunInTerminalTool._activeExecutions.set(termId, execution);
@@ -1683,6 +1681,16 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					toolSpecificData: retryToolSpecificData,
 				}, _countTokens, _progress, token);
 			}
+		}
+
+		// Re-check shell integration quality now that command execution has completed.
+		// By this point SI has had enough time to arrive even on slow shells (e.g. Windows
+		// PowerShell 5.1 + accessibility mode with cold-loading PSReadLine). Only set the
+		// banner if toolResultMessage hasn't already been set (e.g. by the alt-buffer path).
+		this._terminalToolCreator.refreshShellIntegrationQuality(toolTerminal);
+		this._logService.info(`RunInTerminalTool: shellIntegrationQuality=${toolTerminal.shellIntegrationQuality} at banner decision time`);
+		if (!toolResultMessage && toolTerminal.shellIntegrationQuality === ShellIntegrationQuality.None) {
+			toolResultMessage = '$(info) Enable [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) to improve command detection';
 		}
 
 		const resultText: string[] = [];
