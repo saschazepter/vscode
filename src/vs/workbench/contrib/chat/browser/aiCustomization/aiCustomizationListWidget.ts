@@ -822,6 +822,9 @@ export class AICustomizationListWidget extends Disposable {
 		this.currentSection = section;
 		this.updateSectionHeader();
 		await this.loadItems();
+		if (this._store.isDisposed) {
+			return;
+		}
 		this.updateAddButton();
 	}
 
@@ -1103,6 +1106,9 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	async refresh(): Promise<void> {
 		await this.loadItems();
+		if (this._store.isDisposed) {
+			return;
+		}
 		this.updateAddButton();
 	}
 
@@ -1122,8 +1128,8 @@ export class AICustomizationListWidget extends Disposable {
 			items = [];
 		}
 
-		if (this.currentSection !== section || this._loadItemsSeq !== seq) {
-			return; // section changed or a newer load started while loading
+		if (this._store.isDisposed || this.currentSection !== section || this._loadItemsSeq !== seq) {
+			return; // disposed, section changed, or a newer load started while loading
 		}
 
 		this.allItems = items;
@@ -1509,6 +1515,9 @@ export class AICustomizationListWidget extends Disposable {
 	async generateDebugReport(): Promise<string> {
 		// Ensure items are loaded before capturing the snapshot
 		await this.loadItems();
+		if (this._store.isDisposed) {
+			return '';
+		}
 		const activeDescriptor = this.harnessService.getActiveDescriptor();
 		return generateCustomizationDebugReport(
 			this.currentSection,

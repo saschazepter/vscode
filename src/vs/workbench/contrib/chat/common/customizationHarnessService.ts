@@ -257,6 +257,13 @@ export interface ICustomizationHarnessService {
 // #region Shared filter constants
 
 /**
+ * Empty filter returned when no harness is registered yet.
+ */
+const EMPTY_FILTER: IStorageSourceFilter = {
+	sources: [],
+};
+
+/**
  * Hooks filter — local, user, and plugin sources.
  */
 const HOOKS_FILTER: IStorageSourceFilter = {
@@ -488,11 +495,8 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 	getStorageSourceFilter(type: PromptsType): IStorageSourceFilter {
 		const activeId = this._activeHarness.get();
 		const all = this._getAllHarnesses();
-		if (all.length === 0) {
-			return { sources: [] };
-		}
-		const descriptor = all.find(h => h.id === activeId);
-		return descriptor?.getStorageSourceFilter(type) ?? all[0].getStorageSourceFilter(type);
+		const descriptor = all.find(h => h.id === activeId) ?? all[0];
+		return descriptor?.getStorageSourceFilter(type) ?? EMPTY_FILTER;
 	}
 
 	getActiveDescriptor(): IHarnessDescriptor {
