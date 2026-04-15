@@ -59,6 +59,12 @@ export class CopilotCLITerminalIntegration extends Disposable implements ICopilo
 	declare _serviceBrand: undefined;
 	private readonly initialization: Promise<void>;
 	private shellScriptPath: string | undefined;
+	/**
+	 * On Windows only: a POSIX shell script (no extension) that Git Bash / MSYS bash
+	 * can execute. Used when the user's default shell is `bash.exe`, since bash cannot
+	 * run the `copilot.bat` shim.
+	 */
+	private posixShellScriptPath: string | undefined;
 	private powershellScriptPath: string | undefined;
 	private readonly pythonTerminalService: PythonTerminalService;
 	private readonly _linkProvider: CopilotCLITerminalLinkProvider | undefined;
@@ -102,6 +108,18 @@ powershell -ExecutionPolicy Bypass -File "${this.powershellScriptPath}" %*
 `;
 			this.shellScriptPath = path.join(storageLocation, `${COPILOT_CLI_COMMAND}.bat`);
 			await fs.writeFile(this.shellScriptPath, copilotPowershellScript);
+
+			// Also create a POSIX shell script for Git Bash (MSYS) on Windows. Bash cannot
+			// execute the .bat shim directly inside a `bash -c` string, and we cannot run
+			// the JS shim via Electron-as-node here because Electron on Windows does not
+			// support console stdin (see copilotCLIShim.ts header). Instead, delegate to
+			// the existing .bat shim, which routes through cmd.exe -> PowerShell where
+			// console stdin works correctly. The path uses MSYS form (e.g. /c/Users/...)
+			// since MSYS path translation does not apply inside `bash -c` strings.
+			const posixBatPath = toMsysPath(this.shellScriptPath);
+			const copilotBashScript = `#!/bin/sh\nexec "${posixBatPath}" "$@"\n`;
+			this.posixShellScriptPath = path.join(storageLocation, COPILOT_CLI_COMMAND);
+			await fs.writeFile(this.posixShellScriptPath, copilotBashScript);
 		} else {
 			const copilotShellScript = `#!/bin/sh
 unset NODE_OPTIONS
@@ -318,13 +336,17 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 				copilotCommand: this.shellScriptPath,
 				exitCommand: `&& exit`
 			};
-		} else if ((shellBasename === 'bash' || shellBasename === 'bash.exe') && this.shellScriptPath) {
+		} else if ((shellBasename === 'bash' || shellBasename === 'bash.exe') && (configPlatform === 'windows' ? this.posixShellScriptPath : this.shellScriptPath)) {
+			// On Windows (Git Bash), use the POSIX shim and reference it by its MSYS path,
+			// since the path lives inside the `-ic` shell-string and is not translated by MSYS.
+			const scriptPath = configPlatform === 'windows' ? this.posixShellScriptPath! : this.shellScriptPath!;
+			const bashScriptPath = configPlatform === 'windows' ? toMsysPath(scriptPath) : scriptPath;
 			return {
 				shell: 'bash',
 				shellPath,
-				shellArgs: [`-${shellArgs.includes('-l') ? 'l' : ''}ic`, quoteArgsForShell(this.shellScriptPath, cliArgs)],
+				shellArgs: [`-${shellArgs.includes('-l') ? 'l' : ''}ic`, quoteArgsForShell(bashScriptPath, cliArgs)],
 				iconPath,
-				copilotCommand: this.shellScriptPath,
+				copilotCommand: bashScriptPath,
 				exitCommand: `&& exit`
 			};
 		} else if (shellBasename === 'fish' && this.shellScriptPath) {
@@ -386,6 +408,15 @@ function quoteArgsForShell(shellScript: string, args: string[]): string {
 
 	const escapedArgs = args.map(escapeArg);
 	return args.length ? `${escapeArg(shellScript)} ${escapedArgs.join(' ')}` : escapeArg(shellScript);
+}
+
+/**
+ * Convert a Windows path (e.g. `C:\Users\foo\bar`) to MSYS / Git Bash form
+ * (e.g. `/c/Users/foo/bar`). MSYS only translates standalone argv entries,
+ * so paths embedded inside `bash -c "..."` strings must be converted manually.
+ */
+function toMsysPath(p: string): string {
+	return p.replace(/^([a-zA-Z]):/, (_m, drive: string) => `/${drive.toLowerCase()}`).replace(/\\/g, '/');
 }
 
 async function getCommonTerminalOptions(name: string, authenticationService: IAuthenticationService, otelService: IOTelService, location: TerminalOpenLocation = 'editor'): Promise<TerminalOptions> {
