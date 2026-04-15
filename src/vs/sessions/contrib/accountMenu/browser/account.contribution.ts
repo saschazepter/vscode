@@ -429,6 +429,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 				this.isMenuVisible = false;
 				this.container?.classList.remove('menu-visible');
 				this.renderState();
+				this.container?.focus();
 			}
 		});
 
