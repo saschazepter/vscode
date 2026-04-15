@@ -176,11 +176,16 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		// Overlay live session status from the state manager
+		// Overlay live session state from the state manager
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
-				return { ...s, status: liveState.summary.status, model: liveState.summary.model ?? s.model };
+				return {
+					...s,
+					summary: liveState.summary.title ?? s.summary,
+					status: liveState.summary.status,
+					model: liveState.summary.model ?? s.model,
+				};
 			}
 			return s;
 		});
