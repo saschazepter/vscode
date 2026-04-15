@@ -490,12 +490,12 @@ describe('createResponsesRequestBody', () => {
 
 		const body = instantiationService.invokeFunction(servicesAccessor => createResponsesRequestBody(servicesAccessor, createRequestOptions(messages, false), testEndpoint.model, testEndpoint));
 
-		expect(body.input).toContainEqual({
+		expect(body.input?.[0]).toMatchObject({
 			role: 'assistant',
 			content: [{ type: 'output_text', text: 'previous answer' }],
 			type: 'message',
-			phase: undefined,
 		});
+		expect(body.input?.[0]).not.toHaveProperty('phase');
 		expect(body.input?.[0]).not.toHaveProperty('id');
 		expect(body.input?.[0]).not.toHaveProperty('status');
 
