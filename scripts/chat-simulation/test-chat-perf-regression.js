@@ -712,7 +712,69 @@ function generateCISummary(jsonReport, baseline, opts) {
 	const lines = [];
 	const scenarios = Object.keys(jsonReport.scenarios);
 
-	lines.push(`# Chat Performance Comparison`);
+	// -- Collect verdicts per scenario/metric --------------------------------
+	/** @type {Map<string, { metric: string, verdict: string, change: number, pValue: string, basStr: string, curStr: string }[]>} */
+	const scenarioVerdicts = new Map();
+	let totalRegressions = 0;
+	let totalImprovements = 0;
+
+	for (const scenario of scenarios) {
+		const current = jsonReport.scenarios[scenario];
+		const base = baseline?.scenarios?.[scenario];
+		/** @type {{ metric: string, verdict: string, change: number, pValue: string, basStr: string, curStr: string }[]} */
+		const verdicts = [];
+
+		if (base) {
+			for (const [metric, group, unit] of allMetrics) {
+				const cur = current[group]?.[metric];
+				const bas = base[group]?.[metric];
+				if (!cur || !bas || bas.median === null || bas.median === undefined) { continue; }
+
+				const change = bas.median !== 0 ? (cur.median - bas.median) / bas.median : 0;
+				const isRegressionMetric = regressionMetricNames.has(metric);
+
+				const curRaw = (current.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+				const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
+				const ttest = welchTTest(basRaw, curRaw);
+				const pStr = ttest ? `${ttest.pValue}` : 'n/a';
+
+				let verdict = '';
+				if (isRegressionMetric) {
+					if (change > opts.threshold) {
+						if (!ttest || ttest.significant) {
+							verdict = 'REGRESSION';
+							totalRegressions++;
+						} else {
+							verdict = 'noise';
+						}
+					} else if (change < -opts.threshold && ttest?.significant) {
+						verdict = 'improved';
+						totalImprovements++;
+					} else {
+						verdict = 'ok';
+					}
+				} else {
+					verdict = 'info';
+				}
+
+				const basStr = `${bas.median}${unit} \xb1${bas.stddev}${unit}`;
+				const curStr = `${cur.median}${unit} \xb1${cur.stddev}${unit}`;
+				verdicts.push({ metric, verdict, change, pValue: pStr, basStr, curStr });
+			}
+		}
+		scenarioVerdicts.set(scenario, verdicts);
+	}
+
+	// -- Header with verdict up front ----------------------------------------
+	const hasRegressions = totalRegressions > 0;
+	const verdictIcon = hasRegressions ? '\u274C' : '\u2705';
+	const verdictText = hasRegressions
+		? `${totalRegressions} regression(s) detected`
+		: totalImprovements > 0
+			? `No regressions \u2014 ${totalImprovements} improvement(s)`
+			: 'No significant changes';
+
+	lines.push(`# ${verdictIcon} Chat Performance: ${verdictText}`);
 	lines.push('');
 	lines.push(`| | |`);
 	lines.push(`|---|---|`);
@@ -727,23 +789,85 @@ function generateCISummary(jsonReport, baseline, opts) {
 	lines.push(`| **Platform** | ${process.platform} / ${process.arch} |`);
 	lines.push('');
 
-	// Overall status
-	let totalRegressions = 0;
-	let totalImprovements = 0;
+	// -- At-a-glance overview table: one row per scenario --------------------
+	lines.push(`## Overview`);
+	lines.push('');
+	lines.push('| Scenario | TTFT | Complete | Layouts | Styles | LoAF | Verdict |');
+	lines.push('|----------|-----:|---------:|--------:|-------:|-----:|:-------:|');
 
-	// Per-scenario tables
 	for (const scenario of scenarios) {
-		const current = jsonReport.scenarios[scenario];
+		const verdicts = scenarioVerdicts.get(scenario) || [];
+		const get = (/** @type {string} */ m) => verdicts.find(v => v.metric === m);
+
+		const ttft = get('timeToFirstToken');
+		const complete = get('timeToComplete');
+		const layouts = get('layoutCount');
+		const styles = get('recalcStyleCount');
+		const loaf = get('longAnimationFrameCount');
+
+		const fmtCell = (/** @type {{ change: number, verdict: string } | undefined} */ v) => {
+			if (!v) { return '\u2014'; }
+			const pct = `${v.change > 0 ? '+' : ''}${(v.change * 100).toFixed(0)}%`;
+			return pct;
+		};
+
+		const fmtVerdict = (/** @type {{ verdict: string, change: number }[]} */ vs) => {
+			const hasRegression = vs.some(v => v.verdict === 'REGRESSION');
+			const hasImproved = vs.some(v => v.verdict === 'improved');
+			if (hasRegression) { return '\u274C Regressed'; }
+			if (hasImproved) { return '\u2B06\uFE0F Improved'; }
+			return '\u2705 OK';
+		};
+
+		const keyVerdicts = [ttft, complete, layouts, styles, loaf].filter(Boolean);
+		const rowVerdict = fmtVerdict(/** @type {any[]} */(keyVerdicts));
+
+		lines.push(`| ${scenario} | ${fmtCell(ttft)} | ${fmtCell(complete)} | ${fmtCell(layouts)} | ${fmtCell(styles)} | ${fmtCell(loaf)} | ${rowVerdict} |`);
+	}
+	lines.push('');
+
+	// -- Regressions & improvements detail section ---------------------------
+	const hasNotable = [...scenarioVerdicts.values()].some(vs => vs.some(v => v.verdict === 'REGRESSION' || v.verdict === 'improved'));
+	if (hasNotable) {
+		lines.push('## Regressions & Improvements');
+		lines.push('');
+		lines.push('Only metrics that regressed or improved significantly are shown below.');
+		lines.push('');
+
+		for (const scenario of scenarios) {
+			const verdicts = scenarioVerdicts.get(scenario) || [];
+			const notable = verdicts.filter(v => v.verdict === 'REGRESSION' || v.verdict === 'improved');
+			if (notable.length === 0) { continue; }
+
+			const icon = notable.some(v => v.verdict === 'REGRESSION') ? '\u274C' : '\u2B06\uFE0F';
+			lines.push(`### ${icon} ${scenario}`);
+			lines.push('');
+			lines.push('| Metric | Baseline | Test | Change | p-value | Verdict |');
+			lines.push('|--------|----------|------|--------|---------|---------|');
+			for (const v of notable) {
+				const pct = `${v.change > 0 ? '+' : ''}${(v.change * 100).toFixed(1)}%`;
+				const verdictIcon = v.verdict === 'REGRESSION' ? '\u274C' : '\u2B06\uFE0F';
+				lines.push(`| ${v.metric} | ${v.basStr} | ${v.curStr} | ${pct} | ${v.pValue} | ${verdictIcon} ${v.verdict} |`);
+			}
+			lines.push('');
+		}
+	}
+
+	// -- Full metric tables in collapsible section ---------------------------
+	lines.push('<details><summary>Full metric details per scenario</summary>');
+	lines.push('');
+
+	for (const scenario of scenarios) {
+		const verdicts = scenarioVerdicts.get(scenario) || [];
 		const base = baseline?.scenarios?.[scenario];
 
-		lines.push(`## ${scenario}`);
+		lines.push(`### ${scenario}`);
 		lines.push('');
 
 		if (!base) {
+			const current = jsonReport.scenarios[scenario];
 			lines.push('> No baseline data for this scenario.');
 			lines.push('');
-
-			// Show absolute values
 			lines.push('| Metric | Value | StdDev | CV | n |');
 			lines.push('|--------|------:|-------:|---:|--:|');
 			for (const [metric, group, unit] of allMetrics) {
@@ -758,63 +882,21 @@ function generateCISummary(jsonReport, baseline, opts) {
 		lines.push(`| Metric | Baseline | Test | Change | p-value | Verdict |`);
 		lines.push(`|--------|----------|------|--------|---------|---------|`);
 
-		for (const [metric, group, unit] of allMetrics) {
-			const cur = current[group]?.[metric];
-			const bas = base[group]?.[metric];
-			if (!cur || !bas || bas.median === null || bas.median === undefined) { continue; }
-
-			const change = bas.median !== 0 ? (cur.median - bas.median) / bas.median : 0;
-			const pct = `${change > 0 ? '+' : ''}${(change * 100).toFixed(1)}%`;
-			const isRegressionMetric = regressionMetricNames.has(metric);
-
-			// t-test
-			const curRaw = (current.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
-			const basRaw = (base.rawRuns || []).map((/** @type {any} */ r) => r[metric]).filter((/** @type {any} */ v) => v >= 0);
-			const ttest = welchTTest(basRaw, curRaw);
-			const pStr = ttest ? `${ttest.pValue}` : 'n/a';
-
-			let verdict = '';
-			if (isRegressionMetric) {
-				if (change > opts.threshold) {
-					if (!ttest) {
-						verdict = 'REGRESSION';
-						totalRegressions++;
-					} else if (ttest.significant) {
-						verdict = 'REGRESSION';
-						totalRegressions++;
-					} else {
-						verdict = 'noise';
-					}
-				} else if (change < -opts.threshold && ttest?.significant) {
-					verdict = 'improved';
-					totalImprovements++;
-				} else {
-					verdict = 'ok';
-				}
-			} else {
-				verdict = 'info';
-			}
-
-			const basStr = `${bas.median}${unit} \xb1${bas.stddev}${unit}`;
-			const curStr = `${cur.median}${unit} \xb1${cur.stddev}${unit}`;
-			lines.push(`| ${metric} | ${basStr} | ${curStr} | ${pct} | ${pStr} | ${verdict} |`);
+		for (const v of verdicts) {
+			const pct = `${v.change > 0 ? '+' : ''}${(v.change * 100).toFixed(1)}%`;
+			let verdictDisplay = v.verdict;
+			if (v.verdict === 'REGRESSION') { verdictDisplay = '\u274C REGRESSION'; }
+			else if (v.verdict === 'improved') { verdictDisplay = '\u2B06\uFE0F improved'; }
+			else if (v.verdict === 'ok') { verdictDisplay = '\u2705 ok'; }
+			else if (v.verdict === 'noise') { verdictDisplay = '\uD83C\uDF2B\uFE0F noise'; }
+			lines.push(`| ${v.metric} | ${v.basStr} | ${v.curStr} | ${pct} | ${v.pValue} | ${verdictDisplay} |`);
 		}
 		lines.push('');
 	}
-
-	// Grand summary
-	lines.push('## Summary');
-	lines.push('');
-	if (totalRegressions > 0) {
-		lines.push(`**${totalRegressions} regression(s) detected** across ${scenarios.length} scenario(s).`);
-	} else if (totalImprovements > 0) {
-		lines.push(`**No regressions.** ${totalImprovements} improvement(s) detected.`);
-	} else {
-		lines.push(`**No significant changes** across ${scenarios.length} scenario(s).`);
-	}
+	lines.push('</details>');
 	lines.push('');
 
-	// Raw data per scenario
+	// -- Raw run data in collapsible section ---------------------------------
 	lines.push('<details><summary>Raw run data</summary>');
 	lines.push('');
 	for (const scenario of scenarios) {

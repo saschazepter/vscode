@@ -396,7 +396,13 @@ async function main() {
 
 	// Write JSON
 	const jsonPath = path.join(DATA_DIR, 'chat-simulation-leak-results.json');
-	fs.writeFileSync(jsonPath, JSON.stringify({ timestamp: new Date().toISOString(), ...result }, null, 2));
+	fs.writeFileSync(jsonPath, JSON.stringify({
+		timestamp: new Date().toISOString(),
+		leakThresholdMB: opts.leakThresholdMB,
+		iterationCount: opts.iterations,
+		scenarioCount: getScenarioIds().length,
+		...result,
+	}, null, 2));
 	console.log(`[chat-simulation] Results written to ${jsonPath}`);
 
 	const leaked = result.totalResidualMB > opts.leakThresholdMB;

@@ -395,9 +395,36 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "## Memory Leak Check" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            cat leak-results/.chat-simulation-data/chat-simulation-leak-results.json >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+            node -e "
+              const r = JSON.parse(require('fs').readFileSync('leak-results/.chat-simulation-data/chat-simulation-leak-results.json', 'utf-8'));
+              const threshold = r.leakThresholdMB || 10;
+              const leaked = r.totalResidualMB > threshold;
+              const verdict = leaked ? '❌ **LEAK DETECTED**' : '✅ **No leak detected**';
+              const lines = [];
+              lines.push('| | |');
+              lines.push('|---|---|');
+              lines.push('| **Verdict** | ' + verdict + ' |');
+              lines.push('| **Threshold** | ' + threshold + ' MB |');
+              lines.push('| **Iterations** | ' + (r.iterationCount || r.iterations.length) + ' (+ 1 warmup) |');
+              lines.push('| **Scenarios per iteration** | ' + (r.scenarioCount || '—') + ' |');
+              lines.push('');
+              lines.push('| Phase | Heap (MB) | DOM Nodes |');
+              lines.push('|-------|----------:|----------:|');
+              lines.push('| Baseline (post-warmup) | ' + r.baseline.heapMB + ' | ' + r.baseline.domNodes + ' |');
+              for (let i = 0; i < r.iterations.length; i++) {
+                const it = r.iterations[i];
+                const sign = it.deltaHeapMB > 0 ? '+' : '';
+                const domSign = it.deltaDomNodes > 0 ? '+' : '';
+                lines.push('| Iteration ' + (i + 1) + ' | ' + it.afterHeapMB + ' (' + sign + it.deltaHeapMB + ') | ' + it.afterDomNodes + ' (' + domSign + it.deltaDomNodes + ') |');
+              }
+              lines.push('| **Final** | **' + r.final.heapMB + '** | **' + r.final.domNodes + '** |');
+              lines.push('');
+              const sign = r.totalResidualMB > 0 ? '+' : '';
+              const domSign = r.totalResidualNodes > 0 ? '+' : '';
+              lines.push('**Total residual growth:** ' + sign + r.totalResidualMB + ' MB heap, ' + domSign + r.totalResidualNodes + ' DOM nodes');
+              console.log(lines.join('\n'));
+            " >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Zip diagnostic outputs
