@@ -626,9 +626,9 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 		if (inputState instanceof ChatSessionInputStateImpl) {
 			if (isUntitledChatSession(sessionResource)) {
-				inputState.sessionResource = sessionResource;
-			} else {
 				inputState.untitledSessionResource = sessionResource;
+			} else {
+				inputState.sessionResource = sessionResource;
 			}
 		}
 
