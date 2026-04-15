@@ -49,21 +49,27 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	title: localize('issueReporterConfigurationTitle', "Issue Reporter"),
 	type: 'object',
 	properties: {
-		'issueReporter.experimental.wizardReporter': {
-			type: 'boolean',
-			default: false,
-			description: localize('issueReporter.wizardReporter', "Enable the experimental issue reporter wizard instead of the classic issue reporter."),
-		},
-		'issueReporter.experimental.displayMode': {
-			type: 'string',
-			enum: ['titlebar', 'tabWithFloatingBar'],
-			default: 'titlebar',
-			enumDescriptions: [
-				localize('issueReporter.displayMode.titlebar', "Show the wizard as a title bar panel that pushes the workbench down."),
-				localize('issueReporter.displayMode.tabWithFloatingBar', "Show the wizard as an editor tab with a floating capture toolbar."),
-			],
-			description: localize('issueReporter.displayMode', "Controls how the experimental issue reporter wizard is displayed."),
-			markdownDeprecationMessage: undefined,
+		'issueReporter.experimental.issueReportingWizard': {
+			type: 'object',
+			default: { enabled: false, displayMode: 'titlebar' },
+			description: localize('issueReporter.issueReportingWizard', "Configure the experimental issue reporting wizard."),
+			properties: {
+				'enabled': {
+					type: 'boolean',
+					default: false,
+					description: localize('issueReporter.issueReportingWizard.enabled', "Enable the experimental issue reporter wizard instead of the classic issue reporter."),
+				},
+				'displayMode': {
+					type: 'string',
+					enum: ['titlebar', 'tab'],
+					default: 'titlebar',
+					enumDescriptions: [
+						localize('issueReporter.displayMode.titlebar', "Show the wizard as a title bar panel that pushes the workbench down."),
+						localize('issueReporter.displayMode.tab', "Show the wizard as an editor tab with a capture strip."),
+					],
+					description: localize('issueReporter.displayMode', "Controls how the experimental issue reporter wizard is displayed."),
+				},
+			},
 		},
 	}
 });

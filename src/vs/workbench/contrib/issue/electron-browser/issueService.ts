@@ -35,7 +35,8 @@ export class NativeIssueService implements IWorkbenchIssueService {
 	) { }
 
 	async openReporter(dataOverrides: Partial<IssueReporterData> = {}): Promise<void> {
-		const useWizard = this.configurationService.getValue<boolean>('issueReporter.experimental.wizardReporter');
+		const wizardConfig = this.configurationService.getValue<{ enabled?: boolean; displayMode?: string }>('issueReporter.experimental.issueReportingWizard');
+		const useWizard = wizardConfig?.enabled ?? false;
 
 		if (useWizard) {
 			// New wizard: show UI immediately, load data in background

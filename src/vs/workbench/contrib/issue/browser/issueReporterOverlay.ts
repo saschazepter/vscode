@@ -405,40 +405,81 @@ export class IssueReporterOverlay {
 		}
 	}
 
+	private captureStripRecordBtn: HTMLElement | undefined;
+	private captureStripRecordLbl: HTMLElement | undefined;
+	private captureStripRecordElapsed: HTMLElement | undefined;
+
 	private createFloatingCaptureBar(): void {
-		const targetWindow = this.options.container ? getWindow(this.options.container) : getWindow(this.wizardPanel);
+		const workbenchContainer = this.layoutService.mainContainer;
+		const targetWindow = getWindow(workbenchContainer);
 		const body = targetWindow.document.body;
 
-		this.floatingBar = $('div.wizard-floating-bar');
+		this.floatingBar = $('div.wizard-capture-strip');
 
-		// Drag handle
-		const dragHandle = append(this.floatingBar, $('div.wizard-floating-drag'));
-		dragHandle.appendChild(renderIcon(Codicon.gripper));
+		// Delay dropdown
+		const delayGroup = append(this.floatingBar, $('div.wizard-capture-strip-group'));
+		const delayLabel = append(delayGroup, $('label.wizard-capture-strip-delay-label'));
+		delayLabel.textContent = localize('delay', "Delay:");
+		const delaySelect = append(delayGroup, $('select.wizard-capture-strip-delay')) as HTMLSelectElement;
+		const delayOptions = [
+			{ label: localize('noDelay', "No delay"), value: 0 },
+			{ label: localize('threeSeconds', "3 seconds"), value: 3 },
+			{ label: localize('fiveSeconds', "5 seconds"), value: 5 },
+			{ label: localize('tenSeconds', "10 seconds"), value: 10 },
+		];
+		for (const opt of delayOptions) {
+			const option = delaySelect.ownerDocument.createElement('option');
+			option.value = String(opt.value);
+			option.textContent = opt.label;
+			delaySelect.appendChild(option);
+		}
+		this.disposables.add(addDisposableListener(delaySelect, EventType.CHANGE, () => {
+			this.screenshotDelay = parseInt(delaySelect.value);
+		}));
 
 		// Screenshot button
-		const captureBtn = append(this.floatingBar, $('div.wizard-floating-btn'));
+		const captureBtn = append(this.floatingBar, $('div.wizard-nav-btn.wizard-capture-btn.primary'));
 		captureBtn.setAttribute('role', 'button');
 		captureBtn.setAttribute('tabindex', '0');
-		captureBtn.title = localize('addScreenshot', "Add screenshot");
-		captureBtn.appendChild(renderIcon(Codicon.deviceCamera));
+		const cameraIcon = append(captureBtn, $('span'));
+		cameraIcon.appendChild(renderIcon(Codicon.deviceCamera));
 		const captureLbl = append(captureBtn, $('span'));
-		captureLbl.textContent = localize('screenshot', "Screenshot");
+		captureLbl.textContent = localize('addScreenshot', "Add screenshot");
 		this.disposables.add(addDisposableListener(captureBtn, EventType.CLICK, () => {
-			if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
-				this._onDidRequestScreenshot.fire();
+			if (this.getTotalAttachments() < MAX_ATTACHMENTS && !captureBtn.classList.contains('disabled')) {
+				if (this.screenshotDelay > 0) {
+					captureBtn.classList.add('disabled');
+					let remaining = this.screenshotDelay;
+					captureLbl.textContent = `${remaining}...`;
+					const interval = setInterval(() => {
+						remaining--;
+						if (remaining > 0) {
+							captureLbl.textContent = `${remaining}...`;
+						} else {
+							clearInterval(interval);
+							captureLbl.textContent = localize('addScreenshot', "Add screenshot");
+							captureBtn.classList.remove('disabled');
+							this._onDidRequestScreenshot.fire();
+						}
+					}, 1000);
+				} else {
+					this._onDidRequestScreenshot.fire();
+				}
 			}
 		}));
 
 		// Record button
 		if (this.recordingSupported) {
-			const recordBtn = append(this.floatingBar, $('div.wizard-floating-btn'));
-			recordBtn.setAttribute('role', 'button');
-			recordBtn.setAttribute('tabindex', '0');
-			recordBtn.title = localize('recordVideo', "Record video");
-			recordBtn.appendChild(renderIcon(Codicon.record));
-			const recordLbl = append(recordBtn, $('span'));
-			recordLbl.textContent = localize('record', "Record");
-			this.disposables.add(addDisposableListener(recordBtn, EventType.CLICK, () => {
+			this.captureStripRecordBtn = append(this.floatingBar, $('div.wizard-nav-btn.wizard-record-btn'));
+			this.captureStripRecordBtn.setAttribute('role', 'button');
+			this.captureStripRecordBtn.setAttribute('tabindex', '0');
+			const recordIcon = append(this.captureStripRecordBtn, $('span.wizard-record-icon'));
+			recordIcon.appendChild(renderIcon(Codicon.record));
+			this.captureStripRecordLbl = append(this.captureStripRecordBtn, $('span'));
+			this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+			this.captureStripRecordElapsed = append(this.captureStripRecordBtn, $('span.wizard-recording-elapsed'));
+			this.captureStripRecordElapsed.style.display = 'none';
+			this.disposables.add(addDisposableListener(this.captureStripRecordBtn, EventType.CLICK, () => {
 				if (this.currentRecordingState === RecordingState.Recording) {
 					this._onDidRequestStopRecording.fire();
 				} else if (this.currentRecordingState === RecordingState.Idle && this.getTotalAttachments() < MAX_ATTACHMENTS) {
@@ -447,40 +488,32 @@ export class IssueReporterOverlay {
 			}));
 		}
 
-		body.appendChild(this.floatingBar);
+		// Insert as body sibling before the workbench (like titlebar mode)
+		// and use the same layout mechanism to push the workbench down
+		body.insertBefore(this.floatingBar, workbenchContainer);
 
-		// Dragging
-		let dragStartX = 0;
-		let dragStartY = 0;
-		let barStartX = 0;
-		let barStartY = 0;
-
-		const onPointerMove = (e: PointerEvent) => {
-			const dx = e.clientX - dragStartX;
-			const dy = e.clientY - dragStartY;
-			this.floatingBar!.style.left = `${barStartX + dx}px`;
-			this.floatingBar!.style.top = `${barStartY + dy}px`;
-		};
-
-		const onPointerUp = () => {
-			targetWindow.document.removeEventListener('pointermove', onPointerMove);
-			targetWindow.document.removeEventListener('pointerup', onPointerUp);
-		};
-
-		this.disposables.add(addDisposableListener(dragHandle, EventType.POINTER_DOWN, (e: PointerEvent) => {
-			e.preventDefault();
-			dragStartX = e.clientX;
-			dragStartY = e.clientY;
-			const rect = this.floatingBar!.getBoundingClientRect();
-			barStartX = rect.left;
-			barStartY = rect.top;
-			targetWindow.document.addEventListener('pointermove', onPointerMove);
-			targetWindow.document.addEventListener('pointerup', onPointerUp);
-		}));
+		// Only visible on step 3
+		this.updateCaptureStripVisibility();
 
 		this.disposables.add(toDisposable(() => {
 			this.floatingBar?.remove();
+			body.classList.remove('issue-reporter-active');
+			this.layoutService.layout();
 		}));
+	}
+
+	private updateCaptureStripVisibility(): void {
+		if (!this.floatingBar) {
+			return;
+		}
+		const workbenchContainer = this.layoutService.mainContainer;
+		const targetWindow = getWindow(workbenchContainer);
+		const body = targetWindow.document.body;
+		const shouldShow = this.currentStep === WizardStep.Screenshots;
+
+		this.floatingBar.style.display = shouldShow ? '' : 'none';
+		body.classList.toggle('issue-reporter-active', shouldShow);
+		this.layoutService.layout();
 	}
 
 	// ── Step 4: Review & Submit ──
@@ -832,6 +865,9 @@ export class IssueReporterOverlay {
 
 		// Show/hide toolbar media controls
 		this.updateToolbarActionsSlot();
+
+		// Show/hide capture strip (only on step 3 in embedded mode)
+		this.updateCaptureStripVisibility();
 	}
 
 	private updateReviewDetails(): void {
@@ -1253,6 +1289,10 @@ export class IssueReporterOverlay {
 		return this.wizardPanel;
 	}
 
+	getCaptureStripHeight(): number {
+		return this.floatingBar?.offsetHeight ?? 0;
+	}
+
 	hasUserInput(): boolean {
 		return !!(
 			this.descriptionTextarea.value.trim() ||
@@ -1271,10 +1311,12 @@ export class IssueReporterOverlay {
 		this.currentRecordingState = state;
 
 		if (state === RecordingState.Recording) {
-			// Auto-minimize when starting recording from expanded state
-			this.wasCollapsedBeforeRecording = this.collapsed;
-			if (!this.collapsed) {
-				this.toggleCollapsed();
+			// Auto-minimize when starting recording from expanded state (titlebar mode only)
+			if (!this.options.embedded) {
+				this.wasCollapsedBeforeRecording = this.collapsed;
+				if (!this.collapsed) {
+					this.toggleCollapsed();
+				}
 			}
 
 			// Switch to recording mode: disable all wizard UI except stop button
@@ -1289,8 +1331,26 @@ export class IssueReporterOverlay {
 					const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
 					const mins = Math.floor(elapsed / 60);
 					const secs = elapsed % 60;
-					this.recordingElapsedLabel.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+					const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+					this.recordingElapsedLabel.textContent = timeStr;
+					if (this.captureStripRecordElapsed) {
+						this.captureStripRecordElapsed.textContent = timeStr;
+					}
 				}, 1000);
+			}
+
+			// Update capture strip record button
+			if (this.captureStripRecordBtn && this.captureStripRecordLbl) {
+				this.captureStripRecordBtn.classList.add('recording');
+				this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
+				if (this.captureStripRecordElapsed) {
+					this.captureStripRecordElapsed.style.display = '';
+					this.captureStripRecordElapsed.textContent = '0:00';
+				}
+			}
+			// Dim other capture strip controls during recording
+			if (this.floatingBar) {
+				this.floatingBar.classList.add('wizard-strip-recording');
 			}
 		} else {
 			// Back to idle
@@ -1305,8 +1365,20 @@ export class IssueReporterOverlay {
 				this.recordingElapsedTimer = undefined;
 			}
 
-			// Restore expanded state if we auto-minimized for recording
-			if (!this.wasCollapsedBeforeRecording && this.collapsed) {
+			// Update capture strip record button
+			if (this.captureStripRecordBtn && this.captureStripRecordLbl) {
+				this.captureStripRecordBtn.classList.remove('recording');
+				this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+				if (this.captureStripRecordElapsed) {
+					this.captureStripRecordElapsed.style.display = 'none';
+				}
+			}
+			if (this.floatingBar) {
+				this.floatingBar.classList.remove('wizard-strip-recording');
+			}
+
+			// Restore expanded state if we auto-minimized for recording (titlebar mode only)
+			if (!this.options.embedded && !this.wasCollapsedBeforeRecording && this.collapsed) {
 				this.toggleCollapsed();
 			}
 		}
