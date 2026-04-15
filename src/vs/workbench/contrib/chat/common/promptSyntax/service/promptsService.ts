@@ -76,7 +76,6 @@ export interface IPromptFileContext { }
  */
 export interface IPromptFileEnablement {
 	readonly sessionTypes?: readonly string[];
-	readonly configurationKeys?: readonly string[];
 }
 
 /**

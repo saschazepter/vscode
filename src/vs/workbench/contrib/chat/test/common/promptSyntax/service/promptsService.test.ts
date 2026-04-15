@@ -2091,7 +2091,6 @@ suite('PromptsService', () => {
 			} as IExtensionDescription;
 			const enablement = {
 				sessionTypes: ['copilotcli'],
-				configurationKeys: ['chat.testFeature'],
 			};
 
 			await mockFiles(fileService, [
@@ -2376,8 +2375,7 @@ suite('PromptsService', () => {
 		} as unknown as IExtensionDescription;
 
 		const enablement = {
-			sessionTypes: ['copilotcli'],
-			configurationKeys: ['chat.testFeature']
+			sessionTypes: ['copilotcli']
 		};
 
 		await mockFiles(fileService, [

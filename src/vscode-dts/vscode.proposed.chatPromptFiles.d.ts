@@ -18,7 +18,6 @@ declare module 'vscode' {
 	 */
 	export interface ChatResourceEnablement {
 		readonly sessionTypes?: readonly string[];
-		readonly configurationKeys?: readonly string[];
 	}
 
 	/**

@@ -199,17 +199,12 @@ export interface IMcpCollectionContribution {
 	readonly when?: string;
 }
 
-export interface IChatFileContributionEnablement {
-	readonly sessionTypes?: readonly string[];
-	readonly configurationKeys?: readonly string[];
-}
-
 export interface IChatFileContribution {
 	readonly path: string;
 	readonly name?: string;
 	readonly description?: string;
 	readonly when?: string;
-	readonly enablement?: IChatFileContributionEnablement;
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface IExtensionContributions {

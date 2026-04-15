@@ -25,7 +25,7 @@ interface IRawChatFileContribution {
 	readonly name?: string;
 	readonly description?: string;
 	readonly when?: string;
-	readonly enablement?: IPromptFileEnablement;
+	readonly sessionTypes?: readonly string[];
 }
 
 enum ChatContributionPoint {
@@ -73,22 +73,10 @@ function registerChatFilesExtensionPoint(point: ChatContributionPoint) {
 						description: localize('chatContribution.property.when', '(Optional) A condition which must be true to enable this entry.'),
 						type: 'string'
 					},
-					enablement: {
-						description: localize('chatContribution.property.enablement', '(Optional) Metadata describing when this entry should be offered.'),
-						type: 'object',
-						additionalProperties: false,
-						properties: {
-							sessionTypes: {
-								description: localize('chatContribution.property.enablement.sessionTypes', '(Optional) The chat session types where this entry should be offered.'),
-								type: 'array',
-								items: { type: 'string' }
-							},
-							configurationKeys: {
-								description: localize('chatContribution.property.enablement.configurationKeys', '(Optional) The configuration keys that influence whether this entry should be offered.'),
-								type: 'array',
-								items: { type: 'string' }
-							}
-						}
+					sessionTypes: {
+						description: localize('chatContribution.property.sessionTypes', '(Optional) The chat session types where this entry should be offered.'),
+						type: 'array',
+						items: { type: 'string' }
 					}
 				}
 			}
@@ -151,7 +139,8 @@ export class ChatPromptFilesExtensionPointHandler implements IWorkbenchContribut
 						continue;
 					}
 					try {
-						const d = this.promptsService.registerContributedFile(type, fileUri, ext.description, raw.name, raw.description, raw.when, raw.enablement);
+						const enablement: IPromptFileEnablement | undefined = raw.sessionTypes ? { sessionTypes: raw.sessionTypes } : undefined;
+						const d = this.promptsService.registerContributedFile(type, fileUri, ext.description, raw.name, raw.description, raw.when, enablement);
 						this.registrations.set(key(ext.description.identifier, type, raw.path), d);
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e);

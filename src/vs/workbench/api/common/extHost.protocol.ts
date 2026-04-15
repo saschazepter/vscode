@@ -1687,7 +1687,6 @@ export type IChatResourceSourceDto = 'local' | 'user' | 'extension' | 'plugin';
 
 export interface IChatResourceEnablementDto {
 	readonly sessionTypes?: readonly string[];
-	readonly configurationKeys?: readonly string[];
 }
 
 export interface IChatResourceDto {
