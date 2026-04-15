@@ -280,12 +280,10 @@ export class PackageJSONContribution implements IJSONContribution {
 		let info: ViewPackageInfo | undefined;
 		let installedVersion: string | undefined;
 		if (this.npmCommandPath) {
-			const res = await Promise.all([
+			([info, installedVersion] = await Promise.all([
 				this.npmView(this.npmCommandPath, pack, resource),
 				this.npmListInstalledVersion(this.npmCommandPath, pack, resource)
-			]);
-			info = res[0];
-			installedVersion = res[1];
+			]));
 		}
 		if (!info && this.onlineEnabled()) {
 			info = await this.npmjsView(pack);
