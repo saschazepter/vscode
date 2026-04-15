@@ -137,8 +137,7 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 			const options = await getCommonTerminalOptions('GitHub Copilot CLI', this._authenticationService, this._otelService, 'panel');
 			this.sendTerminalOpenTelemetry('new', shellInfo?.shell ?? 'unknown', 'newFromTerminalProfile', 'panel');
 			if (!shellInfo) {
-				// Fallback: create a profile with the user's default shell.
-				// Copilot CLI should be in PATH via contributePath().
+				// Create a profile with the user's default shell as a fallback.
 				return new TerminalProfile({
 					...options,
 					titleTemplate: '${sequence}',
@@ -307,11 +306,8 @@ ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(storageLocation, COPIL
 	private async getShellInfo(cliArgs: string[]): Promise<IShellInfo | undefined> {
 		const configPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
 
-		// vscode.env.shell already resolves to the user's configured default terminal profile path,
-		// respecting the terminal.integrated.defaultProfile.* setting. Use it directly.
+		// vscode.env.shell already resolves to the user's configured default terminal profile path.
 		const shellPath = this.envService.shell;
-
-		// Look up the profile config only for args
 		const defaultProfileName = workspace.getConfiguration('terminal').get<string | undefined>(`integrated.defaultProfile.${configPlatform}`);
 		let shellArgs: string[] = [];
 		if (defaultProfileName) {
