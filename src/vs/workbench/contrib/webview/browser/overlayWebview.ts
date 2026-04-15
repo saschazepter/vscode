@@ -108,8 +108,8 @@ export class OverlayWebview extends Disposable implements IOverlayWebview {
 			this._overlayLayout = new OverlayLayoutElement();
 			this._overlayLayout.content.style.visibility = 'hidden';
 
-			// // Webviews cannot be reparented in the dom as it will destroy their contents.
-			// // Mount them to a high level node to avoid this depending on the active container.
+			// Webviews cannot be reparented in the dom as it will destroy their contents.
+			// Mount them to a high level node to avoid this depending on the active container.
 			const root = this._layoutService.getContainer(this.window);
 			root.appendChild(this._overlayLayout.root);
 			this._overlayLayout.root.style.zIndex = '2541'; // One level above the modals
