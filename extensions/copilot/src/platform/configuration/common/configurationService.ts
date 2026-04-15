@@ -865,10 +865,13 @@ export namespace ConfigKey {
 		/** Internal: configure reasoning effort for Anthropic thinking. Used by evals. */
 		export const AnthropicThinkingEffort = defineTeamInternalSetting<'low' | 'medium' | 'high' | undefined>('chat.advanced.anthropicThinkingEffort', ConfigType.Simple, undefined);
 
-		/** Enable session search features (chronicle, remote session upload). Team-internal only. */
-		export const SessionSearchEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.enabled', ConfigType.ExperimentBased, false, vBoolean());
-		/** Session data storage level: how Copilot session data is stored. */
-		export const SessionSearchStorageLevel = defineSetting<'none' | 'local' | 'user' | 'repo_and_user'>('chat.advanced.sessionSearch.storageLevel', ConfigType.Simple, 'none');
+		/** Enable cloud sync of session data to cloud. */
+		export const SessionSearchCloudSyncEnabled = defineSetting<boolean>('chat.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
+		/** Repository patterns to exclude from cloud sync (exact owner/repo or glob patterns like my-org/*). */
+		export const SessionSearchCloudSyncExcludeRepositories = defineSetting<string[]>('chat.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
+
+		/** Enable local session search index — tracks sessions locally and enables /chronicle commands. */
+		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
 	}
 
 	/**

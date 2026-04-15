@@ -48,7 +48,7 @@ export class ChronicleIntent implements IIntent {
 	readonly id = ChronicleIntent.ID;
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
 	get locations(): ChatLocation[] {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService) ? [ChatLocation.Panel] : [];
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService) ? [ChatLocation.Panel] : [];
 	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
@@ -84,8 +84,8 @@ export class ChronicleIntent implements IIntent {
 		location: ChatLocation,
 		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)) {
-			stream.markdown(l10n.t('Session search is not enabled. Set `github.copilot.chat.advanced.sessionSearch.enabled` to `true` in settings to enable this feature.'));
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
+			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
 
@@ -142,10 +142,6 @@ export class ChronicleIntent implements IIntent {
 		request: vscode.ChatRequest,
 		token: CancellationToken,
 	): Promise<vscode.ChatResult> {
-		// Check if user needs to consent to session indexing
-		// This shows the inline askQuestions UI on first use per repo
-		await this._checkSessionStorageConfig(stream);
-
 		// Always query local SQLite (has current machine's sessions)
 		const localSessions = this._queryLocalStore();
 
@@ -270,8 +266,6 @@ Instructions:
 		location: ChatLocation,
 		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		await this._checkSessionStorageConfig(stream);
-
 		const hasCloud = this._indexingPreference.hasCloudConsent();
 		const schema = this._getSchemaDescription(hasCloud);
 
@@ -315,6 +309,17 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 	private _sendTelemetry(subcommand: string, localSessionCount: number, cloudSessionCount: number): void {
 		const hasCloudConsent = this._indexingPreference.hasCloudConsent();
 		const querySource = hasCloudConsent ? (localSessionCount > 0 ? 'both' : 'cloud') : 'local';
+		/* __GDPR__
+			"chronicle" : {
+				"owner": "vijayu",
+				"comment": "Tracks chronicle subcommand usage and data sources",
+				"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand: standup, tips, or freeform." },
+				"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source used: local, cloud, or both." },
+				"localSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of local sessions used." },
+				"cloudSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of cloud sessions used." },
+				"totalSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total sessions used." }
+			}
+		*/
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle', {
 			subcommand,
 			querySource,
@@ -365,30 +370,6 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 		}
 	}
 
-	/**
-	 * Check if session storage is configured. If not, show a notification.
-	 */
-	private async _checkSessionStorageConfig(
-		stream?: vscode.ChatResponseStream,
-	): Promise<void> {
-		if (!this._indexingPreference.needsPrompt()) {
-			return;
-		}
-
-		stream?.markdown(l10n.t('Session search needs to be configured.\n\n'));
-		const level = await this._indexingPreference.showFirstUseNotification();
-		if (level) {
-			const levelLabels: Record<string, string> = {
-				local: l10n.t('local only'),
-				user: l10n.t('synced to your account'),
-				repo_and_user: l10n.t('synced to the repository'),
-			};
-			stream?.markdown(l10n.t('✓ Session storage set to **{0}**.\n\n---\n\n', levelLabels[level] ?? level));
-		} else {
-			stream?.markdown(l10n.t('You can configure this anytime in Settings → `sessionSearch.storageLevel`.\n\n'));
-		}
-	}
-
 	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[] }> {
 		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[] };
 		try {
@@ -429,7 +410,20 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 
 			return { sessions, refs };
 		} catch (err) {
-			console.error('[Chronicle] Cloud query failed:', err);
+			/* __GDPR__
+				"chronicle" : {
+					"owner": "vijayu",
+					"comment": "Tracks chronicle cloud query failures",
+					"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
+					"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: cloud." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
+				subcommand: 'standup',
+				querySource: 'cloud',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
 			return empty;
 		}
 	}
@@ -470,12 +464,8 @@ class ChronicleIntentInvocation extends RendererIntentInvocation implements IInt
 	}
 
 	getAvailableTools(): vscode.LanguageModelToolInformation[] | Promise<vscode.LanguageModelToolInformation[]> | undefined {
-		const allTools = this.toolsService.getEnabledTools(this.request, this.endpoint);
-		console.log(`[Chronicle] all enabled tools: ${allTools.length}`, allTools.map(t => t.name));
-		const tools = this.toolsService.getEnabledTools(this.request, this.endpoint,
+		return this.toolsService.getEnabledTools(this.request, this.endpoint,
 			tool => tool.name === ToolName.SessionStoreSql
 		);
-		console.log(`[Chronicle] filtered tools: ${tools?.length ?? 0}`, tools?.map(t => t.name));
-		return tools;
 	}
 }

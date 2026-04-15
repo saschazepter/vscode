@@ -6,75 +6,79 @@
 import { describe, expect, it } from 'vitest';
 import { SessionIndexingPreference } from '../sessionIndexingPreference';
 
-function createMockConfigService(storageLevel: string = 'none') {
+function createMockConfigService(opts: {
+	localIndexEnabled?: boolean;
+	cloudSyncEnabled?: boolean;
+	excludeRepositories?: string[];
+} = {}) {
+	const configs: Record<string, unknown> = {};
+	// Map by fullyQualifiedId
+	configs['github.copilot.chat.sessionSearch.localIndex.enabled'] = opts.localIndexEnabled ?? false;
+	configs['github.copilot.chat.advanced.sessionSearch.cloudSync.enabled'] = opts.cloudSyncEnabled ?? false;
+	configs['github.copilot.chat.advanced.sessionSearch.cloudSync.excludeRepositories'] = opts.excludeRepositories ?? [];
+
 	return {
-		getConfig: (key: unknown) => {
-			if (typeof key === 'object' && key !== null && 'key' in key) {
-				return storageLevel;
-			}
-			return storageLevel;
-		},
+		getConfig: (key: { fullyQualifiedId: string }) => configs[key.fullyQualifiedId],
 	} as unknown as import('../../../../platform/configuration/common/configurationService').IConfigurationService;
 }
 
 describe('SessionIndexingPreference', () => {
-	it('returns undefined when storage level is none', () => {
-		const config = createMockConfigService('none');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.getStorageLevel()).toBeUndefined();
-	});
-
-	it('returns local when configured', () => {
-		const config = createMockConfigService('local');
-		const pref = new SessionIndexingPreference(config);
+	it('getStorageLevel returns local when no cloud sync', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({ localIndexEnabled: true }));
 		expect(pref.getStorageLevel()).toBe('local');
 	});
 
-	it('returns user when configured', () => {
-		const config = createMockConfigService('user');
-		const pref = new SessionIndexingPreference(config);
+	it('getStorageLevel returns user when cloud sync enabled', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({
+			localIndexEnabled: true,
+			cloudSyncEnabled: true,
+		}));
 		expect(pref.getStorageLevel()).toBe('user');
 	});
 
-	it('returns repo_and_user when configured', () => {
-		const config = createMockConfigService('repo_and_user');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.getStorageLevel()).toBe('repo_and_user');
+	it('getStorageLevel returns local for excluded repo', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({
+			localIndexEnabled: true,
+			cloudSyncEnabled: true,
+			excludeRepositories: ['my-org/private-repo'],
+		}));
+		expect(pref.getStorageLevel('my-org/private-repo')).toBe('local');
 	});
 
-	it('needsPrompt returns true when none', () => {
-		const config = createMockConfigService('none');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.needsPrompt()).toBe(true);
+	it('getStorageLevel returns user for non-excluded repo', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({
+			localIndexEnabled: true,
+			cloudSyncEnabled: true,
+			excludeRepositories: ['my-org/private-repo'],
+		}));
+		expect(pref.getStorageLevel('microsoft/vscode')).toBe('user');
 	});
 
-	it('needsPrompt returns false when configured', () => {
-		const config = createMockConfigService('user');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.needsPrompt()).toBe(false);
-	});
-
-	it('hasCloudConsent returns true for user', () => {
-		const config = createMockConfigService('user');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.hasCloudConsent()).toBe(true);
-	});
-
-	it('hasCloudConsent returns true for repo_and_user', () => {
-		const config = createMockConfigService('repo_and_user');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.hasCloudConsent()).toBe(true);
-	});
-
-	it('hasCloudConsent returns false for local', () => {
-		const config = createMockConfigService('local');
-		const pref = new SessionIndexingPreference(config);
+	it('hasCloudConsent returns false when cloud sync disabled', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({ cloudSyncEnabled: false }));
 		expect(pref.hasCloudConsent()).toBe(false);
 	});
 
-	it('hasCloudConsent returns false for none', () => {
-		const config = createMockConfigService('none');
-		const pref = new SessionIndexingPreference(config);
-		expect(pref.hasCloudConsent()).toBe(false);
+	it('hasCloudConsent returns true when cloud sync enabled', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({ cloudSyncEnabled: true }));
+		expect(pref.hasCloudConsent()).toBe(true);
+	});
+
+	it('hasCloudConsent returns false for excluded repo', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({
+			cloudSyncEnabled: true,
+			excludeRepositories: ['my-org/*'],
+		}));
+		expect(pref.hasCloudConsent('my-org/secret-repo')).toBe(false);
+	});
+
+	it('hasCloudConsent supports glob patterns', () => {
+		const pref = new SessionIndexingPreference(createMockConfigService({
+			cloudSyncEnabled: true,
+			excludeRepositories: ['private-org/*'],
+		}));
+		expect(pref.hasCloudConsent('private-org/repo-a')).toBe(false);
+		expect(pref.hasCloudConsent('private-org/repo-b')).toBe(false);
+		expect(pref.hasCloudConsent('public-org/repo-a')).toBe(true);
 	});
 });

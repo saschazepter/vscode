@@ -10,8 +10,8 @@ import { IExperimentationService } from '../../../platform/telemetry/common/null
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IExtensionContribution } from '../../common/contributions';
-import { SessionIndexingPreference } from '../common/sessionIndexingPreference';
 import {
 	extractFilePath,
 	extractRefsFromMcpTool,
@@ -73,6 +73,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
 		@IConfigurationService private readonly _configService: IConfigurationService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 
@@ -83,7 +84,20 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 			const stats = this._sessionStore.getStats();
 			console.log('[SessionStoreTracker] database ready', stats);
 		} catch (err) {
-			console.error('[SessionStoreTracker] failed to initialize database', err);
+			/* __GDPR__
+				"chronicle.localStore" : {
+					"owner": "vijayu",
+					"comment": "Tracks local session store failures",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: dbInit or flush." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
+				operation: 'dbInit',
+				success: 'false',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
 		}
 
 		// Start periodic flush
@@ -117,12 +131,8 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 
 	private _handleSpan(span: ICompletedSpanData): void {
 		// Only track sessions when session search is enabled and user has chosen a storage level
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)) {
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
 			return;
-		}
-		const pref = new SessionIndexingPreference(this._configService);
-		if (!pref.getStorageLevel()) {
-			return; // storageLevel is 'none' — user hasn't configured yet
 		}
 
 		try {
@@ -374,7 +384,21 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 				}
 			});
 		} catch (err) {
-			console.error(`[SessionStoreTracker] Flush failed (${totalOps} ops):`, err);
+			/* __GDPR__
+				"chronicle.localStore" : {
+					"owner": "vijayu",
+					"comment": "Tracks local session store flush failures",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: flush." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
+					"opsCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of buffered operations that failed to flush." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
+				operation: 'flush',
+				success: 'false',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, { opsCount: totalOps });
 		}
 	}
 

@@ -74,16 +74,6 @@ class ChatAgents implements IDisposable {
 		@IChatSessionService chatSessionService: IChatSessionService,
 	) {
 		this._disposables.add(chatSessionService.onDidDisposeChatSession(sessionId => clearChatExtMarks(sessionId)));
-
-		// Register command to reset session search storage level
-		this._disposables.add(vscode.commands.registerCommand('github.copilot.sessionSearch.resetConsent', async () => {
-			await vscode.workspace.getConfiguration('github.copilot').update(
-				'chat.advanced.sessionSearch.storageLevel',
-				'none',
-				vscode.ConfigurationTarget.Global,
-			);
-			vscode.window.showInformationMessage(vscode.l10n.t('Session search storage level has been reset. You will be prompted again on your next /chronicle use.'));
-		}));
 	}
 
 	dispose() {

@@ -13,6 +13,7 @@ import { LanguageModelTextPart } from '../../../vscodeTypes';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { ToolName } from '../common/toolNames';
 import { ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
 
@@ -43,6 +44,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		@ICopilotTokenManager private readonly _tokenManager: ICopilotTokenManager,
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
 		@IConfigurationService configService: IConfigurationService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(configService);
 	}
@@ -68,19 +70,19 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 
 		// Determine query target based on consent
 		const hasCloud = this._indexingPreference.hasCloudConsent();
-		console.log(`[SessionStoreSql] invoke: hasCloud=${hasCloud}, sql=${sql.substring(0, 100)}`);
 
 		try {
 			let rows: Record<string, unknown>[];
 			let truncated = false;
 			let source: string;
+			const startTime = Date.now();
 
 			if (hasCloud) {
 				source = 'cloud';
 				const client = new CloudSessionStoreClient(this._tokenManager, this._authService);
 				const result = await client.executeQuery(sql);
-				console.log(`[SessionStoreSql] cloud result: ${result ? `${result.rows.length} rows` : 'null'}`);
 				if (!result) {
+					this._sendTelemetry(source, 0, Date.now() - startTime, false, 'empty_result');
 					return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Cloud query returned no result.')]);
 				}
 				rows = result.rows;
@@ -99,7 +101,6 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 						throw authErr;
 					}
 				}
-				console.log(`[SessionStoreSql] local result: ${rows.length} rows`);
 			}
 
 			// Cap rows
@@ -108,12 +109,53 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 				truncated = true;
 			}
 
+			this._sendTelemetry(source, rows.length, Date.now() - startTime, true);
+
 			// Format as table
 			const result = formatSqlResult(rows, truncated, source);
 			return new LanguageModelToolResultImpl([new LanguageModelTextPart(result)]);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
+			this._sendTelemetry(hasCloud ? 'cloud' : 'local', 0, 0, false, message.substring(0, 100));
 			return new LanguageModelToolResultImpl([new LanguageModelTextPart(`Error: ${message}`)]);
+		}
+	}
+
+	private _sendTelemetry(source: string, rowCount: number, durationMs: number, success: boolean, error?: string): void {
+		if (success) {
+			/* __GDPR__
+				"chronicle.sqlQuery" : {
+					"owner": "vijayu",
+					"comment": "Tracks session store SQL query execution",
+					"source": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Query target: local or cloud." },
+					"rowCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of rows returned." },
+					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Query duration in milliseconds." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryEvent('chronicle.sqlQuery', {
+				source,
+			}, {
+				rowCount,
+				durationMs,
+			});
+		} else {
+			/* __GDPR__
+				"chronicle.sqlQuery" : {
+					"owner": "vijayu",
+					"comment": "Tracks session store SQL query failures",
+					"source": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Query target: local or cloud." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
+					"rowCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of rows returned." },
+					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Query duration in milliseconds." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.sqlQuery', {
+				source,
+				error: error ?? 'unknown',
+			}, {
+				rowCount,
+				durationMs,
+			});
 		}
 	}
 

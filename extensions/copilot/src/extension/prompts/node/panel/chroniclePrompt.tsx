@@ -18,6 +18,7 @@ export interface ChroniclePromptProps extends BasePromptElementProps {
 
 export class ChroniclePrompt extends PromptElement<ChroniclePromptProps> {
 	render() {
+		const userQuery = this.props.promptContext.query || 'Go ahead.';
 		return (
 			<>
 				<SystemMessage priority={1000}>
@@ -25,7 +26,7 @@ export class ChroniclePrompt extends PromptElement<ChroniclePromptProps> {
 					<SafetyRules />
 					{this.props.systemPrompt}
 				</SystemMessage>
-				<UserMessage priority={900}>{this.props.promptContext.query}</UserMessage>
+				<UserMessage priority={900}>{userQuery}</UserMessage>
 				<ChatToolCalls
 					priority={899}
 					flexGrow={2}

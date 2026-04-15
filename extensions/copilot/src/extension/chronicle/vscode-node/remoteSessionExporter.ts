@@ -24,6 +24,7 @@ import {
 import type { GitHubRepository, McSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/missionControlTypes';
 import { filterSecretsFromObj, addSecretValues } from '../common/secretFilter';
 import { SessionIndexingPreference, type SessionIndexingLevel } from '../common/sessionIndexingPreference';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { MissionControlClient } from '../node/missionControlClient';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IGithubRepositoryService private readonly _githubRepoService: IGithubRepositoryService,
 		@IConfigurationService private readonly _configService: IConfigurationService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 
@@ -191,7 +193,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	 * Check if the session search feature is enabled via settings.
 	 */
 	private _isFeatureEnabled(): boolean {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService);
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
 	}
 
 	private _getOrCreateTranslationState(sessionId: string): SessionTranslationState {
@@ -251,18 +253,30 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				return;
 			}
 
-			// Only export remotely if the user has explicitly opted in to cloud storage
-			const storageLevel = this._indexingPreference.getStorageLevel();
-
-			if (storageLevel !== 'user' && storageLevel !== 'repo_and_user') {
-				console.log(`[RemoteSessionExporter] Storage level is '${storageLevel}', skipping remote export`);
+			// Only export remotely if the user has cloud consent for this repo
+			const repoNwo = `${repo.owner}/${repo.repo}`;
+			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
+				console.log(`[RemoteSessionExporter] Cloud sync not enabled for ${repoNwo}, skipping remote export`);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
 
-			await this._createMcSession(sessionId, repo, storageLevel);
+			await this._createMcSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
 		} catch (err) {
-			console.error('[RemoteSessionExporter] Session initialization failed:', err);
+			/* __GDPR__
+				"chronicle.cloudSync" : {
+					"owner": "vijayu",
+					"comment": "Tracks cloud sync session initialization failure",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+				operation: 'sessionInit',
+				success: 'false',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
 			this._disabledSessions.add(sessionId);
 		} finally {
 			this._initializingSessions.delete(sessionId);
@@ -312,13 +326,30 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		);
 
 		if (!result.ok) {
-			console.error(`[RemoteSessionExporter] Failed to create MC session: ${result.reason}`);
+			/* __GDPR__
+				"chronicle.cloudSync" : {
+					"owner": "vijayu",
+					"comment": "Tracks cloud sync MC session creation failure",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message or error code." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+				operation: 'createMcSession',
+				success: 'false',
+				error: result.reason?.substring(0, 100) ?? 'unknown',
+			}, {});
 			this._disabledSessions.add(sessionId);
 			return;
 		}
 
 		if (!result.response.task_id) {
-			console.error('[RemoteSessionExporter] MC session created without task_id');
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+				operation: 'createMcSession',
+				success: 'false',
+				error: 'missing_task_id',
+			}, {});
 			this._disabledSessions.add(sessionId);
 			return;
 		}
@@ -368,7 +399,20 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			console.log(`[RemoteSessionExporter] Resolved repo: ${repoId.org}/${repoId.repo} (owner=${apiResponse.owner.id}, repo=${apiResponse.id})`);
 			return this._repository;
 		} catch (err) {
-			console.error('[RemoteSessionExporter] Failed to resolve repository:', err);
+			/* __GDPR__
+				"chronicle.cloudSync" : {
+					"owner": "vijayu",
+					"comment": "Tracks cloud sync repository resolution failure",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+				operation: 'resolveRepository',
+				success: 'false',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
 			return undefined;
 		}
 	}
@@ -416,7 +460,20 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		this._flushTimer = setInterval(() => {
 			this._flushBatch().catch(err => {
-				console.error('[RemoteSessionExporter] Flush error:', err);
+				/* __GDPR__
+					"chronicle.cloudSync" : {
+						"owner": "vijayu",
+						"comment": "Tracks cloud sync flush timer failure",
+						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
+						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+					operation: 'flush',
+					success: 'false',
+					error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+				}, {});
 			});
 		}, interval);
 	}
@@ -496,7 +553,21 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// Re-queue on unexpected error
 			this._eventBuffer.unshift(...batch);
 			this._circuitBreaker.recordFailure();
-			console.error('[RemoteSessionExporter] Unexpected flush error:', err);
+			/* __GDPR__
+				"chronicle.cloudSync" : {
+					"owner": "vijayu",
+					"comment": "Tracks cloud sync batch flush failure",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
+					"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in the failed batch." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
+				operation: 'flushBatch',
+				success: 'false',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, { droppedEvents: batch.length });
 		} finally {
 			this._isFlushing = false;
 		}

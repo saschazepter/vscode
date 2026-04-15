@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as l10n from '@vscode/l10n';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
+import picomatch from 'picomatch';
 
 /**
  * Session indexing levels — matches CLI's MissionControlIndexingLevel.
@@ -15,82 +15,54 @@ import { ConfigKey, IConfigurationService } from '../../../platform/configuratio
 export type SessionIndexingLevel = 'local' | 'user' | 'repo_and_user';
 
 /**
- * Storage level setting values (includes 'none' for first-use notification).
- */
-export type StorageLevelSetting = 'none' | SessionIndexingLevel;
-
-/**
  * Manages user preferences for session indexing via VS Code settings.
  *
- * Uses the `github.copilot.chat.advanced.sessionSearch.storageLevel` setting
- * (workspace-scoped) instead of inline chat consent.
- *
- * When the setting is 'none' (default), a one-time notification is shown
- * on first `/chronicle` use, with buttons to set the value.
+ * Two settings control behavior:
+ * - `chat.sessionSearch.localIndex.enabled` (experimental, ExP) — enables local
+ *   SQLite tracking and /chronicle commands
+ * - `chat.advanced.sessionSearch.cloudSync.enabled` (team-internal) — enables
+ *   cloud upload to Mission Control
+ * - `chat.advanced.sessionSearch.cloudSync.excludeRepositories` — repo patterns
+ *   to exclude from cloud sync
  */
 export class SessionIndexingPreference {
-
-	/** Track whether we've shown the notification in this session to avoid spamming. */
-	private _notificationShown = false;
 
 	constructor(
 		private readonly _configService: IConfigurationService,
 	) { }
 
 	/**
-	 * Get the current storage level from settings.
-	 * Returns the level, or undefined if set to 'none' (not yet configured).
+	 * Get the effective storage level for a given repo.	 *
+	 * - If cloud sync is enabled and repo is not excluded → 'user'
+	 * - Otherwise → 'local'
 	 */
-	getStorageLevel(): SessionIndexingLevel | undefined {
-		const value = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchStorageLevel);
-		if (value === 'none' || !value) {
-			return undefined;
+	getStorageLevel(repoNwo?: string): SessionIndexingLevel {
+		if (this.hasCloudConsent(repoNwo)) {
+			return 'user';
 		}
-		return value as SessionIndexingLevel;
+		return 'local';
 	}
 
 	/**
-	 * Check if the user needs to be prompted (setting is 'none').
+	 * Check if cloud sync is enabled for a given repo.
+	 * Returns true if cloudSync.enabled is true AND the repo is not excluded.
 	 */
-	needsPrompt(): boolean {
-		const value = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchStorageLevel);
-		return value === 'none' || !value;
-	}
-
-	/**
-	 * Show a one-time notification asking the user to configure session storage.
-	 * Uses vscode.window.showInformationMessage with action buttons.
-	 *
-	 * Returns the chosen level, or undefined if dismissed.
-	 */
-	async showFirstUseNotification(): Promise<SessionIndexingLevel | undefined> {
-		if (this._notificationShown) {
-			return undefined;
-		}
-		this._notificationShown = true;
-
-		// Dynamic import to avoid circular deps — vscode is only available at runtime
-		const vscode = await import('vscode');
-
-		const openSettings = l10n.t('Open Settings');
-
-		const choice = await vscode.window.showInformationMessage(
-			l10n.t('Configure how Copilot stores your session history. This enables features like /chronicle.'),
-			openSettings,
-		);
-
-		if (choice === openSettings) {
-			await vscode.commands.executeCommand('workbench.action.openSettings', 'github.copilot.chat.advanced.sessionSearch.storageLevel');
+	hasCloudConsent(repoNwo?: string): boolean {
+		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled)) {
+			return false;
 		}
 
-		return undefined;
-	}
+		if (repoNwo) {
+			const excludePatterns = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncExcludeRepositories);
+			if (excludePatterns && excludePatterns.length > 0) {
+				for (const pattern of excludePatterns) {
+					if (pattern === repoNwo || picomatch.isMatch(repoNwo, pattern)) {
+						return false;
+					}
+				}
+			}
+		}
 
-	/**
-	 * Check if the current storage level enables cloud sync.
-	 */
-	hasCloudConsent(): boolean {
-		const level = this.getStorageLevel();
-		return level === 'user' || level === 'repo_and_user';
+		return true;
 	}
 }

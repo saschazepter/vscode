@@ -2478,11 +2478,6 @@
 				"category": "Chat"
 			},
 			{
-				"command": "github.copilot.sessionSearch.resetConsent",
-				"title": "%github.copilot.command.resetSessionSearchConsent%",
-				"category": "Chat"
-			},
-			{
 				"command": "github.copilot.terminal.explainTerminalLastCommand",
 				"title": "%github.copilot.command.explainTerminalLastCommand%",
 				"category": "Chat"
@@ -4015,6 +4010,27 @@
 						"tags": [
 							"experimental"
 						]
+					},
+					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.sessionSearch.cloudSync.enabled%",
+						"when": "github.copilot.sessionSearch.enabled",
+						"tags": [
+							"experimental"
+						]
+					},
+					"github.copilot.chat.sessionSearch.cloudSync.excludeRepositories": {
+						"type": "array",
+						"default": [],
+						"items": {
+							"type": "string"
+						},
+						"markdownDescription": "%github.copilot.config.sessionSearch.cloudSync.excludeRepositories%",
+						"when": "github.copilot.sessionSearch.enabled",
+						"tags": [
+							"experimental"
+						]
 					}
 				}
 			},
@@ -4790,26 +4806,6 @@
 						"type": "boolean",
 						"default": false,
 						"markdownDescription": "Enable SQLite DB span exporter. Persists OTel spans to a local SQLite database. Automatically enables OTel when set to true. Requires window reload.",
-						"tags": [
-							"advanced"
-						]
-					},
-					"github.copilot.chat.advanced.sessionSearch.storageLevel": {
-						"type": "string",
-						"enum": [
-							"none",
-							"local",
-							"user"
-						],
-						"enumDescriptions": [
-							"%github.copilot.config.sessionSearch.storageLevel.none%",
-							"%github.copilot.config.sessionSearch.storageLevel.local%",
-							"%github.copilot.config.sessionSearch.storageLevel.user%"
-						],
-						"default": "none",
-						"scope": "resource",
-						"markdownDescription": "%github.copilot.config.sessionSearch.storageLevel%",
-						"when": "github.copilot.sessionSearch.enabled",
 						"tags": [
 							"advanced"
 						]
