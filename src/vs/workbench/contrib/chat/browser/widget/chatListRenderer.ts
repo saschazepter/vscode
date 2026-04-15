@@ -1023,7 +1023,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private shouldShowWorkingProgress(element: IChatResponseViewModel, partsToRender: IChatRendererContent[], moreContentAvailable: boolean, templateData: IChatListItemTemplate): IChatWorkingProgress | undefined {
-		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal' || !checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
+		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal') {
 			return undefined;
 		}
 
@@ -1034,9 +1034,13 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			completedAt: element.model.completedAt,
 		};
 
-		// For completed responses, show past-tense summary
+		// For completed responses, always show the finished summary
 		if (element.isComplete) {
 			return { kind: 'working', state: workingState };
+		}
+
+		if (!checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
+			return undefined;
 		}
 
 		// Show confirmation progress while a non-subagent confirmation carousel is active above the input.
@@ -1108,6 +1112,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private updateWorkingProgressForPendingConfirmations(templateData: IChatListItemTemplate): void {
 		const element = templateData.currentElement;
 		if (!isResponseVM(element)) {
+			return;
+		}
+
+		// Don't remove working progress for completed responses — they show the finished summary
+		if (element.isComplete) {
 			return;
 		}
 

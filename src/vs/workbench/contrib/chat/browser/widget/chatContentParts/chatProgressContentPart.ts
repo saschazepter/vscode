@@ -251,11 +251,11 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		const timeStr = formatElapsedTime(elapsed);
 		const tokens = usage?.completionTokens;
 
-		this.labelElement.textContent = localize('workedFor', "Worked for {0}", timeStr);
+		this.labelElement.textContent = localize('finishedIn', "Finished in {0}", timeStr);
 		if (typeof tokens === 'number') {
 			this.statsElement.textContent = localize(
-				'workedForTokensSuffix',
-				"\u00b7 {0} tokens",
+				'finishedTokensSuffix',
+				"with {0} tokens",
 				formatTokenCount(tokens)
 			);
 		}
