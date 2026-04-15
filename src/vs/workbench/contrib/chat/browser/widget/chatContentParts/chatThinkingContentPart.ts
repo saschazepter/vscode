@@ -480,15 +480,27 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			this._register(this.scrollableElement.onScroll(e => this.handleScroll(e.scrollTop)));
 
 			if (this.showProgressDetails) {
+				let pendingMutationRefresh: IDisposable | undefined;
 				const mutationObserver = new MutationObserver(() => {
-					if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
+					if (pendingMutationRefresh) {
 						return;
 					}
-					this.refreshContentHeight();
-					this.updateScrollDimensionsFromCache();
+					pendingMutationRefresh = scheduleAtNextAnimationFrame(getWindow(this.wrapper), () => {
+						pendingMutationRefresh = undefined;
+						if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
+							return;
+						}
+						this.refreshContentHeight();
+						this.updateScrollDimensionsFromCache();
+					});
 				});
 				mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
-				this._register({ dispose: () => mutationObserver.disconnect() });
+				this._register({
+					dispose: () => {
+						mutationObserver.disconnect();
+						pendingMutationRefresh?.dispose();
+					}
+				});
 			}
 
 			// Observe child elements for resizes (e.g. terminal output growing)

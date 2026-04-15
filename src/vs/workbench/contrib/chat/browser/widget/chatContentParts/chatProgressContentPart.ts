@@ -219,7 +219,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		}
 
 		if (state) {
-			this.initializeWithState(state, context);
+			this.initializeWithState(state);
 		} else {
 			// No state provided - show explicit content or label
 			this.labelElement.textContent = this.explicitContent
@@ -234,7 +234,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		}));
 	}
 
-	private initializeWithState(state: IChatWorkingProgressState, context: IChatContentPartRenderContext): void {
+	private initializeWithState(state: IChatWorkingProgressState): void {
 		if (state.isComplete) {
 			// Past tense: show final elapsed time and tokens
 			this.renderCompletedProgress(state);
@@ -252,7 +252,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 
 		this.labelElement.textContent = localize('finishedIn', "Finished in {0}", timeStr);
 		const updateStats = (tokens: number | undefined) => {
-			if (typeof tokens === 'number') {
+			if (typeof tokens === 'number' && tokens > 0) {
 				this.statsElement.textContent = tokens === 1
 					? localize('finishedOneTokenSuffix', "with 1 token")
 					: localize('finishedTokensSuffix', "with {0} tokens", formatTokenCount(tokens));
@@ -280,7 +280,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 
 			// Label gets shimmer, stats do not
 			this.labelElement.textContent = this.label;
-			if (typeof tokens === 'number') {
+			if (typeof tokens === 'number' && tokens > 0) {
 				const tokenStr = formatTokenCount(tokens);
 				this.statsElement.textContent = tokens === 1
 					? localize('workingProgressStatsWithOneToken', "({0} \u00b7 1 token)", timeStr)
