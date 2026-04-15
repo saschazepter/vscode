@@ -878,14 +878,15 @@ export class ChatService extends Disposable implements IChatService {
 
 				const newItem = await this.chatSessionService.createNewChatSessionItem(getChatSessionType(sessionResource), { prompt: requestText, command: commandPart?.text, initialSessionOptions }, CancellationToken.None);
 				if (newItem) {
+					// Register alias so session-option lookups work with the new resource
+					this.chatSessionService.registerSessionResourceAlias(sessionResource, newItem.resource);
+
 					tempRef = await this.loadRemoteSession(newItem.resource, model.initialLocation, CancellationToken.None);
 					model = tempRef?.object as ChatModel | undefined;
 					if (!model) {
 						throw new Error(`Failed to load session for resource: ${newItem.resource}`);
 					}
 
-					// Register alias so session-option lookups work with the new resource
-					this.chatSessionService.registerSessionResourceAlias(sessionResource, newItem.resource);
 
 					// Update the new model's contributed session with initialSessionOptions
 					// so that the agent receives them when invoked.

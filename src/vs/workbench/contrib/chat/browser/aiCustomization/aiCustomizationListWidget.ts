@@ -578,8 +578,6 @@ export class AICustomizationListWidget extends Disposable {
 			() => this.harnessService.getActiveDescriptor(),
 			this.promptsService,
 			this.workspaceService,
-			this.fileService,
-			this.pathService,
 			this.productService,
 		);
 		this.element = $('.ai-customization-list-widget');
@@ -1509,6 +1507,8 @@ export class AICustomizationListWidget extends Disposable {
 	 * Generates a debug report for the current section.
 	 */
 	async generateDebugReport(): Promise<string> {
+		// Ensure items are loaded before capturing the snapshot
+		await this.loadItems();
 		const activeDescriptor = this.harnessService.getActiveDescriptor();
 		return generateCustomizationDebugReport(
 			this.currentSection,
@@ -1516,6 +1516,7 @@ export class AICustomizationListWidget extends Disposable {
 			this.workspaceService,
 			{ allItems: this.allItems, displayEntries: this.displayEntries },
 			activeDescriptor,
+			this.promptsServiceItemProvider,
 		);
 	}
 }
