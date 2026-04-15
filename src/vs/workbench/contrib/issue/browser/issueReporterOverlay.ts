@@ -895,6 +895,9 @@ export class IssueReporterOverlay {
 		this.updateScreenshotThumbnails();
 		this.updateAttachmentButtons();
 		this.updateStepUI();
+
+		// Immediately open the annotation editor for the new screenshot
+		this.openAnnotationEditor(this.screenshots.length - 1);
 	}
 
 	private updateAttachmentButtons(): void {
