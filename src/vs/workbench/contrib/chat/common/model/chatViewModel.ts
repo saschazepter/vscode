@@ -169,12 +169,14 @@ export interface IChatWorkingProgress {
 export interface IChatWorkingProgressState {
 	/** The confirmation-adjusted timestamp observable for computing elapsed time */
 	readonly confirmationAdjustedTimestamp: IObservable<number>;
-	/** Observable for tracking token usage as it arrives */
-	readonly usageObs: IObservable<IChatUsage | undefined>;
+	/** Observable for tracking completion token count as it arrives */
+	readonly completionTokenCountObs: IObservable<number | undefined>;
 	/** Whether the response is complete (for past-tense display) */
 	readonly isComplete: boolean;
 	/** The completedAt timestamp for completed responses */
 	readonly completedAt?: number;
+	/** Pre-computed elapsed generation time in ms (reliable for restored sessions) */
+	readonly elapsedMs?: number;
 }
 
 
@@ -231,6 +233,7 @@ export interface IChatResponseViewModel {
 	readonly contentUpdateTimings?: IChatStreamStats;
 	readonly confirmationAdjustedTimestamp: IObservable<number>;
 	readonly usageObs: IObservable<IChatUsage | undefined>;
+	readonly completionTokenCountObs: IObservable<number | undefined>;
 	readonly shouldBeRemovedOnSend: IChatRequestDisablement | undefined;
 	readonly isCompleteAddedRequest: boolean;
 	renderData?: IChatResponseRenderData;
@@ -671,6 +674,10 @@ export class ChatResponseViewModel extends Disposable implements IChatResponseVi
 
 	get usageObs(): IObservable<IChatUsage | undefined> {
 		return this._model.usageObs;
+	}
+
+	get completionTokenCountObs(): IObservable<number | undefined> {
+		return this._model.completionTokenCountObs;
 	}
 
 	constructor(

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, append, getWindow } from '../../../../../../base/browser/dom.js';
+import { $, WindowIntervalTimer, append } from '../../../../../../base/browser/dom.js';
 import { IRenderedMarkdown, renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
 import { alert } from '../../../../../../base/browser/ui/aria/aria.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
@@ -174,7 +174,6 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	private explicitContent: IMarkdownString | undefined;
 	private readonly label: string;
 	private readonly isCompleteState: boolean;
-	private timerHandle: number | undefined;
 
 	constructor(
 		workingProgress: IChatWorkingProgress,
@@ -205,8 +204,8 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		}
 		append(this.domNode, iconElement);
 
-		// Structure: .progress-container > .rendered-markdown.progress-step > p (shimmered label) + span (stats, no shimmer)
-		const messageContainer = $('div.rendered-markdown.progress-step');
+		// Structure: .progress-container > .rendered-markdown.progress-step.chat-working-progress-step > p (shimmered label) + span (stats, no shimmer)
+		const messageContainer = $('div.rendered-markdown.progress-step.chat-working-progress-step');
 		this.labelElement = $('p');
 		this.statsElement = $('span');
 		append(messageContainer, this.labelElement);
@@ -244,25 +243,28 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	}
 
 	private renderCompletedProgress(state: IChatWorkingProgressState): void {
-		const elapsed = state.completedAt
-			? state.completedAt - state.confirmationAdjustedTimestamp.get()
-			: 0;
-		const usage = state.usageObs.get();
+		// Use pre-computed elapsedMs (reliable for restored sessions), fall back to live computation
+		const elapsed = state.elapsedMs
+			?? (state.completedAt ? Math.max(0, state.completedAt - state.confirmationAdjustedTimestamp.get()) : 0);
 		const timeStr = formatElapsedTime(elapsed);
-		const tokens = usage?.completionTokens;
 
 		this.labelElement.textContent = localize('finishedIn', "Finished in {0}", timeStr);
-		if (typeof tokens === 'number') {
-			this.statsElement.textContent = localize(
-				'finishedTokensSuffix',
-				"with {0} tokens",
-				formatTokenCount(tokens)
-			);
-		}
+		const updateStats = (tokens: number | undefined) => {
+			if (typeof tokens === 'number') {
+				this.statsElement.textContent = tokens === 1
+					? localize('finishedOneTokenSuffix', "with 1 token")
+					: localize('finishedTokensSuffix', "with {0} tokens", formatTokenCount(tokens));
+			} else {
+				this.statsElement.textContent = '';
+			}
+		};
+
+		updateStats(state.completionTokenCountObs.get());
+		this._register(autorun(reader => updateStats(state.completionTokenCountObs.read(reader))));
 	}
 
 	private startLiveProgress(state: IChatWorkingProgressState): void {
-		let lastTokenText = '';
+		let lastCompletionTokens: number | undefined;
 
 		const updateDisplay = () => {
 			// If explicit content was set (e.g., tool unresponsive), show that instead
@@ -274,17 +276,18 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 			const adjustedTimestamp = state.confirmationAdjustedTimestamp.get();
 			const elapsed = Math.max(0, now - adjustedTimestamp);
 			const timeStr = formatElapsedTime(elapsed);
-			const usage = state.usageObs.get();
-			const tokens = usage?.completionTokens;
+			const tokens = state.completionTokenCountObs.get();
 
 			// Label gets shimmer, stats do not
 			this.labelElement.textContent = this.label;
 			if (typeof tokens === 'number') {
 				const tokenStr = formatTokenCount(tokens);
-				this.statsElement.textContent = `(${timeStr} \u00b7 ${tokenStr} tokens)`;
-				lastTokenText = tokenStr;
+				this.statsElement.textContent = tokens === 1
+					? localize('workingProgressStatsWithOneToken', "({0} \u00b7 1 token)", timeStr)
+					: localize('workingProgressStatsWithTokens', "({0} \u00b7 {1} tokens)", timeStr, tokenStr);
+				lastCompletionTokens = tokens;
 			} else {
-				this.statsElement.textContent = `(${timeStr})`;
+				this.statsElement.textContent = localize('workingProgressStats', "({0})", timeStr);
 			}
 		};
 
@@ -292,23 +295,14 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		updateDisplay();
 
 		// Update every second for the timer
-		const targetWindow = getWindow(this.domNode);
-		this.timerHandle = targetWindow.setInterval(updateDisplay, 1000);
-		this._register({
-			dispose: () => {
-				if (this.timerHandle !== undefined) {
-					targetWindow.clearInterval(this.timerHandle);
-					this.timerHandle = undefined;
-				}
-			}
-		});
+		const timer = this._register(new WindowIntervalTimer(this.domNode));
+		timer.cancelAndSet(updateDisplay, 1000);
 
 		// Also react to token usage changes via observable
 		this._register(autorun(reader => {
-			const usage = state.usageObs.read(reader);
-			if (typeof usage?.completionTokens === 'number') {
-				const newTokenText = formatTokenCount(usage.completionTokens);
-				if (newTokenText !== lastTokenText) {
+			const tokens = state.completionTokenCountObs.read(reader);
+			if (typeof tokens === 'number') {
+				if (tokens !== lastCompletionTokens) {
 					updateDisplay();
 				}
 			}

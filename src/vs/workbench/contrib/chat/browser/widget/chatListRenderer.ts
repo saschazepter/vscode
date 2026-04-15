@@ -1004,6 +1004,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			content.push(fileChangesSummaryPart);
 		}
 
+		// Show "Finished in..." summary for completed responses
+		const workingProgress = this.shouldShowWorkingProgress(element, content, false, templateData);
+		if (workingProgress) {
+			content.push(workingProgress);
+		}
+
 		const diff = this.diff(templateData.renderedParts ?? [], content, element);
 		this.renderChatContentDiff(diff, content, element, index, templateData);
 		this.finalizeCompletedResponseParts(element, templateData);
@@ -1029,9 +1035,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		const workingState = {
 			confirmationAdjustedTimestamp: element.confirmationAdjustedTimestamp,
-			usageObs: element.usageObs,
+			completionTokenCountObs: element.completionTokenCountObs,
 			isComplete: element.isComplete,
 			completedAt: element.model.completedAt,
+			elapsedMs: element.model.elapsedMs,
 		};
 
 		// For completed responses, always show the finished summary
