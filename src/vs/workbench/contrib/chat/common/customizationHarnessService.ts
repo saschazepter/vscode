@@ -488,8 +488,8 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 	getStorageSourceFilter(type: PromptsType): IStorageSourceFilter {
 		const activeId = this._activeHarness.get();
 		const all = this._getAllHarnesses();
-		const descriptor = all.find(h => h.id === activeId);
-		return descriptor?.getStorageSourceFilter(type) ?? all[0].getStorageSourceFilter(type);
+		const descriptor = all.find(h => h.id === activeId) ?? all[0];
+		return descriptor?.getStorageSourceFilter(type) ?? { sources: [] };
 	}
 
 	getActiveDescriptor(): IHarnessDescriptor {
