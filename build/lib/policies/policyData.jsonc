@@ -291,6 +291,7 @@
                 "description": {
                     "key": "agentSandbox.enabledSetting",
                     "value": "Controls whether agent mode uses sandboxing to restrict what tools can do. When enabled, tools like the terminal are run in a sandboxed environment to limit access to the system."
+<<<<<<< HEAD
                 },
                 "enumDescriptions": [
                     {
@@ -302,6 +303,9 @@
                         "value": "Enable sandboxing for agent mode tools."
                     }
                 ]
+=======
+                }
+>>>>>>> 136206c5 (Add policy for agent sandbox setting (#309981))
             },
             "type": "string",
             "default": "off",
