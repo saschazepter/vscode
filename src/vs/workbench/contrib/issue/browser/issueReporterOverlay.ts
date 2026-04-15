@@ -160,11 +160,6 @@ export class IssueReporterOverlay {
 		const minimizeShortcut = append(this.collapseToggle, $('span.wizard-shortcut-badge'));
 		minimizeShortcut.textContent = isMacintosh ? '\u2318M' : 'Ctrl+M';
 
-		// Hide minimize in embedded mode (editor tab)
-		if (this.options.embedded) {
-			this.collapseToggle.style.display = 'none';
-		}
-
 		// Slot for screenshot/record buttons when collapsed on step 3
 		this.toolbarActionsSlot = append(toolbar, $('div.wizard-toolbar-actions-slot'));
 
@@ -174,6 +169,12 @@ export class IssueReporterOverlay {
 		this.discardButton.textContent = localize('discardFeedback', "Discard feedback");
 		this.discardButton.setAttribute('role', 'button');
 		this.discardButton.setAttribute('tabindex', '0');
+
+		// Hide minimize and discard in embedded mode (editor tab)
+		if (this.options.embedded) {
+			this.collapseToggle.style.display = 'none';
+			this.discardButton.style.display = 'none';
+		}
 
 		// ── Step content area ──
 		this.stepContainer = append(this.wizardPanel, $('div.wizard-step-container'));
@@ -1037,14 +1038,14 @@ export class IssueReporterOverlay {
 	}
 
 	close(): void {
-		if (!this.visible || this.animating) {
-			return;
-		}
-
 		if (this.options.embedded) {
 			// In embedded mode, just fire close — the editor pane handles cleanup
 			this.visible = false;
 			this._onDidClose.fire();
+			return;
+		}
+
+		if (!this.visible || this.animating) {
 			return;
 		}
 
@@ -1250,6 +1251,16 @@ export class IssueReporterOverlay {
 
 	getPanel(): HTMLElement {
 		return this.wizardPanel;
+	}
+
+	hasUserInput(): boolean {
+		return !!(
+			this.descriptionTextarea.value.trim() ||
+			this.titleInput.value.trim() ||
+			this.selectedIssueType !== undefined ||
+			this.screenshots.length > 0 ||
+			this.recordings.length > 0
+		);
 	}
 
 	getWizardHeight(): number {

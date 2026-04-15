@@ -98,7 +98,7 @@ export class IssueFormService implements IIssueFormService {
 	}
 
 	protected openEditorTabReporter(data: IssueReporterData): void {
-		const input = new IssueReporterEditorInput(data);
+		const input = this.instantiationService.createInstance(IssueReporterEditorInput, data);
 		this.editorService.openEditor(input);
 	}
 

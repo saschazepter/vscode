@@ -85,9 +85,19 @@ export class IssueReporterEditorPane extends EditorPane {
 		);
 		this.inputDisposables.add(this.wizard);
 
+		// Let the input check wizard state for close confirmation
+		input.hasUserInputFn = () => this.wizard?.hasUserInput() ?? false;
+
 		// Close the editor tab when the user discards
 		this.inputDisposables.add(this.wizard.onDidClose(() => {
+			// Reset so close handler doesn't prompt again
+			input.hasUserInputFn = undefined;
 			this.group.closeEditor(this.input!);
+		}));
+
+		// Clean up wizard when the input is disposed (tab actually closed)
+		this.inputDisposables.add(input.onWillDispose(() => {
+			this.destroyWizard();
 		}));
 
 		this.wizard.show();
@@ -96,6 +106,14 @@ export class IssueReporterEditorPane extends EditorPane {
 	override clearInput(): void {
 		// Don't destroy wizard on tab switch — preserve state
 		super.clearInput();
+	}
+
+	private destroyWizard(): void {
+		this.inputDisposables.clear();
+		this.wizard = undefined;
+		if (this.container) {
+			clearNode(this.container);
+		}
 	}
 
 	override focus(): void {

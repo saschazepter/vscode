@@ -5,6 +5,8 @@
 
 import { URI } from '../../../../base/common/uri.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
+import { IEditorCloseHandler } from '../../../common/editor/editorInput.js';
+import { ConfirmResult, IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IssueReporterData } from '../common/issue.js';
 import { localize } from '../../../../nls.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -20,9 +22,30 @@ export class IssueReporterEditorInput extends EditorInput {
 
 	private _data: IssueReporterData | undefined;
 
-	constructor(data?: IssueReporterData) {
+	/** Set by the editor pane to check if user has entered data */
+	hasUserInputFn: (() => boolean) | undefined;
+
+	override readonly closeHandler: IEditorCloseHandler;
+
+	constructor(
+		data: IssueReporterData | undefined,
+		@IDialogService private readonly dialogService: IDialogService,
+	) {
 		super();
 		this._data = data;
+
+		this.closeHandler = {
+			showConfirm: () => !!this.hasUserInputFn?.(),
+			confirm: async () => {
+				const { confirmed } = await this.dialogService.confirm({
+					message: localize('discardIssue', "Discard issue report?"),
+					detail: localize('discardIssueDetail', "Your issue report has unsaved changes that will be lost."),
+					primaryButton: localize('discard', "Discard"),
+					type: 'warning',
+				});
+				return confirmed ? ConfirmResult.DONT_SAVE : ConfirmResult.CANCEL;
+			},
+		};
 	}
 
 	get data(): IssueReporterData | undefined {
