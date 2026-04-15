@@ -17,7 +17,6 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { ModelPickerActionItem, IModelPickerDelegate } from '../../../../workbench/contrib/chat/browser/widget/input/modelPickerActionItem.js';
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
-import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { Menus } from '../../../browser/menus.js';
@@ -233,7 +232,6 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 				};
 				const pickerOptions: IChatInputPickerOptions = {
 					hideChevrons: observableValue('hideChevrons', false),
-					hoverPosition: { hoverPosition: HoverPosition.ABOVE },
 				};
 				const action = { id: 'sessions.modelPicker', label: '', enabled: true, class: undefined, tooltip: '', run: () => { } };
 				const modelPicker = instantiationService.createInstance(ModelPickerActionItem, action, delegate, pickerOptions);

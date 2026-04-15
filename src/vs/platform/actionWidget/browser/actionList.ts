@@ -30,7 +30,6 @@ import { defaultListStyles } from '../../theme/browser/defaultStyles.js';
 import { asCssVariable } from '../../theme/common/colorRegistry.js';
 import { ILayoutService } from '../../layout/browser/layoutService.js';
 import { IInstantiationService } from '../../instantiation/common/instantiation.js';
-import { IHoverPositionOptions } from '../../../base/browser/ui/hover/hover.js';
 
 export const acceptSelectedActionCommand = 'acceptSelectedCodeAction';
 export const previewSelectedActionCommand = 'previewSelectedCodeAction';
@@ -51,8 +50,6 @@ export interface IActionListItemHover {
 	 * Content to display in the hover.
 	 */
 	readonly content?: string | MarkdownString;
-
-	readonly position?: IHoverPositionOptions;
 }
 
 export interface IActionListItem<T> {
@@ -1245,9 +1242,14 @@ export class ActionListWidget<T> extends Disposable {
 			const markdown = typeof hoverContent === 'string' ? new MarkdownString(hoverContent) : hoverContent;
 			const linkHandler = this._options?.linkHandler;
 			const rendered = renderMarkdown(markdown, {
-				actionHandler: linkHandler ? (url: string) => {
-					linkHandler(URI.parse(url), element);
-				} : undefined,
+				actionHandler: (url: string) => {
+					const uri = URI.parse(url);
+					if (linkHandler) {
+						linkHandler(uri, element);
+					} else {
+						this._openerService.open(uri, { allowCommands: true });
+					}
+				},
 			});
 			this._submenuDisposables.add(rendered);
 			hoverHeader = rendered.element;
@@ -1263,7 +1265,7 @@ export class ActionListWidget<T> extends Disposable {
 		// Show container before creating widget so List can measure during construction
 		this._submenuContainer.style.display = '';
 		this._submenuContainer.style.position = 'absolute';
-		this._submenuContainer.setAttribute('role', hasSubmenuActions ? 'menu' : 'tooltip');
+		this._submenuContainer.removeAttribute('role');
 
 		const anchorRect = anchor.getBoundingClientRect();
 		const parentRect = this.domNode.getBoundingClientRect();
