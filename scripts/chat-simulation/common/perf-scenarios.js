@@ -316,21 +316,19 @@ const TOOL_CALL_SCENARIOS = {
 					kind: 'tool-calls',
 					toolCalls: [
 						{
-							toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
+							toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 							arguments: {
 								filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
-								oldString: '// perf-benchmark-marker',
-								newString: '// perf-benchmark-marker (updated)',
 								explanation: 'Update the benchmark marker comment in lifecycle.ts',
+								code: '// perf-benchmark-marker (updated)',
 							},
 						},
 						{
-							toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
+							toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 							arguments: {
 								filePath: path.join(FIXTURES_DIR, 'event.ts'),
-								oldString: '// perf-benchmark-marker',
-								newString: '// perf-benchmark-marker (updated)',
 								explanation: 'Update the benchmark marker comment in event.ts',
+								code: '// perf-benchmark-marker (updated)',
 							},
 						},
 					],
@@ -411,12 +409,11 @@ const TOOL_CALL_SCENARIOS = {
 				kind: 'tool-calls',
 				toolCalls: [
 					{
-						toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
+						toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 						arguments: {
 							filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
-							oldString: '// perf-benchmark-marker',
-							newString: '// perf-benchmark-marker (fixed)',
 							explanation: 'Fix the dispose call in the test',
+							code: '// perf-benchmark-marker (fixed)',
 						},
 					},
 				],

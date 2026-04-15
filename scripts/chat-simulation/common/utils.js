@@ -235,8 +235,6 @@ function writeSettings(userDataDir, mockServer) {
 		'github.copilot.advanced.debug.overrideProxyUrl': mockServer.url,
 		'github.copilot.advanced.debug.overrideCapiUrl': mockServer.url,
 		'chat.allowAnonymousAccess': true,
-		// Start new chat sessions in agent mode so tools are available.
-		'chat.newSession.defaultMode': 'agent',
 		// Disable MCP servers — they start async and add unpredictable
 		// delay that pollutes perf measurements.
 		'chat.mcp.discovery.enabled': false,
