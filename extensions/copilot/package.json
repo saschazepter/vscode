@@ -4520,6 +4520,14 @@
 							"advanced"
 						]
 					},
+					"github.copilot.chat.cli.showExternalSessions": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.cli.showExternalSessions%",
+						"tags": [
+							"advanced"
+						]
+					},
 					"github.copilot.chat.cli.planExitMode.enabled": {
 						"type": "boolean",
 						"default": true,

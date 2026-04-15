@@ -544,6 +544,18 @@ describe('CopilotCLISessionService', () => {
 			expect(await service.getSession({ sessionId: id, ...sessionOptionsFor() }, CancellationToken.None)).toBeUndefined();
 		});
 
+		it('fires onDidDeleteSession with the session id', async () => {
+			const session = await service.createSession({ ...sessionOptionsFor() }, CancellationToken.None);
+			const id = session!.object.sessionId;
+			const deletedIds: string[] = [];
+			disposables.add(session);
+			disposables.add(service.onDidDeleteSession(deletedId => deletedIds.push(deletedId)));
+			await service.deleteSession(id);
+
+			expect(deletedIds).toHaveLength(1);
+			expect(deletedIds[0]).toBe(id);
+		});
+
 		it('clears partial session history cache and working directory on delete', async () => {
 			const session = await service.createSession({ ...sessionOptionsFor() }, CancellationToken.None);
 			const id = session.object.sessionId;

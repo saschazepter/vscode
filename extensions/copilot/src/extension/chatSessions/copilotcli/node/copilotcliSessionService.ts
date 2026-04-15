@@ -145,6 +145,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	private _bridgeProcessor: CopilotCliBridgeSpanProcessor | undefined;
 	/** Whether we've attempted to install the bridge (only try once). */
 	private _bridgeInstalled = false;
+	private showExternalSessions: boolean;
 	constructor(
 		@ILogService protected readonly logService: ILogService,
 		@ICopilotCLISDK private readonly copilotCLISDK: ICopilotCLISDK,
@@ -168,6 +169,12 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		@IChatPromptFileService private readonly _chatPromptFileService: IChatPromptFileService,
 	) {
 		super();
+		this.showExternalSessions = this.configurationService.getConfig(ConfigKey.Advanced.CLIShowExternalSessions);
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(ConfigKey.Advanced.CLIShowExternalSessions.fullyQualifiedId)) {
+				this.showExternalSessions = this.configurationService.getConfig(ConfigKey.Advanced.CLIShowExternalSessions);
+			}
+		}));
 		this.monitorSessionFiles();
 		this._sessionManager = new Lazy<Promise<internal.LocalSessionManager>>(async () => {
 			try {
@@ -562,6 +569,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 			const session = this.createCopilotSession(sdkSession, options.workspace, options.agent?.name, sessionManager);
 			session.object.add(mcpGateway);
+			void this._chatSessionMetadataStore.setSessionOrigin(session.object.sessionId);
 			return session;
 		}
 		catch (error) {
@@ -608,6 +616,13 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	private async shouldShowSession(sessionId: string, context?: SessionContext): Promise<boolean> {
 		if (isUntitledSessionId(sessionId)) {
 			return true;
+		}
+
+		if (!this.showExternalSessions) {
+			const sessionOrigin = await this._chatSessionMetadataStore.getSessionOrigin(sessionId);
+			if (sessionOrigin !== 'vscode') {
+				return false;
+			}
 		}
 		// If we're in an empty workspace then show all sessions.
 		if (this.workspaceService.getWorkspaceFolders().length === 0) {
@@ -1064,6 +1079,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			this._sessionWrappers.deleteAndLeak(sessionId);
 			// Possible the session was deleted in another vscode session or the like.
 			this._onDidChangeSessions.fire();
+			this._onDidDeleteSession.fire(sessionId);
 		}
 	}
 
