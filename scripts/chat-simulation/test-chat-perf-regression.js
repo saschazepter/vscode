@@ -132,12 +132,12 @@ function parseMetricThreshold(raw) {
 /**
  * Get the regression threshold for a specific metric.
  * Uses per-metric override from config if available, otherwise the global threshold.
- * @param {ReturnType<typeof parseArgs>} opts
+ * @param {{ threshold: number, metricThresholds?: Record<string, number | string> }} opts
  * @param {string} metric
  * @returns {MetricThreshold}
  */
 function getMetricThreshold(opts, metric) {
-	const raw = opts.metricThresholds[metric];
+	const raw = opts.metricThresholds?.[metric];
 	if (raw !== undefined) {
 		return parseMetricThreshold(raw);
 	}
@@ -748,7 +748,7 @@ function formatCompareLink(base, test) {
  *
  * @param {Record<string, any>} jsonReport
  * @param {Record<string, any> | null} baseline
- * @param {{ threshold: number, metricThresholds: Record<string, number | string>, runs: number, baselineBuild?: string, build?: string }} opts
+ * @param {{ threshold: number, metricThresholds?: Record<string, number | string>, runs: number, baselineBuild?: string, build?: string }} opts
  */
 function generateCISummary(jsonReport, baseline, opts) {
 	const baseLabel = opts.baselineBuild || 'baseline';
@@ -1354,7 +1354,7 @@ async function main() {
 /**
  * Print baseline comparison and exit with code 1 if regressions found.
  * @param {Record<string, any>} jsonReport
- * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string, resume?: string }} opts
+ * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string, resume?: string, metricThresholds?: Record<string, number | string> }} opts
  */
 async function printComparison(jsonReport, opts) {
 	let regressionFound = false;

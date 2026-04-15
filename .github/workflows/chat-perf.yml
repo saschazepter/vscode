@@ -368,7 +368,6 @@ jobs:
         with:
           pattern: perf-results-*
           path: perf-results
-          merge-multiple: true
 
       - name: Download leak results
         if: inputs.skip_leak_check != true && needs.leak-check.result != 'skipped'
@@ -431,21 +430,25 @@ jobs:
         run: |
           mkdir -p collected
 
-          # Collect perf logs from all groups
-          find perf-results -name 'perf-output.log' -exec cp {} collected/ \; 2>/dev/null || true
+          # Collect perf logs from all groups (preserve group name to avoid overwrite)
+          for f in perf-results/perf-results-*/perf-output.log; do
+            GROUP=$(basename "$(dirname "$f")")
+            cp "$f" "collected/perf-output-${GROUP}.log" 2>/dev/null || true
+          done
           cp leak-results/leak-output.log collected/ 2>/dev/null || true
 
-          # Zip all .chat-simulation-data directories
+          # Zip .chat-simulation-data from each group
           if [[ -d perf-results ]]; then
-            find perf-results -type d -name '20*' | head -5 | while read -r RUN_DIR; do
-              GROUP_NAME=$(basename "$(dirname "$RUN_DIR")")
-              cd "$(dirname "$RUN_DIR")"
-              zip -r "$OLDPWD/collected/chat-perf-${GROUP_NAME}.zip" \
-                "$(basename "$RUN_DIR")"/ \
-                ci-summary.md \
-                baseline-*.json \
-                2>/dev/null || true
-              cd "$OLDPWD"
+            for GROUP_DIR in perf-results/perf-results-*; do
+              GROUP=$(basename "$GROUP_DIR")
+              SIM_DIR="$GROUP_DIR/.chat-simulation-data"
+              if [[ -d "$SIM_DIR" ]]; then
+                cd "$SIM_DIR"
+                zip -r "$OLDPWD/collected/chat-perf-${GROUP}.zip" \
+                  . \
+                  2>/dev/null || true
+                cd "$OLDPWD"
+              fi
             done
           fi
 
