@@ -613,6 +613,11 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
 		},
+		[ChatConfiguration.ChatProgressDetailsEnabled]: {
+			type: 'boolean',
+			default: true,
+			description: nls.localize('chat.progressDetails.enabled', "Show elapsed time and token usage in chat response progress."),
+		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'string',
 			enum: ['off', 'windowNotFocused', 'always'],

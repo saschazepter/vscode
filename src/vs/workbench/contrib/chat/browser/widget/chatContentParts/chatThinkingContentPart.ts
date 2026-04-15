@@ -247,7 +247,9 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private isUpdatingDimensions: boolean = false;
 	private lastKnownContentHeight: number = 0;
 	private lastKnownScrollTop: number = 0;
+	private titleShimmerSpan: HTMLElement | undefined;
 	private titleDetailContainer: HTMLElement | undefined;
+	private readonly showProgressDetails: boolean;
 	private readonly _externalResourceWidget: ChatThinkingExternalResourceWidget;
 	private readonly _titleDetailRendered = this._register(new MutableDisposable<IRenderedMarkdown>());
 	private readonly diffStatsByPartId = new Map<string, IEditSessionDiffStats>();
@@ -301,6 +303,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.id = content.id;
 		this.content = content;
 		this.allThinkingParts.push(content);
+		this.showProgressDetails = this.configurationService.getValue<boolean>(ChatConfiguration.ChatProgressDetailsEnabled) !== false;
 		const configuredMode = this.configurationService.getValue<ThinkingDisplayMode>('chat.agent.thinkingStyle') ?? ThinkingDisplayMode.Collapsed;
 
 		this.fixedScrollingMode = configuredMode === ThinkingDisplayMode.FixedScrolling;
@@ -345,8 +348,12 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}
 		}
 
-		if (!this.fixedScrollingMode && !this.streamingCompleted && !this.element.isComplete && this._collapseButton) {
-			// Title is set statically; progress is handled by the outer working progress indicator
+		if (!this.fixedScrollingMode && !this.streamingCompleted && !this.element.isComplete && this._collapseButton && !this.showProgressDetails) {
+			const labelElement = this._collapseButton.labelElement;
+			labelElement.textContent = '';
+			this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
+			this.titleShimmerSpan.textContent = extractedTitle;
+			labelElement.appendChild(this.titleShimmerSpan);
 		}
 
 		if (this.fixedScrollingMode) {
@@ -452,7 +459,15 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			this.renderMarkdown(this.currentThinkingValue);
 		}
 
-		// Working spinner removed — progress is handled by the outer working progress indicator
+		if (!this.showProgressDetails && !this.streamingCompleted && !this.element.isComplete) {
+			this.workingSpinnerElement = $('.chat-thinking-item.chat-thinking-spinner-item');
+			const spinnerIcon = createThinkingIcon(Codicon.circleFilled);
+			this.workingSpinnerElement.appendChild(spinnerIcon);
+			this.workingSpinnerLabel = $('span.chat-thinking-spinner-label');
+			this.workingSpinnerLabel.textContent = this.getRandomWorkingMessage(WorkingMessageCategory.Thinking);
+			this.workingSpinnerElement.appendChild(this.workingSpinnerLabel);
+			this.wrapper.appendChild(this.workingSpinnerElement);
+		}
 
 		// wrap content in scrollable element for fixed scrolling mode
 		if (this.fixedScrollingMode) {
@@ -464,18 +479,17 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}));
 			this._register(this.scrollableElement.onScroll(e => this.handleScroll(e.scrollTop)));
 
-			// Watch for DOM mutations (child additions/removals) in the wrapper
-			// so we always scroll to bottom when new content appears. This replaces
-			// the old working-spinner sentinel that served as a scroll anchor.
-			const mutationObserver = new MutationObserver(() => {
-				if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
-					return;
-				}
-				this.refreshContentHeight();
-				this.updateScrollDimensionsFromCache();
-			});
-			mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
-			this._register({ dispose: () => mutationObserver.disconnect() });
+			if (this.showProgressDetails) {
+				const mutationObserver = new MutationObserver(() => {
+					if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
+						return;
+					}
+					this.refreshContentHeight();
+					this.updateScrollDimensionsFromCache();
+				});
+				mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
+				this._register({ dispose: () => mutationObserver.disconnect() });
+			}
 
 			// Observe child elements for resizes (e.g. terminal output growing)
 			// so we can update scroll dimensions when the wrapper box is pinned at max-height.
@@ -488,6 +502,9 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}));
 			if (this.textContainer) {
 				this._register(this.childResizeObserver.observe(this.textContainer));
+			}
+			if (this.workingSpinnerElement) {
+				this._register(this.childResizeObserver.observe(this.workingSpinnerElement));
 			}
 
 			// Cache wrapper scrollHeight post-layout via ResizeObserver to avoid forced reflows.
@@ -1981,6 +1998,7 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 			}
 			this.titleDetailContainer = undefined;
 			this._titleDetailRendered.clear();
+			this.titleShimmerSpan = undefined;
 			this.currentTitle = title;
 			return;
 		}
@@ -1995,11 +2013,19 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 
 		const labelElement = this._collapseButton.labelElement;
 
-		// Set static prefix (no shimmer animation — progress is handled by outer working progress)
-		labelElement.textContent = '';
-		const prefixSpan = $('span');
-		prefixSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
-		labelElement.appendChild(prefixSpan);
+		if (this.showProgressDetails) {
+			labelElement.textContent = '';
+			const prefixSpan = $('span');
+			prefixSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
+			labelElement.appendChild(prefixSpan);
+		} else {
+			if (!this.titleShimmerSpan || !this.titleShimmerSpan.parentElement) {
+				labelElement.textContent = '';
+				this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
+				labelElement.appendChild(this.titleShimmerSpan);
+			}
+			this.titleShimmerSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
+		}
 
 		// Dispose previous detail rendering
 		this._titleDetailRendered.clear();

@@ -173,6 +173,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	private readonly statsElement: HTMLElement;
 	private explicitContent: IMarkdownString | undefined;
 	private readonly label: string;
+	private readonly hasState: boolean;
 	private readonly isCompleteState: boolean;
 
 	constructor(
@@ -194,6 +195,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		this.domNode = $('.progress-container');
 		const iconElement = $('div');
 		const state = workingProgress.state;
+		this.hasState = !!state;
 		const isComplete = state?.isComplete ?? false;
 		this.isCompleteState = isComplete;
 
@@ -219,7 +221,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		if (state) {
 			this.initializeWithState(state, context);
 		} else {
-			// No state provided — show explicit content or label
+			// No state provided - show explicit content or label
 			this.labelElement.textContent = this.explicitContent
 				? renderAsPlaintext(this.explicitContent)
 				: this.label;
@@ -264,8 +266,6 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	}
 
 	private startLiveProgress(state: IChatWorkingProgressState): void {
-		let lastCompletionTokens: number | undefined;
-
 		const updateDisplay = () => {
 			// If explicit content was set (e.g., tool unresponsive), show that instead
 			if (this.explicitContent) {
@@ -285,7 +285,6 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 				this.statsElement.textContent = tokens === 1
 					? localize('workingProgressStatsWithOneToken', "({0} \u00b7 1 token)", timeStr)
 					: localize('workingProgressStatsWithTokens', "({0} \u00b7 {1} tokens)", timeStr, tokenStr);
-				lastCompletionTokens = tokens;
 			} else {
 				this.statsElement.textContent = localize('workingProgressStats', "({0})", timeStr);
 			}
@@ -294,19 +293,9 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		// Initial render
 		updateDisplay();
 
-		// Update every second for the timer
+		// Update elapsed time and the latest token count once per second.
 		const timer = this._register(new WindowIntervalTimer(this.domNode));
 		timer.cancelAndSet(updateDisplay, 1000);
-
-		// Also react to token usage changes via observable
-		this._register(autorun(reader => {
-			const tokens = state.completionTokenCountObs.read(reader);
-			if (typeof tokens === 'number') {
-				if (tokens !== lastCompletionTokens) {
-					updateDisplay();
-				}
-			}
-		}));
 	}
 
 	updateWorkingContent(content: IMarkdownString): void {
@@ -319,8 +308,11 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		if (other.kind !== 'working') {
 			return false;
 		}
-		// Re-render when completion state changes (in-progress → complete)
-		if (other.state?.isComplete !== this.isCompleteState) {
+		if (!!other.state !== this.hasState) {
+			return false;
+		}
+		// Re-render when completion state changes (in-progress to complete)
+		if ((other.state?.isComplete ?? false) !== this.isCompleteState) {
 			return false;
 		}
 		return other.content?.value === this.explicitContent?.value;
