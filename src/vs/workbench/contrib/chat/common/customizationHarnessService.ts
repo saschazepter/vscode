@@ -264,6 +264,17 @@ const EMPTY_FILTER: IStorageSourceFilter = {
 };
 
 /**
+ * Empty descriptor returned when no harness is registered yet.
+ */
+const EMPTY_DESCRIPTOR: IHarnessDescriptor = {
+	id: '',
+	label: '',
+	icon: Codicon.sparkle,
+	getStorageSourceFilter: () => ({ sources: [] }),
+};
+
+
+/**
  * Hooks filter — local, user, and plugin sources.
  */
 const HOOKS_FILTER: IStorageSourceFilter = {
@@ -495,6 +506,9 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 	getStorageSourceFilter(type: PromptsType): IStorageSourceFilter {
 		const activeId = this._activeHarness.get();
 		const all = this._getAllHarnesses();
+		if (all.length === 0) {
+			return EMPTY_FILTER;
+		}
 		const descriptor = all.find(h => h.id === activeId) ?? all[0];
 		return descriptor?.getStorageSourceFilter(type) ?? EMPTY_FILTER;
 	}
@@ -503,18 +517,9 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		const activeId = this._activeHarness.get();
 		const all = this._getAllHarnesses();
 		if (all.length === 0) {
-			return this._createEmptyDescriptor();
+			return EMPTY_DESCRIPTOR;
 		}
 		return all.find(h => h.id === activeId) ?? all[0];
-	}
-
-	private _createEmptyDescriptor(): IHarnessDescriptor {
-		return {
-			id: '',
-			label: '',
-			icon: Codicon.sparkle,
-			getStorageSourceFilter: () => ({ sources: [] }),
-		};
 	}
 }
 
