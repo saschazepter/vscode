@@ -2617,7 +2617,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 
 		// Render background task chips from the background task service
-		let hasBackgroundTasks = false;
 		const sessionResource = this._widget?.viewModel?.model.sessionResource;
 		if (sessionResource) {
 			const bgTaskStore = new DisposableStore();
@@ -2625,7 +2624,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			store.add(autorun(reader => {
 				const tasks = this._chatBackgroundTaskService.getTasksForSession(sessionResource).read(reader);
 				bgTaskStore.clear();
-				hasBackgroundTasks = tasks.length > 0;
 				for (const task of tasks) {
 					const attachment: IChatBackgroundTaskVariableEntry = {
 						kind: 'backgroundTask',
@@ -2643,13 +2641,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						this._chatBackgroundTaskService.evictTask(task.taskId);
 					}));
 				}
+				const hasBackgroundTasks = tasks.length > 0;
 				dom.setVisibility(Boolean(this.options.renderInputToolbarBelowInput || hasAttachments || hasImplicitContext || hasBackgroundTasks), this.attachmentsContainer);
 				dom.setVisibility(hasAttachments || hasImplicitContext || hasBackgroundTasks, this.attachedContextContainer);
 			}));
+		} else {
+			dom.setVisibility(Boolean(this.options.renderInputToolbarBelowInput || hasAttachments || hasImplicitContext), this.attachmentsContainer);
+			dom.setVisibility(hasAttachments || hasImplicitContext, this.attachedContextContainer);
 		}
-
-		dom.setVisibility(Boolean(this.options.renderInputToolbarBelowInput || hasAttachments || hasImplicitContext || hasBackgroundTasks), this.attachmentsContainer);
-		dom.setVisibility(hasAttachments || hasImplicitContext || hasBackgroundTasks, this.attachedContextContainer);
 		if (!attachments.length) {
 			this._indexOfLastAttachedContextDeletedWithKeyboard = -1;
 			this._indexOfLastOpenedContext = -1;

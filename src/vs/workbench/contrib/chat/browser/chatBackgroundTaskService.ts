@@ -10,6 +10,7 @@ import { generateUuid } from '../../../../base/common/uuid.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { BackgroundTaskSource, BackgroundTaskStatus, IChatBackgroundTask, IChatBackgroundTaskHandle, IChatBackgroundTaskService } from '../common/chatBackgroundTask.js';
+import { IChatService } from '../common/chatService/chatService.js';
 
 class ChatBackgroundTask extends Disposable implements IChatBackgroundTaskHandle {
 	private readonly _status: ISettableObservable<BackgroundTaskStatus>;
@@ -41,11 +42,17 @@ class ChatBackgroundTask extends Disposable implements IChatBackgroundTaskHandle
 	}
 
 	complete(result: unknown): void {
+		if (this._status.get() !== BackgroundTaskStatus.Working) {
+			return;
+		}
 		this._result.set(result, undefined);
 		this._status.set(BackgroundTaskStatus.Completed, undefined);
 	}
 
 	fail(message?: string): void {
+		if (this._status.get() !== BackgroundTaskStatus.Working) {
+			return;
+		}
 		this._statusMessage.set(message, undefined);
 		this._status.set(BackgroundTaskStatus.Failed, undefined);
 	}
@@ -63,8 +70,16 @@ export class ChatBackgroundTaskServiceImpl extends Disposable implements IChatBa
 
 	constructor(
 		@ILogService private readonly _logService: ILogService,
+		@IChatService private readonly _chatService: IChatService,
 	) {
 		super();
+
+		this._register(this._chatService.onDidDisposeSession(e => {
+			for (const sessionResource of e.sessionResources) {
+				this._tasksBySession.deleteAndDispose(sessionResource.toString());
+			}
+			this._onDidChangeTasks.fire();
+		}));
 	}
 
 	createTask(sessionResource: URI, options: {

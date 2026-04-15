@@ -30,13 +30,6 @@ export interface IChatBackgroundTask {
 	cancel(): void;
 }
 
-export interface ISerializedBackgroundTask {
-	readonly taskId: string;
-	readonly name: string;
-	readonly source: BackgroundTaskSource;
-	readonly status: BackgroundTaskStatus;
-}
-
 export interface IChatBackgroundTaskHandle extends IChatBackgroundTask {
 	complete(result: unknown): void;
 	fail(message?: string): void;
