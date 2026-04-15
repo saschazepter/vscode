@@ -19,6 +19,8 @@ import { IssueFormService } from '../browser/issueFormService.js';
 import { IGitHubUploadService } from '../browser/githubUploadService.js';
 import { IRecordingService } from '../browser/recordingService.js';
 import { IScreenshotService } from '../browser/screenshotService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IIssueFormService, IssueReporterData } from '../common/issue.js';
 
 export class NativeIssueFormService extends IssueFormService implements IIssueFormService {
@@ -39,9 +41,11 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		@IFileService fileService: IFileService,
 		@IEnvironmentService environmentService: IEnvironmentService,
 		@IGitHubUploadService githubUploadService: IGitHubUploadService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IEditorService editorService: IEditorService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
-		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, layoutService, screenshotService, openerService, recordingService, fileDialogService, fileService, environmentService, githubUploadService);
+		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, layoutService, screenshotService, openerService, recordingService, fileDialogService, fileService, environmentService, githubUploadService, configurationService, editorService);
 	}
 
 	// override to grab platform info
@@ -56,7 +60,11 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		this.release = release;
 		this.type = type;
 
-		// Use the new overlay-based reporter
-		this.openOverlayReporter(data);
+		const displayMode = this.configurationService.getValue<string>('issueReporter.experimental.displayMode');
+		if (displayMode === 'tabWithFloatingBar') {
+			this.openEditorTabReporter(data);
+		} else {
+			this.openOverlayReporter(data);
+		}
 	}
 }

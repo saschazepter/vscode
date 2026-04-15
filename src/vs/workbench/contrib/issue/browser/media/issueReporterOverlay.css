@@ -42,6 +42,30 @@ body.issue-reporter-active {
 	overflow: visible;
 }
 
+/* ── Embedded mode (editor tab) ── */
+.issue-reporter-wizard.wizard-embedded {
+	max-height: none;
+	overflow: visible;
+	height: 100%;
+	transition: none;
+}
+
+.issue-reporter-wizard.wizard-embedded .wizard-toolbar {
+	-webkit-app-region: no-drag;
+	padding-right: 0;
+}
+
+.issue-reporter-wizard.wizard-embedded .wizard-step-container {
+	flex: 1;
+	overflow: auto;
+}
+
+.issue-reporter-editor-tab {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
 /* ── Resize Sash ── */
 .wizard-resize-sash {
 	flex-shrink: 0;

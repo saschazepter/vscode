@@ -28,8 +28,11 @@ import { IssueWebReporter } from './issueReporterService.js';
 import { IRecordingService, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
 import { IGitHubUploadService } from './githubUploadService.js';
+import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import './media/issueReporter.css';
@@ -71,6 +74,8 @@ export class IssueFormService implements IIssueFormService {
 		@IFileService protected readonly fileService: IFileService,
 		@IEnvironmentService protected readonly environmentService: IEnvironmentService,
 		@IGitHubUploadService protected readonly githubUploadService: IGitHubUploadService,
+		@IConfigurationService protected readonly configurationService: IConfigurationService,
+		@IEditorService protected readonly editorService: IEditorService,
 	) { }
 
 	async openReporter(data: IssueReporterData): Promise<void> {
@@ -78,7 +83,17 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
-		this.openOverlayReporter(data);
+		const displayMode = this.configurationService.getValue<string>('issueReporter.experimental.displayMode');
+		if (displayMode === 'tabWithFloatingBar') {
+			this.openEditorTabReporter(data);
+		} else {
+			this.openOverlayReporter(data);
+		}
+	}
+
+	protected openEditorTabReporter(data: IssueReporterData): void {
+		const input = new IssueReporterEditorInput(data);
+		this.editorService.openEditor(input);
 	}
 
 	protected openOverlayReporter(data: IssueReporterData): void {

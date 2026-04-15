@@ -9,6 +9,7 @@ import { Categories } from '../../../../platform/action/common/actionCommonCateg
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProcessService } from '../../../../platform/process/common/process.js';
@@ -16,6 +17,9 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { IQuickAccessRegistry, Extensions as QuickAccessExtensions } from '../../../../platform/quickinput/common/quickAccess.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions, IWorkbenchContributionsRegistry } from '../../../common/contributions.js';
+import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../browser/editor.js';
+import { EditorExtensions } from '../../../common/editor.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { IssueQuickAccess } from '../browser/issueQuickAccess.js';
 import '../browser/issueTroubleshoot.js';
@@ -29,6 +33,8 @@ import { IRecordingService } from '../browser/recordingService.js';
 import { NativeRecordingService } from './nativeRecordingService.js';
 import { IGitHubUploadService } from '../browser/githubUploadService.js';
 import { NativeGitHubUploadService } from './nativeGitHubUploadService.js';
+import { IssueReporterEditorPane } from '../browser/issueReporterEditorPane.js';
+import { IssueReporterEditorInput } from '../browser/issueReporterEditorInput.js';
 
 //#region Issue Contribution
 registerSingleton(IWorkbenchIssueService, NativeIssueService, InstantiationType.Delayed);
@@ -36,6 +42,41 @@ registerSingleton(IIssueFormService, NativeIssueFormService, InstantiationType.D
 registerSingleton(IScreenshotService, NativeScreenshotService, InstantiationType.Delayed);
 registerSingleton(IRecordingService, NativeRecordingService, InstantiationType.Delayed);
 registerSingleton(IGitHubUploadService, NativeGitHubUploadService, InstantiationType.Delayed);
+
+// Settings
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
+	id: 'issueReporter',
+	title: localize('issueReporterConfigurationTitle', "Issue Reporter"),
+	type: 'object',
+	properties: {
+		'issueReporter.experimental.wizardReporter': {
+			type: 'boolean',
+			default: false,
+			description: localize('issueReporter.wizardReporter', "Enable the experimental issue reporter wizard instead of the classic issue reporter."),
+		},
+		'issueReporter.experimental.displayMode': {
+			type: 'string',
+			enum: ['titlebar', 'tabWithFloatingBar'],
+			default: 'titlebar',
+			enumDescriptions: [
+				localize('issueReporter.displayMode.titlebar', "Show the wizard as a title bar panel that pushes the workbench down."),
+				localize('issueReporter.displayMode.tabWithFloatingBar', "Show the wizard as an editor tab with a floating capture toolbar."),
+			],
+			description: localize('issueReporter.displayMode', "Controls how the experimental issue reporter wizard is displayed."),
+			markdownDeprecationMessage: undefined,
+		},
+	}
+});
+
+// Editor pane for tab display mode
+Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
+	EditorPaneDescriptor.create(
+		IssueReporterEditorPane,
+		IssueReporterEditorPane.ID,
+		localize('issueReporter', "Issue Reporter")
+	),
+	[new SyncDescriptor(IssueReporterEditorInput)]
+);
 
 class NativeIssueContribution extends BaseIssueContribution {
 

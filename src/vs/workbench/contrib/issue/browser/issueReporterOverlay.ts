@@ -35,6 +35,13 @@ export interface IScreenshot {
 	annotatedDataUrl?: string;
 }
 
+export interface IssueReporterOverlayOptions {
+	/** When true, the wizard renders inside the given container instead of as a body-level flex sibling. */
+	readonly embedded?: boolean;
+	/** Container element to render into when embedded. */
+	readonly container?: HTMLElement;
+}
+
 export class IssueReporterOverlay {
 
 	private readonly disposables = new DisposableStore();
@@ -109,6 +116,7 @@ export class IssueReporterOverlay {
 		private readonly data: IssueReporterData,
 		private readonly layoutService: IWorkbenchLayoutService,
 		private readonly recordingSupported: boolean = false,
+		private readonly options: IssueReporterOverlayOptions = {},
 	) {
 		this.model = new IssueReporterModel({
 			...data,
@@ -894,6 +902,15 @@ export class IssueReporterOverlay {
 		}
 		this.visible = true;
 
+		if (this.options.embedded && this.options.container) {
+			// Embedded mode: render inside the provided container (e.g. editor tab)
+			this.wizardPanel.classList.add('open', 'wizard-embedded');
+			this.wizardPanel.style.maxHeight = 'none';
+			append(this.options.container, this.wizardPanel);
+			this.descriptionTextarea.focus();
+			return;
+		}
+
 		const workbenchContainer = this.layoutService.mainContainer;
 		const targetWindow = getWindow(workbenchContainer);
 		const body = targetWindow.document.body;
@@ -1128,6 +1145,10 @@ export class IssueReporterOverlay {
 
 	isVisible(): boolean {
 		return this.visible;
+	}
+
+	focus(): void {
+		this.wizardPanel.focus();
 	}
 
 	getWizardHeight(): number {
