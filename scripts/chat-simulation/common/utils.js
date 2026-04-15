@@ -193,8 +193,17 @@ function buildEnv(mockServer, { isDevBuild = true } = {}) {
  * @param {string} logsDir
  * @returns {string[]}
  */
-function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostInspectPort = 0 } = {}) {
+function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostInspectPort = 0, traceFile = '' } = {}) {
+	// Chromium switches must come BEFORE the app path (ROOT) — Chromium
+	// only processes switches that precede the first non-switch argument.
+	const chromiumFlags = [];
+	if (traceFile) {
+		chromiumFlags.push(`--enable-tracing=v8.gc,devtools.timeline,blink.user_timing`);
+		chromiumFlags.push(`--trace-startup-file=${traceFile}`);
+		chromiumFlags.push(`--enable-tracing-format=json`);
+	}
 	const args = [
+		...chromiumFlags,
 		ROOT,
 		'--skip-release-notes',
 		'--skip-welcome',
@@ -505,18 +514,19 @@ async function launchVSCode(executable, launchArgs, env, opts = {}) {
 		page,
 		browser,
 		close: async () => {
-			await browser.close().catch(() => { });
-			const pid = child.pid;
-			if (pid) {
-				if (process.platform === 'win32') {
-					try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' }); }
-					catch { }
-				} else {
-					try { execSync(`pkill -TERM -P ${pid}`, { stdio: 'ignore' }); }
-					catch { }
-					child.kill('SIGTERM');
-				}
+			// Trigger app.quit() so Chromium flushes trace buffers and
+			// writes --trace-startup-file. Using Cmd+Q / Alt+F4 triggers
+			// the full Electron quit lifecycle including trace flush.
+			// window.close() only closes the BrowserWindow without
+			// triggering app-level quit.
+			try {
+				const quitKey = process.platform === 'darwin' ? 'Meta+KeyQ' : 'Alt+F4';
+				await page.keyboard.press(quitKey);
+			} catch {
+				// Page may already be closed
 			}
+			const pid = child.pid;
+			// Wait for graceful exit (up to 30s for trace flush)
 			await new Promise(resolve => {
 				const timer = setTimeout(() => {
 					if (pid) {
@@ -525,9 +535,11 @@ async function launchVSCode(executable, launchArgs, env, opts = {}) {
 					}
 					child.kill('SIGKILL');
 					resolve(undefined);
-				}, 3000);
+				}, 30_000);
 				child.once('exit', () => { clearTimeout(timer); resolve(undefined); });
 			});
+			// Disconnect CDP after the process has exited
+			await browser.close().catch(() => { });
 			// Kill crashpad handler — it self-daemonizes and outlives the
 			// parent. Wait briefly for it to detach, then kill by pattern.
 			await new Promise(r => setTimeout(r, 500));

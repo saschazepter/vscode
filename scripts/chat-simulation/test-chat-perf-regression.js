@@ -172,10 +172,11 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	const runDiagDir = path.join(runDir, `${role}-${buildLabel}`, runIndex.replace(/^baseline-/, ''));
 	fs.mkdirSync(runDiagDir, { recursive: true });
 
+	const tracePath = path.join(runDiagDir, 'trace.json');
 	const extHostInspectPort = getNextExtHostInspectPort();
 	const vscode = await launchVSCode(
 		electronPath,
-		buildArgs(userDataDir, extDir, logsDir, { isDevBuild, extHostInspectPort }),
+		buildArgs(userDataDir, extDir, logsDir, { isDevBuild, extHostInspectPort, traceFile: tracePath }),
 		buildEnv(mockServer, { isDevBuild }),
 		{ verbose },
 	);
@@ -187,6 +188,12 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	let extHostInspector = null;
 	/** @type {{ usedSize: number, totalSize: number } | null} */
 	let extHostHeapBefore = null;
+	/** @type {Omit<RunMetrics, 'majorGCs' | 'minorGCs' | 'gcDurationMs' | 'longTaskCount' | 'timeToUIUpdated' | 'timeToFirstToken' | 'timeToComplete' | 'instructionCollectionTime' | 'agentInvokeTime' | 'hasInternalMarks' | 'internalFirstToken'> | null} */
+	let partialMetrics = null;
+	// Timing vars hoisted for access in post-close trace parsing
+	let submitTime = 0;
+	let firstResponseTime = 0;
+	let responseCompleteTime = 0;
 
 	try {
 		await window.waitForSelector('.monaco-workbench', { timeout: 60_000 });
@@ -195,14 +202,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		await cdp.send('Performance.enable');
 		const heapBefore = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
 
-		// Stop any existing tracing session (stable builds may have one active)
-		try { await cdp.send('Tracing.end'); await new Promise(r => setTimeout(r, 200)); } catch { }
-		await cdp.send('Tracing.start', {
-			traceConfig: {
-				includedCategories: ['v8.gc', 'devtools.timeline'],
-				recordMode: 'recordContinuously',
-			}
-		});
 		const metricsBefore = await cdp.send('Performance.getMetrics');
 
 		// Open chat
@@ -319,53 +318,14 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			}
 		});
 
-		// Use a PerformanceObserver to capture code/chat/* marks as they're
-		// emitted. This is event-driven (no polling) and captures marks
-		// even if they're cleared immediately after emission.
-		await window.evaluate(() => {
-			// @ts-ignore
-			globalThis._chatPerfCapture = [];
-			try {
-				// @ts-ignore
-				globalThis._chatPerfObserver = new PerformanceObserver((list) => {
-					for (const entry of list.getEntries()) {
-						if (entry.name.startsWith('code/chat/')) {
-							const timeOrigin = performance.timeOrigin ?? 0;
-							// @ts-ignore
-							globalThis._chatPerfCapture.push({
-								name: entry.name,
-								startTime: Math.round(timeOrigin + entry.startTime),
-							});
-						}
-					}
-				});
-				// @ts-ignore
-				globalThis._chatPerfObserver.observe({ type: 'mark', buffered: false });
-			} catch {
-				// PerformanceObserver not available — fall back to polling
-				// @ts-ignore
-				globalThis._chatPerfPollId = setInterval(() => {
-					// @ts-ignore
-					const marks = globalThis.MonacoPerformanceMarks?.getMarks() ?? [];
-					for (const m of marks) {
-						// @ts-ignore
-						if (m.name.startsWith('code/chat/') && !globalThis._chatPerfCapture.some(c => c.name === m.name)) {
-							// @ts-ignore
-							globalThis._chatPerfCapture.push({ name: m.name, startTime: m.startTime });
-						}
-					}
-				}, 16);
-			}
-		});
-
 		// Submit
 		const completionsBefore = mockServer.completionCount();
-		const submitTime = Date.now();
+		submitTime = Date.now();
 		await window.keyboard.press('Enter');
 
 		// Wait for mock server to serve the response
 		try { await mockServer.waitForCompletion(completionsBefore + 1, 60_000); } catch { }
-		const firstResponseTime = Date.now();
+		firstResponseTime = Date.now();
 
 		// Wait for DOM response to settle
 		await dismissDialog();
@@ -378,7 +338,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			},
 			responseSelector, { timeout: 30_000 },
 		);
-		let responseCompleteTime = Date.now();
+		responseCompleteTime = Date.now();
 
 		// -- User turn injection loop -----------------------------------------
 		// For multi-turn scenarios with user follow-ups, type each follow-up
@@ -478,26 +438,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			console.log(`  [debug] Client-side timing: firstResponse=${firstResponseTime - submitTime}ms, complete=${responseCompleteTime - submitTime}ms`);
 		}
 
-		// Collect perf marks and tear down the observer/poll
-		const chatMarks = await window.evaluate(() => {
-			// @ts-ignore
-			if (globalThis._chatPerfObserver) { globalThis._chatPerfObserver.disconnect(); }
-			// @ts-ignore
-			if (globalThis._chatPerfPollId) { clearInterval(globalThis._chatPerfPollId); }
-			// @ts-ignore
-			const marks = globalThis._chatPerfCapture ?? [];
-			// @ts-ignore
-			delete globalThis._chatPerfCapture;
-			// @ts-ignore
-			delete globalThis._chatPerfObserver;
-			// @ts-ignore
-			delete globalThis._chatPerfPollId;
-			return marks;
-		});
-		if (verbose && chatMarks.length > 0) {
-			console.log(`  [debug] chatMarks (${chatMarks.length}): ${chatMarks.map((/** @type {any} */ m) => m.name.split('/').slice(-1)[0]).join(', ')}`);
-		}
-
 		// Collect Long Animation Frame entries and tear down the observer
 		const loafData = await window.evaluate(() => {
 			// @ts-ignore
@@ -514,19 +454,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		});
 
 		const heapAfter = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
-		/** @type {Array<any>} */
-		const traceEvents = [];
-		cdp.on('Tracing.dataCollected', (/** @type {any} */ data) => { traceEvents.push(...data.value); });
-		const tracingComplete = new Promise(resolve => {
-			cdp.once('Tracing.tracingComplete', () => resolve(undefined));
-		});
-		await cdp.send('Tracing.end');
-		await tracingComplete;
 		const metricsAfter = await cdp.send('Performance.getMetrics');
-
-		// Save performance trace (Chrome DevTools format)
-		const tracePath = path.join(runDiagDir, 'trace.json');
-		fs.writeFileSync(tracePath, JSON.stringify({ traceEvents }));
 
 		// Take heap snapshot
 		const snapshotPath = path.join(runDiagDir, 'heap.heapsnapshot');
@@ -594,37 +522,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			}
 		}
 
-		// Parse timing — prefer internal code/chat/* marks (precise, in-process)
-		// with client-side Date.now() as fallback for older builds without marks.
-		const timeToUIUpdated = markDuration(chatMarks, 'request/start', 'request/uiUpdated');
-		const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
-		const timeToFirstToken = internalFirstToken >= 0 ? internalFirstToken : (firstResponseTime - submitTime);
-		const timeToComplete = responseCompleteTime - submitTime;
-		const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
-		const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
-
-		// Parse GC events from trace.
-		// Use the trace-event category and phase fields which are stable
-		// across V8 versions, rather than matching event name substrings.
-		let majorGCs = 0, minorGCs = 0, gcDurationMs = 0;
-		for (const event of traceEvents) {
-			const isGC = event.cat === 'v8.gc'
-				|| event.cat === 'devtools.timeline,v8'
-				|| (typeof event.cat === 'string' && event.cat.split(',').some((/** @type {string} */ c) => c.trim() === 'v8.gc'));
-			if (!isGC) { continue; }
-			// Only count complete ('X') or duration-begin ('B') events to
-			// avoid double-counting begin/end pairs.
-			if (event.ph && event.ph !== 'X' && event.ph !== 'B') { continue; }
-			const name = event.name || '';
-			if (/Major|MarkCompact|MSC|MC|IncrementalMarking|FinalizeMC/i.test(name)) { majorGCs++; }
-			else if (/Minor|Scaveng/i.test(name)) { minorGCs++; }
-			else { minorGCs++; } // default unknown GC events to minor
-			if (event.dur) { gcDurationMs += event.dur / 1000; }
-		}
-		let longTaskCount = 0;
-		for (const event of traceEvents) {
-			if (event.name === 'RunTask' && event.dur && event.dur > 50_000) { longTaskCount++; }
-		}
+		// Store partial metrics here so we can combine with trace data after close.
 
 		/** @param {any} r @param {string} name */
 		function getMetric(r, name) {
@@ -632,8 +530,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			return e ? e.value : 0;
 		}
 
-		return {
-			timeToUIUpdated, timeToFirstToken, timeToComplete, instructionCollectionTime, agentInvokeTime,
+		partialMetrics = {
 			heapUsedBefore: Math.round(heapBefore.usedSize / 1024 / 1024),
 			heapUsedAfter: Math.round(heapAfter.usedSize / 1024 / 1024),
 			heapDelta: Math.round((heapAfter.usedSize - heapBefore.usedSize) / 1024 / 1024),
@@ -650,20 +547,15 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 					return -1; // gc() not available in this build
 				}
 			})(),
-			majorGCs, minorGCs,
-			gcDurationMs: Math.round(gcDurationMs * 100) / 100,
 			layoutCount: getMetric(metricsAfter, 'LayoutCount') - getMetric(metricsBefore, 'LayoutCount'),
 			recalcStyleCount: getMetric(metricsAfter, 'RecalcStyleCount') - getMetric(metricsBefore, 'RecalcStyleCount'),
 			forcedReflowCount: getMetric(metricsAfter, 'ForcedStyleRecalcs') - getMetric(metricsBefore, 'ForcedStyleRecalcs'),
-			longTaskCount,
 			longAnimationFrameCount: loafData.count,
 			longAnimationFrameTotalMs: Math.round(loafData.totalMs * 100) / 100,
 			frameCount: getMetric(metricsAfter, 'FrameCount') - getMetric(metricsBefore, 'FrameCount'),
 			compositeLayers: getMetric(metricsAfter, 'CompositeLayers') - getMetric(metricsBefore, 'CompositeLayers'),
 			paintCount: getMetric(metricsAfter, 'PaintCount') - getMetric(metricsBefore, 'PaintCount'),
-			hasInternalMarks: chatMarks.length > 0,
 			responseHasContent: responseInfo.hasContent,
-			internalFirstToken,
 			profilePath,
 			tracePath,
 			snapshotPath,
@@ -681,6 +573,68 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		activeVSCode = null;
 		await vscode.close();
 	}
+
+	// Read the trace file written by VS Code on exit via --trace-startup-file
+	/** @type {Array<any>} */
+	let traceEvents = [];
+	try {
+		const traceData = JSON.parse(fs.readFileSync(tracePath, 'utf-8'));
+		traceEvents = traceData.traceEvents || [];
+	} catch {
+		// Trace file may not exist if VS Code crashed before shutdown
+	}
+
+	// Extract code/chat/* perf marks from blink.user_timing trace events.
+	// These appear as instant ('R' or 'I') events with timestamps in microseconds.
+	const chatMarks = traceEvents
+		.filter(e => e.cat === 'blink.user_timing' && e.name && e.name.startsWith('code/chat/'))
+		.map(e => ({ name: e.name, startTime: e.ts / 1000 }));
+
+	if (verbose && chatMarks.length > 0) {
+		console.log(`  [trace] chatMarks (${chatMarks.length}): ${chatMarks.map((/** @type {any} */ m) => m.name.split('/').slice(-1)[0]).join(', ')}`);
+	}
+
+	// Parse timing — prefer internal code/chat/* marks (precise, in-process)
+	// with client-side Date.now() as fallback for older builds without marks.
+	const timeToUIUpdated = markDuration(chatMarks, 'request/start', 'request/uiUpdated');
+	const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
+	const timeToFirstToken = internalFirstToken >= 0 ? internalFirstToken : (firstResponseTime - submitTime);
+	const timeToComplete = responseCompleteTime - submitTime;
+	const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
+	const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
+
+	// Parse GC events from trace.
+	// Use the trace-event category and phase fields which are stable
+	// across V8 versions, rather than matching event name substrings.
+	let majorGCs = 0, minorGCs = 0, gcDurationMs = 0;
+	for (const event of traceEvents) {
+		const isGC = event.cat === 'v8.gc'
+			|| event.cat === 'devtools.timeline,v8'
+			|| (typeof event.cat === 'string' && event.cat.split(',').some((/** @type {string} */ c) => c.trim() === 'v8.gc'));
+		if (!isGC) { continue; }
+		// Only count complete ('X') or duration-begin ('B') events to
+		// avoid double-counting begin/end pairs.
+		if (event.ph && event.ph !== 'X' && event.ph !== 'B') { continue; }
+		const name = event.name || '';
+		if (/Major|MarkCompact|MSC|MC|IncrementalMarking|FinalizeMC/i.test(name)) { majorGCs++; }
+		else if (/Minor|Scaveng/i.test(name)) { minorGCs++; }
+		else { minorGCs++; } // default unknown GC events to minor
+		if (event.dur) { gcDurationMs += event.dur / 1000; }
+	}
+	let longTaskCount = 0;
+	for (const event of traceEvents) {
+		if (event.name === 'RunTask' && event.dur && event.dur > 50_000) { longTaskCount++; }
+	}
+
+	return {
+		...partialMetrics,
+		timeToUIUpdated, timeToFirstToken, timeToComplete, instructionCollectionTime, agentInvokeTime,
+		hasInternalMarks: chatMarks.length > 0,
+		internalFirstToken,
+		majorGCs, minorGCs,
+		gcDurationMs: Math.round(gcDurationMs * 100) / 100,
+		longTaskCount,
+	};
 }
 
 // -- CI summary generation ---------------------------------------------------

@@ -257,6 +257,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: perf-results-${{ matrix.group }}
+          include-hidden-files: true
           path: |
             perf-output.log
             .chat-simulation-data/
@@ -340,6 +341,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: leak-results
+          include-hidden-files: true
           path: |
             leak-output.log
             .chat-simulation-data/chat-simulation-leak-results.json
