@@ -17,6 +17,28 @@ export const enum TreeSitterCommandParserLanguage {
 	PowerShell = 'powershell',
 }
 
+/**
+ * Matches a PowerShell command token of the form `-flag=` or `--flag=` at the
+ * start of input or following whitespace. Used to work around a tree-sitter
+ * PowerShell grammar limitation where POSIX-style `--flag=value` arguments
+ * (e.g. `git log --format="a|b"`) are parsed as assignment expressions and
+ * truncate the surrounding command.
+ *
+ * See https://github.com/microsoft/vscode/issues/294010
+ */
+const pwshFlagEqualsRegex = /(^|\s)(-{1,2}[\w-]+)=/g;
+
+/**
+ * Replaces the `=` in PowerShell `--flag=value` argument patterns with a space
+ * so the tree-sitter PowerShell grammar treats the argument as a normal
+ * command parameter. Character positions and overall length are preserved so
+ * node ranges from the parsed (masked) tree can be used to slice the original
+ * command line.
+ */
+function maskPwshFlagEquals(commandLine: string): string {
+	return commandLine.replace(pwshFlagEqualsRegex, (_, pre, flag) => `${pre}${flag} `);
+}
+
 export class TreeSitterCommandParser extends Disposable {
 	private readonly _parser: Lazy<Promise<Parser>>;
 	private readonly _treeCache = this._register(new TreeCache());
@@ -32,6 +54,15 @@ export class TreeSitterCommandParser extends Disposable {
 	}
 
 	async extractSubCommands(languageId: TreeSitterCommandParserLanguage, commandLine: string): Promise<string[]> {
+		if (languageId === TreeSitterCommandParserLanguage.PowerShell) {
+			const masked = maskPwshFlagEquals(commandLine);
+			if (masked !== commandLine) {
+				const captures = await this._queryTree(languageId, masked, '(command) @command');
+				// Masked command line has identical character positions, so slice the original
+				// to preserve the user-visible text (including the `=` characters).
+				return captures.map(e => commandLine.substring(e.node.startIndex, e.node.endIndex));
+			}
+		}
 		const captures = await this._queryTree(languageId, commandLine, '(command) @command');
 		return captures.map(e => e.node.text);
 	}
