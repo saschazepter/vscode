@@ -13,6 +13,7 @@ import { LanguageModelTextPart } from '../../../vscodeTypes';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
+import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { ToolName } from '../common/toolNames';
 import { ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
@@ -45,6 +46,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
 		@IConfigurationService configService: IConfigurationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IFetcherService private readonly _fetcherService: IFetcherService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(configService);
 	}
@@ -79,8 +81,9 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 
 			if (hasCloud) {
 				source = 'cloud';
-				const client = new CloudSessionStoreClient(this._tokenManager, this._authService);
+				const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 				const result = await client.executeQuery(sql);
+				console.log(`[Chronicle] Remote query done: ${result ? result.rows.length : 0} rows`); // TODO: remove temp log
 				if (!result) {
 					this._sendTelemetry(source, 0, Date.now() - startTime, false, 'empty_result');
 					return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Cloud query returned no result.')]);

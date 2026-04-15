@@ -48,15 +48,16 @@ export class SessionIndexingPreference {
 	 * Returns true if cloudSync.enabled is true AND the repo is not excluded.
 	 */
 	hasCloudConsent(repoNwo?: string): boolean {
-		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled)) {
+		if (!this._configService.getConfig(ConfigKey.SessionSearchCloudSyncEnabled)) {
 			return false;
 		}
 
 		if (repoNwo) {
-			const excludePatterns = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncExcludeRepositories);
+			const excludePatterns = this._configService.getConfig(ConfigKey.SessionSearchCloudSyncExcludeRepositories);
 			if (excludePatterns && excludePatterns.length > 0) {
 				for (const pattern of excludePatterns) {
 					if (pattern === repoNwo || picomatch.isMatch(repoNwo, pattern)) {
+						console.log(`[Chronicle] Repo excluded from cloud sync: ${repoNwo} (matched pattern: ${pattern})`); // TODO: remove temp log
 						return false;
 					}
 				}

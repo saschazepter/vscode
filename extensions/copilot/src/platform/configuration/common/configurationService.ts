@@ -709,6 +709,13 @@ export namespace ConfigKey {
 		export const OTelDbSpanExporter = defineSetting<boolean>('chat.otel.dbSpanExporter.enabled', ConfigType.Simple, false);
 	}
 
+	/** Enable cloud sync of session data to cloud. */
+	export const SessionSearchCloudSyncEnabled = defineSetting<boolean>('chat.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
+	/** Repository patterns to exclude from cloud sync (exact owner/repo or glob patterns like my-org/*). */
+	export const SessionSearchCloudSyncExcludeRepositories = defineSetting<string[]>('chat.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
+	/** Enable local session search index — tracks sessions locally and enables /chronicle commands. */
+	export const SessionSearchLocalIndexEnabled = defineSetting<boolean>('chat.sessionSearch.localIndex.enabled', ConfigType.Simple, true, vBoolean());
+
 	/**
 	 * Internal settings those only team members can configure
 	 * Features should only be in this list temporarily, moving on to experimental to be accessible to early adopters.
@@ -867,13 +874,8 @@ export namespace ConfigKey {
 		/** Internal: configure reasoning effort for Anthropic thinking. Used by evals. */
 		export const AnthropicThinkingEffort = defineTeamInternalSetting<'low' | 'medium' | 'high' | undefined>('chat.advanced.anthropicThinkingEffort', ConfigType.Simple, undefined);
 
-		/** Enable cloud sync of session data to cloud. */
-		export const SessionSearchCloudSyncEnabled = defineSetting<boolean>('chat.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
-		/** Repository patterns to exclude from cloud sync (exact owner/repo or glob patterns like my-org/*). */
-		export const SessionSearchCloudSyncExcludeRepositories = defineSetting<string[]>('chat.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
-
-		/** Enable local session search index — tracks sessions locally and enables /chronicle commands. */
-		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
+		/** Master gate for session search feature — controls visibility of all sessionSearch.* settings. */
+		export const SessionSearchEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.enabled', ConfigType.ExperimentBased, false, vBoolean());
 	}
 
 	/**

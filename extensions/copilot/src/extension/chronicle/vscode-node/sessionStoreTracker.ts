@@ -128,7 +128,8 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 
 	private _handleSpan(span: ICompletedSpanData): void {
 		// Only track sessions when session search is enabled and user has chosen a storage level
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
+			|| !this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled)) {
 			return;
 		}
 

@@ -5,6 +5,7 @@
 
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
+import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import type { CreateSessionFailureReason, CreateSessionResult, MissionControlSession, SessionEvent } from '../common/missionControlTypes';
 
 /** Timeout for individual MC API requests (ms). */
@@ -28,6 +29,7 @@ export class MissionControlClient {
 	constructor(
 		private readonly _tokenManager: ICopilotTokenManager,
 		private readonly _authService: IAuthenticationService,
+		private readonly _fetcherService: IFetcherService,
 	) { }
 
 	/**
@@ -55,24 +57,22 @@ export class MissionControlClient {
 				indexing_level: indexingLevel,
 			};
 
-			const res = await fetch(url, {
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.mcCreateSession',
 				method: 'POST',
 				headers,
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-				body: JSON.stringify(body),
+				json: body,
+				timeout: REQUEST_TIMEOUT_MS,
 			});
 
 			if (!res.ok) {
-				const text = await res.text().catch(() => '');
-				console.error(`[MissionControlClient] createSession ${res.status}: ${text.slice(0, 200)}`);
 				const reason: CreateSessionFailureReason = res.status === 403 ? 'policy_blocked' : 'error';
 				return { ok: false, reason };
 			}
 
 			const response = await res.json() as { id: string; task_id?: string; agent_task_id?: string };
 			return { ok: true, response };
-		} catch (err) {
-			console.error('[MissionControlClient] createSession failed:', err);
+		} catch {
 			return { ok: false, reason: 'error' };
 		}
 	}
@@ -91,23 +91,20 @@ export class MissionControlClient {
 				return false;
 			}
 
-			const res = await fetch(url, {
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.mcSubmitEvents',
 				method: 'POST',
 				headers,
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-				body: JSON.stringify({ events }),
+				json: { events },
+				timeout: REQUEST_TIMEOUT_MS,
 			});
 
 			if (!res.ok) {
-				const text = await res.text().catch(() => '');
-				console.error(`[MissionControlClient] submitEvents ${res.status}: ${text.slice(0, 200)}`);
 				return false;
 			}
 
-			console.log(`[MissionControlClient] submitEvents OK: ${events.length} events to session ${sessionId}`);
 			return true;
-		} catch (err) {
-			console.error('[MissionControlClient] submitEvents failed:', err);
+		} catch {
 			return false;
 		}
 	}
@@ -122,10 +119,11 @@ export class MissionControlClient {
 				return undefined;
 			}
 
-			const res = await fetch(url, {
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.mcGetSession',
 				method: 'GET',
 				headers,
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+				timeout: REQUEST_TIMEOUT_MS,
 			});
 
 			if (!res.ok) {
@@ -147,7 +145,6 @@ export class MissionControlClient {
 			const copilotToken = await this._tokenManager.getCopilotToken();
 			const baseUrl = copilotToken.endpoints?.api;
 			if (!baseUrl) {
-				console.log('[MissionControlClient] No API endpoint available');
 				return { url: undefined, headers: {} };
 			}
 
@@ -163,8 +160,7 @@ export class MissionControlClient {
 			};
 
 			return { url, headers };
-		} catch (err) {
-			console.error('[MissionControlClient] Failed to build request:', err);
+		} catch {
 			return { url: undefined, headers: {} };
 		}
 	}

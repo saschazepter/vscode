@@ -24,6 +24,7 @@ import {
 import type { GitHubRepository, McSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/missionControlTypes';
 import { filterSecretsFromObj, addSecretValues } from '../common/secretFilter';
 import { SessionIndexingPreference, type SessionIndexingLevel } from '../common/sessionIndexingPreference';
+import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { MissionControlClient } from '../node/missionControlClient';
 
@@ -97,11 +98,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IConfigurationService private readonly _configService: IConfigurationService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IFetcherService private readonly _fetcherService: IFetcherService,
 	) {
 		super();
 
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
-		this._mcClient = new MissionControlClient(this._tokenManager, this._authService);
+		this._mcClient = new MissionControlClient(this._tokenManager, this._authService, this._fetcherService);
 		this._circuitBreaker = new CircuitBreaker({
 			failureThreshold: 5,
 			resetTimeoutMs: 1_000,
@@ -192,7 +194,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	 * Check if the session search feature is enabled via settings.
 	 */
 	private _isFeatureEnabled(): boolean {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
+			&& this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled);
 	}
 
 	private _getOrCreateTranslationState(sessionId: string): SessionTranslationState {
@@ -254,11 +257,24 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// Only export remotely if the user has cloud consent for this repo
 			const repoNwo = `${repo.owner}/${repo.repo}`;
 			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
+				console.log(`[Chronicle] Repo '${repoNwo}' excluded from cloud sync, disabling session`); // TODO: remove temp log
 				this._disabledSessions.add(sessionId);
 				return;
 			}
 
 			await this._createMcSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
+			/* __GDPR__
+				"chronicle.cloudSync" : {
+					"owner": "vijayu",
+					"comment": "Tracks successful cloud sync session initialization",
+					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
+					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+				operation: 'sessionInit',
+				success: 'true',
+			});
 		} catch (err) {
 			/* __GDPR__
 				"chronicle.cloudSync" : {
@@ -353,6 +369,20 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		};
 
 		this._mcSessions.set(sessionId, mcIds);
+		/* __GDPR__
+			"chronicle.cloudSync" : {
+				"owner": "vijayu",
+				"comment": "Tracks successful MC session creation",
+				"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
+				"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." },
+				"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." }
+			}
+		*/
+		this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+			operation: 'createMcSession',
+			success: 'true',
+			indexingLevel,
+		});
 	}
 
 	/**
@@ -533,6 +563,21 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
+				/* __GDPR__
+					"chronicle.cloudSync" : {
+						"owner": "vijayu",
+						"comment": "Tracks successful batch flush of events to MC",
+						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
+						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." },
+						"eventCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events flushed." },
+						"sessionCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of MC sessions flushed to." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+					operation: 'flushBatch',
+					success: 'true',
+				}, { eventCount: batch.length, sessionCount: eventsBySession.size });
+				console.log(`[Chronicle] Remote upload done: ${batch.length} events to ${eventsBySession.size} session(s)`); // TODO: remove temp log
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
 			}

@@ -5,6 +5,7 @@
 
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
+import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 
 /** Analytics query path through copilot-api proxy. */
 const QUERY_PATH = '/agents/analytics/query';
@@ -53,6 +54,7 @@ export class CloudSessionStoreClient {
 	constructor(
 		private readonly _tokenManager: ICopilotTokenManager,
 		private readonly _authService: IAuthenticationService,
+		private readonly _fetcherService: IFetcherService,
 	) { }
 
 	/**
@@ -64,7 +66,6 @@ export class CloudSessionStoreClient {
 			const copilotToken = await this._tokenManager.getCopilotToken();
 			const baseUrl = copilotToken.endpoints?.api;
 			if (!baseUrl) {
-				console.log('[CloudSessionStore] No API endpoint available');
 				return undefined;
 			}
 
@@ -74,31 +75,26 @@ export class CloudSessionStoreClient {
 			const bearerToken = githubToken ?? copilotToken.token;
 
 			const url = `${baseUrl.replace(/\/+$/, '')}${QUERY_PATH}`;
-			console.log(`[CloudSessionStore] POST ${url} (auth: ${githubToken ? 'github-oauth' : 'copilot-proxy'})`);
 
-			const res = await fetch(url, {
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.cloudQuery',
 				method: 'POST',
 				headers: {
-					'Content-Type': 'application/json',
 					'Authorization': `Bearer ${bearerToken}`,
 					'Copilot-Integration-Id': 'vscode-chat',
 				},
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-				body: JSON.stringify({ query: sql }),
+				json: { query: sql },
+				timeout: REQUEST_TIMEOUT_MS,
 			});
 
 			if (!res.ok) {
-				const text = await res.text().catch(() => '');
-				console.error(`[CloudSessionStore] HTTP ${res.status}: ${text.slice(0, 200)}`);
 				return undefined;
 			}
 
 			const data = await res.json() as AnalyticsQueryResponse;
 			const rows = columnarToRecords(data);
-			console.log(`[CloudSessionStore] Returned ${rows.length} rows, truncated=${data.truncated}`);
 			return { rows, truncated: data.truncated ?? false };
-		} catch (err) {
-			console.error('[CloudSessionStore] Query failed:', err);
+		} catch {
 			return undefined;
 		}
 	}

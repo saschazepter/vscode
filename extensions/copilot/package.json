@@ -3999,6 +3999,15 @@
 							"experimental"
 						]
 					},
+					"github.copilot.chat.sessionSearch.localIndex.enabled": {
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%github.copilot.config.sessionSearch.localIndex.enabled%",
+						"when": "github.copilot.sessionSearch.enabled",
+						"tags": [
+							"experimental"
+						]
+					},
 					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
 						"type": "boolean",
 						"default": false,

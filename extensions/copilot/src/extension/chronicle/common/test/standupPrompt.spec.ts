@@ -76,7 +76,7 @@ describe('buildStandupPrompt', () => {
 			{ session_id: 'cloud-2', ref_type: 'pr', ref_value: '99', source: 'cloud' },
 		];
 		const result = buildStandupPrompt(sessions, refs);
-		expect(result).toContain('Cloud Sessions (2)');
+		expect(result).toContain('Sessions (2)');
 		expect(result).toContain('cloud-2 | pr: 99');
 	});
 });

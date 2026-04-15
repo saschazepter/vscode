@@ -20,6 +20,7 @@ import { LanguageModelChatMessage } from '../../../vscodeTypes';
 import { type AnnotatedRef, type AnnotatedSession, SESSIONS_QUERY_SQLITE, buildRefsQuery, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
+import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IToolsService } from '../../tools/common/toolsService';
 import { ToolName } from '../../tools/common/toolNames';
@@ -48,7 +49,8 @@ export class ChronicleIntent implements IIntent {
 	readonly id = ChronicleIntent.ID;
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
 	get locations(): ChatLocation[] {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService) ? [ChatLocation.Panel] : [];
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
+			&& this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled) ? [ChatLocation.Panel] : [];
 	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
@@ -65,6 +67,7 @@ export class ChronicleIntent implements IIntent {
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
+		@IFetcherService private readonly _fetcherService: IFetcherService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
 	}
@@ -84,7 +87,8 @@ export class ChronicleIntent implements IIntent {
 		location: ChatLocation,
 		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
+			|| !this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled)) {
 			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
@@ -373,7 +377,7 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[] }> {
 		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[] };
 		try {
-			const client = new CloudSessionStoreClient(this._tokenManager, this._authService);
+			const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 
 			const sessionsResult = await client.executeQuery(SESSIONS_QUERY_DUCKDB);
 			if (!sessionsResult || sessionsResult.rows.length === 0) {
