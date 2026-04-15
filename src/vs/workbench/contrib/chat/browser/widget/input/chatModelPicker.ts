@@ -6,6 +6,7 @@
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { renderIcon, renderLabelWithIcons } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { IHoverPositionOptions } from '../../../../../../base/browser/ui/hover/hover.js';
 import { IStringDictionary } from '../../../../../../base/common/collections.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
@@ -17,7 +18,6 @@ import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
 import { ActionListItemKind, IActionListItem } from '../../../../../../platform/actionWidget/browser/actionList.js';
-import { IHoverPositionOptions } from '../../../../../../base/browser/ui/hover/hover.js';
 import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
 import { IActionWidgetDropdownAction } from '../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
@@ -105,6 +105,7 @@ function createModelItem(
 		hideIcon: false,
 		section: action.section,
 		hover: model ? { content: getModelHoverContent(model, languageModelsService, onDismiss, () => action.run()), position: hoverPosition } : undefined,
+		submenuActions: action.toolbarActions,
 	};
 }
 
@@ -123,6 +124,9 @@ function getModelConfigurationDescription(model: ILanguageModelChatMetadataAndId
 
 	for (const [key, propSchema] of Object.entries(schema.properties)) {
 		if (propSchema.group !== 'navigation') {
+			continue;
+		}
+		if (!propSchema.enum || propSchema.enum.length < 2) {
 			continue;
 		}
 		const value = currentConfig[key] ?? propSchema.default;
@@ -214,7 +218,6 @@ export function buildModelPickerItems(
 	chatEntitlementService: IChatEntitlementService,
 	showUnavailableFeatured: boolean,
 	showFeatured: boolean,
-	hoverPosition?: IHoverPositionOptions,
 	languageModelsService?: ILanguageModelsService,
 	onDismiss?: () => void,
 ): IActionListItem<IActionWidgetDropdownAction>[] {
@@ -358,7 +361,7 @@ export function buildModelPickerItems(
 					if (item.kind === 'available') {
 						items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect, languageModelsService!), item.model, hoverPosition, languageModelsService, onDismiss));
 					} else {
-						items.push(createUnavailableModelItem(item.id, item.entry, item.reason, manageSettingsUrl, updateStateType, undefined, hoverPosition));
+						items.push(createUnavailableModelItem(item.id, item.entry, item.reason, manageSettingsUrl, updateStateType));
 					}
 				}
 			}
@@ -407,7 +410,7 @@ export function buildModelPickerItems(
 				for (const model of otherModels) {
 					const entry = controlModels[model.metadata.id] ?? controlModels[model.identifier];
 					if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-						items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', manageSettingsUrl, updateStateType, ModelPickerSection.Other, hoverPosition));
+						items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', manageSettingsUrl, updateStateType, ModelPickerSection.Other));
 					} else {
 						items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!, ModelPickerSection.Other), model, hoverPosition, languageModelsService, onDismiss));
 					}
@@ -476,7 +479,6 @@ function createUnavailableModelItem(
 	manageSettingsUrl: string | undefined,
 	updateStateType: StateType,
 	section?: string,
-	hoverPosition?: IHoverPositionOptions,
 ): IActionListItem<IActionWidgetDropdownAction> {
 	let description: string | MarkdownString | undefined;
 
@@ -493,7 +495,7 @@ function createUnavailableModelItem(
 	let hoverContent: MarkdownString;
 	if (reason === 'upgrade') {
 		hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-		hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "[Upgrade to GitHub Copilot Pro](command:workbench.action.chat.upgradePlan \" \") with a free 30-day trial to use the best models."));
+		hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "[Upgrade to GitHub Copilot Pro](command:workbench.action.chat.upgradePlan \" \") to use the best models."));
 	} else if (reason === 'update') {
 		hoverContent = getUpdateHoverContent(updateStateType);
 	} else {
@@ -520,11 +522,11 @@ function createUnavailableModelItem(
 		hideIcon: false,
 		className: 'chat-model-picker-unavailable',
 		section,
-		hover: { content: hoverContent, position: hoverPosition },
+		hover: { content: hoverContent },
 	};
 }
 
-export type ModelPickerBadge = 'info' | 'warning';
+type ModelPickerBadge = 'info' | 'warning';
 
 /**
  * A model selection dropdown widget.
@@ -558,7 +560,6 @@ export class ModelPickerWidget extends Disposable {
 
 	constructor(
 		private readonly _delegate: IModelPickerDelegate,
-		private readonly _hoverPosition: IHoverPositionOptions | undefined,
 		@IActionWidgetService private readonly _actionWidgetService: IActionWidgetService,
 		@ICommandService private readonly _commandService: ICommandService,
 		@IOpenerService private readonly _openerService: IOpenerService,
@@ -686,7 +687,6 @@ export class ModelPickerWidget extends Disposable {
 			this._entitlementService,
 			this._delegate.showUnavailableFeatured(),
 			this._delegate.showFeatured(),
-			this._hoverPosition,
 			this._languageModelsService,
 			dismissPicker,
 		);

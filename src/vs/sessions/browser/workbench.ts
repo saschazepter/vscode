@@ -61,6 +61,7 @@ import { IMarkdownRendererService } from '../../platform/markdown/browser/markdo
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
+import { SessionsExperimentalShellGradientBackgroundSettingId } from '../common/configuration.js';
 
 //#region Workbench Options
 
@@ -82,6 +83,7 @@ enum LayoutClasses {
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
 	CHATBAR_HIDDEN = 'nochatbar',
 	STATUSBAR_HIDDEN = 'nostatusbar',
+	EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND = 'experimental-shell-gradient-background',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized'
 }
@@ -101,8 +103,6 @@ interface IPartVisibilityState {
 //#endregion
 
 export class Workbench extends Disposable implements IWorkbenchLayoutService {
-
-	private static readonly PROTOTYPE_SHELL_CLASS = 'prototype-shell';
 
 	declare readonly _serviceBrand: undefined;
 
@@ -230,12 +230,12 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private sideBarPartView!: ISerializableView;
 	private panelPartView!: ISerializableView;
 	private auxiliaryBarPartView!: ISerializableView;
-	private statusBarPartView!: ISerializableView;
+	private editorPartView!: ISerializableView;
 
 	private chatBarPartView!: ISerializableView;
 
 	private readonly partVisibility: IPartVisibilityState = {
-		sidebar: false,
+		sidebar: true,
 		auxiliaryBar: false,
 		editor: false,
 		panel: false,
@@ -340,6 +340,12 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 				const notificationService = accessor.get(INotificationService) as NotificationService;
 				const markdownRendererService = accessor.get(IMarkdownRendererService);
 
+				// On web, the configuration service needs access to the
+				// instantiation service for dynamic configuration resolution.
+				if (isWeb && typeof (configurationService as IConfigurationService & { acquireInstantiationService?(i: IInstantiationService): void }).acquireInstantiationService === 'function') {
+					(configurationService as IConfigurationService & { acquireInstantiationService(i: IInstantiationService): void }).acquireInstantiationService(instantiationService);
+				}
+
 				// Set code block renderer for markdown rendering
 				markdownRendererService.setDefaultCodeBlockRenderer(instantiationService.createInstance(EditorMarkdownCodeBlockRenderer));
 
@@ -411,6 +417,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private registerListeners(lifecycleService: ILifecycleService, storageService: IStorageService, configurationService: IConfigurationService, hostService: IHostService, dialogService: IDialogService): void {
 		// Configuration changes
 		this._register(configurationService.onDidChangeConfiguration(e => this.updateFontAliasing(e, configurationService)));
+		this._register(configurationService.onDidChangeConfiguration(e => this.updateShellGradientBackground(e, configurationService)));
 
 		// Font Info
 		if (isNative) {
@@ -494,6 +501,17 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		}
 	}
 
+	private updateShellGradientBackground(e: IConfigurationChangeEvent | undefined, configurationService: IConfigurationService): void {
+		if (e && !e.affectsConfiguration(SessionsExperimentalShellGradientBackgroundSettingId)) {
+			return;
+		}
+
+		this.mainContainer.classList.toggle(
+			LayoutClasses.EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND,
+			configurationService.getValue<boolean>(SessionsExperimentalShellGradientBackgroundSettingId)
+		);
+	}
+
 	//#endregion
 
 	private renderWorkbench(instantiationService: IInstantiationService, notificationService: NotificationService, storageService: IStorageService, configurationService: IConfigurationService): void {
@@ -506,7 +524,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const workbenchClasses = coalesce([
 			'monaco-workbench',
 			'agent-sessions-workbench',
-			Workbench.PROTOTYPE_SHELL_CLASS,
 			platformClass,
 			isWeb ? 'web' : undefined,
 			isChrome ? 'chromium' : isFirefox ? 'firefox' : isSafari ? 'safari' : undefined,
@@ -518,18 +535,18 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		// Apply font aliasing
 		this.updateFontAliasing(undefined, configurationService);
+		this.updateShellGradientBackground(undefined, configurationService);
 
 		// Warm up font cache information before building up too many dom elements
 		this.restoreFontInfo(storageService, configurationService);
 
-		// Create Parts (excluding editor - it will be in a modal)
+		// Create Parts (editor starts hidden and is shown when an editor opens)
 		for (const { id, role, classes } of [
 			{ id: Parts.TITLEBAR_PART, role: 'none', classes: ['titlebar'] },
 			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
 			{ id: Parts.PANEL_PART, role: 'none', classes: ['panel', 'basepanel', positionToString(this.getPanelPosition())] },
-			{ id: Parts.STATUSBAR_PART, role: 'status', classes: ['statusbar'] },
 		]) {
 			const partContainer = this.createPartContainer(id, role, classes);
 
@@ -538,8 +555,8 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			mark(`code/didCreatePart/${id}`);
 		}
 
-		// Create Editor Part (hidden — all editors open via MODAL_GROUP)
-		this.createHiddenEditorPart();
+		// Create Editor Part (hidden by default)
+		this.createEditorPart();
 
 		// Notification Handlers
 		this.createNotificationsHandlers(instantiationService, notificationService);
@@ -585,18 +602,15 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		return part;
 	}
 
-	private createHiddenEditorPart(): void {
+	private createEditorPart(): void {
 		const editorPartContainer = document.createElement('div');
 		editorPartContainer.classList.add('part', 'editor');
 		editorPartContainer.id = Parts.EDITOR_PART;
 		editorPartContainer.setAttribute('role', 'main');
-		editorPartContainer.style.display = 'none';
 
 		mark('code/willCreatePart/workbench.parts.editor');
 		this.getPart(Parts.EDITOR_PART).create(editorPartContainer, { restorePreviousState: false });
 		mark('code/didCreatePart/workbench.parts.editor');
-
-		this.getPart(Parts.EDITOR_PART).layout(0, 0, 0, 0); // needed to make some view methods work
 
 		this.mainContainer.appendChild(editorPartContainer);
 	}
@@ -657,8 +671,17 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Register layout listeners
 		this.registerLayoutListeners();
 
-		// Show editor part when an editor opens
-		this._register(this.editorService.onWillOpenEditor(() => {
+		// Keep background editor hidden for modal opens, only show for non-modal opens.
+		this._register(this.editorService.onWillOpenEditor(e => {
+			const isModalOpen = this.editorGroupService.activeModalEditorPart?.groups.some(group => group.id === e.groupId) ?? false;
+
+			if (isModalOpen) {
+				if (this.partVisibility.editor) {
+					this.setEditorHidden(true);
+				}
+				return;
+			}
+
 			if (!this.partVisibility.editor) {
 				this.setEditorHidden(false);
 			}
@@ -714,23 +737,22 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const auxiliaryBarPart = this.getPart(Parts.AUXILIARYBAR_PART);
 		const sideBar = this.getPart(Parts.SIDEBAR_PART);
 		const chatBarPart = this.getPart(Parts.CHATBAR_PART);
-		const statusBarPart = this.getPart(Parts.STATUSBAR_PART);
 
-		// View references for parts in the grid (editor is NOT in grid)
+		// View references for parts in the grid
 		this.titleBarPartView = titleBar;
 		this.sideBarPartView = sideBar;
 		this.panelPartView = panelPart;
 		this.auxiliaryBarPartView = auxiliaryBarPart;
-		this.statusBarPartView = statusBarPart;
 		this.chatBarPartView = chatBarPart;
+		this.editorPartView = editorPart;
 
 		const viewMap: { [key: string]: ISerializableView } = {
 			[Parts.TITLEBAR_PART]: this.titleBarPartView,
 			[Parts.PANEL_PART]: this.panelPartView,
 			[Parts.SIDEBAR_PART]: this.sideBarPartView,
 			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView,
-			[Parts.STATUSBAR_PART]: this.statusBarPartView,
-			[Parts.CHATBAR_PART]: this.chatBarPartView
+			[Parts.CHATBAR_PART]: this.chatBarPartView,
+			[Parts.EDITOR_PART]: this.editorPartView
 		};
 
 		const fromJSON = ({ type }: { type: string }) => viewMap[type];
@@ -746,7 +768,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		this.workbenchGrid.edgeSnapping = this.mainWindowFullscreen;
 
 		// Listen for part visibility changes (for parts in grid)
-		for (const part of [titleBar, panelPart, sideBar, auxiliaryBarPart, chatBarPart]) {
+		for (const part of [titleBar, panelPart, sideBar, auxiliaryBarPart, chatBarPart, editorPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
 				if (part === sideBar) {
 					this.setSideBarHidden(!visible);
@@ -756,19 +778,14 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 					this.setAuxiliaryBarHidden(!visible);
 				} else if (part === chatBarPart) {
 					this.setChatBarHidden(!visible);
+				} else if (part === editorPart) {
+					this.setEditorHidden(!visible);
 				}
 
 				this._onDidChangePartVisibility.fire({ partId: part.getId(), visible });
 				this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
 			}));
 		}
-
-		// Listen for editor part visibility changes (modal)
-		this._register(editorPart.onDidVisibilityChange(visible => {
-			this.setEditorHidden(!visible);
-			this._onDidChangePartVisibility.fire({ partId: editorPart.getId(), visible });
-			this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
-		}));
 	}
 
 	createWorkbenchManagement(_instantiationService: IInstantiationService): void {
@@ -777,32 +794,30 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	/**
 	 * Creates the grid descriptor for the Agent Sessions layout.
-	 * Editor is NOT included - it's rendered as a modal overlay.
 	 *
 	 * Structure (horizontal orientation):
 	 * - Sidebar (left, spans full height from top to bottom)
 	 * - Right section (vertical):
 	 *   - Titlebar (top of right section)
-	 *   - Top right (horizontal): Chat Bar | Auxiliary Bar
-	 *   - Panel (below chat and auxiliary bar only)
+	 *   - Top right (horizontal): Chat Bar | Editor | Auxiliary Bar
+	 *   - Panel (below chat, editor, and auxiliary bar)
 	 */
 	private createGridDescriptor(): ISerializedGrid {
 		const { width, height } = this._mainContainerDimension;
 
 		// Default sizes
 		const sideBarSize = 300;
+		const editorSize = 650;
 		const auxiliaryBarSize = 380;
 		const panelSize = 300;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
-		const statusBarHeight = this.statusBarPartView?.minimumHeight ?? 22;
 
 		// Calculate right section width and chat bar width
 		const rightSectionWidth = Math.max(0, width - sideBarSize);
-		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize);
+		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize - editorSize);
 
-		const mainContentHeight = Math.max(0, height - statusBarHeight);
-		const rightSectionHeight = Math.max(0, mainContentHeight - titleBarHeight);
-		const topRightHeight = Math.max(0, rightSectionHeight - panelSize);
+		const contentHeight = height - titleBarHeight;
+		const topRightHeight = contentHeight - panelSize;
 
 		const titleBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -832,6 +847,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			visible: this.partVisibility.chatBar
 		};
 
+		const editorNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.EDITOR_PART },
+			size: editorSize,
+			visible: this.partVisibility.editor
+		};
+
 		const panelNode: ISerializedLeafNode = {
 			type: 'leaf',
 			data: { type: Parts.PANEL_PART },
@@ -839,17 +861,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			visible: this.partVisibility.panel
 		};
 
-		const statusBarNode: ISerializedLeafNode = {
-			type: 'leaf',
-			data: { type: Parts.STATUSBAR_PART },
-			size: statusBarHeight,
-			visible: true
-		};
-
-		// Top right section: Chat Bar | Auxiliary Bar (horizontal)
+		// Top right section: Chat Bar | Editor | Auxiliary Bar (horizontal)
 		const topRightSection: ISerializedNode = {
 			type: 'branch',
-			data: [chatBarNode, auxiliaryBarNode],
+			data: [chatBarNode, editorNode, auxiliaryBarNode],
 			size: topRightHeight
 		};
 
@@ -860,22 +875,16 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			size: rightSectionWidth
 		};
 
-		const mainContentSection: ISerializedNode = {
-			type: 'branch',
-			data: [sideBarNode, rightSection],
-			size: mainContentHeight
-		};
-
 		const result: ISerializedGrid = {
 			root: {
 				type: 'branch',
 				size: height,
 				data: [
-					mainContentSection,
-					statusBarNode
+					sideBarNode,
+					rightSection
 				]
 			},
-			orientation: Orientation.VERTICAL,
+			orientation: Orientation.HORIZONTAL,
 			width,
 			height
 		};
@@ -919,6 +928,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
 			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
 			!this.partVisibility.chatBar ? LayoutClasses.CHATBAR_HIDDEN : undefined,
+			LayoutClasses.STATUSBAR_HIDDEN, // agents window never has a status bar
 			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined
 		]);
 	}
@@ -1040,9 +1050,8 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 				return this.partVisibility.panel;
 			case Parts.CHATBAR_PART:
 				return this.partVisibility.chatBar;
-			case Parts.STATUSBAR_PART:
-				return true;
 			case Parts.ACTIVITYBAR_PART:
+			case Parts.STATUSBAR_PART:
 			case Parts.BANNER_PART:
 			default:
 				return false;
@@ -1070,10 +1079,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setSideBarHidden(hidden: boolean): void {
-		if (!hidden) {
-			return;
-		}
-
 		if (this.partVisibility.sidebar === !hidden) {
 			return;
 		}
@@ -1103,10 +1108,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setAuxiliaryBarHidden(hidden: boolean): void {
-		if (!hidden) {
-			return;
-		}
-
 		if (this.partVisibility.auxiliaryBar === !hidden) {
 			return;
 		}
@@ -1142,13 +1143,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		this.partVisibility.editor = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
+
+		if (this.editorPartView) {
+			this.workbenchGrid.setViewVisible(this.editorPartView, !hidden);
+		}
 	}
 
 	private setPanelHidden(hidden: boolean): void {
-		if (!hidden) {
-			return;
-		}
-
 		if (this.partVisibility.panel === !hidden) {
 			return;
 		}
@@ -1194,10 +1195,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setChatBarHidden(hidden: boolean): void {
-		if (hidden) {
-			return;
-		}
-
 		if (this.partVisibility.chatBar === !hidden) {
 			return;
 		}
@@ -1288,7 +1285,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			case Parts.AUXILIARYBAR_PART:
 				return this.auxiliaryBarPartView;
 			case Parts.EDITOR_PART:
-				return undefined; // Editor is not in the grid, it's a modal
+				return this.editorPartView;
 			case Parts.PANEL_PART:
 				return this.panelPartView;
 			case Parts.CHATBAR_PART:
@@ -1426,7 +1423,9 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		if (neighborView === this.auxiliaryBarPartView) {
 			return Parts.AUXILIARYBAR_PART;
 		}
-		// Editor is not in the grid - it's rendered as a modal
+		if (neighborView === this.editorPartView) {
+			return Parts.EDITOR_PART;
+		}
 		if (neighborView === this.panelPartView) {
 			return Parts.PANEL_PART;
 		}

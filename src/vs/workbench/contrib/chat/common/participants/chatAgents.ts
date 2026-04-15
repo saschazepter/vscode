@@ -148,6 +148,7 @@ export interface IChatAgentRequest {
 	locationData?: Revived<IChatLocationData>;
 	acceptedConfirmationData?: unknown[];
 	rejectedConfirmationData?: unknown[];
+	agentHostSessionConfig?: Record<string, string>;
 	userSelectedModelId?: string;
 	modelConfiguration?: IStringDictionary<unknown>;
 	userSelectedTools?: UserSelectedTools;
@@ -181,6 +182,10 @@ export interface IChatAgentRequest {
 	 */
 	parentRequestId?: string;
 
+	/**
+	 * When true, this request was initiated by the system rather than the user.
+	 */
+	isSystemInitiated?: boolean;
 }
 
 export interface IChatQuestion {

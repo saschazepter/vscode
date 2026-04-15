@@ -3574,6 +3574,7 @@ export class ChatSessionCustomizationType {
 	static readonly Instructions = new ChatSessionCustomizationType('instructions');
 	static readonly Prompt = new ChatSessionCustomizationType('prompt');
 	static readonly Hook = new ChatSessionCustomizationType('hook');
+	static readonly Plugins = new ChatSessionCustomizationType('plugins');
 
 	constructor(public readonly id: string) { }
 }
@@ -3790,10 +3791,6 @@ export class ChatDebugEventHookContent {
 }
 
 export class ChatSessionChangedFile {
-	constructor(public readonly modifiedUri: vscode.Uri, public readonly insertions: number, public readonly deletions: number, public readonly originalUri?: vscode.Uri) { }
-}
-
-export class ChatSessionChangedFile2 {
 	constructor(public readonly uri: vscode.Uri, public readonly originalUri: vscode.Uri | undefined, public readonly modifiedUri: vscode.Uri | undefined, public readonly insertions: number, public readonly deletions: number) { }
 }
 

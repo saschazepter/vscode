@@ -1036,7 +1036,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		}
 
 		let session: IChatSession;
-		const newSessionOptionGroups = await this.getNewChatSessionInputState(resolvedType);
+		const newSessionOptionGroups = isUntitledChatSession(sessionResource) ? await this.getNewChatSessionInputState(resolvedType) : undefined;
 		if (isUntitledChatSession(sessionResource) && newSessionOptionGroups) {
 			const options: ChatSessionOptionsMap = new Map();
 			for (const group of newSessionOptionGroups) {
@@ -1156,6 +1156,21 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	public setOptionGroupsForSessionType(chatSessionType: string, handle: number, optionGroups?: IChatSessionProviderOptionGroup[]): void {
 		if (optionGroups) {
 			this._sessionTypeOptions.set(chatSessionType, optionGroups);
+
+			// Apply selected values from the updated option groups directly to all active
+			// sessions of this type. We write to the session's option cache without firing
+			// _onDidChangeSessionOptions to avoid a feedback loop: that event triggers
+			// $provideHandleOptionsChange back to the extension host, which may re-set
+			// inputState.groups -> $updateChatSessionInputState -> here again.
+			for (const [_, sessionData] of this._sessions) {
+				if (sessionData.chatSessionType === chatSessionType) {
+					for (const group of optionGroups) {
+						if (group.selected) {
+							sessionData.setOption(group.id, group.selected);
+						}
+					}
+				}
+			}
 		} else {
 			this._sessionTypeOptions.delete(chatSessionType);
 		}
@@ -1363,7 +1378,7 @@ async function openChatSession(accessor: ServicesAccessor, openOptions: NewChatS
 			// Set initial session options on the model before sending the request,
 			// so that the contributed session provider can read them.
 			if (chatSendOptions.initialSessionOptions) {
-				chatSessionService.updateSessionOptions(resource, chatSendOptions.initialSessionOptions);
+				chatSessionService.updateSessionOptions(resource, normalizeSessionOptions(chatSendOptions.initialSessionOptions));
 			}
 
 			let attachedContext = chatSendOptions.attachedContext;
@@ -1376,6 +1391,28 @@ async function openChatSession(accessor: ServicesAccessor, openOptions: NewChatS
 			logService.error(`Failed to send initial request to '${openOptions.type}' chat session with contextOptions: ${JSON.stringify(chatSendOptions)}`, e);
 		}
 	}
+}
+
+/**
+ * Normalizes session options that may arrive in one of three runtime shapes
+ * into a proper `ReadonlyChatSessionOptionsMap`:
+ *
+ * - **Map** — returned as-is.
+ * - **Array** of `{optionId, value}` objects — e.g. from command arguments
+ *   that bypass static type checking.
+ * - **Plain record** (`Record<string, string | IChatSessionProviderOptionItem>`)
+ *   — e.g. from JSON deserialization across process boundaries where a Map
+ *   loses its prototype.
+ */
+function normalizeSessionOptions(options: ReadonlyChatSessionOptionsMap | ReadonlyArray<{ optionId: string; value: string | IChatSessionProviderOptionItem }>): ReadonlyChatSessionOptionsMap {
+	if (options instanceof Map) {
+		return options;
+	}
+	if (Array.isArray(options)) {
+		return new Map(options.map(o => [o.optionId, o.value]));
+	}
+	// Plain object fallback (e.g. from JSON deserialization)
+	return ChatSessionOptionsMap.fromRecord(options as unknown as Record<string, string | IChatSessionProviderOptionItem>);
 }
 
 /**
