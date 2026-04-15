@@ -42,6 +42,7 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 	let tmpDir: string;
 	let ghToken: string;
 	let sessionUri: string | undefined;
+	let sdkSessionId: string | undefined;
 
 	suiteSetup(async function () {
 		this.timeout(30_000);
@@ -52,7 +53,11 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 		ghToken = process.env['GITHUB_OAUTH_TOKEN'] ?? '';
 		if (!ghToken) {
 			try {
-				ghToken = execFileSync('gh', ['auth', 'token'], { encoding: 'utf-8' }).trim();
+				ghToken = execFileSync('gh', ['auth', 'token'], {
+					encoding: 'utf-8',
+					timeout: 5_000,
+					stdio: 'pipe',
+				}).trim();
 			} catch {
 				// Neither env var nor gh CLI available — skip the suite.
 				return this.skip();
@@ -93,6 +98,13 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 		}
 		client?.close();
 		sessionUri = undefined;
+		// Clean up SDK session-state directory for this specific session
+		if (sdkSessionId) {
+			try {
+				fs.rmSync(join(os.homedir(), '.copilot', 'session-state', sdkSessionId), { recursive: true, force: true });
+			} catch { /* best effort */ }
+			sdkSessionId = undefined;
+		}
 		try {
 			fs.rmSync(tmpDir, { recursive: true, force: true });
 		} catch { /* best effort */ }
@@ -117,6 +129,7 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 			15_000,
 		);
 		sessionUri = ((addedNotif.params as INotificationBroadcastParams).notification as ISessionAddedNotification).summary.resource;
+		sdkSessionId = AgentSession.id(URI.parse(sessionUri));
 
 		// 2. Set client tools (mimics what VS Code does before the first message).
 		//    This populates the ActiveClient for the session, so the sendMessage
@@ -139,8 +152,11 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 			},
 		});
 
-		// Give the server a moment to process the activeClientChanged action
-		await new Promise(resolve => setTimeout(resolve, 500));
+		// Give the server time to process the activeClientChanged action
+		await client.waitForNotification(
+			n => isActionNotification(n, 'session/activeClientChanged'),
+			5_000,
+		);
 
 		// 3. Send a trivial message by dispatching a turnStarted action.
 		//    Because the active client was set after createSession, the
@@ -155,7 +171,7 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 		);
 
 		// 4. Read the SDK's events.jsonl and verify the cwd in the session.start event
-		const eventsPath = join(os.homedir(), '.copilot', 'session-state', sessionId, 'events.jsonl');
+		const eventsPath = join(os.homedir(), '.copilot', 'session-state', sdkSessionId, 'events.jsonl');
 		assert.ok(fs.existsSync(eventsPath), `events.jsonl should exist at: ${eventsPath}`);
 
 		const lines = fs.readFileSync(eventsPath, 'utf-8').trim().split('\n');

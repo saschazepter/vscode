@@ -54,3 +54,24 @@ steps:
     - script: xvfb-run -a npm run test:sanity
       workingDirectory: $(Build.SourcesDirectory)/extensions/copilot
       displayName: Run sanity tests
+
+    # Agent host integration tests — exercises real CopilotAgent → Copilot SDK path.
+    # Needs root node_modules (for @github/copilot-sdk at runtime) and
+    # transpiled main sources in out/ (the agent host server runs from there).
+    - script: npm ci --ignore-scripts
+      displayName: Install root dependencies (agent host tests)
+      env:
+        ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+    - script: npm run transpile-client
+      displayName: Transpile VS Code sources (agent host tests)
+
+    - script: |
+        set -e
+        set -a
+        source extensions/copilot/.env
+        set +a
+        npx mocha --timeout 120000 out/vs/platform/agentHost/test/node/protocol/copilotAgentCwd.integrationTest.js
+      displayName: 🧪 Run agent host cwd integration test
+      timeoutInMinutes: 5

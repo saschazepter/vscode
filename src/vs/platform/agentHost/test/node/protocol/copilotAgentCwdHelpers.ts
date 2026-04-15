@@ -24,20 +24,23 @@ export function startCopilotServer(): Promise<IServerHandle> {
 
 		const timer = setTimeout(() => {
 			child.kill();
-			reject(new Error('Copilot server startup timed out'));
+			reject(new Error(`Copilot server startup timed out.\nstderr: ${stderrBuf}`));
 		}, 30_000);
 
+		let stdoutBuf = '';
+		let stderrBuf = '';
+
 		child.stdout!.on('data', (data: Buffer) => {
-			const text = data.toString();
-			const match = text.match(/READY:(\d+)/);
+			stdoutBuf += data.toString();
+			const match = stdoutBuf.match(/READY:(\d+)/);
 			if (match) {
 				clearTimeout(timer);
 				resolve({ process: child, port: parseInt(match[1], 10) });
 			}
 		});
 
-		child.stderr!.on('data', () => {
-			// Swallowed — the test runner fails if stderr leaks through.
+		child.stderr!.on('data', (data: Buffer) => {
+			stderrBuf += data.toString();
 		});
 
 		child.on('error', err => {
@@ -47,7 +50,7 @@ export function startCopilotServer(): Promise<IServerHandle> {
 
 		child.on('exit', code => {
 			clearTimeout(timer);
-			reject(new Error(`Copilot server exited prematurely with code ${code}`));
+			reject(new Error(`Copilot server exited prematurely with code ${code}.\nstderr: ${stderrBuf}`));
 		});
 	});
 }
