@@ -182,7 +182,7 @@ export class AgentSideEffects extends Disposable {
 
 		// Read auto-approval: approve reads inside the session's working directory.
 		if (e.permissionKind === 'read' && e.permissionPath) {
-			const workDir = sessionState?.workingDirectory ?? sessionState?.summary.workingDirectory;
+			const workDir = sessionState?.summary.workingDirectory;
 			const workingDirectory = workDir ? URI.parse(workDir) : undefined;
 			if (workingDirectory && extUriBiasedIgnorePathCase.isEqualOrParent(normalizePath(URI.file(e.permissionPath)), workingDirectory)) {
 				this._logService.trace(`[AgentSideEffects] Auto-approving read of ${e.permissionPath}`);
@@ -196,7 +196,7 @@ export class AgentSideEffects extends Disposable {
 		// Write auto-approval: only within the session's working directory,
 		// then apply the default glob patterns for protected files.
 		if (e.permissionKind === 'write' && e.permissionPath) {
-			const workDir = sessionState?.workingDirectory ?? sessionState?.summary.workingDirectory;
+			const workDir = sessionState?.summary.workingDirectory;
 			const workingDirectory = workDir ? URI.parse(workDir) : undefined;
 			if (workingDirectory && extUriBiasedIgnorePathCase.isEqualOrParent(normalizePath(URI.file(e.permissionPath)), workingDirectory)) {
 				if (this._shouldAutoApproveEdit(e.permissionPath)) {

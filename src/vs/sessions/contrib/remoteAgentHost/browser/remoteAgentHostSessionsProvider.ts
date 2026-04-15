@@ -22,7 +22,7 @@ import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from 
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
-import type { IRootState, ISessionFileDiff } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { IRootState, ISessionFileDiff, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
@@ -1079,7 +1079,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 		}
 	}
 
-	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; project?: { uri: string; displayName: string }; model?: string; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
+	private _handleSessionAdded(summary: ISessionSummary): void {
 		const sessionUri = URI.parse(summary.resource);
 		const rawId = AgentSession.id(sessionUri);
 		if (this._sessionCache.has(rawId)) {
