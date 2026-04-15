@@ -122,6 +122,9 @@ function getModelConfigurationDescription(model: ILanguageModelChatMetadataAndId
 		if (propSchema.group !== 'navigation') {
 			continue;
 		}
+		if (!propSchema.enum || propSchema.enum.length < 2) {
+			continue;
+		}
 		const value = currentConfig[key] ?? propSchema.default;
 		if (value === undefined) {
 			continue;
