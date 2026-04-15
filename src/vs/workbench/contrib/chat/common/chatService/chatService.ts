@@ -422,6 +422,8 @@ export interface IChatQuestionCarousel {
 	message?: string | IMarkdownString;
 	/** Source attribution (e.g. MCP server) */
 	source?: ToolDataSource;
+	/** Terminal ID when the carousel was triggered by a terminal needing input */
+	terminalId?: string;
 	kind: 'questionCarousel';
 }
 
@@ -1389,6 +1391,7 @@ export interface IChatSendRequestOptions {
 	rejectedConfirmationData?: any[];
 	attachedContext?: IChatRequestVariableEntry[];
 	resolvedVariables?: IChatRequestVariableEntry[];
+	agentHostSessionConfig?: Record<string, string>;
 
 	/** The target agent ID can be specified with this property instead of using @ in 'message' */
 	agentId?: string;
@@ -1425,6 +1428,13 @@ export interface IChatSendRequestOptions {
 	 * this label as a compact progress-style message instead of the full request text.
 	 */
 	systemInitiatedLabel?: string;
+
+	/**
+	 * Structured terminal execution ID for system-initiated terminal notifications.
+	 * This avoids parsing IDs from request text when tools need to correlate
+	 * terminal prompts with follow-up actions.
+	 */
+	terminalExecutionId?: string;
 
 	/**
 	 * When set, the chat service will collect automatic instructions

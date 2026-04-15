@@ -466,9 +466,10 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 			? (this._lastRenderTokenCount + toolTokens) / baseBudget
 			: 0;
 
-		// Track whether we applied a summary in this iteration so we don't
-		// immediately re-trigger background compaction in the post-render check.
-		let summaryAppliedThisIteration = false;
+		// Track whether this iteration already performed compaction-related work
+		// (including applying a summary or using a foreground fallback path) so
+		// we don't immediately re-trigger background compaction in the post-render check.
+		let didSummarizeThisIteration = false;
 
 		// If a previous background pass completed, apply its summary now.
 		if (summarizationEnabled && backgroundSummarizer?.state === BackgroundSummarizationState.Completed) {
@@ -479,7 +480,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 				this._applySummaryToRounds(bgResult, promptContext);
 				this._persistSummaryOnTurn(bgResult, promptContext, this._lastRenderTokenCount);
 				this._sendBackgroundCompactionTelemetry('preRender', 'applied', contextRatio, promptContext);
-				summaryAppliedThisIteration = true;
+				didSummarizeThisIteration = true;
 			} else {
 				this.logService.warn(`[ConversationHistorySummarizer] background compaction state was Completed but consumeAndReset returned no result`);
 				this._sendBackgroundCompactionTelemetry('preRender', 'noResult', contextRatio, promptContext);
@@ -612,7 +613,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 						this._applySummaryToRounds(bgResult, promptContext);
 						this._persistSummaryOnTurn(bgResult, promptContext, contextLengthBefore);
 						this._sendBackgroundCompactionTelemetry(budgetExceededTrigger, 'applied', contextRatio, promptContext);
-						summaryAppliedThisIteration = true;
+						didSummarizeThisIteration = true;
 						// Re-render with the compacted history
 						const renderer = PromptRenderer.create(this.instantiationService, endpoint, this.prompt, { ...props, promptContext });
 						result = await renderer.render(progress, token);
@@ -622,9 +623,11 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 						this._recordBackgroundCompactionFailure(promptContext, budgetExceededTrigger);
 						// Background compaction failed — fall back to synchronous summarization
 						result = await renderWithSummarization(`budget exceeded(${e.message}), background compaction failed`);
+						didSummarizeThisIteration = true;
 					}
 				} else {
 					result = await renderWithSummarization(`budget exceeded(${e.message})`);
+					didSummarizeThisIteration = true;
 				}
 			} else {
 				throw e;
@@ -657,7 +660,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		}
 
 		// Post-render: kick off background compaction at ≥ 80% if idle.
-		if (summarizationEnabled && backgroundSummarizer && !summaryAppliedThisIteration) {
+		if (summarizationEnabled && backgroundSummarizer && !didSummarizeThisIteration) {
 			const postRenderRatio = baseBudget > 0
 				? (result.tokenCount + toolTokens) / baseBudget
 				: 0;
