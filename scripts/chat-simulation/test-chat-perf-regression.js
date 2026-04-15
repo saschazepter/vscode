@@ -27,6 +27,7 @@ const {
 	DATA_DIR, METRIC_DEFS, loadConfig,
 	resolveBuild, buildEnv, buildArgs, prepareRunDir,
 	robustStats, welchTTest, summarize, markDuration, launchVSCode,
+	getNextExtHostInspectPort, connectToExtHostInspector,
 } = require('./common/utils');
 const { getUserTurns, getScenarioIds } = require('./common/mock-llm-server');
 const { registerPerfScenarios } = require('./common/perf-scenarios');
@@ -134,6 +135,12 @@ function parseArgs() {
  *   profilePath: string,
  *   tracePath: string,
  *   snapshotPath: string,
+ *   extHostHeapUsedBefore: number,
+ *   extHostHeapUsedAfter: number,
+ *   extHostHeapDelta: number,
+ *   extHostHeapDeltaPostGC: number,
+ *   extHostProfilePath: string,
+ *   extHostSnapshotPath: string,
  * }} RunMetrics
  */
 
@@ -165,14 +172,21 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	const runDiagDir = path.join(runDir, `${role}-${buildLabel}`, runIndex.replace(/^baseline-/, ''));
 	fs.mkdirSync(runDiagDir, { recursive: true });
 
+	const extHostInspectPort = getNextExtHostInspectPort();
 	const vscode = await launchVSCode(
 		electronPath,
-		buildArgs(userDataDir, extDir, logsDir, { isDevBuild }),
+		buildArgs(userDataDir, extDir, logsDir, { isDevBuild, extHostInspectPort }),
 		buildEnv(mockServer, { isDevBuild }),
 		{ verbose },
 	);
 	activeVSCode = vscode;
 	const window = vscode.page;
+
+	// Declared outside try so the finally block can clean up
+	/** @type {{ send: (method: string, params?: any) => Promise<any>, on: (event: string, listener: (params: any) => void) => void, close: () => void } | null} */
+	let extHostInspector = null;
+	/** @type {{ usedSize: number, totalSize: number } | null} */
+	let extHostHeapBefore = null;
 
 	try {
 		await window.waitForSelector('.monaco-workbench', { timeout: 60_000 });
@@ -221,6 +235,22 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		try { await mockServer.waitForRequests(reqsBefore + 4, 30_000); } catch { }
 		if (verbose) {
 			console.log(`  [debug] Extension active (${mockServer.requestCount() - reqsBefore} new requests)`);
+		}
+
+		// Connect to extension host inspector for profiling/heap data
+		try {
+			extHostInspector = await connectToExtHostInspector(extHostInspectPort, { verbose, timeoutMs: 15_000 });
+			await extHostInspector.send('HeapProfiler.enable');
+			await extHostInspector.send('Profiler.enable');
+			await extHostInspector.send('Profiler.start');
+			extHostHeapBefore = await extHostInspector.send('Runtime.getHeapUsage');
+			if (verbose) {
+				console.log(`  [ext-host] Heap before: ${Math.round(extHostHeapBefore.usedSize / 1024 / 1024)}MB`);
+			}
+		} catch (err) {
+			if (verbose) {
+				console.log(`  [ext-host] Could not connect to inspector: ${err}`);
+			}
 		}
 
 		// Wait for model resolution
@@ -503,6 +533,62 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
 		fs.writeFileSync(snapshotPath, snapshotChunks.join(''));
 
+		// -- Extension host metrics ------------------------------------------
+		let extHostHeapUsedBefore = -1;
+		let extHostHeapUsedAfter = -1;
+		let extHostHeapDelta = -1;
+		let extHostHeapDeltaPostGC = -1;
+		let extHostProfilePath = '';
+		let extHostSnapshotPath = '';
+		if (extHostInspector && extHostHeapBefore) {
+			try {
+				extHostHeapUsedBefore = Math.round(extHostHeapBefore.usedSize / 1024 / 1024);
+
+				// Stop CPU profiler and save
+				const extProfile = await extHostInspector.send('Profiler.stop');
+				extHostProfilePath = path.join(runDiagDir, 'exthost-profile.cpuprofile');
+				fs.writeFileSync(extHostProfilePath, JSON.stringify(extProfile.profile));
+				if (verbose) {
+					console.log(`  [ext-host] CPU profile saved to ${extHostProfilePath}`);
+				}
+
+				// Heap usage after interaction
+				const extHostHeapAfter = await extHostInspector.send('Runtime.getHeapUsage');
+				extHostHeapUsedAfter = Math.round(extHostHeapAfter.usedSize / 1024 / 1024);
+				extHostHeapDelta = extHostHeapUsedAfter - extHostHeapUsedBefore;
+
+				// Force GC and measure retained heap
+				try {
+					await extHostInspector.send('Runtime.evaluate', { expression: 'gc()', awaitPromise: false, includeCommandLineAPI: true });
+					await new Promise(r => setTimeout(r, 200));
+					const extHostHeapPostGC = await extHostInspector.send('Runtime.getHeapUsage');
+					extHostHeapDeltaPostGC = Math.round(extHostHeapPostGC.usedSize / 1024 / 1024) - extHostHeapUsedBefore;
+				} catch {
+					extHostHeapDeltaPostGC = -1;
+				}
+
+				// Take ext host heap snapshot
+				extHostSnapshotPath = path.join(runDiagDir, 'exthost-heap.heapsnapshot');
+				const extSnapshotChunks = /** @type {string[]} */ ([]);
+				extHostInspector.on('HeapProfiler.addHeapSnapshotChunk', (/** @type {any} */ params) => {
+					extSnapshotChunks.push(params.chunk);
+				});
+				await extHostInspector.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+				fs.writeFileSync(extHostSnapshotPath, extSnapshotChunks.join(''));
+
+				if (verbose) {
+					console.log(`  [ext-host] Heap: before=${extHostHeapUsedBefore}MB, after=${extHostHeapUsedAfter}MB, delta=${extHostHeapDelta}MB, deltaPostGC=${extHostHeapDeltaPostGC}MB`);
+					console.log(`  [ext-host] Snapshot saved to ${extHostSnapshotPath}`);
+				}
+			} catch (err) {
+				if (verbose) {
+					console.log(`  [ext-host] Error collecting metrics: ${err}`);
+				}
+			} finally {
+				extHostInspector.close();
+			}
+		}
+
 		// Parse timing — prefer internal code/chat/* marks (precise, in-process)
 		// with client-side Date.now() as fallback for older builds without marks.
 		const timeToUIUpdated = markDuration(chatMarks, 'request/start', 'request/uiUpdated');
@@ -576,14 +662,59 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			profilePath,
 			tracePath,
 			snapshotPath,
+			extHostHeapUsedBefore,
+			extHostHeapUsedAfter,
+			extHostHeapDelta,
+			extHostHeapDeltaPostGC,
+			extHostProfilePath,
+			extHostSnapshotPath,
 		};
 	} finally {
+		if (extHostInspector) {
+			try { extHostInspector.close(); } catch { }
+		}
 		activeVSCode = null;
 		await vscode.close();
 	}
 }
 
 // -- CI summary generation ---------------------------------------------------
+
+const GITHUB_REPO = 'https://github.com/microsoft/vscode';
+
+/**
+ * Format a build identifier as a Markdown link when possible.
+ * - Commit SHAs link to the commit page.
+ * - Semver versions link to the release tag page.
+ * - Everything else (e.g. "baseline", "dev (local)") is returned as inline code.
+ * @param {string} label
+ * @returns {string}
+ */
+function formatBuildLink(label) {
+	if (/^[0-9a-f]{7,40}$/.test(label)) {
+		const short = label.substring(0, 7);
+		return `[\`${short}\`](${GITHUB_REPO}/commit/${label})`;
+	}
+	if (/^\d+\.\d+\.\d+/.test(label)) {
+		return `[\`${label}\`](${GITHUB_REPO}/releases/tag/${label})`;
+	}
+	return `\`${label}\``;
+}
+
+/**
+ * Build a GitHub compare link between two build identifiers, if both are
+ * commit-like or version-like references.  Returns empty string otherwise.
+ * @param {string} base
+ * @param {string} test
+ * @returns {string}
+ */
+function formatCompareLink(base, test) {
+	const isRef = (/** @type {string} */ v) => /^[0-9a-f]{7,40}$/.test(v) || /^\d+\.\d+\.\d+/.test(v);
+	if (!isRef(base) || !isRef(test)) {
+		return '';
+	}
+	return `[compare](${GITHUB_REPO}/compare/${base}...${test})`;
+}
 
 /**
  * Generate a detailed Markdown summary table for CI.
@@ -596,6 +727,9 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 function generateCISummary(jsonReport, baseline, opts) {
 	const baseLabel = opts.baselineBuild || 'baseline';
 	const testLabel = opts.build || 'dev (local)';
+	const baseLink = formatBuildLink(baseLabel);
+	const testLink = formatBuildLink(testLabel);
+	const compareLink = formatCompareLink(baseLabel, testLabel);
 	const allMetrics = [
 		['timeToFirstToken', 'timing', 'ms'],
 		['timeToComplete', 'timing', 'ms'],
@@ -611,6 +745,8 @@ function generateCISummary(jsonReport, baseline, opts) {
 		['heapDelta', 'memory', 'MB'],
 		['heapDeltaPostGC', 'memory', 'MB'],
 		['gcDurationMs', 'memory', 'ms'],
+		['extHostHeapDelta', 'extHost', 'MB'],
+		['extHostHeapDeltaPostGC', 'extHost', 'MB'],
 	];
 	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'recalcStyleCount', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
 
@@ -621,8 +757,11 @@ function generateCISummary(jsonReport, baseline, opts) {
 	lines.push('');
 	lines.push(`| | |`);
 	lines.push(`|---|---|`);
-	lines.push(`| **Baseline** | \`${baseLabel}\` |`);
-	lines.push(`| **Test** | \`${testLabel}\` |`);
+	lines.push(`| **Baseline** | ${baseLink} |`);
+	lines.push(`| **Test** | ${testLink} |`);
+	if (compareLink) {
+		lines.push(`| **Diff** | ${compareLink} |`);
+	}
 	lines.push(`| **Runs per scenario** | ${opts.runs} |`);
 	lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
 	lines.push(`| **Scenarios** | ${scenarios.length} |`);
@@ -856,12 +995,12 @@ async function main() {
 			}
 
 			// Recompute stats with merged data
-			const sd = /** @type {any} */ ({ runs: prevTestRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: prevTestRuns });
+			const sd = /** @type {any} */ ({ runs: prevTestRuns.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: prevTestRuns });
 			for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(prevTestRuns.map((/** @type {any} */ r) => r[metric])); }
 			prevResults.scenarios[scenario] = sd;
 
 			if (prevBaseline?.scenarios?.[scenario]) {
-				const bsd = /** @type {any} */ ({ runs: prevBaseRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: prevBaseRuns });
+				const bsd = /** @type {any} */ ({ runs: prevBaseRuns.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: prevBaseRuns });
 				for (const [metric, group] of METRIC_DEFS) { bsd[group][metric] = robustStats(prevBaseRuns.map((/** @type {any} */ r) => r[metric])); }
 				prevBaseline.scenarios[scenario] = bsd;
 			}
@@ -954,7 +1093,7 @@ async function main() {
 					}
 					const allRuns = [...existingRuns, ...newResults];
 					if (allRuns.length > 0) {
-						const sd = /** @type {any} */ ({ runs: allRuns.length, timing: {}, memory: {}, rendering: {}, rawRuns: allRuns });
+						const sd = /** @type {any} */ ({ runs: allRuns.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: allRuns });
 						for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(allRuns.map((/** @type {any} */ r) => r[metric])); }
 						cachedBaseline.scenarios[scenario] = sd;
 					}
@@ -986,7 +1125,7 @@ async function main() {
 				scenarios: /** @type {Record<string, any>} */ ({}),
 			};
 			for (const [scenario, results] of Object.entries(baselineResults)) {
-				const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
+				const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: results });
 				for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
 				baselineReport.scenarios[scenario] = sd;
 			}
@@ -1053,13 +1192,21 @@ async function main() {
 		console.log(summarize(results.map(r => r.heapDelta), '  Heap delta            ', 'MB'));
 		console.log(summarize(results.map(r => r.heapDeltaPostGC), '  Heap delta (post-GC)  ', 'MB'));
 		console.log(summarize(results.map(r => r.gcDurationMs), '  GC duration           ', 'ms'));
+		if (results.some(r => r.extHostHeapDelta >= 0)) {
+			console.log('');
+			console.log('  Extension Host:');
+			console.log(summarize(results.map(r => r.extHostHeapUsedBefore), '  Heap before           ', 'MB'));
+			console.log(summarize(results.map(r => r.extHostHeapUsedAfter), '  Heap after            ', 'MB'));
+			console.log(summarize(results.map(r => r.extHostHeapDelta), '  Heap delta            ', 'MB'));
+			console.log(summarize(results.map(r => r.extHostHeapDeltaPostGC), '  Heap delta (post-GC)  ', 'MB'));
+		}
 	}
 
 	// -- JSON output -----------------------------------------------------
 	const jsonPath = path.join(runDir, 'results.json');
 	const jsonReport = /** @type {{ timestamp: string, platform: NodeJS.Platform, runsPerScenario: number, scenarios: Record<string, any>, _resultsPath?: string }} */ ({ timestamp: new Date().toISOString(), platform: process.platform, runsPerScenario: opts.runs, scenarios: /** @type {Record<string, any>} */ ({}) });
 	for (const [scenario, results] of Object.entries(allResults)) {
-		const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, rawRuns: results });
+		const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: results });
 		for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
 		jsonReport.scenarios[scenario] = sd;
 	}
@@ -1111,6 +1258,8 @@ async function printComparison(jsonReport, opts) {
 		const infoMetrics = [
 			['heapDelta', 'memory', 'MB'],
 			['gcDurationMs', 'memory', 'ms'],
+			['extHostHeapDelta', 'extHost', 'MB'],
+			['extHostHeapDeltaPostGC', 'extHost', 'MB'],
 		];
 
 		for (const scenario of Object.keys(jsonReport.scenarios)) {

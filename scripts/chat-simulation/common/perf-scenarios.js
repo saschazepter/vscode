@@ -357,6 +357,113 @@ const TOOL_CALL_SCENARIOS = {
 			],
 		};
 	})()),
+
+	// Terminal tool: run commands, read output, run more commands.
+	// Simulates an agent installing dependencies, running tests, and
+	// diagnosing failures — a common agentic workflow.
+	'tool-terminal': /** @type {import('./mock-llm-server').MultiTurnScenario} */ ({
+		type: 'multi-turn',
+		turns: [
+			// Round 1: run initial commands (install + build)
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						arguments: {
+							command: 'echo "Installing dependencies..." && echo "added 1631 packages in 6m"',
+							explanation: 'Install project dependencies',
+							goal: 'Install dependencies',
+							mode: 'sync',
+							timeout: 30000,
+						},
+					},
+				],
+			},
+			// Round 2: run test command
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						arguments: {
+							command: 'echo "Running unit tests..." && echo "  42 passing (3s)" && echo "  2 failing" && echo "" && echo "  1) ChatService should dispose listeners" && echo "     AssertionError: expected 0 to equal 1" && echo "  2) ChatModel should clear on new session" && echo "     TypeError: Cannot read property dispose of undefined"',
+							explanation: 'Run the unit test suite to check for failures',
+							goal: 'Run tests',
+							mode: 'sync',
+							timeout: 60000,
+						},
+					},
+				],
+			},
+			// Round 3: read the failing test file for context
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /read.?file/i,
+						arguments: { filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'), startLine: 1, endLine: 50 },
+					},
+				],
+			},
+			// Round 4: fix the issue with an edit
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /replace.?string|apply.?patch|insert.?edit/i,
+						arguments: {
+							filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
+							oldString: '// perf-benchmark-marker',
+							newString: '// perf-benchmark-marker (fixed)',
+							explanation: 'Fix the dispose call in the test',
+						},
+					},
+				],
+			},
+			// Round 5: re-run tests to confirm
+			{
+				kind: 'tool-calls',
+				toolCalls: [
+					{
+						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						arguments: {
+							command: 'echo "Running unit tests..." && echo "  44 passing (3s)" && echo "  0 failing"',
+							explanation: 'Re-run tests to verify the fix',
+							goal: 'Verify fix',
+							mode: 'sync',
+							timeout: 60000,
+						},
+					},
+				],
+			},
+			// Round 6: final summary
+			{
+				kind: 'content',
+				chunks: new ScenarioBuilder()
+					.wait(20, '## Test Failures Fixed\n\n')
+					.stream([
+						'I found and fixed 2 test failures:\n\n',
+						'### Root Cause\n',
+						'The `ChatService` was not properly disposing event listeners when a session was cleared. ',
+						'The `dispose()` method was missing a call to `this._store.dispose()`.\n\n',
+						'### Changes Made\n',
+						'Updated `lifecycle.ts` to properly chain disposal:\n\n',
+						'```typescript\n',
+						'override dispose(): void {\n',
+						'  this._store.dispose();\n',
+						'  super.dispose();\n',
+						'}\n',
+						'```\n\n',
+						'### Test Results\n',
+						'- **Before**: 42 passing, 2 failing\n',
+						'- **After**: 44 passing, 0 failing\n\n',
+						'All tests pass now. The fix ensures listeners are cleaned up during session transitions.\n',
+					], 15)
+					.build(),
+			},
+		],
+	}),
 };
 
 // -- Multi-turn user conversation scenarios -----------------------------------

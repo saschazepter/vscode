@@ -193,7 +193,7 @@ function buildEnv(mockServer, { isDevBuild = true } = {}) {
  * @param {string} logsDir
  * @returns {string[]}
  */
-function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true } = {}) {
+function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostInspectPort = 0 } = {}) {
 	const args = [
 		ROOT,
 		'--skip-release-notes',
@@ -213,6 +213,13 @@ function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true } = {}) {
 	if (process.platform !== 'darwin') {
 		args.push('--disable-gpu');
 	}
+	if (process.env.CI && process.platform === 'linux') {
+		args.push('--no-sandbox');
+	}
+	// Enable extension host inspector for profiling/heap snapshots
+	if (extHostInspectPort > 0) {
+		args.push(`--inspect-extensions=${extHostInspectPort}`);
+	}
 	return args;
 }
 
@@ -228,6 +235,8 @@ function writeSettings(userDataDir, mockServer) {
 		'github.copilot.advanced.debug.overrideProxyUrl': mockServer.url,
 		'github.copilot.advanced.debug.overrideCapiUrl': mockServer.url,
 		'chat.allowAnonymousAccess': true,
+		// Start new chat sessions in agent mode so tools are available.
+		'chat.newSession.defaultMode': 'agent',
 		// Disable MCP servers — they start async and add unpredictable
 		// delay that pollutes perf measurements.
 		'chat.mcp.discovery.enabled': false,
@@ -274,6 +283,112 @@ function prepareRunDir(runId, mockServer) {
 }
 
 // -- VS Code launch via CDP --------------------------------------------------
+
+// -- Extension host inspector ------------------------------------------------
+
+/** @type {number} */
+let nextExtHostPort = 29222;
+
+/** @returns {number} */
+function getNextExtHostInspectPort() {
+	return nextExtHostPort++;
+}
+
+/**
+ * Connect to the extension host's Node inspector via WebSocket.
+ * The extension host must be started with `--inspect-extensions=<port>`.
+ *
+ * @param {number} port
+ * @param {{ verbose?: boolean, timeoutMs?: number }} [opts]
+ * @returns {Promise<{ send: (method: string, params?: any) => Promise<any>, on: (event: string, listener: (params: any) => void) => void, close: () => void, port: number }>}
+ */
+async function connectToExtHostInspector(port, opts = {}) {
+	const { verbose = false, timeoutMs = 30_000 } = opts;
+
+	// Wait for the inspector endpoint to be available
+	const deadline = Date.now() + timeoutMs;
+	/** @type {any} */
+	let wsUrl;
+	while (Date.now() < deadline) {
+		try {
+			const targets = await getJson(`http://127.0.0.1:${port}/json`);
+			if (targets.length > 0 && targets[0].webSocketDebuggerUrl) {
+				wsUrl = targets[0].webSocketDebuggerUrl;
+				break;
+			}
+		} catch { }
+		await new Promise(r => setTimeout(r, 500));
+	}
+	if (!wsUrl) {
+		throw new Error(`Timed out waiting for extension host inspector on port ${port}`);
+	}
+
+	if (verbose) {
+		console.log(`  [ext-host] Connected to inspector: ${wsUrl}`);
+	}
+
+	const WebSocket = require('ws');
+	const ws = new WebSocket(wsUrl);
+	await new Promise((resolve, reject) => {
+		ws.once('open', resolve);
+		ws.once('error', reject);
+	});
+
+	let msgId = 1;
+	/** @type {Map<number, { resolve: (v: any) => void, reject: (e: Error) => void }>} */
+	const pending = new Map();
+	/** @type {Map<string, ((params: any) => void)[]>} */
+	const eventListeners = new Map();
+
+	ws.on('message', (/** @type {Buffer} */ data) => {
+		const msg = JSON.parse(data.toString());
+		if (msg.id !== undefined) {
+			const p = pending.get(msg.id);
+			if (p) {
+				pending.delete(msg.id);
+				if (msg.error) { p.reject(new Error(msg.error.message)); }
+				else { p.resolve(msg.result); }
+			}
+		} else if (msg.method) {
+			const listeners = eventListeners.get(msg.method) || [];
+			for (const listener of listeners) { listener(msg.params); }
+		}
+	});
+
+	return {
+		port,
+		/**
+		 * @param {string} method
+		 * @param {any} [params]
+		 * @returns {Promise<any>}
+		 */
+		send(method, params) {
+			return new Promise((resolve, reject) => {
+				const id = msgId++;
+				pending.set(id, { resolve, reject });
+				ws.send(JSON.stringify({ id, method, params }));
+				setTimeout(() => {
+					if (pending.has(id)) {
+						pending.delete(id);
+						reject(new Error(`Inspector call timed out: ${method}`));
+					}
+				}, 30_000);
+			});
+		},
+		/**
+		 * @param {string} event
+		 * @param {(params: any) => void} listener
+		 */
+		on(event, listener) {
+			const list = eventListeners.get(event) || [];
+			list.push(listener);
+			eventListeners.set(event, list);
+		},
+		close() {
+			ws.close();
+		},
+	};
+}
 
 /**
  * Fetch JSON from a URL. Used to probe the CDP endpoint.
@@ -647,6 +762,10 @@ const METRIC_DEFS = [
 	['frameCount', 'rendering', ''],
 	['compositeLayers', 'rendering', ''],
 	['paintCount', 'rendering', ''],
+	['extHostHeapUsedBefore', 'extHost', 'MB'],
+	['extHostHeapUsedAfter', 'extHost', 'MB'],
+	['extHostHeapDelta', 'extHost', 'MB'],
+	['extHostHeapDeltaPostGC', 'extHost', 'MB'],
 ];
 
 module.exports = {
@@ -670,4 +789,6 @@ module.exports = {
 	summarize,
 	markDuration,
 	launchVSCode,
+	getNextExtHostInspectPort,
+	connectToExtHostInspector,
 };

@@ -5,8 +5,8 @@ on:
     paths:
       - '.github/workflows/chat-perf.yml'
   schedule:
-    # Every Friday at 12:00 AM PT (07:00 UTC)
-    - cron: '0 7 * * 5'
+    # Nightly at 12:00 AM PT (07:00 UTC)
+    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       baseline_commit:
@@ -49,7 +49,7 @@ env:
 
 jobs:
   chat-perf:
-    name: Chat Perf – ${{ inputs.baseline_commit || 'config default' }} vs ${{ inputs.test_commit || github.sha }}
+    name: Chat Perf
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:

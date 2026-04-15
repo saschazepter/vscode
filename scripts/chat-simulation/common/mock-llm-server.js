@@ -445,7 +445,7 @@ function handleRequest(req, res) {
 						tokenizer: 'o200k_base',
 						limits: {
 							max_prompt_tokens: 128000,
-							max_output_tokens: 16384,
+							max_output_tokens: 131072,
 							max_context_window_tokens: 128000,
 						},
 						supports: {
@@ -472,7 +472,7 @@ function handleRequest(req, res) {
 						tokenizer: 'o200k_base',
 						limits: {
 							max_prompt_tokens: 128000,
-							max_output_tokens: 16384,
+							max_output_tokens: 131072,
 							max_context_window_tokens: 128000,
 						},
 						supports: {
@@ -508,7 +508,7 @@ function handleRequest(req, res) {
 				type: 'chat',
 				family: 'gpt-4o',
 				tokenizer: 'o200k_base',
-				limits: { max_prompt_tokens: 128000, max_output_tokens: 16384, max_context_window_tokens: 128000 },
+				limits: { max_prompt_tokens: 128000, max_output_tokens: 131072, max_context_window_tokens: 128000 },
 				supports: { streaming: true, tool_calls: true, parallel_tool_calls: true, vision: false },
 			},
 		});
@@ -599,20 +599,36 @@ const serverEvents = new EventEmitter();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Count the number of model turns already completed in the conversation.
- * A model turn is one of:
- *   - An assistant message with tool_calls (tool-calls turn)
- *   - An assistant message with content but no tool_calls (content/thinking turn)
- * The first assistant message after each user message counts as a new model
- * turn. User turns in the scenario are detected by counting user messages
- * beyond the initial one.
+ * Count the number of model turns already completed for the CURRENT scenario.
+ * Only counts assistant messages that appear after the last user message
+ * containing a [scenario:X] tag. This prevents assistant messages from
+ * previous scenarios (in the same chat session) from inflating the count.
+ *
  * @param {any[]} messages
  * @returns {number}
  */
 function countCompletedModelTurns(messages) {
+	// Find the index of the last user message with a scenario tag
+	let scenarioMsgIdx = -1;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== 'user') { continue; }
+		const content = typeof msg.content === 'string'
+			? msg.content
+			: Array.isArray(msg.content)
+				? msg.content.map((/** @type {any} */ c) => c.text || '').join('')
+				: '';
+		if (/\[scenario:[^\]]+\]/.test(content)) {
+			scenarioMsgIdx = i;
+			break;
+		}
+	}
+
+	// Count assistant messages after the scenario tag message
 	let turns = 0;
-	for (const msg of messages) {
-		if (msg.role === 'assistant') {
+	const startIdx = scenarioMsgIdx >= 0 ? scenarioMsgIdx + 1 : 0;
+	for (let i = startIdx; i < messages.length; i++) {
+		if (messages[i].role === 'assistant') {
 			turns++;
 		}
 	}
@@ -680,9 +696,14 @@ async function handleChatCompletions(body, res) {
 			console.log(`[mock-llm]   ${ts} → ${requestToolNames.length} tools available: ${requestToolNames.join(', ')}`);
 		}
 
-		// Search all user messages for the scenario tag (not just the last one,
-		// since follow-up user messages in multi-turn scenarios won't have it).
-		for (const msg of messages) {
+		// Search user messages in reverse order (newest first) for the scenario
+		// tag. This ensures the most recent message's tag takes precedence when
+		// multiple messages with different tags exist in the same conversation
+		// (e.g. in the leak checker which sends many scenarios in one session).
+		// Follow-up user messages in multi-turn scenarios won't have a tag, so
+		// searching backwards still finds the correct tag from the initial message.
+		for (let mi = messages.length - 1; mi >= 0; mi--) {
+			const msg = messages[mi];
 			if (msg.role !== 'user') { continue; }
 			const content = typeof msg.content === 'string'
 				? msg.content
