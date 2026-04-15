@@ -388,7 +388,10 @@
 	.monaco-list-row:not(.selected) .session-item.in-progress .session-title {
 		animation: none;
 		background: none;
-		-webkit-text-fill-color: unset;
+		background-clip: border-box;
+		-webkit-background-clip: border-box;
+		color: var(--vscode-foreground);
+		-webkit-text-fill-color: var(--vscode-foreground);
 	}
 }
 
