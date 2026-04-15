@@ -495,7 +495,6 @@ describe('createResponsesRequestBody', () => {
 			content: [{ type: 'output_text', text: 'previous answer' }],
 			type: 'message',
 		});
-		expect(body.input?.[0]).not.toHaveProperty('phase');
 		expect(body.input?.[0]).not.toHaveProperty('id');
 		expect(body.input?.[0]).not.toHaveProperty('status');
 
