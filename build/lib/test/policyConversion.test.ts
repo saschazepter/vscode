@@ -510,8 +510,10 @@ suite('Policy E2E conversion', () => {
 	test('should successfully parse the checked-in policyData.jsonc', async () => {
 		const policyDataPath = path.join(import.meta.dirname, '..', 'policies', 'policyData.jsonc');
 		const raw = await fs.readFile(policyDataPath, 'utf-8');
-		const policyData: ExportedPolicyDataDto = JSONC.parse(raw);
+		const errors: JSONC.ParseError[] = [];
+		const policyData: ExportedPolicyDataDto = JSONC.parse(raw, errors);
 
+		assert.strictEqual(errors.length, 0, `policyData.jsonc should be valid JSONC: ${JSON.stringify(errors)}`);
 		// This exercises StringEnumPolicy.from() validation, which requires
 		// enumDescriptions to exist and match enum length for string enum policies.
 		const parsed = parsePolicies(policyData);
