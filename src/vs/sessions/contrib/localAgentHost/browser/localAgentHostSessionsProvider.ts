@@ -26,6 +26,7 @@ import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbe
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
+import { isSessionConfigComplete } from '../../../common/sessionConfig.js';
 import { ISendRequestOptions, ISessionChangeEvent } from '../../../services/sessions/common/sessionsProvider.js';
 import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
 import { IChat, ISession, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, type IGitHubInfo, ISessionType } from '../../../services/sessions/common/session.js';
@@ -54,10 +55,6 @@ function buildMutableConfigSchema(config: Record<string, string>): Record<string
 		};
 	}
 	return properties;
-}
-
-function isSessionConfigComplete(config: IResolveSessionConfigResult): boolean {
-	return (config.schema.required ?? []).every(property => config.values[property] !== undefined && config.values[property] !== '');
 }
 
 /**
@@ -89,7 +86,7 @@ class LocalSessionAdapter implements ISession {
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
 	readonly modelId: ISettableObservable<string | undefined>;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
-	readonly loading = observableValue(this, true);
+	readonly loading = observableValue(this, false);
 	readonly isArchived = observableValue('isArchived', false);
 	readonly isRead = observableValue('isRead', true);
 	readonly description: ISettableObservable<IMarkdownString | undefined>;

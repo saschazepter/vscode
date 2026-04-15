@@ -167,13 +167,18 @@ function createProvider(disposables: DisposableStore, agentHostService: MockAgen
 }
 
 async function waitForSessionConfig(provider: LocalAgentHostSessionsProvider, sessionId: string, predicate: (config: IResolveSessionConfigResult | undefined) => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 20; attempt++) {
-		await timeout(0);
-		if (predicate(provider.getSessionConfig(sessionId))) {
-			return;
-		}
+	if (predicate(provider.getSessionConfig(sessionId))) {
+		return;
 	}
-	assert.fail('Timed out waiting for session config');
+
+	await new Promise<void>(resolve => {
+		const disposable = provider.onDidChangeSessionConfig(changedSessionId => {
+			if (changedSessionId === sessionId && predicate(provider.getSessionConfig(sessionId))) {
+				disposable.dispose();
+				resolve();
+			}
+		});
+	});
 }
 
 function fireSessionAdded(agentHost: MockAgentHostService, rawId: string, opts?: { provider?: string; title?: string; model?: string; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {

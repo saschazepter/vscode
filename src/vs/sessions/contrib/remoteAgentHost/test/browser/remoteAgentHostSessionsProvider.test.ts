@@ -167,6 +167,21 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	return provider;
 }
 
+async function waitForSessionConfig(provider: RemoteAgentHostSessionsProvider, sessionId: string, predicate: (config: IResolveSessionConfigResult | undefined) => boolean): Promise<void> {
+	if (predicate(provider.getSessionConfig(sessionId))) {
+		return;
+	}
+
+	await new Promise<void>(resolve => {
+		const disposable = provider.onDidChangeSessionConfig(changedSessionId => {
+			if (changedSessionId === sessionId && predicate(provider.getSessionConfig(sessionId))) {
+				disposable.dispose();
+				resolve();
+			}
+		});
+	});
+}
+
 function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?: { provider?: string; title?: string; model?: string; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {
 	const provider = opts?.provider ?? 'copilot';
 	const sessionUri = AgentSession.uri(provider, rawId);
@@ -666,7 +681,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		};
 		const provider = createProvider(disposables, connection);
 		const session = provider.createNewSession(URI.parse('vscode-agent-host://auth/home/user/project'), provider.sessionTypes[0].id);
-		await timeout(0);
+		await waitForSessionConfig(provider, session.sessionId, config => config?.schema.required?.includes('branch') === true);
 
 		assert.strictEqual(session.loading.get(), true);
 	});

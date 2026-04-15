@@ -31,6 +31,7 @@ import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbe
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
+import { isSessionConfigComplete } from '../../../common/sessionConfig.js';
 import { ISessionChangeEvent, ISendRequestOptions } from '../../../services/sessions/common/sessionsProvider.js';
 import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, ISessionType, COPILOT_CLI_SESSION_TYPE } from '../../../services/sessions/common/session.js';
@@ -89,10 +90,6 @@ function buildMutableConfigSchema(config: Record<string, string>): Record<string
 		};
 	}
 	return properties;
-}
-
-function isSessionConfigComplete(config: IResolveSessionConfigResult): boolean {
-	return (config.schema.required ?? []).every(property => config.values[property] !== undefined && config.values[property] !== '');
 }
 
 function toLocalProjectUri(uri: URI, connectionAuthority: string): URI {
