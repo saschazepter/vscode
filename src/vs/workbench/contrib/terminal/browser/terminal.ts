@@ -1510,6 +1510,16 @@ export interface IDetachedXtermTerminal extends IXtermTerminal {
 	reset(): void;
 
 	/**
+	 * Updates the terminal configuration from current settings.
+	 */
+	updateConfig(): void;
+
+	/**
+	 * Updates the terminal theme from the current color theme.
+	 */
+	updateTheme(): void;
+
+	/**
 	 * Access to the terminal buffer for reading cursor position and content.
 	 */
 	readonly buffer: IBufferSet;
