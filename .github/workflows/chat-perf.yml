@@ -53,18 +53,20 @@ env:
   PERF_THRESHOLD: ${{ inputs.threshold || '' }}
 
 jobs:
-  chat-perf:
-    name: Chat Perf
+  # ── Shared setup: build once, cache everything ──────────────────────
+  setup:
+    name: Build & Cache
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
-      - name: Checkout test commit
+      - name: Checkout
         uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
+          cache: npm
 
       - name: Install system dependencies
         run: |
@@ -98,20 +100,133 @@ jobs:
       - name: Download Electron
         run: node build/lib/preLaunch.ts
 
+      - name: Cache Electron
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('.nvmrc', 'package.json') }}
+
       - name: Install Playwright Chromium
         run: npx playwright install chromium
 
-      - name: Run chat perf comparison
-        id: perf
+      - name: Cache Playwright
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: |
+            out/
+            extensions/copilot/dist/
+          retention-days: 1
+
+  # ── Perf comparison (split across matrix groups) ─────────────────────
+  chat-perf:
+    name: Chat Perf (${{ matrix.group }})
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install system dependencies
         run: |
-          SCENARIO_ARGS=""
+          sudo apt update -y
+          sudo apt install -y \
+            xvfb sqlite3 \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2t64 libdrm2 libxcomposite1 libxdamage1 \
+            libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
+            libasound2t64 libxshmfence1 libgtk-3-0
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download build output
+        uses: actions/download-artifact@v7
+        with:
+          name: build-output
+
+      - name: Restore Electron cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('.nvmrc', 'package.json') }}
+
+      - name: Download Electron
+        run: node build/lib/preLaunch.ts
+
+      - name: Restore Playwright cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Resolve scenario group
+        id: scenarios
+        run: |
+          # Get all scenario IDs from the perf script, then split into groups
           if [[ -n "${{ inputs.scenarios }}" ]]; then
-            IFS=',' read -ra SCENS <<< "${{ inputs.scenarios }}"
-            for s in "${SCENS[@]}"; do
-              SCENARIO_ARGS="$SCENARIO_ARGS --scenario $(echo "$s" | xargs)"
-            done
+            # User-specified scenarios: split evenly across groups
+            IFS=',' read -ra ALL_SCENS <<< "${{ inputs.scenarios }}"
+          else
+            ALL_SCENS=($(node -e "
+              require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
+              const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
+              console.log(getScenarioIds().join(' '));
+            "))
           fi
 
+          TOTAL=${#ALL_SCENS[@]}
+          GROUPS=4
+          GROUP=${{ matrix.group }}
+
+          # Distribute scenarios round-robin across groups
+          GROUP_SCENS=()
+          for ((i = 0; i < TOTAL; i++)); do
+            if (( (i % GROUPS) + 1 == GROUP )); then
+              GROUP_SCENS+=("${ALL_SCENS[$i]}")
+            fi
+          done
+
+          if [[ ${#GROUP_SCENS[@]} -eq 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No scenarios for group $GROUP"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Build --scenario flags
+            SCENARIO_ARGS=""
+            for s in "${GROUP_SCENS[@]}"; do
+              SCENARIO_ARGS="$SCENARIO_ARGS --scenario $s"
+            done
+            echo "args=$SCENARIO_ARGS" >> "$GITHUB_OUTPUT"
+            echo "Group $GROUP scenarios: ${GROUP_SCENS[*]}"
+          fi
+
+      - name: Run chat perf comparison
+        id: perf
+        if: steps.scenarios.outputs.skip != 'true'
+        run: |
           PERF_ARGS="--ci"
           if [[ -n "$BASELINE_COMMIT" ]]; then
             PERF_ARGS="$PERF_ARGS --baseline-build $BASELINE_COMMIT"
@@ -128,16 +243,79 @@ jobs:
 
           xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \
             $PERF_ARGS \
-            $SCENARIO_ARGS \
+            ${{ steps.scenarios.outputs.args }} \
             2>&1 | tee perf-output.log
 
-          # Extract exit code from the script (tee masks it)
           exit ${PIPESTATUS[0]}
         continue-on-error: true
 
+      - name: Upload perf results
+        if: always() && steps.scenarios.outputs.skip != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-results-${{ matrix.group }}
+          path: |
+            perf-output.log
+            .chat-simulation-data/
+          retention-days: 30
+
+  # ── Memory leak check (runs in parallel with perf) ──────────────────
+  leak-check:
+    name: Leak Check
+    needs: setup
+    if: inputs.skip_leak_check != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y \
+            xvfb \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2t64 libdrm2 libxcomposite1 libxdamage1 \
+            libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
+            libasound2t64 libxshmfence1 libgtk-3-0
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download build output
+        uses: actions/download-artifact@v7
+        with:
+          name: build-output
+
+      - name: Restore Electron cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('.nvmrc', 'package.json') }}
+
+      - name: Download Electron
+        run: node build/lib/preLaunch.ts
+
+      - name: Restore Playwright cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
       - name: Run memory leak check
         id: leak
-        if: inputs.skip_leak_check != true
         run: |
           LEAK_ARGS="--verbose"
           if [[ -n "$TEST_COMMIT" ]]; then
@@ -151,59 +329,109 @@ jobs:
           exit ${PIPESTATUS[0]}
         continue-on-error: true
 
-      - name: Write job summary
+      - name: Upload leak results
         if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: leak-results
+          path: |
+            leak-output.log
+            .chat-simulation-data/chat-simulation-leak-results.json
+          retention-days: 30
+
+  # ── Report: collect results, write summary, fail on regression ──────
+  report:
+    name: Report
+    needs: [chat-perf, leak-check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download all perf results
+        uses: actions/download-artifact@v7
+        with:
+          pattern: perf-results-*
+          path: perf-results
+          merge-multiple: true
+
+      - name: Download leak results
+        if: inputs.skip_leak_check != true && needs.leak-check.result != 'skipped'
+        uses: actions/download-artifact@v7
+        with:
+          name: leak-results
+          path: leak-results
+        continue-on-error: true
+
+      - name: Write job summary
         run: |
-          if [[ -f .chat-simulation-data/ci-summary.md ]]; then
-            cat .chat-simulation-data/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+          # Merge ci-summary.md files from all groups (they may be in nested dirs)
+          SUMMARIES=$(find perf-results -name 'ci-summary.md' 2>/dev/null)
+          if [[ -n "$SUMMARIES" ]]; then
+            for f in $SUMMARIES; do
+              cat "$f" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+            done
           else
-            echo "⚠️ No summary file generated. Check perf-output.log artifact." >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ No summary files generated. Check perf-output.log artifacts." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [[ "${{ inputs.skip_leak_check }}" != "true" && -f .chat-simulation-data/chat-simulation-leak-results.json ]]; then
+          if [[ -f leak-results/.chat-simulation-data/chat-simulation-leak-results.json ]]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "## Memory Leak Check" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            cat .chat-simulation-data/chat-simulation-leak-results.json >> "$GITHUB_STEP_SUMMARY"
+            cat leak-results/.chat-simulation-data/chat-simulation-leak-results.json >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Zip diagnostic outputs
-        if: always()
         run: |
-          # Find the most recent timestamped run directory
-          RUN_DIR=$(ls -td .chat-simulation-data/20*/ 2>/dev/null | head -1)
-          if [[ -n "$RUN_DIR" ]]; then
-            # Zip everything: results JSON, CPU profiles, traces, heap snapshots
-            cd .chat-simulation-data
-            zip -r ../chat-perf-artifacts.zip \
-              "$(basename "$RUN_DIR")"/ \
-              ci-summary.md \
-              baseline-*.json \
-              chat-simulation-leak-results.json \
-              2>/dev/null || true
-            cd ..
+          mkdir -p collected
+
+          # Collect perf logs from all groups
+          find perf-results -name 'perf-output.log' -exec cp {} collected/ \; 2>/dev/null || true
+          cp leak-results/leak-output.log collected/ 2>/dev/null || true
+
+          # Zip all .chat-simulation-data directories
+          if [[ -d perf-results ]]; then
+            find perf-results -type d -name '20*' | head -5 | while read -r RUN_DIR; do
+              GROUP_NAME=$(basename "$(dirname "$RUN_DIR")")
+              cd "$(dirname "$RUN_DIR")"
+              zip -r "$OLDPWD/collected/chat-perf-${GROUP_NAME}.zip" \
+                "$(basename "$RUN_DIR")"/ \
+                ci-summary.md \
+                baseline-*.json \
+                2>/dev/null || true
+              cd "$OLDPWD"
+            done
           fi
 
-      - name: Upload perf artifacts
-        if: always()
+          if [[ -f leak-results/.chat-simulation-data/chat-simulation-leak-results.json ]]; then
+            cp leak-results/.chat-simulation-data/chat-simulation-leak-results.json collected/
+          fi
+
+      - name: Upload combined artifacts
         uses: actions/upload-artifact@v7
         with:
           name: chat-perf-${{ env.BASELINE_COMMIT || 'default-baseline' }}-vs-${{ env.TEST_COMMIT }}
-          path: |
-            chat-perf-artifacts.zip
-            perf-output.log
-            leak-output.log
+          path: collected/
           retention-days: 30
 
       - name: Fail on regression
-        if: steps.perf.outcome == 'failure' || (inputs.skip_leak_check != true && steps.leak.outcome == 'failure')
+        if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true && needs.leak-check.result == 'failure')
         run: |
-          if [[ "${{ steps.perf.outcome }}" == "failure" ]]; then
+          if [[ "${{ needs.chat-perf.result }}" == "failure" ]]; then
             echo "::error::Chat performance regression detected. See job summary for details."
           fi
-          if [[ "${{ inputs.skip_leak_check }}" != "true" && "${{ steps.leak.outcome }}" == "failure" ]]; then
+          if [[ "${{ inputs.skip_leak_check }}" != "true" && "${{ needs.leak-check.result }}" == "failure" ]]; then
             echo "::error::Chat memory leak detected. See leak-output.log for details."
           fi
           exit 1
