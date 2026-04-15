@@ -9,6 +9,7 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
@@ -59,7 +60,8 @@ export class IssueReporterOverlay {
 
 	// Step 2: Categorize
 	private readonly issueTypeButtons: HTMLElement[] = [];
-	private selectedIssueType: IssueType = IssueType.Bug;
+	private selectedIssueType: IssueType | undefined;
+	private typeButtonGroup!: HTMLElement;
 
 	// Step 3: Screenshots & Recording
 	private screenshotContainer!: HTMLElement;
@@ -84,6 +86,7 @@ export class IssueReporterOverlay {
 	private stepLabel!: HTMLElement;
 	private backButton!: HTMLElement;
 	private nextButton!: HTMLElement;
+	private nextShortcutBadge!: HTMLElement;
 	private discardButton!: HTMLElement;
 
 	// Progress dots
@@ -112,7 +115,7 @@ export class IssueReporterOverlay {
 			issueType: data.issueType || IssueType.Bug,
 			allExtensions: data.enabledExtensions,
 		});
-		this.selectedIssueType = data.issueType || IssueType.Bug;
+		this.selectedIssueType = data.issueType;
 
 		this.createWizard();
 	}
@@ -121,6 +124,7 @@ export class IssueReporterOverlay {
 		this.wizardPanel = $('div.issue-reporter-wizard');
 		this.wizardPanel.setAttribute('role', 'dialog');
 		this.wizardPanel.setAttribute('aria-label', localize('reportIssue', "Report Issue"));
+		this.wizardPanel.setAttribute('tabindex', '-1');
 
 		// ── Toolbar (drag region + step indicator + discard) ──
 		const toolbar = append(this.wizardPanel, $('div.wizard-toolbar'));
@@ -142,8 +146,10 @@ export class IssueReporterOverlay {
 		this.collapseToggle.setAttribute('aria-label', localize('toggleCollapse', "Toggle compact mode"));
 		const collapseIcon = append(this.collapseToggle, $('span.wizard-collapse-icon'));
 		collapseIcon.appendChild(renderIcon(Codicon.chevronUp));
-		const collapseLabel = append(this.collapseToggle, $('span'));
+		const collapseLabel = append(this.collapseToggle, $('span.wizard-collapse-label'));
 		collapseLabel.textContent = localize('minimize', "Minimize");
+		const minimizeShortcut = append(this.collapseToggle, $('span.wizard-shortcut-badge'));
+		minimizeShortcut.textContent = isMacintosh ? '\u2318M' : 'Ctrl+M';
 
 		// Slot for screenshot/record buttons when collapsed on step 3
 		this.toolbarActionsSlot = append(toolbar, $('div.wizard-toolbar-actions-slot'));
@@ -170,16 +176,23 @@ export class IssueReporterOverlay {
 		backArrow.textContent = '\u2190'; // ←
 		const backLabel = append(this.backButton, $('span'));
 		backLabel.textContent = localize('back', "Back");
+		const backShortcut = append(this.backButton, $('span.wizard-shortcut-badge'));
+		backShortcut.textContent = 'Esc';
 		this.backButton.setAttribute('role', 'button');
 		this.backButton.setAttribute('tabindex', '0');
+		this.backButton.title = localize('backEscape', "Back (Escape)");
 
 		this.nextButton = append(nav, $('div.wizard-nav-btn.wizard-next.primary'));
 		const nextLabel = append(this.nextButton, $('span.wizard-next-label'));
 		nextLabel.textContent = localize('next', "Next");
 		const nextArrow = append(this.nextButton, $('span.wizard-next-arrow'));
 		nextArrow.textContent = ' \u2192'; // →
+		this.nextShortcutBadge = append(this.nextButton, $('span.wizard-shortcut-badge'));
+		this.nextShortcutBadge.textContent = isMacintosh ? '\u2318\u23CE' : 'Ctrl+\u23CE';
 		this.nextButton.setAttribute('role', 'button');
 		this.nextButton.setAttribute('tabindex', '0');
+		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
+		this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 
 		this.registerEventHandlers();
 		this.updateStepUI();
@@ -223,36 +236,39 @@ export class IssueReporterOverlay {
 		const subtitle = append(page, $('p.wizard-subtitle'));
 		subtitle.textContent = localize('categorizeSubtitle', "Selecting the right category helps us identify and route your feedback to the correct team");
 
-		const buttonGroup = append(page, $('div.wizard-type-buttons'));
+		this.typeButtonGroup = append(page, $('div.wizard-type-buttons'));
 		const types = [
-			{ type: IssueType.Bug, label: localize('bug', "Bug"), icon: Codicon.bug },
-			{ type: IssueType.FeatureRequest, label: localize('featureRequest', "Feature Request"), icon: Codicon.lightbulb },
-			{ type: IssueType.PerformanceIssue, label: localize('performanceIssue', "Performance Issue"), icon: Codicon.dashboard },
+			{ type: IssueType.Bug, label: localize('bug', "Bug"), icon: Codicon.bug, shortcut: '1' },
+			{ type: IssueType.FeatureRequest, label: localize('featureRequest', "Feature Request"), icon: Codicon.lightbulb, shortcut: '2' },
+			{ type: IssueType.PerformanceIssue, label: localize('performanceIssue', "Performance Issue"), icon: Codicon.dashboard, shortcut: '3' },
 		];
 
-		for (const { type, label, icon } of types) {
-			const btn = append(buttonGroup, $('div.wizard-type-btn'));
+		const selectType = (type: IssueType) => {
+			this.selectedIssueType = type;
+			this.model.update({ issueType: type });
+			this.typeButtonGroup.classList.remove('invalid-input');
+			for (const b of this.issueTypeButtons) {
+				b.classList.toggle('selected', b.getAttribute('data-type') === String(type));
+			}
+		};
+
+		for (const { type, label, icon, shortcut } of types) {
+			const btn = append(this.typeButtonGroup, $('div.wizard-type-btn'));
 			btn.setAttribute('role', 'button');
 			btn.setAttribute('tabindex', '0');
 			btn.setAttribute('data-type', String(type));
 
+			const shortcutBadge = append(btn, $('span.wizard-shortcut-badge'));
+			shortcutBadge.textContent = shortcut;
 			const iconEl = append(btn, $('span.wizard-type-icon'));
 			iconEl.appendChild(renderIcon(icon));
 			const labelEl = append(btn, $('span'));
 			labelEl.textContent = label;
 
-			if (type === this.selectedIssueType) {
-				btn.classList.add('selected');
-			}
-
 			this.issueTypeButtons.push(btn);
 
 			this.disposables.add(addDisposableListener(btn, EventType.CLICK, () => {
-				this.selectedIssueType = type;
-				this.model.update({ issueType: type });
-				for (const b of this.issueTypeButtons) {
-					b.classList.toggle('selected', b.getAttribute('data-type') === String(type));
-				}
+				selectType(type);
 			}));
 
 			this.disposables.add(addDisposableListener(btn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -262,6 +278,18 @@ export class IssueReporterOverlay {
 				}
 			}));
 		}
+
+		// Number key shortcuts for category selection (1, 2, 3)
+		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (this.currentStep !== WizardStep.Categorize) {
+				return;
+			}
+			const index = ['1', '2', '3'].indexOf(e.key);
+			if (index >= 0 && index < types.length) {
+				e.preventDefault();
+				selectType(types[index].type);
+			}
+		}));
 	}
 
 	// ── Step 3: Screenshots ──
@@ -389,7 +417,7 @@ export class IssueReporterOverlay {
 
 		// Update toggle icon and label
 		const icon = this.collapseToggle.querySelector('.wizard-collapse-icon');
-		const label = this.collapseToggle.querySelector('span:not(.wizard-collapse-icon)');
+		const label = this.collapseToggle.querySelector('.wizard-collapse-label');
 		if (icon) {
 			icon.textContent = '';
 			icon.appendChild(renderIcon(this.collapsed ? Codicon.chevronDown : Codicon.chevronUp));
@@ -411,6 +439,9 @@ export class IssueReporterOverlay {
 			this.resizeSash.style.display = '';
 		}
 		this.layoutService.layout();
+
+		// Keep focus on the toggle so shortcuts continue to work
+		this.collapseToggle.focus();
 	}
 
 	private updateToolbarActionsSlot(): void {
@@ -456,7 +487,7 @@ export class IssueReporterOverlay {
 		// Collapse toggle
 		this.disposables.add(addDisposableListener(this.collapseToggle, EventType.CLICK, () => this.toggleCollapsed()));
 		this.disposables.add(addDisposableListener(this.collapseToggle, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
+			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
 				e.preventDefault();
 				this.toggleCollapsed();
 			}
@@ -465,7 +496,7 @@ export class IssueReporterOverlay {
 		// Discard
 		this.disposables.add(addDisposableListener(this.discardButton, EventType.CLICK, () => this.close()));
 		this.disposables.add(addDisposableListener(this.discardButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
+			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
 				e.preventDefault();
 				this.close();
 			}
@@ -474,7 +505,7 @@ export class IssueReporterOverlay {
 		// Back
 		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => this.goBack()));
 		this.disposables.add(addDisposableListener(this.backButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
+			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
 				e.preventDefault();
 				this.goBack();
 			}
@@ -483,18 +514,40 @@ export class IssueReporterOverlay {
 		// Next
 		this.disposables.add(addDisposableListener(this.nextButton, EventType.CLICK, () => this.goNext()));
 		this.disposables.add(addDisposableListener(this.nextButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
+			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
 				e.preventDefault();
 				this.goNext();
 			}
 		}));
 
-		// Escape to close
+		// Ctrl+Enter to advance / submit
+		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+				e.preventDefault();
+				e.stopPropagation();
+				this.goNext();
+			}
+		}));
+
+		// Escape to go back, or close on first step
 		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
 				e.preventDefault();
 				e.stopPropagation();
-				this.close();
+				if (this.currentStep > WizardStep.Describe) {
+					this.goBack();
+				} else {
+					this.close();
+				}
+			}
+		}));
+
+		// Ctrl+M to toggle minimize
+		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'm' && (e.ctrlKey || e.metaKey)) {
+				e.preventDefault();
+				e.stopPropagation();
+				this.toggleCollapsed();
 			}
 		}));
 	}
@@ -541,12 +594,18 @@ export class IssueReporterOverlay {
 	}
 
 	private goBack(): void {
+		if (this.collapsed) {
+			return;
+		}
 		if (this.currentStep > WizardStep.Describe) {
 			this.setStep(this.currentStep - 1);
 		}
 	}
 
 	private goNext(): void {
+		if (this.collapsed) {
+			return;
+		}
 		if (this.currentStep === WizardStep.Describe) {
 			const desc = this.descriptionTextarea.value.trim();
 			if (!desc) {
@@ -556,6 +615,11 @@ export class IssueReporterOverlay {
 			}
 			this.descriptionTextarea.classList.remove('invalid-input');
 			this.model.update({ issueDescription: desc });
+		}
+
+		if (this.currentStep === WizardStep.Categorize && this.selectedIssueType === undefined) {
+			this.typeButtonGroup.classList.add('invalid-input');
+			return;
 		}
 
 		if (this.currentStep === WizardStep.Review) {
@@ -595,6 +659,9 @@ export class IssueReporterOverlay {
 		} else if (step === WizardStep.Review) {
 			this.updateReviewDetails();
 			this.titleInput.focus();
+		} else {
+			// Categorize / Screenshots — focus the panel so keyboard shortcuts work
+			this.wizardPanel.focus();
 		}
 	}
 
@@ -629,6 +696,7 @@ export class IssueReporterOverlay {
 		this.backButton.style.display = this.currentStep === WizardStep.Describe ? 'none' : '';
 
 		// Next button label
+		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
 		const nextLabel = this.nextButton.querySelector('.wizard-next-label');
 		const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
 		if (this.currentStep === WizardStep.Review) {
@@ -640,6 +708,7 @@ export class IssueReporterOverlay {
 			}
 			this.nextButton.classList.remove('submit');
 			this.nextButton.classList.add('primary');
+			this.nextButton.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
 		} else if (this.currentStep === WizardStep.Screenshots) {
 			if (nextLabel) {
 				nextLabel.textContent = this.screenshots.length === 0
@@ -647,9 +716,10 @@ export class IssueReporterOverlay {
 					: localize('next', "Next");
 			}
 			if (nextArrow) {
-				nextArrow.textContent = ' \u00BB'; // �>>
+				nextArrow.textContent = ' \u00BB'; // »
 			}
 			this.nextButton.classList.remove('submit');
+			this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		} else {
 			if (nextLabel) {
 				nextLabel.textContent = localize('next', "Next");
@@ -658,6 +728,7 @@ export class IssueReporterOverlay {
 				nextArrow.textContent = ' \u2192'; // →
 			}
 			this.nextButton.classList.remove('submit');
+			this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		}
 
 		// Show/hide toolbar media controls
@@ -690,7 +761,7 @@ export class IssueReporterOverlay {
 			[IssueType.FeatureRequest]: localize('featureRequest', "Feature Request"),
 			[IssueType.PerformanceIssue]: localize('performanceIssue', "Performance Issue"),
 		};
-		catValue.textContent = typeLabels[this.selectedIssueType] ?? localize('unknown', "Unknown");
+		catValue.textContent = (this.selectedIssueType !== undefined ? typeLabels[this.selectedIssueType] : undefined) ?? localize('unknown', "Unknown");
 
 		// Attachments row with full-size clickable thumbnails
 		const totalAttachments = this.screenshots.length + this.recordings.length;
@@ -811,7 +882,7 @@ export class IssueReporterOverlay {
 		}
 
 		const description = this.descriptionTextarea.value.trim();
-		this.model.update({ issueDescription: description, issueTitle: title, issueType: this.selectedIssueType });
+		this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
 
 		const body = this.buildIssueBody();
 		this._onDidSubmit.fire({ title, body });
@@ -868,7 +939,12 @@ export class IssueReporterOverlay {
 		this.wizardPanel.style.height = '';
 		this.wizardPanel.style.maxHeight = '';
 
-		const onTransitionEnd = () => {
+		let cleaned = false;
+		const cleanup = () => {
+			if (cleaned) {
+				return;
+			}
+			cleaned = true;
 			this.wizardPanel.removeEventListener('transitionend', onTransitionEnd);
 			this.wizardPanel.remove();
 			this.resizeSash.remove();
@@ -879,7 +955,14 @@ export class IssueReporterOverlay {
 			this.animating = false;
 			this._onDidClose.fire();
 		};
+		const onTransitionEnd = () => cleanup();
 		this.wizardPanel.addEventListener('transitionend', onTransitionEnd);
+
+		// Safety net: if transitionend never fires (e.g. transition from max-height:none),
+		// force cleanup after the expected transition duration + buffer.
+		const targetWindow = getWindow(this.wizardPanel);
+		targetWindow.setTimeout(cleanup, 500);
+
 		this.layoutService.layout();
 	}
 

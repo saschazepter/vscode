@@ -310,6 +310,39 @@ body.wizard-resizing {
 	user-select: none;
 }
 
+/* Shortcut badge — shared style for keyboard shortcut indicators */
+.wizard-shortcut-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 4px;
+	min-width: 18px;
+	height: 18px;
+	border-radius: 4px;
+	border: 1px solid var(--vscode-input-border, #555);
+	font-size: 11px;
+	font-family: var(--vscode-editor-font-family, monospace);
+	color: var(--vscode-descriptionForeground, #888);
+	opacity: 0.7;
+	margin-left: 2px;
+}
+
+.wizard-nav-btn.primary .wizard-shortcut-badge {
+	border-color: rgba(255, 255, 255, 0.3);
+	color: var(--vscode-button-foreground, #fff);
+	opacity: 0.7;
+}
+
+.wizard-type-btn.selected .wizard-shortcut-badge {
+	border-color: rgba(255, 255, 255, 0.4);
+	color: var(--vscode-button-foreground, #fff);
+	opacity: 0.8;
+}
+
+.wizard-type-buttons.invalid-input .wizard-type-btn {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
 .wizard-type-btn:hover {
 	border-color: var(--vscode-focusBorder, #007acc);
 	background: rgba(255, 255, 255, 0.04);

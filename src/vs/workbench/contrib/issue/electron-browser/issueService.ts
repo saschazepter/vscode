@@ -33,11 +33,33 @@ export class NativeIssueService implements IWorkbenchIssueService {
 	) { }
 
 	async openReporter(dataOverrides: Partial<IssueReporterData> = {}): Promise<void> {
-		const extensionData: IssueReporterExtensionData[] = [];
+		// Show the wizard UI immediately with minimal data — don't block on async operations
+		const theme = this.themeService.getColorTheme();
+		const issueReporterData: IssueReporterData = Object.assign({
+			styles: getIssueReporterStyles(theme),
+			zoomLevel: getZoomLevel(mainWindow),
+			enabledExtensions: [],
+			restrictedMode: !this.workspaceTrustManagementService.isWorkspaceTrusted(),
+			isUnsupported: false,
+			githubAccessToken: '',
+		}, dataOverrides);
+
+		// Open the UI right away — extensions, experiments, and token load in background
+		const openPromise = this.issueFormService.openReporter(issueReporterData);
+
+		// Fire-and-forget: populate extension data, experiments, token, and integrity in background.
+		// These are only needed at submit time, so no need to block the UI.
+		this.populateReporterDataAsync(issueReporterData, dataOverrides);
+
+		return openPromise;
+	}
+
+	private async populateReporterDataAsync(data: IssueReporterData, dataOverrides: Partial<IssueReporterData>): Promise<void> {
+		// Extensions
 		try {
 			const extensions = await this.extensionManagementService.getInstalled();
 			const enabledExtensions = extensions.filter(extension => this.extensionEnablementService.isEnabled(extension) || (dataOverrides.extensionId && extension.identifier.id === dataOverrides.extensionId));
-			extensionData.push(...enabledExtensions.map((extension): IssueReporterExtensionData => {
+			data.enabledExtensions = enabledExtensions.map((extension): IssueReporterExtensionData => {
 				const { manifest } = extension;
 				const manifestKeys = manifest.contributes ? Object.keys(manifest.contributes) : [];
 				const isTheme = !manifest.main && !manifest.browser && manifestKeys.length === 1 && manifestKeys[0] === 'themes';
@@ -56,66 +78,34 @@ export class NativeIssueService implements IWorkbenchIssueService {
 					isBuiltin,
 					extensionData: 'Extensions data loading',
 				};
-			}));
-		} catch (e) {
-			extensionData.push({
-				name: 'Workbench Issue Service',
-				publisher: 'Unknown',
-				version: '0.0.0',
-				repositoryUrl: undefined,
-				bugsUrl: undefined,
-				extensionData: 'Extensions data loading',
-				displayName: `Extensions not loaded: ${e}`,
-				id: 'workbench.issue',
-				isTheme: false,
-				isBuiltin: true
 			});
+		} catch (e) {
+			// Ignore — extensions will be empty
 		}
-		const experiments = await this.experimentService.getCurrentExperiments();
 
-		let githubAccessToken = '';
+		// Experiments
+		try {
+			const experiments = await this.experimentService.getCurrentExperiments();
+			data.experiments = experiments?.join('\n');
+		} catch (e) {
+			// Ignore
+		}
+
+		// GitHub access token — only fetch existing sessions, never prompt
 		try {
 			const githubSessions = await this.authenticationService.getSessions('github');
-			// Try to find a session with gist scope first (for uploading attachments)
-			const gistSession = githubSessions.find(session => session.scopes.includes('gist'));
 			const repoSession = githubSessions.find(session => session.scopes.includes('repo'));
-			githubAccessToken = gistSession?.accessToken ?? repoSession?.accessToken ?? '';
-
-			// If no gist-scoped session exists, request one
-			if (!gistSession && githubSessions.length > 0) {
-				try {
-					const newSession = await this.authenticationService.createSession('github', ['repo', 'gist']);
-					if (newSession) {
-						githubAccessToken = newSession.accessToken;
-					}
-				} catch {
-					// User may have declined the scope request
-				}
-			}
+			data.githubAccessToken = repoSession?.accessToken ?? '';
 		} catch (e) {
 			// Ignore
 		}
 
-		// air on the side of caution and have false be the default
-		let isUnsupported = false;
+		// Integrity check
 		try {
-			isUnsupported = !(await this.integrityService.isPure()).isPure;
+			data.isUnsupported = !(await this.integrityService.isPure()).isPure;
 		} catch (e) {
 			// Ignore
 		}
-
-		const theme = this.themeService.getColorTheme();
-		const issueReporterData: IssueReporterData = Object.assign({
-			styles: getIssueReporterStyles(theme),
-			zoomLevel: getZoomLevel(mainWindow),
-			enabledExtensions: extensionData,
-			experiments: experiments?.join('\n'),
-			restrictedMode: !this.workspaceTrustManagementService.isWorkspaceTrusted(),
-			isUnsupported,
-			githubAccessToken
-		}, dataOverrides);
-
-		return this.issueFormService.openReporter(issueReporterData);
 	}
 
 }
