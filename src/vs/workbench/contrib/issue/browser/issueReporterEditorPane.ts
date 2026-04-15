@@ -55,14 +55,13 @@ export class IssueReporterEditorPane extends EditorPane {
 		context: IEditorOpenContext,
 		token: CancellationToken,
 	): Promise<void> {
-		const previousInput = this.input;
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.container) {
 			return;
 		}
 
-		// If switching back to the same input, just re-show — don't recreate
-		if (previousInput === input && this.wizard) {
+		// If the wizard is already built and its DOM is still attached, skip recreation
+		if (this.wizard && this.container.contains(this.wizard.getPanel())) {
 			return;
 		}
 

@@ -1248,6 +1248,10 @@ export class IssueReporterOverlay {
 		this.wizardPanel.focus();
 	}
 
+	getPanel(): HTMLElement {
+		return this.wizardPanel;
+	}
+
 	getWizardHeight(): number {
 		return this.wizardPanel.offsetHeight + this.resizeSash.offsetHeight;
 	}
