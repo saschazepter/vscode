@@ -57,6 +57,8 @@ export class IssueReporterOverlay {
 	readonly onDidRequestStopRecording: Event<void> = this._onDidRequestStopRecording.event;
 	private readonly _onDidRequestOpenRecording = new Emitter<string>();
 	readonly onDidRequestOpenRecording: Event<string> = this._onDidRequestOpenRecording.event;
+	private readonly _onDidRequestOpenScreenshot = new Emitter<IScreenshot>();
+	readonly onDidRequestOpenScreenshot: Event<IScreenshot> = this._onDidRequestOpenScreenshot.event;
 
 	private wizardPanel!: HTMLElement;
 	private stepContainer!: HTMLElement;
@@ -1175,7 +1177,11 @@ export class IssueReporterOverlay {
 			img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
 
 			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-				this.openAnnotationEditor(i);
+				if (this.options.embedded) {
+					this._onDidRequestOpenScreenshot.fire(screenshot);
+				} else {
+					this.openAnnotationEditor(i);
+				}
 			}));
 
 			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
@@ -1410,5 +1416,6 @@ export class IssueReporterOverlay {
 		this._onDidRequestStartRecording.dispose();
 		this._onDidRequestStopRecording.dispose();
 		this._onDidRequestOpenRecording.dispose();
+		this._onDidRequestOpenScreenshot.dispose();
 	}
 }

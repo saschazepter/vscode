@@ -208,106 +208,101 @@ export class IssueFormService implements IIssueFormService {
 
 		// Handle submit
 		this.overlayDisposables.add(this.overlay.onDidSubmit(async ({ title, body }) => {
-			const screenshots = this.overlay?.getScreenshots() ?? [];
-			const recordings = this.overlay?.getRecordings() ?? [];
-
-			// Determine the issue URL
-			let issueUrl = data.privateUri
-				? URI.revive(data.privateUri).toString()
-				: product.reportIssueUrl ?? '';
-
-			const selectedExtension = data.extensionId
-				? data.enabledExtensions.find(ext => ext.id.toLocaleLowerCase() === data.extensionId?.toLocaleLowerCase())
-				: undefined;
-
-			if (selectedExtension?.uri) {
-				issueUrl = URI.revive(selectedExtension.uri).toString();
-			}
-
-			let mediaMarkdown = '';
-			const hasAttachments = screenshots.length > 0 || recordings.length > 0;
-
-			if (hasAttachments && data.githubAccessToken) {
-				this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
-
-				// Show uploading state
-				this.overlay?.setUploading(true);
-
-				try {
-					// Resolve repo ID for the target repo
-					const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
-
-					// Collect files to upload
-					const filesToUpload: { name: string; bytes: Uint8Array; contentType: string }[] = [];
-					for (let i = 0; i < screenshots.length; i++) {
-						const bytes = this.dataUrlToBytes(screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl);
-						if (bytes) {
-							filesToUpload.push({ name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
-						}
-					}
-					for (const rec of recordings) {
-						const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
-						const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
-						const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-						filesToUpload.push({ name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
-					}
-
-					// Upload one file at a time with per-attachment progress
-					if (filesToUpload.length > 0) {
-						// Mark all as pending
-						for (let i = 0; i < filesToUpload.length; i++) {
-							this.overlay?.setAttachmentUploadState(i, 'pending');
-						}
-
-						const uploadResults: import('./githubUploadService.js').IGitHubUploadResult[] = [];
-						for (let i = 0; i < filesToUpload.length; i++) {
-							this.overlay?.setAttachmentUploadState(i, 'uploading');
-							const file = filesToUpload[i];
-							const result = await this.githubUploadService.uploadViaMobileApi(
-								data.githubAccessToken, repoId, [file]
-							);
-							uploadResults.push(...result);
-							this.overlay?.setAttachmentUploadState(i, 'done');
-						}
-
-						mediaMarkdown = '\n\n### Attachments\n\n';
-						for (const r of uploadResults) {
-							mediaMarkdown += r.contentType.startsWith('video/')
-								? `${r.assetUrl}\n\n`
-								: `![${r.fileName}](${r.assetUrl})\n\n`;
-						}
-						this.logService.info(`[IssueFormService] Upload done: ${uploadResults.length} files`);
-					}
-				} catch (err) {
-					this.logService.error('[IssueFormService] Upload failed:', err);
-					mediaMarkdown = '\n\n### Attachments\n\n> Upload failed. Please drag and drop attachments manually.\n\n';
-				} finally {
-					this.overlay?.setUploading(false);
-				}
-			}
-
-			const issueBody = body + mediaMarkdown;
-			this.logService.info(`[IssueFormService] Opening issue preview: bodyLen=${issueBody.length}`);
-
-			// Open issue creation URL
-			{
-				let url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(issueBody)}`;
-
-				if (url.length > 7500) {
-					const shouldWrite = await this.showClipboardDialog();
-					if (!shouldWrite) {
-						return;
-					}
-					url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
-				}
-
-				await this.openerService.open(URI.parse(url));
-			}
-
+			await this.submitIssue(this.overlay!, data, title, body);
 			this.closeOverlay();
 		}));
 
 		this.overlay.show();
+	}
+
+	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<void> {
+		const screenshots = wizard.getScreenshots();
+		const recordings = wizard.getRecordings();
+
+		// Determine the issue URL
+		let issueUrl = data.privateUri
+			? URI.revive(data.privateUri).toString()
+			: product.reportIssueUrl ?? '';
+
+		const selectedExtension = data.extensionId
+			? data.enabledExtensions.find(ext => ext.id.toLocaleLowerCase() === data.extensionId?.toLocaleLowerCase())
+			: undefined;
+
+		if (selectedExtension?.uri) {
+			issueUrl = URI.revive(selectedExtension.uri).toString();
+		}
+
+		let mediaMarkdown = '';
+		const hasAttachments = screenshots.length > 0 || recordings.length > 0;
+
+		if (hasAttachments && data.githubAccessToken) {
+			this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+
+			wizard.setUploading(true);
+
+			try {
+				const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
+
+				const filesToUpload: { name: string; bytes: Uint8Array; contentType: string }[] = [];
+				for (let i = 0; i < screenshots.length; i++) {
+					const bytes = this.dataUrlToBytes(screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl);
+					if (bytes) {
+						filesToUpload.push({ name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
+					}
+				}
+				for (const rec of recordings) {
+					const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
+					const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
+					const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
+					filesToUpload.push({ name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
+				}
+
+				if (filesToUpload.length > 0) {
+					for (let i = 0; i < filesToUpload.length; i++) {
+						wizard.setAttachmentUploadState(i, 'pending');
+					}
+
+					const uploadResults: import('./githubUploadService.js').IGitHubUploadResult[] = [];
+					for (let i = 0; i < filesToUpload.length; i++) {
+						wizard.setAttachmentUploadState(i, 'uploading');
+						const file = filesToUpload[i];
+						const result = await this.githubUploadService.uploadViaMobileApi(
+							data.githubAccessToken, repoId, [file]
+						);
+						uploadResults.push(...result);
+						wizard.setAttachmentUploadState(i, 'done');
+					}
+
+					mediaMarkdown = '\n\n### Attachments\n\n';
+					for (const r of uploadResults) {
+						mediaMarkdown += r.contentType.startsWith('video/')
+							? `${r.assetUrl}\n\n`
+							: `![${r.fileName}](${r.assetUrl})\n\n`;
+					}
+					this.logService.info(`[IssueFormService] Upload done: ${uploadResults.length} files`);
+				}
+			} catch (err) {
+				this.logService.error('[IssueFormService] Upload failed:', err);
+				mediaMarkdown = '\n\n### Attachments\n\n> Upload failed. Please drag and drop attachments manually.\n\n';
+			} finally {
+				wizard.setUploading(false);
+			}
+		}
+
+		const issueBody = body + mediaMarkdown;
+		this.logService.info(`[IssueFormService] Opening issue preview: bodyLen=${issueBody.length}`);
+
+		let url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(issueBody)}`;
+
+		if (url.length > 7500) {
+			const shouldWrite = await this.showClipboardDialog();
+			if (!shouldWrite) {
+				return;
+			}
+			url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
+		}
+
+		await this.openerService.open(URI.parse(url));
 	}
 
 	private dataUrlToBytes(dataUrl: string): Uint8Array | undefined {

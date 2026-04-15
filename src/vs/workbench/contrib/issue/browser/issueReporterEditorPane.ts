@@ -18,6 +18,7 @@ import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
@@ -25,6 +26,8 @@ import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
+import { IIssueFormService } from '../common/issue.js';
+import { IssueFormService } from './issueFormService.js';
 
 /**
  * Editor pane that hosts the issue reporter wizard inside an editor tab.
@@ -49,6 +52,8 @@ export class IssueReporterEditorPane extends EditorPane {
 		@ILogService private readonly logService: ILogService,
 		@IFileService private readonly fileService: IFileService,
 		@IEnvironmentService private readonly environmentService: IEnvironmentService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IIssueFormService private readonly issueFormService: IIssueFormService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -178,6 +183,42 @@ export class IssueReporterEditorPane extends EditorPane {
 				this.wizard?.setRecordingState(RecordingState.Idle);
 			}
 		}));
+
+		// Wire open screenshot — save to temp file and open in editor
+		this.inputDisposables.add(this.wizard.onDidRequestOpenScreenshot(async (screenshot) => {
+			try {
+				const dataUrl = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
+				const commaIndex = dataUrl.indexOf(',');
+				if (commaIndex === -1) {
+					return;
+				}
+				const base64 = dataUrl.substring(commaIndex + 1);
+				const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+				const fileName = `screenshot-${Date.now()}.jpg`;
+				const target = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings', fileName);
+				await this.fileService.writeFile(target, VSBuffer.wrap(bytes));
+				await this.editorService.openEditor({ resource: target });
+			} catch (err) {
+				this.logService.error('[IssueReporterEditorPane] Open screenshot failed:', err);
+			}
+		}));
+
+		// Wire open recording — open file in editor
+		this.inputDisposables.add(this.wizard.onDidRequestOpenRecording(async (filePath) => {
+			try {
+				await this.editorService.openEditor({ resource: URI.file(filePath) });
+			} catch (err) {
+				this.logService.error('[IssueReporterEditorPane] Open recording failed:', err);
+			}
+		}));
+
+		// Wire submit — delegate to form service for upload + open URL
+		this.inputDisposables.add(this.wizard.onDidSubmit(async ({ title, body }) => {
+			if (!this.wizard) {
+				return;
+			}
+			await (this.issueFormService as IssueFormService).submitIssue(this.wizard, data, title, body);
+		}));
 	}
 
 	override clearInput(): void {
@@ -212,10 +253,59 @@ export class IssueReporterEditorPane extends EditorPane {
 			await this.fileService.writeFile(target, VSBuffer.wrap(new Uint8Array(arrayBuffer)));
 			this.logService.info(`[IssueReporterEditorPane] Recording saved to ${target.toString()}`);
 
-			this.wizard?.addRecording(target.fsPath, data.durationMs);
+			const thumbnailDataUrl = await this.generateVideoThumbnail(data.blob);
+			this.wizard?.addRecording(target.fsPath, data.durationMs, thumbnailDataUrl);
 		} catch (err) {
 			this.logService.error('[IssueReporterEditorPane] Failed to save recording:', err);
 		}
+	}
+
+	private generateVideoThumbnail(blob: Blob): Promise<string | undefined> {
+		return new Promise(resolve => {
+			const timeout = setTimeout(() => { cleanup(); resolve(undefined); }, 5000);
+			let cleaned = false;
+			const cleanup = () => {
+				if (cleaned) { return; }
+				cleaned = true;
+				clearTimeout(timeout);
+				URL.revokeObjectURL(url);
+				video.remove();
+			};
+
+			const url = URL.createObjectURL(blob);
+			const video = document.createElement('video');
+			video.muted = true;
+			video.preload = 'auto';
+			video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+			document.body.appendChild(video);
+			video.src = url;
+
+			video.addEventListener('loadeddata', () => {
+				video.currentTime = Math.min(0.5, video.duration / 2);
+			}, { once: true });
+
+			video.addEventListener('seeked', () => {
+				try {
+					const canvas = document.createElement('canvas');
+					canvas.width = video.videoWidth;
+					canvas.height = video.videoHeight;
+					const ctx = canvas.getContext('2d');
+					if (ctx) {
+						ctx.drawImage(video, 0, 0);
+						cleanup();
+						resolve(canvas.toDataURL('image/jpeg', 0.7));
+					} else {
+						cleanup();
+						resolve(undefined);
+					}
+				} catch {
+					cleanup();
+					resolve(undefined);
+				}
+			}, { once: true });
+
+			video.addEventListener('error', () => { cleanup(); resolve(undefined); }, { once: true });
+		});
 	}
 
 	override layout(dimension: Dimension): void {
