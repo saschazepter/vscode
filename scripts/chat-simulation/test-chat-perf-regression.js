@@ -244,7 +244,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			await extHostInspector.send('Profiler.enable');
 			await extHostInspector.send('Profiler.start');
 			extHostHeapBefore = await extHostInspector.send('Runtime.getHeapUsage');
-			if (verbose) {
+			if (verbose && extHostHeapBefore) {
 				console.log(`  [ext-host] Heap before: ${Math.round(extHostHeapBefore.usedSize / 1024 / 1024)}MB`);
 			}
 		} catch (err) {
@@ -417,11 +417,6 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 				await window.locator(actualInputSelector).pressSequentially(userTurn.message, { delay: 0 });
 			}
 
-			// Note current response count before submitting
-			const responseCountBefore = await window.evaluate((sel) => {
-				return document.querySelectorAll(sel).length;
-			}, responseSelector);
-
 			// Submit follow-up
 			const utCompBefore = mockServer.completionCount();
 			await window.keyboard.press('Enter');
@@ -429,15 +424,25 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			// Wait for mock server to serve the response for this turn
 			try { await mockServer.waitForCompletion(utCompBefore + 1, 60_000); } catch { }
 
-			// Wait for a new response element to appear and settle
+			// Wait for the new response to finish rendering.
+			// The chat list is virtualized — old response elements are
+			// recycled out of the DOM as new ones appear, so we cannot
+			// rely on counting DOM elements. Instead, scroll to the
+			// bottom and wait for no response to be in loading state.
 			await dismissDialog();
+			await window.evaluate((chatViewSel) => {
+				const input = document.querySelector(chatViewSel + ' .interactive-input-part');
+				if (input) { input.scrollIntoView({ block: 'end' }); }
+			}, CHAT_VIEW);
+			await new Promise(r => setTimeout(r, 200));
+
 			await window.waitForFunction(
-				({ sel, prevCount }) => {
+				(sel) => {
 					const responses = document.querySelectorAll(sel);
-					if (responses.length <= prevCount) { return false; }
+					if (responses.length === 0) { return false; }
 					return !responses[responses.length - 1].classList.contains('chat-response-loading');
 				},
-				{ sel: responseSelector, prevCount: responseCountBefore },
+				responseSelector,
 				{ timeout: 30_000 },
 			);
 			responseCompleteTime = Date.now();

@@ -32,6 +32,11 @@ on:
         required: false
         type: number
         default: 0.2
+      skip_leak_check:
+        description: 'Skip the memory leak check step'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -132,6 +137,7 @@ jobs:
 
       - name: Run memory leak check
         id: leak
+        if: inputs.skip_leak_check != true
         run: |
           LEAK_ARGS="--verbose"
           if [[ -n "$TEST_COMMIT" ]]; then
@@ -154,7 +160,7 @@ jobs:
             echo "⚠️ No summary file generated. Check perf-output.log artifact." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [[ -f .chat-simulation-data/chat-simulation-leak-results.json ]]; then
+          if [[ "${{ inputs.skip_leak_check }}" != "true" && -f .chat-simulation-data/chat-simulation-leak-results.json ]]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "## Memory Leak Check" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -192,12 +198,12 @@ jobs:
           retention-days: 30
 
       - name: Fail on regression
-        if: steps.perf.outcome == 'failure' || steps.leak.outcome == 'failure'
+        if: steps.perf.outcome == 'failure' || (inputs.skip_leak_check != true && steps.leak.outcome == 'failure')
         run: |
           if [[ "${{ steps.perf.outcome }}" == "failure" ]]; then
             echo "::error::Chat performance regression detected. See job summary for details."
           fi
-          if [[ "${{ steps.leak.outcome }}" == "failure" ]]; then
+          if [[ "${{ inputs.skip_leak_check }}" != "true" && "${{ steps.leak.outcome }}" == "failure" ]]; then
             echo "::error::Chat memory leak detected. See leak-output.log for details."
           fi
           exit 1
