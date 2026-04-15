@@ -1305,10 +1305,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				commandDetection!,
 				executionOptions.persistentSession
 			);
-			// The shell integration banner decision is deferred to after command execution
-			// completes (see below). This gives SI time to arrive — on Windows PowerShell 5.1,
-			// cold-loading PSReadLine can push `HasRichCommandDetection` past the initial wait
-			// timeout, and checking here would incorrectly show the banner.
 			this._logService.info(`RunInTerminalTool: Using \`${execution.strategy.type}\` execute strategy for command \`${command}\``);
 			store.add(execution);
 			RunInTerminalTool._activeExecutions.set(termId, execution);
