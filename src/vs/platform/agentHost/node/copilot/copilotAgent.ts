@@ -395,7 +395,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 
 		return {
-			ready: Object.values(values).every(value => value !== ''),
 			schema: { type: 'object', properties },
 			values,
 		};

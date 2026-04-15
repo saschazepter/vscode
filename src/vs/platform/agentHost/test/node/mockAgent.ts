@@ -80,7 +80,7 @@ export class MockAgent implements IAgent {
 	}
 
 	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<IResolveSessionConfigResult> {
-		return { ready: true, schema: { type: 'object', properties: {} }, values: params.config ?? {} };
+		return { schema: { type: 'object', properties: {} }, values: params.config ?? {} };
 	}
 
 	async sessionConfigCompletions(_params: IAgentSessionConfigCompletionsParams): Promise<ISessionConfigCompletionsResult> {
@@ -233,7 +233,6 @@ export class ScriptedMockAgent implements IAgent {
 		const isolation = params.config?.isolation === 'folder' || params.config?.isolation === 'worktree' ? params.config.isolation : 'worktree';
 		const branch = isolation === 'worktree' && typeof params.config?.branch === 'string' ? params.config.branch : 'main';
 		return {
-			ready: true,
 			schema: {
 				type: 'object',
 				properties: {

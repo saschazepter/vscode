@@ -2108,7 +2108,6 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			description: primaryChat.description,
 			lastTurnEnd: chatsObs.map((chats, reader) => this._latestDate(chats, c => c.lastTurnEnd.read(reader))),
 			gitHubInfo: primaryChat.gitHubInfo,
-			ready: constObservable(true),
 			chats: chatsObs,
 			mainChat,
 		};
@@ -2138,7 +2137,6 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			description: chat.description,
 			lastTurnEnd: chat.lastTurnEnd,
 			gitHubInfo: chat.gitHubInfo,
-			ready: constObservable(true),
 			chats: constObservable([mainChat]),
 			mainChat,
 		};
