@@ -15,14 +15,14 @@ import { TestInstantiationService } from '../../../../../../platform/instantiati
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
 import { AICustomizationListWidget } from '../../../browser/aiCustomization/aiCustomizationListWidget.js';
 import { extractExtensionIdFromPath, getCustomizationSecondaryText, truncateToFirstLine } from '../../../browser/aiCustomization/aiCustomizationListWidgetUtils.js';
-import { AICustomizationManagementSection, IAICustomizationWorkspaceService } from '../../../common/aiCustomizationWorkspaceService.js';
-import { ICustomizationHarnessService, ICustomizationItem, IHarnessDescriptor, IStorageSourceFilter } from '../../../common/customizationHarnessService.js';
+import { AICustomizationManagementSection, IAICustomizationWorkspaceService, IStorageSourceFilter } from '../../../common/aiCustomizationWorkspaceService.js';
+import { ICustomizationHarnessService, ICustomizationItem, IHarnessDescriptor } from '../../../common/customizationHarnessService.js';
 import { ContributionEnablementState } from '../../../common/enablement.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { ResourceMap } from '../../../../../../base/common/map.js';
+import { ResourceSet } from '../../../../../../base/common/map.js';
 
 suite('aiCustomizationListWidget', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -136,6 +136,7 @@ suite('aiCustomizationListWidget', () => {
 		let disposables: DisposableStore;
 		let instaService: TestInstantiationService;
 		let fetchDeferred: DeferredPromise<ICustomizationItem[] | undefined>;
+		let fetchStarted: DeferredPromise<void>;
 
 		function createMockHarnessDescriptor(): IHarnessDescriptor {
 			return {
@@ -146,6 +147,7 @@ suite('aiCustomizationListWidget', () => {
 				itemProvider: {
 					onDidChange: Event.None,
 					provideChatSessionCustomizations: (_token: CancellationToken) => {
+						fetchStarted.complete();
 						return fetchDeferred.p;
 					},
 				},
@@ -155,6 +157,7 @@ suite('aiCustomizationListWidget', () => {
 		setup(() => {
 			disposables = new DisposableStore();
 			fetchDeferred = new DeferredPromise();
+			fetchStarted = new DeferredPromise();
 			const descriptor = createMockHarnessDescriptor();
 
 			instaService = workbenchInstantiationService({}, disposables);
@@ -170,7 +173,7 @@ suite('aiCustomizationListWidget', () => {
 				findAgentSkills: async () => [],
 				getHooks: async () => undefined,
 				getInstructionFiles: async () => [],
-				getDisabledPromptFiles: () => new ResourceMap(),
+				getDisabledPromptFiles: () => new ResourceSet(),
 			});
 
 			instaService.stub(IAICustomizationWorkspaceService, {
@@ -229,12 +232,13 @@ suite('aiCustomizationListWidget', () => {
 			// which blocks on our deferred
 			const refreshPromise = widget.refresh();
 
-			// Dispose before async completes
+			// Wait until the provider is actually called before disposing
+			await fetchStarted.p;
 			widget.dispose();
 
 			// Resolve the deferred — this should not cause an error
 			// because the disposal guard prevents updateAddButton() from running
-			await fetchDeferred.complete(undefined);
+			fetchDeferred.complete(undefined);
 			await refreshPromise;
 		});
 
@@ -242,9 +246,11 @@ suite('aiCustomizationListWidget', () => {
 			const widget = disposables.add(instaService.createInstance(AICustomizationListWidget));
 
 			const setSectionPromise = widget.setSection(AICustomizationManagementSection.Instructions);
+
+			await fetchStarted.p;
 			widget.dispose();
 
-			await fetchDeferred.complete(undefined);
+			fetchDeferred.complete(undefined);
 			await setSectionPromise;
 		});
 
@@ -252,9 +258,11 @@ suite('aiCustomizationListWidget', () => {
 			const widget = disposables.add(instaService.createInstance(AICustomizationListWidget));
 
 			const reportPromise = widget.generateDebugReport();
+
+			await fetchStarted.p;
 			widget.dispose();
 
-			await fetchDeferred.complete(undefined);
+			fetchDeferred.complete(undefined);
 			const result = await reportPromise;
 			assert.strictEqual(result, '');
 		});
