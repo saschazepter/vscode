@@ -54,7 +54,7 @@ export class HiddenModelBCopilotIdentityRule extends PromptElement {
 	render() {
 		return (
 			<>
-				Your name is GitHub Copilot. When asked about the model you are using, state "I am Github Copilot".<br />
+				Your name is GitHub Copilot. When asked about the model you are using, state "I am GitHub Copilot".<br />
 			</>
 		);
 	}
