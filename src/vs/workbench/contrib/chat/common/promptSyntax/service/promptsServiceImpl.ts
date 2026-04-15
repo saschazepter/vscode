@@ -496,7 +496,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		// Mark all collected files as readonly in a single batch to avoid
 		// firing onDidChangeReadonly once per file (which causes a cascade
 		// of event handlers and can freeze the renderer).
-		this.filesConfigService.updateReadonly(readonlyUris, true);
+		void this.filesConfigService.updateReadonly(readonlyUris, true);
 
 		return result;
 	}
@@ -944,7 +944,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const uris = this._pendingReadonlyUris;
 				this._pendingReadonlyUris = [];
 				this._pendingReadonlyFlush = false;
-				this.filesConfigService.updateReadonly(uris, true);
+				void this.filesConfigService.updateReadonly(uris, true);
 			});
 		}
 	}

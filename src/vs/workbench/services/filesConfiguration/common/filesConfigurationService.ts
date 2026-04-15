@@ -103,7 +103,8 @@ export interface IFilesConfigurationService {
 
 	isReadonly(resource: URI, stat?: IBaseFileStat): boolean | IMarkdownString;
 
-	updateReadonly(resource: URI | URI[], readonly: true | false | 'toggle' | 'reset'): Promise<void>;
+	updateReadonly(resource: URI, readonly: true | false | 'toggle' | 'reset'): Promise<void>;
+	updateReadonly(resource: URI[], readonly: true | false | 'reset'): Promise<void>;
 
 	//#endregion
 
