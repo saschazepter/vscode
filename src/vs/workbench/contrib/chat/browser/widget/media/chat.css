@@ -2626,6 +2626,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		white-space: normal;
 		display: flex;
 		align-items: baseline;
+		gap: 0.3em;
 
 		& > p {
 			color: var(--vscode-descriptionForeground);

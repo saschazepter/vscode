@@ -1375,7 +1375,12 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 	}
 
 	setUsage(usage: IChatUsage): void {
-		this._usageObs.set(usage, undefined);
+		const prev = this._usageObs.get();
+		this._usageObs.set({
+			...usage,
+			promptTokens: (prev?.promptTokens ?? 0) + usage.promptTokens,
+			completionTokens: (prev?.completionTokens ?? 0) + usage.completionTokens,
+		}, undefined);
 		this._onDidChange.fire(defaultChatResponseModelChangeReason);
 	}
 

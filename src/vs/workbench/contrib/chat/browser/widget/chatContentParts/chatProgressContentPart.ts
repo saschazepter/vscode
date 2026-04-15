@@ -255,7 +255,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		if (typeof tokens === 'number') {
 			this.statsElement.textContent = localize(
 				'workedForTokensSuffix',
-				" \u00b7 {0} tokens",
+				"\u00b7 {0} tokens",
 				formatTokenCount(tokens)
 			);
 		}
@@ -281,10 +281,10 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 			this.labelElement.textContent = this.label;
 			if (typeof tokens === 'number') {
 				const tokenStr = formatTokenCount(tokens);
-				this.statsElement.textContent = ` (${timeStr} \u00b7 ${tokenStr} tokens)`;
+				this.statsElement.textContent = `(${timeStr} \u00b7 ${tokenStr} tokens)`;
 				lastTokenText = tokenStr;
 			} else {
-				this.statsElement.textContent = ` (${timeStr})`;
+				this.statsElement.textContent = `(${timeStr})`;
 			}
 		};
 
