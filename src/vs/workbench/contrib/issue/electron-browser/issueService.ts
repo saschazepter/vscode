@@ -5,6 +5,7 @@
 
 import { getZoomLevel } from '../../../../base/browser/browser.js';
 import { mainWindow } from '../../../../base/browser/window.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IExtensionManagementService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { ExtensionType } from '../../../../platform/extensions/common/extensions.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
@@ -30,10 +31,22 @@ export class NativeIssueService implements IWorkbenchIssueService {
 		@IWorkbenchAssignmentService private readonly experimentService: IWorkbenchAssignmentService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@IIntegrityService private readonly integrityService: IIntegrityService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) { }
 
 	async openReporter(dataOverrides: Partial<IssueReporterData> = {}): Promise<void> {
-		// Show the wizard UI immediately with minimal data — don't block on async operations
+		const useWizard = this.configurationService.getValue<boolean>('issueReporter.experimental.wizardReporter');
+
+		if (useWizard) {
+			// New wizard: show UI immediately, load data in background
+			return this.openWizardReporter(dataOverrides);
+		} else {
+			// Old reporter: collect all data first, then open
+			return this.openLegacyReporter(dataOverrides);
+		}
+	}
+
+	private async openWizardReporter(dataOverrides: Partial<IssueReporterData>): Promise<void> {
 		const theme = this.themeService.getColorTheme();
 		const issueReporterData: IssueReporterData = Object.assign({
 			styles: getIssueReporterStyles(theme),
@@ -44,14 +57,70 @@ export class NativeIssueService implements IWorkbenchIssueService {
 			githubAccessToken: '',
 		}, dataOverrides);
 
-		// Open the UI right away — extensions, experiments, and token load in background
 		const openPromise = this.issueFormService.openReporter(issueReporterData);
-
-		// Fire-and-forget: populate extension data, experiments, token, and integrity in background.
-		// These are only needed at submit time, so no need to block the UI.
 		this.populateReporterDataAsync(issueReporterData, dataOverrides);
-
 		return openPromise;
+	}
+
+	private async openLegacyReporter(dataOverrides: Partial<IssueReporterData>): Promise<void> {
+		const extensionData: IssueReporterExtensionData[] = [];
+		try {
+			const extensions = await this.extensionManagementService.getInstalled();
+			const enabledExtensions = extensions.filter(extension => this.extensionEnablementService.isEnabled(extension) || (dataOverrides.extensionId && extension.identifier.id === dataOverrides.extensionId));
+			extensionData.push(...enabledExtensions.map((extension): IssueReporterExtensionData => {
+				const { manifest } = extension;
+				const manifestKeys = manifest.contributes ? Object.keys(manifest.contributes) : [];
+				const isTheme = !manifest.main && !manifest.browser && manifestKeys.length === 1 && manifestKeys[0] === 'themes';
+				const isBuiltin = extension.type === ExtensionType.System;
+				return {
+					name: manifest.name,
+					publisher: manifest.publisher,
+					version: manifest.version,
+					repositoryUrl: manifest.repository && manifest.repository.url,
+					bugsUrl: manifest.bugs && manifest.bugs.url,
+					displayName: manifest.displayName,
+					id: extension.identifier.id,
+					data: dataOverrides.data,
+					uri: dataOverrides.uri,
+					isTheme,
+					isBuiltin,
+					extensionData: 'Extensions data loading',
+				};
+			}));
+		} catch (e) {
+			// Ignore
+		}
+
+		const experiments = await this.experimentService.getCurrentExperiments();
+
+		let githubAccessToken = '';
+		try {
+			const githubSessions = await this.authenticationService.getSessions('github');
+			const repoSession = githubSessions.find(session => session.scopes.includes('repo'));
+			githubAccessToken = repoSession?.accessToken ?? '';
+		} catch (e) {
+			// Ignore
+		}
+
+		let isUnsupported = false;
+		try {
+			isUnsupported = !(await this.integrityService.isPure()).isPure;
+		} catch (e) {
+			// Ignore
+		}
+
+		const theme = this.themeService.getColorTheme();
+		const issueReporterData: IssueReporterData = Object.assign({
+			styles: getIssueReporterStyles(theme),
+			zoomLevel: getZoomLevel(mainWindow),
+			enabledExtensions: extensionData,
+			experiments: experiments?.join('\n'),
+			restrictedMode: !this.workspaceTrustManagementService.isWorkspaceTrusted(),
+			isUnsupported,
+			githubAccessToken,
+		}, dataOverrides);
+
+		return this.issueFormService.openReporter(issueReporterData);
 	}
 
 	private async populateReporterDataAsync(data: IssueReporterData, dataOverrides: Partial<IssueReporterData>): Promise<void> {

@@ -83,6 +83,12 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
+		const useWizard = this.configurationService.getValue<boolean>('issueReporter.experimental.wizardReporter');
+		if (!useWizard) {
+			this.openAuxIssueReporterLegacy(data);
+			return;
+		}
+
 		const displayMode = this.configurationService.getValue<string>('issueReporter.experimental.displayMode');
 		if (displayMode === 'tabWithFloatingBar') {
 			this.openEditorTabReporter(data);

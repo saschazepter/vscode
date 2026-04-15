@@ -48,7 +48,7 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, layoutService, screenshotService, openerService, recordingService, fileDialogService, fileService, environmentService, githubUploadService, configurationService, editorService);
 	}
 
-	// override to grab platform info
+	// override to grab platform info before routing
 	override async openReporter(data: IssueReporterData): Promise<void> {
 		if (this.hasToReload(data)) {
 			return;
@@ -59,6 +59,12 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		this.arch = arch;
 		this.release = release;
 		this.type = type;
+
+		const useWizard = this.configurationService.getValue<boolean>('issueReporter.experimental.wizardReporter');
+		if (!useWizard) {
+			this.openAuxIssueReporterLegacy(data);
+			return;
+		}
 
 		const displayMode = this.configurationService.getValue<string>('issueReporter.experimental.displayMode');
 		if (displayMode === 'tabWithFloatingBar') {
