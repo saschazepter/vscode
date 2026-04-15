@@ -390,8 +390,11 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 			this.collapsedTitle.textContent = this.items.length === 1
 				? localize('confirmTool', "Confirm tool?")
 				: localize('confirmTools', "Confirm {0} tools?", this.items.length);
+			this.collapsedTitle.title = '';
 		} else {
-			this.collapsedTitle.textContent = this.getToolTitle(item) ?? '';
+			const toolTitle = this.getToolTitle(item);
+			this.collapsedTitle.textContent = toolTitle?.display ?? '';
+			this.collapsedTitle.title = toolTitle?.full ?? '';
 		}
 		dom.setVisibility(this._isCollapsed || !!this.collapsedTitle.textContent, this.collapsedTitle);
 
@@ -553,7 +556,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		}
 	}
 
-	private getToolTitle(item: ICarouselToolItem | undefined): string | undefined {
+	private getToolTitle(item: ICarouselToolItem | undefined): { display: string; full: string } | undefined {
 		if (!item) {
 			return undefined;
 		}
@@ -561,11 +564,11 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		if (!messages?.title) {
 			return undefined;
 		}
-		return this.truncateTitle(this.toPlainText(messages.title));
+		const full = this.toPlainText(messages.title).replace(/\s+/g, ' ').trim();
+		return { display: this.truncateTitle(full), full };
 	}
 
 	private truncateTitle(text: string): string {
-		text = text.replace(/\s+/g, ' ').trim();
 		const maxLength = 100;
 		return text.length > maxLength ? `${text.substring(0, maxLength)}\u2026` : text;
 	}

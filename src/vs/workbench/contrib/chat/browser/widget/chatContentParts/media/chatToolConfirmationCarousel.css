@@ -62,6 +62,8 @@
 		font-weight: 500;
 		font-size: var(--vscode-chat-font-size-body-s);
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		color: var(--vscode-foreground);
 	}
 
