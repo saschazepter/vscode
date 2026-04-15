@@ -77,12 +77,9 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	) {
 		super();
 
-		console.log(`[SessionStoreTracker] initialized, db path: ${this._sessionStore.getPath()}`);
-
 		// Warm up the DB eagerly so schema issues surface early
 		try {
-			const stats = this._sessionStore.getStats();
-			console.log('[SessionStoreTracker] database ready', stats);
+			this._sessionStore.getStats();
 		} catch (err) {
 			/* __GDPR__
 				"chronicle.localStore" : {
@@ -167,8 +164,8 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 
 			// Lightweight timestamp bump — throttled by cooldown
 			this._bufferSessionTimestamp(sessionId);
-		} catch (err) {
-			console.error('[SessionStoreTracker] Error handling span:', err);
+		} catch {
+			// Non-fatal — individual span processing failure
 		}
 	}
 

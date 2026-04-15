@@ -14,7 +14,7 @@ import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { IExtensionContribution } from '../../common/contributions';
-import { CircuitBreaker, CircuitState } from '../common/circuitBreaker';
+import { CircuitBreaker } from '../common/circuitBreaker';
 import {
 	createSessionTranslationState,
 	makeShutdownEvent,
@@ -131,7 +131,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Best-effort final flush with timeout
 		const pending = this._eventBuffer.length;
 		if (pending > 0) {
-			console.log(`[RemoteSessionExporter] Disposing with ${pending} buffered events, attempting final flush`);
 			// Fire-and-forget — cannot block dispose
 			this._flushBatch().catch(() => { /* best effort */ });
 		}
@@ -178,8 +177,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				this._bufferEvents(sessionId, events);
 				this._ensureFlushTimer();
 			}
-		} catch (err) {
-			console.error('[RemoteSessionExporter] Error handling span:', err);
+		} catch {
+			// Non-fatal — individual span processing failure
 		}
 	}
 
@@ -248,7 +247,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		try {
 			const repo = await this._resolveRepository();
 			if (!repo) {
-				console.log('[RemoteSessionExporter] No GitHub repository detected, disabling for session', sessionId);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
@@ -256,7 +254,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// Only export remotely if the user has cloud consent for this repo
 			const repoNwo = `${repo.owner}/${repo.repo}`;
 			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
-				console.log(`[RemoteSessionExporter] Cloud sync not enabled for ${repoNwo}, skipping remote export`);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
@@ -283,10 +280,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 	}
 
-	/**
-	 * Called by the chat handler after the user completes the consent prompt.
-	 * Creates the MC session for any pending sessions that were waiting for consent.
-	 */
 	/**
 	 * Called when the storage level setting changes.
 	 * Creates MC sessions for any pending sessions if cloud sync is now enabled.
@@ -360,7 +353,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		};
 
 		this._mcSessions.set(sessionId, mcIds);
-		console.log(`[RemoteSessionExporter] MC session created: ${mcIds.mcSessionId} for chat session ${sessionId}`);
 	}
 
 	/**
@@ -396,7 +388,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 					repoId: apiResponse.id,
 				},
 			};
-			console.log(`[RemoteSessionExporter] Resolved repo: ${repoId.org}/${repoId.repo} (owner=${apiResponse.owner.id}, repo=${apiResponse.id})`);
 			return this._repository;
 		} catch (err) {
 			/* __GDPR__
@@ -443,7 +434,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		if (this._eventBuffer.length > MAX_BUFFER_SIZE) {
 			const dropped = this._eventBuffer.length - MAX_BUFFER_SIZE;
 			this._eventBuffer.splice(0, dropped);
-			console.log(`[RemoteSessionExporter] Buffer hard cap hit, dropped ${dropped} oldest events`);
 		}
 	}
 
@@ -545,9 +535,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				this._circuitBreaker.recordSuccess();
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
-				if (this._circuitBreaker.getState() === CircuitState.OPEN) {
-					console.warn(`[RemoteSessionExporter] Circuit opened after ${this._circuitBreaker.getFailureCount()} failures`);
-				}
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
