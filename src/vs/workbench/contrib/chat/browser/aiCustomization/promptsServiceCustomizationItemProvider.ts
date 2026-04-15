@@ -10,9 +10,7 @@ import { OS } from '../../../../../base/common/platform.js';
 import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { localize } from '../../../../../nls.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
-import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IAICustomizationWorkspaceService, applyStorageSourceFilter } from '../../common/aiCustomizationWorkspaceService.js';
 import { HookType, HOOK_METADATA } from '../../common/promptSyntax/hookTypes.js';
 import { formatHookCommandLabel } from '../../common/promptSyntax/hookSchema.js';
@@ -20,7 +18,7 @@ import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
-import { expandHookFileItems, getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
+import { getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
 
 /**
  * Adapts the rich promptsService model to the same provider-shaped items
@@ -34,8 +32,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 		private readonly getActiveDescriptor: () => IHarnessDescriptor,
 		private readonly promptsService: IPromptsService,
 		private readonly workspaceService: IAICustomizationWorkspaceService,
-		private readonly fileService: IFileService,
-		private readonly pathService: IPathService,
 		private readonly productService: IProductService,
 	) {
 		this.onDidChange = Event.any(
@@ -159,36 +155,18 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 	private async fetchPromptServiceHooks(items: ICustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
 		const hookFiles = await this.promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
 
-		// Convert hook files to provider-shaped items for shared expansion.
-		// Plugin hooks are pre-expanded by plugin manifests and kept as-is.
-		const hookFileItems: ICustomizationItem[] = hookFiles
-			.filter(f => f.storage !== PromptsStorage.plugin)
-			.map(f => ({
+		// Non-plugin hooks: return raw file items — expansion into individual
+		// hook entries is handled by ProviderCustomizationItemSource.fetchItemsFromProvider().
+		// Plugin hooks: add directly as-is since they're pre-expanded by
+		// plugin manifests and must NOT be re-parsed by expandHookFileItems.
+		for (const f of hookFiles) {
+			items.push({
 				uri: f.uri,
 				type: promptType,
 				name: f.name || getFriendlyName(basename(f.uri)),
+				storage: f.storage,
 				enabled: !disabledUris.has(f.uri),
-			}));
-
-		const expanded = await expandHookFileItems(
-			hookFileItems, this.workspaceService, this.fileService, this.pathService,
-		);
-		const storageByUri = new Map(hookFiles.map(f => [f.uri.toString(), f.storage]));
-		for (const item of expanded) {
-			items.push({ ...item, storage: storageByUri.get(item.uri.toString()) });
-		}
-
-		// Plugin hooks are pre-expanded; add them directly.
-		for (const hookFile of hookFiles) {
-			if (hookFile.storage === PromptsStorage.plugin) {
-				items.push({
-					uri: hookFile.uri,
-					type: promptType,
-					name: hookFile.name || getFriendlyName(basename(hookFile.uri)),
-					storage: hookFile.storage,
-					enabled: !disabledUris.has(hookFile.uri),
-				});
-			}
+			});
 		}
 
 		// Agent-embedded hooks (not in sessions window).
@@ -298,7 +276,10 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					groupKey: item.groupKey ?? BUILTIN_STORAGE,
 				};
 			}
-			return item;
+			return {
+				...item,
+				extensionLabel: extInfo.displayName || extInfo.id.value,
+			};
 		});
 	}
 
