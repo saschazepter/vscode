@@ -76,6 +76,7 @@ import { clamp } from '../../../../../../base/common/numbers.js';
 import { IOutputAnalyzer } from './outputAnalyzer.js';
 import { SandboxOutputAnalyzer, outputLooksSandboxBlocked } from './sandboxOutputAnalyzer.js';
 import { IAgentSessionsService } from '../../../../chat/browser/agentSessions/agentSessionsService.js';
+import { BackgroundTaskStatus, IChatBackgroundTaskService } from '../../../../chat/common/chatBackgroundTask.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxResolvedNetworkDomains } from '../../common/terminalSandboxService.js';
 import { LanguageModelPartAudience } from '../../../../chat/common/languageModels.js';
 import { isSessionAutoApproveLevel, isTerminalAutoApproveAllowed, isToolEligibleForTerminalAutoApproval } from './terminalToolAutoApprove.js';
@@ -551,6 +552,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@IAgentSessionsService private readonly _agentSessionsService: IAgentSessionsService,
+		@IChatBackgroundTaskService private readonly _chatBackgroundTaskService: IChatBackgroundTaskService,
 	) {
 		super();
 
@@ -2094,6 +2096,18 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			return;
 		}
 
+		// Create a background task to track this terminal command
+		const backgroundTask = this._chatBackgroundTaskService.createTask(chatSessionResource, {
+			name: commandName,
+			source: { kind: 'terminal', termId, commandName },
+			onCancel: () => {
+				RunInTerminalTool._activeExecutions.get(termId)?.dispose();
+				RunInTerminalTool._activeExecutions.delete(termId);
+				terminalInstance.dispose();
+				disposeNotification();
+			},
+		});
+
 		// Capture model/mode/tools from the last request so the steering message
 		// uses the same settings as the original conversation (not defaults).
 		const lastRequest = sessionRef.object.lastRequest;
@@ -2228,26 +2242,44 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			disposeNotification();
 
 			const exitCode = command.exitCode;
-			const exitCodeText = exitCode !== undefined ? ` with exit code ${exitCode}` : '';
 			const currentOutput = execution.getOutput();
-			const message = `[Terminal ${termId} notification: command completed${exitCodeText}. Use send_to_terminal to send another command or kill_terminal to stop it.]\nTerminal output:\n${currentOutput}`;
 
-			this._logService.debug(`RunInTerminalTool: Command completed in background terminal ${termId}, notifying chat session`);
+			this._logService.debug(`RunInTerminalTool: Command completed in background terminal ${termId}, updating background task`);
 
-			this._chatService.sendRequest(chatSessionResource, message, {
-				...sendOptions,
-				queue: ChatRequestQueueKind.Steering,
-				isSystemInitiated: true,
-				systemInitiatedLabel: localize('terminalCommandCompleted', "`{0}` completed", commandName),
-				terminalExecutionId: termId,
-			}).catch(e => {
-				this._logService.warn(`RunInTerminalTool: Failed to send completion notification for terminal ${termId}`, e);
-			});
+			// Update the background task with the result instead of sending a steering message
+			if (exitCode !== undefined && exitCode !== 0) {
+				backgroundTask.fail(`Exited with code ${exitCode}\n${currentOutput ?? ''}`);
+			} else {
+				backgroundTask.complete(currentOutput ?? '');
+			}
 		}));
+
+		// Handle the case where the command already completed before the listener
+		// was registered (e.g. fast commands like `ls`).
+		const execution = RunInTerminalTool._activeExecutions.get(termId);
+		if (execution) {
+			execution.completionPromise.then(result => {
+				// Only act if the background task is still in working state
+				// (the onCommandFinished listener may have already handled it)
+				if (backgroundTask.status.get() === BackgroundTaskStatus.Working) {
+					const currentOutput = execution.getOutput();
+					this._logService.debug(`RunInTerminalTool: Command already completed in background terminal ${termId}, updating background task via completionPromise`);
+					if (result.exitCode !== undefined && result.exitCode !== 0) {
+						backgroundTask.fail(`Exited with code ${result.exitCode}\n${currentOutput ?? ''}`);
+					} else {
+						backgroundTask.complete(currentOutput ?? '');
+					}
+					disposeNotification();
+				}
+			}).catch(() => {
+				// Execution errored - already handled elsewhere
+			});
+		}
 
 		// Clean up all background resources when the terminal is disposed
 		// (e.g. user closes the terminal) to avoid leaking listeners and monitors.
 		store.add(terminalInstance.onDisposed(() => {
+			backgroundTask.fail(localize('terminalDisposed', "Terminal was closed"));
 			disposeNotification();
 		}));
 

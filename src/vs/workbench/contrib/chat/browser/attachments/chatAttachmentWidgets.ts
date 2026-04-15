@@ -19,6 +19,7 @@ import { Iterable } from '../../../../../base/common/iterator.js';
 import { KeyCode } from '../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
+import { autorun } from '../../../../../base/common/observable.js';
 import { basename, dirname } from '../../../../../base/common/path.js';
 import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
@@ -63,7 +64,8 @@ import { ITerminalService } from '../../../terminal/browser/terminal.js';
 import { IChatContentReference } from '../../common/chatService/chatService.js';
 import { coerceImageBuffer } from '../../common/chatImageExtraction.js';
 import { ChatConfiguration } from '../../common/constants.js';
-import { IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, IPromptFileVariableEntry, IPromptTextVariableEntry, ISCMHistoryItemVariableEntry, MAX_IMAGES_PER_REQUEST, OmittedState, PromptFileVariableKind, ChatRequestToolReferenceEntry, ISCMHistoryItemChangeVariableEntry, ISCMHistoryItemChangeRangeVariableEntry, ITerminalVariableEntry, isStringVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, IPromptFileVariableEntry, IPromptTextVariableEntry, ISCMHistoryItemVariableEntry, MAX_IMAGES_PER_REQUEST, OmittedState, PromptFileVariableKind, ChatRequestToolReferenceEntry, ISCMHistoryItemChangeVariableEntry, ISCMHistoryItemChangeRangeVariableEntry, ITerminalVariableEntry, isStringVariableEntry, IChatBackgroundTaskVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { BackgroundTaskStatus, IChatBackgroundTaskService } from '../../common/chatBackgroundTask.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../common/languageModels.js';
 import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
@@ -97,7 +99,7 @@ abstract class AbstractChatAttachmentWidget extends Disposable {
 	public readonly element: HTMLElement;
 	public readonly label: IResourceLabel;
 
-	private readonly _onDidDelete: event.Emitter<Event> = this._register(new event.Emitter<Event>());
+	protected readonly _onDidDelete: event.Emitter<Event> = this._register(new event.Emitter<Event>());
 	get onDidDelete(): event.Event<Event> {
 		return this._onDidDelete.event;
 	}
@@ -1572,3 +1574,129 @@ function addBasicContextMenu(accessor: ServicesAccessor, widget: HTMLElement, sc
 }
 
 export const chatAttachmentResourceContextKey = new RawContextKey<string>('chatAttachmentResource', undefined, { type: 'URI', description: localize('resource', "The full value of the chat attachment resource, including scheme and path") });
+
+export class BackgroundTaskAttachmentWidget extends AbstractChatAttachmentWidget {
+	constructor(
+		attachment: IChatBackgroundTaskVariableEntry,
+		currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined,
+		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
+		container: HTMLElement,
+		contextResourceLabels: ResourceLabels,
+		@ICommandService commandService: ICommandService,
+		@IOpenerService openerService: IOpenerService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IHoverService private readonly hoverService: IHoverService,
+		@IChatBackgroundTaskService private readonly chatBackgroundTaskService: IChatBackgroundTaskService,
+	) {
+		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
+
+		const sourceLabel = attachment.source.kind === 'terminal'
+			? localize('bgTask.terminal', "terminal")
+			: attachment.source.serverLabel;
+
+		const task = this.chatBackgroundTaskService.getTask(attachment.taskId);
+		if (task) {
+			// Reactively update the chip appearance when the task status changes
+			this._register(autorun(reader => {
+				const status = task.status.read(reader);
+				switch (status) {
+					case BackgroundTaskStatus.Working:
+						this.label.setLabel(`$(${ThemeIcon.modify(Codicon.loading, 'spin').id})\u00A0${attachment.name}`, undefined);
+						this.element.classList.add('shimmer-progress');
+						this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.working', "Background task, {0}, running", attachment.name));
+						break;
+					case BackgroundTaskStatus.Completed:
+						this.label.setLabel(`$(${Codicon.check.id})\u00A0${attachment.name}`, undefined);
+						this.element.classList.remove('shimmer-progress');
+						this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.completed', "Background task, {0}, completed", attachment.name));
+						break;
+					case BackgroundTaskStatus.Failed:
+						this.label.setLabel(`$(${Codicon.error.id})\u00A0${attachment.name}`, undefined);
+						this.element.classList.remove('shimmer-progress');
+						this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.failed', "Background task, {0}, failed", attachment.name));
+						break;
+					case BackgroundTaskStatus.Cancelled:
+						this.label.setLabel(`$(${Codicon.close.id})\u00A0${attachment.name}`, undefined);
+						this.element.classList.remove('shimmer-progress');
+						this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.cancelled', "Background task, {0}, cancelled", attachment.name));
+						break;
+				}
+			}));
+		} else {
+			// Fallback if the task is not found (e.g. already evicted)
+			this.label.setLabel(`$(${Codicon.check.id})\u00A0${attachment.name}`, undefined);
+			this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.completed', "Background task, {0}, completed", attachment.name));
+		}
+
+		this._register(this.hoverService.setupDelayedHover(this.element, () => {
+			const currentTask = this.chatBackgroundTaskService.getTask(attachment.taskId);
+			const status = currentTask?.status.get();
+			switch (status) {
+				case BackgroundTaskStatus.Completed:
+					return { ...commonHoverOptions, content: localize('bgTask.hover.completed', "Background task '{0}' completed ({1})", attachment.name, sourceLabel) };
+				case BackgroundTaskStatus.Failed: {
+					const msg = currentTask?.statusMessage.get();
+					return {
+						...commonHoverOptions, content: msg
+							? localize('bgTask.hover.failedMsg', "Background task '{0}' failed: {1}", attachment.name, msg)
+							: localize('bgTask.hover.failed', "Background task '{0}' failed ({1})", attachment.name, sourceLabel)
+					};
+				}
+				case BackgroundTaskStatus.Cancelled:
+					return { ...commonHoverOptions, content: localize('bgTask.hover.cancelled', "Background task '{0}' was cancelled", attachment.name) };
+				default:
+					return { ...commonHoverOptions, content: localize('bgTask.hover.working', "Background task '{0}' is running ({1})", attachment.name, sourceLabel) };
+			}
+		}, commonHoverLifecycleOptions));
+
+		// Set up the clear button here (after super() has returned and DI services are available)
+		// rather than in attachClearButton() which is called during super() before services are injected.
+		this._setupClearButton();
+	}
+
+	/** No-op: the base class calls this during super(), before DI services are available. */
+	protected override attachClearButton(): void { }
+
+	private _setupClearButton(): void {
+		const task = this.chatBackgroundTaskService.getTask((this.attachment as IChatBackgroundTaskVariableEntry).taskId);
+
+		const clearButton = new Button(this.element, {
+			supportIcons: true,
+			hoverDelegate: createInstantHoverDelegate(),
+			title: task?.status.get() === BackgroundTaskStatus.Working
+				? localize('bgTask.clearButton.cancel', "Cancel")
+				: localize('bgTask.clearButton.dismiss', "Dismiss"),
+		});
+		clearButton.element.tabIndex = -1;
+		clearButton.icon = Codicon.close;
+		this._register(clearButton);
+
+		if (task) {
+			// Reactively update the button title based on task status
+			this._register(autorun(reader => {
+				const status = task.status.read(reader);
+				clearButton.element.title = status === BackgroundTaskStatus.Working
+					? localize('bgTask.clearButton.cancel', "Cancel")
+					: localize('bgTask.clearButton.dismiss', "Dismiss");
+			}));
+		}
+
+		this._register(event.Event.once(clearButton.onDidClick)((e) => {
+			// Only cancel running tasks (kills the terminal); completed tasks just get dismissed
+			if (task && task.status.get() === BackgroundTaskStatus.Working) {
+				task.cancel();
+			}
+			this._onDidDelete.fire(e);
+		}));
+		this._register(dom.addStandardDisposableListener(this.element, dom.EventType.KEY_DOWN, e => {
+			if (e.keyCode === KeyCode.Backspace || e.keyCode === KeyCode.Delete) {
+				e.preventDefault();
+				e.stopPropagation();
+				if (task && task.status.get() === BackgroundTaskStatus.Working) {
+					task.cancel();
+				}
+				this._onDidDelete.fire(e.browserEvent);
+			}
+		}));
+	}
+}

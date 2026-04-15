@@ -83,6 +83,7 @@ import { IChatTipService } from '../chatTipService.js';
 import { ChatTipContentPart } from './chatContentParts/chatTipContentPart.js';
 import { ChatContentMarkdownRenderer } from './chatContentMarkdownRenderer.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
+import { BackgroundTaskStatus, IChatBackgroundTaskService } from '../../common/chatBackgroundTask.js';
 import { IChatDebugService } from '../../common/chatDebugService.js';
 
 const $ = dom.$;
@@ -413,6 +414,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IChatAttachmentResolveService private readonly chatAttachmentResolveService: IChatAttachmentResolveService,
 		@IChatTipService private readonly chatTipService: IChatTipService,
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
+		@IChatBackgroundTaskService private readonly chatBackgroundTaskService: IChatBackgroundTaskService,
 	) {
 		super();
 
@@ -2004,6 +2006,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this.listWidget.setViewModel(this.viewModel);
 
+		// Re-render attached context now that the session resource is available
+		// so the background task autorun is set up.
+		this.input.renderAttachedContext();
+
 		if (this._lockedAgent) {
 			let placeholder = this.chatSessionsService.getChatSessionContribution(this._lockedAgent.id)?.inputPlaceholder;
 			if (!placeholder) {
@@ -2464,6 +2470,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// visibility sync before firing events to hide the welcome view
 		this.updateChatViewVisibility();
 		this.input.acceptInput(options?.storeToHistory ?? isUserQuery);
+
+		// Evict completed background tasks so their context is included in this request
+		if (submittedSessionResource) {
+			const tasks = this.chatBackgroundTaskService.getTasksForSession(submittedSessionResource).get();
+			for (const task of tasks) {
+				if (task.status.get() === BackgroundTaskStatus.Completed || task.status.get() === BackgroundTaskStatus.Failed || task.status.get() === BackgroundTaskStatus.Cancelled) {
+					this.chatBackgroundTaskService.evictTask(task.taskId);
+				}
+			}
+		}
 
 		const sent = ChatSendResult.isQueued(result) ? await result.deferred : result;
 		if (!ChatSendResult.isSent(sent)) {
