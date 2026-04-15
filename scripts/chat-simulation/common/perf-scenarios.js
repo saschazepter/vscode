@@ -367,7 +367,7 @@ const TOOL_CALL_SCENARIOS = {
 				kind: 'tool-calls',
 				toolCalls: [
 					{
-						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						toolNamePattern: /run.?in.?terminal|execute.?command/i,
 						arguments: {
 							command: 'echo "Installing dependencies..." && echo "added 1631 packages in 6m"',
 							explanation: 'Install project dependencies',
@@ -383,7 +383,7 @@ const TOOL_CALL_SCENARIOS = {
 				kind: 'tool-calls',
 				toolCalls: [
 					{
-						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						toolNamePattern: /run.?in.?terminal|execute.?command/i,
 						arguments: {
 							command: 'echo "Running unit tests..." && echo "  42 passing (3s)" && echo "  2 failing" && echo "" && echo "  1) ChatService should dispose listeners" && echo "     AssertionError: expected 0 to equal 1" && echo "  2) ChatModel should clear on new session" && echo "     TypeError: Cannot read property dispose of undefined"',
 							explanation: 'Run the unit test suite to check for failures',
@@ -423,7 +423,7 @@ const TOOL_CALL_SCENARIOS = {
 				kind: 'tool-calls',
 				toolCalls: [
 					{
-						toolNamePattern: /run.?in.?terminal|execute.?command|terminal/i,
+						toolNamePattern: /run.?in.?terminal|execute.?command/i,
 						arguments: {
 							command: 'echo "Running unit tests..." && echo "  44 passing (3s)" && echo "  0 failing"',
 							explanation: 'Re-run tests to verify the fix',
