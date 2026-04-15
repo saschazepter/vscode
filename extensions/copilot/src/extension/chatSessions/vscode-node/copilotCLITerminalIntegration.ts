@@ -110,13 +110,12 @@ powershell -ExecutionPolicy Bypass -File "${this.powershellScriptPath}" %*
 			this.shellScriptPath = path.join(storageLocation, `${COPILOT_CLI_COMMAND}.bat`);
 			await fs.writeFile(this.shellScriptPath, copilotPowershellScript);
 
-			// Also create a POSIX shell script for Git Bash (MSYS) on Windows. Bash cannot
+			// Also create a POSIX shell script for Git Bash on Windows. Bash cannot
 			// execute the .bat shim directly inside a `bash -c` string, and we cannot run
 			// the JS shim via Electron-as-node here because Electron on Windows does not
 			// support console stdin (see copilotCLIShim.ts header). Instead, delegate to
 			// the existing .bat shim, which routes through cmd.exe -> PowerShell where
-			// console stdin works correctly. The path uses MSYS form (e.g. /c/Users/...)
-			// since MSYS path translation does not apply inside `bash -c` strings.
+			// console stdin works correctly.
 			const posixBatPath = windowsToGitBashPath(this.shellScriptPath);
 			const copilotBashScript = `#!/bin/sh\nexec "${posixBatPath}" "$@"\n`;
 			this.posixShellScriptPath = path.join(storageLocation, COPILOT_CLI_COMMAND);
