@@ -244,13 +244,12 @@ jobs:
             PERF_ARGS="$PERF_ARGS --threshold $PERF_THRESHOLD"
           fi
 
+          set +eo pipefail
           xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \
             $PERF_ARGS \
             ${{ steps.scenarios.outputs.args }} \
             2>&1 | tee perf-output.log
-
-          exit ${PIPESTATUS[0]}
-        continue-on-error: true
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload perf results
         if: always() && steps.scenarios.outputs.skip != 'true'
@@ -262,6 +261,12 @@ jobs:
             perf-output.log
             .chat-simulation-data/
           retention-days: 30
+
+      - name: Check for regressions
+        if: always() && steps.perf.outputs.exit_code != '' && steps.perf.outputs.exit_code != '0'
+        run: |
+          echo "::error::Chat perf regression detected (exit code ${{ steps.perf.outputs.exit_code }}). See perf-output.log for details."
+          exit 1
 
   # ── Memory leak check (runs in parallel with perf) ──────────────────
   leak-check:
@@ -329,12 +334,11 @@ jobs:
             LEAK_ARGS="$LEAK_ARGS --build $TEST_COMMIT"
           fi
 
+          set +eo pipefail
           xvfb-run node scripts/chat-simulation/test-chat-mem-leaks.js \
             $LEAK_ARGS \
             2>&1 | tee leak-output.log
-
-          exit ${PIPESTATUS[0]}
-        continue-on-error: true
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload leak results
         if: always()
@@ -347,6 +351,12 @@ jobs:
             .chat-simulation-data/chat-simulation-leak-results.json
             .chat-simulation-data/ci-summary-leak.md
           retention-days: 30
+
+      - name: Check for leaks
+        if: always() && steps.leak.outputs.exit_code != '' && steps.leak.outputs.exit_code != '0'
+        run: |
+          echo "::error::Chat memory leak detected (exit code ${{ steps.leak.outputs.exit_code }}). See leak-output.log for details."
+          exit 1
 
   # ── Report: collect results, write summary, fail on regression ──────
   report:
@@ -441,6 +451,7 @@ jobs:
           failOnError: false
 
       - name: Fail on regression
+        id: regression
         if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true && needs.leak-check.result == 'failure')
         run: |
           if [[ "${{ needs.chat-perf.result }}" == "failure" ]]; then
