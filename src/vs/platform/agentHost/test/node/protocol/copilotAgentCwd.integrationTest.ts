@@ -41,6 +41,7 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 	let client: TestProtocolClient;
 	let tmpDir: string;
 	let ghToken: string;
+	let sessionUri: string | undefined;
 
 	suiteSetup(async function () {
 		this.timeout(30_000);
@@ -83,8 +84,15 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 		});
 	});
 
-	teardown(function () {
+	teardown(async function () {
+		this.timeout(15_000);
+		if (client && sessionUri) {
+			try {
+				await client.call('disposeSession', { session: sessionUri }, 10_000);
+			} catch { /* best effort */ }
+		}
 		client?.close();
+		sessionUri = undefined;
 		try {
 			fs.rmSync(tmpDir, { recursive: true, force: true });
 		} catch { /* best effort */ }
@@ -108,7 +116,7 @@ suite('CopilotAgent — Working Directory (real SDK)', function () {
 				(n.params as INotificationBroadcastParams).notification.type === 'notify/sessionAdded',
 			15_000,
 		);
-		const sessionUri = ((addedNotif.params as INotificationBroadcastParams).notification as ISessionAddedNotification).summary.resource;
+		sessionUri = ((addedNotif.params as INotificationBroadcastParams).notification as ISessionAddedNotification).summary.resource;
 
 		// 2. Set client tools (mimics what VS Code does before the first message).
 		//    This populates the ActiveClient for the session, so the sendMessage
