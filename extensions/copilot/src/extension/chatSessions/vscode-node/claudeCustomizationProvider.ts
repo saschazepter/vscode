@@ -15,7 +15,6 @@ import { URI } from '../../../util/vs/base/common/uri';
 import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { IPromptsService } from '../../../platform/promptFiles/common/promptsService';
-import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 
 // TODO: Consider reporting Claude slash commands (from Query.supportedCommands()) when appropriate
 // TODO: Report MCP servers when ChatSessionCustomizationType.Mcp is available (use Query.mcpServerStatus())
