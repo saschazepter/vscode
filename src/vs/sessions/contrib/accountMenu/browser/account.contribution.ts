@@ -329,10 +329,10 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 			return;
 		}
 
-		this.showCombinedPanel();
+		this.showPanel();
 	}
 
-	togglePanel(): void {
+	showPanel(): void {
 		this.showCombinedPanel();
 	}
 
