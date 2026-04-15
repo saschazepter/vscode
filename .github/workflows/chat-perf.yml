@@ -33,7 +33,7 @@ on:
         description: 'Skip the memory leak check step'
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
