@@ -55,8 +55,14 @@ export class IssueReporterEditorPane extends EditorPane {
 		context: IEditorOpenContext,
 		token: CancellationToken,
 	): Promise<void> {
+		const previousInput = this.input;
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.container) {
+			return;
+		}
+
+		// If switching back to the same input, just re-show — don't recreate
+		if (previousInput === input && this.wizard) {
 			return;
 		}
 
@@ -79,15 +85,17 @@ export class IssueReporterEditorPane extends EditorPane {
 			{ embedded: true, container: this.container },
 		);
 		this.inputDisposables.add(this.wizard);
+
+		// Close the editor tab when the user discards
+		this.inputDisposables.add(this.wizard.onDidClose(() => {
+			this.group.closeEditor(this.input!);
+		}));
+
 		this.wizard.show();
 	}
 
 	override clearInput(): void {
-		this.inputDisposables.clear();
-		this.wizard = undefined;
-		if (this.container) {
-			clearNode(this.container);
-		}
+		// Don't destroy wizard on tab switch — preserve state
 		super.clearInput();
 	}
 

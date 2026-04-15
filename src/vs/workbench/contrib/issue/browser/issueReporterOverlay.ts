@@ -111,6 +111,7 @@ export class IssueReporterOverlay {
 	private wasCollapsedBeforeRecording = false;
 	private collapseToggle!: HTMLElement;
 	private toolbarActionsSlot!: HTMLElement;
+	private floatingBar: HTMLElement | undefined;
 
 	constructor(
 		private readonly data: IssueReporterData,
@@ -158,6 +159,11 @@ export class IssueReporterOverlay {
 		collapseLabel.textContent = localize('minimize', "Minimize");
 		const minimizeShortcut = append(this.collapseToggle, $('span.wizard-shortcut-badge'));
 		minimizeShortcut.textContent = isMacintosh ? '\u2318M' : 'Ctrl+M';
+
+		// Hide minimize in embedded mode (editor tab)
+		if (this.options.embedded) {
+			this.collapseToggle.style.display = 'none';
+		}
 
 		// Slot for screenshot/record buttons when collapsed on step 3
 		this.toolbarActionsSlot = append(toolbar, $('div.wizard-toolbar-actions-slot'));
@@ -390,6 +396,90 @@ export class IssueReporterOverlay {
 		}
 
 		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
+
+		// In embedded mode, hide inline actions and create a floating capture bar
+		if (this.options.embedded) {
+			actions.style.display = 'none';
+			this.createFloatingCaptureBar();
+		}
+	}
+
+	private createFloatingCaptureBar(): void {
+		const targetWindow = this.options.container ? getWindow(this.options.container) : getWindow(this.wizardPanel);
+		const body = targetWindow.document.body;
+
+		this.floatingBar = $('div.wizard-floating-bar');
+
+		// Drag handle
+		const dragHandle = append(this.floatingBar, $('div.wizard-floating-drag'));
+		dragHandle.appendChild(renderIcon(Codicon.gripper));
+
+		// Screenshot button
+		const captureBtn = append(this.floatingBar, $('div.wizard-floating-btn'));
+		captureBtn.setAttribute('role', 'button');
+		captureBtn.setAttribute('tabindex', '0');
+		captureBtn.title = localize('addScreenshot', "Add screenshot");
+		captureBtn.appendChild(renderIcon(Codicon.deviceCamera));
+		const captureLbl = append(captureBtn, $('span'));
+		captureLbl.textContent = localize('screenshot', "Screenshot");
+		this.disposables.add(addDisposableListener(captureBtn, EventType.CLICK, () => {
+			if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
+				this._onDidRequestScreenshot.fire();
+			}
+		}));
+
+		// Record button
+		if (this.recordingSupported) {
+			const recordBtn = append(this.floatingBar, $('div.wizard-floating-btn'));
+			recordBtn.setAttribute('role', 'button');
+			recordBtn.setAttribute('tabindex', '0');
+			recordBtn.title = localize('recordVideo', "Record video");
+			recordBtn.appendChild(renderIcon(Codicon.record));
+			const recordLbl = append(recordBtn, $('span'));
+			recordLbl.textContent = localize('record', "Record");
+			this.disposables.add(addDisposableListener(recordBtn, EventType.CLICK, () => {
+				if (this.currentRecordingState === RecordingState.Recording) {
+					this._onDidRequestStopRecording.fire();
+				} else if (this.currentRecordingState === RecordingState.Idle && this.getTotalAttachments() < MAX_ATTACHMENTS) {
+					this._onDidRequestStartRecording.fire();
+				}
+			}));
+		}
+
+		body.appendChild(this.floatingBar);
+
+		// Dragging
+		let dragStartX = 0;
+		let dragStartY = 0;
+		let barStartX = 0;
+		let barStartY = 0;
+
+		const onPointerMove = (e: PointerEvent) => {
+			const dx = e.clientX - dragStartX;
+			const dy = e.clientY - dragStartY;
+			this.floatingBar!.style.left = `${barStartX + dx}px`;
+			this.floatingBar!.style.top = `${barStartY + dy}px`;
+		};
+
+		const onPointerUp = () => {
+			targetWindow.document.removeEventListener('pointermove', onPointerMove);
+			targetWindow.document.removeEventListener('pointerup', onPointerUp);
+		};
+
+		this.disposables.add(addDisposableListener(dragHandle, EventType.POINTER_DOWN, (e: PointerEvent) => {
+			e.preventDefault();
+			dragStartX = e.clientX;
+			dragStartY = e.clientY;
+			const rect = this.floatingBar!.getBoundingClientRect();
+			barStartX = rect.left;
+			barStartY = rect.top;
+			targetWindow.document.addEventListener('pointermove', onPointerMove);
+			targetWindow.document.addEventListener('pointerup', onPointerUp);
+		}));
+
+		this.disposables.add(toDisposable(() => {
+			this.floatingBar?.remove();
+		}));
 	}
 
 	// ── Step 4: Review & Submit ──
@@ -948,6 +1038,13 @@ export class IssueReporterOverlay {
 
 	close(): void {
 		if (!this.visible || this.animating) {
+			return;
+		}
+
+		if (this.options.embedded) {
+			// In embedded mode, just fire close — the editor pane handles cleanup
+			this.visible = false;
+			this._onDidClose.fire();
 			return;
 		}
 
