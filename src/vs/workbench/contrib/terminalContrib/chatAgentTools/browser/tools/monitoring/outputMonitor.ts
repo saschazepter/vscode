@@ -255,7 +255,13 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		const output = this._execution.getOutput();
 		this._logService.trace(`OutputMonitor: Idle output summary: len=${output.length}, lastLine=${this._formatLastLineForLog(output)}`);
 
-		if (detectsNonInteractiveHelpPattern(output)) {
+		// Use only the tail of the output for pattern detection. All detect*
+		// functions match prompts near the end of the buffer (using $ anchors
+		// or normalized-string includes). Slicing avoids unnecessary O(n) regex
+		// scanning over potentially large terminal scrollback.
+		const outputTail = output.slice(-1000);
+
+		if (detectsNonInteractiveHelpPattern(outputTail)) {
 			this._logService.trace('OutputMonitor: Idle -> non-interactive help pattern detected, stopping');
 			return { shouldContinuePolling: false, output };
 		}
@@ -264,7 +270,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// If the execution is a task and the output contains a VS Code task finish message,
 		// always treat it as a stop signal regardless of task active state (which can be stale).
 		const isTask = this._execution.task !== undefined;
-		if (isTask && detectsVSCodeTaskFinishMessage(output)) {
+		if (isTask && detectsVSCodeTaskFinishMessage(outputTail)) {
 			this._logService.trace('OutputMonitor: Idle -> VS Code task finish message detected, stopping');
 			// Task is finished, ignore the "press any key to close" message
 			return { shouldContinuePolling: false, output };
@@ -272,7 +278,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 		// Check for generic "press any key" prompts from scripts.
 		// Only shown for non-task executions since task finish messages are handled above.
-		if (!isTask && detectsGenericPressAnyKeyPattern(output)) {
+		if (!isTask && detectsGenericPressAnyKeyPattern(outputTail)) {
 			this._logService.trace('OutputMonitor: Idle -> generic "press any key" detected, signaling agent');
 			this._onDidDetectInputNeeded.fire();
 			this._cleanupIdleInputListener();
@@ -289,7 +295,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// In async mode, use regex-based detection for input-required patterns
 		// (passwords, [Y/n], etc.) and signal the agent to handle via send_to_terminal.
 		if (this._asyncMode) {
-			if (detectsInputRequiredPattern(output)) {
+			if (detectsInputRequiredPattern(outputTail)) {
 				this._logService.trace('OutputMonitor: Async mode - input-required pattern detected, signaling agent');
 				this._onDidDetectInputNeeded.fire();
 			}
@@ -301,7 +307,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// In foreground mode, fire the event so the race in runInTerminalTool can pick it
 		// up and return control to the agent (which uses send_to_terminal to provide input).
 		// No elicitation UI is shown — the agent handles it autonomously.
-		if (detectsInputRequiredPattern(output)) {
+		if (detectsInputRequiredPattern(outputTail)) {
 			this._logService.trace('OutputMonitor: Input-required pattern detected, signaling agent');
 			this._onDidDetectInputNeeded.fire();
 			this._cleanupIdleInputListener();
@@ -472,9 +478,9 @@ export function matchTerminalPromptOption(options: readonly string[], suggestedO
 export function detectsInputRequiredPattern(cursorLine: string): boolean {
 	return [
 		// PowerShell-style multi-option line (supports [?] Help and optional default suffix) ending
-		// in whitespace.  The label part uses [^\[\s]+(?:\s+[^\[\s]+)* to support multi-word
-		// labels (e.g. "Yes to All") while avoiding overlap with \s* that caused ReDoS.
-		/\s*(?:\[[^\]]\]\s+[^\[\s]+(?:\s+[^\[\s]+)*\s*)+(?:\(default is\s+"[^"]+"\):)?\s+$/,
+		// in whitespace.  Uses [^\[]* to match each label (everything up to the next bracket),
+		// ensuring linear-time matching with no nested quantifiers that could cause ReDoS.
+		/\s*(?:\[[^\]]\][^\[]*)+(?:\(default is\s+"[^"]+"\):)?\s+$/,
 		// Bracketed/parenthesized yes/no pairs at end of line: (y/n), [Y/n], (yes/no), [no/yes]
 		/(?:\(|\[)\s*(?:y(?:es)?\s*\/\s*n(?:o)?|n(?:o)?\s*\/\s*y(?:es)?)\s*(?:\]|\))\s+$/i,
 		// Same as above but allows a preceding '?' or ':' and optional wrappers e.g.
