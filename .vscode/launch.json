@@ -730,6 +730,10 @@
 				"Attach to Shared Process",
 				"Attach to Agent Host Process"
 			],
+			"env": {
+				"FORCE_DEV_INTEGRATION": "1",
+				"IS_SCENARIO_AUTOMATION": "1",
+			},
 			"preLaunchTask": "Ensure Prelaunch Dependencies",
 			"presentation": {
 				"group": "0_vscode",

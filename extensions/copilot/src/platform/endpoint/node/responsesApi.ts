@@ -699,7 +699,7 @@ export class OpenAIResponsesProcessor {
 			_onProgress(this.textAccumulator, 0, delta);
 		};
 		const compactionItems = this.getCompactionItemsInChunk(chunk);
-		if (chunk.type !== 'response.completed') {
+		if (chunk.type !== 'response.completed' && chunk.type !== 'response.incomplete') {
 			for (const { item, outputIndex } of compactionItems) {
 				this.captureCompactionItem(item, outputIndex, onProgress);
 			}
@@ -793,92 +793,108 @@ export class OpenAIResponsesProcessor {
 						id: chunk.item_id
 					}
 				});
-			case 'response.completed': {
-				const normalizedOutput = keepLatestCompactionOutput(chunk.response.output, this.latestCompactionOutputIndex);
-				const latestCompactionOutput = getLatestCompactionOutput(normalizedOutput, this.latestCompactionOutputIndex);
-				const latestCompactionItem = latestCompactionOutput?.item;
-				const previousCompactionItem = this.latestCompactionItem;
-				if (latestCompactionItem) {
-					this.sawCompactionMessage = true;
-					this.latestCompactionOutputIndex = latestCompactionOutput.outputIndex;
-				}
-
-				const shouldEmitResolvedCompaction = latestCompactionItem && (
-					!previousCompactionItem ||
-					previousCompactionItem.id !== latestCompactionItem.id ||
-					previousCompactionItem.encrypted_content !== latestCompactionItem.encrypted_content
-				);
-				if (latestCompactionItem) {
-					this.latestCompactionItem = latestCompactionItem;
-				}
-				if (this.compactionThreshold !== undefined && this.sawCompactionMessage) {
-					const promptTokens = chunk.response.usage?.input_tokens ?? 0;
-					const totalTokens = chunk.response.usage?.total_tokens ?? 0;
-					sendResponsesApiCompactionTelemetry(this.telemetryService, {
-						outcome: 'compaction_returned',
-						headerRequestId: this.requestId,
-						gitHubRequestId: this.ghRequestId,
-						model: chunk.response.model,
-					}, {
-						compactThreshold: this.compactionThreshold,
-						promptTokens,
-						totalTokens,
-					});
-					this.logService.debug(`[responsesAPI_compaction] Compaction enabled. headerRequestId=${this.requestId}`);
-				} else if (this.compactionThreshold !== undefined && (chunk.response.usage?.input_tokens ?? 0) >= this.compactionThreshold) {
-					const promptTokens = chunk.response.usage?.input_tokens ?? 0;
-					const totalTokens = chunk.response.usage?.total_tokens ?? 0;
-					sendResponsesApiCompactionTelemetry(this.telemetryService, {
-						outcome: 'threshold_met_no_compaction',
-						headerRequestId: this.requestId,
-						gitHubRequestId: this.ghRequestId,
-						model: chunk.response.model,
-					}, {
-						compactThreshold: this.compactionThreshold,
-						promptTokens,
-						totalTokens,
-					});
-					this.logService.debug(`[responsesAPI_compaction] Compaction enabled but context not compacted after threshold was met. headerRequestId=${this.requestId}, gitHubRequestId=${this.ghRequestId}, promptTokens=${promptTokens}, totalTokens=${totalTokens}`);
-				}
-				onProgress({
-					text: '',
-					statefulMarker: chunk.response.id,
-					contextManagement: shouldEmitResolvedCompaction ? latestCompactionItem : undefined,
-				});
-				return {
-					blockFinished: true,
-					choiceIndex: 0,
-					model: chunk.response.model,
-					tokens: [],
-					telemetryData: this.telemetryData,
-					requestId: { headerRequestId: this.requestId, gitHubRequestId: this.ghRequestId, completionId: chunk.response.id, created: chunk.response.created_at, deploymentId: '', serverExperiments: this.serverExperiments },
-					usage: {
-						prompt_tokens: chunk.response.usage?.input_tokens ?? 0,
-						completion_tokens: chunk.response.usage?.output_tokens ?? 0,
-						total_tokens: chunk.response.usage?.total_tokens ?? 0,
-						prompt_tokens_details: {
-							cached_tokens: chunk.response.usage?.input_tokens_details.cached_tokens ?? 0,
-						},
-						completion_tokens_details: {
-							reasoning_tokens: chunk.response.usage?.output_tokens_details.reasoning_tokens ?? 0,
-							accepted_prediction_tokens: 0,
-							rejected_prediction_tokens: 0,
-						},
-					},
-					finishReason: FinishedCompletionReason.Stop,
-					message: {
-						role: Raw.ChatRole.Assistant,
-						content: normalizedOutput.map((item): Raw.ChatCompletionContentPart | undefined => {
-							if (item.type === 'message') {
-								return { type: Raw.ChatCompletionContentPartKind.Text, text: item.content.map(c => c.type === 'output_text' ? c.text : c.refusal).join('') };
-							} else if (item.type === 'image_generation_call' && item.result) {
-								return { type: Raw.ChatCompletionContentPartKind.Image, imageUrl: { url: item.result } };
-							}
-						}).filter(isDefined),
-					}
-				};
-			}
+			case 'response.incomplete':
+				return this.buildCompletion(chunk.response, incompleteReasonToFinishReason(chunk.response.incomplete_details?.reason), onProgress);
+			case 'response.completed':
+				return this.buildCompletion(chunk.response, FinishedCompletionReason.Stop, onProgress);
 		}
+	}
+
+	private buildCompletion(response: OpenAI.Responses.Response, finishReason: FinishedCompletionReason, onProgress: (delta: IResponseDelta) => undefined): ChatCompletion {
+		const normalizedOutput = keepLatestCompactionOutput(response.output, this.latestCompactionOutputIndex);
+		const latestCompactionOutput = getLatestCompactionOutput(normalizedOutput, this.latestCompactionOutputIndex);
+		const latestCompactionItem = latestCompactionOutput?.item;
+		const previousCompactionItem = this.latestCompactionItem;
+		if (latestCompactionItem) {
+			this.sawCompactionMessage = true;
+			this.latestCompactionOutputIndex = latestCompactionOutput.outputIndex;
+		}
+
+		const shouldEmitResolvedCompaction = latestCompactionItem && (
+			!previousCompactionItem ||
+			previousCompactionItem.id !== latestCompactionItem.id ||
+			previousCompactionItem.encrypted_content !== latestCompactionItem.encrypted_content
+		);
+		if (latestCompactionItem) {
+			this.latestCompactionItem = latestCompactionItem;
+		}
+		if (this.compactionThreshold !== undefined && this.sawCompactionMessage) {
+			const promptTokens = response.usage?.input_tokens ?? 0;
+			const totalTokens = response.usage?.total_tokens ?? 0;
+			sendResponsesApiCompactionTelemetry(this.telemetryService, {
+				outcome: 'compaction_returned',
+				headerRequestId: this.requestId,
+				gitHubRequestId: this.ghRequestId,
+				model: response.model,
+			}, {
+				compactThreshold: this.compactionThreshold,
+				promptTokens,
+				totalTokens,
+			});
+			this.logService.debug(`[responsesAPI_compaction] Compaction enabled. headerRequestId=${this.requestId}`);
+		} else if (this.compactionThreshold !== undefined && (response.usage?.input_tokens ?? 0) >= this.compactionThreshold) {
+			const promptTokens = response.usage?.input_tokens ?? 0;
+			const totalTokens = response.usage?.total_tokens ?? 0;
+			sendResponsesApiCompactionTelemetry(this.telemetryService, {
+				outcome: 'threshold_met_no_compaction',
+				headerRequestId: this.requestId,
+				gitHubRequestId: this.ghRequestId,
+				model: response.model,
+			}, {
+				compactThreshold: this.compactionThreshold,
+				promptTokens,
+				totalTokens,
+			});
+			this.logService.debug(`[responsesAPI_compaction] Compaction enabled but context not compacted after threshold was met. headerRequestId=${this.requestId}, gitHubRequestId=${this.ghRequestId}, promptTokens=${promptTokens}, totalTokens=${totalTokens}`);
+		}
+		onProgress({
+			text: '',
+			statefulMarker: response.id,
+			contextManagement: shouldEmitResolvedCompaction ? latestCompactionItem : undefined,
+		});
+		return {
+			blockFinished: true,
+			choiceIndex: 0,
+			model: response.model,
+			tokens: [],
+			telemetryData: this.telemetryData,
+			requestId: { headerRequestId: this.requestId, gitHubRequestId: this.ghRequestId, completionId: response.id, created: response.created_at, deploymentId: '', serverExperiments: this.serverExperiments },
+			usage: {
+				prompt_tokens: response.usage?.input_tokens ?? 0,
+				completion_tokens: response.usage?.output_tokens ?? 0,
+				total_tokens: response.usage?.total_tokens ?? 0,
+				prompt_tokens_details: {
+					cached_tokens: response.usage?.input_tokens_details.cached_tokens ?? 0,
+				},
+				completion_tokens_details: {
+					reasoning_tokens: response.usage?.output_tokens_details.reasoning_tokens ?? 0,
+					accepted_prediction_tokens: 0,
+					rejected_prediction_tokens: 0,
+				},
+			},
+			finishReason,
+			message: {
+				role: Raw.ChatRole.Assistant,
+				content: normalizedOutput.map((item): Raw.ChatCompletionContentPart | undefined => {
+					if (item.type === 'message') {
+						return { type: Raw.ChatCompletionContentPartKind.Text, text: item.content.map(c => c.type === 'output_text' ? c.text : c.refusal).join('') };
+					} else if (item.type === 'image_generation_call' && item.result) {
+						return { type: Raw.ChatCompletionContentPartKind.Image, imageUrl: { url: item.result } };
+					}
+				}).filter(isDefined),
+			}
+		};
+	}
+}
+
+function incompleteReasonToFinishReason(reason: string | undefined): FinishedCompletionReason {
+	switch (reason) {
+		case 'content_filter':
+			return FinishedCompletionReason.ContentFilter;
+		case 'max_output_tokens':
+			return FinishedCompletionReason.Length;
+		default:
+			return FinishedCompletionReason.ServerError;
 	}
 }
 

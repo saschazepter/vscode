@@ -11,7 +11,7 @@ import { IInstantiationService } from '../../../../util/vs/platform/instantiatio
 import { ILogService } from '../../../log/common/logService';
 import { isOpenAIContextManagementResponse } from '../../../networking/common/fetch';
 import { IChatEndpoint, ICreateEndpointBodyOptions } from '../../../networking/common/networking';
-import { openAIContextManagementCompactionType, OpenAIContextManagementResponse } from '../../../networking/common/openai';
+import { FinishedCompletionReason, openAIContextManagementCompactionType, OpenAIContextManagementResponse } from '../../../networking/common/openai';
 import { IChatWebSocketManager, NullChatWebSocketManager } from '../../../networking/node/chatWebSocketManager';
 import { TelemetryData } from '../../../telemetry/common/telemetryData';
 import { SpyingTelemetryService } from '../../../telemetry/node/spyingTelemetryService';
@@ -533,6 +533,121 @@ describe('processResponseFromChatEndpoint telemetry', () => {
 		expect(messagesJson).toHaveLength(1);
 		expect(messagesJson[0].role).toBe('assistant');
 		expect(messagesJson[0].content).toBe('final assistant reply');
+
+		accessor.dispose();
+		services.dispose();
+	});
+
+	it('handles response.incomplete with content_filter reason', async () => {
+		const services = createPlatformServices();
+		const accessor = services.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const logService = accessor.get(ILogService);
+		const telemetryService = new SpyingTelemetryService();
+
+		const incompleteEvent = {
+			type: 'response.incomplete',
+			response: {
+				id: 'resp_filtered',
+				model: 'gpt-5',
+				created_at: 123,
+				status: 'incomplete',
+				incomplete_details: { reason: 'content_filter' },
+				usage: {
+					input_tokens: 100,
+					output_tokens: 10,
+					total_tokens: 110,
+					input_tokens_details: { cached_tokens: 0 },
+					output_tokens_details: { reasoning_tokens: 0 },
+				},
+				output: [
+					{
+						type: 'message',
+						status: 'incomplete',
+						content: [{ type: 'output_text', text: 'I\'m sorry, but I cannot assist with that request.' }],
+					}
+				],
+			}
+		};
+
+		const response = createFakeStreamResponse(`data: ${JSON.stringify(incompleteEvent)}\n\n`);
+		const telemetryData = TelemetryData.createAndMarkAsIssued({}, {});
+
+		const stream = await processResponseFromChatEndpoint(
+			instantiationService,
+			telemetryService,
+			logService,
+			response,
+			1,
+			async () => undefined,
+			telemetryData
+		);
+
+		const completions = [];
+		for await (const completion of stream) {
+			completions.push(completion);
+		}
+
+		expect(completions).toHaveLength(1);
+		expect(completions[0].finishReason).toBe(FinishedCompletionReason.ContentFilter);
+		expect(completions[0].model).toBe('gpt-5');
+
+		accessor.dispose();
+		services.dispose();
+	});
+
+	it('handles response.incomplete with max_output_tokens reason', async () => {
+		const services = createPlatformServices();
+		const accessor = services.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const logService = accessor.get(ILogService);
+		const telemetryService = new SpyingTelemetryService();
+
+		const incompleteEvent = {
+			type: 'response.incomplete',
+			response: {
+				id: 'resp_truncated',
+				model: 'gpt-5',
+				created_at: 123,
+				status: 'incomplete',
+				incomplete_details: { reason: 'max_output_tokens' },
+				usage: {
+					input_tokens: 100,
+					output_tokens: 32768,
+					total_tokens: 32868,
+					input_tokens_details: { cached_tokens: 0 },
+					output_tokens_details: { reasoning_tokens: 0 },
+				},
+				output: [
+					{
+						type: 'message',
+						status: 'incomplete',
+						content: [{ type: 'output_text', text: 'This is a truncated response...' }],
+					}
+				],
+			}
+		};
+
+		const response = createFakeStreamResponse(`data: ${JSON.stringify(incompleteEvent)}\n\n`);
+		const telemetryData = TelemetryData.createAndMarkAsIssued({}, {});
+
+		const stream = await processResponseFromChatEndpoint(
+			instantiationService,
+			telemetryService,
+			logService,
+			response,
+			1,
+			async () => undefined,
+			telemetryData
+		);
+
+		const completions = [];
+		for await (const completion of stream) {
+			completions.push(completion);
+		}
+
+		expect(completions).toHaveLength(1);
+		expect(completions[0].finishReason).toBe(FinishedCompletionReason.Length);
 
 		accessor.dispose();
 		services.dispose();
