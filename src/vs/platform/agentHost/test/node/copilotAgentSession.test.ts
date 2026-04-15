@@ -115,13 +115,56 @@ suite('CopilotAgentSession', () => {
 
 	suite('permission handling', () => {
 
-		test('auto-approves read inside working directory', async () => {
-			const { session } = await createAgentSession(disposables, { workingDirectory: URI.file('/workspace') });
-			const result = await session.handlePermissionRequest({
+		test('does not auto-approve read inside working directory (deferred to side effects)', async () => {
+			const { session, progressEvents } = await createAgentSession(disposables, { workingDirectory: URI.file('/workspace') });
+			const resultPromise = session.handlePermissionRequest({
 				kind: 'read',
 				path: '/workspace/src/file.ts',
 				toolCallId: 'tc-1',
 			});
+
+			// Read should NOT be auto-approved at the session level — it fires
+			// a tool_ready event so agentSideEffects can handle it.
+			assert.strictEqual(progressEvents.length, 1);
+			assert.strictEqual(progressEvents[0].type, 'tool_ready');
+
+			assert.ok(session.respondToPermissionRequest('tc-1', true));
+			const result = await resultPromise;
+			assert.strictEqual(result.kind, 'approved');
+		});
+
+		test('does not auto-approve write inside working directory (deferred to side effects)', async () => {
+			const { session, progressEvents } = await createAgentSession(disposables, { workingDirectory: URI.file('/workspace') });
+			const resultPromise = session.handlePermissionRequest({
+				kind: 'write',
+				fileName: '/workspace/src/file.ts',
+				toolCallId: 'tc-1',
+			});
+
+			// Write should NOT be auto-approved at the session level — it fires
+			// a tool_ready event so agentSideEffects can apply glob patterns.
+			assert.strictEqual(progressEvents.length, 1);
+			assert.strictEqual(progressEvents[0].type, 'tool_ready');
+
+			assert.ok(session.respondToPermissionRequest('tc-1', true));
+			const result = await resultPromise;
+			assert.strictEqual(result.kind, 'approved');
+		});
+
+		test('does not auto-approve write outside working directory', async () => {
+			const { session, progressEvents } = await createAgentSession(disposables, { workingDirectory: URI.file('/workspace') });
+
+			const resultPromise = session.handlePermissionRequest({
+				kind: 'write',
+				fileName: '/other/file.ts',
+				toolCallId: 'tc-write-outside',
+			});
+
+			assert.strictEqual(progressEvents.length, 1);
+			assert.strictEqual(progressEvents[0].type, 'tool_ready');
+
+			assert.ok(session.respondToPermissionRequest('tc-write-outside', true));
+			const result = await resultPromise;
 			assert.strictEqual(result.kind, 'approved');
 		});
 
