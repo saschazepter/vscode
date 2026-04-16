@@ -420,23 +420,27 @@ describe('ChatEndpoint - Image Count Validation', () => {
 			expect(countImages(messages)).toBe(3);
 		});
 
-		it('should use server-provided maxPromptImages instead of defaults', () => {
-			// Default Gemini limit is 10, but server says 2. 3 history images + 1 current image = 4 total > 2.
-			const endpoint = createEndpoint(createGeminiModelMetadata(2));
-			const messages = [
-				createImageMessage(),
-				createAssistantMessage(),
-				createImageMessage(),
-				createAssistantMessage(),
-				createImageMessage(),
-				createAssistantMessage(),
-				createImageMessage(1),
-			];
-			const filtered = filterImages(endpoint, messages, 2);
-			expect(countImages(filtered)).toBeLessThanOrEqual(2);
+		it('should ignore an overly-restrictive server-provided maxPromptImages and use the hardcoded Gemini limit of 10', () => {
+			// Server reports max_prompt_images: 1 but the true Gemini limit is 10.
+			// 2 images in the current turn must not throw.
+			const endpoint = createEndpoint(createGeminiModelMetadata(1));
+			const options = createTestOptions([createImageMessage(2)]);
+			expect(() => endpoint.createRequestBody(options)).not.toThrow();
 		});
 
-		it('should preserve current-turn images even when they alone exceed the limit', () => {
+		it('should throw using the hardcoded Gemini limit of 10 when the current turn exceeds it', () => {
+			const endpoint = createEndpoint(createGeminiModelMetadata(1));
+			const options = createTestOptions([createImageMessage(11)]);
+			expect(() => endpoint.createRequestBody(options)).toThrow(/maximum of 10 images/);
+		});
+
+		it('should throw using the hardcoded Anthropic Messages limit of 20 when the current turn exceeds it', () => {
+			const endpoint = createEndpoint(createAnthropicMessagesModelMetadata());
+			const options = createTestOptions([createImageMessage(21)]);
+			expect(() => endpoint.createRequestBody(options)).toThrow(/maximum of 20 images/);
+		});
+
+		it('should throw a clear error when the current turn alone exceeds the limit', () => {
 			const endpoint = createEndpoint(createGeminiModelMetadata(2));
 			// Current user message has 5 images, limit is 2. History has 1 image.
 			const messages = [
@@ -444,10 +448,7 @@ describe('ChatEndpoint - Image Count Validation', () => {
 				createAssistantMessage(),
 				createImageMessage(5),
 			];
-			const filtered = filterImages(endpoint, messages, 2);
-			// Current user message keeps all 5; history image is dropped.
-			expect(countImages([filtered[filtered.length - 1]])).toBe(5);
-			expect(countImages(filtered)).toBe(5);
+			expect(() => filterImages(endpoint, messages, 2)).toThrow(/Too many images/);
 		});
 	});
 });

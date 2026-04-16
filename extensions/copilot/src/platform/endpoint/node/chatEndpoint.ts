@@ -308,15 +308,16 @@ export class ChatEndpoint implements IChatEndpoint {
 
 	/**
 	 * Returns the model-specific image limit, or `undefined` if no limit applies.
-	 * Anthropic Messages API defaults to 20; Gemini defaults to 10.
-	 * The server-provided `maxPromptImages` takes precedence when available.
+	 * Anthropic Messages API allows up to 20 images per request; Gemini allows up to 10.
+	 * These are hardcoded based on API documentation rather than model metadata to
+	 * avoid being clamped by unreliable server-provided values.
 	 */
 	private getImageLimit(): number | undefined {
 		if (this.useMessagesApi && isAnthropicFamily(this)) {
-			return this.maxPromptImages ?? 20;
+			return 20;
 		}
 		if (isGeminiFamily(this)) {
-			return this.maxPromptImages ?? 10;
+			return 10;
 		}
 		return undefined;
 	}

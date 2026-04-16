@@ -2,6 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
+import * as l10n from '@vscode/l10n';
 import { Raw } from '@vscode/prompt-tsx';
 
 /**
@@ -14,8 +15,10 @@ const IMAGE_PLACEHOLDER_TEXT = '[Image omitted from conversation history due to 
  * Silently drops the oldest images from history when the total number of images
  * in the conversation exceeds `maxImages`. Images belonging to the current turn
  * (the last user message and anything after it, e.g. recent tool results) are
- * always preserved — if the current turn alone exceeds the limit we let the
- * request through and rely on the model to surface an error.
+ * always preserved.
+ *
+ * If the current turn alone exceeds the limit, throws a localized error rather
+ * than sending a request we know will be rejected with an opaque server error.
  *
  * @returns A (possibly filtered) copy of messages. The original array is never mutated.
  */
@@ -67,10 +70,16 @@ export function filterHistoryImages(messages: Raw.ChatMessage[], maxImages: numb
 		return messages;
 	}
 
+	// Fail fast with a clear, localized error when the current turn alone exceeds
+	// the limit — otherwise we'd send a request the server will reject with an
+	// opaque error. Silent history filtering is only safe when dropping history
+	// images can bring the total down to the limit.
+	if (currentTurnImages > maxImages) {
+		throw new Error(l10n.t('Too many images in request: {0} images provided, but the model supports a maximum of {1} images.', currentTurnImages, maxImages));
+	}
+
 	// Walk backward through history (before the current turn), keeping the
-	// most recent images and replacing the oldest with placeholders. Budget
-	// can go negative if the current turn alone exceeds the limit — in that
-	// case we drop all history images and let the model handle it.
+	// most recent images and replacing the oldest with placeholders.
 	let historyBudget = maxImages - currentTurnImages;
 
 	// Collect keep/drop decisions by walking backward through history

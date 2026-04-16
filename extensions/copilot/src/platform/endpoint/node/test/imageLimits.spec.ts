@@ -98,17 +98,14 @@ describe('filterHistoryImages', () => {
 		expect(countImages(messages)).toBe(3);
 	});
 
-	it('preserves current-turn images even when they alone exceed the limit', () => {
-		// Current user message has 5 images, limit is 2. History has 1 image.
-		const messages = [
-			createUserImageMessage(),
-			createAssistantMessage(),
-			createUserImageMessage(5),
-		];
-		const filtered = filterHistoryImages(messages, 2);
-		// Current user message keeps all 5; history image is dropped.
-		expect(countImages([filtered[filtered.length - 1]])).toBe(5);
-		expect(countImages(filtered)).toBe(5);
+	it('throws a clear error including the per-model limit when the current turn alone exceeds it', () => {
+		// Current user message has 11 images. The error must mention the exact
+		// model-scoped limit (10 for Gemini, 20 for Anthropic Messages API).
+		const messages = [createUserImageMessage(11)];
+		expect(() => filterHistoryImages(messages, 10)).toThrow(/11 images provided.*maximum of 10 images/);
+
+		const many = [createUserImageMessage(25)];
+		expect(() => filterHistoryImages(many, 20)).toThrow(/25 images provided.*maximum of 20 images/);
 	});
 
 	it('handles conversations with no user message by treating the last message as current', () => {
@@ -124,10 +121,13 @@ describe('filterHistoryImages', () => {
 	});
 
 	it('does not mutate the original messages array or its contents', () => {
+		// History has 2 images, current turn has 1, limit is 1 → history filters silently.
 		const messages = [
 			createUserImageMessage(),
 			createAssistantMessage(),
-			createUserImageMessage(2),
+			createUserImageMessage(),
+			createAssistantMessage(),
+			createUserImageMessage(1),
 		];
 		const snapshot = JSON.stringify(messages);
 		filterHistoryImages(messages, 1);
@@ -137,9 +137,10 @@ describe('filterHistoryImages', () => {
 	it('passes through messages with non-array content', () => {
 		const messages: Raw.ChatMessage[] = [
 			{ role: Raw.ChatRole.System, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'system' }] },
-			createUserImageMessage(3),
+			createUserImageMessage(2),
 		];
+		// Total = 2 images, within limit of 2 → returned unchanged.
 		const filtered = filterHistoryImages(messages, 2);
-		expect(countImages([filtered[filtered.length - 1]])).toBe(3);
+		expect(filtered).toBe(messages);
 	});
 });
