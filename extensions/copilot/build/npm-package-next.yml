@@ -1,9 +1,4 @@
-trigger:
-  batch: true
-  branches:
-    include:
-      - main
-      - release/*
+trigger: none
 
 pr: none
 
@@ -14,6 +9,16 @@ resources:
       name: microsoft/vscode-engineering
       ref: main
       endpoint: Monaco
+  pipelines:
+    - pipeline: vscode
+      source: '⭐️ VS Code'
+      trigger:
+        stages:
+          - Release
+        branches:
+          include:
+            - main
+            - release/*
 
 parameters:
   - name: NPM_REGISTRY
@@ -47,6 +52,30 @@ extends:
             inputs:
               workingFile: $(NPMRC_PATH)
             displayName: 🔑 Authenticate npm
+
+          - download: vscode
+            artifact: copilot_vsix
+            displayName: 📥 Download Copilot VSIX
+            condition: and(succeeded(), ne(variables['resources.pipeline.vscode.runName'], ''))
+
+          - bash: |
+              set -e
+              if [ -f "$(Pipeline.Workspace)/vscode/copilot_vsix/copilot-chat.vsix" ]; then
+                unzip -o "$(Pipeline.Workspace)/vscode/copilot_vsix/copilot-chat.vsix" 'extension/package.json'
+                VERSION=$(node -p "require('./extension/package.json').version")
+                rm -rf extension
+                node -e "
+                  const fs = require('fs');
+                  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+                  pkg.version = '$VERSION';
+                  fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+                "
+                echo "Set extension version to $VERSION"
+              else
+                echo "No Copilot VSIX found, using version from package.json"
+              fi
+            displayName: 📋 Sync version from extension
+            workingDirectory: extensions/copilot
 
           - bash: npm ci && npm run extract-chat-lib && rm -rf node_modules
             displayName: 📂 Extract chat-lib
@@ -110,16 +139,9 @@ extends:
           - script: npm test
             displayName: 🧪 Run chat-lib tests
             workingDirectory: extensions/copilot/chat-lib
-        # Manually triggered → publish to latest or next
-        ${{ if eq(parameters.nextVersion, 'none') }}:
-          publishPackage: false
-        ${{ elseif eq(parameters.nextVersion, 'prerelease') }}:
-          publishPackage: true
-          publishRequiresApproval: false
-          nextVersion: prerelease
-          tag: next
-        ${{ else }}:
-          publishPackage: true
-          nextVersion: ${{ parameters.nextVersion }}
+        # Triggered by ⭐️ VS Code pipeline → always publish to next
+        publishPackage: true
+        publishRequiresApproval: false
+        tag: next
         ghCreateRelease: false
         ghReleaseAddChangeLog: false
