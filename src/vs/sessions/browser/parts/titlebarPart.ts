@@ -203,7 +203,11 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 			toolbarOptions: { primaryGroup: () => true },
 		}));
 		this.leftToolbarContentWidth = getContentWidth(this.leftToolbarContainer);
-		this._register(leftToolbar.onDidChangeMenuItems(() => this.leftToolbarContentWidth = getContentWidth(this.leftToolbarContainer)));
+		this.updateLeftContentWidth();
+		this._register(leftToolbar.onDidChangeMenuItems(() => {
+			this.leftToolbarContentWidth = getContentWidth(this.leftToolbarContainer);
+			this.updateLeftContentWidth();
+		}));
 
 		// Center toolbar - command center (renders session picker via IActionViewItemService)
 		// Uses .window-title > .command-center nesting to match default workbench CSS selectors
