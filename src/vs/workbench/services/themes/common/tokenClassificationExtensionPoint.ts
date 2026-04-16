@@ -85,7 +85,7 @@ const tokenStyleDefaultsExtPoint = ExtensionsRegistry.registerExtensionPoint<ITo
 			type: 'object',
 			properties: {
 				language: {
-					description: nls.localize('contributes.semanticTokenScopes.languages', 'Lists the languge for which the defaults are.'),
+					description: nls.localize('contributes.semanticTokenScopes.languages', 'Lists the language for which the defaults are.'),
 					type: 'string'
 				},
 				scopes: {
@@ -200,7 +200,7 @@ export class TokenClassificationExtensionPoints {
 							const selector = tokenClassificationRegistry.parseTokenSelector(selectorString, contribution.language);
 							tokenClassificationRegistry.registerTokenStyleDefault(selector, { scopesToProbe: tmScopes.map(s => s.split(' ')) });
 						} catch (e) {
-							collector.error(nls.localize('invalid.semanticTokenScopes.scopes.selector', "configuration.semanticTokenScopes.scopes': Problems parsing selector {0}.", selectorString));
+							collector.error(nls.localize('invalid.semanticTokenScopes.scopes.selector', "'configuration.semanticTokenScopes.scopes': Problems parsing selector {0}.", selectorString));
 							// invalid selector, ignore
 						}
 					}
