@@ -321,14 +321,17 @@ export class ChatEndpoint implements IChatEndpoint {
 	}
 
 	/**
-	 * Validates that the current user message does not exceed the image limit,
-	 * and silently drops the oldest images from history when the conversation
-	 * total exceeds the limit.
+	 * Silently drops the oldest images from history when the total number of images
+	 * in the conversation exceeds `maxImages`. Images belonging to the current turn
+	 * (the last user message and anything after it, e.g. recent tool results) are
+	 * always preserved — if the current turn alone exceeds the limit we let the
+	 * request through and rely on the model to surface an error.
 	 *
 	 * @returns A (possibly filtered) copy of messages. The original array is never mutated.
 	 */
 	private validateAndFilterImages(messages: Raw.ChatMessage[], maxImages: number): Raw.ChatMessage[] {
-		// Find the last user message — this is the current request
+		// Anchor the current turn at the last user message; anything at or after this
+		// index is treated as "current turn" and its images are never filtered.
 		let lastUserIdx = -1;
 		for (let i = messages.length - 1; i >= 0; i--) {
 			if (messages[i].role === Raw.ChatRole.User) {
@@ -337,12 +340,22 @@ export class ChatEndpoint implements IChatEndpoint {
 			}
 		}
 
-		// Count images in the current user message
-		let currentUserImages = 0;
-		if (lastUserIdx >= 0 && Array.isArray(messages[lastUserIdx].content)) {
-			for (const part of messages[lastUserIdx].content) {
+		// Corner case: no user message at all (e.g. system-only history). Treat the
+		// last message as the current turn so we still filter earlier images.
+		if (lastUserIdx === -1 && messages.length > 0) {
+			lastUserIdx = messages.length - 1;
+		}
+
+		// Count images in the current turn (the last user message and anything after it).
+		let currentTurnImages = 0;
+		for (let i = Math.max(lastUserIdx, 0); i < messages.length; i++) {
+			const content = messages[i].content;
+			if (!Array.isArray(content)) {
+				continue;
+			}
+			for (const part of content) {
 				if (part.type === Raw.ChatCompletionContentPartKind.Image) {
-					currentUserImages++;
+					currentTurnImages++;
 				}
 			}
 		}
@@ -364,9 +377,11 @@ export class ChatEndpoint implements IChatEndpoint {
 			return messages;
 		}
 
-		// Walk backward through history (before the current user message),
-		// keeping the most recent images and replacing the oldest with placeholders.
-		let historyBudget = maxImages - currentUserImages;
+		// Walk backward through history (before the current turn), keeping the
+		// most recent images and replacing the oldest with placeholders. Budget
+		// can go negative if the current turn alone exceeds the limit — in that
+		// case we drop all history images and let the model handle it.
+		let historyBudget = maxImages - currentTurnImages;
 
 		// Collect keep/drop decisions by walking backward through history
 		const historyImageDecisions = new Map<string, boolean>(); // "msgIdx:partIdx" -> keep
@@ -407,7 +422,8 @@ export class ChatEndpoint implements IChatEndpoint {
 					if (historyImageDecisions.get(`${msgIdx}:${partIdx}`)) {
 						return part;
 					}
-					return { type: Raw.ChatCompletionContentPartKind.Text, text: '[Image omitted from conversation history due to model limit.]' } as Raw.ChatCompletionContentPart;
+					// Model-facing placeholder; intentionally not localized.
+					return { type: Raw.ChatCompletionContentPartKind.Text, text: '[Image omitted from conversation history due to model limit.]' };
 				})
 			};
 		});

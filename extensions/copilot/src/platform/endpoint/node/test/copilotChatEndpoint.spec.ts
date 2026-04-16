@@ -308,16 +308,40 @@ describe('ChatEndpoint - Image Count Validation', () => {
 			mockServices.logService
 		);
 
+	const countImages = (messages: Raw.ChatMessage[]): number => {
+		let count = 0;
+		for (const msg of messages) {
+			if (Array.isArray(msg.content)) {
+				for (const part of msg.content) {
+					if (part.type === Raw.ChatCompletionContentPartKind.Image) {
+						count++;
+					}
+				}
+			}
+		}
+		return count;
+	};
+
+	// Exercises the private `validateAndFilterImages` method directly so we can
+	// assert on the filtered messages without being blocked by downstream mocks.
+	const filterImages = (endpoint: ChatEndpoint, messages: Raw.ChatMessage[], maxImages: number): Raw.ChatMessage[] => {
+		return (endpoint as unknown as { validateAndFilterImages(m: Raw.ChatMessage[], n: number): Raw.ChatMessage[] })
+			.validateAndFilterImages(messages, maxImages);
+	};
+
 	describe('Gemini image limits', () => {
 		it('should allow requests within image limit', () => {
 			const endpoint = createEndpoint(createGeminiModelMetadata(5));
-			const options = createTestOptions([createImageMessage(), createImageMessage()]);
+			const messages = [createImageMessage(), createImageMessage()];
+			const options = createTestOptions(messages);
 			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+			// Input is within limit — messages should be returned untouched.
+			expect(filterImages(endpoint, messages, 5)).toBe(messages);
 		});
 
 		it('should silently filter history images when total exceeds limit', () => {
 			const endpoint = createEndpoint(createGeminiModelMetadata(3));
-			// 2 history user messages with 1 image each, then 2 images in current user message = 4 total
+			// 2 history user messages with 1 image each + current user message with 2 images = 4 total > 3 limit
 			const messages = [
 				createImageMessage(),
 				createAssistantMessage(),
@@ -325,22 +349,23 @@ describe('ChatEndpoint - Image Count Validation', () => {
 				createAssistantMessage(),
 				createImageMessage(2),
 			];
-			const options = createTestOptions(messages);
-			// Should not throw — history images are silently filtered
-			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+			expect(() => endpoint.createRequestBody(createTestOptions(messages))).not.toThrow();
+			const filtered = filterImages(endpoint, messages, 3);
+			// Total image parts in the filtered output must not exceed the limit.
+			expect(countImages(filtered)).toBeLessThanOrEqual(3);
+			// Current user message (last) must retain all 2 of its images.
+			expect(countImages([filtered[filtered.length - 1]])).toBe(2);
+			// Original messages must not be mutated.
+			expect(countImages(messages)).toBe(4);
 		});
 	});
 
 	describe('Anthropic Messages API image limits', () => {
 		it('should allow requests within image limit', () => {
 			const endpoint = createEndpoint(createAnthropicMessagesModelMetadata());
-			const options = createTestOptions([createImageMessage(5)]);
-			// Should not throw an image limit error (may throw downstream due to mock instantiation service)
-			try {
-				endpoint.createRequestBody(options);
-			} catch (e: unknown) {
-				expect((e as Error).message).not.toMatch(/Too many images/);
-			}
+			const messages = [createImageMessage(5)];
+			// Within limit — filter must not alter the messages.
+			expect(filterImages(endpoint, messages, 20)).toBe(messages);
 		});
 
 		it('should silently filter history images when total exceeds limit', () => {
@@ -352,13 +377,12 @@ describe('ChatEndpoint - Image Count Validation', () => {
 				messages.push(createAssistantMessage());
 			}
 			messages.push(createImageMessage(5));
-			const options = createTestOptions(messages);
-			// Should not throw an image limit error (may throw downstream due to mock instantiation service)
-			try {
-				endpoint.createRequestBody(options);
-			} catch (e: unknown) {
-				expect((e as Error).message).not.toMatch(/Too many images/);
-			}
+			const filtered = filterImages(endpoint, messages, 20);
+			expect(countImages(filtered)).toBeLessThanOrEqual(20);
+			// Current user message must retain all 5 of its images.
+			expect(countImages([filtered[filtered.length - 1]])).toBe(5);
+			// Original messages must not be mutated.
+			expect(countImages(messages)).toBe(23);
 		});
 	});
 
@@ -369,6 +393,61 @@ describe('ChatEndpoint - Image Count Validation', () => {
 			// 25 images should not throw for a non-limited model
 			const options = createTestOptions([createImageMessage(25)]);
 			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+		});
+	});
+
+	describe('edge cases', () => {
+		it('should filter tool-result images in history the same as user images', () => {
+			const endpoint = createEndpoint(createGeminiModelMetadata(2));
+			const toolResultImage: Raw.ChatMessage = {
+				role: Raw.ChatRole.Tool,
+				toolCallId: 'tool-1',
+				content: [
+					{ type: Raw.ChatCompletionContentPartKind.Image, imageUrl: { url: 'https://example.com/tool.png' } }
+				]
+			};
+			// 2 tool-result images in history + 1 current user image = 3 total > 2 limit
+			const messages: Raw.ChatMessage[] = [
+				toolResultImage,
+				createAssistantMessage(),
+				toolResultImage,
+				createAssistantMessage(),
+				createImageMessage(1),
+			];
+			const filtered = filterImages(endpoint, messages, 2);
+			expect(countImages(filtered)).toBeLessThanOrEqual(2);
+			// Original messages must not be mutated.
+			expect(countImages(messages)).toBe(3);
+		});
+
+		it('should use server-provided maxPromptImages instead of defaults', () => {
+			// Default Gemini limit is 10, but server says 2. 3 history images + 1 current image = 4 total > 2.
+			const endpoint = createEndpoint(createGeminiModelMetadata(2));
+			const messages = [
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(1),
+			];
+			const filtered = filterImages(endpoint, messages, 2);
+			expect(countImages(filtered)).toBeLessThanOrEqual(2);
+		});
+
+		it('should preserve current-turn images even when they alone exceed the limit', () => {
+			const endpoint = createEndpoint(createGeminiModelMetadata(2));
+			// Current user message has 5 images, limit is 2. History has 1 image.
+			const messages = [
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(5),
+			];
+			const filtered = filterImages(endpoint, messages, 2);
+			// Current user message keeps all 5; history image is dropped.
+			expect(countImages([filtered[filtered.length - 1]])).toBe(5);
+			expect(countImages(filtered)).toBe(5);
 		});
 	});
 });
