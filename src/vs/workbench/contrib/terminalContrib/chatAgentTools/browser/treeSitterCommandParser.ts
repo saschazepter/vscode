@@ -25,16 +25,11 @@ export const enum TreeSitterCommandParserLanguage {
  * truncate the surrounding command.
  *
  * See https://github.com/microsoft/vscode/issues/294010
+ * TODO: Remove once upstream tree-sitter PowerShell grammer is updated.
  */
 const pwshFlagEqualsRegex = /(^|\s)(-{1,2}[\w-]+)=/g;
 
-/**
- * Replaces the `=` in PowerShell `--flag=value` argument patterns with a space
- * so the tree-sitter PowerShell grammar treats the argument as a normal
- * command parameter. Character positions and overall length are preserved so
- * node ranges from the parsed (masked) tree can be used to slice the original
- * command line.
- */
+// TODO: Remove once upstream tree-sitter PowerShell grammer is updated.
 function maskPwshFlagEquals(commandLine: string): string {
 	return commandLine.replace(pwshFlagEqualsRegex, (_, pre, flag) => `${pre}${flag} `);
 }
