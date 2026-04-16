@@ -185,43 +185,28 @@ jobs:
       - name: Resolve scenario group
         id: scenarios
         run: |
-          # Get all scenario IDs from the perf script, then split into groups
-          if [[ -n "${{ inputs.scenarios }}" ]]; then
-            # User-specified scenarios: split evenly across groups
-            IFS=',' read -ra ALL_SCENS <<< "${{ inputs.scenarios }}"
-          else
-            ALL_SCENS=($(node -e "
-              require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
-              const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
-              console.log(getScenarioIds().join(' '));
-            "))
-          fi
-
-          TOTAL=${#ALL_SCENS[@]}
-          GROUPS=4
-          GROUP=${{ matrix.group }}
-
-          # Distribute scenarios round-robin across groups
-          GROUP_SCENS=()
-          for ((i = 0; i < TOTAL; i++)); do
-            if (( (i % GROUPS) + 1 == GROUP )); then
-              GROUP_SCENS+=("${ALL_SCENS[$i]}")
-            fi
-          done
-
-          if [[ ${#GROUP_SCENS[@]} -eq 0 ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No scenarios for group $GROUP"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            # Build --scenario flags
-            SCENARIO_ARGS=""
-            for s in "${GROUP_SCENS[@]}"; do
-              SCENARIO_ARGS="$SCENARIO_ARGS --scenario $s"
-            done
-            echo "args=$SCENARIO_ARGS" >> "$GITHUB_OUTPUT"
-            echo "Group $GROUP scenarios: ${GROUP_SCENS[*]}"
-          fi
+          node -e "
+            const fs = require('fs');
+            require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
+            const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
+            const userInput = '${{ inputs.scenarios }}';
+            const allScens = userInput
+              ? userInput.split(',').map(s => s.trim()).filter(Boolean)
+              : getScenarioIds();
+            const groups = 4;
+            const group = ${{ matrix.group }};
+            // Distribute scenarios round-robin across groups
+            const groupScens = allScens.filter((_, i) => (i % groups) + 1 === group);
+            if (groupScens.length === 0) {
+              console.log('No scenarios for group ' + group);
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, 'skip=true\n');
+            } else {
+              const args = groupScens.map(s => '--scenario ' + s).join(' ');
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, 'skip=false\n');
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, 'args=' + args + '\n');
+              console.log('Group ' + group + ' (' + groupScens.length + '/' + allScens.length + '): ' + groupScens.join(', '));
+            }
+          "
 
       - name: Run chat perf comparison
         id: perf

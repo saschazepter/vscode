@@ -758,6 +758,7 @@ function markDuration(marks, from, to) {
 const METRIC_DEFS = [
 	['timeToFirstToken', 'timing', 'ms'],
 	['timeToComplete', 'timing', 'ms'],
+	['timeToRenderComplete', 'timing', 'ms'],
 	['timeToUIUpdated', 'timing', 'ms'],
 	['instructionCollectionTime', 'timing', 'ms'],
 	['agentInvokeTime', 'timing', 'ms'],

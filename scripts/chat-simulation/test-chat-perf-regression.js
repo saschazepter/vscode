@@ -277,6 +277,7 @@ function exceedsThreshold(threshold, change, absoluteDelta) {
  *   timeToUIUpdated: number,
  *   timeToFirstToken: number,
  *   timeToComplete: number,
+ *   timeToRenderComplete: number,
  *   instructionCollectionTime: number,
  *   agentInvokeTime: number,
  *   heapUsedBefore: number,
@@ -367,6 +368,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	let submitTime = 0;
 	let firstResponseTime = 0;
 	let responseCompleteTime = 0;
+	let renderCompleteTime = 0;
 
 	try {
 		await window.waitForSelector('.monaco-workbench', { timeout: 60_000 });
@@ -591,6 +593,56 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 			console.log(`  [debug] Client-side timing: firstResponse=${firstResponseTime - submitTime}ms, complete=${responseCompleteTime - submitTime}ms`);
 		}
 
+		// Wait for the typewriter animation to finish rendering.
+		// The chat UI animates streamed content word-by-word after the
+		// response stream completes. We need to wait until all content
+		// is rendered before capturing layout/style metrics, otherwise
+		// we miss the rendering phase where batching optimizations matter.
+		await window.waitForFunction(
+			(sel) => {
+				const responses = document.querySelectorAll(sel);
+				const last = responses[responses.length - 1];
+				if (!last) { return true; }
+				// The typewriter animation is done when there are no
+				// elements with the 'typewriter' or 'animating' class,
+				// and no pending cursor animations.
+				const hasAnimating = last.querySelector('.chat-animated-word, .chat-typewriter-cursor');
+				return !hasAnimating;
+			},
+			responseSelector,
+			{ timeout: 30_000 },
+		).catch(() => {
+			// Fallback: if the selector-based check doesn't work (e.g.
+			// the CSS classes differ across versions), wait for content
+			// to stabilize by polling textContent.
+		});
+
+		// Additional stabilization: poll until textContent stops changing.
+		// This catches any remaining animation regardless of CSS class names.
+		{
+			let prev = '';
+			let stableCount = 0;
+			const stabilizeStart = Date.now();
+			while (stableCount < 3 && Date.now() - stabilizeStart < 10_000) {
+				const current = await window.evaluate((sel) => {
+					const responses = document.querySelectorAll(sel);
+					const last = responses[responses.length - 1];
+					return last ? (last.textContent || '') : '';
+				}, responseSelector).catch(() => '');
+				if (current === prev) {
+					stableCount++;
+				} else {
+					stableCount = 0;
+					prev = current;
+				}
+				await new Promise(r => setTimeout(r, 100));
+			}
+		}
+		renderCompleteTime = Date.now();
+		if (verbose) {
+			console.log(`  [debug] Render stabilized: ${renderCompleteTime - responseCompleteTime}ms after stream complete`);
+		}
+
 		const heapAfter = /** @type {any} */ (await cdp.send('Runtime.getHeapUsage'));
 		const metricsAfter = await cdp.send('Performance.getMetrics');
 
@@ -736,6 +788,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	const internalFirstToken = markDuration(chatMarks, 'request/start', 'request/firstToken');
 	const timeToFirstToken = internalFirstToken >= 0 ? internalFirstToken : (firstResponseTime - submitTime);
 	const timeToComplete = responseCompleteTime - submitTime;
+	const timeToRenderComplete = renderCompleteTime - submitTime;
 	const instructionCollectionTime = markDuration(chatMarks, 'request/willCollectInstructions', 'request/didCollectInstructions');
 	const agentInvokeTime = markDuration(chatMarks, 'agent/willInvoke', 'agent/didInvoke');
 
@@ -788,7 +841,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 
 	return {
 		...partialMetrics,
-		timeToUIUpdated, timeToFirstToken, timeToComplete, instructionCollectionTime, agentInvokeTime,
+		timeToUIUpdated, timeToFirstToken, timeToComplete, timeToRenderComplete, instructionCollectionTime, agentInvokeTime,
 		hasInternalMarks: chatMarks.length > 0,
 		internalFirstToken,
 		majorGCs, minorGCs,
@@ -1474,6 +1527,7 @@ async function main() {
 		console.log('  Timing:');
 		console.log(summarize(results.map(r => r.timeToFirstToken), '  Request → First token ', 'ms'));
 		console.log(summarize(results.map(r => r.timeToComplete), '  Request → Complete    ', 'ms'));
+		console.log(summarize(results.map(r => r.timeToRenderComplete), '  Request → Rendered    ', 'ms'));
 		console.log('');
 		console.log('  Rendering:');
 		console.log(summarize(results.map(r => r.layoutCount), '  Layouts               ', ''));

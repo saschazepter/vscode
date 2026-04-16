@@ -23,7 +23,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { welchTTest } = require('./common/utils');
+const { welchTTest, loadConfig } = require('./common/utils');
 
 // -- CLI args ----------------------------------------------------------------
 
@@ -92,8 +92,11 @@ function mergeResults(resultsDir) {
 	let baselineBuildVersion;
 	/** @type {string | undefined} */
 	let threshold;
+
+	// Read per-metric thresholds from config.jsonc (same source as the perf script)
+	const perfConfig = loadConfig('perfRegression');
 	/** @type {Record<string, number | string>} */
-	const metricThresholds = {};
+	const metricThresholds = perfConfig.metricThresholds ?? {};
 
 	for (const groupDir of groupDirs) {
 		// Find results.json (may be in a timestamped subdir under .chat-simulation-data)
@@ -335,7 +338,21 @@ function generateUnifiedSummary(jsonReport, baseline, opts) {
 		lines.push(`| **Diff** | ${compareLink} |`);
 	}
 	lines.push(`| **Runs per scenario** | ${opts.runs} |`);
-	lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
+	const overrides = Object.entries(opts.metricThresholds || {}).filter(([, v]) => {
+		const parsed = typeof v === 'number' ? { type: 'fraction', value: v } : { type: 'absolute', value: parseFloat(/** @type {string} */(v)) };
+		return parsed.type !== 'fraction' || parsed.value !== opts.threshold;
+	});
+	if (overrides.length > 0) {
+		const overrideStr = overrides.map(([k, v]) => {
+			if (typeof v === 'number') {
+				return `${k}: ${(v * 100).toFixed(0)}%`;
+			}
+			return `${k}: ${v}`;
+		}).join(', ');
+		lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% (${overrideStr}) |`);
+	} else {
+		lines.push(`| **Regression threshold** | ${(opts.threshold * 100).toFixed(0)}% |`);
+	}
 	lines.push(`| **Scenarios** | ${scenarios.length} |`);
 	lines.push(`| **Platform** | ${jsonReport.platform || 'linux'} / x64 |`);
 	lines.push('');
