@@ -10,7 +10,7 @@ import { parse as parseJSONC } from '../../../../../base/common/json.js';
 import { ResourceMap } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { OS } from '../../../../../base/common/platform.js';
-import { basename, isEqualOrParent } from '../../../../../base/common/resources.js';
+import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -362,9 +362,63 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		if (promptType === PromptsType.skill) {
 			providerItems = await this.addSkillDescriptionFallbacks(providerItems);
+			providerItems = await this.mergeBuiltinSkills(providerItems);
 		}
 
 		return this.itemNormalizer.normalizeItems(providerItems, promptType);
+	}
+
+	/**
+	 * Merges built-in skills (bundled with the app under `vs/sessions/skills/`)
+	 * into the provider's items. The provider may re-discover the bundled
+	 * copies when scanning disk — those duplicates are dropped (deduped by
+	 * URI) and replaced with the authoritative built-in entry tagged
+	 * `groupKey: BUILTIN_STORAGE` so the UI renders them in the "Built-in"
+	 * group. User-authored overrides (different URI, same name) are preserved.
+	 *
+	 * A workbench that uses the base `PromptsService` will throw on
+	 * `BUILTIN_STORAGE` — we catch and return the items unchanged in that case.
+	 */
+	private async mergeBuiltinSkills(items: readonly ICustomizationItem[]): Promise<readonly ICustomizationItem[]> {
+		let builtinPaths: readonly { uri: URI; name?: string; description?: string }[] = [];
+		try {
+			builtinPaths = await this.promptsService.listPromptFilesForStorage(PromptsType.skill, BUILTIN_STORAGE as unknown as PromptsStorage, CancellationToken.None);
+		} catch {
+			return items;
+		}
+		if (builtinPaths.length === 0) {
+			return items;
+		}
+
+		const builtinUris = new ResourceMap<typeof builtinPaths[number]>();
+		for (const p of builtinPaths) {
+			builtinUris.set(p.uri, p);
+		}
+
+		// Drop provider items that are the same URI as a built-in (the provider
+		// re-discovered the bundled copy by scanning disk).
+		const deduped = items.filter(item => !builtinUris.has(item.uri));
+
+		const uiIntegrations = this.workspaceService.getSkillUIIntegrations();
+		const uiIntegrationBadge = localize('uiIntegrationBadge', "UI Integration");
+
+		// Append authoritative built-in entries.
+		const builtinItems: ICustomizationItem[] = builtinPaths.map(p => {
+			const folderName = basename(dirname(p.uri));
+			const uiTooltip = uiIntegrations.get(folderName);
+			return {
+				uri: p.uri,
+				type: PromptsType.skill,
+				name: p.name ?? basename(p.uri),
+				description: p.description,
+				groupKey: BUILTIN_STORAGE,
+				enabled: true,
+				badge: uiTooltip ? uiIntegrationBadge : undefined,
+				badgeTooltip: uiTooltip,
+			};
+		});
+
+		return [...deduped, ...builtinItems];
 	}
 
 	private async addSkillDescriptionFallbacks(items: readonly ICustomizationItem[]): Promise<readonly ICustomizationItem[]> {
