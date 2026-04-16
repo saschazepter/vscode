@@ -127,8 +127,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	private emptyPaneMessageElement: HTMLElement | undefined;
 
 	private globalToolBar: MenuWorkbenchToolBar | undefined;
-	private globalLeftToolBar: MenuWorkbenchToolBar | undefined;
-
 	private blockOpening: DeferredPromise<PaneComposite | undefined> | undefined = undefined;
 	protected contentDimension: Dimension | undefined;
 
@@ -635,8 +633,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		// Each toolbar item has 4px margin
 		const toolBarWidth = this.toolBar.getItemsWidth() + this.toolBar.getItemsLength() * 4;
 		const globalToolBarWidth = this.globalToolBar ? this.globalToolBar.getItemsWidth() + this.globalToolBar.getItemsLength() * 4 : 0;
-		const globalLeftToolBarWidth = this.globalLeftToolBar ? this.globalLeftToolBar.getItemsWidth() + this.globalLeftToolBar.getItemsLength() * 4 : 0;
-		return toolBarWidth + globalToolBarWidth + globalLeftToolBarWidth + 8; // 8px padding left
+		return toolBarWidth + globalToolBarWidth + 8; // 8px padding left
 	}
 
 	private onTitleAreaContextMenu(event: StandardMouseEvent): void {
