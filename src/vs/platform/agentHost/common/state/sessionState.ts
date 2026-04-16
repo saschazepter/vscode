@@ -46,7 +46,7 @@ export {
 	type IRootState,
 	type ISessionActiveClient,
 	type ISessionConfigState,
-	type ISessionFileDiff,
+	type IFileEdit as ISessionFileDiff,
 	type IModelSelection,
 	type ISessionModelInfo,
 	type ISessionState,
