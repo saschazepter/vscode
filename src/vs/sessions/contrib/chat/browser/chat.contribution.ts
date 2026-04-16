@@ -49,6 +49,7 @@ import { IRemoteAgentHostService, IRemoteAgentHostSSHConnection, RemoteAgentHost
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { encodeHex, VSBuffer } from '../../../../base/common/buffer.js';
+import { isNative } from '../../../../base/common/platform.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -133,7 +134,9 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 		}
 	}
 }
-registerAction2(OpenSessionWorktreeInVSCodeAction);
+if (!isNative) {
+	registerAction2(OpenSessionWorktreeInVSCodeAction);
+}
 
 /**
  * Resolves the VS Code remote authority for the given session provider,
