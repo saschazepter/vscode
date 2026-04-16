@@ -941,10 +941,13 @@ class SyncAccountPolicyAction extends Action2 {
 		try {
 			logService.info('[DefaultAccount] Manually syncing account policy');
 			await defaultAccountService.refresh({ forceRefresh: true });
-			dialogService.info(localize('syncAccountPolicy.success', "Account policy has been synced."));
+			await dialogService.info(localize('syncAccountPolicy.success', "Account policy has been synced."));
 		} catch (error) {
 			logService.error('[DefaultAccount] Failed to sync account policy', error);
-			dialogService.error(localize('syncAccountPolicy.error', "Failed to sync account policy: {0}", error instanceof Error ? error.message : String(error)));
+			await dialogService.error(
+				localize('syncAccountPolicy.error', "Failed to sync account policy."),
+				error instanceof Error ? error.message : String(error)
+			);
 		}
 	}
 }
