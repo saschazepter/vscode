@@ -8,7 +8,7 @@ import * as DOM from '../../../../../base/browser/dom.js';
 import { KeybindingLabel } from '../../../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { Event } from '../../../../../base/common/event.js';
 import { autorun } from '../../../../../base/common/observable.js';
-import { OS } from '../../../../../base/common/platform.js';
+import { isMobile, isWeb, OS } from '../../../../../base/common/platform.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -31,6 +31,7 @@ import { defaultButtonStyles } from '../../../../../platform/theme/browser/defau
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IHostService } from '../../../../../workbench/services/host/browser/host.js';
+import { IWorkbenchLayoutService, Parts } from '../../../../../workbench/services/layout/browser/layoutService.js';
 import { logSessionsInteraction } from '../../../../common/sessionsTelemetry.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
@@ -79,6 +80,7 @@ export class SessionsView extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@IHostService private readonly hostService: IHostService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IStorageService private readonly storageService: IStorageService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 	) {
@@ -224,7 +226,13 @@ export class SessionsView extends ViewPane {
 			grouping: () => this.currentGrouping,
 			sorting: () => this.currentSorting,
 			findWidgetContainer,
-			onSessionOpen: (resource, preserveFocus) => this.sessionsManagementService.openSession(resource, { preserveFocus }),
+			onSessionOpen: async (resource, preserveFocus) => {
+				await this.sessionsManagementService.openSession(resource, { preserveFocus });
+
+				if (isWeb && isMobile) {
+					this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
+				}
+			},
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
 

@@ -1041,6 +1041,30 @@ export class TerminalService extends Disposable implements ITerminalService {
 		}
 
 		if (!shellLaunchConfig.customPtyImplementation && !this.isProcessSupportRegistered) {
+			// On web without process support, fall back to a contributed profile
+			// (e.g. agent host terminal) if one is available
+			const fallbackProfile = this._terminalProfileService.contributedProfiles[0];
+			if (fallbackProfile) {
+				const resolvedLocation = await this.resolveLocation(options?.location);
+				let location: TerminalLocation | { viewColumn: number; preserveState?: boolean } | { splitActiveTerminal: boolean } | undefined;
+				if (splitActiveTerminal) {
+					location = resolvedLocation === TerminalLocation.Editor ? { viewColumn: SIDE_GROUP } : { splitActiveTerminal: true };
+				} else {
+					location = typeof options?.location === 'object' && hasKey(options.location, { viewColumn: true }) ? options.location : resolvedLocation;
+				}
+				await this.createContributedTerminalProfile(fallbackProfile.extensionIdentifier, fallbackProfile.id, {
+					icon: fallbackProfile.icon,
+					color: fallbackProfile.color,
+					location,
+					cwd: shellLaunchConfig.cwd,
+					titleTemplate: fallbackProfile.titleTemplate,
+				});
+				const instanceHost = resolvedLocation === TerminalLocation.Editor ? this._terminalEditorService : this._terminalGroupService;
+				const instance = instanceHost.instances[instanceHost.instances.length - 1];
+				await instance?.focusWhenReady();
+				this._terminalHasBeenCreated.set(true);
+				return instance;
+			}
 			throw new Error('Could not create terminal when process support is not registered');
 		}
 

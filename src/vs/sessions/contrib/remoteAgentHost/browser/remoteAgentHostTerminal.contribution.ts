@@ -31,13 +31,24 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 			agentHostTerminalService
 		);
 
-
 		// React to connection changes
-		this._register(this._remoteAgentHostService.onDidChangeConnections(() => this._reconcile()));
+		this._register(this._remoteAgentHostService.onDidChangeConnections(() => {
+			this._reconcile();
+		}));
+
+		// The base-class constructor already called _reconcile(), but at that
+		// point _remoteAgentHostService was not yet assigned (guard returned
+		// early). Re-reconcile now to pick up any existing connections.
+		this._reconcile();
 	}
 
 	protected override _collectEntries(): IAgentHostEntry[] {
 		const entries: IAgentHostEntry[] = [];
+		// Guard: _remoteAgentHostService may not be assigned yet when the
+		// base-class constructor calls _reconcile() before super() returns.
+		if (!this._remoteAgentHostService) {
+			return entries;
+		}
 		// Remote connections
 		for (const info of this._remoteAgentHostService.connections) {
 			if (info.status !== RemoteAgentHostConnectionStatus.Connected) {
@@ -60,7 +71,9 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 			});
 		}
 
-		return [...entries, ...super._collectEntries()];
+		// On web, only remote entries are relevant (no local agent host).
+		// Skip super._collectEntries() which adds the unusable "Local" entry.
+		return entries;
 	}
 }
 registerWorkbenchContribution2(AgentHostTerminalContribution.ID, RemoteAgentHostTerminalContribution, WorkbenchPhase.AfterRestored);
