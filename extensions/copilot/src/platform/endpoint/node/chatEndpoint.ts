@@ -291,7 +291,7 @@ export class ChatEndpoint implements IChatEndpoint {
 		// Determine per-model image limit for APIs with known restrictions
 		const imageLimit = this.getImageLimit();
 		if (imageLimit !== undefined) {
-			options = { ...options, messages: filterHistoryImages(options.messages, imageLimit) };
+			options = { ...options, messages: this.validateAndFilterImages(options.messages, imageLimit) };
 		}
 
 		if (this.useResponsesApi) {
@@ -319,6 +319,13 @@ export class ChatEndpoint implements IChatEndpoint {
 			return this.maxPromptImages ?? 10;
 		}
 		return undefined;
+	}
+
+	/**
+	 * Thin wrapper around {@link filterHistoryImages} retained for test ergonomics.
+	 */
+	private validateAndFilterImages(messages: Raw.ChatMessage[], maxImages: number): Raw.ChatMessage[] {
+		return filterHistoryImages(messages, maxImages);
 	}
 
 	protected getCompletionsCallback(): RawMessageConversionCallback | undefined {
