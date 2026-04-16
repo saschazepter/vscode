@@ -13,9 +13,9 @@ function createMockConfigService(opts: {
 } = {}) {
 	const configs: Record<string, unknown> = {};
 	// Map by fullyQualifiedId
-	configs['github.copilot.chat.sessionSearch.localIndex.enabled'] = opts.localIndexEnabled ?? false;
-	configs['github.copilot.chat.sessionSearch.cloudSync.enabled'] = opts.cloudSyncEnabled ?? false;
-	configs['github.copilot.chat.sessionSearch.cloudSync.excludeRepositories'] = opts.excludeRepositories ?? [];
+	configs['github.copilot.chat.advanced.sessionSearch.localIndex.enabled'] = opts.localIndexEnabled ?? false;
+	configs['github.copilot.chat.advanced.sessionSearch.cloudSync.enabled'] = opts.cloudSyncEnabled ?? false;
+	configs['github.copilot.chat.advanced.sessionSearch.cloudSync.excludeRepositories'] = opts.excludeRepositories ?? [];
 
 	return {
 		getConfig: (key: { fullyQualifiedId: string }) => configs[key.fullyQualifiedId],

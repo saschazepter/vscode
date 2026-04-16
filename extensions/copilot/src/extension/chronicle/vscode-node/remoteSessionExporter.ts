@@ -509,9 +509,16 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				}
 			}
 
-			// Re-queue events with no cloud session (session not initialized yet)
+			// Re-queue events with no cloud session (session not initialized yet),
+			// but drop events for sessions that have been disabled (init failed).
 			if (orphanedEntries.length > 0) {
-				this._eventBuffer.unshift(...orphanedEntries);
+				const requeue = orphanedEntries.filter(e =>
+					!this._disabledSessions.has(e.chatSessionId)
+					&& (this._initializingSessions.has(e.chatSessionId) || this._cloudSessions.has(e.chatSessionId))
+				);
+				if (requeue.length > 0) {
+					this._eventBuffer.unshift(...requeue);
+				}
 			}
 
 			// Submit each session's events to the correct cloud session

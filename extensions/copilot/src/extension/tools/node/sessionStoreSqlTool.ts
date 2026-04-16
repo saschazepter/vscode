@@ -9,7 +9,7 @@ import { IAuthenticationService } from '../../../platform/authentication/common/
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
-import { LanguageModelTextPart } from '../../../vscodeTypes';
+import { LanguageModelTextPart, LanguageModelToolResult } from '../../../vscodeTypes';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
@@ -59,14 +59,14 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		const sql = options.input.query.trim().replace(/;+\s*$/, '');
 
 		if (!sql) {
-			return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Empty query provided.')]);
+			return new LanguageModelToolResult([new LanguageModelTextPart('Error: Empty query provided.')]);
 		}
 
 		// Security check: block mutating statements
 		for (const pattern of BLOCKED_PATTERNS) {
 			if (pattern.test(sql)) {
 				this._sendTelemetry('blocked', 0, 0, false, 'blocked_mutating_sql');
-				return new LanguageModelToolResultImpl([
+				return new LanguageModelToolResult([
 					new LanguageModelTextPart(`Error: Blocked SQL statement. Only SELECT queries are allowed.`),
 				]);
 			}
@@ -75,7 +75,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		// Block multiple statements — only one query per call
 		if (sql.includes(';')) {
 			this._sendTelemetry('blocked', 0, 0, false, 'multiple_statements');
-			return new LanguageModelToolResultImpl([
+			return new LanguageModelToolResult([
 				new LanguageModelTextPart('Error: Only one SQL statement per call. Remove semicolons and split into separate calls.'),
 			]);
 		}
@@ -95,7 +95,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 				const result = await client.executeQuery(sql);
 				if (!result) {
 					this._sendTelemetry(source, 0, Date.now() - startTime, false, 'empty_result');
-					return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Cloud query returned no result.')]);
+					return new LanguageModelToolResult([new LanguageModelTextPart('Error: Cloud query returned no result.')]);
 				}
 				rows = result.rows;
 				truncated = result.truncated;
@@ -122,11 +122,11 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 
 			// Format as table
 			const result = formatSqlResult(rows, truncated, source);
-			return new LanguageModelToolResultImpl([new LanguageModelTextPart(result)]);
+			return new LanguageModelToolResult([new LanguageModelTextPart(result)]);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			this._sendTelemetry(hasCloud ? 'cloud' : 'local', 0, 0, false, message.substring(0, 100));
-			return new LanguageModelToolResultImpl([new LanguageModelTextPart(`Error: ${message}`)]);
+			return new LanguageModelToolResult([new LanguageModelTextPart(`Error: ${message}`)]);
 		}
 	}
 
@@ -200,13 +200,6 @@ function formatSqlResult(rows: Record<string, unknown>[], truncated: boolean, so
 	}
 
 	return lines.join('\n');
-}
-
-/**
- * Simple LanguageModelToolResult implementation.
- */
-class LanguageModelToolResultImpl {
-	constructor(public readonly content: (vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart)[]) { }
 }
 
 ToolRegistry.registerTool(SessionStoreSqlTool);
