@@ -9,7 +9,8 @@ import { type FileRow, type RefRow, type SessionRow, type TurnRow, ISessionStore
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
-import { Disposable } from '../../../util/vs/base/common/lifecycle';
+import { Disposable, DisposableStore } from '../../../util/vs/base/common/lifecycle';
+import { autorun } from '../../../util/vs/base/common/observableInternal';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IExtensionContribution } from '../../common/contributions';
 import {
@@ -77,40 +78,51 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	) {
 		super();
 
-		// Warm up the DB eagerly so schema issues surface early
-		try {
-			this._sessionStore.getStats();
-		} catch (err) {
-			/* __GDPR__
-				"chronicle.localStore" : {
-					"owner": "vijayu",
-					"comment": "Tracks local session store failures",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: dbInit or flush." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-				}
-			*/
-			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
-				operation: 'dbInit',
-				success: 'false',
-				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
-			}, {});
-		}
+		// Only set up span listener and flush timer when the feature is enabled.
+		// Uses autorun to react if the setting changes at runtime.
+		const featureEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		const spanListenerStore = this._register(new DisposableStore());
+		this._register(autorun(reader => {
+			spanListenerStore.clear();
+			if (!featureEnabled.read(reader)) {
+				return;
+			}
 
-		// Start periodic flush
-		this._flushTimer = setInterval(() => this._flush(), FLUSH_INTERVAL_MS);
+			// Warm up the DB eagerly so schema issues surface early
+			try {
+				this._sessionStore.getStats();
+			} catch (err) {
+				/* __GDPR__
+					"chronicle.localStore" : {
+						"owner": "vijayu",
+						"comment": "Tracks local session store failures",
+						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: dbInit or flush." },
+						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
+						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
+					operation: 'dbInit',
+					success: 'false',
+					error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+				}, {});
+			}
 
-		// Listen to completed OTel spans for tool calls and session activity
-		this._register(this._otelService.onDidCompleteSpan(span => {
-			// Defer processing off the span completion callback
-			queueMicrotask(() => this._handleSpan(span));
-		}));
+			// Start periodic flush
+			this._flushTimer = setInterval(() => this._flush(), FLUSH_INTERVAL_MS);
+			spanListenerStore.add({ dispose: () => { if (this._flushTimer) { clearInterval(this._flushTimer); this._flushTimer = undefined; } } });
 
-		// Flush and clean up on session disposal
-		this._register(this._chatSessionService.onDidDisposeChatSession(sessionId => {
-			this._initializedSessions.delete(sessionId);
-			this._lastSessionTimestamp.delete(sessionId);
-			this._turnCounters.delete(sessionId);
+			// Listen to completed OTel spans for tool calls and session activity
+			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
+				queueMicrotask(() => this._handleSpan(span));
+			}));
+
+			// Flush and clean up on session disposal
+			spanListenerStore.add(this._chatSessionService.onDidDisposeChatSession(sessionId => {
+				this._initializedSessions.delete(sessionId);
+				this._lastSessionTimestamp.delete(sessionId);
+				this._turnCounters.delete(sessionId);
+			}));
 		}));
 	}
 
@@ -127,12 +139,6 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	// ── Span handling (produces buffered writes, no direct DB calls) ─────
 
 	private _handleSpan(span: ICompletedSpanData): void {
-		// Only track sessions when session search is enabled and user has chosen a storage level
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
-			|| !this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled)) {
-			return;
-		}
-
 		try {
 			const sessionId = this._getSessionId(span);
 			if (!sessionId) {
@@ -179,6 +185,18 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	private _initSession(sessionId: string): void {
 		this._initializedSessions.add(sessionId);
 		this._bufferSessionUpsert({ id: sessionId, host_type: 'vscode' });
+		console.log(`[Chronicle] Local store: tracking session ${sessionId.substring(0, 8)}...`);
+
+		/* __GDPR__
+			"chronicle.localStore" : {
+				"owner": "vijayu",
+				"comment": "Tracks that a session is being stored locally",
+				"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: sessionInit." }
+			}
+		*/
+		this._telemetryService.sendMSFTTelemetryEvent('chronicle.localStore', {
+			operation: 'sessionInit',
+		}, {});
 	}
 
 	private _backfillFromSpanAttributes(sessionId: string, span: ICompletedSpanData): void {
@@ -347,6 +365,9 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		this._bufferSessionUpsert({ id: sessionId, host_type: 'vscode' });
 	}
 
+	/** Whether we've already sent a successful-write telemetry event. */
+	private _firstWriteLogged = false;
+
 	// ── Flush: batch all buffered writes into one transaction ────────────
 
 	private _flush(): void {
@@ -381,6 +402,20 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 					this._sessionStore.insertTurn(turn);
 				}
 			});
+
+			if (!this._firstWriteLogged) {
+				this._firstWriteLogged = true;
+				/* __GDPR__
+					"chronicle.localStore" : {
+						"owner": "vijayu",
+						"comment": "Tracks first successful local session store write",
+						"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: firstWrite." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.localStore', {
+					operation: 'firstWrite',
+				}, {});
+			}
 		} catch (err) {
 			/* __GDPR__
 				"chronicle.localStore" : {

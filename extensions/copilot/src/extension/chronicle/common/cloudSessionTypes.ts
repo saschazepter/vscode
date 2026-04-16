@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// ── Mission Control API types ───────────────────────────────────────────────────
-// Mirrors the CLI's src/core/remote/types.ts for API compatibility.
+// ── Cloud session API types ─────────────────────────────────────────────────────
 
 /**
  * Resolved GitHub repository numeric IDs (from GitHub REST API).
@@ -24,15 +23,15 @@ export interface GitHubRepository {
 }
 
 /**
- * Mission Control session and task IDs needed to interact with an active MC session.
+ * Cloud session and task IDs for an active remote session.
  */
-export interface McSessionIds {
-	mcSessionId: string;
-	mcTaskId: string;
+export interface CloudSessionIds {
+	cloudSessionId: string;
+	cloudTaskId: string;
 }
 
 /**
- * Response from creating a session in Mission Control.
+ * Response from creating a cloud session.
  */
 export interface CreateSessionResponse {
 	id: string;
@@ -41,9 +40,9 @@ export interface CreateSessionResponse {
 }
 
 /**
- * A Mission Control session.
+ * A cloud session.
  */
-export interface MissionControlSession {
+export interface CloudSession {
 	id: string;
 	state: string;
 	task_id?: string;
@@ -54,11 +53,10 @@ export interface MissionControlSession {
 }
 
 // ── Session event types (CLI-compatible) ────────────────────────────────────────
-// These match the MC event format so the cloud analytics pipeline processes
-// VS Code sessions identically to CLI sessions.
+// Event format compatible with the cloud session pipeline.
 
 /**
- * Base structure for all session events sent to Mission Control.
+ * Base structure for all session events sent to the cloud.
  */
 export interface SessionEvent {
 	/** Unique event identifier (UUID v4). */
@@ -88,7 +86,7 @@ export interface WorkingDirectoryContext {
 /** Reason why session creation failed. */
 export type CreateSessionFailureReason = 'policy_blocked' | 'error';
 
-/** Result of attempting to create a Mission Control session. */
+/** Result of attempting to create a cloud session. */
 export type CreateSessionResult =
 	| { ok: true; response: CreateSessionResponse }
 	| { ok: false; reason: CreateSessionFailureReason };

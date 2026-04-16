@@ -19,7 +19,7 @@ import { ToolName } from '../common/toolNames';
 import { ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
 
 /** Max rows to return to avoid blowing up the context window. */
-const MAX_ROWS = 200;
+const MAX_ROWS = 100;
 
 /** Dangerous SQL patterns that should be blocked. */
 const BLOCKED_PATTERNS = [
@@ -55,7 +55,8 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		options: vscode.LanguageModelToolInvocationOptions<SessionStoreSqlParams>,
 		token: CancellationToken,
 	): Promise<vscode.LanguageModelToolResult> {
-		const sql = options.input.query.trim();
+		// Strip trailing semicolons — models often append them
+		const sql = options.input.query.trim().replace(/;+\s*$/, '');
 
 		if (!sql) {
 			return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Empty query provided.')]);
@@ -70,8 +71,16 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 			}
 		}
 
+		// Block multiple statements — only one query per call
+		if (sql.includes(';')) {
+			return new LanguageModelToolResultImpl([
+				new LanguageModelTextPart('Error: Only one SQL statement per call. Remove semicolons and split into separate calls.'),
+			]);
+		}
+
 		// Determine query target based on consent
 		const hasCloud = this._indexingPreference.hasCloudConsent();
+		console.log(`[Chronicle] SQL tool: hasCloud=${hasCloud}, query=${sql.substring(0, 80)}...`);
 
 		try {
 			let rows: Record<string, unknown>[];
@@ -83,27 +92,25 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 				source = 'cloud';
 				const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 				const result = await client.executeQuery(sql);
-				console.log(`[Chronicle] Remote query done: ${result ? result.rows.length : 0} rows`); // TODO: remove temp log
 				if (!result) {
 					this._sendTelemetry(source, 0, Date.now() - startTime, false, 'empty_result');
 					return new LanguageModelToolResultImpl([new LanguageModelTextPart('Error: Cloud query returned no result.')]);
 				}
 				rows = result.rows;
 				truncated = result.truncated;
+				console.log(`[Chronicle] SQL tool cloud query: ${rows.length} rows`);
 			} else {
 				source = 'local';
 				try {
 					rows = this._sessionStore.executeReadOnly(sql);
 				} catch (authErr) {
 					if (authErr instanceof Error && authErr.message.includes('authorizer')) {
-						// Fallback: authorizer not available (Node.js < 24.2).
-						// SQL is already validated by BLOCKED_PATTERNS above, so
-						// execute directly without engine-level enforcement.
 						rows = this._sessionStore.executeReadOnlyFallback(sql);
 					} else {
 						throw authErr;
 					}
 				}
+				console.log(`[Chronicle] SQL tool local query: ${rows.length} rows`);
 			}
 
 			// Cap rows

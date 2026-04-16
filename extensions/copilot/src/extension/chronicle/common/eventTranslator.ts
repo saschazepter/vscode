@@ -6,7 +6,7 @@
 import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import type { ICompletedSpanData } from '../../../platform/otel/common/otelService';
-import type { SessionEvent, WorkingDirectoryContext } from './missionControlTypes';
+import type { SessionEvent, WorkingDirectoryContext } from './cloudSessionTypes';
 
 // ── Content size limits (bytes) ─────────────────────────────────────────────────
 // Truncate content before buffering to keep memory and payload sizes bounded.
@@ -74,7 +74,7 @@ export function createSessionTranslationState(): SessionTranslationState {
 }
 
 /**
- * Translate a completed OTel span into zero or more Mission Control SessionEvents.
+ * Translate a completed OTel span into zero or more cloud SessionEvents.
  *
  * Returns the events to buffer, or an empty array if the span is not relevant.
  * Mutates `state` to track parentId chaining and session.start emission.

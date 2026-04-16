@@ -17,7 +17,7 @@ import { IGitService } from '../../../platform/git/common/gitService';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { LanguageModelChatMessage } from '../../../vscodeTypes';
-import { type AnnotatedRef, type AnnotatedSession, SESSIONS_QUERY_SQLITE, buildRefsQuery, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
+import { type AnnotatedRef, type AnnotatedSession, type SessionFileInfo, type SessionTurnInfo, SESSIONS_QUERY_SQLITE, buildRefsQuery, buildFilesQuery, buildTurnsQuery, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
@@ -33,8 +33,8 @@ import { IIntent, IIntentInvocation, IIntentInvocationContext, IIntentSlashComma
 import { PromptRenderer, RendererIntentInvocation } from '../../prompts/node/base/promptRenderer';
 import { ChroniclePrompt } from '../../prompts/node/panel/chroniclePrompt';
 
-/** DuckDB-dialect sessions query (cloud uses DuckDB, not SQLite). */
-const SESSIONS_QUERY_DUCKDB = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
+/** Cloud SQL dialect sessions query. */
+const SESSIONS_QUERY_CLOUD = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
 	FROM sessions
 	WHERE updated_at >= now() - INTERVAL '1 day'
 	ORDER BY updated_at DESC
@@ -49,8 +49,7 @@ export class ChronicleIntent implements IIntent {
 	readonly id = ChronicleIntent.ID;
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
 	get locations(): ChatLocation[] {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
-			&& this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled) ? [ChatLocation.Panel] : [];
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService) ? [ChatLocation.Panel] : [];
 	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
@@ -87,8 +86,7 @@ export class ChronicleIntent implements IIntent {
 		location: ChatLocation,
 		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
-			|| !this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled)) {
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
 			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
@@ -190,7 +188,20 @@ export class ChronicleIntent implements IIntent {
 		const cappedIds = new Set(capped.map(s => s.id));
 		const cappedRefs = refs.filter(r => cappedIds.has(r.session_id));
 
-		const standupPrompt = buildStandupPrompt(capped, cappedRefs, extra);
+		// Fetch turns and files for capped sessions (local only — lightweight detail)
+		let cappedTurns: SessionTurnInfo[] = [];
+		let cappedFiles: SessionFileInfo[] = [];
+		if (capped.length > 0) {
+			const ids = capped.map(s => s.id);
+			try {
+				cappedTurns = this._sessionStore.executeReadOnlyFallback(buildTurnsQuery(ids)) as unknown as SessionTurnInfo[];
+			} catch { /* non-fatal */ }
+			try {
+				cappedFiles = this._sessionStore.executeReadOnlyFallback(buildFilesQuery(ids)) as unknown as SessionFileInfo[];
+			} catch { /* non-fatal */ }
+		}
+
+		const standupPrompt = buildStandupPrompt(capped, cappedRefs, cappedTurns, cappedFiles, extra);
 
 		if (capped.length === 0) {
 			stream.markdown(l10n.t('No sessions found. There\'s nothing to report for a standup.'));
@@ -246,10 +257,12 @@ Database schema:
 ${schema}
 
 Instructions:
-1. IMMEDIATELY call the session_store_sql tool to query recent sessions. Do not explain what you will do first.
+1. IMMEDIATELY call the session_store_sql tool to query sessions from the last 7 days. Do not explain what you will do first.
 2. After getting results, make additional queries for tool usage, prompting patterns, and session durations.
 3. Based on the data, provide 3-5 specific, actionable tips grounded in actual usage data.
-4. Consider VS Code features like inline chat, @workspace, agent mode, custom instructions, and prompt files.`;
+4. Consider VS Code features like inline chat, @workspace, agent mode, custom instructions, and prompt files.
+5. Only one query per call — do not combine multiple statements with semicolons.
+6. Always use LIMIT (max 50) in your queries and prefer aggregations (COUNT, GROUP BY) over raw row dumps.`;
 
 		if (extra) {
 			prompt += `\n\nThe user is especially interested in: ${extra}`;
@@ -279,7 +292,11 @@ ${schema}
 
 User's question: ${userQuery}
 
-Use the session_store_sql tool to run queries. Start with a broad query, then drill down as needed. Only SELECT queries are allowed.`;
+Use the session_store_sql tool to run queries. Start with a broad query, then drill down as needed.
+- Only SELECT queries are allowed
+- Only one query per call — do not combine multiple statements with semicolons
+- Always use LIMIT (max 50) and prefer aggregations (COUNT, GROUP BY) over raw row dumps
+- Present results in a clear, readable format with markdown tables or bullet points`;
 
 		this._sendTelemetry('freeform', 0, 0);
 		return this._delegateToToolCallingHandler(conversation, request, stream, token, documentContext, location, chatTelemetry);
@@ -304,7 +321,7 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 			documentContext,
 			location,
 			chatTelemetry,
-			{ maxToolCallIterations: 5, temperature: 0 },
+			{ maxToolCallIterations: 8, temperature: 0, confirmOnMaxToolIterations: false },
 			undefined,
 		);
 		return handler.getResult();
@@ -336,7 +353,7 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 
 	private _getSchemaDescription(hasCloud: boolean): string {
 		return hasCloud
-			? `Available tables (DuckDB SQL syntax — cloud):
+			? `Available tables (cloud SQL syntax):
 - **sessions**: id, repository, branch, summary, created_at, updated_at (TIMESTAMP). NOTE: cwd is always NULL in the cloud.
 - **turns**: session_id, turn_index, user_message, assistant_response, timestamp (TIMESTAMP)
 - **session_files**: session_id, file_path, tool_name, turn_index
@@ -358,18 +375,35 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 	 */
 	private _queryLocalStore(): { sessions: AnnotatedSession[]; refs: AnnotatedRef[] } {
 		try {
-			const rawSessions = this._sessionStore.executeReadOnly(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
+			// Use fallback (no authorizer) since these are known-safe SELECT queries
+			const rawSessions = this._sessionStore.executeReadOnlyFallback(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
+			console.log(`[Chronicle] Local store query returned ${rawSessions.length} session(s)`);
 			const sessions: AnnotatedSession[] = rawSessions.map(s => ({ ...s, source: 'vscode' as const }));
 
 			let refs: AnnotatedRef[] = [];
 			if (sessions.length > 0) {
 				const ids = sessions.map(s => s.id);
-				const rawRefs = this._sessionStore.executeReadOnly(buildRefsQuery(ids)) as unknown as RefRow[];
+				const rawRefs = this._sessionStore.executeReadOnlyFallback(buildRefsQuery(ids)) as unknown as RefRow[];
 				refs = rawRefs.map(r => ({ ...r, source: 'vscode' as const }));
 			}
 
 			return { sessions, refs };
-		} catch {
+		} catch (err) {
+			console.log(`[Chronicle] Local store query failed: ${err instanceof Error ? err.message : 'unknown'}`);
+			/* __GDPR__
+				"chronicle" : {
+					"owner": "vijayu",
+					"comment": "Tracks chronicle local query failures",
+					"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
+					"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: local." },
+					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
+				subcommand: 'standup',
+				querySource: 'local',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
 			return { sessions: [], refs: [] };
 		}
 	}
@@ -379,7 +413,7 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 		try {
 			const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 
-			const sessionsResult = await client.executeQuery(SESSIONS_QUERY_DUCKDB);
+			const sessionsResult = await client.executeQuery(SESSIONS_QUERY_CLOUD);
 			if (!sessionsResult || sessionsResult.rows.length === 0) {
 				return empty;
 			}
@@ -408,8 +442,21 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 						source: 'cloud' as const,
 					}));
 				}
-			} catch {
-				// session_refs may not be populated — non-fatal
+			} catch (refsErr) {
+				/* __GDPR__
+					"chronicle" : {
+						"owner": "vijayu",
+						"comment": "Tracks chronicle cloud refs query failures",
+						"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
+						"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: cloudRefs." },
+						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
+					subcommand: 'standup',
+					querySource: 'cloudRefs',
+					error: refsErr instanceof Error ? refsErr.message.substring(0, 100) : 'unknown',
+				}, {});
 			}
 
 			return { sessions, refs };

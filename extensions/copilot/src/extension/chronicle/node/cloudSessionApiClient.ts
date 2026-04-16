@@ -6,25 +6,21 @@
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
-import type { CreateSessionFailureReason, CreateSessionResult, MissionControlSession, SessionEvent } from '../common/missionControlTypes';
+import type { CreateSessionFailureReason, CreateSessionResult, CloudSession, SessionEvent } from '../common/cloudSessionTypes';
 
-/** Timeout for individual MC API requests (ms). */
+/** Timeout for individual cloud API requests (ms). */
 const REQUEST_TIMEOUT_MS = 10_000;
 
-/** MC sessions endpoint path through copilot-api proxy. */
+/** Cloud sessions endpoint path. */
 const SESSIONS_PATH = '/agents/sessions';
 
 /**
- * HTTP client for Mission Control's Session API.
+ * HTTP client for the cloud session API.
  *
- * Mirrors the CLI's MissionControlClient — creates sessions and submits
- * event batches. All methods are non-blocking: failures are logged but
- * never thrown to avoid disrupting the chat session.
- *
- * Auth uses the GitHub OAuth token (preferred) or Copilot proxy token.
- * The MC base URL is derived from the Copilot API endpoint.
+ * Creates sessions and submits event batches. All methods are non-blocking:
+ * failures are logged but never thrown to avoid disrupting the chat session.
  */
-export class MissionControlClient {
+export class CloudSessionApiClient {
 
 	constructor(
 		private readonly _tokenManager: ICopilotTokenManager,
@@ -33,9 +29,8 @@ export class MissionControlClient {
 	) { }
 
 	/**
-	 * Create a session in Mission Control.
+	 * Create a session in the cloud.
 	 *
-	 * MC automatically creates/links a task for the session.
 	 * The response includes both the session ID and the associated task ID.
 	 */
 	async createSession(
@@ -47,6 +42,7 @@ export class MissionControlClient {
 		try {
 			const { url, headers } = await this._buildRequest(SESSIONS_PATH);
 			if (!url) {
+				console.log('[Chronicle] Cloud createSession: no API endpoint');
 				return { ok: false, reason: 'error' };
 			}
 
@@ -58,7 +54,7 @@ export class MissionControlClient {
 			};
 
 			const res = await this._fetcherService.fetch(url, {
-				callSite: 'chronicle.mcCreateSession',
+				callSite: 'chronicle.cloudCreateSession',
 				method: 'POST',
 				headers,
 				json: body,
@@ -66,13 +62,15 @@ export class MissionControlClient {
 			});
 
 			if (!res.ok) {
+				console.log(`[Chronicle] Cloud createSession failed: HTTP ${res.status}`);
 				const reason: CreateSessionFailureReason = res.status === 403 ? 'policy_blocked' : 'error';
 				return { ok: false, reason };
 			}
 
 			const response = await res.json() as { id: string; task_id?: string; agent_task_id?: string };
 			return { ok: true, response };
-		} catch {
+		} catch (err) {
+			console.log(`[Chronicle] Cloud createSession error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return { ok: false, reason: 'error' };
 		}
 	}
@@ -88,11 +86,12 @@ export class MissionControlClient {
 		try {
 			const { url, headers } = await this._buildRequest(`${SESSIONS_PATH}/${sessionId}/events`);
 			if (!url) {
+				console.log('[Chronicle] Cloud submitEvents: no API endpoint');
 				return false;
 			}
 
 			const res = await this._fetcherService.fetch(url, {
-				callSite: 'chronicle.mcSubmitEvents',
+				callSite: 'chronicle.cloudSubmitEvents',
 				method: 'POST',
 				headers,
 				json: { events },
@@ -100,11 +99,13 @@ export class MissionControlClient {
 			});
 
 			if (!res.ok) {
+				console.log(`[Chronicle] Cloud submitEvents failed: HTTP ${res.status}`);
 				return false;
 			}
 
 			return true;
-		} catch {
+		} catch (err) {
+			console.log(`[Chronicle] Cloud submitEvents error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return false;
 		}
 	}
@@ -112,7 +113,7 @@ export class MissionControlClient {
 	/**
 	 * Get a session by ID (used for reattach verification).
 	 */
-	async getSession(sessionId: string): Promise<MissionControlSession | undefined> {
+	async getSession(sessionId: string): Promise<CloudSession | undefined> {
 		try {
 			const { url, headers } = await this._buildRequest(`${SESSIONS_PATH}/${sessionId}`);
 			if (!url) {
@@ -120,7 +121,7 @@ export class MissionControlClient {
 			}
 
 			const res = await this._fetcherService.fetch(url, {
-				callSite: 'chronicle.mcGetSession',
+				callSite: 'chronicle.cloudGetSession',
 				method: 'GET',
 				headers,
 				timeout: REQUEST_TIMEOUT_MS,
@@ -130,15 +131,14 @@ export class MissionControlClient {
 				return undefined;
 			}
 
-			return (await res.json()) as MissionControlSession;
+			return (await res.json()) as CloudSession;
 		} catch {
 			return undefined;
 		}
 	}
 
 	/**
-	 * Build the full URL and auth headers for an MC API request.
-	 * Derives the base URL from the Copilot API endpoint.
+	 * Build the full URL and auth headers for a cloud API request.
 	 */
 	private async _buildRequest(path: string): Promise<{ url: string | undefined; headers: Record<string, string> }> {
 		try {
@@ -148,7 +148,7 @@ export class MissionControlClient {
 				return { url: undefined, headers: {} };
 			}
 
-			// Prefer GitHub OAuth token (like CLI does), fallback to Copilot proxy token
+			// Prefer GitHub OAuth token, fallback to Copilot token
 			const githubToken = this._authService.anyGitHubSession?.accessToken;
 			const bearerToken = githubToken ?? copilotToken.token;
 

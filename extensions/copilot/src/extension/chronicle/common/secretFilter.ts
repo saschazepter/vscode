@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Filters secrets from event data before sending to Mission Control.
+ * Filters secrets from event data before sending to the cloud.
  *
  * Patterns are sourced from the CLI's SecretFilter (which uses GitHub Actions
  * log redaction patterns) — covering tokens, keys, passwords, and credentials.

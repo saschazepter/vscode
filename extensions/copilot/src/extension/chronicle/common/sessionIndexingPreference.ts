@@ -7,7 +7,7 @@ import { ConfigKey, IConfigurationService } from '../../../platform/configuratio
 import picomatch from 'picomatch';
 
 /**
- * Session indexing levels — matches CLI's MissionControlIndexingLevel.
+ * Session indexing levels for cloud sync.
  * - 'local': keep on device only, no remote export
  * - 'user': sync to cloud, visible only to the user
  * - 'repo_and_user': sync to cloud, visible to repo collaborators
@@ -48,12 +48,12 @@ export class SessionIndexingPreference {
 	 * Returns true if cloudSync.enabled is true AND the repo is not excluded.
 	 */
 	hasCloudConsent(repoNwo?: string): boolean {
-		if (!this._configService.getConfig(ConfigKey.SessionSearchCloudSyncEnabled)) {
+		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled)) {
 			return false;
 		}
 
 		if (repoNwo) {
-			const excludePatterns = this._configService.getConfig(ConfigKey.SessionSearchCloudSyncExcludeRepositories);
+			const excludePatterns = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchCloudSyncExcludeRepositories);
 			if (excludePatterns && excludePatterns.length > 0) {
 				for (const pattern of excludePatterns) {
 					if (pattern === repoNwo || picomatch.isMatch(repoNwo, pattern)) {

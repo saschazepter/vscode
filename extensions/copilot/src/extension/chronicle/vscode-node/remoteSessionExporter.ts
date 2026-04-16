@@ -12,7 +12,8 @@ import { IExperimentationService } from '../../../platform/telemetry/common/null
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
-import { Disposable } from '../../../util/vs/base/common/lifecycle';
+import { Disposable, DisposableStore } from '../../../util/vs/base/common/lifecycle';
+import { autorun } from '../../../util/vs/base/common/observableInternal';
 import { IExtensionContribution } from '../../common/contributions';
 import { CircuitBreaker } from '../common/circuitBreaker';
 import {
@@ -21,16 +22,16 @@ import {
 	translateSpan,
 	type SessionTranslationState,
 } from '../common/eventTranslator';
-import type { GitHubRepository, McSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/missionControlTypes';
+import type { GitHubRepository, CloudSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/cloudSessionTypes';
 import { filterSecretsFromObj, addSecretValues } from '../common/secretFilter';
 import { SessionIndexingPreference, type SessionIndexingLevel } from '../common/sessionIndexingPreference';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
-import { MissionControlClient } from '../node/missionControlClient';
+import { CloudSessionApiClient } from '../node/cloudSessionApiClient';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
 
-/** How often to flush buffered events to MC (ms). */
+/** How often to flush buffered events to the cloud (ms). */
 const BATCH_INTERVAL_MS = 500;
 
 /** Faster drain interval when buffer is above soft cap. */
@@ -46,26 +47,26 @@ const MAX_BUFFER_SIZE = 1_000;
 const SOFT_BUFFER_CAP = 500;
 
 /**
- * Exports VS Code chat session events to Mission Control in real-time.
+ * Exports VS Code chat session events to the cloud in real-time.
  *
- * - Listens to OTel spans, translates to MC SessionEvent format
+ * - Listens to OTel spans, translates to cloud SessionEvent format
  * - Buffers events and flushes in batches every 500ms
- * - Circuit breaker prevents cascading failures when MC is unavailable
+ * - Circuit breaker prevents cascading failures when the cloud is unavailable
  * - Lazy initialization: no work until the first real chat interaction
  *
- * All MC operations are fire-and-forget — never blocks or slows the chat session.
+ * All cloud operations are fire-and-forget — never blocks or slows the chat session.
  */
 export class RemoteSessionExporter extends Disposable implements IExtensionContribution {
 
 	// ── Per-session state ────────────────────────────────────────────────────────
 
-	/** Per-session MC IDs (created lazily on first interaction). */
-	private readonly _mcSessions = new Map<string, McSessionIds>();
+	/** Per-session cloud IDs (created lazily on first interaction). */
+	private readonly _cloudSessions = new Map<string, CloudSessionIds>();
 
 	/** Per-session translation state (parentId chaining, session.start tracking). */
 	private readonly _translationStates = new Map<string, SessionTranslationState>();
 
-	/** Sessions that failed MC initialization — don't retry. */
+	/** Sessions that failed cloud initialization — don't retry. */
 	private readonly _disabledSessions = new Set<string>();
 
 	/** Sessions currently initializing (prevent concurrent init). */
@@ -75,11 +76,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	/** Buffered events tagged with their chat session ID for correct routing. */
 	private readonly _eventBuffer: Array<{ chatSessionId: string; event: SessionEvent }> = [];
-	private readonly _mcClient: MissionControlClient;
+	private readonly _cloudClient: CloudSessionApiClient;
 	private readonly _circuitBreaker: CircuitBreaker;
 
 	private _flushTimer: ReturnType<typeof setInterval> | undefined;
 	private _isFlushing = false;
+	private _firstCloudWriteLogged = false;
 
 	/** Resolved lazily on first use. */
 	private _repository: GitHubRepository | undefined;
@@ -103,7 +105,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		super();
 
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
-		this._mcClient = new MissionControlClient(this._tokenManager, this._authService, this._fetcherService);
+		this._cloudClient = new CloudSessionApiClient(this._tokenManager, this._authService, this._fetcherService);
 		this._circuitBreaker = new CircuitBreaker({
 			failureThreshold: 5,
 			resetTimeoutMs: 1_000,
@@ -113,14 +115,26 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
 
-		// Listen to completed OTel spans — deferred off the callback
-		this._register(this._otelService.onDidCompleteSpan(span => {
-			queueMicrotask(() => this._handleSpan(span));
-		}));
+		// Only set up span listener when both local index and cloud sync are enabled.
+		// Uses autorun to react if settings change at runtime.
+		const localEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		const cloudEnabled = this._configService.getConfigObservable(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled);
+		const spanListenerStore = this._register(new DisposableStore());
+		this._register(autorun(reader => {
+			spanListenerStore.clear();
+			if (!localEnabled.read(reader) || !cloudEnabled.read(reader)) {
+				return;
+			}
 
-		// Clean up on session disposal
-		this._register(this._chatSessionService.onDidDisposeChatSession(sessionId => {
-			this._handleSessionDispose(sessionId);
+			// Listen to completed OTel spans — deferred off the callback
+			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
+				queueMicrotask(() => this._handleSpan(span));
+			}));
+
+			// Clean up on session disposal
+			spanListenerStore.add(this._chatSessionService.onDidDisposeChatSession(sessionId => {
+				this._handleSessionDispose(sessionId);
+			}));
 		}));
 	}
 
@@ -137,7 +151,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._flushBatch().catch(() => { /* best effort */ });
 		}
 
-		this._mcSessions.clear();
+		this._cloudSessions.clear();
 		this._translationStates.clear();
 		this._disabledSessions.clear();
 		this._initializingSessions.clear();
@@ -149,11 +163,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	private _handleSpan(span: ICompletedSpanData): void {
 		try {
-			// Check if session search feature is enabled
-			if (!this._isFeatureEnabled()) {
-				return;
-			}
-
 			const sessionId = this._getSessionId(span);
 			if (!sessionId || this._disabledSessions.has(sessionId)) {
 				return;
@@ -162,7 +171,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const operationName = span.attributes[GenAiAttr.OPERATION_NAME] as string | undefined;
 
 			// Only start tracking on invoke_agent (real user interaction)
-			if (!this._mcSessions.has(sessionId) && !this._initializingSessions.has(sessionId)) {
+			if (!this._cloudSessions.has(sessionId) && !this._initializingSessions.has(sessionId)) {
 				if (operationName !== GenAiOperationName.INVOKE_AGENT) {
 					return;
 				}
@@ -170,7 +179,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				this._initializeSession(sessionId, span);
 			}
 
-			// Translate span to MC events
+			// Translate span to cloud events
 			const state = this._getOrCreateTranslationState(sessionId);
 			const context = this._extractContext(span);
 			const events = translateSpan(span, state, context);
@@ -188,14 +197,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		return (span.attributes[CopilotChatAttr.CHAT_SESSION_ID] as string | undefined)
 			?? (span.attributes[GenAiAttr.CONVERSATION_ID] as string | undefined)
 			?? (span.attributes[CopilotChatAttr.SESSION_ID] as string | undefined);
-	}
-
-	/**
-	 * Check if the session search feature is enabled via settings.
-	 */
-	private _isFeatureEnabled(): boolean {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)
-			&& this._configService.getConfig(ConfigKey.SessionSearchLocalIndexEnabled);
 	}
 
 	private _getOrCreateTranslationState(sessionId: string): SessionTranslationState {
@@ -225,7 +226,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	/**
 	 * Register known authentication tokens as dynamic secrets so they are
-	 * redacted from any event data sent to Mission Control.
+	 * redacted from any event data sent to the cloud.
 	 */
 	private _registerAuthSecrets(): void {
 		// GitHub OAuth token
@@ -250,19 +251,22 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		try {
 			const repo = await this._resolveRepository();
 			if (!repo) {
+				console.log('[Chronicle] Cloud sync disabled for session: no GitHub repository resolved');
 				this._disabledSessions.add(sessionId);
 				return;
 			}
 
 			// Only export remotely if the user has cloud consent for this repo
 			const repoNwo = `${repo.owner}/${repo.repo}`;
+
 			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
-				console.log(`[Chronicle] Repo '${repoNwo}' excluded from cloud sync, disabling session`); // TODO: remove temp log
+				console.log(`[Chronicle] Repo '${repoNwo}' excluded from cloud sync, disabling session`);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
 
-			await this._createMcSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
+			console.log(`[Chronicle] Creating cloud sync session for repo '${repoNwo}'`);
+			await this._createCloudSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
 			/* __GDPR__
 				"chronicle.cloudSync" : {
 					"owner": "vijayu",
@@ -298,12 +302,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	/**
 	 * Called when the storage level setting changes.
-	 * Creates MC sessions for any pending sessions if cloud sync is now enabled.
+	 * Creates cloud sessions for any pending sessions if cloud sync is now enabled.
 	 */
 	async notifyConsent(level: SessionIndexingLevel): Promise<void> {
 		if (level === 'local') {
 			for (const sessionId of this._translationStates.keys()) {
-				if (!this._mcSessions.has(sessionId)) {
+				if (!this._cloudSessions.has(sessionId)) {
 					this._disabledSessions.add(sessionId);
 				}
 			}
@@ -316,18 +320,18 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		for (const sessionId of this._translationStates.keys()) {
-			if (!this._mcSessions.has(sessionId) && !this._disabledSessions.has(sessionId)) {
-				await this._createMcSession(sessionId, repo, level);
+			if (!this._cloudSessions.has(sessionId) && !this._disabledSessions.has(sessionId)) {
+				await this._createCloudSession(sessionId, repo, level);
 			}
 		}
 	}
 
-	private async _createMcSession(
+	private async _createCloudSession(
 		sessionId: string,
 		repo: GitHubRepository,
 		indexingLevel: SessionIndexingLevel,
 	): Promise<void> {
-		const result = await this._mcClient.createSession(
+		const result = await this._cloudClient.createSession(
 			repo.repoIds.ownerId,
 			repo.repoIds.repoId,
 			sessionId,
@@ -338,14 +342,14 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			/* __GDPR__
 				"chronicle.cloudSync" : {
 					"owner": "vijayu",
-					"comment": "Tracks cloud sync MC session creation failure",
+					"comment": "Tracks cloud sync session creation failure",
 					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
 					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
 					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message or error code." }
 				}
 			*/
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
-				operation: 'createMcSession',
+				operation: 'createCloudSession',
 				success: 'false',
 				error: result.reason?.substring(0, 100) ?? 'unknown',
 			}, {});
@@ -355,7 +359,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		if (!result.response.task_id) {
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
-				operation: 'createMcSession',
+				operation: 'createCloudSession',
 				success: 'false',
 				error: 'missing_task_id',
 			}, {});
@@ -363,23 +367,23 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			return;
 		}
 
-		const mcIds: McSessionIds = {
-			mcSessionId: result.response.id,
-			mcTaskId: result.response.task_id,
+		const cloudIds: CloudSessionIds = {
+			cloudSessionId: result.response.id,
+			cloudTaskId: result.response.task_id,
 		};
 
-		this._mcSessions.set(sessionId, mcIds);
+		this._cloudSessions.set(sessionId, cloudIds);
 		/* __GDPR__
 			"chronicle.cloudSync" : {
 				"owner": "vijayu",
-				"comment": "Tracks successful MC session creation",
+				"comment": "Tracks successful cloud session creation",
 				"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
 				"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." },
 				"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." }
 			}
 		*/
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
-			operation: 'createMcSession',
+			operation: 'createCloudSession',
 			success: 'true',
 			indexingLevel,
 		});
@@ -399,11 +403,13 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		try {
 			const repoContext = this._gitService.activeRepository?.get();
 			if (!repoContext) {
+				console.log('[Chronicle] Cloud sync: no active git repository');
 				return undefined;
 			}
 
 			const repoInfo = getGitHubRepoInfoFromContext(repoContext);
 			if (!repoInfo) {
+				console.log('[Chronicle] Cloud sync: active repo is not a GitHub repository');
 				return undefined;
 			}
 
@@ -420,6 +426,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			};
 			return this._repository;
 		} catch (err) {
+			console.log(`[Chronicle] Cloud sync: failed to resolve repository — ${err instanceof Error ? err.message : 'unknown error'}`);
 			/* __GDPR__
 				"chronicle.cloudSync" : {
 					"owner": "vijayu",
@@ -442,12 +449,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	private _handleSessionDispose(sessionId: string): void {
 		const state = this._translationStates.get(sessionId);
-		if (state && this._mcSessions.has(sessionId)) {
+		if (state && this._cloudSessions.has(sessionId)) {
 			const event = makeShutdownEvent(state);
 			this._bufferEvents(sessionId, [event]);
 		}
 
-		this._mcSessions.delete(sessionId);
+		this._cloudSessions.delete(sessionId);
 		this._translationStates.delete(sessionId);
 		this._disabledSessions.delete(sessionId);
 		this._initializingSessions.delete(sessionId);
@@ -513,7 +520,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		if (this._eventBuffer.length === 0) {
-			if (this._mcSessions.size === 0) {
+			if (this._cloudSessions.size === 0) {
 				this._stopFlushTimer();
 			}
 			return;
@@ -531,31 +538,31 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
 
 		try {
-			// Group events by chat session ID for correct MC session routing
+			// Group events by chat session ID for correct cloud session routing
 			const eventsBySession = new Map<string, SessionEvent[]>();
 			const orphanedEntries: typeof batch = [];
 
 			for (const entry of batch) {
-				const mcIds = this._mcSessions.get(entry.chatSessionId);
-				if (mcIds) {
-					const arr = eventsBySession.get(mcIds.mcSessionId) ?? [];
+				const cloudIds = this._cloudSessions.get(entry.chatSessionId);
+				if (cloudIds) {
+					const arr = eventsBySession.get(cloudIds.cloudSessionId) ?? [];
 					arr.push(entry.event);
-					eventsBySession.set(mcIds.mcSessionId, arr);
+					eventsBySession.set(cloudIds.cloudSessionId, arr);
 				} else {
 					orphanedEntries.push(entry);
 				}
 			}
 
-			// Re-queue events with no MC session (session not initialized yet)
+			// Re-queue events with no cloud session (session not initialized yet)
 			if (orphanedEntries.length > 0) {
 				this._eventBuffer.unshift(...orphanedEntries);
 			}
 
-			// Submit each session's events to the correct MC session
+			// Submit each session's events to the correct cloud session
 			let allSuccess = true;
-			for (const [mcSessionId, events] of eventsBySession) {
+			for (const [cloudSessionId, events] of eventsBySession) {
 				const filteredEvents = events.map(e => filterSecretsFromObj(e));
-				const success = await this._mcClient.submitSessionEvents(mcSessionId, filteredEvents);
+				const success = await this._cloudClient.submitSessionEvents(cloudSessionId, filteredEvents);
 				if (!success) {
 					allSuccess = false;
 				}
@@ -563,20 +570,20 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
-				/* __GDPR__
-					"chronicle.cloudSync" : {
-						"owner": "vijayu",
-						"comment": "Tracks successful batch flush of events to MC",
-						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
-						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." },
-						"eventCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events flushed." },
-						"sessionCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of MC sessions flushed to." }
-					}
-				*/
-				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
-					operation: 'flushBatch',
-					success: 'true',
-				}, { eventCount: batch.length, sessionCount: eventsBySession.size });
+
+				if (!this._firstCloudWriteLogged) {
+					this._firstCloudWriteLogged = true;
+					/* __GDPR__
+						"chronicle.cloudSync" : {
+							"owner": "vijayu",
+							"comment": "Tracks first successful cloud write",
+							"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: firstWrite." }
+						}
+					*/
+					this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+						operation: 'firstWrite',
+					}, {});
+				}
 				console.log(`[Chronicle] Remote upload done: ${batch.length} events to ${eventsBySession.size} session(s)`); // TODO: remove temp log
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();

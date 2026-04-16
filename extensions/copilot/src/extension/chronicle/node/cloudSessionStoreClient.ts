@@ -7,17 +7,17 @@ import { IAuthenticationService } from '../../../platform/authentication/common/
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 
-/** Analytics query path through copilot-api proxy. */
+/** Cloud query endpoint path. */
 const QUERY_PATH = '/agents/analytics/query';
 
-/** Timeout for analytics query requests (ms). */
+/** Timeout for cloud query requests (ms). */
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * Response format from the analytics query API.
+ * Response format from the cloud query API.
  * Data comes as columnar arrays, not row objects.
  */
-interface AnalyticsQueryResponse {
+interface CloudQueryResponse {
 	columns: string[];
 	column_types: string[];
 	data: unknown[][];
@@ -26,9 +26,9 @@ interface AnalyticsQueryResponse {
 }
 
 /**
- * Convert a columnar analytics response to an array of record objects.
+ * Convert a columnar cloud response to an array of record objects.
  */
-function columnarToRecords(response: AnalyticsQueryResponse): Record<string, unknown>[] {
+function columnarToRecords(response: CloudQueryResponse): Record<string, unknown>[] {
 	const { columns, data } = response;
 	if (!data || !columns) {
 		return [];
@@ -43,11 +43,7 @@ function columnarToRecords(response: AnalyticsQueryResponse): Record<string, unk
 }
 
 /**
- * HTTP client for querying session data from the cloud analytics API.
- *
- * The endpoint is proxied through copilot-api to the mission-control
- * analytics service, which runs DuckDB for SQL queries.
- * Uses VS Code's ICopilotTokenManager for authentication.
+ * HTTP client for querying session data from the cloud.
  */
 export class CloudSessionStoreClient {
 
@@ -58,7 +54,7 @@ export class CloudSessionStoreClient {
 	) { }
 
 	/**
-	 * Execute a DuckDB SQL query against the cloud session store (user-scoped).
+	 * Execute a SQL query against the cloud session store (user-scoped).
 	 * Returns an array of row objects on success, or undefined on failure.
 	 */
 	async executeQuery(sql: string): Promise<{ rows: Record<string, unknown>[]; truncated: boolean } | undefined> {
@@ -66,11 +62,12 @@ export class CloudSessionStoreClient {
 			const copilotToken = await this._tokenManager.getCopilotToken();
 			const baseUrl = copilotToken.endpoints?.api;
 			if (!baseUrl) {
+				console.log('[Chronicle] Cloud query skipped: no API endpoint in copilot token');
 				return undefined;
 			}
 
-			// The analytics endpoint expects a GitHub OAuth token (like the CLI uses),
-			// not the Copilot HMAC proxy token. Try the GitHub session token first.
+			// The cloud endpoint expects a GitHub OAuth token,
+			// not the Copilot proxy token.
 			const githubToken = this._authService.anyGitHubSession?.accessToken;
 			const bearerToken = githubToken ?? copilotToken.token;
 
@@ -88,13 +85,18 @@ export class CloudSessionStoreClient {
 			});
 
 			if (!res.ok) {
+				let errorBody = '';
+				try { errorBody = await res.text(); } catch { /* ignore */ }
+				console.log(`[Chronicle] Cloud query failed: HTTP ${res.status} — ${errorBody.substring(0, 200)}`);
 				return undefined;
 			}
 
-			const data = await res.json() as AnalyticsQueryResponse;
+			const data = await res.json() as CloudQueryResponse;
 			const rows = columnarToRecords(data);
+			console.log(`[Chronicle] Cloud query returned ${rows.length} rows (truncated: ${data.truncated ?? false})`);
 			return { rows, truncated: data.truncated ?? false };
-		} catch {
+		} catch (err) {
+			console.log(`[Chronicle] Cloud query error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return undefined;
 		}
 	}

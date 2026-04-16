@@ -9,7 +9,7 @@ import { type AnnotatedRef, type AnnotatedSession, buildRefsQuery, buildStandupP
 
 describe('buildStandupPrompt', () => {
 	it('returns no-activity message when no sessions', () => {
-		const result = buildStandupPrompt([], []);
+		const result = buildStandupPrompt([], [], [], []);
 		expect(result).toContain('no sessions were found');
 	});
 
@@ -17,8 +17,7 @@ describe('buildStandupPrompt', () => {
 		const sessions: AnnotatedSession[] = [
 			{ id: 'sess-1', branch: 'feature/auth', repository: 'owner/repo', summary: 'Added OAuth', updated_at: '2026-04-06T10:00:00Z', source: 'cloud' },
 		];
-		const result = buildStandupPrompt(sessions, []);
-		expect(result).toContain('Sessions (1)');
+		const result = buildStandupPrompt(sessions, [], [], []);
 		expect(result).toContain('sess-1');
 		expect(result).toContain('feature/auth');
 		expect(result).toContain('owner/repo');
@@ -33,26 +32,25 @@ describe('buildStandupPrompt', () => {
 			{ session_id: 'sess-1', ref_type: 'pr', ref_value: '42', source: 'cloud' },
 			{ session_id: 'sess-1', ref_type: 'commit', ref_value: 'abc123', source: 'cloud' },
 		];
-		const result = buildStandupPrompt(sessions, refs);
-		expect(result).toContain('pr: 42');
+		const result = buildStandupPrompt(sessions, refs, [], []);
 		expect(result).toContain('commit: abc123');
 	});
 
 	it('shows "No references found" when refs empty', () => {
 		const sessions: AnnotatedSession[] = [{ id: 'sess-1', branch: 'main', summary: 'Fix', source: 'cloud' }];
-		const result = buildStandupPrompt(sessions, []);
+		const result = buildStandupPrompt(sessions, [], [], []);
 		expect(result).toContain('No references found.');
 	});
 
 	it('includes extra context when provided', () => {
 		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'cloud' }];
-		const result = buildStandupPrompt(sessions, [], 'Focus on backend changes');
+		const result = buildStandupPrompt(sessions, [], [], [], 'Focus on backend changes');
 		expect(result).toContain('Additional context: Focus on backend changes');
 	});
 
 	it('shows "unknown" for missing branch and repo', () => {
 		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'cloud' }];
-		const result = buildStandupPrompt(sessions, []);
+		const result = buildStandupPrompt(sessions, [], [], []);
 		expect(result).toContain('unknown (unknown)');
 	});
 
@@ -61,8 +59,7 @@ describe('buildStandupPrompt', () => {
 			{ id: 'sess-1', branch: 'feature/a', repository: 'org/repo', summary: 'Feature A', source: 'cloud' },
 			{ id: 'sess-2', branch: 'feature/b', repository: 'org/repo', summary: 'Feature B', source: 'cloud' },
 		];
-		const result = buildStandupPrompt(sessions, []);
-		expect(result).toContain('Sessions (2)');
+		const result = buildStandupPrompt(sessions, [], [], []);
 		expect(result).toContain('feature/a');
 		expect(result).toContain('feature/b');
 	});
@@ -75,8 +72,7 @@ describe('buildStandupPrompt', () => {
 		const refs: AnnotatedRef[] = [
 			{ session_id: 'cloud-2', ref_type: 'pr', ref_value: '99', source: 'cloud' },
 		];
-		const result = buildStandupPrompt(sessions, refs);
-		expect(result).toContain('Sessions (2)');
+		const result = buildStandupPrompt(sessions, refs, [], []);
 		expect(result).toContain('cloud-2 | pr: 99');
 	});
 });

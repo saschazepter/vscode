@@ -84,7 +84,7 @@ export class ContextKeysContribution extends Disposable {
 			commands.executeCommand('setContext', debugReportFeedbackContextKey, debugReportFeedback.read(reader));
 		}));
 
-		const sessionSearchEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService);
+		const sessionSearchEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
 		this._register(autorun(reader => {
 			commands.executeCommand('setContext', sessionSearchEnabledContextKey, sessionSearchEnabled.read(reader));
 		}));
