@@ -538,9 +538,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 						// Update the permission picker dropdown based on the selected action
 						if (response.approved && response.selectedAction !== 'exit_only') {
-							const autoApprove = response.selectedAction === 'autopilot' || response.selectedAction === 'autopilot_fleet';
+							const autopilotSelected = response.selectedAction === 'autopilot' || response.selectedAction === 'autopilot_fleet';
 							const commandId = 'workbench.action.chat.copilotcli.approval';
-							this._commandExecutionService.executeCommand(commandId, this._sessionResource, autoApprove).catch(error => {
+							this._commandExecutionService.executeCommand(commandId, this._sessionResource, autopilotSelected).catch(error => {
 								this.logService.error(error, '[CopilotCLISession] Failed to update permission picker');
 							});
 						}
