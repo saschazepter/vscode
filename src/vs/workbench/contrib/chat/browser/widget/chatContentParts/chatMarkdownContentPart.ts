@@ -60,7 +60,7 @@ import { IDisposableReference } from './chatCollections.js';
 import { EditorPool } from './chatContentCodePools.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
 import { ChatExtensionsContentPart } from './chatExtensionsContentPart.js';
-import { SmoothStreamingDOMMorpher } from './chatSmoothStreaming.js';
+import { SmoothStreamingDOMMorpher } from './chatSmoothStreaming/chatSmoothStreaming.js';
 import './media/chatMarkdownPart.css';
 
 const $ = dom.$;
@@ -157,6 +157,24 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 				content.uris = this.markdown.content.uris;
 				this.markdown = { ...this.markdown, content };
 				doRenderMarkdown();
+			});
+			// Shadow render for visual-line measurement (line buffering mode).
+			// Uses a lightweight render — no code block processing — into a
+			// hidden off-screen div to measure scrollHeight.
+			this._smoothMorpher.setShadowRenderCallback((newMd) => {
+				const shadowNode = this._smoothMorpher!.getShadowNode();
+				if (!shadowNode) {
+					return;
+				}
+				const shadowContent = new MarkdownString(newMd, this.markdown.content);
+				shadowContent.baseUri = URI.revive(this.markdown.content.baseUri);
+				shadowContent.uris = this.markdown.content.uris;
+				dom.clearNode(shadowNode);
+				const result = renderer.render(shadowContent, {
+					fillInIncompleteTokens,
+					markedOptions: { gfm: true, breaks: true },
+				}, shadowNode);
+				result.dispose();
 			});
 		}
 

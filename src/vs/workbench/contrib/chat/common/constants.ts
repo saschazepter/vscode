@@ -72,6 +72,7 @@ export enum ChatConfiguration {
 
 	SmoothStreaming = 'chat.experimental.smoothStreaming.enabled',
 	SmoothStreamingStyle = 'chat.experimental.smoothStreaming.animationStyle',
+	SmoothStreamingBuffering = 'chat.experimental.smoothStreaming.buffering',
 }
 
 /**

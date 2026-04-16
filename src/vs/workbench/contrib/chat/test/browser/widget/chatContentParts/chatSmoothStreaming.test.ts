@@ -10,7 +10,8 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../ba
 import { TestConfigurationService } from '../../../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { workbenchInstantiationService } from '../../../../../../test/browser/workbenchTestServices.js';
-import { lastBlockBoundary, SmoothStreamingDOMMorpher } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming.js';
+import { lastBlockBoundary } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/buffers/paragraphBuffer.js';
+import { SmoothStreamingDOMMorpher } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/chatSmoothStreaming.js';
 import { ChatConfiguration } from '../../../../common/constants.js';
 
 suite('lastBlockBoundary', () => {
