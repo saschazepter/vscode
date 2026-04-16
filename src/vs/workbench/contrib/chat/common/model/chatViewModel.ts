@@ -354,8 +354,9 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 
 		const pendingRequests = this._model.getPendingRequests();
 		if (pendingRequests.length > 0) {
-			// Separate steering and queued requests, excluding system-initiated steering
-			const steeringRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering && !p.request.isSystemInitiated);
+			// Use visible pending requests for steering (excludes system-initiated)
+			const visiblePendingRequests = this._model.getVisiblePendingRequests();
+			const steeringRequests = visiblePendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering);
 			const queuedRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Queued);
 
 			// Add steering requests with their divider first

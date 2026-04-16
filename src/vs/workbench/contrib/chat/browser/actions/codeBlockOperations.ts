@@ -36,7 +36,7 @@ import { CellKind, ICellEditOperation, NOTEBOOK_EDITOR_ID } from '../../../noteb
 import { INotebookService } from '../../../notebook/common/notebookService.js';
 import { ICodeMapperCodeBlock, ICodeMapperRequest, ICodeMapperResponse, ICodeMapperService } from '../../common/editing/chatCodeMapperService.js';
 import { ChatUserAction, IChatService } from '../../common/chatService/chatService.js';
-import { IChatRequestViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
+import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ICodeBlockActionContext } from '../widget/chatContentParts/codeBlockPart.js';
 
 export class InsertCodeBlockOperation {
@@ -67,7 +67,7 @@ export class InsertCodeBlockOperation {
 
 		if (isResponseVM(context.element)) {
 			const requestId = context.element.requestId;
-			const request = context.element.session.getItems().find(item => item.id === requestId && isRequestVM(item)) as IChatRequestViewModel | undefined;
+			const request = context.element.session.model.getRequests().find(r => r.id === requestId);
 			notifyUserAction(this.chatService, context, {
 				kind: 'insert',
 				codeBlockIndex: context.codeBlockIndex,
@@ -197,7 +197,7 @@ export class ApplyCodeBlockOperation {
 
 		if (isResponseVM(context.element)) {
 			const requestId = context.element.requestId;
-			const request = context.element.session.getItems().find(item => item.id === requestId && isRequestVM(item)) as IChatRequestViewModel | undefined;
+			const request = context.element.session.model.getRequests().find(r => r.id === requestId);
 			notifyUserAction(this.chatService, context, {
 				kind: 'apply',
 				codeBlockIndex: context.codeBlockIndex,

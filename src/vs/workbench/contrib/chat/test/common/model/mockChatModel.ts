@@ -68,6 +68,7 @@ export class MockChatModel extends Disposable implements IChatModel {
 	setRepoData(data: IExportableRepoData | undefined): void { this.repoData = data; }
 	readonly onDidChangePendingRequests: Event<void> = this._register(new Emitter<void>()).event;
 	getPendingRequests(): readonly IChatPendingRequest[] { return []; }
+	getVisiblePendingRequests(): readonly IChatPendingRequest[] { return []; }
 	toExport(): IExportableChatData {
 		return {
 			initialLocation: this.initialLocation,

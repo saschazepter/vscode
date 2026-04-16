@@ -2052,12 +2052,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._sessionHasDebugDataContextKey.set(this.chatDebugService.getEvents(model.sessionResource).length > 0);
 		let lastSteeringCount = 0;
 		const updatePendingRequestKeys = (announceSteering: boolean) => {
-			const pendingRequests = model.getPendingRequests();
-			const hasVisiblePendingRequests = pendingRequests.some(pending => !pending.request.isSystemInitiated);
-			this._hasPendingRequestsContextKey.set(hasVisiblePendingRequests);
-			// Only count user-initiated steering for announcements; system-initiated
-			// steering (e.g. terminal completion) is hidden from the conversation view.
-			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering && !pending.request.isSystemInitiated).length;
+			const visiblePendingRequests = model.getVisiblePendingRequests();
+			this._hasPendingRequestsContextKey.set(visiblePendingRequests.length > 0);
+			const steeringCount = visiblePendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering).length;
 			if (announceSteering && steeringCount > 0 && lastSteeringCount === 0) {
 				status(localize('chat.pendingRequests.steeringQueued', "Steering"));
 			}
@@ -2528,8 +2525,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return true;
 		}
 
-		// Only count user-visible pending requests (exclude system-initiated ones)
-		const hasPendingRequests = model.getPendingRequests().some(p => !p.request.isSystemInitiated);
+		const hasPendingRequests = model.getVisiblePendingRequests().length > 0;
 		if (!hasPendingRequests) {
 			return true;
 		}
@@ -2556,7 +2552,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		if (promptResult.result === 'remove') {
-			for (const pendingRequest of [...model.getPendingRequests()]) {
+			for (const pendingRequest of [...model.getVisiblePendingRequests()]) {
 				this.chatService.removePendingRequest(model.sessionResource, pendingRequest.request.id);
 			}
 		}
