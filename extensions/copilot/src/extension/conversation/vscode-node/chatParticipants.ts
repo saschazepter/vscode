@@ -282,8 +282,16 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 						: vscode.l10n.t("{0} {1} at {2}", month, day, time);
 					stream.warning(new vscode.MarkdownString(
 						rateLimitWarning.type === 'session'
-							? vscode.l10n.t("You've used {0}% of your session rate limit. Your session rate limit will reset on {1}.", rateLimitWarning.percentUsed, dateStr)
-							: vscode.l10n.t("You've used {0}% of your weekly rate limit. Your weekly rate limit will reset on {1}.", rateLimitWarning.percentUsed, dateStr)
+							? vscode.l10n.t({
+								message: "You've used {0}% of your session rate limit. Your session rate limit will reset on {1}. [Learn More]({2})",
+								args: [rateLimitWarning.percentUsed, dateStr, 'https://aka.ms/github-copilot-rate-limit-error'],
+								comment: [`{Locked=']({'}`]
+							})
+							: vscode.l10n.t({
+								message: "You've used {0}% of your weekly rate limit. Your weekly rate limit will reset on {1}. [Learn More]({2})",
+								args: [rateLimitWarning.percentUsed, dateStr, 'https://aka.ms/github-copilot-rate-limit-error'],
+								comment: [`{Locked=']({'}`]
+							})
 					));
 				}
 				markChatExt(request.sessionId, ChatExtPerfMark.DidHandleParticipant);
