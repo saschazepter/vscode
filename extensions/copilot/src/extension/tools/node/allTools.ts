@@ -35,7 +35,6 @@ import './scmChangesTool';
 import './searchSubagentTool';
 import './searchWorkspaceSymbolsTool';
 import './sessionStoreSqlTool';
-import './testFailureTool';
 import './toolSearchTool';
 import './viewImageTool';
 import './vscodeAPITool';

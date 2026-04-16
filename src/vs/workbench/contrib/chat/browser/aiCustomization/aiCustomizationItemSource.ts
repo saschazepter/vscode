@@ -155,6 +155,7 @@ export async function expandHookFileItems(
 							description: truncatedCmd || localize('hookUnset', "(unset)"),
 							enabled: item.enabled,
 							groupKey: item.groupKey,
+							storage: item.storage,
 						});
 					}
 				}
@@ -229,12 +230,12 @@ export class AICustomizationItemNormalizer {
 	private resolveSource(item: ICustomizationItem): { storage?: PromptsStorage; groupKey?: string; isBuiltin?: boolean; extensionLabel?: string } {
 		const inferred = this.inferStorageAndGroup(item.uri);
 
-		// Use provider-supplied storage when available; otherwise fall back to URI inference.
+		// Use provider-supplied values when available; otherwise fall back to URI inference.
 		const storage = item.storage ?? inferred.storage;
-		const extensionLabel = inferred.extensionLabel;
+		const extensionLabel = item.extensionLabel ?? inferred.extensionLabel;
 
 		if (!item.groupKey) {
-			return { ...inferred, storage };
+			return { ...inferred, storage, extensionLabel };
 		}
 
 		switch (item.groupKey) {
@@ -345,12 +346,19 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			return [];
 		}
 
-		let providerItems: readonly ICustomizationItem[] = promptType === PromptsType.hook
-			? await expandHookFileItems(
-				allItems.filter(item => item.type === PromptsType.hook),
-				this.workspaceService, this.fileService, this.pathService,
-			)
-			: allItems.filter(item => item.type === promptType);
+		let providerItems: readonly ICustomizationItem[];
+		if (promptType === PromptsType.hook) {
+			const hookItems = allItems.filter(item => item.type === PromptsType.hook);
+			// Plugin hooks are pre-expanded by plugin manifests — skip re-expansion.
+			const toExpand = hookItems.filter(item => item.storage !== PromptsStorage.plugin);
+			const preExpanded = hookItems.filter(item => item.storage === PromptsStorage.plugin);
+			const expanded = await expandHookFileItems(
+				toExpand, this.workspaceService, this.fileService, this.pathService,
+			);
+			providerItems = [...expanded, ...preExpanded];
+		} else {
+			providerItems = allItems.filter(item => item.type === promptType);
+		}
 
 		if (promptType === PromptsType.skill) {
 			providerItems = await this.addSkillDescriptionFallbacks(providerItems);
