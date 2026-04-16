@@ -1601,7 +1601,7 @@ export class BackgroundTaskAttachmentWidget extends AbstractChatAttachmentWidget
 				const status = task.status.read(reader);
 				switch (status) {
 					case BackgroundTaskStatus.Working:
-						this.label.setLabel(`$(${ThemeIcon.modify(Codicon.loading, 'spin').id})\u00A0${attachment.name}`, undefined);
+						this.label.setLabel(`$(${Codicon.sessionInProgress.id})\u00A0${attachment.name}`, undefined);
 						this.element.classList.add('shimmer-progress');
 						this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel.working', "Background task, {0}, running", attachment.name));
 						break;

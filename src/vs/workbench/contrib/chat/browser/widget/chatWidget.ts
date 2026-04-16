@@ -2471,7 +2471,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.updateChatViewVisibility();
 		this.input.acceptInput(options?.storeToHistory ?? isUserQuery);
 
-		// Evict completed background tasks so their context is included in this request
+		// Evict completed background tasks to avoid re-attaching them to subsequent requests
 		if (submittedSessionResource) {
 			const tasks = this.chatBackgroundTaskService.getTasksForSession(submittedSessionResource).get();
 			for (const task of tasks) {

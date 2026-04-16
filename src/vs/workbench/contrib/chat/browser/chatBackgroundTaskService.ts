@@ -116,9 +116,12 @@ export class ChatBackgroundTaskServiceImpl extends Disposable implements IChatBa
 	}
 
 	evictTask(taskId: string): void {
-		for (const [, map] of this._tasksBySession) {
+		for (const [sessionKey, map] of this._tasksBySession) {
 			if (map.has(taskId)) {
 				map.deleteAndDispose(taskId);
+				if (map.size === 0) {
+					this._tasksBySession.deleteAndDispose(sessionKey);
+				}
 				this._onDidChangeTasks.fire();
 				return;
 			}

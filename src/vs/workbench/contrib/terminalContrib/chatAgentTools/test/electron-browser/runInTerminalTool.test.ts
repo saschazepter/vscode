@@ -54,6 +54,7 @@ import { ChatAgentToolsContribution } from '../../browser/terminal.chatAgentTool
 import { TerminalToolId } from '../../browser/tools/toolIds.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
+import { BackgroundTaskStatus, IChatBackgroundTaskService } from '../../../../chat/common/chatBackgroundTask.js';
 
 class TestRunInTerminalTool extends RunInTerminalTool {
 	protected override _osBackend: Promise<OperatingSystem> = Promise.resolve(OperatingSystem.Windows);
@@ -211,6 +212,23 @@ suite('RunInTerminalTool', () => {
 		});
 		instantiationService.stub(ITerminalProfileResolverService, {
 			getDefaultProfile: async () => ({ path: 'bash' } as ITerminalProfile)
+		});
+		instantiationService.stub(IChatBackgroundTaskService, {
+			createTask: () => ({
+				taskId: 'test-task',
+				name: 'test',
+				source: { kind: 'terminal', termId: '', commandName: '' },
+				status: constObservable(BackgroundTaskStatus.Working),
+				statusMessage: constObservable(undefined),
+				result: constObservable(undefined),
+				cancel: () => { },
+				complete: () => { },
+				fail: () => { },
+				updateStatusMessage: () => { },
+			}),
+			getTasksForSession: () => constObservable([]),
+			getTask: () => undefined,
+			evictTask: () => { },
 		});
 
 		storageService = instantiationService.get(IStorageService);
@@ -2379,6 +2397,23 @@ suite('ChatAgentToolsContribution - tool registration refresh', () => {
 
 		instantiationService.stub(ITerminalProfileResolverService, {
 			getDefaultProfile: async () => ({ path: 'bash' } as ITerminalProfile)
+		});
+		instantiationService.stub(IChatBackgroundTaskService, {
+			createTask: () => ({
+				taskId: 'test-task',
+				name: 'test',
+				source: { kind: 'terminal', termId: '', commandName: '' },
+				status: constObservable(BackgroundTaskStatus.Working),
+				statusMessage: constObservable(undefined),
+				result: constObservable(undefined),
+				cancel: () => { },
+				complete: () => { },
+				fail: () => { },
+				updateStatusMessage: () => { },
+			}),
+			getTasksForSession: () => constObservable([]),
+			getTask: () => undefined,
+			evictTask: () => { },
 		});
 
 		const contextKeyService = instantiationService.get(IContextKeyService);

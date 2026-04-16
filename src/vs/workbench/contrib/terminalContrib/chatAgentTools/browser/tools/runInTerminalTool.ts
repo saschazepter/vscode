@@ -2103,8 +2103,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			onCancel: () => {
 				RunInTerminalTool._activeExecutions.get(termId)?.dispose();
 				RunInTerminalTool._activeExecutions.delete(termId);
-				terminalInstance.dispose();
 				disposeNotification();
+				terminalInstance.dispose();
 			},
 		});
 
