@@ -869,10 +869,7 @@ export namespace ConfigKey {
 		export const ResponsesApiWebSocketEnabled = defineTeamInternalSetting<boolean>('chat.advanced.responsesApi.webSocket.enabled', ConfigType.ExperimentBased, false);
 		export const DebugSimulateWebSocketResponse = defineTeamInternalSetting<string>('chat.advanced.debug.simulateWebSocketResponse', ConfigType.Simple, '');
 
-		/** Enable local session search index — tracks sessions locally and enables /chronicle commands.
-		 * This is the master gate for the session search feature. Default false; internal users
-		 * enable via settings.json, external users' values are ignored (valueIgnoredForExternals).
-		 */
+		/** Enable local session search index — tracks sessions locally and enables chronicle commands.*/
 		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
 		/** Enable cloud sync of session data to cloud. */
 		export const SessionSearchCloudSyncEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
