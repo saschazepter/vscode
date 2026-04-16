@@ -172,7 +172,6 @@ export function translateSpan(
 		const size = estimateEventSize(event);
 		if (size > MAX_EVENT_SIZE) {
 			state.droppedCount++;
-			console.log(`[EventTranslator] Dropped oversized event (${size} bytes, type=${event.type})`);
 			return false;
 		}
 		return true;

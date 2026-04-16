@@ -62,7 +62,6 @@ export class CloudSessionStoreClient {
 			const copilotToken = await this._tokenManager.getCopilotToken();
 			const baseUrl = copilotToken.endpoints?.api;
 			if (!baseUrl) {
-				console.log('[Chronicle] Cloud query skipped: no API endpoint in copilot token');
 				return undefined;
 			}
 
@@ -85,18 +84,13 @@ export class CloudSessionStoreClient {
 			});
 
 			if (!res.ok) {
-				let errorBody = '';
-				try { errorBody = await res.text(); } catch { /* ignore */ }
-				console.log(`[Chronicle] Cloud query failed: HTTP ${res.status} — ${errorBody.substring(0, 200)}`);
 				return undefined;
 			}
 
 			const data = await res.json() as CloudQueryResponse;
 			const rows = columnarToRecords(data);
-			console.log(`[Chronicle] Cloud query returned ${rows.length} rows (truncated: ${data.truncated ?? false})`);
 			return { rows, truncated: data.truncated ?? false };
 		} catch (err) {
-			console.log(`[Chronicle] Cloud query error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return undefined;
 		}
 	}

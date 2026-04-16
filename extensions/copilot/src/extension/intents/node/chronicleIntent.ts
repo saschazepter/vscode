@@ -226,10 +226,14 @@ export class ChronicleIntent implements IIntent {
 			LanguageModelChatMessage.User(standupPrompt),
 		];
 
-		const response = await model.sendRequest(messages, {}, token);
+		try {
+			const response = await model.sendRequest(messages, {}, token);
 
-		for await (const part of response.text) {
-			stream.markdown(part);
+			for await (const part of response.text) {
+				stream.markdown(part);
+			}
+		} catch (err) {
+			stream.markdown(l10n.t('Failed to generate standup. Please try again.'));
 		}
 
 		return {};
@@ -377,7 +381,6 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 		try {
 			// Use fallback (no authorizer) since these are known-safe SELECT queries
 			const rawSessions = this._sessionStore.executeReadOnlyFallback(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
-			console.log(`[Chronicle] Local store query returned ${rawSessions.length} session(s)`);
 			const sessions: AnnotatedSession[] = rawSessions.map(s => ({ ...s, source: 'vscode' as const }));
 
 			let refs: AnnotatedRef[] = [];
@@ -389,7 +392,6 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 
 			return { sessions, refs };
 		} catch (err) {
-			console.log(`[Chronicle] Local store query failed: ${err instanceof Error ? err.message : 'unknown'}`);
 			/* __GDPR__
 				"chronicle" : {
 					"owner": "vijayu",

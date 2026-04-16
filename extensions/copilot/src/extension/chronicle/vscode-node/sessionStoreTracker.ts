@@ -185,7 +185,6 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	private _initSession(sessionId: string): void {
 		this._initializedSessions.add(sessionId);
 		this._bufferSessionUpsert({ id: sessionId, host_type: 'vscode' });
-		console.log(`[Chronicle] Local store: tracking session ${sessionId.substring(0, 8)}...`);
 
 		/* __GDPR__
 			"chronicle.localStore" : {

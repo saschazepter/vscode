@@ -251,7 +251,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		try {
 			const repo = await this._resolveRepository();
 			if (!repo) {
-				console.log('[Chronicle] Cloud sync disabled for session: no GitHub repository resolved');
 				this._disabledSessions.add(sessionId);
 				return;
 			}
@@ -260,12 +259,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const repoNwo = `${repo.owner}/${repo.repo}`;
 
 			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
-				console.log(`[Chronicle] Repo '${repoNwo}' excluded from cloud sync, disabling session`);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
-
-			console.log(`[Chronicle] Creating cloud sync session for repo '${repoNwo}'`);
 			await this._createCloudSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
 			/* __GDPR__
 				"chronicle.cloudSync" : {
@@ -403,13 +399,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		try {
 			const repoContext = this._gitService.activeRepository?.get();
 			if (!repoContext) {
-				console.log('[Chronicle] Cloud sync: no active git repository');
 				return undefined;
 			}
 
 			const repoInfo = getGitHubRepoInfoFromContext(repoContext);
 			if (!repoInfo) {
-				console.log('[Chronicle] Cloud sync: active repo is not a GitHub repository');
 				return undefined;
 			}
 
@@ -426,7 +420,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			};
 			return this._repository;
 		} catch (err) {
-			console.log(`[Chronicle] Cloud sync: failed to resolve repository — ${err instanceof Error ? err.message : 'unknown error'}`);
 			/* __GDPR__
 				"chronicle.cloudSync" : {
 					"owner": "vijayu",
@@ -584,7 +577,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 						operation: 'firstWrite',
 					}, {});
 				}
-				console.log(`[Chronicle] Remote upload done: ${batch.length} events to ${eventsBySession.size} session(s)`); // TODO: remove temp log
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
 			}

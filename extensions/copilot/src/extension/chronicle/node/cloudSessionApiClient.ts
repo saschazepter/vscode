@@ -42,7 +42,6 @@ export class CloudSessionApiClient {
 		try {
 			const { url, headers } = await this._buildRequest(SESSIONS_PATH);
 			if (!url) {
-				console.log('[Chronicle] Cloud createSession: no API endpoint');
 				return { ok: false, reason: 'error' };
 			}
 
@@ -62,7 +61,6 @@ export class CloudSessionApiClient {
 			});
 
 			if (!res.ok) {
-				console.log(`[Chronicle] Cloud createSession failed: HTTP ${res.status}`);
 				const reason: CreateSessionFailureReason = res.status === 403 ? 'policy_blocked' : 'error';
 				return { ok: false, reason };
 			}
@@ -70,7 +68,6 @@ export class CloudSessionApiClient {
 			const response = await res.json() as { id: string; task_id?: string; agent_task_id?: string };
 			return { ok: true, response };
 		} catch (err) {
-			console.log(`[Chronicle] Cloud createSession error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return { ok: false, reason: 'error' };
 		}
 	}
@@ -86,7 +83,6 @@ export class CloudSessionApiClient {
 		try {
 			const { url, headers } = await this._buildRequest(`${SESSIONS_PATH}/${sessionId}/events`);
 			if (!url) {
-				console.log('[Chronicle] Cloud submitEvents: no API endpoint');
 				return false;
 			}
 
@@ -99,13 +95,11 @@ export class CloudSessionApiClient {
 			});
 
 			if (!res.ok) {
-				console.log(`[Chronicle] Cloud submitEvents failed: HTTP ${res.status}`);
 				return false;
 			}
 
 			return true;
 		} catch (err) {
-			console.log(`[Chronicle] Cloud submitEvents error: ${err instanceof Error ? err.message : 'unknown'}`);
 			return false;
 		}
 	}

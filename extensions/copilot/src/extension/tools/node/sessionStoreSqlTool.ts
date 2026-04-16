@@ -65,6 +65,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 		// Security check: block mutating statements
 		for (const pattern of BLOCKED_PATTERNS) {
 			if (pattern.test(sql)) {
+				this._sendTelemetry('blocked', 0, 0, false, 'blocked_mutating_sql');
 				return new LanguageModelToolResultImpl([
 					new LanguageModelTextPart(`Error: Blocked SQL statement. Only SELECT queries are allowed.`),
 				]);
@@ -73,6 +74,7 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 
 		// Block multiple statements — only one query per call
 		if (sql.includes(';')) {
+			this._sendTelemetry('blocked', 0, 0, false, 'multiple_statements');
 			return new LanguageModelToolResultImpl([
 				new LanguageModelTextPart('Error: Only one SQL statement per call. Remove semicolons and split into separate calls.'),
 			]);
@@ -80,7 +82,6 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 
 		// Determine query target based on consent
 		const hasCloud = this._indexingPreference.hasCloudConsent();
-		console.log(`[Chronicle] SQL tool: hasCloud=${hasCloud}, query=${sql.substring(0, 80)}...`);
 
 		try {
 			let rows: Record<string, unknown>[];
@@ -98,7 +99,6 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 				}
 				rows = result.rows;
 				truncated = result.truncated;
-				console.log(`[Chronicle] SQL tool cloud query: ${rows.length} rows`);
 			} else {
 				source = 'local';
 				try {
@@ -110,7 +110,6 @@ class SessionStoreSqlTool implements ICopilotTool<SessionStoreSqlParams> {
 						throw authErr;
 					}
 				}
-				console.log(`[Chronicle] SQL tool local query: ${rows.length} rows`);
 			}
 
 			// Cap rows

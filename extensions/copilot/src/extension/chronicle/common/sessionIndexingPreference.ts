@@ -57,7 +57,6 @@ export class SessionIndexingPreference {
 			if (excludePatterns && excludePatterns.length > 0) {
 				for (const pattern of excludePatterns) {
 					if (pattern === repoNwo || picomatch.isMatch(repoNwo, pattern)) {
-						console.log(`[Chronicle] Repo excluded from cloud sync: ${repoNwo} (matched pattern: ${pattern})`); // TODO: remove temp log
 						return false;
 					}
 				}
