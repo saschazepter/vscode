@@ -56,6 +56,8 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 	private _firstTimeStep = 1;
 	private _billingMode: 'token-based' | 'current-model' = 'token-based';
 
+	get billingMode(): 'token-based' | 'current-model' { return this._billingMode; }
+
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
@@ -119,7 +121,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 	private setupInputInterceptor(): void {
 		const tryAttach = () => {
 			const container = this.layoutService.getContainer(mainWindow);
-			const auxBar = container.querySelector('.part.auxiliarybar'); // eslint-disable-line no-restricted-syntax
+			const auxBar = container.querySelector('.part.auxiliarybar') || container.querySelector('.part.chatbar'); // eslint-disable-line no-restricted-syntax
 			if (!auxBar) {
 				setTimeout(tryAttach, 1000);
 				return;
@@ -415,8 +417,8 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 
 	private getOrCreatePrototypeContainer(): HTMLElement | null {
 		const container = this.layoutService.getContainer(mainWindow);
-		// Find all input parts in the auxiliary bar and pick the visible one (welcome view vs active session)
-		const inputParts = container.querySelectorAll('.part.auxiliarybar .interactive-input-part'); // eslint-disable-line no-restricted-syntax
+		// Find all input parts in the auxiliary bar, chat bar (Agents window), or new-chat-input-container (Agents welcome)
+		const inputParts = container.querySelectorAll('.part.auxiliarybar .interactive-input-part, .part.chatbar .interactive-input-part, .part.chatbar .new-chat-input-container'); // eslint-disable-line no-restricted-syntax
 		let inputPart: HTMLElement | null = null;
 		for (const part of inputParts) {
 			if ((part as HTMLElement).offsetParent !== null) {
@@ -589,7 +591,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 
 	private setChatInputOverlap(enabled: boolean): void {
 		const container = this.layoutService.getContainer(mainWindow);
-		const chatInputs = container.querySelectorAll('.part.auxiliarybar .interactive-input-part .chat-input-container'); // eslint-disable-line no-restricted-syntax
+		const chatInputs = container.querySelectorAll('.part.auxiliarybar .interactive-input-part .chat-input-container, .part.chatbar .interactive-input-part .chat-input-container, .part.chatbar .new-chat-input-container .chat-input-container, .part.chatbar .new-chat-input-container .new-chat-input-area'); // eslint-disable-line no-restricted-syntax
 		for (const chatInput of chatInputs) {
 			if (enabled) {
 				(chatInput as HTMLElement).style.position = 'relative';
@@ -1133,7 +1135,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		return grid;
 	}
 
-	private renderDashboard(token: CancellationToken): HTMLElement {
+	renderDashboard(token: CancellationToken): HTMLElement {
 		const disposables = new DisposableStore();
 		disposables.add(token.onCancellationRequested(() => disposables.dispose()));
 
@@ -2071,7 +2073,7 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 
 	private getOrCreatePrototypeContainer(): HTMLElement | null {
 		const container = this.layoutService.getContainer(mainWindow);
-		const inputParts = container.querySelectorAll('.part.auxiliarybar .interactive-input-part'); // eslint-disable-line no-restricted-syntax
+		const inputParts = container.querySelectorAll('.part.auxiliarybar .interactive-input-part, .part.chatbar .interactive-input-part, .part.chatbar .new-chat-input-container'); // eslint-disable-line no-restricted-syntax
 		let inputPart: HTMLElement | null = null;
 		for (const part of inputParts) {
 			if ((part as HTMLElement).offsetParent !== null) {
@@ -2180,7 +2182,7 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 
 	private setChatInputOverlap(enabled: boolean): void {
 		const container = this.layoutService.getContainer(mainWindow);
-		const chatInputs = container.querySelectorAll('.part.auxiliarybar .interactive-input-part .chat-input-container'); // eslint-disable-line no-restricted-syntax
+		const chatInputs = container.querySelectorAll('.part.auxiliarybar .interactive-input-part .chat-input-container, .part.chatbar .interactive-input-part .chat-input-container, .part.chatbar .new-chat-input-container .chat-input-container, .part.chatbar .new-chat-input-container .new-chat-input-area'); // eslint-disable-line no-restricted-syntax
 		for (const chatInput of chatInputs) {
 			if (enabled) {
 				(chatInput as HTMLElement).style.position = 'relative';
@@ -2292,7 +2294,7 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 
 	// ---- Dashboard ----
 
-	private renderDashboard(token: CancellationToken): HTMLElement {
+	renderDashboard(token: CancellationToken): HTMLElement {
 		const disposables = new DisposableStore();
 		disposables.add(token.onCancellationRequested(() => disposables.dispose()));
 

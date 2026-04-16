@@ -169,8 +169,8 @@
 .agent-sessions-workbench .sessions-account-titlebar-panel {
 	display: flex;
 	flex-direction: column;
-	width: 280px;
-	max-width: 280px;
+	width: 340px;
+	max-width: 340px;
 	color: var(--vscode-foreground);
 }
 
@@ -251,6 +251,32 @@
 	min-height: 0;
 	padding-top: 4px;
 	border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-disabledForeground));
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard {
+	width: auto;
+	padding: 4px 8px;
+}
+
+/* Hide tabs and Quick Settings content in the Agents app dashboard */
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard-tabs {
+	display: none !important;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard-section-title {
+	display: none !important;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard-settings-grid {
+	display: none !important;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard-snooze {
+	display: none !important;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-content .copilot-prototype-dashboard-header-actions {
+	display: none !important;
 }
 
 .agent-sessions-workbench .sessions-account-titlebar-panel-summary {

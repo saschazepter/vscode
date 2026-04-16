@@ -11,6 +11,7 @@ import '../../../../workbench/contrib/chat/browser/media/copilotPrototypeShell.c
 import { CopilotPrototypeShellCoinStatusBarContribution, CopilotCurrentModelStatusBarContribution } from '../../../../workbench/contrib/chat/browser/copilotPrototypeShell.contribution.js';
 import Severity from '../../../../base/common/severity.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Event } from '../../../../base/common/event.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2, IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
@@ -58,7 +59,7 @@ const AccountMenu = new MenuId('SessionsAccountMenu');
 const SessionsTitleBarAccountWidgetAction = 'sessions.action.titleBarAccountWidget';
 const SessionsTitleBarUpdateWidgetAction = 'sessions.action.titleBarUpdateWidget';
 const SessionsTitleBarTBBWidgetAction = 'sessions.action.titleBarTBBWidget';
-const SESSIONS_ACCOUNT_TITLEBAR_PANEL_WIDTH = 280;
+const SESSIONS_ACCOUNT_TITLEBAR_PANEL_WIDTH = 340;
 
 function shouldHideSessionsTitleBarUpdateWidget(type: StateType): boolean {
 	return type === StateType.Uninitialized
@@ -576,6 +577,28 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 	private createCopilotHoverContent(): HTMLElement {
 		const store = new DisposableStore();
 		this.copilotDashboardStore.value = store;
+
+		// Use the prototype dashboard if available
+		const tbbInstance = CopilotPrototypeShellCoinStatusBarContribution.instance;
+		const currentInstance = CopilotCurrentModelStatusBarContribution.instance;
+		if (tbbInstance) {
+			const cts = new CancellationTokenSource();
+			store.add(cts);
+			let dashboard: HTMLElement;
+			if (tbbInstance.billingMode === 'current-model' && currentInstance) {
+				dashboard = currentInstance.renderDashboard(cts.token);
+			} else {
+				dashboard = tbbInstance.renderDashboard(cts.token);
+			}
+			store.add(disposableWindowInterval(mainWindow, () => {
+				if (!dashboard.isConnected) {
+					store.dispose();
+				}
+			}, 2000));
+			return dashboard;
+		}
+
+		// Fallback to the standard ChatStatusDashboard
 		const dashboardElement = ChatStatusDashboard.instantiateInContents(this.instantiationService, store, {
 			disableInlineSuggestionsSettings: true,
 			disableModelSelection: true,
@@ -834,7 +857,7 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 					menu: {
 						id: Menus.TitleBarRightLayout,
 						group: 'navigation',
-						order: 98,
+						order: 97,
 						when: IsAuxiliaryWindowContext.toNegated(),
 					}
 				});
