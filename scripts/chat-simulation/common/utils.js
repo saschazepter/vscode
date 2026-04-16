@@ -214,6 +214,7 @@ function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostIns
 		`--extensions-dir=${extDir}`,
 		`--logsPath=${logsDir}`,
 		'--enable-smoke-test-driver',
+		'--disable-extensions',
 	];
 	// vscode-api-tests only exists in the dev build
 	if (isDevBuild) {

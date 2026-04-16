@@ -240,6 +240,7 @@ jobs:
           if [[ -n "$PERF_THRESHOLD" ]]; then
             PERF_ARGS="$PERF_ARGS --threshold $PERF_THRESHOLD"
           fi
+          PERF_ARGS="$PERF_ARGS --production-build"
 
           set +eo pipefail
           xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \

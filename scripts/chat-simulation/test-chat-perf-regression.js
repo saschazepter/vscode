@@ -24,8 +24,8 @@
 const path = require('path');
 const fs = require('fs');
 const {
-	DATA_DIR, METRIC_DEFS, loadConfig,
-	resolveBuild, buildEnv, buildArgs, prepareRunDir,
+	ROOT, DATA_DIR, METRIC_DEFS, loadConfig,
+	resolveBuild, isVersionString, buildEnv, buildArgs, prepareRunDir,
 	robustStats, welchTTest, summarize, markDuration, launchVSCode,
 	getNextExtHostInspectPort, connectToExtHostInspector,
 } = require('./common/utils');
@@ -45,6 +45,7 @@ function parseArgs() {
 		verbose: false,
 		ci: false,
 		noCache: false,
+		force: false,
 		/** @type {string[]} */
 		scenarios: [],
 		/** @type {string | undefined} */
@@ -72,7 +73,9 @@ function parseArgs() {
 			case '--save-baseline': opts.saveBaseline = true; break;
 			case '--threshold': opts.threshold = parseFloat(args[++i]); break;
 			case '--resume': opts.resume = args[++i]; break;
+			case '--production-build': opts.productionBuild = true; break;
 			case '--no-cache': opts.noCache = true; break;
+			case '--force': opts.force = true; break;
 			case '--ci': opts.ci = true; opts.noCache = true; break;
 			case '--help': case '-h':
 				console.log([
@@ -82,16 +85,19 @@ function parseArgs() {
 					'  --runs <n>          Number of runs per scenario (default: 5)',
 					'  --scenario <id>     Scenario to run (repeatable; default: all)',
 					'  --build <path|ver>  Path to VS Code build, or a version to download',
-					'                       (e.g. "1.110.0", "insiders", commit hash; default: local dev)',
+					'                       (e.g. "1.110.0", "insiders", commit hash, or local path)',
 					'  --baseline <path>   Compare against a baseline JSON file',
-					'  --baseline-build <v> Download a VS Code version and benchmark it as baseline',
-					'                       (default: 1.115.0; accepts "insiders", "1.100.0", commit hash)',
+					'  --baseline-build <v> Version or path to benchmark as baseline',
+					'                       (e.g. "1.115.0", "insiders", commit hash, or local path)',
 					'  --no-baseline        Skip baseline comparison entirely',
 					'  --save-baseline     Save results as the new baseline (requires --baseline <path>)',
 					'  --resume <path>     Resume a previous run, adding more iterations to increase',
 					'                       confidence. Merges new runs with existing rawRuns data',
 					'  --threshold <frac>  Regression threshold fraction (default: 0.2 = 20%)',
+					'  --production-build  Build a local bundled package (via gulp vscode) for',
+					'                       apples-to-apples comparison against a release baseline',
 					'  --no-cache          Ignore cached baseline data, always run fresh',
+					'  --force             Skip build mode mismatch confirmation',
 					'  --ci                CI mode: write Markdown summary to ci-summary.md (implies --no-cache)',
 					'  --verbose           Print per-run details',
 					'',
@@ -104,6 +110,112 @@ function parseArgs() {
 		opts.scenarios = getScenarioIds();
 	}
 	return opts;
+}
+
+// -- Build mode detection ----------------------------------------------------
+
+/**
+ * Classify an electron path into a build mode.
+ * @param {string} electronPath
+ * @returns {'dev' | 'production' | 'release'}
+ */
+function detectBuildMode(electronPath) {
+	if (electronPath.includes('.vscode-test')) {
+		return 'release';
+	}
+	if (electronPath.includes('VSCode-')) {
+		return 'production';
+	}
+	return 'dev';
+}
+
+/**
+ * Return a human-readable label for a build mode.
+ * @param {'dev' | 'production' | 'release'} mode
+ * @returns {string}
+ */
+function buildModeLabel(mode) {
+	switch (mode) {
+		case 'dev': return 'development (unbundled)';
+		case 'production': return 'production (bundled, local)';
+		case 'release': return 'release (bundled, downloaded)';
+	}
+}
+
+// -- Production build --------------------------------------------------------
+
+/**
+ * Build a local production (bundled) VS Code package using `gulp vscode`.
+ * Returns the path to the Electron executable in the packaged output.
+ *
+ * The gulp task compiles TypeScript, bundles JS, and packages with Electron
+ * into `../VSCode-<platform>-<arch>/`.  This is the same process used for
+ * release builds, minus minification and mangling.
+ */
+function buildProductionBuild() {
+	const product = require(path.join(ROOT, 'product.json'));
+	const platform = process.platform;
+	const arch = process.arch;
+	const destDir = path.join(ROOT, '..', `VSCode-${platform}-${arch}`);
+
+	console.log('[chat-simulation] Building local production package (gulp vscode)...');
+	console.log('[chat-simulation] This may take a few minutes on the first run.');
+
+	const { execSync } = require('child_process');
+	try {
+		execSync('npm run gulp -- vscode', {
+			cwd: ROOT,
+			stdio: 'inherit',
+			timeout: 10 * 60 * 1000, // 10 minute timeout
+		});
+	} catch (e) {
+		// The copilot shim step may fail locally when the copilot SDK is not
+		// fully packaged (it is normally supplied via CI).  As long as the
+		// Electron executable was produced we can still benchmark.
+		console.warn('[chat-simulation] gulp vscode exited with errors (see above). Checking if executable was still produced...');
+	}
+
+	/** @type {string} */
+	let electronPath;
+	if (platform === 'darwin') {
+		electronPath = path.join(destDir, `${product.nameLong}.app`, 'Contents', 'MacOS', product.nameShort);
+	} else if (platform === 'linux') {
+		electronPath = path.join(destDir, product.applicationName);
+	} else {
+		electronPath = path.join(destDir, `${product.nameShort}.exe`);
+	}
+
+	if (!fs.existsSync(electronPath)) {
+		console.error(`[chat-simulation] Production build failed — executable not found at: ${electronPath}`);
+		process.exit(1);
+	}
+
+	// Merge product.overrides.json into the packaged product.json.
+	// The overrides file contains extensionsGallery and other config that
+	// the OSS product.json lacks.  In dev builds these are loaded at
+	// runtime when VSCODE_DEV is set, but the production build doesn't
+	// set that flag so we bake them in.
+	const overridesPath = path.join(ROOT, 'product.overrides.json');
+	if (fs.existsSync(overridesPath)) {
+		/** @type {string} */
+		let appDir;
+		if (platform === 'darwin') {
+			appDir = path.join(destDir, `${product.nameLong}.app`, 'Contents', 'Resources', 'app');
+		} else {
+			appDir = path.join(destDir, 'resources', 'app');
+		}
+		const packagedProductPath = path.join(appDir, 'product.json');
+		if (fs.existsSync(packagedProductPath)) {
+			const packagedProduct = JSON.parse(fs.readFileSync(packagedProductPath, 'utf-8'));
+			const overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf-8'));
+			const merged = Object.assign(packagedProduct, overrides);
+			fs.writeFileSync(packagedProductPath, JSON.stringify(merged, null, '\t'));
+			console.log('[chat-simulation] Merged product.overrides.json into packaged product.json');
+		}
+	}
+
+	console.log(`[chat-simulation] Production build ready: ${electronPath}`);
+	return electronPath;
 }
 
 /**
@@ -212,14 +324,21 @@ function exceedsThreshold(threshold, change, absoluteDelta) {
  */
 async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, runDir, role) {
 	const { userDataDir, extDir, logsDir } = prepareRunDir(runIndex, mockServer);
-	const isDevBuild = !electronPath.includes('.vscode-test');
+	const isDevBuild = !electronPath.includes('.vscode-test') && !electronPath.includes('VSCode-');
 	// Extract a clean build label from the path.
-	// Dev:    .build/electron/Code - OSS.app/.../Code - OSS  → "dev"
-	// Stable: .vscode-test/vscode-darwin-arm64-1.115.0/Visual Studio Code.app/.../Electron → "1.115.0"
+	// Dev:          .build/electron/Code - OSS.app/.../Code - OSS  → "dev"
+	// Stable:       .vscode-test/vscode-darwin-arm64-1.115.0/Visual Studio Code.app/.../Electron → "1.115.0"
+	// Production:   ../VSCode-darwin-arm64/Code - OSS.app/.../Code - OSS → "production"
 	let buildLabel = 'dev';
 	if (!isDevBuild) {
 		const vscodeTestMatch = electronPath.match(/vscode-test\/vscode-[^/]*?-(\d+\.\d+\.\d+)/);
-		buildLabel = vscodeTestMatch ? vscodeTestMatch[1] : path.basename(electronPath);
+		if (vscodeTestMatch) {
+			buildLabel = vscodeTestMatch[1];
+		} else if (electronPath.includes('VSCode-')) {
+			buildLabel = 'production';
+		} else {
+			buildLabel = path.basename(electronPath);
+		}
 	}
 
 	// Create a per-run diagnostics directory: <runDir>/<role>-<build>/<scenario>-<i>/
@@ -844,7 +963,17 @@ function generateCISummary(jsonReport, baseline, opts) {
 	}
 	lines.push(`| **Scenarios** | ${scenarios.length} |`);
 	lines.push(`| **Platform** | ${process.platform} / ${process.arch} |`);
+	if (jsonReport.buildMode) {
+		lines.push(`| **Build mode** | ${jsonReport.buildMode} |`);
+	}
 	lines.push('');
+	if (jsonReport.mismatchedBuildMode) {
+		lines.push('> **⚠ Build mode mismatch:** The test and baseline builds use different build modes.');
+		lines.push('> Results may not be directly comparable. For apples-to-apples comparisons,');
+		lines.push('> use the same build type for both (e.g. `--production-build` with a local');
+		lines.push('> baseline path, or two version strings).');
+		lines.push('');
+	}
 
 	// -- At-a-glance overview table: one row per scenario --------------------
 	lines.push(`## Overview`);
@@ -1136,6 +1265,16 @@ async function main() {
 	}
 
 	// -- Normal (non-resume) flow -------------------------------------------
+	// --production-build: build a local bundled (non-dev) package from the
+	// current source tree using `gulp vscode`.  This produces the same
+	// packaging as a release build (bundled JS, no VSCODE_DEV) while still
+	// testing your local changes.
+	if (opts.productionBuild && !opts.build) {
+		const prodBuildPath = buildProductionBuild();
+		opts.build = prodBuildPath;
+		console.log(`[chat-simulation] --production-build: using local production build at ${prodBuildPath}`);
+	}
+
 	const electronPath = await resolveBuild(opts.build);
 
 	if (!fs.existsSync(electronPath)) {
@@ -1143,6 +1282,28 @@ async function main() {
 		console.error('Run "node build/lib/preLaunch.ts" first, or pass --build <path>');
 		process.exit(1);
 	}
+
+	// Detect build modes for both test and baseline builds
+	const testBuildMode = detectBuildMode(electronPath);
+
+	// Resolve the baseline build path early so we can detect its mode.
+	// For version strings this downloads; for local paths it resolves directly.
+	const isBaselineVersionString = opts.baselineBuild && isVersionString(opts.baselineBuild);
+	const isBaselineLocalPath = opts.baselineBuild && !isBaselineVersionString;
+	/** @type {string | undefined} */
+	let baselineElectronPath;
+	if (isBaselineLocalPath) {
+		baselineElectronPath = await resolveBuild(opts.baselineBuild);
+		if (!fs.existsSync(baselineElectronPath)) {
+			console.error(`Baseline build not found at: ${baselineElectronPath}`);
+			process.exit(1);
+		}
+	}
+	const baselineBuildMode = opts.baselineBuild
+		? (isBaselineVersionString ? 'release' : detectBuildMode(baselineElectronPath || ''))
+		: undefined;
+
+	const isMismatchedBuildMode = baselineBuildMode !== undefined && testBuildMode !== baselineBuildMode;
 
 	// Create a timestamped run directory for all output
 	const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1152,9 +1313,16 @@ async function main() {
 
 	// -- Baseline build --------------------------------------------------
 	if (opts.baselineBuild) {
-		const baselineJsonPath = path.join(runDir, `baseline-${opts.baselineBuild}.json`);
-		const cachedPath = path.join(DATA_DIR, `baseline-${opts.baselineBuild}.json`);
-		const cachedBaseline = !opts.noCache && fs.existsSync(cachedPath)
+		// Use a sanitized label for file names — replace path separators for local paths
+		const baselineLabel = isBaselineLocalPath
+			? path.basename(path.resolve(opts.baselineBuild))
+			: opts.baselineBuild;
+		const baselineJsonPath = path.join(runDir, `baseline-${baselineLabel}.json`);
+
+		// Local paths: always run fresh (no caching — the build may have changed)
+		// Version strings: use caching as before
+		const cachedPath = isBaselineLocalPath ? null : path.join(DATA_DIR, `baseline-${baselineLabel}.json`);
+		const cachedBaseline = cachedPath && !opts.noCache && fs.existsSync(cachedPath)
 			? JSON.parse(fs.readFileSync(cachedPath, 'utf-8'))
 			: null;
 
@@ -1182,7 +1350,7 @@ async function main() {
 					console.log(`[chat-simulation] Cached baseline needs more runs for: ${shortScenarios.map((/** @type {string} */ s) => `${s} (${cachedBaseline.scenarios[s].rawRuns?.length || 0}/${opts.runs})`).join(', ')}`);
 				}
 				console.log(`[chat-simulation] Running baseline for ${scenariosToRun.length} scenario(s)...`);
-				const baselineExePath = await resolveBuild(opts.baselineBuild);
+				const baselineExePath = baselineElectronPath || await resolveBuild(opts.baselineBuild);
 				for (const scenario of scenariosToRun) {
 					const existingRuns = cachedBaseline.scenarios?.[scenario]?.rawRuns || [];
 					const runsNeeded = opts.runs - existingRuns.length;
@@ -1201,12 +1369,14 @@ async function main() {
 				}
 				cachedBaseline.runsPerScenario = opts.runs;
 				fs.writeFileSync(baselineJsonPath, JSON.stringify(cachedBaseline, null, 2));
-				fs.writeFileSync(cachedPath, JSON.stringify(cachedBaseline, null, 2));
+				if (cachedPath) {
+					fs.writeFileSync(cachedPath, JSON.stringify(cachedBaseline, null, 2));
+				}
 				opts.baseline = baselineJsonPath;
 			}
 		} else {
-			const baselineExePath = await resolveBuild(opts.baselineBuild);
-			console.log(`[chat-simulation] Benchmarking baseline build (${opts.baselineBuild})...`);
+			const baselineExePath = baselineElectronPath || await resolveBuild(opts.baselineBuild);
+			console.log(`[chat-simulation] Benchmarking baseline build (${baselineLabel})...`);
 			/** @type {Record<string, RunMetrics[]>} */
 			const baselineResults = {};
 			for (const scenario of opts.scenarios) {
@@ -1231,8 +1401,10 @@ async function main() {
 				baselineReport.scenarios[scenario] = sd;
 			}
 			fs.writeFileSync(baselineJsonPath, JSON.stringify(baselineReport, null, 2));
-			// Cache at the top level for reuse across runs
-			fs.writeFileSync(cachedPath, JSON.stringify(baselineReport, null, 2));
+			// Cache at the top level for reuse across runs (version strings only)
+			if (cachedPath) {
+				fs.writeFileSync(cachedPath, JSON.stringify(baselineReport, null, 2));
+			}
 			opts.baseline = baselineJsonPath;
 		}
 		console.log('');
@@ -1240,8 +1412,33 @@ async function main() {
 
 	// -- Run benchmarks --------------------------------------------------
 	console.log(`[chat-simulation] Electron: ${electronPath}`);
+	console.log(`[chat-simulation] Build mode: ${buildModeLabel(testBuildMode)}`);
+	if (baselineBuildMode) {
+		console.log(`[chat-simulation] Baseline mode: ${buildModeLabel(baselineBuildMode)}`);
+	}
 	console.log(`[chat-simulation] Runs per scenario: ${opts.runs}`);
 	console.log(`[chat-simulation] Scenarios: ${opts.scenarios.join(', ')}`);
+	if (isMismatchedBuildMode) {
+		console.log('');
+		console.log(`[chat-simulation] ⚠ WARNING: Build mode mismatch — test is ${testBuildMode}, baseline is ${baselineBuildMode}.`);
+		console.log('[chat-simulation]   Results may not be directly comparable. For apples-to-apples');
+		console.log('[chat-simulation]   comparisons, use the same build type for both.');
+		if (testBuildMode === 'dev') {
+			console.log('[chat-simulation]   To use a local production build instead:');
+			console.log('[chat-simulation]     npm run perf:chat -- --production-build');
+		}
+		if (!opts.ci && !opts.force) {
+			const readline = require('readline');
+			const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+			const answer = await new Promise(resolve => rl.question('[chat-simulation] Continue anyway? [y/N] ', resolve));
+			rl.close();
+			if (String(answer).toLowerCase() !== 'y') {
+				console.log('[chat-simulation] Aborted.');
+				await mockServer.close();
+				process.exit(0);
+			}
+		}
+	}
 	console.log('');
 
 	/** @type {Record<string, RunMetrics[]>} */
@@ -1305,7 +1502,14 @@ async function main() {
 
 	// -- JSON output -----------------------------------------------------
 	const jsonPath = path.join(runDir, 'results.json');
-	const jsonReport = /** @type {{ timestamp: string, platform: NodeJS.Platform, runsPerScenario: number, scenarios: Record<string, any>, _resultsPath?: string }} */ ({ timestamp: new Date().toISOString(), platform: process.platform, runsPerScenario: opts.runs, scenarios: /** @type {Record<string, any>} */ ({}) });
+	const jsonReport = /** @type {{ timestamp: string, platform: NodeJS.Platform, runsPerScenario: number, buildMode: string, mismatchedBuildMode: boolean, scenarios: Record<string, any>, _resultsPath?: string }} */ ({
+		timestamp: new Date().toISOString(),
+		platform: process.platform,
+		runsPerScenario: opts.runs,
+		buildMode: testBuildMode,
+		mismatchedBuildMode: !!isMismatchedBuildMode,
+		scenarios: /** @type {Record<string, any>} */ ({}),
+	});
 	for (const [scenario, results] of Object.entries(allResults)) {
 		const sd = /** @type {any} */ ({ runs: results.length, timing: {}, memory: {}, rendering: {}, extHost: {}, rawRuns: results });
 		for (const [metric, group] of METRIC_DEFS) { sd[group][metric] = robustStats(results.map(r => /** @type {any} */(r)[metric])); }
@@ -1343,6 +1547,10 @@ async function printComparison(jsonReport, opts) {
 		console.log('');
 		console.log(`[chat-simulation] =========== Baseline Comparison (threshold: ${(opts.threshold * 100).toFixed(0)}%) ===========`);
 		console.log(`[chat-simulation] Baseline: ${baseline.baselineBuildVersion || baseline.timestamp}`);
+		if (jsonReport.mismatchedBuildMode) {
+			console.log(`[chat-simulation] ⚠ Note: build mode mismatch — test is ${jsonReport.buildMode}, baseline differs.`);
+			console.log('[chat-simulation]   Results may not be directly comparable.');
+		}
 		console.log('');
 
 		// Metrics that trigger regression failure when they exceed the threshold
