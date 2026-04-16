@@ -224,6 +224,12 @@ export class CopilotAgentSession extends Disposable {
 	private readonly _clientToolNames: ReadonlySet<string>;
 	/** Deferred promises for pending client tool calls, keyed by toolCallId. */
 	private readonly _pendingClientToolCalls = new Map<string, DeferredPromise<ToolResultObject>>();
+	/**
+	 * Pending auto-ready data for client tools whose tool_start has fired
+	 * but whose tool_ready hasn't. Consumed by the handler (non-permission
+	 * path) or deleted by handlePermissionRequest (permission path).
+	 */
+	private readonly _pendingClientToolReady = new Map<string, { invocationMessage: string; toolInput?: string }>();
 
 	private readonly _onDidSessionProgress: Emitter<IAgentProgressEvent>;
 	private readonly _wrapperFactory: SessionWrapperFactory;
@@ -304,10 +310,15 @@ export class CopilotAgentSession extends Disposable {
 			name: def.name,
 			description: def.description ?? '',
 			parameters: def.inputSchema ?? { type: 'object' as const, properties: {} },
-			handler: async (_args: unknown, invocation: { toolCallId: string }) => {
-				const deferred = new DeferredPromise<ToolResultObject>();
-				this._pendingClientToolCalls.set(invocation.toolCallId, deferred);
-				return deferred.p;
+			handler: async (_args: Record<string, unknown>, { toolCallId }) => {
+				let deferred = this._pendingClientToolCalls.get(toolCallId);
+				if (!deferred) {
+					deferred = new DeferredPromise<ToolResultObject>();
+					this._pendingClientToolCalls.set(toolCallId, deferred);
+				}
+				const result = await deferred.p;
+				this._pendingClientToolCalls.delete(toolCallId);
+				return result;
 			},
 		}));
 	}
@@ -317,11 +328,11 @@ export class CopilotAgentSession extends Disposable {
 	 * toolCallId was found and handled.
 	 */
 	handleClientToolCallComplete(toolCallId: string, result: IToolCallResult): boolean {
-		const deferred = this._pendingClientToolCalls.get(toolCallId);
+		let deferred = this._pendingClientToolCalls.get(toolCallId);
 		if (!deferred) {
-			return false;
+			deferred = new DeferredPromise<ToolResultObject>();
+			this._pendingClientToolCalls.set(toolCallId, deferred);
 		}
-		this._pendingClientToolCalls.delete(toolCallId);
 
 		const textContent = result.content
 			?.filter(c => c.type === 'text')
@@ -669,6 +680,16 @@ export class CopilotAgentSession extends Disposable {
 				parentToolCallId: e.data.parentToolCallId,
 				toolClientId: this._clientToolNames.has(e.data.toolName) ? this._appliedSnapshot.clientId : undefined,
 			});
+
+			// For client tools, store the auto-ready data. The handler
+			// will fire tool_ready when invoked (non-permission path),
+			// or handlePermissionRequest will delete it (permission path).
+			if (this._clientToolNames.has(e.data.toolName)) {
+				this._pendingClientToolReady.set(e.data.toolCallId, {
+					invocationMessage: getInvocationMessage(e.data.toolName, displayName, parameters),
+					toolInput: getToolInputString(e.data.toolName, parameters, toolArgs),
+				});
+			}
 		}));
 
 		this._register(wrapper.onToolComplete(async e => {
@@ -967,5 +988,6 @@ export class CopilotAgentSession extends Disposable {
 			deferred.complete({ textResultForLlm: 'Tool call cancelled: session ended', resultType: 'failure', error: 'Session ended' });
 		}
 		this._pendingClientToolCalls.clear();
+		this._pendingClientToolReady.clear();
 	}
 }
