@@ -16,7 +16,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { AgentSession, IAgentHostService, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
-import type { IRootState, ISessionFileDiff } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { IModelSelection, IRootState, ISessionFileDiff, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
@@ -86,6 +86,7 @@ class LocalSessionAdapter implements ISession {
 	readonly status = observableValue<SessionStatus>('status', SessionStatus.Completed);
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
 	readonly modelId: ISettableObservable<string | undefined>;
+	modelSelection: IModelSelection | undefined;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
 	readonly loading = observableValue(this, false);
 	readonly isArchived = observableValue('isArchived', false);
@@ -114,7 +115,8 @@ class LocalSessionAdapter implements ISession {
 		this.createdAt = new Date(metadata.startTime);
 		this.title = observableValue('title', metadata.summary ?? `Session ${rawId.substring(0, 8)}`);
 		this.updatedAt = observableValue('updatedAt', new Date(metadata.modifiedTime));
-		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${logicalSessionType}:${metadata.model}` : undefined);
+		this.modelSelection = metadata.model;
+		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${logicalSessionType}:${metadata.model.id}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', new MarkdownString().appendText(localize('localAgentHostDescription', "Local")));
 		this.workspace = observableValue('workspace', LocalAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory));
@@ -184,7 +186,8 @@ class LocalSessionAdapter implements ISession {
 			didChange = true;
 		}
 
-		const modelId = metadata.model ? `${this.sessionType}:${metadata.model}` : undefined;
+		this.modelSelection = metadata.model;
+		const modelId = metadata.model ? `${this.sessionType}:${metadata.model.id}` : undefined;
 		if (modelId !== this.modelId.get()) {
 			this.modelId.set(modelId, undefined);
 			didChange = true;
@@ -566,7 +569,8 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 			cached.modelId.set(modelId, undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 			const rawModelId = modelId.startsWith(`${cached.sessionType}:`) ? modelId.substring(cached.sessionType.length + 1) : modelId;
-			const action = { type: ActionType.SessionModelChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), model: rawModelId };
+			const model = cached.modelSelection?.id === rawModelId ? cached.modelSelection : { id: rawModelId };
+			const action = { type: ActionType.SessionModelChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), model };
 			this._agentHostService.dispatch(action);
 		}
 	}
@@ -864,7 +868,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 		}
 	}
 
-	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; project?: { uri: string; displayName: string }; model?: string; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
+	private _handleSessionAdded(summary: ISessionSummary): void {
 		const sessionUri = URI.parse(summary.resource);
 		const rawId = AgentSession.id(sessionUri);
 		if (this._sessionCache.has(rawId)) {
@@ -915,10 +919,13 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 		}
 	}
 
-	private _handleModelChanged(session: string, model: string): void {
+	private _handleModelChanged(session: string, model: IModelSelection): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
-		const modelId = cached ? `${cached.sessionType}:${model}` : undefined;
+		if (cached) {
+			cached.modelSelection = model;
+		}
+		const modelId = cached ? `${cached.sessionType}:${model.id}` : undefined;
 		if (cached && cached.modelId.get() !== modelId) {
 			cached.modelId.set(modelId, undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });

@@ -9,7 +9,7 @@ import type { IAuthorizationProtectedResourceMetadata } from '../../../../base/c
 import { URI } from '../../../../base/common/uri.js';
 import { type ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, type AgentProvider, type IAgent, type IAgentAttachment, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentMessageEvent, type IAgentModelInfo, type IAgentProgressEvent, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type IAgentSubagentStartedEvent, type IAgentToolCompleteEvent, type IAgentToolStartEvent } from '../../common/agentService.js';
-import { IProtectedResourceMetadata } from '../../common/state/protocol/state.js';
+import { IProtectedResourceMetadata, type IModelSelection } from '../../common/state/protocol/state.js';
 import type { IResolveSessionConfigResult, ISessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { CustomizationStatus, ToolResultContentType, type ICustomizationRef, type IPendingMessage, type IToolCallResult } from '../../common/state/sessionState.js';
 
@@ -37,7 +37,7 @@ export class MockAgent implements IAgent {
 	readonly disposeSessionCalls: URI[] = [];
 	readonly abortSessionCalls: URI[] = [];
 	readonly respondToPermissionCalls: { requestId: string; approved: boolean }[] = [];
-	readonly changeModelCalls: { session: URI; model: string }[] = [];
+	readonly changeModelCalls: { session: URI; model: IModelSelection }[] = [];
 	readonly authenticateCalls: { resource: string; token: string }[] = [];
 	readonly setClientCustomizationsCalls: { clientId: string; customizations: ICustomizationRef[] }[] = [];
 	readonly setCustomizationEnabledCalls: { uri: string; enabled: boolean }[] = [];
@@ -119,7 +119,7 @@ export class MockAgent implements IAgent {
 		// no-op for tests
 	}
 
-	async changeModel(session: URI, model: string): Promise<void> {
+	async changeModel(session: URI, model: IModelSelection): Promise<void> {
 		this.changeModelCalls.push({ session, model });
 	}
 
@@ -489,7 +489,7 @@ export class ScriptedMockAgent implements IAgent {
 		}
 	}
 
-	async changeModel(_session: URI, _model: string): Promise<void> {
+	async changeModel(_session: URI, _model: IModelSelection): Promise<void> {
 		// Mock agent doesn't track model state
 	}
 

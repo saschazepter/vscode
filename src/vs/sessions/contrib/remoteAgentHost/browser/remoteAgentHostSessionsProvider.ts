@@ -22,7 +22,7 @@ import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from 
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
-import type { IRootState, ISessionFileDiff, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { IModelSelection, IRootState, ISessionFileDiff, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
@@ -169,6 +169,7 @@ class RemoteSessionAdapter implements IChatData {
 	readonly status = observableValue<SessionStatus>('status', SessionStatus.Completed);
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
 	readonly modelId: ISettableObservable<string | undefined>;
+	modelSelection: IModelSelection | undefined;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
 	readonly loading = observableValue('loading', false);
 	readonly isArchived = observableValue('isArchived', false);
@@ -197,7 +198,8 @@ class RemoteSessionAdapter implements IChatData {
 		this.createdAt = new Date(metadata.startTime);
 		this.title = observableValue('title', metadata.summary ?? `Session ${rawId.substring(0, 8)}`);
 		this.updatedAt = observableValue('updatedAt', new Date(metadata.modifiedTime));
-		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${resourceScheme}:${metadata.model}` : undefined);
+		this.modelSelection = metadata.model;
+		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${resourceScheme}:${metadata.model.id}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', new MarkdownString().appendText(this._providerLabel));
 		this.workspace = observableValue('workspace', RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel));
@@ -223,7 +225,8 @@ class RemoteSessionAdapter implements IChatData {
 		if (metadata.isDone !== undefined) {
 			this.isArchived.set(metadata.isDone, undefined);
 		}
-		this.modelId.set(metadata.model ? `${this.resource.scheme}:${metadata.model}` : undefined, undefined);
+		this.modelSelection = metadata.model;
+		this.modelId.set(metadata.model ? `${this.resource.scheme}:${metadata.model.id}` : undefined, undefined);
 		const workspace = RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel);
 		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
@@ -756,7 +759,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
 			const resourceScheme = cached.resource.scheme;
 			const rawModelId = modelId.startsWith(`${resourceScheme}:`) ? modelId.substring(resourceScheme.length + 1) : modelId;
-			const action = { type: ActionType.SessionModelChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), model: rawModelId };
+			const model = cached.modelSelection?.id === rawModelId ? cached.modelSelection : { id: rawModelId };
+			const action = { type: ActionType.SessionModelChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), model };
 			this._connection.dispatch(action);
 		}
 	}
@@ -1126,10 +1130,13 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 		}
 	}
 
-	private _handleModelChanged(session: string, model: string): void {
+	private _handleModelChanged(session: string, model: IModelSelection): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
-		const modelId = cached ? `${cached.resource.scheme}:${model}` : undefined;
+		if (cached) {
+			cached.modelSelection = model;
+		}
+		const modelId = cached ? `${cached.resource.scheme}:${model.id}` : undefined;
 		if (cached && cached.modelId.get() !== modelId) {
 			cached.modelId.set(modelId, undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });

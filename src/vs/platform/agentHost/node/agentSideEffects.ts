@@ -106,6 +106,7 @@ export class AgentSideEffects extends Disposable {
 					id: m.id, provider: m.provider, name: m.name,
 					maxContextWindow: m.maxContextWindow, supportsVision: m.supportsVision,
 					policyState: m.policyState,
+					configSchema: m.configSchema,
 				}));
 			} catch {
 				models = [];

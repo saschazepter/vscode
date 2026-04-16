@@ -9,7 +9,7 @@ import { IAuthorizationProtectedResourceMetadata } from '../../../base/common/oa
 import { URI } from '../../../base/common/uri.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import type { ISyncedCustomization } from './agentPluginManager.js';
-import { IProtectedResourceMetadata, type IToolDefinition } from './state/protocol/state.js';
+import { IProtectedResourceMetadata, type IConfigSchema, type IModelSelection, type IToolDefinition } from './state/protocol/state.js';
 import type { IActionEnvelope, INotification, ISessionAction, ITerminalAction } from './state/sessionActions.js';
 import type { IAgentSubscription } from './state/agentSubscription.js';
 import type { ICreateTerminalParams, IResolveSessionConfigResult, ISessionConfigCompletionsResult } from './state/protocol/commands.js';
@@ -44,7 +44,7 @@ export interface IAgentSessionMetadata {
 	readonly project?: IAgentSessionProjectInfo;
 	readonly summary?: string;
 	readonly status?: SessionStatus;
-	readonly model?: string;
+	readonly model?: IModelSelection;
 	readonly workingDirectory?: URI;
 	readonly isRead?: boolean;
 	readonly isDone?: boolean;
@@ -99,7 +99,7 @@ export interface IAuthenticateResult {
 
 export interface IAgentCreateSessionConfig {
 	readonly provider?: AgentProvider;
-	readonly model?: string;
+	readonly model?: IModelSelection;
 	readonly session?: URI;
 	readonly workingDirectory?: URI;
 	readonly config?: Record<string, string>;
@@ -155,6 +155,7 @@ export interface IAgentModelInfo {
 	readonly supportsReasoningEffort: boolean;
 	readonly supportedReasoningEfforts?: readonly string[];
 	readonly defaultReasoningEffort?: string;
+	readonly configSchema?: IConfigSchema;
 	readonly policyState?: PolicyState;
 	readonly billingMultiplier?: number;
 }
@@ -406,7 +407,7 @@ export interface IAgent {
 	abortSession(session: URI): Promise<void>;
 
 	/** Change the model for an existing session. */
-	changeModel(session: URI, model: string): Promise<void>;
+	changeModel(session: URI, model: IModelSelection): Promise<void>;
 
 	/** Respond to a pending permission request from the SDK. */
 	respondToPermissionRequest(requestId: string, approved: boolean): void;

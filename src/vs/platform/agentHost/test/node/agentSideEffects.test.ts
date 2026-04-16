@@ -157,12 +157,12 @@ suite('AgentSideEffects', () => {
 			sideEffects.handleAction({
 				type: ActionType.SessionModelChanged,
 				session: sessionUri.toString(),
-				model: 'gpt-5',
+				model: { id: 'gpt-5' },
 			});
 
 			await new Promise(r => setTimeout(r, 10));
 
-			assert.deepStrictEqual(agent.changeModelCalls, [{ session: URI.parse(sessionUri.toString()), model: 'gpt-5' }]);
+			assert.deepStrictEqual(agent.changeModelCalls, [{ session: URI.parse(sessionUri.toString()), model: { id: 'gpt-5' } }]);
 		});
 	});
 

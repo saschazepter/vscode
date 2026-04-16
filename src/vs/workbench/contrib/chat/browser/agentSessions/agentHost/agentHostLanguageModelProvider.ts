@@ -7,8 +7,8 @@ import { CancellationToken } from '../../../../../../base/common/cancellation.js
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
-import { ISessionModelInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
-import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
+import { IConfigSchema, ISessionModelInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier, ILanguageModelConfigurationSchema } from '../../../common/languageModels.js';
 
 /**
  * Exposes models available from the agent host process as selectable
@@ -59,8 +59,31 @@ export class AgentHostLanguageModelProvider extends Disposable implements ILangu
 						toolCalling: true,
 						agentMode: true,
 					},
+					configurationSchema: this._toLanguageModelConfigurationSchema(m.configSchema),
 				},
 			}));
+	}
+
+	private _toLanguageModelConfigurationSchema(schema: IConfigSchema | undefined): ILanguageModelConfigurationSchema | undefined {
+		if (!schema) {
+			return undefined;
+		}
+
+		return {
+			type: schema.type,
+			required: schema.required,
+			properties: Object.fromEntries(Object.entries(schema.properties).map(([key, property]) => [key, {
+				type: property.type,
+				title: property.title,
+				description: property.description,
+				default: property.default,
+				enum: property.enum,
+				enumItemLabels: property.enumLabels,
+				enumDescriptions: property.enumDescriptions,
+				readOnly: property.readOnly,
+				group: key === 'thinkingLevel' ? 'navigation' : undefined,
+			}])),
+		};
 	}
 
 	async sendChatRequest(): Promise<never> {
