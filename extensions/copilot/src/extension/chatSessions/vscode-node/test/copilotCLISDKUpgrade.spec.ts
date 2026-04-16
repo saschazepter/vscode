@@ -56,7 +56,11 @@ describe('CopilotCLI SDK Upgrade', function () {
 			path.join('prebuilds', 'linux-x64', 'computer.node'),
 			path.join('prebuilds', 'win32-arm64', 'computer.node'),
 			path.join('prebuilds', 'win32-x64', 'computer.node'),
+<<<<<<< HEAD
 			// win32 native module (formerly win_error_mode)
+=======
+			// win32
+>>>>>>> 210358b4 (Update Copilot dependencies to version 1.0.28 (#310361))
 			path.join('prebuilds', 'win32-arm64', 'win32.node'),
 			path.join('prebuilds', 'win32-x64', 'win32.node'),
 			path.join('ripgrep', 'bin', 'darwin-arm64', 'rg'),
