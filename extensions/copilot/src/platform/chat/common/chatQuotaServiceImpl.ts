@@ -43,7 +43,7 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 		this._quotaInfo = undefined;
 	}
 
-	private _processHeadervalue(header: string): IChatQuota | undefined {
+	private _processHeaderValue(header: string): IChatQuota | undefined {
 		try {
 			// Parse URL encoded string into key-value pairs
 			const params = new URLSearchParams(header);
@@ -84,15 +84,15 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 		if (!quotaHeader) {
 			return;
 		}
-		const quotaInfo = this._processHeadervalue(quotaHeader);
+		const quotaInfo = this._processHeaderValue(quotaHeader);
 		if (!quotaInfo) {
 			return;
 		}
 		this._quotaInfo = quotaInfo;
 		const sessionRateLimitHeader = headers.get('x-usage-ratelimit-session');
 		const weeklyRateLimitHeader = headers.get('x-usage-ratelimit-weekly');
-		this._rateLimitInfo.session = sessionRateLimitHeader ? this._processHeadervalue(sessionRateLimitHeader) : undefined;
-		this._rateLimitInfo.weekly = weeklyRateLimitHeader ? this._processHeadervalue(weeklyRateLimitHeader) : undefined;
+		this._rateLimitInfo.session = sessionRateLimitHeader ? this._processHeaderValue(sessionRateLimitHeader) : undefined;
+		this._rateLimitInfo.weekly = weeklyRateLimitHeader ? this._processHeaderValue(weeklyRateLimitHeader) : undefined;
 		this._pendingRateLimitWarning = this._computeRateLimitWarning() ?? this._pendingRateLimitWarning;
 	}
 
