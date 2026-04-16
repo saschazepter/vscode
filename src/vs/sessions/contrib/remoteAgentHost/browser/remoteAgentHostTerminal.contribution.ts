@@ -32,6 +32,7 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 			agentHostTerminalService
 		);
 
+
 		// React to connection changes
 		this._register(this._remoteAgentHostService.onDidChangeConnections(() => {
 			this._reconcile();
