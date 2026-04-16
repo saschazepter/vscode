@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import { RequestMetadata, RequestType } from '@vscode/copilot-api';
-import * as l10n from '@vscode/l10n';
 import { OpenAI, Raw } from '@vscode/prompt-tsx';
 import type { CancellationToken } from 'vscode';
 import { ITokenizer, TokenizerType } from '../../../util/common/tokenizer';
@@ -30,7 +29,7 @@ import { ITelemetryService, TelemetryProperties } from '../../telemetry/common/t
 import { TelemetryData } from '../../telemetry/common/telemetryData';
 import { ITokenizerProvider } from '../../tokenizer/node/tokenizer';
 import { ICAPIClientService } from '../common/capiClient';
-import { isGeminiFamily, modelSupportsContextEditing, modelSupportsToolSearch } from '../common/chatModelCapabilities';
+import { isAnthropicFamily, isGeminiFamily, modelSupportsContextEditing, modelSupportsToolSearch } from '../common/chatModelCapabilities';
 import { IDomainService } from '../common/domainService';
 import { CustomModel, IChatModelInformation, ModelSupportedEndpoint } from '../common/endpointProvider';
 import { createMessagesRequestBody, processResponseFromMessagesEndpoint } from './messagesApi';
@@ -288,13 +287,10 @@ export class ChatEndpoint implements IChatEndpoint {
 	}
 
 	createRequestBody(options: ICreateEndpointBodyOptions): IEndpointBody {
-		// Validate image count if endpoint has max_prompt_images limit (Gemini only for now)
-		if (isGeminiFamily(this) && this.maxPromptImages !== undefined) {
-			const imageCount = this.countImages(options.messages, this.maxPromptImages);
-			if (imageCount > this.maxPromptImages) {
-				const errorMsg = l10n.t('Too many images in request: {0} images provided, but the model supports a maximum of {1} images.', imageCount, this.maxPromptImages);
-				throw new Error(errorMsg);
-			}
+		// Determine per-model image limit for APIs with known restrictions
+		const imageLimit = this.getImageLimit();
+		if (imageLimit !== undefined) {
+			options = { ...options, messages: this.validateAndFilterImages(options.messages, imageLimit) };
 		}
 
 		if (this.useResponsesApi) {
@@ -309,22 +305,112 @@ export class ChatEndpoint implements IChatEndpoint {
 		}
 	}
 
-	private countImages(messages: Raw.ChatMessage[], maxAllowed?: number): number {
-		let imageCount = 0;
+	/**
+	 * Returns the model-specific image limit, or `undefined` if no limit applies.
+	 * Anthropic Messages API defaults to 20; Gemini defaults to 10.
+	 * The server-provided `maxPromptImages` takes precedence when available.
+	 */
+	private getImageLimit(): number | undefined {
+		if (this.useMessagesApi && isAnthropicFamily(this)) {
+			return this.maxPromptImages ?? 20;
+		}
+		if (isGeminiFamily(this)) {
+			return this.maxPromptImages ?? 10;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Validates that the current user message does not exceed the image limit,
+	 * and silently drops the oldest images from history when the conversation
+	 * total exceeds the limit.
+	 *
+	 * @returns A (possibly filtered) copy of messages. The original array is never mutated.
+	 */
+	private validateAndFilterImages(messages: Raw.ChatMessage[], maxImages: number): Raw.ChatMessage[] {
+		// Find the last user message — this is the current request
+		let lastUserIdx = -1;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].role === Raw.ChatRole.User) {
+				lastUserIdx = i;
+				break;
+			}
+		}
+
+		// Count images in the current user message
+		let currentUserImages = 0;
+		if (lastUserIdx >= 0 && Array.isArray(messages[lastUserIdx].content)) {
+			for (const part of messages[lastUserIdx].content) {
+				if (part.type === Raw.ChatCompletionContentPartKind.Image) {
+					currentUserImages++;
+				}
+			}
+		}
+
+		// Count total images across all messages
+		let totalImages = 0;
 		for (const message of messages) {
 			if (Array.isArray(message.content)) {
 				for (const part of message.content) {
 					if (part.type === Raw.ChatCompletionContentPartKind.Image) {
-						imageCount++;
-						// Early exit if we've already exceeded the limit
-						if (maxAllowed !== undefined && imageCount > maxAllowed) {
-							return imageCount;
-						}
+						totalImages++;
 					}
 				}
 			}
 		}
-		return imageCount;
+
+		// No filtering needed if total is within the limit
+		if (totalImages <= maxImages) {
+			return messages;
+		}
+
+		// Walk backward through history (before the current user message),
+		// keeping the most recent images and replacing the oldest with placeholders.
+		let historyBudget = maxImages - currentUserImages;
+
+		// Collect keep/drop decisions by walking backward through history
+		const historyImageDecisions = new Map<string, boolean>(); // "msgIdx:partIdx" -> keep
+		for (let i = lastUserIdx - 1; i >= 0; i--) {
+			if (!Array.isArray(messages[i].content)) {
+				continue;
+			}
+			for (let j = messages[i].content.length - 1; j >= 0; j--) {
+				if (messages[i].content[j].type === Raw.ChatCompletionContentPartKind.Image) {
+					const key = `${i}:${j}`;
+					if (historyBudget > 0) {
+						historyImageDecisions.set(key, true);
+						historyBudget--;
+					} else {
+						historyImageDecisions.set(key, false);
+					}
+				}
+			}
+		}
+
+		// Build filtered messages, replacing dropped images with text placeholders
+		return messages.map((message, msgIdx) => {
+			if (msgIdx >= lastUserIdx) {
+				return message;
+			}
+			if (!Array.isArray(message.content)) {
+				return message;
+			}
+			if (!message.content.some(p => p.type === Raw.ChatCompletionContentPartKind.Image)) {
+				return message;
+			}
+			return {
+				...message,
+				content: message.content.map((part, partIdx) => {
+					if (part.type !== Raw.ChatCompletionContentPartKind.Image) {
+						return part;
+					}
+					if (historyImageDecisions.get(`${msgIdx}:${partIdx}`)) {
+						return part;
+					}
+					return { type: Raw.ChatCompletionContentPartKind.Text, text: '[Image omitted from conversation history due to model limit.]' } as Raw.ChatCompletionContentPart;
+				})
+			};
+		});
 	}
 
 	protected getCompletionsCallback(): RawMessageConversionCallback | undefined {

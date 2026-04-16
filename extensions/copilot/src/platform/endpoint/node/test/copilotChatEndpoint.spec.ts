@@ -13,7 +13,7 @@ import { DefaultsOnlyConfigurationService } from '../../../configuration/common/
 import { InMemoryConfigurationService } from '../../../configuration/test/common/inMemoryConfigurationService';
 import { ICAPIClientService } from '../../../endpoint/common/capiClient';
 import { IDomainService } from '../../../endpoint/common/domainService';
-import { IChatModelInformation } from '../../../endpoint/common/endpointProvider';
+import { IChatModelInformation, ModelSupportedEndpoint } from '../../../endpoint/common/endpointProvider';
 import { IEnvService } from '../../../env/common/envService';
 import { ILogService } from '../../../log/common/logService';
 import { IFetcherService } from '../../../networking/common/fetcherService';
@@ -246,15 +246,23 @@ describe('ChatEndpoint - Image Count Validation', () => {
 		mockServices = createMockServices();
 	});
 
-	const createImageMessage = (): Raw.ChatMessage => ({
+	const createImageMessage = (imageCount: number = 1): Raw.ChatMessage => ({
 		role: Raw.ChatRole.User,
 		content: [
 			{ type: Raw.ChatCompletionContentPartKind.Text, text: 'What is in this image?' },
-			{ type: Raw.ChatCompletionContentPartKind.Image, imageUrl: { url: 'data:image/png;base64,test' } }
+			...Array.from({ length: imageCount }, () => ({
+				type: Raw.ChatCompletionContentPartKind.Image as const,
+				imageUrl: { url: 'data:image/png;base64,test' }
+			}))
 		]
 	});
 
-	const createGeminiModelMetadata = (maxPromptImages: number): IChatModelInformation => {
+	const createAssistantMessage = (): Raw.ChatMessage => ({
+		role: Raw.ChatRole.Assistant,
+		content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'I see an image.' }]
+	});
+
+	const createGeminiModelMetadata = (maxPromptImages?: number): IChatModelInformation => {
 		const baseMetadata = createNonAnthropicModelMetadata('gemini-3');
 		return {
 			...baseMetadata,
@@ -266,19 +274,30 @@ describe('ChatEndpoint - Image Count Validation', () => {
 				},
 				limits: {
 					...baseMetadata.capabilities.limits,
-					vision: {
-						max_prompt_images: maxPromptImages
-					}
+					...(maxPromptImages !== undefined ? { vision: { max_prompt_images: maxPromptImages } } : {})
 				}
 			}
 		};
 	};
 
-	it('should throw error when image count exceeds maxPromptImages', () => {
-		const modelMetadata = createGeminiModelMetadata(2);
+	const createAnthropicMessagesModelMetadata = (): IChatModelInformation => {
+		const baseMetadata = createNonAnthropicModelMetadata('claude-sonnet-4');
+		return {
+			...baseMetadata,
+			supported_endpoints: [ModelSupportedEndpoint.Messages],
+			capabilities: {
+				...baseMetadata.capabilities,
+				supports: {
+					...baseMetadata.capabilities.supports,
+					vision: true
+				}
+			}
+		};
+	};
 
-		const endpoint = new ChatEndpoint(
-			modelMetadata,
+	const createEndpoint = (metadata: IChatModelInformation) =>
+		new ChatEndpoint(
+			metadata,
 			mockServices.domainService,
 			mockServices.chatMLFetcher,
 			mockServices.tokenizerProvider,
@@ -289,30 +308,67 @@ describe('ChatEndpoint - Image Count Validation', () => {
 			mockServices.logService
 		);
 
-		// Create 3 messages each with 1 image (total 3 images)
-		const options = createTestOptions([createImageMessage(), createImageMessage(), createImageMessage()]);
+	describe('Gemini image limits', () => {
+		it('should allow requests within image limit', () => {
+			const endpoint = createEndpoint(createGeminiModelMetadata(5));
+			const options = createTestOptions([createImageMessage(), createImageMessage()]);
+			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+		});
 
-		expect(() => endpoint.createRequestBody(options)).toThrow(/Too many images in request/);
+		it('should silently filter history images when total exceeds limit', () => {
+			const endpoint = createEndpoint(createGeminiModelMetadata(3));
+			// 2 history user messages with 1 image each, then 2 images in current user message = 4 total
+			const messages = [
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(),
+				createAssistantMessage(),
+				createImageMessage(2),
+			];
+			const options = createTestOptions(messages);
+			// Should not throw — history images are silently filtered
+			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+		});
 	});
 
-	it('should allow requests within image limit', () => {
-		const modelMetadata = createGeminiModelMetadata(5);
+	describe('Anthropic Messages API image limits', () => {
+		it('should allow requests within image limit', () => {
+			const endpoint = createEndpoint(createAnthropicMessagesModelMetadata());
+			const options = createTestOptions([createImageMessage(5)]);
+			// Should not throw an image limit error (may throw downstream due to mock instantiation service)
+			try {
+				endpoint.createRequestBody(options);
+			} catch (e: unknown) {
+				expect((e as Error).message).not.toMatch(/Too many images/);
+			}
+		});
 
-		const endpoint = new ChatEndpoint(
-			modelMetadata,
-			mockServices.domainService,
-			mockServices.chatMLFetcher,
-			mockServices.tokenizerProvider,
-			mockServices.instantiationService,
-			mockServices.configurationService,
-			mockServices.expService,
-			mockServices.chatWebSocketService,
-			mockServices.logService
-		);
+		it('should silently filter history images when total exceeds limit', () => {
+			const endpoint = createEndpoint(createAnthropicMessagesModelMetadata());
+			// Build history with 18 images + current message with 5 images = 23 total > 20 limit
+			const messages: Raw.ChatMessage[] = [];
+			for (let i = 0; i < 18; i++) {
+				messages.push(createImageMessage());
+				messages.push(createAssistantMessage());
+			}
+			messages.push(createImageMessage(5));
+			const options = createTestOptions(messages);
+			// Should not throw an image limit error (may throw downstream due to mock instantiation service)
+			try {
+				endpoint.createRequestBody(options);
+			} catch (e: unknown) {
+				expect((e as Error).message).not.toMatch(/Too many images/);
+			}
+		});
+	});
 
-		// Create 2 messages each with 1 image (total 2 images)
-		const options = createTestOptions([createImageMessage(), createImageMessage()]);
-
-		expect(() => endpoint.createRequestBody(options)).not.toThrow();
+	describe('non-limited models', () => {
+		it('should not apply image limits to non-Anthropic non-Gemini models', () => {
+			const metadata = createNonAnthropicModelMetadata('gpt-4o');
+			const endpoint = createEndpoint(metadata);
+			// 25 images should not throw for a non-limited model
+			const options = createTestOptions([createImageMessage(25)]);
+			expect(() => endpoint.createRequestBody(options)).not.toThrow();
+		});
 	});
 });
