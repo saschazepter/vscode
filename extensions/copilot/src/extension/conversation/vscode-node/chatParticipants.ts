@@ -269,6 +269,23 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 
 				return result;
 			} finally {
+				const rateLimitWarning = this._chatQuotaService.consumeRateLimitWarning();
+				if (rateLimitWarning) {
+					const resetDate = rateLimitWarning.resetDate;
+					const now = new Date();
+					const includeYear = resetDate.getFullYear() !== now.getFullYear();
+					const month = resetDate.toLocaleString('en-US', { month: 'long' });
+					const day = resetDate.getDate();
+					const time = resetDate.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+					const dateStr = includeYear
+						? vscode.l10n.t("{0} {1}, {2} at {3}", month, day, resetDate.getFullYear(), time)
+						: vscode.l10n.t("{0} {1} at {2}", month, day, time);
+					stream.warning(new vscode.MarkdownString(
+						rateLimitWarning.type === 'session'
+							? vscode.l10n.t("You've used {0}% of your session rate limit. Your session rate limit will reset on {1}.", rateLimitWarning.percentUsed, dateStr)
+							: vscode.l10n.t("You've used {0}% of your weekly rate limit. Your weekly rate limit will reset on {1}.", rateLimitWarning.percentUsed, dateStr)
+					));
+				}
 				markChatExt(request.sessionId, ChatExtPerfMark.DidHandleParticipant);
 				clearChatExtMarks(request.sessionId);
 			}
