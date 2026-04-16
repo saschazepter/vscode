@@ -370,10 +370,13 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		if (promptType === PromptsType.skill) {
 			providerItems = await this.addSkillDescriptionFallbacks(providerItems);
-			providerItems = await this.mergeBuiltinSkills(providerItems);
 		}
 
-		return this.itemNormalizer.normalizeItems(providerItems, promptType);
+		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
+		if (promptType === PromptsType.skill) {
+			return this.mergeBuiltinSkills(normalized, promptType);
+		}
+		return normalized;
 	}
 
 	/**
@@ -387,15 +390,15 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 	 * A workbench that uses the base `PromptsService` will throw on
 	 * `BUILTIN_STORAGE` — we catch and return the items unchanged in that case.
 	 */
-	private async mergeBuiltinSkills(items: readonly ICustomizationItem[]): Promise<readonly ICustomizationItem[]> {
+	private async mergeBuiltinSkills(items: readonly IAICustomizationListItem[], promptType: PromptsType): Promise<IAICustomizationListItem[]> {
 		let builtinPaths: readonly { uri: URI; name?: string; description?: string }[] = [];
 		try {
 			builtinPaths = await this.promptsService.listPromptFilesForStorage(PromptsType.skill, BUILTIN_STORAGE as unknown as PromptsStorage, CancellationToken.None);
 		} catch {
-			return items;
+			return [...items];
 		}
 		if (builtinPaths.length === 0) {
-			return items;
+			return [...items];
 		}
 
 		const builtinUris = new ResourceMap<typeof builtinPaths[number]>();
@@ -410,14 +413,35 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		const uiIntegrations = this.workspaceService.getSkillUIIntegrations();
 		const uiIntegrationBadge = localize('uiIntegrationBadge', "UI Integration");
 
-		// Append authoritative built-in entries.
-		const builtinItems: ICustomizationItem[] = builtinPaths.map(p => {
+		// Collect names of user/workspace skills so we can hide the built-in
+		// copy once the user has added an override at either level.
+		const overriddenNames = new Set<string>();
+		for (const item of deduped) {
+			if (item.storage === PromptsStorage.local || item.storage === PromptsStorage.user) {
+				if (item.name) {
+					overriddenNames.add(item.name);
+				}
+			}
+		}
+
+		// Append authoritative built-in entries (excluding any that have been
+		// overridden by a workspace or user copy with the same name).
+		const uriUseCounts = new ResourceMap<number>();
+		for (const item of deduped) {
+			uriUseCounts.set(item.uri, (uriUseCounts.get(item.uri) ?? 0) + 1);
+		}
+		const appended: IAICustomizationListItem[] = [];
+		for (const p of builtinPaths) {
+			const name = p.name ?? basename(p.uri);
+			if (overriddenNames.has(name)) {
+				continue;
+			}
 			const folderName = basename(dirname(p.uri));
 			const uiTooltip = uiIntegrations.get(folderName);
-			return {
+			const builtinItem: ICustomizationItem = {
 				uri: p.uri,
 				type: PromptsType.skill,
-				name: p.name ?? basename(p.uri),
+				name,
 				description: p.description,
 				storage: BUILTIN_STORAGE as unknown as PromptsStorage,
 				groupKey: BUILTIN_STORAGE,
@@ -425,9 +449,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
 				badgeTooltip: uiTooltip,
 			};
-		});
+			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
+		}
 
-		return [...deduped, ...builtinItems];
+		return [...deduped, ...appended];
 	}
 
 	private async addSkillDescriptionFallbacks(items: readonly ICustomizationItem[]): Promise<readonly ICustomizationItem[]> {
