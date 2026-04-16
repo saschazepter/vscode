@@ -217,7 +217,9 @@ export class ChatEditPendingRequestAction extends Action2 {
 				order: 2,
 				when: ContextKeyExpr.and(
 					ChatContextKeys.isRequest,
-					ChatContextKeys.isPendingRequest
+					ChatContextKeys.isPendingRequest,
+					ContextKeyExpr.notEquals(`config.${ChatConfiguration.EditRequests}`, 'hover'),
+					ContextKeyExpr.notEquals(`config.${ChatConfiguration.EditRequests}`, 'input')
 				)
 			}]
 		});
