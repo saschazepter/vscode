@@ -247,9 +247,9 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private isUpdatingDimensions: boolean = false;
 	private lastKnownContentHeight: number = 0;
 	private lastKnownScrollTop: number = 0;
+	private readonly showProgressDetails: boolean;
 	private titleShimmerSpan: HTMLElement | undefined;
 	private titleDetailContainer: HTMLElement | undefined;
-	private readonly showProgressDetails: boolean;
 	private readonly _externalResourceWidget: ChatThinkingExternalResourceWidget;
 	private readonly _titleDetailRendered = this._register(new MutableDisposable<IRenderedMarkdown>());
 	private readonly diffStatsByPartId = new Map<string, IEditSessionDiffStats>();
@@ -348,7 +348,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}
 		}
 
-		if (!this.fixedScrollingMode && !this.streamingCompleted && !this.element.isComplete && this._collapseButton && !this.showProgressDetails) {
+		if (!this.fixedScrollingMode && !this.streamingCompleted && !this.element.isComplete && this._collapseButton) {
 			const labelElement = this._collapseButton.labelElement;
 			labelElement.textContent = '';
 			this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
@@ -459,7 +459,13 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			this.renderMarkdown(this.currentThinkingValue);
 		}
 
-		if (!this.showProgressDetails && !this.streamingCompleted && !this.element.isComplete) {
+		// Show the in-thinking spinner while streaming. When collapsed, the CSS
+		// clipping hides it (the title shimmer is the visible indicator). When
+		// expanded, the title shimmer is less prominent so this spinner at the
+		// bottom of the section serves as the active indicator. In fixed-scrolling
+		// mode with progress details enabled, the working-progress row owns the
+		// active indicator instead, so skip creating the in-thinking spinner.
+		if (!this.streamingCompleted && !this.element.isComplete && !(this.fixedScrollingMode && this.showProgressDetails)) {
 			this.workingSpinnerElement = $('.chat-thinking-item.chat-thinking-spinner-item');
 			const spinnerIcon = createThinkingIcon(Codicon.circleFilled);
 			this.workingSpinnerElement.appendChild(spinnerIcon);
@@ -479,29 +485,27 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			}));
 			this._register(this.scrollableElement.onScroll(e => this.handleScroll(e.scrollTop)));
 
-			if (this.showProgressDetails) {
-				let pendingMutationRefresh: IDisposable | undefined;
-				const mutationObserver = new MutationObserver(() => {
-					if (pendingMutationRefresh) {
+			let pendingMutationRefresh: IDisposable | undefined;
+			const mutationObserver = new MutationObserver(() => {
+				if (pendingMutationRefresh) {
+					return;
+				}
+				pendingMutationRefresh = scheduleAtNextAnimationFrame(getWindow(this.wrapper), () => {
+					pendingMutationRefresh = undefined;
+					if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
 						return;
 					}
-					pendingMutationRefresh = scheduleAtNextAnimationFrame(getWindow(this.wrapper), () => {
-						pendingMutationRefresh = undefined;
-						if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
-							return;
-						}
-						this.refreshContentHeight();
-						this.updateScrollDimensionsFromCache();
-					});
+					this.refreshContentHeight();
+					this.updateScrollDimensionsFromCache();
 				});
-				mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
-				this._register({
-					dispose: () => {
-						mutationObserver.disconnect();
-						pendingMutationRefresh?.dispose();
-					}
-				});
-			}
+			});
+			mutationObserver.observe(this.wrapper, { childList: true, subtree: true });
+			this._register({
+				dispose: () => {
+					mutationObserver.disconnect();
+					pendingMutationRefresh?.dispose();
+				}
+			});
 
 			// Observe child elements for resizes (e.g. terminal output growing)
 			// so we can update scroll dimensions when the wrapper box is pinned at max-height.
@@ -893,6 +897,10 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 	public getIsActive(): boolean {
 		return this.isActive;
+	}
+
+	public get isFixedScrollingMode(): boolean {
+		return this.fixedScrollingMode;
 	}
 
 	/**
@@ -2008,9 +2016,9 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 				labelElement.appendChild(plainSpan);
 				this._collapseButton.element.ariaLabel = title;
 			}
+			this.titleShimmerSpan = undefined;
 			this.titleDetailContainer = undefined;
 			this._titleDetailRendered.clear();
-			this.titleShimmerSpan = undefined;
 			this.currentTitle = title;
 			return;
 		}
@@ -2025,19 +2033,13 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 
 		const labelElement = this._collapseButton.labelElement;
 
-		if (this.showProgressDetails) {
+		// Ensure the persistent shimmer span exists
+		if (!this.titleShimmerSpan || !this.titleShimmerSpan.parentElement) {
 			labelElement.textContent = '';
-			const prefixSpan = $('span');
-			prefixSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
-			labelElement.appendChild(prefixSpan);
-		} else {
-			if (!this.titleShimmerSpan || !this.titleShimmerSpan.parentElement) {
-				labelElement.textContent = '';
-				this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
-				labelElement.appendChild(this.titleShimmerSpan);
-			}
-			this.titleShimmerSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
+			this.titleShimmerSpan = $('span.chat-thinking-title-shimmer');
+			labelElement.appendChild(this.titleShimmerSpan);
 		}
+		this.titleShimmerSpan.textContent = localize('chat.thinking.shimmer', "{0}: ", this.defaultTitle);
 
 		// Dispose previous detail rendering
 		this._titleDetailRendered.clear();

@@ -3,21 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, WindowIntervalTimer, append } from '../../../../../../base/browser/dom.js';
+import { $, append } from '../../../../../../base/browser/dom.js';
 import { IRenderedMarkdown, renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
 import { alert } from '../../../../../../base/browser/ui/aria/aria.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { stripIcons } from '../../../../../../base/common/iconLabels.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { localize } from '../../../../../../nls.js';
 import { IChatProgressMessage, IChatTask, IChatTaskSerialized, IChatToolInvocation, IChatToolInvocationSerialized } from '../../../common/chatService/chatService.js';
 import { IChatRendererContent, IChatWorkingProgress, IChatWorkingProgressState, isResponseVM } from '../../../common/model/chatViewModel.js';
-import { formatElapsedTime, formatTokenCount } from '../../../common/chatProgressFormatting.js';
+// NOTE: `formatElapsedTime` / `formatTokenCount` from '../../../common/chatProgressFormatting.js'
+// and `WindowIntervalTimer` / `autorun` are intentionally not imported — the live timer and
+// token-count UI is currently disabled (see `startLiveProgress` / `renderCompletedProgress`).
+// Re-add those imports when re-enabling progress details.
 import { ChatTreeItem } from '../../chat.js';
 import { renderFileWidgets } from './chatInlineAnchorWidget.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
@@ -245,57 +247,61 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	}
 
 	private renderCompletedProgress(state: IChatWorkingProgressState): void {
-		// Use pre-computed elapsedMs (reliable for restored sessions), fall back to live computation
-		const elapsed = state.elapsedMs
-			?? (state.completedAt ? Math.max(0, state.completedAt - state.confirmationAdjustedTimestamp.get()) : 0);
-		const timeStr = formatElapsedTime(elapsed);
-
-		this.labelElement.textContent = localize('finishedIn', "Finished in {0}", timeStr);
-		const updateStats = (tokens: number | undefined) => {
-			if (typeof tokens === 'number' && tokens > 0) {
-				this.statsElement.textContent = tokens === 1
-					? localize('finishedOneTokenSuffix', "with 1 token")
-					: localize('finishedTokensSuffix', "with {0} tokens", formatTokenCount(tokens));
-			} else {
-				this.statsElement.textContent = '';
-			}
-		};
-
-		updateStats(state.completionTokenCountObs.get());
-		this._register(autorun(reader => updateStats(state.completionTokenCountObs.read(reader))));
+		// TODO: Re-enable elapsed time and token count display on completion (
+		// "Finished in {time} with {n} tokens"). Shipping a minimal version for
+		// now — stats stay hidden. The original logic is preserved below as a
+		// reference and can be brought back behind `chat.progressDetails.enabled`.
+		// const elapsed = state.elapsedMs
+		// 	?? (state.completedAt ? Math.max(0, state.completedAt - state.confirmationAdjustedTimestamp.get()) : 0);
+		// const timeStr = formatElapsedTime(elapsed);
+		// this.labelElement.textContent = localize('finishedIn', "Finished in {0}", timeStr);
+		// const updateStats = (tokens: number | undefined) => {
+		// 	if (typeof tokens === 'number' && tokens > 0) {
+		// 		this.statsElement.textContent = tokens === 1
+		// 			? localize('finishedOneTokenSuffix', "with 1 token")
+		// 			: localize('finishedTokensSuffix', "with {0} tokens", formatTokenCount(tokens));
+		// 	} else {
+		// 		this.statsElement.textContent = '';
+		// 	}
+		// };
+		// updateStats(state.completionTokenCountObs.get());
+		// this._register(autorun(reader => updateStats(state.completionTokenCountObs.read(reader))));
 	}
 
 	private startLiveProgress(state: IChatWorkingProgressState): void {
-		const updateDisplay = () => {
-			// If explicit content was set (e.g., tool unresponsive), show that instead
-			if (this.explicitContent) {
-				return;
-			}
-
-			const now = Date.now();
-			const adjustedTimestamp = state.confirmationAdjustedTimestamp.get();
-			const elapsed = Math.max(0, now - adjustedTimestamp);
-			const timeStr = formatElapsedTime(elapsed);
-			const tokens = state.completionTokenCountObs.get();
-
-			// Label gets shimmer, stats do not
+		// If explicit content was set (e.g., tool unresponsive), show that; otherwise
+		// just show the shimmered working label. Stats are intentionally hidden in
+		// the minimal shipping version.
+		if (!this.explicitContent) {
 			this.labelElement.textContent = this.label;
-			if (typeof tokens === 'number' && tokens > 0) {
-				const tokenStr = formatTokenCount(tokens);
-				this.statsElement.textContent = tokens === 1
-					? localize('workingProgressStatsWithOneToken', "({0} \u00b7 1 token)", timeStr)
-					: localize('workingProgressStatsWithTokens', "({0} \u00b7 {1} tokens)", timeStr, tokenStr);
-			} else {
-				this.statsElement.textContent = localize('workingProgressStats', "({0})", timeStr);
-			}
-		};
+		}
 
-		// Initial render
-		updateDisplay();
-
-		// Update elapsed time and the latest token count once per second.
-		const timer = this._register(new WindowIntervalTimer(this.domNode));
-		timer.cancelAndSet(updateDisplay, 1000);
+		// TODO: Re-enable live elapsed-time / token-count updates. The original
+		// implementation drove a per-second timer that wrote into `statsElement`;
+		// preserved here as a reference so it can be re-enabled behind the
+		// `chat.progressDetails.enabled` setting in the future.
+		// const updateDisplay = () => {
+		// 	if (this.explicitContent) {
+		// 		return;
+		// 	}
+		// 	const now = Date.now();
+		// 	const adjustedTimestamp = state.confirmationAdjustedTimestamp.get();
+		// 	const elapsed = Math.max(0, now - adjustedTimestamp);
+		// 	const timeStr = formatElapsedTime(elapsed);
+		// 	const tokens = state.completionTokenCountObs.get();
+		// 	this.labelElement.textContent = this.label;
+		// 	if (typeof tokens === 'number' && tokens > 0) {
+		// 		const tokenStr = formatTokenCount(tokens);
+		// 		this.statsElement.textContent = tokens === 1
+		// 			? localize('workingProgressStatsWithOneToken', "({0} \u00b7 1 token)", timeStr)
+		// 			: localize('workingProgressStatsWithTokens', "({0} \u00b7 {1} tokens)", timeStr, tokenStr);
+		// 	} else {
+		// 		this.statsElement.textContent = localize('workingProgressStats', "({0})", timeStr);
+		// 	}
+		// };
+		// updateDisplay();
+		// const timer = this._register(new WindowIntervalTimer(this.domNode));
+		// timer.cancelAndSet(updateDisplay, 1000);
 	}
 
 	updateWorkingContent(content: IMarkdownString): void {

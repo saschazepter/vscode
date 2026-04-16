@@ -1036,6 +1036,13 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatProgressDetailsEnabled) !== false;
+		// TODO: Re-enable the "Finished in {time} with {n} tokens" summary on completed
+		// responses. Shipping a minimal version for now — nothing is rendered for
+		// completed responses. The setting and downstream working-state plumbing
+		// remain in place so this can be brought back without re-plumbing the data.
+		if (element.isComplete) {
+			return undefined;
+		}
 		if (!showProgressDetails && element.isComplete) {
 			return undefined;
 		}
@@ -1080,6 +1087,14 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		if (showProgressDetails) {
+			// When the thinking section is actively streaming with its own inline
+			// shimmer (collapsed mode), let it own the progress indicator. In
+			// fixed-scrolling mode the thinking section does not show its own
+			// active indicator, so the working-progress row should still render.
+			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
+			if (lastThinking?.getIsActive() && !lastThinking.isFixedScrollingMode) {
+				return undefined;
+			}
 			return { kind: 'working', state: workingState };
 		}
 
