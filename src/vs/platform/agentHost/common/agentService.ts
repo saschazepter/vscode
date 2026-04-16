@@ -35,6 +35,27 @@ export const AgentHostEnabledSettingId = 'chat.agentHost.enabled';
 /** Configuration key that controls whether per-host IPC traffic output channels are created. */
 export const AgentHostIpcLoggingSettingId = 'chat.agentHost.ipcLoggingEnabled';
 
+/** Result of starting the agent host WebSocket server on-demand. */
+export interface IAgentHostSocketInfo {
+	readonly socketPath: string;
+}
+
+/**
+ * IPC service exposed on the {@link AgentHostIpcChannels.ConnectionTracker}
+ * channel. Used by the server process for lifetime management and by the
+ * shared process to request a local WebSocket listener on-demand.
+ */
+export interface IConnectionTrackerService {
+	readonly onDidChangeConnectionCount: Event<number>;
+
+	/**
+	 * Request the agent host to start a WebSocket server on a local
+	 * pipe/socket. Returns the socket path.
+	 * If a server is already running, returns the existing info.
+	 */
+	startWebSocketServer(): Promise<IAgentHostSocketInfo>;
+}
+
 // ---- IPC data types (serializable across MessagePort) -----------------------
 
 export interface IAgentSessionMetadata {
@@ -205,7 +226,7 @@ export interface IAgentToolStartEvent extends IAgentProgressEventBase {
 	/** Human-readable display name for this tool. */
 	readonly displayName: string;
 	/** Message describing the tool invocation in progress (e.g., "Running `echo hello`"). */
-	readonly invocationMessage: string;
+	readonly invocationMessage: StringOrMarkdown;
 	/** A representative input string for display in the UI (e.g., the shell command). */
 	readonly toolInput?: string;
 	/** Hint for the renderer about how to display this tool (e.g., 'terminal' for shell commands, 'subagent' for subagent-spawning tools). */
@@ -652,4 +673,6 @@ export interface IAgentHostService extends IAgentConnection {
 	readonly onAgentHostStart: Event<void>;
 
 	restartAgentHost(): Promise<void>;
+
+	startWebSocketServer(): Promise<IAgentHostSocketInfo>;
 }
