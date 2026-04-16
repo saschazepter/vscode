@@ -14,6 +14,7 @@ import { wrapTablesWithScrollable } from './chatMarkdownTableScrolling.js';
 import { coalesce } from '../../../../../../base/common/arrays.js';
 import { findLast } from '../../../../../../base/common/arraysFind.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
+import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { Disposable, DisposableStore, dispose, IDisposable, MutableDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
@@ -59,6 +60,7 @@ import { IDisposableReference } from './chatCollections.js';
 import { EditorPool } from './chatContentCodePools.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
 import { ChatExtensionsContentPart } from './chatExtensionsContentPart.js';
+import { SmoothStreamingDOMMorpher } from './chatSmoothStreaming.js';
 import './media/chatMarkdownPart.css';
 
 const $ = dom.$;
@@ -107,8 +109,11 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 
 	private readonly mathLayoutParticipants = new Set<() => void>();
 
+	/** Smooth streaming morpher — only created when the experiment is enabled. */
+	private _smoothMorpher: SmoothStreamingDOMMorpher | undefined;
+
 	constructor(
-		private readonly markdown: IChatMarkdownContent,
+		private markdown: IChatMarkdownContent,
 		context: IChatContentPartRenderContext,
 		private readonly editorPool: EditorPool,
 		fillInIncompleteTokens = false,
@@ -142,6 +147,16 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 
 		const enableMath = configurationService.getValue<boolean>(ChatConfiguration.EnableMath);
 
+		// Initialize smooth streaming morpher when the experiment is enabled
+		const smoothStreamingEnabled = configurationService.getValue<boolean>(ChatConfiguration.SmoothStreaming);
+		if (smoothStreamingEnabled && isResponseVM(element) && fillInIncompleteTokens) {
+			this._smoothMorpher = this._register(instantiationService.createInstance(SmoothStreamingDOMMorpher, this.domNode));
+			this._smoothMorpher.setRenderCallback((newMd) => {
+				this.markdown = { ...this.markdown, content: new MarkdownString(newMd, this.markdown.content) };
+				doRenderMarkdown();
+			});
+		}
+
 		const renderStore = this._register(new MutableDisposable<DisposableStore>());
 
 		const doRenderMarkdown = () => {
@@ -173,7 +188,7 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 				breaks: true,
 			};
 
-			const result = store.add(renderer.render(markdown.content, {
+			const result = store.add(renderer.render(this.markdown.content, {
 				sanitizerConfig: MarkedKatexSupport.getSanitizerOptions({
 					allowedTags: allowedChatMarkdownHtmlTags,
 					allowedAttributes: allowedMarkdownHtmlAttributes,
@@ -306,7 +321,7 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 			}
 
 			const markdownDecorationsRenderer = instantiationService.createInstance(ChatMarkdownDecorationsRenderer);
-			store.add(markdownDecorationsRenderer.walkTreeAndAnnotateReferenceLinks(markdown, result.element));
+			store.add(markdownDecorationsRenderer.walkTreeAndAnnotateReferenceLinks(this.markdown, result.element));
 
 			const layoutParticipants = new Lazy(() => {
 				const observer = new ResizeObserver(() => this.mathLayoutParticipants.forEach(layout => layout()));
@@ -338,6 +353,13 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 
 		// Always render immediately
 		doRenderMarkdown();
+
+		// Seed the morpher *after* the initial render so it captures
+		// the correct markdown baseline. Pass `animateInitial: true`
+		// so the initial DOM children receive the entrance animation —
+		// this is important when a markdown part first appears (e.g.
+		// after thinking content) and already contains visible content.
+		this._smoothMorpher?.seed(markdown.content.value, /* animateInitial */ true);
 
 		if (enableMath && !MarkedKatexSupport.getExtension(dom.getWindow(context.container))) {
 			// KaTeX not yet loaded - load it and re-render when ready
@@ -423,6 +445,38 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 		}
 
 		return false;
+	}
+
+	/**
+	 * Attempts an incremental DOM update for smooth streaming instead of
+	 * tearing down and rebuilding the entire markdown part.
+	 *
+	 * The morpher checks that the new content is a pure append, then
+	 * schedules a rAF-batched re-render through the full markdown
+	 * pipeline. Code blocks, tables, and all markdown features are
+	 * rendered correctly because the update goes through the standard
+	 * `doRenderMarkdown()` path.
+	 *
+	 * @param newMarkdown The new (appended) markdown content.
+	 * @returns `true` if the incremental update succeeded and the caller
+	 *          should treat this part as unchanged. `false` if a full
+	 *          re-render is needed.
+	 */
+	tryIncrementalUpdate(newMarkdown: IChatMarkdownContent): boolean {
+		if (!this._smoothMorpher) {
+			return false;
+		}
+
+		const success = this._smoothMorpher.tryMorph(newMarkdown.content.value);
+
+		if (success) {
+			// Update the stored markdown so hasSameContent() returns true
+			// for subsequent diffs with the same content, allowing the
+			// progressive render to detect "caught up" and "complete" states.
+			this.markdown = newMarkdown;
+		}
+
+		return success;
 	}
 
 	layout(width: number): void {

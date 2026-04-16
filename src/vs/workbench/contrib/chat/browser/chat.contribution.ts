@@ -349,6 +349,26 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.experimental.detectParticipant.enabled', "Enables chat participant autodetection for panel chat."),
 			default: null
 		},
+		[ChatConfiguration.SmoothStreaming]: {
+			type: 'boolean',
+			description: nls.localize('chat.experimental.smoothStreaming.enabled', "Enables smooth token-by-token animation when streaming chat responses."),
+			default: false,
+			tags: ['experimental'],
+		},
+		[ChatConfiguration.SmoothStreamingStyle]: {
+			type: 'string',
+			enum: ['fade', 'rise', 'blur', 'scale', 'slide'],
+			enumDescriptions: [
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.fade', "Simple opacity fade from 0 to 1."),
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.rise', "Tokens fade in while rising upward."),
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.blur', "Tokens fade in from a blurred state."),
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.scale', "Tokens scale up from slightly smaller."),
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.slide', "Tokens slide in from the left."),
+			],
+			description: nls.localize('chat.experimental.smoothStreaming.animationStyle', "Controls the animation style for smooth token streaming."),
+			default: 'fade',
+			tags: ['experimental'],
+		},
 		'chat.detectParticipant.enabled': {
 			type: 'boolean',
 			description: nls.localize('chat.detectParticipant.enabled', "Enables chat participant autodetection for panel chat."),

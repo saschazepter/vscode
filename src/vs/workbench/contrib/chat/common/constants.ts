@@ -69,6 +69,9 @@ export enum ChatConfiguration {
 	ToolConfirmationCarousel = 'chat.tools.confirmationCarousel.enabled',
 	DefaultNewSessionMode = 'chat.newSession.defaultMode',
 	AgentHostClientTools = 'chat.agentHost.clientTools',
+
+	SmoothStreaming = 'chat.experimental.smoothStreaming.enabled',
+	SmoothStreamingStyle = 'chat.experimental.smoothStreaming.animationStyle',
 }
 
 /**
