@@ -343,20 +343,6 @@ export interface ISessionActiveClient {
 }
 
 /**
- * A summary of changes to a single file within a session.
- *
- * @category Session State
- */
-export interface ISessionFileDiff {
-	/** URI of the affected file */
-	uri: URI;
-	/** Number of items added (e.g., lines for text files, cells for notebooks) */
-	added?: number;
-	/** Number of items removed (e.g., lines for text files, cells for notebooks) */
-	removed?: number;
-}
-
-/**
  * Server-owned project metadata for a session.
  *
  * @category Session State
@@ -395,7 +381,7 @@ export interface ISessionSummary {
 	/** Whether the session has been marked as done by the client */
 	isDone?: boolean;
 	/** Files changed during this session with diff statistics */
-	diffs?: ISessionFileDiff[];
+	diffs?: IFileEdit[];
 }
 
 // ─── Config Schema Types ─────────────────────────────────────────────────────
@@ -1038,6 +1024,10 @@ export interface IToolCallPendingConfirmationState extends IToolCallBase, IToolC
 	status: ToolCallStatus.PendingConfirmation;
 	/** Short title for the confirmation prompt (e.g. `"Run in terminal"`, `"Write file"`) */
 	confirmationTitle?: StringOrMarkdown;
+	/** File edits that this tool call will perform, for preview before confirmation */
+	edits?: { items: IFileEdit[] };
+	/** Whether the agent host allows the client to edit the tool's input parameters before confirming */
+	editable?: boolean;
 }
 
 /**
@@ -1233,15 +1223,14 @@ export interface IToolResultResourceContent extends IContentRef {
 }
 
 /**
- * Describes a file modification performed by a tool.
+ * Describes a file modification with before/after state and diff metadata.
  *
  * Supports creates (only `after`), deletes (only `before`), renames/moves
  * (different `uri` in `before` and `after`), and edits (same `uri`, different content).
  *
  * @category Tool Result Content
  */
-export interface IToolResultFileEditContent {
-	type: ToolResultContentType.FileEdit;
+export interface IFileEdit {
 	/** The file state before the edit. Absent for file creations or for in-place file edits. */
 	before?: {
 		/** URI of the file before the edit */
@@ -1263,6 +1252,15 @@ export interface IToolResultFileEditContent {
 		/** Number of items removed (e.g., lines for text files, cells for notebooks) */
 		removed?: number;
 	};
+}
+
+/**
+ * Describes a file modification performed by a tool.
+ *
+ * @category Tool Result Content
+ */
+export interface IToolResultFileEditContent extends IFileEdit {
+	type: ToolResultContentType.FileEdit;
 }
 
 /**
