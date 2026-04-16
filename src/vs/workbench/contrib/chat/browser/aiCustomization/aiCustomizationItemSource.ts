@@ -239,8 +239,16 @@ export class AICustomizationItemNormalizer {
 		}
 
 		switch (item.groupKey) {
-			case BUILTIN_STORAGE:
-				return { storage: PromptsStorage.extension, groupKey: BUILTIN_STORAGE, isBuiltin: true, extensionLabel };
+			case BUILTIN_STORAGE: {
+				// Preserve a provider-supplied BUILTIN_STORAGE so the management
+				// editor's "edit built-in and save as user/workspace copy" flow
+				// activates. Otherwise fall back to extension storage (the
+				// historical source of built-in items).
+				const builtinStorage = (item.storage as PromptsStorage | typeof BUILTIN_STORAGE | undefined) === BUILTIN_STORAGE
+					? (BUILTIN_STORAGE as unknown as PromptsStorage)
+					: PromptsStorage.extension;
+				return { storage: builtinStorage, groupKey: BUILTIN_STORAGE, isBuiltin: true, extensionLabel };
+			}
 			default:
 				return { storage, groupKey: item.groupKey, extensionLabel };
 		}
@@ -411,6 +419,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				type: PromptsType.skill,
 				name: p.name ?? basename(p.uri),
 				description: p.description,
+				storage: BUILTIN_STORAGE as unknown as PromptsStorage,
 				groupKey: BUILTIN_STORAGE,
 				enabled: true,
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
