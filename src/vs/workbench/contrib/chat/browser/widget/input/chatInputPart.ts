@@ -129,8 +129,6 @@ import { SessionTypePickerActionItem } from './sessionTargetPickerActionItem.js'
 import { WorkspacePickerActionItem } from './workspacePickerActionItem.js';
 import { ChatContextUsageWidget } from '../../widgetHosts/viewPane/chatContextUsageWidget.js';
 import { Target } from '../../../common/promptSyntax/promptTypes.js';
-import { EnhancedModelPickerActionItem } from './modelPickerActionItem2.js';
-import { ModelPickerWidget } from './chatModelPicker.js';
 import { findLast } from '../../../../../../base/common/arraysFind.js';
 import { ConfigureToolsAction } from '../../actions/chatToolActions.js';
 
@@ -327,8 +325,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private contextUsageWidget?: ChatContextUsageWidget;
 	private contextUsageWidgetContainer!: HTMLElement;
 	private readonly _contextUsageDisposables = this._register(new MutableDisposable<DisposableStore>());
-	private _modelInfoLabel?: HTMLElement;
-	private _modelInfoPicker?: ModelPickerWidget;
 
 	get inputContainerElement(): HTMLElement | undefined {
 		return this.inputContainer;
@@ -2016,12 +2012,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							dom.h('.chat-input-toolbars@inputToolbars'),
 						]),
 					]),
-					dom.h('.chat-model-info-row@modelInfoRow', [
-						dom.h('.chat-model-info-label@modelInfoLabel'),
-						dom.h('.chat-model-info-spacer'),
+					dom.h('.chat-secondary-toolbar@secondaryToolbar', [
 						dom.h('.chat-context-usage-container@contextUsageWidgetContainer'),
 					]),
-					dom.h('.chat-secondary-toolbar@secondaryToolbar'),
 					dom.h('.chat-attachments-container@attachmentsContainer', [
 						dom.h('.chat-attached-context@attachedContextContainer'),
 					]),
@@ -2047,12 +2040,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						dom.h('.chat-input-toolbars@inputToolbars'),
 					]),
 				]),
-				dom.h('.chat-model-info-row@modelInfoRow', [
-					dom.h('.chat-model-info-label@modelInfoLabel'),
-					dom.h('.chat-model-info-spacer'),
+				dom.h('.chat-secondary-toolbar@secondaryToolbar', [
 					dom.h('.chat-context-usage-container@contextUsageWidgetContainer'),
 				]),
-				dom.h('.chat-secondary-toolbar@secondaryToolbar'),
 			]);
 		}
 		this.container = elements.root;
@@ -2088,59 +2078,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.chatInputWidgetsContainer = elements.chatInputWidgetsContainer;
 		this.contextUsageWidgetContainer = elements.contextUsageWidgetContainer;
 
-		// Model info picker — render a real model picker widget below the input
-		if (elements.modelInfoLabel) {
-			this._modelInfoLabel = elements.modelInfoLabel;
-			this._modelInfoLabel.classList.add('chat-model-info-picker-container');
-
-			const pickerDelegate: IModelPickerDelegate = {
-				currentModel: this._currentLanguageModel,
-				setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
-					this._waitForPersistedLanguageModel.clear();
-					this.setCurrentLanguageModel(model);
-					this.renderAttachedContext();
-				},
-				getModels: () => this.getModels(),
-				useGroupedModelPicker: () => {
-					const sessionType = this.getCurrentSessionType();
-					return !sessionType || sessionType === localChatSessionType;
-				},
-				showManageModelsAction: () => {
-					const sessionType = this.getCurrentSessionType();
-					return !sessionType || sessionType === localChatSessionType;
-				},
-				showUnavailableFeatured: () => {
-					const sessionType = this.getCurrentSessionType();
-					return !sessionType || sessionType === localChatSessionType;
-				},
-				showFeatured: () => {
-					const sessionType = this.getCurrentSessionType();
-					return !sessionType || sessionType === localChatSessionType;
-				},
-			};
-
-			this._modelInfoPicker = this._register(this.instantiationService.createInstance(
-				ModelPickerWidget,
-				pickerDelegate,
-				{ forcePosition: true, hoverPosition: HoverPosition.LEFT },
-			));
-			this._modelInfoPicker.render(this._modelInfoLabel);
-
-			// Keep the picker in sync with the current model
-			this._register(autorun(reader => {
-				const model = this._currentLanguageModel.read(reader);
-				this._modelInfoPicker?.setSelectedModel(model);
-			}));
-
-			// Sync picker selection back
-			this._register(this._modelInfoPicker.onDidChangeSelection(model => {
-				this._waitForPersistedLanguageModel.clear();
-				this.setCurrentLanguageModel(model);
-				this.renderAttachedContext();
-			}));
+		if (this.options.isSessionsWindow || this.options.renderStyle === 'compact') {
+			toolbarsContainer.prepend(this.contextUsageWidgetContainer);
 		}
 
-		// Context usage widget
+		// Context usage widget — will be positioned in the toolbar after toolbars are created
 		this.contextUsageWidget = this._register(this.instantiationService.createInstance(ChatContextUsageWidget));
 		this.contextUsageWidgetContainer.appendChild(this.contextUsageWidget.domNode);
 

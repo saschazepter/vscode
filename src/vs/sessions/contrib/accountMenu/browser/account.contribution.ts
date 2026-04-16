@@ -7,6 +7,8 @@ import '../../../browser/media/sidebarActionButton.css';
 import './media/accountWidget.css';
 import './media/accountTitleBarWidget.css';
 import '../../../../workbench/contrib/chat/browser/chatStatus/media/chatStatus.css';
+import '../../../../workbench/contrib/chat/browser/media/copilotPrototypeShell.css';
+import { CopilotPrototypeShellCoinStatusBarContribution, CopilotCurrentModelStatusBarContribution } from '../../../../workbench/contrib/chat/browser/copilotPrototypeShell.contribution.js';
 import Severity from '../../../../base/common/severity.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { Event } from '../../../../base/common/event.js';
@@ -55,6 +57,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 const AccountMenu = new MenuId('SessionsAccountMenu');
 const SessionsTitleBarAccountWidgetAction = 'sessions.action.titleBarAccountWidget';
 const SessionsTitleBarUpdateWidgetAction = 'sessions.action.titleBarUpdateWidget';
+const SessionsTitleBarTBBWidgetAction = 'sessions.action.titleBarTBBWidget';
 const SESSIONS_ACCOUNT_TITLEBAR_PANEL_WIDTH = 280;
 
 function shouldHideSessionsTitleBarUpdateWidget(type: StateType): boolean {
@@ -590,6 +593,146 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 	}
 }
 
+class TitleBarTBBWidget extends BaseActionViewItem {
+
+	private container: HTMLElement | undefined;
+	private readonly clickPanelDisposable = this._register(new MutableDisposable<DisposableStore>());
+	private isMenuVisible = false;
+
+	constructor(
+		action: IAction,
+		options: IBaseActionViewItemOptions | undefined,
+		@IHoverService private readonly hoverService: IHoverService,
+	) {
+		super(undefined, action, options);
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+
+		this.container = container;
+		container.classList.add('sessions-tbb-titlebar-widget');
+		container.setAttribute('aria-label', localize('tbbSimulator', "Token Based Billing Simulator"));
+		container.title = localize('tbbSimulator', "Token Based Billing Simulator");
+
+		const icon = append(container, $('span.sessions-tbb-titlebar-widget-icon'));
+		icon.append(...renderLabelWithIcons(`$(${Codicon.dashboard.id})`));
+	}
+
+	override onClick(): void {
+		if (!this.container) {
+			return;
+		}
+
+		if (this.isMenuVisible) {
+			this.hoverService.hideHover(true);
+			this.clickPanelDisposable.clear();
+			return;
+		}
+
+		this.hoverService.hideHover(true);
+		this.clickPanelDisposable.clear();
+
+		const panelStore = new DisposableStore();
+		this.clickPanelDisposable.value = panelStore;
+
+		this.isMenuVisible = true;
+		this.container.classList.add('menu-visible');
+
+		panelStore.add({
+			dispose: () => {
+				this.isMenuVisible = false;
+				this.container?.classList.remove('menu-visible');
+			}
+		});
+
+		const panelContent = this.createTBBPanelContent(panelStore);
+		const { left, width } = getDomNodePagePosition(this.container);
+		const hoverWidget = this.hoverService.showInstantHover({
+			content: panelContent,
+			target: {
+				targetElements: [this.container],
+				x: left + width - 320,
+			},
+			additionalClasses: ['sessions-account-titlebar-panel-hover'],
+			position: { hoverPosition: HoverPosition.BELOW },
+			persistence: { sticky: true, hideOnHover: false },
+			appearance: { showPointer: false, skipFadeInAnimation: true, maxHeightRatio: 0.8 },
+		}, true);
+
+		if (hoverWidget) {
+			panelStore.add(hoverWidget);
+		}
+
+		panelStore.add(disposableWindowInterval(mainWindow, () => {
+			if (!panelContent.isConnected || hoverWidget?.isDisposed) {
+				this.clickPanelDisposable.clear();
+			}
+		}, 500));
+	}
+
+	private createTBBPanelContent(panelStore: DisposableStore): HTMLElement {
+		const panel = $('div.copilot-prototype-coin-view');
+		panel.style.padding = '8px';
+		panel.style.minWidth = '300px';
+
+		const tbbInstance = CopilotPrototypeShellCoinStatusBarContribution.instance;
+		const currentInstance = CopilotCurrentModelStatusBarContribution.instance;
+
+		if (!tbbInstance || !currentInstance) {
+			const msg = $('div');
+			msg.style.padding = '12px';
+			msg.style.color = 'var(--vscode-descriptionForeground)';
+			msg.textContent = localize('tbbLoading', "Waiting for prototype controller...");
+			panel.appendChild(msg);
+			return panel;
+		}
+
+		// Top-level toggle: TBB | Current
+		const topTabs = $('div.copilot-prototype-coin-tabs');
+		topTabs.style.marginBottom = '4px';
+
+		const tbbTab = $('div.copilot-prototype-coin-tab.active');
+		tbbTab.textContent = localize('tabTBB', "Token Based Billing");
+		tbbTab.tabIndex = 0;
+		tbbTab.role = 'tab';
+
+		const currentTab = $('div.copilot-prototype-coin-tab');
+		currentTab.textContent = localize('tabCurrent', "Current Model");
+		currentTab.tabIndex = 0;
+		currentTab.role = 'tab';
+
+		topTabs.append(tbbTab, currentTab);
+		panel.appendChild(topTabs);
+
+		const tbbContainer = $('div');
+		const currentContainer = $('div');
+		currentContainer.style.display = 'none';
+
+		tbbInstance.renderController(tbbContainer, panelStore);
+		currentInstance.renderController(currentContainer, panelStore);
+
+		panel.append(tbbContainer, currentContainer);
+
+		tbbTab.addEventListener('click', () => {
+			tbbTab.classList.add('active');
+			currentTab.classList.remove('active');
+			tbbContainer.style.display = '';
+			currentContainer.style.display = 'none';
+			tbbInstance.setBillingMode('token-based');
+		});
+		currentTab.addEventListener('click', () => {
+			currentTab.classList.add('active');
+			tbbTab.classList.remove('active');
+			currentContainer.style.display = '';
+			tbbContainer.style.display = 'none';
+			tbbInstance.setBillingMode('current-model');
+		});
+
+		return panel;
+	}
+}
+
 class TitleBarUpdateWidget extends BaseActionViewItem {
 
 	private container: HTMLElement | undefined;
@@ -677,6 +820,30 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
+
+		// TBB Simulator widget (dashboard icon, left of update and account)
+		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarTBBWidgetAction, (action, options) => {
+			return instantiationService.createInstance(TitleBarTBBWidget, action, options);
+		}, undefined));
+
+		this._register(registerAction2(class extends Action2 {
+			constructor() {
+				super({
+					id: SessionsTitleBarTBBWidgetAction,
+					title: localize2('agentsTBBTitleBar', "Token Based Billing Simulator"),
+					menu: {
+						id: Menus.TitleBarRightLayout,
+						group: 'navigation',
+						order: 98,
+						when: IsAuxiliaryWindowContext.toNegated(),
+					}
+				});
+			}
+
+			async run(): Promise<void> {
+				// Handled by the custom view item
+			}
+		}));
 
 		// Titlebar update widget (to the right of separator, left of account badge)
 		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarUpdateWidgetAction, (action, options) => {

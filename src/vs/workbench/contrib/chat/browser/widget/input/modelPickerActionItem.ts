@@ -15,18 +15,9 @@ import { localize } from '../../../../../../nls.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../../platform/keybinding/common/keybinding.js';
-import { IProductService } from '../../../../../../platform/product/common/productService.js';
-import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
-import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
-import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
-import { IActionProvider } from '../../../../../../base/browser/ui/dropdown/dropdown.js';
-import { IActionWidgetDropdownAction, IActionWidgetDropdownActionProvider } from '../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
-import { ChatEntitlement, IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
-import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
-import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
-import { DEFAULT_MODEL_PICKER_CATEGORY } from '../../../common/widget/input/modelPickerWidget.js';
+import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
 import { IChatInputPickerOptions } from './chatInputPickerActionItem.js';
-import { getModelHoverContent, ModelPickerWidget } from './chatModelPicker.js';
+import { ModelPickerWidget } from './chatModelPicker.js';
 
 export interface IModelPickerDelegate {
 	readonly currentModel: IObservable<ILanguageModelChatMetadataAndIdentifier | undefined>;
@@ -36,126 +27,6 @@ export interface IModelPickerDelegate {
 	showManageModelsAction(): boolean;
 	showUnavailableFeatured(): boolean;
 	showFeatured(): boolean;
-}
-
-type ChatModelChangeClassification = {
-	owner: 'lramos15';
-	comment: 'Reporting when the model picker is switched';
-	fromModel?: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The previous chat model' };
-	toModel: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The new chat model' };
-};
-
-type ChatModelChangeEvent = {
-	fromModel: string | TelemetryTrustedValue<string> | undefined;
-	toModel: string | TelemetryTrustedValue<string>;
-};
-
-
-function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, telemetryService: ITelemetryService, pickerOptions: IChatInputPickerOptions, languageModelsService?: ILanguageModelsService): IActionWidgetDropdownActionProvider {
-	return {
-		getActions: () => {
-			const models = delegate.getModels();
-			if (models.length === 0) {
-				// Show a fake "Auto" entry when no models are available
-				return [{
-					id: 'auto',
-					enabled: true,
-					checked: true,
-					category: DEFAULT_MODEL_PICKER_CATEGORY,
-					class: undefined,
-					tooltip: localize('chat.modelPicker.auto', "Auto"),
-					label: localize('chat.modelPicker.auto', "Auto"),
-					hover: { content: localize('chat.modelPicker.auto.description', "Automatically selects the best model for your task based on capacity."), position: pickerOptions.hoverPosition },
-					run: () => { }
-				} satisfies IActionWidgetDropdownAction];
-			}
-			return models.map(model => {
-				const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
-				const selectThisModel = () => {
-					if (model.identifier !== delegate.currentModel.get()?.identifier) {
-						const previousModel = delegate.currentModel.get();
-						telemetryService.publicLog2<ChatModelChangeEvent, ChatModelChangeClassification>('chat.modelChange', {
-							fromModel: previousModel?.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(previousModel.identifier) : 'unknown',
-							toModel: model.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(model.identifier) : 'unknown'
-						});
-						delegate.setModel(model);
-					}
-				};
-				const hoverMarkdown = getModelHoverContent(model, languageModelsService, undefined, selectThisModel);
-				return {
-					id: model.metadata.id,
-					enabled: true,
-					icon: model.metadata.statusIcon,
-					checked: model.identifier === delegate.currentModel.get()?.identifier,
-					category: model.metadata.modelPickerCategory || DEFAULT_MODEL_PICKER_CATEGORY,
-					class: undefined,
-					description: isAuto ? undefined : model.metadata.detail,
-					tooltip: '',
-					hover: { content: hoverMarkdown, position: pickerOptions.hoverPosition },
-					label: model.metadata.name,
-					run: () => {
-						const previousModel = delegate.currentModel.get();
-						telemetryService.publicLog2<ChatModelChangeEvent, ChatModelChangeClassification>('chat.modelChange', {
-							fromModel: previousModel?.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(previousModel.identifier) : 'unknown',
-							toModel: model.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(model.identifier) : 'unknown'
-						});
-						delegate.setModel(model);
-					}
-				} satisfies IActionWidgetDropdownAction;
-			});
-		}
-	};
-}
-
-function getModelPickerActionBarActionProvider(commandService: ICommandService, chatEntitlementService: IChatEntitlementService, productService: IProductService): IActionProvider {
-
-	const actionProvider: IActionProvider = {
-		getActions: () => {
-			const additionalActions: IAction[] = [];
-			if (
-				chatEntitlementService.entitlement === ChatEntitlement.Free ||
-				chatEntitlementService.entitlement === ChatEntitlement.EDU ||
-				chatEntitlementService.entitlement === ChatEntitlement.Pro ||
-				chatEntitlementService.entitlement === ChatEntitlement.ProPlus ||
-				chatEntitlementService.entitlement === ChatEntitlement.Business ||
-				chatEntitlementService.entitlement === ChatEntitlement.Enterprise ||
-				chatEntitlementService.isInternal
-			) {
-				additionalActions.push({
-					id: 'manageModels',
-					label: localize('chat.manageModels', "Manage Models..."),
-					enabled: true,
-					tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
-					class: undefined,
-					run: () => {
-						commandService.executeCommand(MANAGE_CHAT_COMMAND_ID);
-					}
-				});
-			}
-
-			// Add sign-in / upgrade option if entitlement is anonymous / free / new user
-			const isNewOrAnonymousUser = !chatEntitlementService.sentiment.completed ||
-				chatEntitlementService.entitlement === ChatEntitlement.Available ||
-				chatEntitlementService.anonymous ||
-				chatEntitlementService.entitlement === ChatEntitlement.Unknown;
-			if (isNewOrAnonymousUser || chatEntitlementService.entitlement === ChatEntitlement.Free) {
-				additionalActions.push({
-					id: 'moreModels',
-					label: isNewOrAnonymousUser ? localize('chat.moreModels', "Add Language Models") : localize('chat.morePremiumModels', "Add Premium Models"),
-					enabled: true,
-					tooltip: isNewOrAnonymousUser ? localize('chat.moreModels.tooltip', "Add Language Models") : localize('chat.morePremiumModels.tooltip', "Add Premium Models"),
-					class: undefined,
-					run: () => {
-						const commandId = isNewOrAnonymousUser ? 'workbench.action.chat.triggerSetup' : 'workbench.action.chat.upgradePlan';
-						commandService.executeCommand(commandId);
-					}
-				});
-			}
-
-			return additionalActions;
-		}
-	};
-	return actionProvider;
 }
 
 /**
@@ -246,6 +117,7 @@ export class ModelPickerActionItem extends BaseActionViewItem {
 			label += ` (${keybindingLabel})`;
 		}
 		const { statusIcon, tooltip } = this._pickerWidget.selectedModel?.metadata || {};
-		return statusIcon && tooltip ? `${label} • ${tooltip}` : label;
+		const cleanTooltip = tooltip?.replace(/\s*Rate is counted at \d+(\.\d+)?x\.?/gi, '').replace(/\s*Counted at \d+(\.\d+)?x\.?/gi, '').trim();
+		return statusIcon && cleanTooltip ? `${label} • ${cleanTooltip}` : label;
 	}
 }

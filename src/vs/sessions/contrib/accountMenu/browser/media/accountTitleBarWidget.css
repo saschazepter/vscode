@@ -384,3 +384,34 @@
 .agent-sessions-workbench.monaco-reduce-motion .sessions-account-titlebar-widget-badge {
 	transition-duration: 0ms !important;
 }
+
+/* TBB Simulator widget in titlebar */
+
+.agent-sessions-workbench .sessions-tbb-titlebar-widget {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 22px;
+	width: 22px;
+	min-width: 22px;
+	background: transparent;
+	border-radius: var(--vscode-cornerRadius-medium);
+	color: inherit;
+	cursor: pointer;
+	-webkit-app-region: no-drag;
+}
+
+.agent-sessions-workbench .sessions-tbb-titlebar-widget:hover,
+.agent-sessions-workbench .action-item:focus-within .sessions-tbb-titlebar-widget {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.agent-sessions-workbench .sessions-tbb-titlebar-widget:active,
+.agent-sessions-workbench .sessions-tbb-titlebar-widget.menu-visible {
+	background: var(--vscode-toolbar-activeBackground);
+}
+
+.agent-sessions-workbench .sessions-tbb-titlebar-widget-icon {
+	font-size: 16px;
+	color: inherit;
+}

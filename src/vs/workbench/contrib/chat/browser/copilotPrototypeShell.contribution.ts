@@ -32,7 +32,7 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 
-class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implements IWorkbenchContribution {
+export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.copilotPrototypeShellCoinStatusBar';
 	private static readonly DASHBOARD_ENTRY_ID = 'chat.prototypeDashboardEntry';
@@ -1766,13 +1766,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const monthlyApproached = _state === 'Overage Approached';
 			const monthlyReached = _state === 'Overage Reached';
 			const monthlyPct = monthlyApproached ? 75 : monthlyReached ? 100 : (_state === 'Overage Reset') ? 0 : 56;
-			const monthlySev = monthlyApproached ? 'warning' as const : monthlyReached ? 'error' as const : undefined;
 			this.createCard(cards, {
 				name: localize('cardMonthlyLimit', "Monthly Limit"),
 				resetLabel: localize('cardResetMay1Monthly', "Resets May 1 at 10:00 AM"),
 				percent: monthlyPct,
-				severity: monthlySev,
-				highlight: monthlyApproached || monthlyReached,
+				severity: monthlyApproached ? 'warning' as const : undefined,
+				highlight: monthlyApproached,
+				disabled: monthlyReached,
 			});
 		} else {
 			// Regular Ent/Bus: everything included, single card
@@ -1918,7 +1918,7 @@ registerWorkbenchContribution2(CopilotPrototypeShellCoinStatusBarContribution.ID
 // Separate from the TBB prototype above. Has its own status bar icon + dashboard.
 // =====================================================================================
 
-class CopilotCurrentModelStatusBarContribution extends Disposable implements IWorkbenchContribution {
+export class CopilotCurrentModelStatusBarContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.copilotCurrentModelStatusBar';
 

@@ -1408,58 +1408,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding: 0 4px 0 5px;
 }
 
-/* Model info row below input (sessions window) */
-.interactive-session .chat-model-info-row {
-	display: flex;
-	align-items: center;
-	padding: 4px 0 2px 0;
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-label {
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	min-width: 0;
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-label:hover {
-	color: var(--vscode-foreground);
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-picker-container {
-	min-width: 0;
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-picker-container .action-label {
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	padding: 0;
-	background: none;
-	border: none;
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	gap: 4px;
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-picker-container .action-label:hover {
-	color: var(--vscode-foreground);
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-picker-container .action-label .model-picker-badge {
-	display: none;
-}
-
-.interactive-session .chat-model-info-row .chat-model-info-spacer {
-	flex: 1;
-}
-
-.interactive-session .chat-model-info-row .chat-context-usage-container {
-	flex-shrink: 0;
-}
-
 .interactive-session .chat-secondary-toolbar:empty {
 	display: none;
 }

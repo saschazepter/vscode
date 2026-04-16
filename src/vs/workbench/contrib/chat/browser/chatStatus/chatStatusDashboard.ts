@@ -129,6 +129,7 @@ export class ChatStatusDashboard extends DomWidget {
 	private readonly dateFormatter = safeIntl.DateTimeFormat(language, { month: 'short', day: 'numeric' });
 	private readonly timeFormatter = safeIntl.DateTimeFormat(language, { hour: 'numeric', minute: 'numeric' });
 	private readonly quotaPercentageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 0 });
+	private readonly quotaOverageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 
 	constructor(
 		private readonly options: IChatStatusDashboardOptions | undefined,
@@ -304,6 +305,142 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
+	private renderUsageContent(container: HTMLElement, token: CancellationToken, updatePromise?: Promise<void>): void {
+		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
+
+		if (chatQuota || premiumChatQuota) {
+			const resetLabel = resetDate ? (resetDateHasTime ? localize('quotaResetsAt', "Resets {0} at {1}", this.dateFormatter.value.format(new Date(resetDate)), this.timeFormatter.value.format(new Date(resetDate))) : localize('quotaResets', "Resets {0}", this.dateFormatter.value.format(new Date(resetDate)))) : undefined;
+
+			let chatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
+			if (chatQuota && !chatQuota.unlimited && chatQuota.total > 0) {
+				chatQuotaIndicator = this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), false, resetLabel);
+			}
+
+			let premiumChatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
+			if (premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.total > 0) {
+				const premiumChatLabel = premiumChatQuota.overageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
+				premiumChatQuotaIndicator = this.createQuotaIndicator(container, this._store, premiumChatQuota, premiumChatLabel, true, resetLabel);
+			}
+
+			if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && (Number(chatQuota?.percentRemaining) <= 25 || Number(completionsQuota?.percentRemaining) <= 25)) {
+				const upgradeProButton = this._store.add(new Button(container, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: this.canUseChat() /* use secondary color when chat can still be used */ }));
+				upgradeProButton.label = localize('upgradeToCopilotPro', "Upgrade to GitHub Copilot Pro");
+				this._store.add(upgradeProButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
+			}
+
+			(async () => {
+				await (updatePromise ?? this.chatEntitlementService.update(token));
+				if (token.isCancellationRequested) {
+					return;
+				}
+
+				const { chat: chatQuota, premiumChat: premiumChatQuota } = this.chatEntitlementService.quotas;
+				if (chatQuota) {
+					chatQuotaIndicator?.(chatQuota);
+				}
+				if (premiumChatQuota) {
+					premiumChatQuotaIndicator?.(premiumChatQuota);
+				}
+			})();
+		}
+
+		// Anonymous Indicator
+		else if (this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed) {
+			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('chatsLabel', "Chat messages"), false);
+		}
+	}
+
+	private renderInlineSuggestionsContent(container: HTMLElement, token: CancellationToken, updatePromise?: Promise<void>): void {
+		// Completions quota
+		{
+			const { completions: completionsQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
+			const resetLabel = resetDate ? (resetDateHasTime ? localize('quotaResetsAt', "Resets {0} at {1}", this.dateFormatter.value.format(new Date(resetDate)), this.timeFormatter.value.format(new Date(resetDate))) : localize('quotaResets', "Resets {0}", this.dateFormatter.value.format(new Date(resetDate)))) : undefined;
+			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.total > 0) {
+				const completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), false, resetLabel);
+				(async () => {
+					await (updatePromise ?? this.chatEntitlementService.update(token));
+					if (token.isCancellationRequested) {
+						return;
+					}
+					const { completions } = this.chatEntitlementService.quotas;
+					if (completions) {
+						completionsQuotaIndicator(completions);
+					}
+				})();
+			} else if (this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed) {
+				this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('completionsLabel', "Inline Suggestions"), false);
+			}
+		}
+
+		// Settings (editor-specific)
+		if (!this.options?.disableInlineSuggestionsSettings) {
+			this.createSettings(container, this._store);
+		}
+
+		const providers = (!this.options?.disableModelSelection || !this.options?.disableProviderOptions) ? this.languageFeaturesService.inlineCompletionsProvider.allNoModel() : undefined;
+
+		// Model Selection (editor-specific)
+		if (!this.options?.disableModelSelection && providers) {
+			const provider = providers.find(p => p.modelInfo && p.modelInfo.models.length > 0);
+
+			if (provider) {
+				const modelInfo = provider.modelInfo!;
+				const currentModel = modelInfo.models.find(m => m.id === modelInfo.currentModelId);
+
+				if (currentModel) {
+					const modelContainer = container.appendChild($('div.model-selection'));
+
+					modelContainer.appendChild($('span.model-text', undefined, localize('modelLabel', "Model")));
+
+					const actionBar = modelContainer.appendChild($('div.model-action-bar'));
+					const toolbar = this._store.add(new ActionBar(actionBar, { hoverDelegate: nativeHoverDelegate }));
+					toolbar.push([toAction({
+						id: 'workbench.action.selectInlineCompletionsModel',
+						label: currentModel.name,
+						tooltip: localize('selectModel', "Select Model"),
+						class: ThemeIcon.asClassName(Codicon.gear),
+						run: async () => {
+							await this.showModelPicker(provider);
+						}
+					})], { icon: false, label: true });
+				}
+			}
+		}
+
+		// Provider Options (editor-specific)
+		if (!this.options?.disableProviderOptions && providers) {
+			for (const provider of providers) {
+				if (provider.providerOptions && provider.providerOptions.length > 0) {
+					for (const option of provider.providerOptions) {
+						const currentValue = option.values.find(v => v.id === option.currentValueId);
+						if (currentValue) {
+							const optionContainer = container.appendChild($('div.suggest-option-selection'));
+
+							optionContainer.appendChild($('span.suggest-option-text', undefined, option.label));
+
+							const actionBar = optionContainer.appendChild($('div.suggest-option-action-bar'));
+							const toolbar = this._store.add(new ActionBar(actionBar, { hoverDelegate: nativeHoverDelegate }));
+							toolbar.push([toAction({
+								id: `workbench.action.selectProviderOption.${option.id}`,
+								label: currentValue.label,
+								tooltip: localize('selectOption', "Select {0}", option.label),
+								run: async () => {
+									await this.showProviderOptionPicker(provider, option);
+								}
+							})], { icon: false, label: true });
+						}
+					}
+				}
+			}
+		}
+
+		// Completions Snooze (editor-specific)
+		if (!this.options?.disableCompletionsSnooze && this.canUseChat()) {
+			const snooze = append(container, $('div.snooze-completions'));
+			this.createCompletionsSnooze(snooze, localize('settings.snooze', "Snooze"), this._store);
+		}
+	}
+
 	private canUseChat(): boolean {
 		if (!this.chatEntitlementService.sentiment.completed || this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted) {
 			return false; // chat not completed or not enabled
@@ -397,9 +534,10 @@ export class ChatStatusDashboard extends DomWidget {
 
 			quotaBit.style.width = `${usedPercentage}%`;
 
-			if (usedPercentage >= 90) {
+			const overageEnabled = supportsOverage && typeof quota !== 'string' && quota?.overageEnabled;
+			if (usedPercentage >= 90 && !overageEnabled) {
 				quotaIndicator.classList.add('error');
-			} else if (usedPercentage >= 75) {
+			} else if (usedPercentage >= 75 && !overageEnabled) {
 				quotaIndicator.classList.add('warning');
 			}
 
