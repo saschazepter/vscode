@@ -11,6 +11,7 @@ import { ConfigurationTarget } from '../../../configuration/common/configuration
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { AgentNetworkFilterService } from '../../common/networkFilterService.js';
 import { AgentNetworkDomainSettingId } from '../../common/settings.js';
+import { AgentSandboxSettingId } from '../../../sandbox/common/settings.js';
 
 suite('AgentNetworkFilterService', () => {
 
@@ -51,6 +52,28 @@ suite('AgentNetworkFilterService', () => {
 		const service = createService();
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://anything.test')), true);
+	});
+
+	test('network filter disabled with sandbox enabled activates filtering', () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
+		configService.setUserConfiguration(AgentSandboxSettingId.Enabled, 'on');
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
+
+		const service = createService();
+
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
+	});
+
+	test('deprecated boolean sandbox setting activates filtering', () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
+		configService.setUserConfiguration(AgentSandboxSettingId.DeprecatedEnabled, true);
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
+
+		const service = createService();
+
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
 	});
 
 	test('denies all domains when both lists are empty', () => {
@@ -123,5 +146,41 @@ suite('AgentNetworkFilterService', () => {
 		fireConfigChange(AgentNetworkDomainSettingId.DeniedNetworkDomains);
 
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), false);
+	});
+
+	test('sandbox setting change fires onDidChange and updates filtering', async () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
+		configService.setUserConfiguration(AgentSandboxSettingId.Enabled, 'off');
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
+		const service = createService();
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), true);
+
+		let fired = false;
+		disposables.add(service.onDidChange(() => { fired = true; }));
+
+		configService.setUserConfiguration(AgentSandboxSettingId.Enabled, 'on');
+		fireConfigChange(AgentSandboxSettingId.Enabled);
+
+		assert.strictEqual(fired, true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
+	});
+
+	test('deprecated sandbox setting change fires onDidChange and updates filtering', async () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
+		configService.setUserConfiguration(AgentSandboxSettingId.DeprecatedEnabled, false);
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
+		const service = createService();
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), true);
+
+		let fired = false;
+		disposables.add(service.onDidChange(() => { fired = true; }));
+
+		configService.setUserConfiguration(AgentSandboxSettingId.DeprecatedEnabled, true);
+		fireConfigChange(AgentSandboxSettingId.DeprecatedEnabled);
+
+		assert.strictEqual(fired, true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
 	});
 });

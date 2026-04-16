@@ -7,6 +7,7 @@ import type { IStringDictionary } from '../../../../../base/common/collections.j
 import type { IJSONSchema } from '../../../../../base/common/jsonSchema.js';
 import { localize } from '../../../../../nls.js';
 import { type IConfigurationPropertySchema } from '../../../../../platform/configuration/common/configurationRegistry.js';
+import { AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
 import { TerminalSettingId } from '../../../../../platform/terminal/common/terminal.js';
 import { terminalProfileBaseProperties } from '../../../../../platform/terminal/common/terminalPlatformConfiguration.js';
 import { PolicyCategory } from '../../../../../base/common/policy.js';
@@ -19,7 +20,7 @@ export const enum TerminalChatAgentToolsSettingId {
 	BlockDetectedFileWrites = 'chat.tools.terminal.blockDetectedFileWrites',
 	ShellIntegrationTimeout = 'chat.tools.terminal.shellIntegrationTimeout',
 	OutputLocation = 'chat.tools.terminal.outputLocation',
-	AgentSandboxEnabled = 'chat.agent.sandbox.enabled',
+	AgentSandboxEnabled = AgentSandboxSettingId.Enabled,
 	AgentSandboxLinuxFileSystem = 'chat.agent.sandbox.fileSystem.linux',
 	AgentSandboxMacFileSystem = 'chat.agent.sandbox.fileSystem.mac',
 	AgentSandboxAdvancedRuntime = 'chat.agent.sandbox.advanced.runtime',
@@ -33,7 +34,7 @@ export const enum TerminalChatAgentToolsSettingId {
 	TerminalProfileMacOs = 'chat.tools.terminal.terminalProfile.osx',
 	TerminalProfileWindows = 'chat.tools.terminal.terminalProfile.windows',
 
-	DeprecatedAgentSandboxEnabled = 'chat.agent.sandbox',
+	DeprecatedAgentSandboxEnabled = AgentSandboxSettingId.DeprecatedEnabled,
 	DeprecatedAgentSandboxLinuxFileSystem = 'chat.agent.sandboxFileSystem.linux',
 	DeprecatedAgentSandboxMacFileSystem = 'chat.agent.sandboxFileSystem.mac',
 	DeprecatedAutoApproveCompatible = 'chat.agent.terminal.autoApprove',

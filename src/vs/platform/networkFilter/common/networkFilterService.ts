@@ -10,6 +10,7 @@ import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { AgentSandboxSettingId } from '../../sandbox/common/settings.js';
 import { extractDomainFromUri, isDomainAllowed } from './domainMatcher.js';
 import { AgentNetworkDomainSettingId } from './settings.js';
 
@@ -19,8 +20,9 @@ export const IAgentNetworkFilterService = createDecorator<IAgentNetworkFilterSer
  * Service that filters network requests made by agent tools (fetch tool,
  * integrated browser) based on the configured allowed/denied domain lists.
  *
- * Filtering is only active when the `chat.agent.networkFilter` setting is
- * enabled.  When both domain lists are empty, all domains are denied.
+ * Filtering is active when the `chat.agent.networkFilter` setting is enabled,
+ * or when chat agent sandboxing is enabled via `chat.agent.sandbox.enabled` or
+ * the deprecated `chat.agent.sandbox` setting. When both domain lists are empty, all domains are denied.
  * When a domain appears on the denied list it is always blocked, even if it
  * also matches an entry on the allowed list.
  */
@@ -68,6 +70,8 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			if (
 				e.affectsConfiguration(AgentNetworkDomainSettingId.NetworkFilter) ||
+				e.affectsConfiguration(AgentSandboxSettingId.Enabled) ||
+				e.affectsConfiguration(AgentSandboxSettingId.DeprecatedEnabled) ||
 				e.affectsConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains) ||
 				e.affectsConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains)
 			) {
@@ -78,14 +82,18 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 	}
 
 	private readConfiguration(): void {
-		this.enabled = this.configurationService.getValue<boolean>(AgentNetworkDomainSettingId.NetworkFilter) ?? false;
+		const networkFilterEnabled = this.configurationService.getValue<boolean>(AgentNetworkDomainSettingId.NetworkFilter) ?? false;
+		const sandboxEnabled = this.configurationService.getValue<'off' | 'on'>(AgentSandboxSettingId.Enabled) === 'on';
+		const deprecatedSandboxEnabled = this.configurationService.getValue<boolean>(AgentSandboxSettingId.DeprecatedEnabled) ?? false;
+
+		this.enabled = networkFilterEnabled || sandboxEnabled || deprecatedSandboxEnabled;
 		this.allowedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains) ?? [];
 		this.deniedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains) ?? [];
 		this.domainCache.clear();
 	}
 
 	isUriAllowed(uri: URI): boolean {
-		// When the network filter is disabled, allow all requests.
+		// When domain filtering is inactive, allow all requests.
 		if (!this.enabled) {
 			return true;
 		}

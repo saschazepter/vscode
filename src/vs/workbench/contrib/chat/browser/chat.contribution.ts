@@ -795,7 +795,7 @@ configurationRegistry.registerConfiguration({
 			}
 		},
 		[AgentNetworkDomainSettingId.NetworkFilter]: {
-			markdownDescription: nls.localize('chat.agent.networkFilter', "When enabled, network access by agent tools (fetch tool, integrated browser) is restricted according to {0} and {1}. When disabled, no network filtering is applied.", '`#chat.agent.allowedNetworkDomains#`', '`#chat.agent.deniedNetworkDomains#`'),
+			markdownDescription: nls.localize('chat.agent.networkFilter', "When enabled, network access by agent tools (fetch tool, integrated browser) is restricted according to {0} and {1}. Domain filtering is also applied to those tools when {2} is enabled.", '`#chat.agent.allowedNetworkDomains#`', '`#chat.agent.deniedNetworkDomains#`', '`#chat.agent.sandbox.enabled#`'),
 			type: 'boolean',
 			default: false,
 			restricted: true,
@@ -806,13 +806,13 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'chat.agent.networkFilter',
-						value: nls.localize('chat.agent.networkFilter', "When enabled, network access by agent tools (fetch tool, integrated browser) is restricted according to {0} and {1}. When disabled, no network filtering is applied.", '`#chat.agent.allowedNetworkDomains#`', '`#chat.agent.deniedNetworkDomains#`'),
+						value: nls.localize('chat.agent.networkFilter', "When enabled, network access by agent tools (fetch tool, integrated browser) is restricted according to {0} and {1}. Domain filtering is also applied to those tools when {2} is enabled.", '`#chat.agent.allowedNetworkDomains#`', '`#chat.agent.deniedNetworkDomains#`', '`#chat.agent.sandbox.enabled#`'),
 					}
 				}
 			}
 		},
 		[AgentNetworkDomainSettingId.AllowedNetworkDomains]: {
-			markdownDescription: nls.localize('chat.agent.allowedNetworkDomains', "Allowed domains for network access by agent tools (fetch tool, integrated browser). Only takes effect when {0} is enabled. When {1} is enabled, these also apply to the terminal sandbox. Supports wildcards like {2}. When both allowed and denied lists are empty, all domains are blocked. Denied domains (see {3}) take precedence.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`*.example.com`', '`#chat.agent.deniedNetworkDomains#`'),
+			markdownDescription: nls.localize('chat.agent.allowedNetworkDomains', "Allowed domains for network access by agent tools (fetch tool, integrated browser). Applies when {0} or {1} is enabled. When {1} is enabled, this also configures terminal sandbox networking. Supports wildcards like {2}. When both allowed and denied lists are empty, all domains are blocked. Denied domains (see {3}) take precedence.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`*.example.com`', '`#chat.agent.deniedNetworkDomains#`'),
 			type: 'array',
 			items: { type: 'string' },
 			default: [],
@@ -824,13 +824,13 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'chat.agent.allowedNetworkDomains',
-						value: nls.localize('chat.agent.allowedNetworkDomains', "Allowed domains for network access by agent tools (fetch tool, integrated browser). Only takes effect when {0} is enabled. When {1} is enabled, these also apply to the terminal sandbox. Supports wildcards like {2}. When both allowed and denied lists are empty, all domains are blocked. Denied domains (see {3}) take precedence.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`*.example.com`', '`#chat.agent.deniedNetworkDomains#`'),
+						value: nls.localize('chat.agent.allowedNetworkDomains', "Allowed domains for network access by agent tools (fetch tool, integrated browser). Applies when {0} or {1} is enabled. When {1} is enabled, this also configures terminal sandbox networking. Supports wildcards like {2}. When both allowed and denied lists are empty, all domains are blocked. Denied domains (see {3}) take precedence.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`*.example.com`', '`#chat.agent.deniedNetworkDomains#`'),
 					}
 				}
 			}
 		},
 		[AgentNetworkDomainSettingId.DeniedNetworkDomains]: {
-			markdownDescription: nls.localize('chat.agent.deniedNetworkDomains', "Denied domains for network access by agent tools (fetch tool, integrated browser). Only takes effect when {0} is enabled. When {1} is enabled, these also apply to the terminal sandbox. Takes precedence over {2}. Supports wildcards like {3}.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`#chat.agent.allowedNetworkDomains#`', '`*.example.com`'),
+			markdownDescription: nls.localize('chat.agent.deniedNetworkDomains', "Denied domains for network access by agent tools (fetch tool, integrated browser). Applies when {0} or {1} is enabled. When {1} is enabled, this also configures terminal sandbox networking. Takes precedence over {2}. Supports wildcards like {3}.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`#chat.agent.allowedNetworkDomains#`', '`*.example.com`'),
 			type: 'array',
 			items: { type: 'string' },
 			default: [],
@@ -842,7 +842,7 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'chat.agent.deniedNetworkDomains',
-						value: nls.localize('chat.agent.deniedNetworkDomains', "Denied domains for network access by agent tools (fetch tool, integrated browser). Only takes effect when {0} is enabled. When {1} is enabled, these also apply to the terminal sandbox. Takes precedence over {2}. Supports wildcards like {3}.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`#chat.agent.allowedNetworkDomains#`', '`*.example.com`'),
+						value: nls.localize('chat.agent.deniedNetworkDomains', "Denied domains for network access by agent tools (fetch tool, integrated browser). Applies when {0} or {1} is enabled. When {1} is enabled, this also configures terminal sandbox networking. Takes precedence over {2}. Supports wildcards like {3}.", '`#chat.agent.networkFilter#`', '`#chat.agent.sandbox.enabled#`', '`#chat.agent.allowedNetworkDomains#`', '`*.example.com`'),
 					}
 				}
 			}
