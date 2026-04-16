@@ -100,7 +100,7 @@ export interface ICopilotCLISession extends IDisposable {
 	 * Only for non-controller code paths.
 	 * @deprecated
 	 */
-	setSesionResource(resource: vscode.Uri): IDisposable;
+	setSessionResource(resource: vscode.Uri): IDisposable;
 }
 
 export class CopilotCLISession extends DisposableStore implements ICopilotCLISession {
@@ -179,7 +179,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		this._sessionResource = SessionIdForCLI.getResource(this.sessionId);
 	}
 
-	setSesionResource(resource: vscode.Uri): IDisposable {
+	setSessionResource(resource: vscode.Uri): IDisposable {
 		this._sessionResource = resource;
 		return this.add(toDisposable(() => {
 			this._sessionResource = SessionIdForCLI.getResource(this.sessionId);
