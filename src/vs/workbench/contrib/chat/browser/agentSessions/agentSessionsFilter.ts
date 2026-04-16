@@ -84,8 +84,8 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	) {
 		super();
 
-		this.updateExcludes(false);
 		this.restoreSorting();
+		this.updateExcludes(false);
 
 		this.registerListeners();
 	}
