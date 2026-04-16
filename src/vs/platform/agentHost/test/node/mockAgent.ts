@@ -65,7 +65,7 @@ export class MockAgent implements IAgent {
 	}
 
 	async listModels(): Promise<IAgentModelInfo[]> {
-		return [{ provider: this.id, id: `${this.id}-model`, name: `${this.id} Model`, maxContextWindow: 128000, supportsVision: false, supportsReasoningEffort: false }];
+		return [{ provider: this.id, id: `${this.id}-model`, name: `${this.id} Model`, maxContextWindow: 128000, supportsVision: false }];
 	}
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
@@ -212,7 +212,7 @@ export class ScriptedMockAgent implements IAgent {
 	}
 
 	async listModels(): Promise<IAgentModelInfo[]> {
-		return [{ provider: 'mock', id: 'mock-model', name: 'Mock Model', maxContextWindow: 128000, supportsVision: false, supportsReasoningEffort: false }];
+		return [{ provider: 'mock', id: 'mock-model', name: 'Mock Model', maxContextWindow: 128000, supportsVision: false }];
 	}
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {

@@ -305,12 +305,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			name: m.name,
 			maxContextWindow: m.capabilities.limits.max_context_window_tokens,
 			supportsVision: m.capabilities.supports.vision,
-			supportsReasoningEffort: m.capabilities.supports.reasoningEffort,
-			supportedReasoningEfforts: m.supportedReasoningEfforts,
-			defaultReasoningEffort: m.defaultReasoningEffort,
 			configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
 			policyState: m.policy?.state as PolicyState | undefined,
-			billingMultiplier: m.billing?.multiplier,
 		}));
 		this._logService.info(`[Copilot] Found ${result.length} models`);
 		return result;

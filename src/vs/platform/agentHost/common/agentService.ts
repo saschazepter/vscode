@@ -152,12 +152,8 @@ export interface IAgentModelInfo {
 	readonly name: string;
 	readonly maxContextWindow: number;
 	readonly supportsVision: boolean;
-	readonly supportsReasoningEffort: boolean;
-	readonly supportedReasoningEfforts?: readonly string[];
-	readonly defaultReasoningEffort?: string;
 	readonly configSchema?: IConfigSchema;
 	readonly policyState?: PolicyState;
-	readonly billingMultiplier?: number;
 }
 
 // ---- Progress events (discriminated union by `type`) ------------------------
