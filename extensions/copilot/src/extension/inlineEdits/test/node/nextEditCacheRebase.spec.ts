@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import { assert, beforeEach, describe, it } from 'vitest';
+import { ConfigKey } from '../../../../platform/configuration/common/configurationService';
 import { DefaultsOnlyConfigurationService } from '../../../../platform/configuration/common/defaultsOnlyConfigurationService';
 import { InMemoryConfigurationService } from '../../../../platform/configuration/test/common/inMemoryConfigurationService';
 import { DocumentId } from '../../../../platform/inlineEdits/common/dataTypes/documentId';
@@ -122,6 +123,7 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
 
 	beforeEach(() => {
 		configService = new InMemoryConfigurationService(new DefaultsOnlyConfigurationService());
+		configService.setConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, true);
 		obsWorkspace = new MutableObservableWorkspace();
 		logService = new LogServiceImpl([]);
 		expService = new NullExperimentationService();
@@ -167,13 +169,7 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
 			[new OffsetRange(1963, 1963)],
 		);
 
-		// TODO: rebase currently fails for this scenario because the user's typing
-		// ("{\n\t") is a strict superset of the model's first edit ("{") but the
-		// rebase engine treats this as a conflict. Once fixed, change this assertion:
-		assert(rebaseResult.edit === undefined, 'rebase currently fails — expected to succeed after fix');
-
-		// When the rebase is fixed, this should be the assertion:
-		// assert(rebaseResult.edit !== undefined, 'should rebase successfully');
-		// assert(rebaseResult.edit.rebasedEdit !== undefined, 'should have a rebased edit for the class body');
+		assert(rebaseResult.edit !== undefined, 'should rebase successfully');
+		assert(rebaseResult.edit.rebasedEdit !== undefined, 'should have a rebased edit for the class body');
 	});
 });
