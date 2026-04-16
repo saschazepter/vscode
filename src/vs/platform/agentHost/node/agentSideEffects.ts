@@ -107,7 +107,8 @@ export class AgentSideEffects extends Disposable {
 					maxContextWindow: m.maxContextWindow, supportsVision: m.supportsVision,
 					policyState: m.policyState,
 				}));
-			} catch {
+			} catch (err) {
+				this._logService.error(err, `[AgentSideEffects] Failed to list models for agent '${a.id}'`);
 				models = [];
 			}
 			const protectedResources = a.getProtectedResources();
@@ -865,7 +866,8 @@ export class AgentSideEffects extends Disposable {
 		let ref: ReturnType<ISessionDataService['openDatabase']>;
 		try {
 			ref = this._options.sessionDataService.openDatabase(URI.parse(session));
-		} catch {
+		} catch (err) {
+			this._logService.warn(`[AgentSideEffects] Failed to open session database for diff computation: ${session}`, err);
 			return;
 		}
 		try {
