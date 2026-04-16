@@ -93,14 +93,15 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 				this._sessionStore.getStats();
 			} catch (err) {
 				/* __GDPR__
-					"chronicle.localStore" : {
-						"owner": "vijayu",
-						"comment": "Tracks local session store failures",
-						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: dbInit or flush." },
-						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-					}
-				*/
+"chronicle.localStore" : {
+"owner": "vijayu",
+"comment": "Tracks local session store operations (init, write, flush errors)",
+"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation performed." },
+"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the operation succeeded." },
+"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message if failed." },
+"opsCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of buffered operations in a failed flush." }
+}
+*/
 				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
 					operation: 'dbInit',
 					success: 'false',
@@ -186,13 +187,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		this._initializedSessions.add(sessionId);
 		this._bufferSessionUpsert({ id: sessionId, host_type: 'vscode' });
 
-		/* __GDPR__
-			"chronicle.localStore" : {
-				"owner": "vijayu",
-				"comment": "Tracks that a session is being stored locally",
-				"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: sessionInit." }
-			}
-		*/
+
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle.localStore', {
 			operation: 'sessionInit',
 		}, {});
@@ -404,28 +399,13 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 
 			if (!this._firstWriteLogged) {
 				this._firstWriteLogged = true;
-				/* __GDPR__
-					"chronicle.localStore" : {
-						"owner": "vijayu",
-						"comment": "Tracks first successful local session store write",
-						"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: firstWrite." }
-					}
-				*/
+
 				this._telemetryService.sendMSFTTelemetryEvent('chronicle.localStore', {
 					operation: 'firstWrite',
 				}, {});
 			}
 		} catch (err) {
-			/* __GDPR__
-				"chronicle.localStore" : {
-					"owner": "vijayu",
-					"comment": "Tracks local session store flush failures",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed: flush." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
-					"opsCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of buffered operations that failed to flush." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.localStore', {
 				operation: 'flush',
 				success: 'false',

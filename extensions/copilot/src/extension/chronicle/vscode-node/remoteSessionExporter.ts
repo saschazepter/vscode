@@ -264,27 +264,22 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			}
 			await this._createCloudSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
 			/* __GDPR__
-				"chronicle.cloudSync" : {
-					"owner": "vijayu",
-					"comment": "Tracks successful cloud sync session initialization",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." }
-				}
-			*/
+"chronicle.cloudSync" : {
+"owner": "vijayu",
+"comment": "Tracks cloud sync operations (session init, creation, flush, errors)",
+"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation performed." },
+"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the operation succeeded." },
+"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message if failed." },
+"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." },
+"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in a failed batch." }
+}
+*/
 			this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 				operation: 'sessionInit',
 				success: 'true',
 			});
 		} catch (err) {
-			/* __GDPR__
-				"chronicle.cloudSync" : {
-					"owner": "vijayu",
-					"comment": "Tracks cloud sync session initialization failure",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'sessionInit',
 				success: 'false',
@@ -335,15 +330,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		);
 
 		if (!result.ok) {
-			/* __GDPR__
-				"chronicle.cloudSync" : {
-					"owner": "vijayu",
-					"comment": "Tracks cloud sync session creation failure",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message or error code." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'createCloudSession',
 				success: 'false',
@@ -369,15 +356,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		};
 
 		this._cloudSessions.set(sessionId, cloudIds);
-		/* __GDPR__
-			"chronicle.cloudSync" : {
-				"owner": "vijayu",
-				"comment": "Tracks successful cloud session creation",
-				"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that succeeded." },
-				"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always true for success events." },
-				"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." }
-			}
-		*/
+
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 			operation: 'createCloudSession',
 			success: 'true',
@@ -420,15 +399,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			};
 			return this._repository;
 		} catch (err) {
-			/* __GDPR__
-				"chronicle.cloudSync" : {
-					"owner": "vijayu",
-					"comment": "Tracks cloud sync repository resolution failure",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'resolveRepository',
 				success: 'false',
@@ -480,15 +451,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		this._flushTimer = setInterval(() => {
 			this._flushBatch().catch(err => {
-				/* __GDPR__
-					"chronicle.cloudSync" : {
-						"owner": "vijayu",
-						"comment": "Tracks cloud sync flush timer failure",
-						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
-						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-					}
-				*/
+
 				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 					operation: 'flush',
 					success: 'false',
@@ -566,13 +529,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 				if (!this._firstCloudWriteLogged) {
 					this._firstCloudWriteLogged = true;
-					/* __GDPR__
-						"chronicle.cloudSync" : {
-							"owner": "vijayu",
-							"comment": "Tracks first successful cloud write",
-							"operation": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The operation: firstWrite." }
-						}
-					*/
+
 					this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 						operation: 'firstWrite',
 					}, {});
@@ -584,16 +541,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// Re-queue on unexpected error
 			this._eventBuffer.unshift(...batch);
 			this._circuitBreaker.recordFailure();
-			/* __GDPR__
-				"chronicle.cloudSync" : {
-					"owner": "vijayu",
-					"comment": "Tracks cloud sync batch flush failure",
-					"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation that failed." },
-					"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Always false for error events." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
-					"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in the failed batch." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'flushBatch',
 				success: 'false',

@@ -335,16 +335,17 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 		const hasCloudConsent = this._indexingPreference.hasCloudConsent();
 		const querySource = hasCloudConsent ? (localSessionCount > 0 ? 'both' : 'cloud') : 'local';
 		/* __GDPR__
-			"chronicle" : {
-				"owner": "vijayu",
-				"comment": "Tracks chronicle subcommand usage and data sources",
-				"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand: standup, tips, or freeform." },
-				"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source used: local, cloud, or both." },
-				"localSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of local sessions used." },
-				"cloudSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of cloud sessions used." },
-				"totalSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total sessions used." }
-			}
-		*/
+"chronicle" : {
+"owner": "vijayu",
+"comment": "Tracks chronicle subcommand usage, data sources, and query failures",
+"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand: standup, tips, or freeform." },
+"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source used: local, cloud, both, or cloudRefs." },
+"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." },
+"localSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of local sessions used." },
+"cloudSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of cloud sessions used." },
+"totalSessionCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total sessions used." }
+}
+*/
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle', {
 			subcommand,
 			querySource,
@@ -392,15 +393,7 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 
 			return { sessions, refs };
 		} catch (err) {
-			/* __GDPR__
-				"chronicle" : {
-					"owner": "vijayu",
-					"comment": "Tracks chronicle local query failures",
-					"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
-					"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: local." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
 				subcommand: 'standup',
 				querySource: 'local',
@@ -445,15 +438,7 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 					}));
 				}
 			} catch (refsErr) {
-				/* __GDPR__
-					"chronicle" : {
-						"owner": "vijayu",
-						"comment": "Tracks chronicle cloud refs query failures",
-						"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
-						"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: cloudRefs." },
-						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-					}
-				*/
+
 				this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
 					subcommand: 'standup',
 					querySource: 'cloudRefs',
@@ -463,15 +448,7 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 
 			return { sessions, refs };
 		} catch (err) {
-			/* __GDPR__
-				"chronicle" : {
-					"owner": "vijayu",
-					"comment": "Tracks chronicle cloud query failures",
-					"subcommand": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The chronicle subcommand that failed." },
-					"querySource": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The data source: cloud." },
-					"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message." }
-				}
-			*/
+
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
 				subcommand: 'standup',
 				querySource: 'cloud',

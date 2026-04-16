@@ -874,11 +874,11 @@ export namespace ConfigKey {
 		 * This is the master gate for the session search feature. Default false; internal users
 		 * enable via settings.json, external users' values are ignored (valueIgnoredForExternals).
 		 */
-		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
+		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
 		/** Enable cloud sync of session data to cloud. */
-		export const SessionSearchCloudSyncEnabled = defineTeamInternalSetting<boolean>('chat.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
+		export const SessionSearchCloudSyncEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
 		/** Repository patterns to exclude from cloud sync (exact owner/repo or glob patterns like my-org/*). */
-		export const SessionSearchCloudSyncExcludeRepositories = defineTeamInternalSetting<string[]>('chat.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
+		export const SessionSearchCloudSyncExcludeRepositories = defineTeamInternalSetting<string[]>('chat.advanced.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
 	}
 
 	/**
