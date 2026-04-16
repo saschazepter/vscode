@@ -2055,7 +2055,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			const pendingRequests = model.getPendingRequests();
 			const pendingCount = pendingRequests.length;
 			this._hasPendingRequestsContextKey.set(pendingCount > 0);
-			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering).length;
+			// Only count user-initiated steering for announcements; system-initiated
+			// steering (e.g. terminal completion) is hidden from the conversation view.
+			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering && !pending.request.isSystemInitiated).length;
 			if (announceSteering && steeringCount > 0 && lastSteeringCount === 0) {
 				status(localize('chat.pendingRequests.steeringQueued', "Steering"));
 			}
@@ -2526,7 +2528,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return true;
 		}
 
-		const hasPendingRequests = model.getPendingRequests().length > 0;
+		// Only count user-visible pending requests (exclude system-initiated ones)
+		const hasPendingRequests = model.getPendingRequests().some(p => !p.request.isSystemInitiated);
 		if (!hasPendingRequests) {
 			return true;
 		}

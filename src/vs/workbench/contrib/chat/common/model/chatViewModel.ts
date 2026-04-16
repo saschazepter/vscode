@@ -341,6 +341,11 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 			if (item.shouldBeRemovedOnSend && !item.shouldBeRemovedOnSend.afterUndoStop) {
 				return false;
 			}
+			// Hide system-initiated requests (e.g. terminal completion notifications)
+			// from the conversation view. Their responses remain visible.
+			if (isRequestVM(item) && item.isSystemInitiated) {
+				return false;
+			}
 			return true;
 		});
 		if (this._options?.maxVisibleItems !== undefined && items.length > this._options.maxVisibleItems) {
@@ -349,8 +354,8 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 
 		const pendingRequests = this._model.getPendingRequests();
 		if (pendingRequests.length > 0) {
-			// Separate steering and queued requests
-			const steeringRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering);
+			// Separate steering and queued requests, excluding system-initiated steering
+			const steeringRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering && !p.request.isSystemInitiated);
 			const queuedRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Queued);
 
 			// Add steering requests with their divider first

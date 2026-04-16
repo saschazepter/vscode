@@ -33,7 +33,7 @@ import { reviewEdits } from '../../../inlineChat/browser/inlineChatController.js
 import { ITerminalEditorService, ITerminalGroupService, ITerminalService } from '../../../terminal/browser/terminal.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatCopyKind, IChatService } from '../../common/chatService/chatService.js';
-import { IChatRequestViewModel, IChatResponseViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
+import { IChatResponseViewModel, isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { IChatCodeBlockContextProviderService, IChatWidgetService } from '../chat.js';
 import { DefaultChatTextEditor, ICodeBlockActionContext, ICodeCompareBlockActionContext } from '../widget/chatContentParts/codeBlockPart.js';
@@ -157,7 +157,7 @@ export function registerChatCodeBlockActions() {
 			if (isResponseVM(context.element)) {
 				const chatService = accessor.get(IChatService);
 				const requestId = context.element.requestId;
-				const request = context.element.session.getItems().find(item => item.id === requestId && isRequestVM(item)) as IChatRequestViewModel | undefined;
+				const request = context.element.session.model.getRequests().find(r => r.id === requestId);
 				chatService.notifyUserAction({
 					agentId: context.element.agent?.id,
 					command: context.element.slashCommand?.name,
@@ -224,7 +224,7 @@ export function registerChatCodeBlockActions() {
 		const element = context.element as IChatResponseViewModel | undefined;
 		if (isResponseVM(element)) {
 			const requestId = element.requestId;
-			const request = element.session.getItems().find(item => item.id === requestId && isRequestVM(item)) as IChatRequestViewModel | undefined;
+			const request = element.session.model.getRequests().find(r => r.id === requestId);
 			chatService.notifyUserAction({
 				agentId: element.agent?.id,
 				command: element.slashCommand?.name,
@@ -383,7 +383,7 @@ export function registerChatCodeBlockActions() {
 
 			if (isResponseVM(context.element)) {
 				const requestId = context.element.requestId;
-				const request = context.element.session.getItems().find(item => item.id === requestId && isRequestVM(item)) as IChatRequestViewModel | undefined;
+				const request = context.element.session.model.getRequests().find(r => r.id === requestId);
 				chatService.notifyUserAction({
 					agentId: context.element.agent?.id,
 					command: context.element.slashCommand?.name,

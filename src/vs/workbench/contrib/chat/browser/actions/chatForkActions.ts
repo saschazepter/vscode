@@ -173,23 +173,10 @@ export function registerChatForkActions() {
 			// Export the full session data and truncate to include only requests up to and including the target
 			const serializedData = chatModel.toJSON();
 			const isRequestItem = isRequestVM(item);
-			let targetIndex = -1;
-			if (widget?.viewModel) {
-				let requestIndex = -1;
-				for (const entry of widget.viewModel.getItems()) {
-					if (isRequestVM(entry)) {
-						requestIndex += 1;
-					}
-					if (entry.id === item?.id) {
-						targetIndex = isRequestVM(entry) ? Math.max(0, requestIndex - 1) : requestIndex;
-						break;
-					}
-				}
-			}
-			if (targetIndex < 0) {
-				const requestIndex = chatModel.getRequests().findIndex(r => r.id === targetRequestId);
-				targetIndex = isRequestItem ? Math.max(0, requestIndex - 1) : requestIndex;
-			}
+			// Use model-level lookup by request ID to get the correct index,
+			// since the view model may filter out hidden requests (e.g. system-initiated).
+			const requestIndex = chatModel.getRequests().findIndex(r => r.id === targetRequestId);
+			const targetIndex = isRequestItem ? Math.max(0, requestIndex - 1) : requestIndex;
 			if (targetIndex < 0) {
 				return;
 			}
