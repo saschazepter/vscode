@@ -30,7 +30,7 @@ import { IChatWidget, IChatWidgetService } from '../../contrib/chat/browser/chat
 import { AgentSessionProviders, getAgentSessionProvider } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
 import { AddDynamicVariableAction, IAddDynamicVariableContext } from '../../contrib/chat/browser/attachments/chatDynamicVariables.js';
 import { IChatAgentHistoryEntry, IChatAgentImplementation, IChatAgentRequest, IChatAgentService } from '../../contrib/chat/common/participants/chatAgents.js';
-import { IAgentSkill, IChatPromptSlashCommand, ICustomAgent, IInstructionFile, IPromptFileContext, IPromptsService, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { IAgentSkill, IChatPromptSlashCommand, ICustomAgent, IInstructionFile, IPromptFileContext, IPromptPath, IPromptsService, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
 import { isValidPromptType, PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
 import { ChatRequestAgentPart } from '../../contrib/chat/common/requestParser/chatParserTypes.js';
@@ -48,7 +48,7 @@ import { NotebookDto } from './mainThreadNotebookDto.js';
 import { isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
 import { ICustomizationHarnessService, ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor } from '../../contrib/chat/common/customizationHarnessService.js';
 import { AICustomizationManagementSection, BUILTIN_STORAGE } from '../../contrib/chat/common/aiCustomizationWorkspaceService.js';
-import { IAgentPluginService } from '../../contrib/chat/common/plugins/agentPluginService.js';
+import { IAgentPlugin, IAgentPluginService } from '../../contrib/chat/common/plugins/agentPluginService.js';
 import { IWorkbenchEnvironmentService } from '../../services/environment/common/environmentService.js';
 
 interface AgentData {
@@ -267,6 +267,19 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		};
 	}
 
+	private _toHookDto(hookFile: IPromptPath): IHookDto {
+		return {
+			uri: hookFile.uri,
+			enablement: hookFile.enablement,
+		};
+	}
+
+	private _toPluginDto(plugin: IAgentPlugin): IPluginDto {
+		return {
+			uri: plugin.uri
+		};
+	}
+
 	async $provideCustomAgents(token: CancellationToken): Promise<ICustomAgentDto[]> {
 		const customAgents = await this._promptsService.getCustomAgents(token);
 		return customAgents.map(agent => this._toCustomAgentDto(agent));
@@ -289,12 +302,12 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 
 	async $provideHooks(token: CancellationToken): Promise<IHookDto[]> {
 		const hookFiles = await this._promptsService.listPromptFiles(PromptsType.hook, token);
-		return hookFiles.map(hookFile => ({ uri: hookFile.uri }));
+		return hookFiles.map(hookFile => this._toHookDto(hookFile));
 	}
 
 	async $providePlugins(_token: CancellationToken): Promise<IPluginDto[]> {
 		const plugins = this._agentPluginService.plugins.get();
-		return plugins.map(plugin => ({ uri: plugin.uri }));
+		return plugins.map(plugin => this._toPluginDto(plugin));
 	}
 
 

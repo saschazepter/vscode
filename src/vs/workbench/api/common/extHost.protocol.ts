@@ -1721,11 +1721,12 @@ export interface ISlashCommandDto extends IChatResourceDto {
 }
 
 export interface IHookDto {
-	uri: UriComponents;
+	readonly uri: UriComponents;
+	readonly enablement?: IChatResourceEnablementDto;
 }
 
 export interface IPluginDto {
-	uri: UriComponents;
+	readonly uri: UriComponents;
 }
 
 export interface IChatSessionCustomizationProviderMetadataDto {

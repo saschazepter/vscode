@@ -242,10 +242,18 @@ declare module 'vscode' {
 
 	export interface ChatHook {
 		readonly uri: Uri;
+		/**
+		 * Optional enablement metadata that describes when the hook should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
 	}
 
 	export interface ChatPlugin {
 		readonly uri: Uri;
+		/**
+		 * Optional enablement metadata that describes when the plugin should be offered.
+		 */
+		readonly enablement?: ChatResourceEnablement;
 	}
 
 	// #endregion

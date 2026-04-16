@@ -581,7 +581,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	}
 
 	private toHook(dto: IHookDto): vscode.ChatHook {
-		return Object.freeze({ uri: URI.revive(dto.uri) });
+		return Object.freeze({ uri: URI.revive(dto.uri), enablement: dto.enablement });
 	}
 
 	private toPlugin(dto: IPluginDto): vscode.ChatPlugin {
