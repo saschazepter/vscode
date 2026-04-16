@@ -5,6 +5,7 @@
 
 import '../media/sessionsViewPane.css';
 import * as DOM from '../../../../../base/browser/dom.js';
+import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { KeybindingLabel } from '../../../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { Event } from '../../../../../base/common/event.js';
 import { autorun } from '../../../../../base/common/observable.js';
@@ -226,12 +227,18 @@ export class SessionsView extends ViewPane {
 			grouping: () => this.currentGrouping,
 			sorting: () => this.currentSorting,
 			findWidgetContainer,
-			onSessionOpen: async (resource, preserveFocus) => {
-				await this.sessionsManagementService.openSession(resource, { preserveFocus });
+			onSessionOpen: (resource, preserveFocus) => {
+				void (async () => {
+					try {
+						await this.sessionsManagementService.openSession(resource, { preserveFocus });
 
-				if (isWeb && isMobile) {
-					this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
-				}
+						if (isWeb && isMobile) {
+							this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
+						}
+					} catch (error) {
+						onUnexpectedError(error);
+					}
+				})();
 			},
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));

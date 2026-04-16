@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { IAgentHostService } from '../../../../platform/agentHost/common/agentService.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -47,7 +48,7 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 		// Guard: _remoteAgentHostService may not be assigned yet when the
 		// base-class constructor calls _reconcile() before super() returns.
 		if (!this._remoteAgentHostService) {
-			return entries;
+			return isWeb ? entries : super._collectEntries();
 		}
 		// Remote connections
 		for (const info of this._remoteAgentHostService.connections) {
@@ -71,9 +72,7 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 			});
 		}
 
-		// On web, only remote entries are relevant (no local agent host).
-		// Skip super._collectEntries() which adds the unusable "Local" entry.
-		return entries;
+		return isWeb ? entries : [...entries, ...super._collectEntries()];
 	}
 }
 registerWorkbenchContribution2(AgentHostTerminalContribution.ID, RemoteAgentHostTerminalContribution, WorkbenchPhase.AfterRestored);

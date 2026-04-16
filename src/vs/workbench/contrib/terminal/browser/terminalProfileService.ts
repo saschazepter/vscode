@@ -194,7 +194,7 @@ export class TerminalProfileService extends Disposable implements ITerminalProfi
 		// On web without a pty host, getBackend() waits forever for a backend
 		// that will never register. Check synchronously first to avoid hanging.
 		const hasAnyBackend = [...this._terminalInstanceService.getRegisteredBackends()].length > 0;
-		if (!hasAnyBackend && isWeb) {
+		if (!hasAnyBackend && isWeb && !this._environmentService.remoteAuthority) {
 			return this._availableProfiles || [];
 		}
 		const primaryBackend = await this._terminalInstanceService.getBackend(this._environmentService.remoteAuthority);

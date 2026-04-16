@@ -1041,17 +1041,16 @@ export class TerminalService extends Disposable implements ITerminalService {
 		}
 
 		if (!shellLaunchConfig.customPtyImplementation && !this.isProcessSupportRegistered) {
-			// On web without process support, fall back to a contributed profile
-			// (e.g. agent host terminal) if one is available
-			const fallbackProfile = this._terminalProfileService.contributedProfiles[0];
-			if (fallbackProfile) {
-				const resolvedLocation = await this.resolveLocation(options?.location);
-				let location: TerminalLocation | { viewColumn: number; preserveState?: boolean } | { splitActiveTerminal: boolean } | undefined;
-				if (splitActiveTerminal) {
-					location = resolvedLocation === TerminalLocation.Editor ? { viewColumn: SIDE_GROUP } : { splitActiveTerminal: true };
-				} else {
-					location = typeof options?.location === 'object' && hasKey(options.location, { viewColumn: true }) ? options.location : resolvedLocation;
-				}
+			const resolvedLocation = await this.resolveLocation(options?.location);
+			let location: TerminalLocation | { viewColumn: number; preserveState?: boolean } | { splitActiveTerminal: boolean } | undefined;
+			if (splitActiveTerminal) {
+				location = resolvedLocation === TerminalLocation.Editor ? { viewColumn: SIDE_GROUP } : { splitActiveTerminal: true };
+			} else {
+				location = typeof options?.location === 'object' && hasKey(options.location, { viewColumn: true }) ? options.location : resolvedLocation;
+			}
+			const instanceHost = resolvedLocation === TerminalLocation.Editor ? this._terminalEditorService : this._terminalGroupService;
+			for (const fallbackProfile of this._terminalProfileService.contributedProfiles) {
+				const instanceCount = instanceHost.instances.length;
 				await this.createContributedTerminalProfile(fallbackProfile.extensionIdentifier, fallbackProfile.id, {
 					icon: fallbackProfile.icon,
 					color: fallbackProfile.color,
@@ -1059,9 +1058,11 @@ export class TerminalService extends Disposable implements ITerminalService {
 					cwd: shellLaunchConfig.cwd,
 					titleTemplate: fallbackProfile.titleTemplate,
 				});
-				const instanceHost = resolvedLocation === TerminalLocation.Editor ? this._terminalEditorService : this._terminalGroupService;
-				const instance = instanceHost.instances[instanceHost.instances.length - 1];
-				await instance?.focusWhenReady();
+				const instance = instanceHost.instances[instanceCount];
+				if (!instance) {
+					continue;
+				}
+				await instance.focusWhenReady();
 				this._terminalHasBeenCreated.set(true);
 				return instance;
 			}
