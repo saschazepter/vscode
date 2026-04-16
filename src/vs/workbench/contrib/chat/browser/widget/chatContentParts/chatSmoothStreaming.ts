@@ -10,9 +10,9 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { ChatConfiguration } from '../../../common/constants.js';
 
 /**
- * Available animation styles for smooth token streaming.
+ * Available animation styles for smooth streaming.
  */
-export type SmoothStreamingAnimationStyle = 'fade' | 'rise' | 'blur' | 'scale' | 'slide';
+type SmoothStreamingAnimationStyle = 'fade' | 'rise' | 'blur' | 'scale' | 'slide';
 
 /** Duration of the animation applied to newly rendered blocks. */
 const ANIMATION_DURATION_MS = 600;

@@ -152,7 +152,10 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 		if (smoothStreamingEnabled && isResponseVM(element) && fillInIncompleteTokens) {
 			this._smoothMorpher = this._register(instantiationService.createInstance(SmoothStreamingDOMMorpher, this.domNode));
 			this._smoothMorpher.setRenderCallback((newMd) => {
-				this.markdown = { ...this.markdown, content: new MarkdownString(newMd, this.markdown.content) };
+				const content = new MarkdownString(newMd, this.markdown.content);
+				content.baseUri = this.markdown.content.baseUri;
+				content.uris = this.markdown.content.uris;
+				this.markdown = { ...this.markdown, content };
 				doRenderMarkdown();
 			});
 		}
