@@ -178,11 +178,19 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		// Overlay live session status from the state manager
+		// Overlay live session state from the state manager.
+		// For the title, prefer the state manager's value when it is
+		// non-empty, so SDK-sourced titles are not overwritten by the
+		// initial empty placeholder.
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
-				return { ...s, status: liveState.summary.status, model: liveState.summary.model ?? s.model };
+				return {
+					...s,
+					summary: liveState.summary.title || s.summary,
+					status: liveState.summary.status,
+					model: liveState.summary.model ?? s.model,
+				};
 			}
 			return s;
 		});
@@ -262,7 +270,7 @@ export class AgentService extends Disposable implements IAgentService {
 			const summary: ISessionSummary = {
 				resource: session.toString(),
 				provider: provider.id,
-				title: 'New Session',
+				title: '',
 				status: SessionStatus.Idle,
 				createdAt: Date.now(),
 				modifiedAt: Date.now(),

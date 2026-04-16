@@ -21,8 +21,9 @@ import { AGENT_HOST_SCHEME, agentHostAuthority, toAgentHostUri } from '../../../
 import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
+import { NotificationType } from '../../../../platform/agentHost/common/state/protocol/notifications.js';
 import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
-import type { IModelSelection, IRootState, ISessionFileDiff, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { IFileEdit, IModelSelection, IRootState, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
@@ -32,7 +33,7 @@ import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/c
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
 import { isSessionConfigComplete } from '../../../common/sessionConfig.js';
-import { diffsToChanges, diffsEqual } from '../../../common/agentHostDiffs.js';
+import { diffsToChanges, diffsEqual, mapProtocolStatus } from '../../../common/agentHostDiffs.js';
 import { ISessionChangeEvent, ISendRequestOptions } from '../../../services/sessions/common/sessionsProvider.js';
 import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, ISessionType, COPILOT_CLI_SESSION_TYPE } from '../../../services/sessions/common/session.js';
@@ -166,7 +167,7 @@ class RemoteSessionAdapter implements IChatData {
 	readonly workspace: ISettableObservable<ISessionWorkspace | undefined>;
 	readonly title: ISettableObservable<string>;
 	readonly updatedAt: ISettableObservable<Date>;
-	readonly status = observableValue<SessionStatus>('status', SessionStatus.Completed);
+	readonly status: ISettableObservable<SessionStatus>;
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
 	readonly modelId: ISettableObservable<string | undefined>;
 	modelSelection: IModelSelection | undefined;
@@ -196,9 +197,10 @@ class RemoteSessionAdapter implements IChatData {
 		this.providerId = providerId;
 		this.sessionType = logicalSessionType;
 		this.createdAt = new Date(metadata.startTime);
-		this.title = observableValue('title', metadata.summary ?? `Session ${rawId.substring(0, 8)}`);
+		this.title = observableValue('title', metadata.summary || `Session ${rawId.substring(0, 8)}`);
 		this.updatedAt = observableValue('updatedAt', new Date(metadata.modifiedTime));
 		this.modelSelection = metadata.model;
+		this.status = observableValue<SessionStatus>('status', metadata.status !== undefined ? mapProtocolStatus(metadata.status) : SessionStatus.Completed);
 		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${resourceScheme}:${metadata.model.id}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', new MarkdownString().appendText(this._providerLabel));
@@ -216,9 +218,15 @@ class RemoteSessionAdapter implements IChatData {
 	}
 
 	update(metadata: IAgentSessionMetadata): void {
-		this.title.set(metadata.summary ?? this.title.get(), undefined);
+		this.title.set(metadata.summary || this.title.get(), undefined);
 		this.updatedAt.set(new Date(metadata.modifiedTime), undefined);
 		this.lastTurnEnd.set(metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined, undefined);
+		if (metadata.status !== undefined) {
+			const uiStatus = mapProtocolStatus(metadata.status);
+			if (uiStatus !== this.status.get()) {
+				this.status.set(uiStatus, undefined);
+			}
+		}
 		if (metadata.isRead !== undefined) {
 			this.isRead.set(metadata.isRead, undefined);
 		}
@@ -405,10 +413,12 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 		}));
 
 		this._connectionListeners.add(connection.onDidNotification(n => {
-			if (n.type === 'notify/sessionAdded') {
+			if (n.type === NotificationType.SessionAdded) {
 				this._handleSessionAdded(n.summary);
-			} else if (n.type === 'notify/sessionRemoved') {
+			} else if (n.type === NotificationType.SessionRemoved) {
 				this._handleSessionRemoved(n.session);
+			} else if (n.type === NotificationType.SessionSummaryChanged) {
+				this._handleSessionSummaryChanged(n.session, n.changes);
 			}
 		}));
 
@@ -1161,12 +1171,47 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 		}
 	}
 
-	private _handleDiffsChanged(session: string, diffs: ISessionFileDiff[]): void {
+	private _handleDiffsChanged(session: string, diffs: IFileEdit[]): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
 			const mapUri = toLocalDiffUri(this._connectionAuthority);
 			cached.changes.set(diffsToChanges(diffs, mapUri), undefined);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
+		}
+	}
+
+	private _handleSessionSummaryChanged(session: string, changes: Partial<ISessionSummary>): void {
+		const rawId = AgentSession.id(session);
+		const cached = this._sessionCache.get(rawId);
+		if (!cached) {
+			return;
+		}
+
+		let didChange = false;
+
+		if (changes.status !== undefined) {
+			const uiStatus = mapProtocolStatus(changes.status);
+			if (uiStatus !== cached.status.get()) {
+				cached.status.set(uiStatus, undefined);
+				didChange = true;
+			}
+		}
+
+		if (changes.title !== undefined && changes.title !== cached.title.get()) {
+			cached.title.set(changes.title, undefined);
+			didChange = true;
+		}
+
+		if (changes.diffs !== undefined) {
+			const mapUri = toLocalDiffUri(this._connectionAuthority);
+			if (!diffsEqual(cached.changes.get(), changes.diffs, mapUri)) {
+				cached.changes.set(diffsToChanges(changes.diffs, mapUri), undefined);
+				didChange = true;
+			}
+		}
+
+		if (didChange) {
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
 		}
 	}
