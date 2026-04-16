@@ -2053,8 +2053,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		let lastSteeringCount = 0;
 		const updatePendingRequestKeys = (announceSteering: boolean) => {
 			const pendingRequests = model.getPendingRequests();
-			const pendingCount = pendingRequests.length;
-			this._hasPendingRequestsContextKey.set(pendingCount > 0);
+			const hasVisiblePendingRequests = pendingRequests.some(pending => !pending.request.isSystemInitiated);
+			this._hasPendingRequestsContextKey.set(hasVisiblePendingRequests);
 			// Only count user-initiated steering for announcements; system-initiated
 			// steering (e.g. terminal completion) is hidden from the conversation view.
 			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering && !pending.request.isSystemInitiated).length;
