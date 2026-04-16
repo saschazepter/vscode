@@ -6,9 +6,9 @@
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IConfigSchema, ISessionModelInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
-import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier, ILanguageModelConfigurationSchema } from '../../../common/languageModels.js';
+import { nullExtensionDescription } from '../../../../../services/extensions/common/extensions.js';
+import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelConfigurationSchema } from '../../../common/languageModels.js';
 
 /**
  * Exposes models available from the agent host process as selectable
@@ -42,7 +42,7 @@ export class AgentHostLanguageModelProvider extends Disposable implements ILangu
 			.map(m => ({
 				identifier: `${this._vendor}:${m.id}`,
 				metadata: {
-					extension: new ExtensionIdentifier('vscode.agent-host'),
+					extension: nullExtensionDescription.identifier,
 					name: m.name,
 					id: m.id,
 					vendor: this._vendor,
