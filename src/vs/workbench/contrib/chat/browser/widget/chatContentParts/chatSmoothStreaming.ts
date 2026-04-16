@@ -40,8 +40,10 @@ const MAX_BUFFERED_CHARS = 500;
  * The scan counts backtick-fence openings/closings from the start of
  * the string. A `\n\n` is only a valid boundary when the fence depth
  * is 0 (i.e. outside any code block).
+ *
+ * @internal Exported for testing.
  */
-function lastBlockBoundary(text: string): number {
+export function lastBlockBoundary(text: string): number {
 	let lastValid = -1;
 	let inFence = false;
 
