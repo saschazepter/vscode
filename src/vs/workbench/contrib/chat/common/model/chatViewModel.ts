@@ -356,7 +356,7 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 
 			// Add steering requests with their divider first
 			if (steeringRequests.length > 0) {
-				const isSystemInitiated = steeringRequests.some(p => p.request.isSystemInitiated);
+				const isSystemInitiated = steeringRequests.every(p => p.request.isSystemInitiated);
 				items.push({ kind: 'pendingDivider', id: 'pending-divider-steering', sessionResource: this._model.sessionResource, isComplete: true, dividerKind: ChatRequestQueueKind.Steering, isSystemInitiated, currentRenderedHeight: undefined });
 				for (const pending of steeringRequests) {
 					const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
