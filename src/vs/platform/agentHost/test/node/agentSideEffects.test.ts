@@ -337,25 +337,36 @@ suite('AgentSideEffects', () => {
 
 		test('dispatches root/agentsChanged without fetching models when observable changes', async () => {
 			agentList.set([], undefined);
-			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => e.action.type === ActionType.RootAgentsChanged && e.action.agents.length === 1));
+			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => {
+				if (e.action.type !== ActionType.RootAgentsChanged) {
+					return false;
+				}
+				return e.action.agents.length === 1;
+			}));
 			agentList.set([agent], undefined);
-			const action = await envelope;
+			const { action } = await envelope;
+			assert.strictEqual(action.type, ActionType.RootAgentsChanged);
 
-			assert.deepStrictEqual(action.action.agents[0].models, []);
+			assert.deepStrictEqual(action.agents[0].models, []);
 		});
 
 		test('model observable update publishes models', async () => {
 			const envelopes: IActionEnvelope[] = [];
 			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
 
-			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => e.action.type === ActionType.RootAgentsChanged && e.action.agents[0]?.models.length === 1));
+			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => {
+				if (e.action.type !== ActionType.RootAgentsChanged) {
+					return false;
+				}
+				return e.action.agents[0]?.models.length === 1;
+			}));
 			agent.setModels([{ provider: 'mock', id: 'mock-model', name: 'mock Model', maxContextWindow: 128000, supportsVision: false, supportsReasoningEffort: false }]);
 			await envelope;
 
-			const actions = envelopes.filter(e => e.action.type === ActionType.RootAgentsChanged);
+			const actions = envelopes.map(e => e.action).filter(action => action.type === ActionType.RootAgentsChanged);
 			const action = actions[actions.length - 1];
 			assert.ok(action, 'should dispatch root/agentsChanged');
-			assert.deepStrictEqual(action.action.agents[0].models, [{
+			assert.deepStrictEqual(action.agents[0].models, [{
 				id: 'mock-model',
 				provider: 'mock',
 				name: 'mock Model',
@@ -370,7 +381,12 @@ suite('AgentSideEffects', () => {
 			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
 			const models = [{ provider: 'mock' as const, id: 'mock-model', name: 'mock Model', maxContextWindow: 128000, supportsVision: false, supportsReasoningEffort: false }];
 
-			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => e.action.type === ActionType.RootAgentsChanged && e.action.agents[0]?.models.length === 1));
+			const envelope = Event.toPromise(Event.filter(stateManager.onDidEmitEnvelope, e => {
+				if (e.action.type !== ActionType.RootAgentsChanged) {
+					return false;
+				}
+				return e.action.agents[0]?.models.length === 1;
+			}));
 			agent.setModels(models);
 			await envelope;
 			envelopes.length = 0;
