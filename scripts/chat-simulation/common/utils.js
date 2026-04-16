@@ -40,6 +40,25 @@ function loadConfig(section) {
 
 // -- Electron path resolution ------------------------------------------------
 
+/**
+ * Derive the VS Code repo root from an Electron executable path.
+ * Dev builds live at `<repo>/.build/electron/<app>/`, so we walk up
+ * from the path to find the directory containing `.build`.
+ * Returns `undefined` if the path doesn't look like a dev build.
+ * @param {string} electronPath
+ * @returns {string | undefined}
+ */
+function getRepoRoot(electronPath) {
+	const buildIdx = electronPath.indexOf(`${path.sep}.build${path.sep}`);
+	if (buildIdx === -1) {
+		// Also check for posix separators (path may be user-supplied)
+		const posixIdx = electronPath.indexOf('/.build/');
+		if (posixIdx === -1) { return undefined; }
+		return electronPath.slice(0, posixIdx);
+	}
+	return electronPath.slice(0, buildIdx);
+}
+
 function getElectronPath() {
 	const product = require(path.join(ROOT, 'product.json'));
 	if (process.platform === 'darwin') {
@@ -193,7 +212,7 @@ function buildEnv(mockServer, { isDevBuild = true } = {}) {
  * @param {string} logsDir
  * @returns {string[]}
  */
-function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostInspectPort = 0, traceFile = '' } = {}) {
+function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostInspectPort = 0, traceFile = '', appRoot = ROOT } = {}) {
 	// Chromium switches must come BEFORE the app path (ROOT) — Chromium
 	// only processes switches that precede the first non-switch argument.
 	const chromiumFlags = [];
@@ -204,7 +223,7 @@ function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostIns
 	}
 	const args = [
 		...chromiumFlags,
-		ROOT,
+		appRoot,
 		'--skip-release-notes',
 		'--skip-welcome',
 		'--disable-telemetry',
@@ -786,6 +805,7 @@ module.exports = {
 	METRIC_DEFS,
 	loadConfig,
 	getElectronPath,
+	getRepoRoot,
 	isVersionString,
 	resolveBuild,
 	preseedStorage,

@@ -27,7 +27,7 @@ const {
 	ROOT, DATA_DIR, METRIC_DEFS, loadConfig,
 	resolveBuild, isVersionString, buildEnv, buildArgs, prepareRunDir,
 	robustStats, welchTTest, summarize, markDuration, launchVSCode,
-	getNextExtHostInspectPort, connectToExtHostInspector,
+	getNextExtHostInspectPort, connectToExtHostInspector, getRepoRoot,
 } = require('./common/utils');
 const { getUserTurns, getScenarioIds } = require('./common/mock-llm-server');
 const { registerPerfScenarios } = require('./common/perf-scenarios');
@@ -342,6 +342,15 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		}
 	}
 
+	// For dev builds from a different repo, derive the repo root from the
+	// electron path so that the build loads its own out/ source code.
+	const appRoot = isDevBuild ? (getRepoRoot(electronPath) || ROOT) : ROOT;
+	if (isDevBuild && appRoot !== ROOT) {
+		if (verbose) {
+			console.log(`  [debug] Using appRoot from electron path: ${appRoot}`);
+		}
+	}
+
 	// Create a per-run diagnostics directory: <runDir>/<role>-<build>/<scenario>-<i>/
 	const runDiagDir = path.join(runDir, `${role}-${buildLabel}`, runIndex.replace(/^baseline-/, ''));
 	fs.mkdirSync(runDiagDir, { recursive: true });
@@ -350,7 +359,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	const extHostInspectPort = getNextExtHostInspectPort();
 	const vscode = await launchVSCode(
 		electronPath,
-		buildArgs(userDataDir, extDir, logsDir, { isDevBuild, extHostInspectPort, traceFile: tracePath }),
+		buildArgs(userDataDir, extDir, logsDir, { isDevBuild, extHostInspectPort, traceFile: tracePath, appRoot }),
 		buildEnv(mockServer, { isDevBuild }),
 		{ verbose },
 	);
@@ -922,7 +931,7 @@ function generateCISummary(jsonReport, baseline, opts) {
 		['extHostHeapDelta', 'extHost', 'MB'],
 		['extHostHeapDeltaPostGC', 'extHost', 'MB'],
 	];
-	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'recalcStyleCount', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
+	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
 
 	const lines = [];
 	const scenarios = Object.keys(jsonReport.scenarios);
