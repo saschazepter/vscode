@@ -33,47 +33,9 @@ extends:
     npmPackages:
       - name: vscode-copilot-chat
         buildSteps:
-          - task: NodeTool@0
-            inputs:
-              versionSpec: 22.x
-            displayName: 🛠 Install Node.js (22.x)
-
-          - bash: |
-              npm config set registry ${{ parameters.NPM_REGISTRY }}
-              echo "##vso[task.setvariable variable=NPMRC_PATH]$(npm config get userconfig)"
-            displayName: 🔧 Set npm registry
-
-          - task: npmAuthenticate@0
-            inputs:
-              workingFile: $(NPMRC_PATH)
-            displayName: 🔑 Authenticate npm
-
-          - bash: npm ci && npm run extract-chat-lib && rm -rf node_modules
-            displayName: 📂 Extract chat-lib
-            workingDirectory: extensions/copilot
-            env:
-              PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-
-          - bash: |
-              set -e
-              VERSION=$(node -p "require('../package.json').version")
-              node -e "
-                const fs = require('fs');
-                const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-                pkg.version = '$VERSION';
-                fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-              "
-              echo "Set chat-lib version to $VERSION"
-            displayName: 📋 Sync chat-lib version
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm ci
-            displayName: 📦 Install chat-lib dependencies
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm run build
-            displayName: 🔨 Build chat-lib
-            workingDirectory: extensions/copilot/chat-lib
+          - template: extensions/copilot/build/steps/build-chat-lib.yml@self
+            parameters:
+              NPM_REGISTRY: ${{ parameters.NPM_REGISTRY }}
         testPlatforms:
           - name: Linux
             nodeVersions: [22.x]
@@ -83,33 +45,9 @@ extends:
             nodeVersions: [22.x]
         workingDirectory: extensions/copilot/chat-lib
         testSteps:
-          - bash: |
-              npm config set registry ${{ parameters.NPM_REGISTRY }}
-              echo "##vso[task.setvariable variable=NPMRC_PATH]$(npm config get userconfig)"
-            displayName: 🔧 Set npm registry
-
-          - task: npmAuthenticate@0
-            inputs:
-              workingFile: $(NPMRC_PATH)
-            displayName: 🔑 Authenticate npm
-
-          - bash: npm ci && npm run extract-chat-lib && rm -rf node_modules
-            displayName: 📂 Extract chat-lib
-            workingDirectory: extensions/copilot
-            env:
-              PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-
-          - script: npm ci
-            displayName: 📦 Install chat-lib dependencies
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm run build
-            displayName: 🔨 Build chat-lib
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm test
-            displayName: 🧪 Run chat-lib tests
-            workingDirectory: extensions/copilot/chat-lib
+          - template: extensions/copilot/build/steps/test-chat-lib.yml@self
+            parameters:
+              NPM_REGISTRY: ${{ parameters.NPM_REGISTRY }}
         # Manually triggered → publish to latest or next
         ${{ if eq(parameters.nextVersion, 'none') }}:
           publishPackage: false

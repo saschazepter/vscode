@@ -25,12 +25,8 @@ parameters:
     displayName: "Custom NPM Registry"
     type: string
     default: 'https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/npm/registry/'
-  - name: nextVersion
-    displayName: '🚀 Release Version (eg: none, major, minor, patch, prerelease, or X.X.X)'
-    type: string
-    default: 'none'
 
-name: "$(Date:yyyyMMdd).$(Rev:r)${{ replace(format(' (🚀 {0})', parameters.nextVersion), ' (🚀 none)', '') }}"
+name: "$(Date:yyyyMMdd).$(Rev:r)"
 
 extends:
   template: azure-pipelines/npm-package/pipeline.yml@templates
@@ -43,15 +39,9 @@ extends:
               versionSpec: 22.x
             displayName: 🛠 Install Node.js (22.x)
 
-          - bash: |
-              npm config set registry ${{ parameters.NPM_REGISTRY }}
-              echo "##vso[task.setvariable variable=NPMRC_PATH]$(npm config get userconfig)"
-            displayName: 🔧 Set npm registry
-
-          - task: npmAuthenticate@0
-            inputs:
-              workingFile: $(NPMRC_PATH)
-            displayName: 🔑 Authenticate npm
+          - template: extensions/copilot/build/steps/setup-npm.yml@self
+            parameters:
+              NPM_REGISTRY: ${{ parameters.NPM_REGISTRY }}
 
           - download: vscode
             artifact: copilot_vsix
@@ -112,33 +102,9 @@ extends:
             nodeVersions: [22.x]
         workingDirectory: extensions/copilot/chat-lib
         testSteps:
-          - bash: |
-              npm config set registry ${{ parameters.NPM_REGISTRY }}
-              echo "##vso[task.setvariable variable=NPMRC_PATH]$(npm config get userconfig)"
-            displayName: 🔧 Set npm registry
-
-          - task: npmAuthenticate@0
-            inputs:
-              workingFile: $(NPMRC_PATH)
-            displayName: 🔑 Authenticate npm
-
-          - bash: npm ci && npm run extract-chat-lib && rm -rf node_modules
-            displayName: 📂 Extract chat-lib
-            workingDirectory: extensions/copilot
-            env:
-              PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-
-          - script: npm ci
-            displayName: 📦 Install chat-lib dependencies
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm run build
-            displayName: 🔨 Build chat-lib
-            workingDirectory: extensions/copilot/chat-lib
-
-          - script: npm test
-            displayName: 🧪 Run chat-lib tests
-            workingDirectory: extensions/copilot/chat-lib
+          - template: extensions/copilot/build/steps/test-chat-lib.yml@self
+            parameters:
+              NPM_REGISTRY: ${{ parameters.NPM_REGISTRY }}
         # Triggered by ⭐️ VS Code pipeline → always publish to next
         publishPackage: true
         publishRequiresApproval: false
