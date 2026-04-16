@@ -14,7 +14,7 @@ import { constObservable, observableValue } from '../../../../../base/common/obs
 import { URI } from '../../../../../base/common/uri.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { ITextModelService } from '../../../../../editor/common/services/resolverService.js';
-import { IDialogService, IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IListService, ListService } from '../../../../../platform/list/browser/listService.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
@@ -24,6 +24,7 @@ import { IWorkspace, IWorkspaceContextService, WorkbenchState } from '../../../.
 import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
+import { IChatWidgetService } from '../../../../contrib/chat/browser/chat.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
@@ -498,11 +499,14 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 			reg.defineInstance(IWorkingCopyService, new class extends mock<IWorkingCopyService>() {
 				override readonly onDidChangeDirty = Event.None;
 			}());
-			reg.defineInstance(IFileDialogService, new class extends mock<IFileDialogService>() { }());
 			reg.defineInstance(IExtensionService, new class extends mock<IExtensionService>() { }());
 			reg.defineInstance(IQuickInputService, new class extends mock<IQuickInputService>() { }());
 			reg.defineInstance(IViewsService, new class extends mock<IViewsService>() {
 				override async openView<T extends {}>(_id: string, _focus?: boolean) { return null as T | null; }
+			}());
+			reg.defineInstance(IChatWidgetService, new class extends mock<IChatWidgetService>() {
+				override get lastFocusedWidget() { return undefined; }
+				override async reveal() { return false; }
 			}());
 			reg.defineInstance(IRequestService, new class extends mock<IRequestService>() { }());
 			reg.defineInstance(IMarkdownRendererService, new class extends mock<IMarkdownRendererService>() {

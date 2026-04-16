@@ -18,7 +18,6 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IViewPaneOptions, IViewPaneLocationColors, ViewPane } from '../../../../../workbench/browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../../workbench/common/views.js';
-import { sessionsSidebarBackground } from '../../../../common/theme.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { localize } from '../../../../../nls.js';
@@ -28,6 +27,8 @@ import { AICustomizationShortcutsWidget } from '../aiCustomizationShortcutsWidge
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { asCssVariable } from '../../../../../platform/theme/common/colorRegistry.js';
+import { agentsNewSessionButtonBackground, agentsNewSessionButtonBorder, agentsNewSessionButtonForeground, agentsNewSessionButtonHoverBackground } from '../../../../common/theme.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IHostService } from '../../../../../workbench/services/host/browser/host.js';
@@ -56,7 +57,6 @@ export class SessionsView extends ViewPane {
 	private headerRow: HTMLElement | undefined;
 	private headerLabel: HTMLElement | undefined;
 	private headerActions: HTMLElement | undefined;
-	private headerLabelWidth = 56;
 	private isFindWidgetOpen = false;
 	sessionsControl: SessionsList | undefined;
 	private _customizationsWidget: AICustomizationShortcutsWidget | undefined;
@@ -120,10 +120,10 @@ export class SessionsView extends ViewPane {
 		const colors = super.getLocationBasedColors();
 		return {
 			...colors,
-			background: sessionsSidebarBackground,
+			background: undefined!,
 			listOverrideStyles: {
 				...colors.listOverrideStyles,
-				listBackground: sessionsSidebarBackground,
+				listBackground: undefined!,
 			}
 		};
 	}
@@ -141,7 +141,6 @@ export class SessionsView extends ViewPane {
 		const headerRow = this.headerRow = DOM.append(sessionsContent, $('.agent-sessions-header-row'));
 		const headerLabel = this.headerLabel = DOM.append(headerRow, $('.agent-sessions-header-label'));
 		headerLabel.textContent = localize('sessionsHeader', "Sessions");
-		this.headerLabelWidth = Math.ceil(headerLabel.getBoundingClientRect().width) || this.headerLabelWidth;
 
 		const headerActions = this.headerActions = DOM.append(headerRow, $('.agent-sessions-header-actions'));
 
@@ -159,7 +158,10 @@ export class SessionsView extends ViewPane {
 		// Compact New Session Button
 		const newSessionButton = this._register(new Button(headerActions, {
 			...defaultButtonStyles,
-			buttonSecondaryBorder: '',
+			buttonSecondaryBackground: asCssVariable(agentsNewSessionButtonBackground),
+			buttonSecondaryForeground: asCssVariable(agentsNewSessionButtonForeground),
+			buttonSecondaryHoverBackground: asCssVariable(agentsNewSessionButtonHoverBackground),
+			buttonSecondaryBorder: asCssVariable(agentsNewSessionButtonBorder),
 			secondary: true,
 			supportIcons: true,
 		}));
@@ -456,7 +458,7 @@ export class SessionsView extends ViewPane {
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
 
-		this.updateHeaderLayout(width);
+		this.updateHeaderLayout();
 
 		if (!this.sessionsControl || !this.sessionsControlContainer) {
 			return;
@@ -485,7 +487,7 @@ export class SessionsView extends ViewPane {
 		this.sessionsControl?.openFind();
 	}
 
-	private updateHeaderLayout(width?: number): void {
+	private updateHeaderLayout(): void {
 		if (!this.headerRow || !this.headerLabel || !this.headerActions) {
 			return;
 		}
@@ -496,12 +498,7 @@ export class SessionsView extends ViewPane {
 			return;
 		}
 
-		this.headerActions.style.display = '';
-		const headerWidth = width ?? this.headerRow.offsetWidth;
-		const actionsWidth = Math.ceil(this.headerActions.getBoundingClientRect().width) || this.headerActions.offsetWidth;
-		const shouldHideLabel = headerWidth > 0 && headerWidth < actionsWidth + this.headerLabelWidth + 12;
-
-		this.headerLabel.style.display = shouldHideLabel ? 'none' : '';
+		this.headerLabel.style.display = '';
 		this.headerActions.style.display = '';
 	}
 

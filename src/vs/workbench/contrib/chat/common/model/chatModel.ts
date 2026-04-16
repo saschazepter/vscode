@@ -1430,8 +1430,6 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 
 	override dispose(): void {
 		super.dispose();
-		// Break back-reference to ChatModel to prevent retention cycles
-		this._session = undefined!;
 		this._response.clear();
 		if (this._codeBlockInfos) {
 			this._codeBlockInfos.length = 0;
@@ -2821,12 +2819,7 @@ export class ChatModel extends Disposable implements IChatModel {
 	}
 
 	override dispose() {
-		this._requests.forEach(r => {
-			r.response?.dispose();
-			// Break back-reference from request to this model
-			// eslint-disable-next-line local/code-no-any-casts, @typescript-eslint/no-explicit-any
-			(r as any)._session = undefined;
-		});
+		this._requests.forEach(r => r.response?.dispose());
 		this._onDidDispose.fire();
 
 		super.dispose();

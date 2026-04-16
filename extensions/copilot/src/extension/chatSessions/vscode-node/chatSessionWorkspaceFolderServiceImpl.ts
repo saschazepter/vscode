@@ -6,8 +6,8 @@
 import { promises as fs } from 'fs';
 import * as vscode from 'vscode';
 import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
-import { IGitService } from '../../../platform/git/common/gitService';
-import { parseGitChangesRaw } from '../../../platform/git/vscode-node/utils';
+import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
+import { buildTempIndexEnv, getUncommittedFilePaths, parseGitChangesRaw } from '../../../platform/git/vscode-node/utils';
 import { DiffChange } from '../../../platform/git/vscode/git';
 import { ILogService } from '../../../platform/log/common/logService';
 import { SequencerByKey } from '../../../util/vs/base/common/async';
@@ -136,15 +136,12 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 				}
 
 				const properties = await this.computeWorkspaceChanges(repositoryProperties, sessionId);
-				this.workspaceFolderChanges.set(repoKey, properties.changes);
+				this.workspaceFolderChanges.set(repoKey, properties?.changes ?? []);
 
-				if (
-					properties.incomingChanges !== undefined &&
-					properties.outgoingChanges !== undefined &&
-					properties.uncommittedChanges !== undefined
-				) {
+				if (properties) {
 					await this.metadataStore.storeRepositoryProperties(sessionId, {
 						...repositoryProperties,
+						hasGitHubRemote: properties.hasGitHubRemote,
 						upstreamBranchName: properties.upstreamBranchName,
 						incomingChanges: properties.incomingChanges,
 						outgoingChanges: properties.outgoingChanges,
@@ -152,18 +149,19 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 					});
 				}
 
-				return properties.changes;
+				return properties?.changes ?? [];
 			});
 		});
 	}
 
 	private async computeWorkspaceChanges(repositoryProperties: RepositoryProperties, sessionId: string): Promise<{
 		readonly changes: ChatSessionWorktreeFile[];
+		readonly hasGitHubRemote?: boolean;
 		readonly upstreamBranchName?: string;
 		readonly incomingChanges?: number;
 		readonly outgoingChanges?: number;
 		readonly uncommittedChanges?: number;
-	}> {
+	} | undefined> {
 		const repository = await this.gitService.getRepository(vscode.Uri.file(repositoryProperties.repositoryPath));
 		if (repository) {
 			const sessionIds = this.sessionsAssociatedWithFolders.get(repository.rootUri) ?? new Set<string>();
@@ -172,7 +170,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		}
 		if (!repository?.changes) {
 			this.logService.warn(`[ChatSessionWorkspaceFolderService][getWorkspaceChanges] No repository found for session ${sessionId}`);
-			return { changes: [] };
+			return undefined;
 		}
 
 		// Check for untracked changes, only if the session branch matches the current branch
@@ -185,10 +183,23 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 		const diffChanges: DiffChange[] = [];
 
+		// If the repository is using a virtual file system, we need to
+		// disable rename detection to avoid expensive git operations
+		const noRenamesArg = repository.isUsingVirtualFileSystem
+			? ['--no-renames']
+			: [];
+
+		const mergeBaseArg = repositoryProperties.baseBranchName
+			? ['--merge-base', repositoryProperties.baseBranchName]
+			: [];
+
 		if (hasUntrackedChanges) {
 			// Tracked + untracked changes
 			const tmpDirName = `vscode-sessions-${generateUuid()}`;
 			const diffIndexFile = path.join(this.extensionContext.globalStorageUri.fsPath, tmpDirName, 'diff.index');
+			const pathspecFile = path.join(this.extensionContext.globalStorageUri.fsPath, tmpDirName, `pathspec.txt`);
+
+			const env = buildTempIndexEnv(repository, diffIndexFile);
 
 			try {
 				// Create temp index file directory
@@ -196,23 +207,23 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 				try {
 					// Populate temp index from HEAD, fall back to empty tree if no commits exist
-					await this.gitService.exec(repository.rootUri, ['read-tree', 'HEAD'], { GIT_INDEX_FILE: diffIndexFile });
+					await this.gitService.exec(repository.rootUri, ['read-tree', 'HEAD'], env);
 				} catch {
 					// Fall back to empty tree for repositories with no commits
-					await this.gitService.exec(repository.rootUri, ['read-tree', ChatSessionWorkspaceFolderService.EMPTY_TREE_OBJECT], { GIT_INDEX_FILE: diffIndexFile });
+					await this.gitService.exec(repository.rootUri, ['read-tree', ChatSessionWorkspaceFolderService.EMPTY_TREE_OBJECT], env);
 				}
 
 				// Stage entire working directory into temp index
-				await this.gitService.exec(repository.rootUri, ['add', '--', '.'], { GIT_INDEX_FILE: diffIndexFile });
+				const uncommittedFilePaths = getUncommittedFilePaths(repository);
+				await fs.writeFile(pathspecFile, uncommittedFilePaths.join('\n'), 'utf8');
+				await this.gitService.exec(repository.rootUri, ['add', '-A', `--pathspec-from-file=${pathspecFile}`], env);
 
 				// Diff the temp index with the base branch
-				const result = repositoryProperties.baseBranchName
-					? await this.gitService.exec(repository.rootUri, ['diff', '--cached', '--raw', '--numstat', '--diff-filter=ADMR', '-z', '--merge-base', repositoryProperties.baseBranchName, '--'], { GIT_INDEX_FILE: diffIndexFile })
-					: await this.gitService.exec(repository.rootUri, ['diff', '--cached', '--raw', '--numstat', '--diff-filter=ADMR', '-z', '--'], { GIT_INDEX_FILE: diffIndexFile });
+				const result = await this.gitService.exec(repository.rootUri, ['diff', '--cached', '--raw', '--numstat', '--diff-filter=ADMR', ...noRenamesArg, '-z', ...mergeBaseArg, '--'], env);
 				diffChanges.push(...parseGitChangesRaw(repository.rootUri.fsPath, result));
 			} catch (error) {
 				this.logService.error(`[ChatSessionWorkspaceFolderService][getWorkspaceChanges] Error while processing workspace changes: ${error}`);
-				return { changes: [] };
+				return undefined;
 			} finally {
 				try {
 					await fs.rm(path.dirname(diffIndexFile), { recursive: true, force: true });
@@ -223,13 +234,11 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		} else {
 			// Tracked changes
 			try {
-				const result = repositoryProperties.baseBranchName
-					? await this.gitService.exec(repository.rootUri, ['diff', '--raw', '--numstat', '--diff-filter=ADMR', '-z', '--merge-base', repositoryProperties.baseBranchName, '--'])
-					: await this.gitService.exec(repository.rootUri, ['diff', '--raw', '--numstat', '--diff-filter=ADMR', '-z', '--']);
+				const result = await this.gitService.exec(repository.rootUri, ['diff', '--raw', '--numstat', '--diff-filter=ADMR', ...noRenamesArg, '-z', ...mergeBaseArg, '--']);
 				diffChanges.push(...parseGitChangesRaw(repository.rootUri.fsPath, result));
 			} catch (error) {
 				this.logService.error(`[ChatSessionWorkspaceFolderService][getWorkspaceChanges] Error while processing workspace changes: ${error}`);
-				return { changes: [] };
+				return undefined;
 			}
 		}
 
@@ -248,6 +257,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		} satisfies ChatSessionWorktreeFile));
 
 		const repositoryState = {
+			hasGitHubRemote: getGitHubRepoInfoFromContext(repository) !== undefined,
 			upstreamBranchName: repository.upstreamRemote && repository.upstreamBranchName
 				? `${repository.upstreamRemote}/${repository.upstreamBranchName}`
 				: undefined,

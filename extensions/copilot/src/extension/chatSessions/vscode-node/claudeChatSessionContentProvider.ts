@@ -23,11 +23,11 @@ import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { ClaudeAgentManager } from '../claude/node/claudeCodeAgent';
 import { IClaudeCodeSdkService } from '../claude/node/claudeCodeSdkService';
 import { parseClaudeModelId } from '../claude/node/claudeModelId';
-import { IClaudeSessionStateService } from '../claude/node/claudeSessionStateService';
+import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { IClaudeCodeSessionService } from '../claude/node/sessionParser/claudeCodeSessionService';
 import { IClaudeCodeSessionInfo } from '../claude/node/sessionParser/claudeSessionSchema';
 import { IClaudeSlashCommandService } from '../claude/vscode-node/claudeSlashCommandService';
-import { FolderRepositoryMRUEntry, IFolderRepositoryManager } from '../common/folderRepositoryManager';
+import { FolderRepositoryMRUEntry, IChatFolderMruService } from '../common/folderRepositoryManager';
 import { buildChatHistory } from './chatHistoryBuilder';
 
 const permissionModes: ReadonlySet<string> = new Set<PermissionMode>(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk']);
@@ -38,9 +38,6 @@ function isPermissionMode(value: string): value is PermissionMode {
 
 // Import the tool permission handlers
 import '../claude/vscode-node/toolPermissionHandlers/index';
-
-// Import the hooks to trigger self-registration
-import '../claude/vscode-node/hooks/index';
 
 // Import the MCP server contributors to trigger self-registration
 import '../claude/vscode-node/mcpServers/index';
@@ -66,7 +63,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		@IClaudeSessionStateService private readonly sessionStateService: IClaudeSessionStateService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IClaudeSlashCommandService private readonly slashCommandService: IClaudeSlashCommandService,
-		@IFolderRepositoryManager private readonly folderRepositoryManager: IFolderRepositoryManager,
+		@IChatFolderMruService private readonly folderMruService: IChatFolderMruService,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@INativeEnvService private readonly envService: INativeEnvService,
 		@IGitService gitService: IGitService,
@@ -147,7 +144,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		}
 
 		// Fallback for empty workspace with no selection: try MRU
-		const mru = await this.folderRepositoryManager.getFolderMRU();
+		const mru = await this.folderMruService.getRecentlyUsedFolders(CancellationToken.None);
 		if (mru.length > 0) {
 			return {
 				cwd: mru[0].folder.fsPath,
@@ -172,7 +169,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		const workspaceFolders = this.workspaceService.getWorkspaceFolders();
 
 		if (this._isEmptyWorkspace()) {
-			const mruEntries = await this.folderRepositoryManager.getFolderMRU();
+			const mruEntries = await this.folderMruService.getRecentlyUsedFolders(CancellationToken.None);
 			return mruToFolderOptionItems(mruEntries).slice(0, MAX_MRU_ENTRIES);
 		}
 
@@ -203,7 +200,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			return workspaceFolders[0];
 		}
 
-		const mru = await this.folderRepositoryManager.getFolderMRU();
+		const mru = await this.folderMruService.getRecentlyUsedFolders(CancellationToken.None);
 		if (mru.length > 0) {
 			return mru[0].folder;
 		}
@@ -441,7 +438,7 @@ export class ClaudeChatSessionItemController extends Disposable {
 				permissionMode,
 				cwd: folder,
 			};
-			this._controller.items.add(item);
+			this._inProgressItems.set(newSessionId, item);
 			return item;
 		};
 
