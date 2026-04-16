@@ -145,7 +145,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		protected readonly location: ViewContainerLocation,
 		readonly registryId: string,
 		private readonly globalActionsMenuId: MenuId,
-		private readonly globalLeftActionsMenuId: MenuId | undefined,
 		@INotificationService notificationService: INotificationService,
 		@IStorageService storageService: IStorageService,
 		@IContextMenuService contextMenuService: IContextMenuService,
@@ -342,24 +341,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		this._register(addDisposableListener(titleArea, GestureEventType.Contextmenu, e => {
 			this.onTitleAreaContextMenu(new StandardMouseEvent(getWindow(titleArea), e));
 		}));
-
-		if (this.globalLeftActionsMenuId) {
-			const globalLeftTitleActionsContainer = titleArea.appendChild($('.global-actions-left'));
-			this.globalLeftToolBar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar,
-				globalLeftTitleActionsContainer,
-				this.globalLeftActionsMenuId,
-				{
-					actionViewItemProvider: (action, options) => this.actionViewItemProvider(action, options),
-					orientation: ActionsOrientation.HORIZONTAL,
-					getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id),
-					anchorAlignmentProvider: () => this.getTitleAreaDropDownAnchorAlignment(),
-					hoverDelegate: this.toolbarHoverDelegate,
-					hiddenItemStrategy: HiddenItemStrategy.NoHide,
-					highlightToggledItems: false,
-					telemetrySource: this.nameForTelemetry
-				}
-			));
-		}
 
 		const globalTitleActionsContainer = titleArea.appendChild($('.global-actions'));
 
