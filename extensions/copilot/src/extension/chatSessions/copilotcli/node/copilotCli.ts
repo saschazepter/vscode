@@ -547,7 +547,8 @@ async function checkFileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-export function isEnabledForCopilotCLI(session: { sessionTypes?: readonly string[] }): boolean {
-	return session === undefined || session.sessionTypes?.includes('copilotcli') || false;
+export function isEnabledForCopilotCLI(customization: { sessionTypes?: readonly string[] }): boolean {
+	const sessionTypes = customization.sessionTypes;
+	return sessionTypes === undefined || sessionTypes.includes('copilotcli') || false;
 }
 

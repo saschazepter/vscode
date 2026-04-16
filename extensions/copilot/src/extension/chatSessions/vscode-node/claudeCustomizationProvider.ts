@@ -275,6 +275,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	}
 }
 
-export function isEnabledForClaudeCode(session: { sessionTypes?: readonly string[] }): boolean {
-	return session === undefined || session.sessionTypes?.includes('claude-code') || false;
+export function isEnabledForClaudeCode(customization: { sessionTypes?: readonly string[] }): boolean {
+	const sessionTypes = customization.sessionTypes;
+	return sessionTypes === undefined || sessionTypes.includes('claude-code') || false;
 }
