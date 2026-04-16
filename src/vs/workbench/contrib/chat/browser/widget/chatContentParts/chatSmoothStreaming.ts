@@ -29,7 +29,7 @@ const STAGGER_DELAY_MS = 150;
  * rendered block boundary before a render is forced. Prevents a long
  * paragraph with no `\n\n` from staying invisible indefinitely.
  */
-const MAX_BUFFERED_CHARS = 500;
+const MAX_BUFFERED_CHARS = 4000;
 
 /**
  * Finds the last `\n\n` block boundary that is NOT inside an open
