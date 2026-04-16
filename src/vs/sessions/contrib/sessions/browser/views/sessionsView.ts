@@ -228,17 +228,11 @@ export class SessionsView extends ViewPane {
 			sorting: () => this.currentSorting,
 			findWidgetContainer,
 			onSessionOpen: (resource, preserveFocus) => {
-				void (async () => {
-					try {
-						await this.sessionsManagementService.openSession(resource, { preserveFocus });
-
-						if (isWeb && isMobile) {
-							this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
-						}
-					} catch (error) {
-						onUnexpectedError(error);
+				this.sessionsManagementService.openSession(resource, { preserveFocus }).then(() => {
+					if (isWeb && isMobile) {
+						this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
 					}
-				})();
+				}).catch(onUnexpectedError);
 			},
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
