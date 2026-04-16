@@ -939,7 +939,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			return;
 		}
 
-		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 0;
+		const titleBarHeight = this.workbenchGrid.getViewSize(this.titleBarPartView).height;
 		const mobileWidth = this._mainContainerDimension.width;
 		const mobileHeight = Math.max(0, this._mainContainerDimension.height - titleBarHeight);
 		sidebarContainer.style.position = 'fixed';
