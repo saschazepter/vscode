@@ -97,6 +97,7 @@ class LocalSessionAdapter implements ISession {
 
 	readonly mainChat: IChat;
 	readonly chats: IObservable<readonly IChat[]>;
+	readonly capabilities = { supportsMultipleChats: false };
 
 	readonly agentProvider: string;
 
@@ -232,8 +233,6 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 	readonly id = LOCAL_PROVIDER_ID;
 	readonly label: string;
 	readonly icon: ThemeIcon = Codicon.vm;
-	readonly onDidChangeCapabilities = Event.None;
-	readonly capabilities = { multipleChatsPerSession: false };
 	private readonly _localLabel = localize('localAgentHostSessionTypeLocation', "Local");
 	private _hasRootStateSnapshot = false;
 	private _sessionTypes: ISessionType[] = [];
@@ -486,6 +485,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 			gitHubInfo: observableValue(this, undefined),
 			mainChat,
 			chats: constObservable([mainChat]),
+			capabilities: { supportsMultipleChats: false },
 		};
 		this._currentNewSession = session;
 		this._currentNewSessionStatus = status;

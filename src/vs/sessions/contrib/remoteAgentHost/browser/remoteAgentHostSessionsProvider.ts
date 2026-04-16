@@ -268,8 +268,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 	readonly id: string;
 	readonly label: string;
 	readonly icon: ThemeIcon = Codicon.remote;
-	readonly onDidChangeCapabilities = Event.None;
-	readonly capabilities = { multipleChatsPerSession: false };
 	readonly remoteAddress: string;
 	private _outputChannelId: string | undefined;
 	get outputChannelId(): string | undefined { return this._outputChannelId; }
@@ -1326,6 +1324,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 			gitHubInfo: chat.gitHubInfo,
 			chats: constObservable([mainChat]),
 			mainChat,
+			capabilities: { supportsMultipleChats: false },
 		};
 		return session;
 	}
