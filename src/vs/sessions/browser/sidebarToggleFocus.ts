@@ -18,6 +18,10 @@ export function clearSidebarToggleFocusRequest(): void {
 	pendingSidebarToggleFocusTarget = undefined;
 }
 
+export function hasSidebarToggleFocusRequest(target: SidebarToggleFocusTarget): boolean {
+	return pendingSidebarToggleFocusTarget === target;
+}
+
 export function consumeSidebarToggleFocusRequest(target: SidebarToggleFocusTarget): boolean {
 	if (pendingSidebarToggleFocusTarget !== target) {
 		return false;

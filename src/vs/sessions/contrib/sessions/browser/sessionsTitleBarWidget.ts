@@ -35,7 +35,7 @@ import { SHOW_SESSIONS_PICKER_COMMAND_ID } from './sessionsActions.js';
 import { IsSessionArchivedContext, IsSessionPinnedContext, IsSessionReadContext, SessionItemContextMenuId } from './views/sessionsList.js';
 import { basename } from '../../../../base/common/resources.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
-import { consumeSidebarToggleFocusRequest, SidebarToggleFocusTarget } from '../../../browser/sidebarToggleFocus.js';
+import { consumeSidebarToggleFocusRequest, hasSidebarToggleFocusRequest, SidebarToggleFocusTarget } from '../../../browser/sidebarToggleFocus.js';
 
 /**
  * Sessions Title Bar Widget - renders the active chat session title
@@ -408,27 +408,36 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 		return this._focusTarget;
 	}
 
+	private _canRestoreFocus(container: HTMLElement, focusTarget: SidebarToggleFocusTarget, fromSidebarOpen: boolean): boolean {
+		if (focusTarget === SidebarToggleFocusTarget.Titlebar) {
+			return !fromSidebarOpen && !this.layoutService.isVisible(Parts.SIDEBAR_PART) && this._isFocusable(container);
+		}
+
+		return this.layoutService.isVisible(Parts.SIDEBAR_PART) && this._isFocusable(container);
+	}
+
+	private _isFocusable(container: HTMLElement): boolean {
+		const focusElement = this.label ?? container;
+		return focusElement.isConnected && focusElement.getClientRects().length > 0;
+	}
+
 	private _restoreFocusIfRequested(container: HTMLElement, fromSidebarOpen: boolean = false): void {
 		const focusTarget = this._getFocusTarget(container);
 		if (!focusTarget) {
 			return;
 		}
 
-		if (focusTarget === SidebarToggleFocusTarget.Titlebar) {
-			if (fromSidebarOpen) {
-				return;
-			}
-		} else if (!this.layoutService.isVisible(Parts.SIDEBAR_PART)) {
-			return;
-		}
-
-		if (!consumeSidebarToggleFocusRequest(focusTarget)) {
+		if (!this._canRestoreFocus(container, focusTarget, fromSidebarOpen) || !hasSidebarToggleFocusRequest(focusTarget)) {
 			return;
 		}
 
 		const targetWindow = getWindow(container);
 		this._renderDisposables.add(scheduleAtNextAnimationFrame(targetWindow, () => {
 			this._renderDisposables.add(scheduleAtNextAnimationFrame(targetWindow, () => {
+				if (!this._canRestoreFocus(container, focusTarget, fromSidebarOpen) || !consumeSidebarToggleFocusRequest(focusTarget)) {
+					return;
+				}
+
 				this.focus();
 			}));
 		}));
