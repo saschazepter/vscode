@@ -133,7 +133,6 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 		}
 	}
 }
-registerAction2(OpenSessionWorktreeInVSCodeAction);
 
 /**
  * Resolves the VS Code remote authority for the given session provider,
