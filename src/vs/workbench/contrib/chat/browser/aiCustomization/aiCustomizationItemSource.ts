@@ -431,6 +431,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			uriUseCounts.set(item.uri, (uriUseCounts.get(item.uri) ?? 0) + 1);
 		}
 		const appended: IAICustomizationListItem[] = [];
+		const disabledPromptFiles = this.promptsService.getDisabledPromptFiles(PromptsType.skill);
 		for (const p of builtinPaths) {
 			const name = p.name ?? basename(p.uri);
 			if (overriddenNames.has(name)) {
@@ -445,7 +446,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				description: p.description,
 				storage: BUILTIN_STORAGE as unknown as PromptsStorage,
 				groupKey: BUILTIN_STORAGE,
-				enabled: true,
+				enabled: !disabledPromptFiles.has(p.uri),
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
 				badgeTooltip: uiTooltip,
 			};

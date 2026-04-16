@@ -103,7 +103,11 @@ export class AgenticPromptsService extends PromptsService {
 			return baseResult;
 		}
 
-		const existingNames = new Set(baseResult.map(s => s.name));
+		const existingNames = new Set(
+			baseResult
+				.filter(s => s.storage === PromptsStorage.local || s.storage === PromptsStorage.user)
+				.map(s => s.name)
+		);
 		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
 		const nonOverridden = builtinSkills.filter(s => !existingNames.has(s.name) && !disabledSkills.has(s.uri));
 		if (nonOverridden.length === 0) {
