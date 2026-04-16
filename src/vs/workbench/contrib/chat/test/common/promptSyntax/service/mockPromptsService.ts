@@ -11,7 +11,7 @@ import { ITextModel } from '../../../../../../../editor/common/model.js';
 import { IExtensionDescription } from '../../../../../../../platform/extensions/common/extensions.js';
 import { PromptsType } from '../../../../common/promptSyntax/promptTypes.js';
 import { ParsedPromptFile } from '../../../../common/promptSyntax/promptFileParser.js';
-import { IAgentSkill, ICustomAgent, IPromptDiscoveryInfo, IPromptFileContext, IPromptFileEnablement, IPromptFileResource, IPromptPath, IPromptsService, IAgentInstructionFile, IInstructionFile, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { IAgentSkill, ICustomAgent, IPromptDiscoveryInfo, IPromptFileContext, IPromptFileResource, IPromptPath, IPromptsService, IAgentInstructionFile, IInstructionFile, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
 import { ResourceSet } from '../../../../../../../base/common/map.js';
 
 export class MockPromptsService implements IPromptsService {
@@ -54,7 +54,7 @@ export class MockPromptsService implements IPromptsService {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	parseNew(_uri: URI, _token: CancellationToken): Promise<any> { throw new Error('Not implemented'); }
 	getParsedPromptFile(textModel: ITextModel): ParsedPromptFile { throw new Error('Not implemented'); }
-	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string, enablement?: IPromptFileEnablement): IDisposable { throw new Error('Not implemented'); }
+	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string, sessionTypes?: readonly string[]): IDisposable { throw new Error('Not implemented'); }
 	getPromptLocationLabel(promptPath: IPromptPath): string { throw new Error('Not implemented'); }
 	listNestedAgentMDs(token: CancellationToken): Promise<IAgentInstructionFile[]> { throw new Error('Not implemented'); }
 	listAgentInstructions(token: CancellationToken): Promise<IAgentInstructionFile[]> { throw new Error('Not implemented'); }

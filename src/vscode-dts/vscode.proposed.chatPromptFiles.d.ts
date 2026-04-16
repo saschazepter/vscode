@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 2
+// version: 3
 
 declare module 'vscode' {
 	// #region Resource Classes
@@ -12,13 +12,6 @@ declare module 'vscode' {
 	 * Indicates where a chat resource was loaded from.
 	 */
 	export type ChatResourceSource = 'local' | 'user' | 'extension' | 'plugin';
-
-	/**
-	 * Enablement metadata attached to a chat customization contribution.
-	 */
-	export interface ChatResourceEnablement {
-		readonly sessionTypes?: readonly string[];
-	}
 
 	/**
 	 * Represents a chat-related resource, such as a custom agent, instructions, prompt file, skill, or slash command.
@@ -30,9 +23,9 @@ declare module 'vscode' {
 		readonly uri: Uri;
 
 		/**
-		 * Optional enablement metadata that describes when the resource should be offered.
+		 * Optional session types that describe when the resource should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 	}
 
 	/**
@@ -60,9 +53,9 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
-		 * Optional enablement metadata that describes when the custom agent should be offered.
+		 * Optional session types that describe when the custom agent should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -125,9 +118,9 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
-		 * Optional enablement metadata that describes when the instruction should be offered.
+		 * Optional session types that describe when the instruction should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -170,9 +163,9 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
-		 * Optional enablement metadata that describes when the skill should be offered.
+		 * Optional session types that describe when the skill should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -215,9 +208,9 @@ declare module 'vscode' {
 		readonly source: ChatResourceSource;
 
 		/**
-		 * Optional enablement metadata that describes when the slash command should be offered.
+		 * Optional session types that describe when the slash command should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 
 		/**
 		 * The contributing extension identifier when {@link source} is `extension`.
@@ -243,17 +236,17 @@ declare module 'vscode' {
 	export interface ChatHook {
 		readonly uri: Uri;
 		/**
-		 * Optional enablement metadata that describes when the hook should be offered.
+		 * Optional session types that describe when the hook should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 	}
 
 	export interface ChatPlugin {
 		readonly uri: Uri;
 		/**
-		 * Optional enablement metadata that describes when the plugin should be offered.
+		 * Optional session types that describe when the plugin should be offered.
 		 */
-		readonly enablement?: ChatResourceEnablement;
+		readonly sessionTypes?: readonly string[];
 	}
 
 	// #endregion

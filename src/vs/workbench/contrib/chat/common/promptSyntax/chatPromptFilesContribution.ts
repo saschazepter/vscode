@@ -10,7 +10,7 @@ import { localize } from '../../../../../nls.js';
 import { ExtensionIdentifier, IExtensionManifest } from '../../../../../platform/extensions/common/extensions.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import * as extensionsRegistry from '../../../../services/extensions/common/extensionsRegistry.js';
-import { IPromptFileEnablement, IPromptsService, PromptsStorage } from './service/promptsService.js';
+import { IPromptsService, PromptsStorage } from './service/promptsService.js';
 import { PromptsType } from './promptTypes.js';
 import { UriComponents } from '../../../../../base/common/uri.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
@@ -139,8 +139,7 @@ export class ChatPromptFilesExtensionPointHandler implements IWorkbenchContribut
 						continue;
 					}
 					try {
-						const enablement: IPromptFileEnablement | undefined = raw.sessionTypes ? { sessionTypes: raw.sessionTypes } : undefined;
-						const d = this.promptsService.registerContributedFile(type, fileUri, ext.description, raw.name, raw.description, raw.when, enablement);
+						const d = this.promptsService.registerContributedFile(type, fileUri, ext.description, raw.name, raw.description, raw.when, raw.sessionTypes);
 						this.registrations.set(key(ext.description.identifier, type, raw.path), d);
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e);

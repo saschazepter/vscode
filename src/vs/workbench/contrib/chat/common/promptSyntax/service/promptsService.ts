@@ -72,13 +72,6 @@ export const SKILL_PROVIDER_ACTIVATION_EVENT = 'onSkillProvider';
 export interface IPromptFileContext { }
 
 /**
- * Enablement metadata attached to a contributed customization resource.
- */
-export interface IPromptFileEnablement {
-	readonly sessionTypes?: readonly string[];
-}
-
-/**
  * Represents a prompt file resource from an external provider.
  */
 export interface IPromptFileResource {
@@ -95,9 +88,9 @@ export interface IPromptFileResource {
 	 */
 	readonly description?: string;
 	/**
-	 * Optional enablement metadata describing when this resource should be offered.
+	 * Optional session types that describe when this resource should be offered.
 	 */
-	readonly enablement?: IPromptFileEnablement;
+	readonly sessionTypes?: readonly string[];
 }
 
 /**
@@ -157,7 +150,10 @@ export interface IPromptPathBase {
 
 	readonly description?: string;
 
-	readonly enablement?: IPromptFileEnablement;
+	/**
+	 * Optional session types that describe when this resource should be offered.
+	 */
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface IExtensionPromptPath extends IPromptPathBase {
@@ -291,9 +287,9 @@ export interface ICustomAgent {
 	readonly when?: ContextKeyExpression;
 
 	/**
-	 * Optional enablement metadata describing when this agent should be offered.
+	 * Optional session types that describe when this agent should be offered.
 	 */
-	readonly enablement?: IPromptFileEnablement;
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface IAgentInstructions {
@@ -314,7 +310,10 @@ export interface IChatPromptSlashCommand {
 	readonly extension?: IExtensionDescription;
 	readonly pluginUri?: URI;
 	readonly when: ContextKeyExpression | undefined;
-	readonly enablement?: IPromptFileEnablement;
+	/**
+	 * Optional session types that describe when this slash command should be offered.
+	 */
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface IResolvedChatPromptSlashCommand extends IChatPromptSlashCommand {
@@ -367,7 +366,10 @@ export interface IInstructionFile {
 	 * when this expression evaluates to true against a scoped context.
 	 */
 	readonly when?: ContextKeyExpression;
-	readonly enablement?: IPromptFileEnablement;
+	/**
+	 * Optional session types that describe when this instruction should be offered.
+	 */
+	readonly sessionTypes?: readonly string[];
 }
 
 /**
@@ -401,7 +403,10 @@ export interface IAgentSkill {
 	 * Optional extension metadata describing where this skill originated.
 	 */
 	readonly extension?: IExtensionDescription;
-	readonly enablement?: IPromptFileEnablement;
+	/**
+	 * Optional session types that describe when this skill should be offered.
+	 */
+	readonly sessionTypes?: readonly string[];
 }
 
 /**
@@ -622,7 +627,7 @@ export interface IPromptsService extends IDisposable {
 	 * Internal: register a contributed file. Returns a disposable that removes the contribution.
 	 * Not intended for extension authors; used by contribution point handler.
 	 */
-	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string, enablement?: IPromptFileEnablement): IDisposable;
+	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string, sessionTypes?: readonly string[]): IDisposable;
 
 
 	getPromptLocationLabel(promptPath: IPromptPath): string;

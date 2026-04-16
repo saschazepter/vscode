@@ -218,7 +218,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			source: this._toChatResourceSource(agent.source.storage),
 			extensionId: agent.source.storage === PromptsStorage.extension ? agent.source.extensionId.value : undefined,
 			pluginUri: agent.source.storage === PromptsStorage.plugin ? agent.source.pluginUri : undefined,
-			enablement: agent.enablement,
+			sessionTypes: agent.sessionTypes,
 			argumentHint: agent.argumentHint,
 			tools: agent.tools,
 			model: agent.model,
@@ -235,7 +235,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			source: this._toChatResourceSource(instruction.storage),
 			extensionId: instruction.extension?.identifier.value,
 			pluginUri: instruction.pluginUri,
-			enablement: instruction.enablement,
+			sessionTypes: instruction.sessionTypes,
 			pattern: instruction.pattern,
 		};
 	}
@@ -248,7 +248,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			source: this._toChatResourceSource(skill.storage),
 			extensionId: skill.extension?.identifier.value,
 			pluginUri: skill.pluginUri,
-			enablement: skill.enablement,
+			sessionTypes: skill.sessionTypes,
 			userInvocable: skill.userInvocable,
 		};
 	}
@@ -261,7 +261,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			source: this._toChatResourceSource(slashCommand.storage),
 			extensionId: slashCommand.extension?.identifier.value,
 			pluginUri: slashCommand.pluginUri,
-			enablement: slashCommand.enablement,
+			sessionTypes: slashCommand.sessionTypes,
 			argumentHint: slashCommand.argumentHint,
 			userInvocable: slashCommand.userInvocable,
 		};
@@ -270,7 +270,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	private _toHookDto(hookFile: IPromptPath): IHookDto {
 		return {
 			uri: hookFile.uri,
-			enablement: hookFile.enablement,
+			sessionTypes: hookFile.sessionTypes,
 		};
 	}
 

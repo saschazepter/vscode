@@ -547,7 +547,7 @@ async function checkFileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-export function isEnabledForCopilotCLI(session: { enablement?: vscode.ChatResourceEnablement }): boolean {
-	return session === undefined || session.enablement?.sessionTypes?.includes('copilotcli') || false;
+export function isEnabledForCopilotCLI(session: { sessionTypes?: readonly string[] }): boolean {
+	return session === undefined || session.sessionTypes?.includes('copilotcli') || false;
 }
 

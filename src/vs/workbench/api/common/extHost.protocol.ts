@@ -1685,10 +1685,6 @@ export interface ExtHostChatAgentsShape2 {
 
 export type IChatResourceSourceDto = 'local' | 'user' | 'extension' | 'plugin';
 
-export interface IChatResourceEnablementDto {
-	readonly sessionTypes?: readonly string[];
-}
-
 export interface IChatResourceDto {
 	readonly uri: UriComponents;
 	readonly name: string;
@@ -1696,7 +1692,7 @@ export interface IChatResourceDto {
 	readonly source: IChatResourceSourceDto;
 	readonly extensionId?: string;
 	readonly pluginUri?: UriComponents;
-	readonly enablement?: IChatResourceEnablementDto;
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface ICustomAgentDto extends IChatResourceDto {
@@ -1722,7 +1718,7 @@ export interface ISlashCommandDto extends IChatResourceDto {
 
 export interface IHookDto {
 	readonly uri: UriComponents;
-	readonly enablement?: IChatResourceEnablementDto;
+	readonly sessionTypes?: readonly string[];
 }
 
 export interface IPluginDto {
