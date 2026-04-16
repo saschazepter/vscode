@@ -61,7 +61,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 			const activeSessionWorkspace = activeSession?.workspace.read(reader)?.repositories[0];
 			const activeSessionWorkspaceUri = activeSessionWorkspace?.workingDirectory ?? activeSessionWorkspace?.uri;
 
-			// The action session is updated before the workspace folders are updated. We
+			// The active session is updated before the workspace folders are updated. We
 			// need to wait until the workspace folders are updated before considering the
 			// active session.
 			if (
@@ -109,6 +109,13 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 
 			// Save working sets to storage
 			reader.store.add(this._storageService.onWillSaveState(() => {
+				const activeSession = this._sessionManagementService.activeSession.read(undefined);
+
+				// Save working set for previous session (skip for untitled sessions)
+				if (activeSession && activeSession.status.read(undefined) !== SessionStatus.Untitled) {
+					this._saveWorkingSet(activeSession.resource);
+				}
+
 				this._storeWorkingSets();
 			}));
 		}));
@@ -164,8 +171,10 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 			// Applying the working set closes all editors which triggers the event listener
 			// to close the editor part. After we apply the working set we need to show the
 			// editor part
-			await this._editorGroupsService.applyWorkingSet(workingSet, { preserveFocus });
-			this._layoutService.setPartHidden(false, Parts.EDITOR_PART);
+			const result = await this._editorGroupsService.applyWorkingSet(workingSet, { preserveFocus });
+			if (result && !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
+				this._layoutService.setPartHidden(false, Parts.EDITOR_PART);
+			}
 		});
 	}
 
@@ -173,6 +182,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 		// Delete existing working set for session if any
 		const existingWorkingSet = this._workingSets.get(sessionResource);
 		if (existingWorkingSet) {
+			this._workingSets.delete(sessionResource);
 			this._editorGroupsService.deleteWorkingSet(existingWorkingSet);
 		}
 
