@@ -112,7 +112,6 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
 		'\n';
 
 	// Document states at different points in time
-	const docAtRequest6 = docPrefix + 'class ';                // offset 1944 → "class " ends at 1950
 	const docAtRequest18 = docPrefix + 'class Fibonacci ';     // offset 1944 → "class Fibonacci " ends at 1960
 	const currentDoc = docPrefix + 'class Fibonacci {\n\t';    // offset 1944 → "class Fibonacci {\n\t" ends at 1963
 
