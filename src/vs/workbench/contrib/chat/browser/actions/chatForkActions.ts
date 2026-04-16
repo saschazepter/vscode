@@ -176,10 +176,10 @@ export function registerChatForkActions() {
 			// Use model-level lookup by request ID to get the correct index,
 			// since the view model may filter out hidden requests (e.g. system-initiated).
 			const requestIndex = chatModel.getRequests().findIndex(r => r.id === targetRequestId);
-			const targetIndex = isRequestItem ? Math.max(0, requestIndex - 1) : requestIndex;
-			if (targetIndex < 0) {
+			if (requestIndex < 0) {
 				return;
 			}
+			const targetIndex = isRequestItem ? Math.max(0, requestIndex - 1) : requestIndex;
 
 			const forkedData = revive(JSON.parse(JSON.stringify({
 				...serializedData,
