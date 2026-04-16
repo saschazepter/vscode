@@ -1238,13 +1238,13 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 registerSingleton(IChatSessionsService, ChatSessionsService, InstantiationType.Delayed);
 
-CommandsRegistry.registerCommand('workbench.action.chat.copilotcli.approval', (accessor: ServicesAccessor, sessionResource: UriComponents, autoApprove: boolean) => {
+CommandsRegistry.registerCommand('workbench.action.chat.copilotcli.approval', (accessor: ServicesAccessor, sessionResource: UriComponents, setAutopilot: boolean) => {
 	const chatWidgetService = accessor.get(IChatWidgetService);
 	const widget = chatWidgetService.getWidgetBySessionResource(URI.revive(sessionResource));
 	if (!widget) {
 		return;
 	}
-	if (autoApprove) {
+	if (setAutopilot) {
 		widget.inputPart.setPermissionLevel(ChatPermissionLevel.Autopilot);
 	} else {
 		if (widget.inputPart.currentPermissionLevelObs.get() === ChatPermissionLevel.Autopilot) {
