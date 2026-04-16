@@ -18,7 +18,7 @@ suite('AgentNetworkFilterService', () => {
 	let disposables: DisposableStore;
 	let configService: TestConfigurationService;
 	let terminalSandboxEnabled: boolean;
-	let terminalSandboxService: Pick<ITerminalSandboxService, 'isEnabled'>;
+	let terminalSandboxService: ITerminalSandboxService;
 
 	setup(() => {
 		disposables = new DisposableStore();
