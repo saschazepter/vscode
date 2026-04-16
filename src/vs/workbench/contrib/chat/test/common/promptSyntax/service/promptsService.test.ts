@@ -799,7 +799,7 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					agents: undefined,
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -857,7 +857,7 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					agents: undefined,
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
 					source: { storage: PromptsStorage.local },
 				},
@@ -871,7 +871,7 @@ suite('PromptsService', () => {
 						],
 						metadata: undefined
 					},
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
 					source: { storage: PromptsStorage.local },
 					target: Target.Undefined,
@@ -935,7 +935,7 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					agents: undefined,
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -955,7 +955,7 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					agents: undefined,
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -1028,7 +1028,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/github-agent.agent.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 				{
@@ -1048,7 +1048,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/vscode-agent.agent.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 				{
@@ -1068,7 +1068,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/generic-agent.agent.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 			];
@@ -1147,7 +1147,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/copilot-agent.agent.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 				{
@@ -1169,7 +1169,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 				{
@@ -1190,7 +1190,7 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent2.md'),
-					enablement: undefined,
+					sessionTypes: undefined,
 					source: { storage: PromptsStorage.local }
 				},
 			];
@@ -1247,7 +1247,7 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					agents: undefined,
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/demonstrate.md'),
 					source: { storage: PromptsStorage.local }
 				}
@@ -1319,7 +1319,7 @@ suite('PromptsService', () => {
 					target: Target.Undefined,
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/restricted-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -1339,7 +1339,7 @@ suite('PromptsService', () => {
 					target: Target.Undefined,
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/no-access-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -1359,7 +1359,7 @@ suite('PromptsService', () => {
 					target: Target.Undefined,
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
-					enablement: undefined,
+					sessionTypes: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/full-access-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
 				},
@@ -2078,7 +2078,7 @@ suite('PromptsService', () => {
 			registered.dispose();
 		});
 
-		test('Contributed file enablement metadata is preserved in core prompt models', async () => {
+		test('Contributed file sessionTypes metadata is preserved in core prompt models', async () => {
 			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
 			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
 
@@ -2089,9 +2089,7 @@ suite('PromptsService', () => {
 			const extension = {
 				identifier: { value: 'test.my-extension' },
 			} as IExtensionDescription;
-			const enablement = {
-				sessionTypes: ['copilotcli'],
-			};
+			const sessionTypes = ['copilotcli'];
 
 			await mockFiles(fileService, [
 				{
@@ -2137,10 +2135,10 @@ suite('PromptsService', () => {
 			]);
 
 			const registrations = [
-				service.registerContributedFile(PromptsType.agent, agentUri, extension, undefined, undefined, undefined, enablement),
-				service.registerContributedFile(PromptsType.instructions, instructionUri, extension, undefined, undefined, undefined, enablement),
-				service.registerContributedFile(PromptsType.prompt, promptUri, extension, undefined, undefined, undefined, enablement),
-				service.registerContributedFile(PromptsType.skill, skillUri, extension, undefined, undefined, undefined, enablement),
+				service.registerContributedFile(PromptsType.agent, agentUri, extension, undefined, undefined, undefined, sessionTypes),
+				service.registerContributedFile(PromptsType.instructions, instructionUri, extension, undefined, undefined, undefined, sessionTypes),
+				service.registerContributedFile(PromptsType.prompt, promptUri, extension, undefined, undefined, undefined, sessionTypes),
+				service.registerContributedFile(PromptsType.skill, skillUri, extension, undefined, undefined, undefined, sessionTypes),
 			];
 
 			try {
@@ -2149,10 +2147,10 @@ suite('PromptsService', () => {
 				const prompt = (await service.getPromptSlashCommands(CancellationToken.None)).find(item => item.uri.toString() === promptUri.toString());
 				const skill = (await service.findAgentSkills(CancellationToken.None))?.find(item => item.uri.toString() === skillUri.toString());
 
-				assert.deepStrictEqual(agent?.enablement, enablement);
-				assert.deepStrictEqual(instruction?.enablement, enablement);
-				assert.deepStrictEqual(prompt?.enablement, enablement);
-				assert.deepStrictEqual(skill?.enablement, enablement);
+				assert.deepStrictEqual(agent?.sessionTypes, sessionTypes);
+				assert.deepStrictEqual(instruction?.sessionTypes, sessionTypes);
+				assert.deepStrictEqual(prompt?.sessionTypes, sessionTypes);
+				assert.deepStrictEqual(skill?.sessionTypes, sessionTypes);
 			} finally {
 				for (const registration of registrations) {
 					registration.dispose();
@@ -2361,7 +2359,7 @@ suite('PromptsService', () => {
 		assert.strictEqual(foundAfterDispose, undefined);
 	});
 
-	test('Provider enablement metadata is preserved in core prompt models', async () => {
+	test('Provider sessionTypes metadata is preserved in core prompt models', async () => {
 		testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
 		testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
 
@@ -2374,9 +2372,7 @@ suite('PromptsService', () => {
 			enabledApiProposals: ['chatParticipantPrivate']
 		} as unknown as IExtensionDescription;
 
-		const enablement = {
-			sessionTypes: ['copilotcli']
-		};
+		const sessionTypes = ['copilotcli'];
 
 		await mockFiles(fileService, [
 			{
@@ -2423,16 +2419,16 @@ suite('PromptsService', () => {
 
 		const registrations = [
 			service.registerPromptFileProvider(extension, PromptsType.agent, {
-				providePromptFiles: async () => [{ uri: agentUri, enablement }]
+				providePromptFiles: async () => [{ uri: agentUri, sessionTypes }]
 			}),
 			service.registerPromptFileProvider(extension, PromptsType.instructions, {
-				providePromptFiles: async () => [{ uri: instructionUri, enablement }]
+				providePromptFiles: async () => [{ uri: instructionUri, sessionTypes }]
 			}),
 			service.registerPromptFileProvider(extension, PromptsType.prompt, {
-				providePromptFiles: async () => [{ uri: promptUri, enablement }]
+				providePromptFiles: async () => [{ uri: promptUri, sessionTypes }]
 			}),
 			service.registerPromptFileProvider(extension, PromptsType.skill, {
-				providePromptFiles: async () => [{ uri: skillUri, enablement }]
+				providePromptFiles: async () => [{ uri: skillUri, sessionTypes }]
 			}),
 		];
 
@@ -2442,10 +2438,10 @@ suite('PromptsService', () => {
 			const prompt = (await service.getPromptSlashCommands(CancellationToken.None)).find(item => item.uri.toString() === promptUri.toString());
 			const skill = (await service.findAgentSkills(CancellationToken.None))?.find(item => item.uri.toString() === skillUri.toString());
 
-			assert.deepStrictEqual(agent?.enablement, enablement);
-			assert.deepStrictEqual(instruction?.enablement, enablement);
-			assert.deepStrictEqual(prompt?.enablement, enablement);
-			assert.deepStrictEqual(skill?.enablement, enablement);
+			assert.deepStrictEqual(agent?.sessionTypes, sessionTypes);
+			assert.deepStrictEqual(instruction?.sessionTypes, sessionTypes);
+			assert.deepStrictEqual(prompt?.sessionTypes, sessionTypes);
+			assert.deepStrictEqual(skill?.sessionTypes, sessionTypes);
 		} finally {
 			for (const registration of registrations) {
 				registration.dispose();
