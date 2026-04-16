@@ -9,7 +9,7 @@ import { IAuthorizationProtectedResourceMetadata } from '../../../base/common/oa
 import { URI } from '../../../base/common/uri.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import type { ISyncedCustomization } from './agentPluginManager.js';
-import { IProtectedResourceMetadata, type IConfigSchema, type IFileEdit, type IModelSelection, type IToolDefinition } from './state/protocol/state.js';
+import { IProtectedResourceMetadata, type IConfigSchema, type IModelSelection, type IToolDefinition } from './state/protocol/state.js';
 import type { IActionEnvelope, INotification, ISessionAction, ITerminalAction } from './state/sessionActions.js';
 import type { IAgentSubscription } from './state/agentSubscription.js';
 import type { ICreateTerminalParams, IResolveSessionConfigResult, ISessionConfigCompletionsResult } from './state/protocol/commands.js';
@@ -69,7 +69,7 @@ export interface IAgentSessionMetadata {
 	readonly workingDirectory?: URI;
 	readonly isRead?: boolean;
 	readonly isDone?: boolean;
-	readonly diffs?: readonly IFileEdit[];
+	readonly diffs?: readonly { readonly uri: string; readonly added?: number; readonly removed?: number }[];
 }
 
 export interface IAgentSessionProjectInfo {

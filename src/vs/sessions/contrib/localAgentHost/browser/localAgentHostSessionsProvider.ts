@@ -59,6 +59,17 @@ function buildMutableConfigSchema(config: Record<string, string>): Record<string
 	return properties;
 }
 
+function toSessionFileDiffs(diffs: readonly IFileEdit[]): { readonly uri: string; readonly added?: number; readonly removed?: number }[] {
+	const result: { readonly uri: string; readonly added?: number; readonly removed?: number }[] = [];
+	for (const diff of diffs) {
+		const uri = diff.after?.uri ?? diff.before?.uri;
+		if (uri) {
+			result.push({ uri, added: diff.diff?.added, removed: diff.diff?.removed });
+		}
+	}
+	return result;
+}
+
 /**
  * Derives the session type / URI scheme from an agent provider name.
  * Must match the type string registered by AgentHostContribution
@@ -966,7 +977,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
-			cached.changes.set(diffsToChanges(diffs), undefined);
+			cached.changes.set(diffsToChanges(toSessionFileDiffs(diffs)), undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 		}
 	}
@@ -993,9 +1004,12 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 			didChange = true;
 		}
 
-		if (changes.diffs !== undefined && !diffsEqual(cached.changes.get(), changes.diffs)) {
-			cached.changes.set(diffsToChanges(changes.diffs), undefined);
-			didChange = true;
+		if (changes.diffs !== undefined) {
+			const diffs = toSessionFileDiffs(changes.diffs);
+			if (!diffsEqual(cached.changes.get(), diffs)) {
+				cached.changes.set(diffsToChanges(diffs), undefined);
+				didChange = true;
+			}
 		}
 
 		if (didChange) {
