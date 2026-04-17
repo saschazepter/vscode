@@ -8,6 +8,7 @@
 .chat-status-bar-entry-tooltip {
 	margin-top: 4px;
 	margin-bottom: 4px;
+	max-width: 340px;
 }
 
 .chat-status-bar-entry-tooltip hr {
@@ -181,6 +182,14 @@
 	color: var(--vscode-gauge-warningForeground);
 }
 
+.chat-status-bar-entry-tooltip .quota-indicator.info {
+	border-color: var(--vscode-gauge-foreground);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.info .quota-percentage .quota-value {
+	color: var(--vscode-gauge-foreground);
+}
+
 .chat-status-bar-entry-tooltip .quota-indicator.error {
 	border-color: var(--vscode-gauge-errorForeground);
 }
@@ -197,8 +206,22 @@
 	color: var(--vscode-gauge-errorForeground);
 }
 
-.chat-status-bar-entry-tooltip .quota-indicator.error.dimmed .quota-percentage .quota-value {
+/* Dimmed state when quota limit is reached without overage */
+
+.chat-status-bar-entry-tooltip .quota-indicator.dimmed {
+	border-color: var(--vscode-editorWidget-border);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-percentage .quota-value {
 	color: var(--vscode-disabledForeground);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-bar {
+	background-color: var(--vscode-gauge-background);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-bar .quota-bit {
+	background-color: var(--vscode-disabledForeground);
 }
 
 /* Quota Callout */
@@ -235,6 +258,15 @@
 
 .chat-status-bar-entry-tooltip .quota-callout.error .callout-icon {
 	color: var(--vscode-gauge-errorForeground);
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.info {
+	border-color: var(--vscode-editorWidget-border);
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.info .callout-icon {
+	color: var(--vscode-descriptionForeground);
 }
 
 /* Settings */
