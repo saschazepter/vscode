@@ -13,7 +13,14 @@ import { DisposableStore } from '../../../../util/vs/base/common/lifecycle';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { createExtensionUnitTestingServices } from '../../../test/node/services';
 import { FolderRepositoryMRUEntry, IChatFolderMruService } from '../../common/folderRepositoryManager';
-import { ClaudeFolderOptionBuilder, ClaudePermissionModeBuilder, ClaudeSessionOptionBuilder, createFolderBuilderProxy, extractFolderGroups, extractNonFolderGroups } from '../claudeSessionOptionBuilder';
+import {
+	ClaudeFolderOptionBuilder,
+	ClaudePermissionModeBuilder,
+	ClaudeSessionOptionBuilder,
+	createFolderBuilderProxy,
+	extractFolderGroups,
+	extractNonFolderGroups,
+} from '../claudeSessionOptionBuilder';
 
 class MockChatFolderMruService implements IChatFolderMruService {
 	declare _serviceBrand: undefined;
@@ -413,6 +420,12 @@ describe('ClaudeFolderOptionBuilder', () => {
 });
 
 describe('createFolderBuilderProxy', () => {
+	const store = new DisposableStore();
+
+	afterEach(() => {
+		store.clear();
+	});
+
 	it('isolates folder groups from real state', () => {
 		const folderGroup: vscode.ChatSessionProviderOptionGroup = {
 			id: 'folder', name: 'Folder', description: '', items: [{ id: '/a', name: 'a' }], selected: { id: '/a', name: 'a' },
@@ -447,7 +460,7 @@ describe('createFolderBuilderProxy', () => {
 		const { proxyState, onDidProxyGroupsChange } = createFolderBuilderProxy(realState, [folderGroup]);
 
 		let fired = false;
-		onDidProxyGroupsChange(() => { fired = true; });
+		store.add(onDidProxyGroupsChange(() => { fired = true; }));
 
 		proxyState.groups = [];
 		expect(fired).toBe(true);

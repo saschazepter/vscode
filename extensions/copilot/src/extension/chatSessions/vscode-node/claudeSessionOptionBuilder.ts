@@ -136,13 +136,12 @@ export class ClaudeFolderOptionBuilder {
 
 	/**
 	 * Handle an input state change for the folder groups.
-	 * Mirrors the shape of {@link ISessionOptionGroupBuilder.handleInputStateChange}.
-	 * Operates on `state.groups` which should be the proxy's isolated groups.
+	 * Mirrors the shape of {@link ISessionOptionGroupBuilder.handleInputStateChange}
+	 * so that the folder builder can be swapped with the CLI's builder in the future.
+	 * Currently a no-op because the Claude folder picker has no dependent dropdowns
+	 * to cascade (unlike the CLI builder which updates branch/isolation).
 	 */
-	async handleInputStateChange(state: vscode.ChatSessionInputState): Promise<void> {
-		// Folder picker has no dependent dropdowns to update
-		// (unlike the CLI builder which updates branch/isolation).
-		// This is a no-op for now but maintains the interface shape.
+	async handleInputStateChange(_state: vscode.ChatSessionInputState): Promise<void> {
 	}
 
 	/**
