@@ -117,7 +117,9 @@ for (let visibleIndex = 1; visibleIndex <= 9; visibleIndex++) {
 		id: OPEN_SESSION_AT_INDEX_COMMAND_ID + visibleIndex,
 		weight: KeybindingWeight.WorkbenchContrib,
 		when: IsSessionsWindowContext,
+		// Always use Ctrl (not Cmd on macOS) to avoid conflicting with Cmd+N view focus shortcuts
 		primary: KeyMod.CtrlCmd | digitToKeyCode(visibleIndex),
+		mac: { primary: KeyMod.WinCtrl | digitToKeyCode(visibleIndex) },
 		handler: accessor => openSessionAtIndex(accessor, sessionIndex)
 	});
 }
