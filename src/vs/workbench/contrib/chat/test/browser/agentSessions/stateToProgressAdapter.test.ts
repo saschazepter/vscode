@@ -4,12 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, type IActiveTurn, type ICompletedToolCall, type IToolCallRunningState, type ITurn, type IToolCallResponsePart, ToolCallCancellationReason } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatToolInvocationSerialized, type IChatMarkdownContent } from '../../../common/chatService/chatService.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
-import { turnsToHistory, activeTurnToProgress, toolCallStateToInvocation, finalizeToolInvocation } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+import { turnsToHistory, activeTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 
 // ---- Helper factories -------------------------------------------------------
 
@@ -50,6 +51,14 @@ function createTurn(overrides?: Partial<ITurn>): ITurn {
 	};
 }
 
+function toolCallStateToInvocation(tc: Parameters<typeof rawToolCallStateToInvocation>[0], subAgentInvocationId?: string) {
+	return rawToolCallStateToInvocation(tc, subAgentInvocationId, URI.file('/'), undefined);
+}
+
+function finalizeToolInvocation(invocation: Parameters<typeof rawFinalizeToolInvocation>[0], tc: Parameters<typeof rawFinalizeToolInvocation>[1]) {
+	return rawFinalizeToolInvocation(invocation, tc, URI.file('/'));
+}
+
 // ---- Tests ------------------------------------------------------------------
 
 suite('stateToProgressAdapter', () => {
@@ -59,7 +68,7 @@ suite('stateToProgressAdapter', () => {
 	suite('turnsToHistory', () => {
 
 		test('empty turns produces empty history', () => {
-			const result = turnsToHistory([], 'p');
+			const result = turnsToHistory(URI.file('/'), [], 'p');
 			assert.deepStrictEqual(result, []);
 		});
 
@@ -69,7 +78,7 @@ suite('stateToProgressAdapter', () => {
 				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: createCompletedToolCall() } as IToolCallResponsePart],
 			});
 
-			const history = turnsToHistory([turn], 'participant-1');
+			const history = turnsToHistory(URI.file('/'), [turn], 'participant-1');
 			assert.strictEqual(history.length, 2);
 
 			// Request
@@ -89,6 +98,22 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(serialized.isComplete, true);
 		});
 
+		test('request history includes restored model id', () => {
+			const turn = createTurn({
+				userMessage: { text: 'Use restored model' },
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'participant-1', 'agent-host-copilot:gpt-5');
+
+			assert.deepStrictEqual(history[0], {
+				id: turn.id,
+				type: 'request',
+				prompt: 'Use restored model',
+				participant: 'participant-1',
+				modelId: 'agent-host-copilot:gpt-5',
+			});
+		});
+
 		test('terminal tool call in history has correct terminal data', () => {
 			const turn = createTurn({
 				responseParts: [{
@@ -103,7 +128,7 @@ suite('stateToProgressAdapter', () => {
 				} as IToolCallResponsePart],
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			const response = history[1];
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
@@ -117,12 +142,71 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState.exitCode, 0);
 		});
 
+		test('subagent tool call in history has correct subagent data', () => {
+			const turn = createTurn({
+				responseParts: [{
+					kind: ResponsePartKind.ToolCall, toolCall: createCompletedToolCall({
+						_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
+						content: [
+							{ type: ToolResultContentType.Text, text: 'Agent result' },
+							{ type: ToolResultContentType.Subagent, resource: 'copilot://session/subagent/tc-1', title: 'Explore', agentName: 'explore', description: 'Explores the codebase' },
+						],
+						success: true,
+					})
+				} as IToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+
+			assert.ok(serialized.toolSpecificData);
+			assert.strictEqual(serialized.toolSpecificData.kind, 'subagent');
+			if (serialized.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(serialized.toolSpecificData.agentName, 'explore');
+				// description is the TASK description from _meta, not the agent description
+				assert.strictEqual(serialized.toolSpecificData.description, 'Find related files');
+				assert.strictEqual(serialized.toolSpecificData.result, 'Agent result');
+			}
+		});
+
+		test('subagent tool without content falls back to toolKind meta', () => {
+			// This happens when the in-memory state lost subagent content
+			// (e.g. tool_complete overwrote it before the merge fix)
+			const turn = createTurn({
+				responseParts: [{
+					kind: ResponsePartKind.ToolCall, toolCall: createCompletedToolCall({
+						toolName: 'task',
+						displayName: 'Task',
+						_meta: { toolKind: 'subagent' },
+						content: [{ type: ToolResultContentType.Text, text: 'Result text' }],
+						success: true,
+					})
+				} as IToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+
+			assert.ok(serialized.toolSpecificData);
+			assert.strictEqual(serialized.toolSpecificData.kind, 'subagent');
+			if (serialized.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(serialized.toolSpecificData.description, 'Task');
+				assert.strictEqual(serialized.toolSpecificData.result, 'Result text');
+			}
+		});
+
 		test('turn with responseText produces markdown content in history', () => {
 			const turn = createTurn({
 				responseParts: [{ kind: ResponsePartKind.Markdown, id: 'md-1', content: 'Hello world' }],
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			assert.strictEqual(history.length, 2);
 
 			const response = history[1];
@@ -139,7 +223,7 @@ suite('stateToProgressAdapter', () => {
 				error: { errorType: 'test', message: 'boom' },
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			const response = history[1];
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
@@ -161,7 +245,7 @@ suite('stateToProgressAdapter', () => {
 				} as IToolCallResponsePart],
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			const response = history[1];
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
@@ -211,6 +295,27 @@ suite('stateToProgressAdapter', () => {
 
 			const invocation = toolCallStateToInvocation(tc);
 			assert.strictEqual(invocation.toolCallId, 'tc-1');
+		});
+
+		test('sets subagent toolSpecificData from _meta for subagent toolKind', () => {
+			const tc = createToolCallState({
+				_meta: { toolKind: 'subagent', subagentDescription: 'Review code', subagentAgentName: 'code-reviewer' },
+			});
+
+			const invocation = toolCallStateToInvocation(tc);
+			assert.ok(invocation.toolSpecificData);
+			assert.strictEqual(invocation.toolSpecificData.kind, 'subagent');
+			if (invocation.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(invocation.toolSpecificData.description, 'Review code');
+				assert.strictEqual(invocation.toolSpecificData.agentName, 'code-reviewer');
+			}
+		});
+
+		test('passes subAgentInvocationId to ChatToolInvocation', () => {
+			const tc = createToolCallState({});
+
+			const invocation = toolCallStateToInvocation(tc, 'parent-tc-42');
+			assert.strictEqual(invocation.subAgentInvocationId, 'parent-tc-42');
 		});
 	});
 
@@ -404,39 +509,39 @@ suite('stateToProgressAdapter', () => {
 		}
 
 		test('empty active turn produces empty progress', () => {
-			const result = activeTurnToProgress(createActiveTurnState());
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState(), undefined);
 			assert.deepStrictEqual(result, []);
 		});
 
 		test('produces markdown content for streamed text', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{ kind: ResponsePartKind.Markdown, id: 'md-1', content: 'Hello world' },
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 1);
 			assert.strictEqual(result[0].kind, 'markdownContent');
 			assert.strictEqual((result[0] as IChatMarkdownContent).content.value, 'Hello world');
 		});
 
 		test('produces thinking progress for reasoning', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{ kind: ResponsePartKind.Reasoning, id: 'r-1', content: 'Let me think about this...' },
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 1);
 			assert.strictEqual(result[0].kind, 'thinking');
 		});
 
 		test('reasoning comes before streamed text when ordered that way', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{ kind: ResponsePartKind.Reasoning, id: 'r-1', content: 'Hmm...' },
 				{ kind: ResponsePartKind.Markdown, id: 'md-1', content: 'Result text' },
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 2);
 			assert.strictEqual(result[0].kind, 'thinking');
 			assert.strictEqual(result[1].kind, 'markdownContent');
 		});
 
 		test('serializes completed tool calls', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{
 					kind: ResponsePartKind.ToolCall,
 					toolCall: {
@@ -450,13 +555,13 @@ suite('stateToProgressAdapter', () => {
 						pastTenseMessage: 'Ran test tool',
 					} as IToolCallResponsePart['toolCall'],
 				},
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 1);
 			assert.strictEqual(result[0].kind, 'toolInvocationSerialized');
 		});
 
 		test('creates live invocations for running tool calls', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{
 					kind: ResponsePartKind.ToolCall,
 					toolCall: createToolCallState({
@@ -464,7 +569,7 @@ suite('stateToProgressAdapter', () => {
 						status: ToolCallStatus.Running,
 					}),
 				},
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 1);
 			// Live ChatToolInvocation - check it has the right toolCallId
 			const invocation = result[0] as { toolCallId?: string; kind?: string };
@@ -472,7 +577,7 @@ suite('stateToProgressAdapter', () => {
 		});
 
 		test('creates confirmation invocations for pending tool confirmations', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{
 					kind: ResponsePartKind.ToolCall,
 					toolCall: {
@@ -485,7 +590,7 @@ suite('stateToProgressAdapter', () => {
 						toolInput: 'echo hello',
 					},
 				},
-			]));
+			]), undefined);
 			assert.strictEqual(result.length, 1);
 			// PendingConfirmation tools have input-style specific data (no terminal content yet)
 			const invocation = result[0] as { toolSpecificData?: { kind: string } };
@@ -494,7 +599,7 @@ suite('stateToProgressAdapter', () => {
 		});
 
 		test('includes all parts in correct order', () => {
-			const result = activeTurnToProgress(createActiveTurnState([
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{ kind: ResponsePartKind.Reasoning, id: 'r-1', content: 'Thinking...' },
 				{ kind: ResponsePartKind.Markdown, id: 'md-1', content: 'Output so far' },
 				{
@@ -515,7 +620,7 @@ suite('stateToProgressAdapter', () => {
 						confirmationTitle: 'Confirm',
 					},
 				},
-			]));
+			]), undefined);
 			// reasoning + text + tool call + pending confirmation = 4 items
 			assert.strictEqual(result.length, 4);
 			assert.strictEqual(result[0].kind, 'thinking');
@@ -539,7 +644,7 @@ suite('stateToProgressAdapter', () => {
 				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as IToolCallResponsePart],
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			const response = history[1];
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
@@ -568,7 +673,7 @@ suite('stateToProgressAdapter', () => {
 				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as IToolCallResponsePart],
 			});
 
-			const history = turnsToHistory([turn], 'p');
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
 			const response = history[1];
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
@@ -631,5 +736,64 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 		});
 
+	});
+
+	suite('updateRunningToolSpecificData', () => {
+
+		test('sets subagent toolSpecificData from content and notifies state observers', () => {
+			const tc = createToolCallState({
+				_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
+			});
+			const invocation = toolCallStateToInvocation(tc);
+			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
+
+			// Simulate subagent content arriving via SessionToolCallContentChanged
+			const runningTc: IToolCallRunningState = {
+				...tc,
+				status: ToolCallStatus.Running,
+				_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
+				content: [{
+					type: ToolResultContentType.Subagent,
+					resource: 'copilot://session/subagent/tc-1',
+					title: 'Explore',
+					agentName: 'explore',
+					description: 'Explores the codebase',
+				}],
+			};
+
+			let stateChanged = false;
+			const disposable = autorun(r => {
+				invocation.state.read(r);
+				stateChanged = true;
+			});
+			stateChanged = false; // reset after initial read
+			const before = invocation.toolSpecificData;
+
+			updateRunningToolSpecificData(invocation, runningTc);
+
+			assert.strictEqual(stateChanged, true, 'state observers should be notified');
+			assert.notStrictEqual(invocation.toolSpecificData, before, 'toolSpecificData should be replaced');
+			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
+			if (invocation.toolSpecificData?.kind === 'subagent') {
+				assert.strictEqual(invocation.toolSpecificData.agentName, 'explore');
+				// description is the TASK description from _meta, not the agent description
+				assert.strictEqual(invocation.toolSpecificData.description, 'Find related files');
+			}
+			disposable.dispose();
+		});
+
+		test('does not notify when no subagent content is present', () => {
+			const tc = createToolCallState({});
+			const invocation = toolCallStateToInvocation(tc);
+			const originalData = invocation.toolSpecificData;
+
+			const runningTc: IToolCallRunningState = {
+				...tc,
+				status: ToolCallStatus.Running,
+			};
+
+			updateRunningToolSpecificData(invocation, runningTc);
+			assert.strictEqual(invocation.toolSpecificData, originalData, 'toolSpecificData should not change');
+		});
 	});
 });
