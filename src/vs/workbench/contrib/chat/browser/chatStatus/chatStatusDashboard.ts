@@ -155,13 +155,15 @@ export class ChatStatusDashboard extends DomWidget {
 	private render(): void {
 		const token = cancelOnDispose(this._store);
 
-		const { chat, premiumChat, completions } = this.chatEntitlementService.quotas;
-		const hasQuotas = !!(chat || premiumChat);
+		const { chat, premiumChat, completions, sessionLimit, weeklyLimit } = this.chatEntitlementService.quotas;
+		const hasQuotas = !!(chat || premiumChat || sessionLimit || weeklyLimit);
 		const isAnonymousWithSentiment = this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed;
 		const hasUsageSection = hasQuotas || isAnonymousWithSentiment;
-		const hasVisibleUsageContent = !!(chat && !chat.unlimited && chat.total > 0) ||
-			!!(premiumChat && !premiumChat.unlimited && premiumChat.total > 0) ||
-			!!(completions && !completions.unlimited && completions.total > 0) ||
+		const hasVisibleUsageContent = !!(chat && !chat.unlimited && chat.percentRemaining > 0) ||
+			!!(premiumChat && !premiumChat.unlimited && premiumChat.percentRemaining > 0) ||
+			!!(completions && !completions.unlimited && completions.percentRemaining > 0) ||
+			!!(sessionLimit && !sessionLimit.unlimited) ||
+			!!(weeklyLimit && !weeklyLimit.unlimited) ||
 			isAnonymousWithSentiment;
 		const hasInlineSuggestionsSection =
 			!this.options?.disableInlineSuggestionsSettings ||
@@ -313,24 +315,39 @@ export class ChatStatusDashboard extends DomWidget {
 	}
 
 	private renderUsageContent(container: HTMLElement, token: CancellationToken, updatePromise?: Promise<void>): void {
-		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
+		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, sessionLimit: sessionLimitQuota, weeklyLimit: weeklyLimitQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
 
-		if (chatQuota || premiumChatQuota || completionsQuota) {
+		if (chatQuota || premiumChatQuota || completionsQuota || sessionLimitQuota || weeklyLimitQuota) {
 			const resetLabel = resetDate ? (resetDateHasTime ? localize('quotaResetsAt', "Resets {0} at {1}", this.dateFormatter.value.format(new Date(resetDate)), this.timeFormatter.value.format(new Date(resetDate))) : localize('quotaResets', "Resets {0}", this.dateFormatter.value.format(new Date(resetDate)))) : undefined;
 
+			// Token-based billing interval quotas supersede premium_interactions
+			const hasTokenBasedBillingQuotas = !!(sessionLimitQuota || weeklyLimitQuota);
+
 			let chatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (chatQuota && !chatQuota.unlimited && chatQuota.total > 0) {
+			if (chatQuota && !chatQuota.unlimited && chatQuota.percentRemaining > 0) {
 				chatQuotaIndicator = this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), false, resetLabel);
 			}
 
 			let premiumChatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.total > 0) {
+			if (!hasTokenBasedBillingQuotas && premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.percentRemaining > 0) {
 				const premiumChatLabel = premiumChatQuota.overageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
 				premiumChatQuotaIndicator = this.createQuotaIndicator(container, this._store, premiumChatQuota, premiumChatLabel, true, resetLabel);
 			}
 
+			let sessionLimitQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
+			if (sessionLimitQuota && !sessionLimitQuota.unlimited) {
+				const sessionResetLabel = this.formatResetAtLabel(sessionLimitQuota.resetAt);
+				sessionLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, sessionLimitQuota, localize('sessionLimitLabel', "Session Limit"), false, sessionResetLabel);
+			}
+
+			let weeklyLimitQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
+			if (weeklyLimitQuota && !weeklyLimitQuota.unlimited) {
+				const weeklyResetLabel = this.formatResetAtLabel(weeklyLimitQuota.resetAt);
+				weeklyLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, weeklyLimitQuota, localize('weeklyLimitLabel', "Weekly Limit"), false, weeklyResetLabel);
+			}
+
 			let completionsQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.total > 0) {
+			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.percentRemaining > 0) {
 				completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), false, resetLabel);
 			}
 
@@ -346,12 +363,18 @@ export class ChatStatusDashboard extends DomWidget {
 					return;
 				}
 
-				const { chat: chatQuota, premiumChat: premiumChatQuota, completions: completionsQuota } = this.chatEntitlementService.quotas;
+				const { chat: chatQuota, premiumChat: premiumChatQuota, completions: completionsQuota, sessionLimit: sessionLimitQuota, weeklyLimit: weeklyLimitQuota } = this.chatEntitlementService.quotas;
 				if (chatQuota) {
 					chatQuotaIndicator?.(chatQuota);
 				}
 				if (premiumChatQuota) {
 					premiumChatQuotaIndicator?.(premiumChatQuota);
+				}
+				if (sessionLimitQuota) {
+					sessionLimitQuotaIndicator?.(sessionLimitQuota);
+				}
+				if (weeklyLimitQuota) {
+					weeklyLimitQuotaIndicator?.(weeklyLimitQuota);
 				}
 				if (completionsQuota) {
 					completionsQuotaIndicator?.(completionsQuota);
@@ -469,6 +492,14 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 
 		this.hoverService.hideHover(true);
+	}
+
+	private formatResetAtLabel(resetAt: number | undefined): string | undefined {
+		if (!resetAt) {
+			return undefined;
+		}
+		const resetDate = new Date(resetAt * 1000);
+		return localize('quotaResetsAt', "Resets {0} at {1}", this.dateFormatter.value.format(resetDate), this.timeFormatter.value.format(resetDate));
 	}
 
 	private createQuotaIndicator(container: HTMLElement, disposables: DisposableStore, quota: IQuotaSnapshot | string, label: string, supportsOverage: boolean, resetLabel?: string): (quota: IQuotaSnapshot | string) => void {

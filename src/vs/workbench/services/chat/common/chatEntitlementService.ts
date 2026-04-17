@@ -481,12 +481,14 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 		const { changed: chatChanged } = this.compareQuotas(oldQuota.chat, quotas.chat);
 		const { changed: completionsChanged } = this.compareQuotas(oldQuota.completions, quotas.completions);
 		const { changed: premiumChatChanged } = this.compareQuotas(oldQuota.premiumChat, quotas.premiumChat);
+		const { changed: sessionLimitChanged } = this.compareQuotas(oldQuota.sessionLimit, quotas.sessionLimit);
+		const { changed: weeklyLimitChanged } = this.compareQuotas(oldQuota.weeklyLimit, quotas.weeklyLimit);
 
-		if (chatChanged.exceeded || completionsChanged.exceeded || premiumChatChanged.exceeded) {
+		if (chatChanged.exceeded || completionsChanged.exceeded || premiumChatChanged.exceeded || sessionLimitChanged.exceeded || weeklyLimitChanged.exceeded) {
 			this._onDidChangeQuotaExceeded.fire();
 		}
 
-		if (chatChanged.remaining || completionsChanged.remaining || premiumChatChanged.remaining) {
+		if (chatChanged.remaining || completionsChanged.remaining || premiumChatChanged.remaining || sessionLimitChanged.remaining || weeklyLimitChanged.remaining) {
 			this._onDidChangeQuotaRemaining.fire();
 		}
 	}
@@ -595,15 +597,14 @@ interface IEntitlements {
 }
 
 export interface IQuotaSnapshot {
-	readonly total: number;
-
-	readonly remaining: number;
 	readonly percentRemaining: number;
 
 	readonly overageEnabled: boolean;
 	readonly overageCount: number;
 
 	readonly unlimited: boolean;
+
+	readonly resetAt?: number;
 }
 
 interface IQuotas {
@@ -613,6 +614,9 @@ interface IQuotas {
 	readonly chat?: IQuotaSnapshot;
 	readonly completions?: IQuotaSnapshot;
 	readonly premiumChat?: IQuotaSnapshot;
+	readonly sessionLimit?: IQuotaSnapshot;
+	readonly weeklyLimit?: IQuotaSnapshot;
+	readonly tokenBasedBilling?: boolean;
 }
 
 export class ChatEntitlementRequests extends Disposable {
@@ -736,9 +740,9 @@ export class ChatEntitlementRequests extends Disposable {
 			entitlement: entitlements.entitlement,
 			tid: entitlementsData.analytics_tracking_id,
 			sku: entitlements.sku,
-			quotaChat: entitlements.quotas?.chat?.remaining,
-			quotaPremiumChat: entitlements.quotas?.premiumChat?.remaining,
-			quotaCompletions: entitlements.quotas?.completions?.remaining,
+			quotaChat: entitlements.quotas?.chat?.percentRemaining,
+			quotaPremiumChat: entitlements.quotas?.premiumChat?.percentRemaining,
+			quotaCompletions: entitlements.quotas?.completions?.percentRemaining,
 			quotaResetDate: entitlements.quotas?.resetDate
 		});
 
@@ -754,8 +758,6 @@ export class ChatEntitlementRequests extends Disposable {
 		// Legacy Free SKU Quota
 		if (entitlementsData.monthly_quotas?.chat && typeof entitlementsData.limited_user_quotas?.chat === 'number') {
 			quotas.chat = {
-				total: entitlementsData.monthly_quotas.chat,
-				remaining: entitlementsData.limited_user_quotas.chat,
 				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.chat / entitlementsData.monthly_quotas.chat) * 100)),
 				overageEnabled: false,
 				overageCount: 0,
@@ -765,8 +767,6 @@ export class ChatEntitlementRequests extends Disposable {
 
 		if (entitlementsData.monthly_quotas?.completions && typeof entitlementsData.limited_user_quotas?.completions === 'number') {
 			quotas.completions = {
-				total: entitlementsData.monthly_quotas.completions,
-				remaining: entitlementsData.limited_user_quotas.completions,
 				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.completions / entitlementsData.monthly_quotas.completions) * 100)),
 				overageEnabled: false,
 				overageCount: 0,
@@ -776,18 +776,20 @@ export class ChatEntitlementRequests extends Disposable {
 
 		// New Quota Snapshot
 		if (entitlementsData.quota_snapshots) {
-			for (const quotaType of ['chat', 'completions', 'premium_interactions'] as const) {
+			const hasTokenBasedBilling = entitlementsData.token_based_billing === true;
+			quotas.tokenBasedBilling = hasTokenBasedBilling;
+
+			for (const quotaType of ['chat', 'completions', 'premium_interactions', 'immediate_usage_interval', 'extended_usage_interval'] as const) {
 				const rawQuotaSnapshot = entitlementsData.quota_snapshots[quotaType];
 				if (!rawQuotaSnapshot) {
 					continue;
 				}
 				const quotaSnapshot: IQuotaSnapshot = {
-					total: rawQuotaSnapshot.entitlement,
-					remaining: rawQuotaSnapshot.remaining,
 					percentRemaining: Math.min(100, Math.max(0, rawQuotaSnapshot.percent_remaining)),
 					overageEnabled: rawQuotaSnapshot.overage_permitted,
 					overageCount: rawQuotaSnapshot.overage_count,
-					unlimited: rawQuotaSnapshot.unlimited
+					unlimited: rawQuotaSnapshot.unlimited,
+					resetAt: rawQuotaSnapshot.quota_reset_at || undefined,
 				};
 
 				switch (quotaType) {
@@ -800,9 +802,19 @@ export class ChatEntitlementRequests extends Disposable {
 					case 'premium_interactions':
 						quotas.premiumChat = quotaSnapshot;
 						break;
+					case 'immediate_usage_interval':
+						quotas.sessionLimit = quotaSnapshot;
+						break;
+					case 'extended_usage_interval':
+						quotas.weeklyLimit = quotaSnapshot;
+						break;
 				}
 			}
 		}
+
+		// DEBUG: Override quota values for testing. Uncomment and tweak as needed.
+		// quotas.sessionLimit = { percentRemaining: 0, overageEnabled: false, overageCount: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
+		// quotas.weeklyLimit = { percentRemaining: 0, overageEnabled: false, overageCount: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
 
 		return quotas;
 	}
