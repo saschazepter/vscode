@@ -531,7 +531,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 							this._toolInvocationToken,
 							this.workspaceService,
 							this.logService,
-							this._userQuestionHandler,
+							this._toolsService,
 							token,
 						);
 						flushPendingInvocationMessages();
