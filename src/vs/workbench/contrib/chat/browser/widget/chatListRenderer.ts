@@ -1040,7 +1040,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return undefined;
 		}
 
-		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatProgressDetailsEnabled) !== false;
+		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false;
 		// TODO: Re-enable the "Finished in {time} with {n} tokens" summary on completed
 		// responses. Shipping a minimal version for now — nothing is rendered for
 		// completed responses. The setting and downstream working-state plumbing
@@ -1207,7 +1207,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return;
 		}
 
-		if (element.isComplete && this.configService.getValue<boolean>(ChatConfiguration.ChatProgressDetailsEnabled) !== false) {
+		if (element.isComplete && this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false) {
 			return;
 		}
 

@@ -27,11 +27,12 @@ import { getToolApprovalMessage } from './toolInvocationParts/chatToolPartUtilit
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { AccessibilityWorkbenchSettingId } from '../../../../accessibility/browser/accessibilityConfiguration.js';
+import { ChatConfiguration } from '../../../common/constants.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../../base/browser/ui/hover/hover.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
 import { isEqual } from '../../../../../../base/common/resources.js';
-import { buildPhrasePool } from './chatThinkingContentPart.js';
+import { buildPhrasePool, defaultThinkingMessages } from './chatThinkingContentPart.js';
 
 export class ChatProgressContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
@@ -189,9 +190,13 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	) {
 		super();
 		this.explicitContent = workingProgress.content;
-		const defaultLabel = localize('workingMessage', "Working");
-		const pool = buildPhrasePool([defaultLabel], configurationService);
-		this.label = pool[Math.floor(Math.random() * pool.length)];
+		const persistentProgressEnabled = configurationService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false;
+		if (persistentProgressEnabled) {
+			const pool = buildPhrasePool(defaultThinkingMessages, configurationService);
+			this.label = pool[Math.floor(Math.random() * pool.length)];
+		} else {
+			this.label = localize('workingMessage', "Working");
+		}
 
 		// Build the DOM
 		this.domNode = $('.progress-container');
@@ -250,7 +255,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		// TODO: Re-enable elapsed time and token count display on completion (
 		// "Finished in {time} with {n} tokens"). Shipping a minimal version for
 		// now — stats stay hidden. The original logic is preserved below as a
-		// reference and can be brought back behind `chat.progressDetails.enabled`.
+		// reference and can be brought back behind `chat.persistentProgress.enabled`.
 		// const elapsed = state.elapsedMs
 		// 	?? (state.completedAt ? Math.max(0, state.completedAt - state.confirmationAdjustedTimestamp.get()) : 0);
 		// const timeStr = formatElapsedTime(elapsed);
@@ -279,7 +284,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		// TODO: Re-enable live elapsed-time / token-count updates. The original
 		// implementation drove a per-second timer that wrote into `statsElement`;
 		// preserved here as a reference so it can be re-enabled behind the
-		// `chat.progressDetails.enabled` setting in the future.
+		// `chat.persistentProgress.enabled` setting in the future.
 		// const updateDisplay = () => {
 		// 	if (this.explicitContent) {
 		// 		return;
