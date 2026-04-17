@@ -6139,6 +6139,10 @@
 						"name": "fleet",
 						"description": "%github.copilot.command.cli.fleet.description%",
 						"when": "false"
+					},
+					{
+						"name": "remote",
+						"description": "%github.copilot.command.cli.remote.description%"
 					}
 				],
 				"customAgentTarget": "github-copilot",
