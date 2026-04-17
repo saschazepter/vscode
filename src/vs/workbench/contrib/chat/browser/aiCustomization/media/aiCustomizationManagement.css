@@ -162,10 +162,13 @@
 	color: var(--vscode-foreground);
 	cursor: pointer;
 	font-family: inherit;
+	opacity: 0.8;
+	transition: background-color 0.1s ease, opacity 0.1s ease;
 }
 
 .ai-customization-management-editor .section-back-arrow-button:hover {
 	background-color: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+	opacity: 1;
 }
 
 .ai-customization-management-editor .section-back-arrow-button:focus-visible {
@@ -1019,8 +1022,8 @@
 .ai-customization-management-editor .editor-header {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	padding: 4px 0;
+	gap: 8px;
+	padding: 6px 2px;
 	flex-shrink: 0;
 }
 
@@ -1028,8 +1031,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 26px;
+	height: 26px;
 	border-radius: 4px;
 	cursor: pointer;
 	background: transparent;
