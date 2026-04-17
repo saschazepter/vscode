@@ -12,7 +12,6 @@ import { Action2, registerAction2 } from '../../../../platform/actions/common/ac
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { AICustomizationManagementEditor } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditor.js';
 import { AICustomizationManagementSection } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
@@ -241,10 +240,7 @@ export class CustomizationsToolbarContribution extends Disposable implements IWo
 				async run(accessor: ServicesAccessor): Promise<void> {
 					const editorService = accessor.get(IEditorService);
 					const input = AICustomizationManagementEditorInput.getOrCreate();
-					const editor = await editorService.openEditor(input, { pinned: true });
-					if (editor instanceof AICustomizationManagementEditor) {
-						editor.selectSectionById(config.section);
-					}
+					await editorService.openEditor(input, { pinned: true });
 				}
 			}));
 		}
