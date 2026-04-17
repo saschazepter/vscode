@@ -7,6 +7,7 @@ import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../..
 import { Emitter } from '../../../base/common/event.js';
 import * as platform from '../../../base/common/platform.js';
 import { generateUuid } from '../../../base/common/uuid.js';
+import { URI } from '../../../base/common/uri.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
@@ -179,7 +180,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 
 		const nodePty = await getNodePty();
 
-		const cwd = params.cwd ?? process.cwd();
+		const cwd = this._resolveCwd(params.cwd);
 		const cols = params.cols ?? 80;
 		const rows = params.rows ?? 24;
 
@@ -644,6 +645,30 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			return process.env['COMSPEC'] || 'cmd.exe';
 		}
 		return process.env['SHELL'] || '/bin/sh';
+	}
+
+	/**
+	 * Resolves a cwd parameter to a local file path. The cwd arrives as a
+	 * URI string over the protocol (e.g. `file:///path`). If it's a file
+	 * URI, the fsPath is extracted; otherwise falls back to `process.cwd()`.
+	 */
+	private _resolveCwd(cwd: unknown): string {
+		if (!cwd || typeof cwd !== 'string') {
+			return process.cwd();
+		}
+
+		// Raw file path (no scheme) — use directly
+		if (!cwd.includes('://')) {
+			return cwd;
+		}
+
+		const parsed = URI.parse(cwd);
+		if (parsed.scheme === 'file') {
+			return parsed.fsPath;
+		}
+
+		this._logService.warn(`[TerminalManager] Cannot use non-file cwd URI, falling back to process.cwd(): ${cwd}`);
+		return process.cwd();
 	}
 
 	/** Dispatch root/terminalsChanged with the current terminal list. */

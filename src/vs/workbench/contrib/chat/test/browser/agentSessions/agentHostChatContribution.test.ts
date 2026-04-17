@@ -324,6 +324,10 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	});
 	instantiationService.stub(IAgentHostTerminalService, {
 		reviveTerminal: async () => undefined!,
+		createTerminalForEntry: async () => undefined,
+		profiles: observableValue('test', []),
+		getProfileForConnection: () => undefined,
+		registerEntry: () => ({ dispose() { } }),
 	});
 	instantiationService.stub(IAgentHostSessionWorkingDirectoryResolver, {
 		registerResolver: () => toDisposable(() => { }),
