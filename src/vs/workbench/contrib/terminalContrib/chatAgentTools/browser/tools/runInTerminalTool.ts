@@ -1840,7 +1840,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// For foreground mode, try to reuse cached terminal (but not if it was a background terminal)
 		if (!isBackground) {
 			const cachedTerminal = this._sessionTerminalAssociations.get(chatSessionResource);
-			if (cachedTerminal && !cachedTerminal.isBackground) {
+			if (cachedTerminal && !cachedTerminal.isBackground && !cachedTerminal.instance.isDisposed) {
 				this._logService.debug(`RunInTerminalTool: Using cached terminal with session resource \`${chatSessionResource}\``);
 				this._terminalToolCreator.refreshShellIntegrationQuality(cachedTerminal);
 				this._terminalChatService.registerTerminalInstanceWithToolSession(terminalToolSessionId, cachedTerminal.instance);

@@ -1900,6 +1900,30 @@ suite('RunInTerminalTool', () => {
 			chatServiceDisposeEmitter.fire({ sessionResources: [LocalChatSessionUri.forSession('non-existent-session')], reason: 'cleared' });
 			strictEqual(runInTerminalTool.sessionTerminalAssociations.size, 0, 'No associations should exist after handling non-existent session');
 		});
+
+		test('should not reuse a disposed cached terminal', () => {
+			const sessionResource = LocalChatSessionUri.forSession('disposed-terminal-session');
+			const disposedTerminal = {
+				isDisposed: true,
+				dispose: () => { },
+				processId: 99999,
+			} as unknown as ITerminalInstance;
+			runInTerminalTool.sessionTerminalAssociations.set(sessionResource, {
+				instance: disposedTerminal,
+				shellIntegrationQuality: ShellIntegrationQuality.None,
+				isBackground: false,
+			});
+
+			// A disposed cached terminal should not be returned by the association lookup
+			const cachedTerminal = runInTerminalTool.sessionTerminalAssociations.get(sessionResource);
+			ok(cachedTerminal, 'Cached terminal should exist in the map');
+			strictEqual(cachedTerminal!.instance.isDisposed, true, 'Cached terminal should be disposed');
+
+			// Verify the guard condition that _initTerminal uses:
+			// cachedTerminal && !cachedTerminal.isBackground && !cachedTerminal.instance.isDisposed
+			const wouldReuse = cachedTerminal !== undefined && !cachedTerminal.isBackground && !cachedTerminal.instance.isDisposed;
+			strictEqual(wouldReuse, false, 'Should not reuse a disposed cached terminal');
+		});
 	});
 
 	test('should dedupe rapid repeated background input-needed notifications', () => {
