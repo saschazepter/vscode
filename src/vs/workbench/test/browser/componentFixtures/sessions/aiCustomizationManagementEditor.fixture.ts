@@ -352,6 +352,8 @@ interface IRenderEditorOptions {
 	readonly width?: number;
 	readonly height?: number;
 	readonly skillUIIntegrations?: ReadonlyMap<string, string>;
+	/** When true, simulates clicking the first list row to enter the embedded editor / detail view. */
+	readonly openFirstItem?: boolean;
 }
 
 async function waitForAnimationFrames(count: number): Promise<void> {
@@ -570,6 +572,21 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 		await waitForAnimationFrames(2);
 		await new Promise(resolve => setTimeout(resolve, 2400));
 		await waitForVisibleScrollbarsToFade(ctx.container);
+	}
+
+	if (options.openFirstItem) {
+		const visibleContent = [...ctx.container.querySelectorAll('.prompts-content-container, .mcp-content-container, .plugin-content-container')]
+			.find(node => node instanceof HTMLElement && node.style.display !== 'none') as HTMLElement | undefined;
+		const firstRow = visibleContent?.querySelector('.monaco-list-row') as HTMLElement | undefined;
+		if (firstRow) {
+			firstRow.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+			firstRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+			firstRow.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+			firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+			// Allow any async setInput to settle.
+			await waitForAnimationFrames(2);
+			await new Promise(resolve => setTimeout(resolve, 250));
+		}
 	}
 }
 
@@ -1004,6 +1021,37 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 			selectedSection: AICustomizationManagementSection.Agents,
 			width: 550,
 			height: 400,
+		}),
+	}),
+
+	// Item-editor view (after clicking an agent) — verifies the editor header back
+	// button aligns with the section back arrow at exactly the same x/y position.
+	AgentsItemEditor: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			harness: CustomizationHarness.VSCode,
+			selectedSection: AICustomizationManagementSection.Agents,
+			openFirstItem: true,
+		}),
+	}),
+
+	// MCP server detail view — same alignment check for the detail back button.
+	McpServerDetail: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			harness: CustomizationHarness.VSCode,
+			selectedSection: AICustomizationManagementSection.McpServers,
+			openFirstItem: true,
+		}),
+	}),
+
+	// Plugin detail view — same alignment check for the detail back button.
+	PluginDetail: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			harness: CustomizationHarness.VSCode,
+			selectedSection: AICustomizationManagementSection.Plugins,
+			openFirstItem: true,
 		}),
 	}),
 });
