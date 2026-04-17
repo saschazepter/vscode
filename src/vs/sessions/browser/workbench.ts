@@ -8,7 +8,7 @@ import './media/style.css';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
 import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
-import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
+import { DeferredPromise, disposableTimeout, RunOnceScheduler } from '../../base/common/async.js';
 import { isFullscreen, onDidChangeFullscreen, isChrome, isFirefox, isSafari } from '../../base/browser/browser.js';
 import { mark } from '../../base/common/performance.js';
 import { onUnexpectedError, setUnexpectedErrorHandler } from '../../base/common/errors.js';
@@ -86,7 +86,7 @@ enum LayoutClasses {
 	EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND = 'experimental-shell-gradient-background',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized',
-	STARTING_UP = 'starting-up'
+	ANIMATIONS_READY = 'animations-ready'
 }
 
 //#endregion
@@ -624,12 +624,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Restore parts (open default view containers)
 		this.restoreParts();
 
-		// Remove starting-up class after the initial paint so that
-		// part-reveal transitions are suppressed on first render but
-		// enabled for subsequent user-driven visibility changes.
-		// Double rAF guarantees at least one painted frame before
-		// re-enabling transitions (rAF fires before paint in Chromium).
-		mainWindow.requestAnimationFrame(() => mainWindow.requestAnimationFrame(() => this.mainContainer.classList.remove(LayoutClasses.STARTING_UP)));
+		// Enable part-reveal transitions only after the initial startup
+		// phase has settled. Both the `transition` declarations and the
+		// `@starting-style` rules are scoped behind `.animations-ready`,
+		// so any parts revealed during startup (including async pane-
+		// composite opens triggered by session loading) appear instantly.
+		// Subsequent user-driven toggles animate normally.
+		disposableTimeout(() => this.mainContainer.classList.add(LayoutClasses.ANIMATIONS_READY), 1500, this._store);
 
 		// Set lifecycle phase to `Restored`
 		lifecycleService.phase = LifecyclePhase.Restored;
@@ -978,7 +979,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	getLayoutClasses(): string[] {
 		return coalesce([
-			LayoutClasses.STARTING_UP, // suppress part-reveal animations until first paint
 			!this.partVisibility.sidebar ? LayoutClasses.SIDEBAR_HIDDEN : undefined,
 			!this.partVisibility.editor ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,

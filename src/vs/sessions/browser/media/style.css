@@ -371,9 +371,9 @@
  * within the grid-allocated space.
  */
 
-.agent-sessions-workbench .part.auxiliarybar,
-.agent-sessions-workbench .part.panel,
-.agent-sessions-workbench .part.chatbar {
+.agent-sessions-workbench.animations-ready .part.auxiliarybar,
+.agent-sessions-workbench.animations-ready .part.panel,
+.agent-sessions-workbench.animations-ready .part.chatbar {
 	transition:
 		opacity 250ms ease-out,
 		margin-top 250ms ease-out,
@@ -382,13 +382,13 @@
 }
 
 /* Auxiliary bar also transitions horizontal margin */
-.agent-sessions-workbench .part.auxiliarybar {
+.agent-sessions-workbench.animations-ready .part.auxiliarybar {
 	transition:
 		opacity 250ms ease-out,
 		margin 250ms ease-out;
 }
 
-.agent-sessions-workbench .part.sidebar > .content {
+.agent-sessions-workbench.animations-ready .part.sidebar > .content {
 	transition:
 		opacity 250ms ease-out,
 		transform 250ms ease-out;
@@ -396,37 +396,37 @@
 
 @starting-style {
 	/* Shared starting values */
-	.agent-sessions-workbench .part.auxiliarybar,
-	.agent-sessions-workbench .part.panel,
-	.agent-sessions-workbench .part.chatbar {
+	.agent-sessions-workbench.animations-ready .part.auxiliarybar,
+	.agent-sessions-workbench.animations-ready .part.panel,
+	.agent-sessions-workbench.animations-ready .part.chatbar {
 		opacity: 0;
 		border-color: transparent;
 	}
 
 	/* Card parts: blend from surrounding background */
-	.agent-sessions-workbench .part.auxiliarybar,
-	.agent-sessions-workbench .part.panel,
-	.agent-sessions-workbench .part.chatbar {
+	.agent-sessions-workbench.animations-ready .part.auxiliarybar,
+	.agent-sessions-workbench.animations-ready .part.panel,
+	.agent-sessions-workbench.animations-ready .part.chatbar {
 		background: color-mix(in srgb, var(--part-background) 60%, var(--vscode-sideBar-background));
 	}
 
-	.agent-sessions-workbench .part.sidebar > .content {
+	.agent-sessions-workbench.animations-ready .part.sidebar > .content {
 		opacity: 0;
 		transform: translateX(-6px);
 	}
 
 	/* Panel (bottom): slides down from 6px above → margin: 0 10px 10px 10px */
-	.agent-sessions-workbench .part.panel {
+	.agent-sessions-workbench.animations-ready .part.panel {
 		margin: 6px 16px 16px 16px;
 	}
 
 	/* Auxiliary bar (right): slides in from 6px right → margin: 0 10px 0px 0 */
-	.agent-sessions-workbench .part.auxiliarybar {
+	.agent-sessions-workbench.animations-ready .part.auxiliarybar {
 		margin: 0 16px 0px 6px;
 	}
 
 	/* Chat bar (center-bottom): slides up from 6px below → margin: 0 10px 0px 10px */
-	.agent-sessions-workbench .part.chatbar {
+	.agent-sessions-workbench.animations-ready .part.chatbar {
 		margin: 6px 16px 0px 16px;
 	}
 }
@@ -434,25 +434,10 @@
 @media (prefers-reduced-motion: reduce) {
 	.agent-sessions-workbench .part.auxiliarybar,
 	.agent-sessions-workbench .part.panel,
-	.agent-sessions-workbench .part.chatbar {
-		transition: none;
-	}
-
+	.agent-sessions-workbench .part.chatbar,
 	.agent-sessions-workbench .part.sidebar > .content {
 		transition: none;
 	}
-}
-
-/* Suppress all part-reveal transitions on initial startup so that
- * visible parts appear instantly without animation or layout shift. */
-.agent-sessions-workbench.starting-up .part.auxiliarybar,
-.agent-sessions-workbench.starting-up .part.panel,
-.agent-sessions-workbench.starting-up .part.chatbar {
-	transition: none;
-}
-
-.agent-sessions-workbench.starting-up .part.sidebar > .content {
-	transition: none;
 }
 
 /* ---- Widget Customizations ---- */
