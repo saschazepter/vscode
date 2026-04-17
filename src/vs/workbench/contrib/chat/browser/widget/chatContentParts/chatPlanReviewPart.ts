@@ -195,7 +195,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private renderFeedback(section: HTMLElement): void {
 		dom.clearNode(section);
 		const label = dom.append(section, dom.$('.chat-plan-review-feedback-label'));
-		label.textContent = localize('chat.planReview.feedbackLabel', 'Additional feedback');
+		label.textContent = localize('chat.planReview.feedbackLabel', 'Approve with additional feedback');
 
 		const textarea = dom.append(section, dom.$<HTMLTextAreaElement>('textarea.chat-plan-review-feedback-textarea'));
 		textarea.rows = 1;
