@@ -1,9 +1,6 @@
 name: Chat Performance Comparison
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/chat-perf.yml"
   workflow_dispatch:
     inputs:
       baseline_commit:
