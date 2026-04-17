@@ -176,15 +176,23 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 	private _getDropdownActions(): IActionWidgetDropdownAction[] {
 		const isSteerDefault = this._isSteerDefault();
 
-		// Resolve display keybindings against the scoped chat input context so the labels
-		// reflect the bindings actually active for the current state, including any user
-		// customizations and scoped overrides (e.g. when editing a queued/steer request).
-		// Without an explicit context the dropdown falls back to the global context, where
-		// `inChatInput`/`requestInProgress` are not set — none of the `when` clauses match
-		// and the resolver falls back to the last-registered binding, producing labels that
-		// contradict actual behavior.
-		const queueKeybinding = this.keybindingService.lookupKeybinding(ChatQueueMessageAction.ID, this.contextKeyService, true);
-		const steerKeybinding = this.keybindingService.lookupKeybinding(ChatSteerWithMessageAction.ID, this.contextKeyService, true);
+		// Resolve display keybindings against an overlay context that simulates the chat input
+		// being focused with a request in progress. The injected `contextKeyService` may be the
+		// chat widget's outer scope (which has `requestInProgress` but lacks `inChatInput`) or
+		// even the global scope; either way, the queue/steer keybindings' `when` clauses would
+		// not match and the resolver would fall back to the last-registered binding for each
+		// command, producing labels that contradict actual behavior. Overlaying the scope keys
+		// the bindings expect ensures we look up the binding that would actually fire.
+		// Other context keys (e.g. `editingRequestType`, `config.chat.requestQueuing.defaultAction`)
+		// are read from the parent context, so user customizations and scoped overrides like
+		// editing a queued/steer request are still respected.
+		const lookupContext = this.contextKeyService.createOverlay([
+			[ChatContextKeys.inputHasText.key, true],
+			[ChatContextKeys.inChatInput.key, true],
+			[ChatContextKeys.requestInProgress.key, true],
+		]);
+		const queueKeybinding = this.keybindingService.lookupKeybinding(ChatQueueMessageAction.ID, lookupContext, true);
+		const steerKeybinding = this.keybindingService.lookupKeybinding(ChatSteerWithMessageAction.ID, lookupContext, true);
 
 		const queueAction: IActionWidgetDropdownAction = {
 			id: ChatQueueMessageAction.ID,

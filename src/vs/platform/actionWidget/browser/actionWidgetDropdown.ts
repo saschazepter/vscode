@@ -3,17 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IActionWidgetService } from './actionWidget.js';
-import { IAction } from '../../../base/common/actions.js';
-import { BaseDropdown, IActionProvider, IBaseDropdownOptions } from '../../../base/browser/ui/dropdown/dropdown.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListItemHover, IActionListOptions } from './actionList.js';
-import { ThemeIcon } from '../../../base/common/themables.js';
-import { Codicon } from '../../../base/common/codicons.js';
 import { getActiveElement, isHTMLElement } from '../../../base/browser/dom.js';
-import { IKeybindingService } from '../../keybinding/common/keybinding.js';
-import { ResolvedKeybinding } from '../../../base/common/keybindings.js';
+import { BaseDropdown, IActionProvider, IBaseDropdownOptions } from '../../../base/browser/ui/dropdown/dropdown.js';
 import { IListAccessibilityProvider } from '../../../base/browser/ui/list/listWidget.js';
+import { IAction } from '../../../base/common/actions.js';
+import { Codicon } from '../../../base/common/codicons.js';
+import { ResolvedKeybinding } from '../../../base/common/keybindings.js';
+import { ThemeIcon } from '../../../base/common/themables.js';
+import { IKeybindingService } from '../../keybinding/common/keybinding.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListItemHover, IActionListOptions } from './actionList.js';
+import { IActionWidgetService } from './actionWidget.js';
 
 export interface IActionWidgetDropdownAction extends IAction {
 	category?: { label: string; order: number; showHeader?: boolean };
