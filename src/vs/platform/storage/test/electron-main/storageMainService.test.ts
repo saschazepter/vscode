@@ -26,8 +26,8 @@ import { UserDataProfilesMainService } from '../../../userDataProfile/electron-m
 import { TestLifecycleMainService } from '../../../test/electron-main/workbenchTestServices.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Event } from '../../../../base/common/event.js';
-import { ICrossAppIPCService } from '../../../crossAppIpc/electron-main/crossAppIpcService.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { ICrossAppIPCMessage, ICrossAppIPCService } from '../../../crossAppIpc/electron-main/crossAppIpcService.js';
 
 suite('StorageMainService', function () {
 
@@ -149,6 +149,12 @@ suite('StorageMainService', function () {
 		const profile = inMemoryProfile;
 
 		return testStorage(storageMainService.profileStorage(profile), StorageScope.PROFILE);
+	});
+
+	test('basics (application shared)', function () {
+		const storageMainService = createStorageService();
+
+		return testStorage(storageMainService.applicationSharedStorage, StorageScope.APPLICATION_SHARED);
 	});
 
 	test('basics (workspace)', function () {
@@ -273,6 +279,104 @@ suite('StorageMainService', function () {
 		strictEqual(didCloseApplicationStorage, true);
 		strictEqual(didCloseProfileStorage, true);
 		strictEqual(didCloseWorkspaceStorage, true);
+	});
+
+	test('application shared storage receives cross-app IPC changes', async function () {
+		const onDidReceiveMessage = disposables.add(new Emitter<ICrossAppIPCMessage>());
+		const sentMessages: ICrossAppIPCMessage[] = [];
+		const crossAppIPCService: ICrossAppIPCService = {
+			_serviceBrand: undefined,
+			isSupported: true,
+			initialized: true,
+			connected: true,
+			isServer: false,
+			onDidConnect: Event.None,
+			onDidDisconnect: Event.None,
+			onDidReceiveMessage: onDidReceiveMessage.event,
+			sendMessage: (msg) => sentMessages.push(msg),
+			initialize: () => { }
+		};
+
+		const environmentService = new NativeEnvironmentService(parseArgs(process.argv, OPTIONS), productService);
+		const fileService = disposables.add(new FileService(new NullLogService()));
+		const uriIdentityService = disposables.add(new UriIdentityService(fileService));
+		const storageMainService = disposables.add(new TestStorageMainService(new NullLogService(), environmentService, disposables.add(new UserDataProfilesMainService(disposables.add(new StateService(SaveStrategy.DELAYED, environmentService, new NullLogService(), fileService)), disposables.add(uriIdentityService), environmentService, fileService, new NullLogService())), new TestLifecycleMainService(), fileService, uriIdentityService, crossAppIPCService));
+
+		const storage = storageMainService.applicationSharedStorage;
+		disposables.add(storage);
+		await storage.init();
+
+		// Verify that storing a value sends a cross-app IPC message
+		storage.set('testKey', 'testValue');
+		strictEqual(sentMessages.length, 1);
+		strictEqual(sentMessages[0].type, 'sharedStorage:changed');
+
+		// Verify that receiving a cross-app IPC message triggers a change event
+		let changeEvent: IStorageChangeEvent | undefined;
+		disposables.add(storage.onDidChangeStorage(e => { changeEvent = e; }));
+
+		onDidReceiveMessage.fire({
+			type: 'sharedStorage:changed',
+			data: {
+				changed: [['externalKey', 'externalValue']],
+				deleted: undefined
+			}
+		});
+
+		strictEqual(changeEvent?.key, 'externalKey');
+		strictEqual(storage.get('externalKey'), 'externalValue');
+
+		// Verify that messages received before init are ignored
+		const onDidReceiveMessage2 = disposables.add(new Emitter<ICrossAppIPCMessage>());
+		const crossAppIPCService2: ICrossAppIPCService = {
+			...crossAppIPCService,
+			onDidReceiveMessage: onDidReceiveMessage2.event,
+		};
+
+		const storageMainService2 = disposables.add(new TestStorageMainService(new NullLogService(), environmentService, disposables.add(new UserDataProfilesMainService(disposables.add(new StateService(SaveStrategy.DELAYED, environmentService, new NullLogService(), fileService)), disposables.add(new UriIdentityService(fileService)), environmentService, fileService, new NullLogService())), new TestLifecycleMainService(), fileService, disposables.add(new UriIdentityService(fileService)), crossAppIPCService2));
+
+		const storage2 = storageMainService2.applicationSharedStorage;
+		disposables.add(storage2);
+
+		let preInitChangeReceived = false;
+		disposables.add(storage2.onDidChangeStorage(() => { preInitChangeReceived = true; }));
+
+		// Fire message before init
+		onDidReceiveMessage2.fire({
+			type: 'sharedStorage:changed',
+			data: { changed: [['preInitKey', 'preInitValue']] }
+		});
+
+		strictEqual(preInitChangeReceived, false);
+
+		// Now init and verify subsequent messages work
+		await storage2.init();
+
+		onDidReceiveMessage2.fire({
+			type: 'sharedStorage:changed',
+			data: { changed: [['postInitKey', 'postInitValue']] }
+		});
+
+		strictEqual(storage2.get('postInitKey'), 'postInitValue');
+
+		await storage.close();
+		await storage2.close();
+	});
+
+	test('application shared storage closed onWillShutdown', async function () {
+		const lifecycleMainService = new TestLifecycleMainService();
+		const storageMainService = createStorageService(lifecycleMainService);
+
+		const applicationSharedStorage = storageMainService.applicationSharedStorage;
+		let didCloseApplicationSharedStorage = false;
+		disposables.add(applicationSharedStorage.onDidCloseStorage(() => {
+			didCloseApplicationSharedStorage = true;
+		}));
+
+		await applicationSharedStorage.init();
+		await lifecycleMainService.fireOnWillShutdown();
+
+		strictEqual(didCloseApplicationSharedStorage, true);
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();
