@@ -3,26 +3,26 @@ name: Chat Performance Comparison
 on:
   workflow_dispatch:
     inputs:
-      baseline_commit:
-        description: "Baseline commit SHA or version (e.g. \"1.115.0\", \"abc1234\")"
+      baseline_build:
+        description: "Baseline version or commit SHA (e.g. \"1.116.0\", \"insiders\", \"abc1234\"). Default: config.jsonc baselineBuild."
         required: false
         type: string
-      test_commit:
-        description: "Test commit SHA or version (e.g. \"1.115.0\", \"abc1234\")"
+      test_build:
+        description: "Branch, PR ref, commit SHA, or version to test (e.g. \"my-feature\", \"refs/pull/12345/head\", \"1.115.0\"). Default: current pipeline branch (probably main)."
         required: false
         type: string
       runs:
-        description: "Runs per scenario (default: 7 for statistical significance)"
+        description: "Runs per scenario"
         required: false
         type: number
         default: 7
       scenarios:
-        description: "Comma-separated scenario list (empty = all)"
+        description: "Comma-separated scenario list. Default: all registered scenarios."
         required: false
         type: string
         default: ""
       threshold:
-        description: "Regression threshold fraction (default: 0.2 = 20%)"
+        description: "Regression threshold fraction (0.2 = 20%)"
         required: false
         type: number
         default: 0.2
@@ -41,7 +41,6 @@ on:
         required: false
         type: string
         default: ""
-
 permissions:
   contents: read
 
@@ -51,8 +50,8 @@ concurrency:
 
 env:
   # Only set when explicitly provided; otherwise scripts read config.jsonc
-  BASELINE_COMMIT: ${{ inputs.baseline_commit || '' }}
-  TEST_COMMIT: ${{ inputs.test_commit || '' }}
+  BASELINE_BUILD_INPUT: ${{ inputs.baseline_build || '' }}
+  TEST_BUILD_INPUT: ${{ inputs.test_build || '' }}
   PERF_RUNS: ${{ inputs.runs || '' }}
   PERF_THRESHOLD: ${{ inputs.threshold || '' }}
   SCENARIOS_INPUT: ${{ inputs.scenarios || '' }}
@@ -65,9 +64,31 @@ jobs:
     name: Build & Cache
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      test_is_version: ${{ steps.resolve.outputs.is_version }}
+      test_build_arg: ${{ steps.resolve.outputs.build_arg }}
     steps:
+      - name: Resolve test build type
+        id: resolve
+        run: |
+          INPUT="$TEST_BUILD_INPUT"
+          if [[ -z "$INPUT" ]]; then
+            echo "is_version=false" >> "$GITHUB_OUTPUT"
+            echo "build_arg=" >> "$GITHUB_OUTPUT"
+          elif [[ "$INPUT" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || [[ "$INPUT" == "insiders" ]] || [[ "$INPUT" == "stable" ]]; then
+            echo "test_build is a version string: $INPUT (will download)"
+            echo "is_version=true" >> "$GITHUB_OUTPUT"
+            echo "build_arg=$INPUT" >> "$GITHUB_OUTPUT"
+          else
+            echo "test_build is a git ref: $INPUT (will checkout and build from source)"
+            echo "is_version=false" >> "$GITHUB_OUTPUT"
+            echo "build_arg=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve.outputs.is_version != 'true' && inputs.test_build || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -144,6 +165,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.test_is_version != 'true' && inputs.test_build || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -227,11 +250,12 @@ jobs:
           SCENARIO_ARGS: ${{ steps.scenarios.outputs.args }}
         run: |
           PERF_ARGS=("--ci")
-          if [[ -n "$BASELINE_COMMIT" ]]; then
-            PERF_ARGS+=("--baseline-build" "$BASELINE_COMMIT")
+          if [[ -n "$BASELINE_BUILD_INPUT" ]]; then
+            PERF_ARGS+=("--baseline-build" "$BASELINE_BUILD_INPUT")
           fi
-          if [[ -n "$TEST_COMMIT" ]]; then
-            PERF_ARGS+=("--build" "$TEST_COMMIT")
+          TEST_BUILD_ARG="${{ needs.setup.outputs.test_build_arg }}"
+          if [[ -n "$TEST_BUILD_ARG" ]]; then
+            PERF_ARGS+=("--build" "$TEST_BUILD_ARG")
           fi
           if [[ -n "$PERF_RUNS" ]]; then
             PERF_ARGS+=("--runs" "$PERF_RUNS")
@@ -291,6 +315,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.test_is_version != 'true' && inputs.test_build || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -343,8 +369,9 @@ jobs:
         id: leak
         run: |
           LEAK_ARGS="--verbose --ci"
-          if [[ -n "$TEST_COMMIT" ]]; then
-            LEAK_ARGS="$LEAK_ARGS --build $TEST_COMMIT"
+          TEST_BUILD_ARG="${{ needs.setup.outputs.test_build_arg }}"
+          if [[ -n "$TEST_BUILD_ARG" ]]; then
+            LEAK_ARGS="$LEAK_ARGS --build $TEST_BUILD_ARG"
           fi
 
           set +eo pipefail
@@ -382,6 +409,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.test_is_version != 'true' && inputs.test_build || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
