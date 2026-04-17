@@ -85,11 +85,12 @@ export function buildStandupPrompt(
 				return `    - ${parts.join(' → ')}`;
 			});
 
-		// Include files touched in this session
+		// Include files touched in this session (capped to avoid noise)
 		const sessionFiles = files.filter(f => f.session_id === s.id);
-		const uniqueFiles = [...new Set(sessionFiles.map(f => f.file_path))].slice(0, 10);
-		const fileLines = uniqueFiles.length > 0
-			? [`    - Files: ${uniqueFiles.join(', ')}`]
+		const uniqueFiles = [...new Set(sessionFiles.map(f => f.file_path))];
+		const shownFiles = uniqueFiles.slice(0, 5);
+		const fileLines = shownFiles.length > 0
+			? [`    - Files (${uniqueFiles.length} total): ${shownFiles.join(', ')}${uniqueFiles.length > 5 ? `, +${uniqueFiles.length - 5} more` : ''}`]
 			: [];
 
 		return [

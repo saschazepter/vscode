@@ -148,7 +148,7 @@ export class ChronicleIntent implements IIntent {
 		const localSessions = this._queryLocalStore();
 
 		// Query cloud if user has cloud consent for any repo
-		let cloudSessions: { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; turns: SessionTurnInfo[]; files: SessionFileInfo[] } = { sessions: [], refs: [], turns: [], files: [] };
+		let cloudSessions: { sessions: AnnotatedSession[]; refs: AnnotatedRef[] } = { sessions: [], refs: [] };
 		if (this._indexingPreference.hasCloudConsent()) {
 			cloudSessions = await this._queryCloudStore();
 		}
@@ -200,22 +200,27 @@ export class ChronicleIntent implements IIntent {
 				cappedFiles = this._sessionStore.executeReadOnlyFallback(buildFilesQuery(ids)) as unknown as SessionFileInfo[];
 			} catch { /* non-fatal */ }
 
-			// Merge cloud turns (dedup by session_id + turn_index)
-			if (cloudSessions.turns.length > 0) {
-				const seenTurns = new Set(cappedTurns.map(t => `${t.session_id}:${t.turn_index}`));
-				for (const t of cloudSessions.turns) {
-					if (cappedIds.has(t.session_id) && !seenTurns.has(`${t.session_id}:${t.turn_index}`)) {
-						cappedTurns.push(t);
+			// Fetch and merge cloud turns and files (only for capped sessions)
+			if (this._indexingPreference.hasCloudConsent()) {
+				const cloudDetail = await this._queryCloudTurnsAndFiles(ids);
+
+				// Merge cloud turns (dedup by session_id + turn_index)
+				if (cloudDetail.turns.length > 0) {
+					const seenTurns = new Set(cappedTurns.map(t => `${t.session_id}:${t.turn_index}`));
+					for (const t of cloudDetail.turns) {
+						if (!seenTurns.has(`${t.session_id}:${t.turn_index}`)) {
+							cappedTurns.push(t);
+						}
 					}
 				}
-			}
 
-			// Merge cloud files (dedup by session_id + file_path)
-			if (cloudSessions.files.length > 0) {
-				const seenFiles = new Set(cappedFiles.map(f => `${f.session_id}:${f.file_path}`));
-				for (const f of cloudSessions.files) {
-					if (cappedIds.has(f.session_id) && !seenFiles.has(`${f.session_id}:${f.file_path}`)) {
-						cappedFiles.push(f);
+				// Merge cloud files (dedup by session_id + file_path)
+				if (cloudDetail.files.length > 0) {
+					const seenFiles = new Set(cappedFiles.map(f => `${f.session_id}:${f.file_path}`));
+					for (const f of cloudDetail.files) {
+						if (!seenFiles.has(`${f.session_id}:${f.file_path}`)) {
+							cappedFiles.push(f);
+						}
 					}
 				}
 			}
@@ -440,8 +445,8 @@ Join sessions with turns/files/refs using session_id for complete analysis.`;
 		}
 	}
 
-	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[]; turns: SessionTurnInfo[]; files: SessionFileInfo[] }> {
-		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[], turns: [] as SessionTurnInfo[], files: [] as SessionFileInfo[] };
+	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[] }> {
+		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[] };
 		try {
 			const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 
@@ -483,10 +488,30 @@ Join sessions with turns/files/refs using session_id for complete analysis.`;
 				}, {});
 			}
 
-			// Query turns for these sessions (user messages + assistant responses)
+			return { sessions, refs };
+		} catch (err) {
+
+			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
+				subcommand: 'standup',
+				querySource: 'cloud',
+				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
+			}, {});
+			return empty;
+		}
+	}
+
+	/**
+	 * Query cloud turns and files for a specific set of session IDs (called after capping).
+	 */
+	private async _queryCloudTurnsAndFiles(sessionIds: string[]): Promise<{ turns: SessionTurnInfo[]; files: SessionFileInfo[] }> {
+		const empty = { turns: [] as SessionTurnInfo[], files: [] as SessionFileInfo[] };
+		try {
+			const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
+			const inClause = sessionIds.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',');
+
 			let turns: SessionTurnInfo[] = [];
 			try {
-				const turnsQuery = `SELECT session_id, turn_index, substring(user_message, 1, 120) as user_message, substring(assistant_response, 1, 200) as assistant_response FROM turns WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')}) AND (user_message IS NOT NULL OR assistant_response IS NOT NULL) ORDER BY session_id, turn_index`;
+				const turnsQuery = `SELECT session_id, turn_index, substring(user_message, 1, 120) as user_message, substring(assistant_response, 1, 200) as assistant_response FROM turns WHERE session_id IN (${inClause}) AND (user_message IS NOT NULL OR assistant_response IS NOT NULL) ORDER BY session_id, turn_index LIMIT 200`;
 				const turnsResult = await client.executeQuery(turnsQuery);
 				if (turnsResult && turnsResult.rows.length > 0) {
 					turns = turnsResult.rows.map(r => ({
@@ -498,10 +523,9 @@ Join sessions with turns/files/refs using session_id for complete analysis.`;
 				}
 			} catch { /* non-fatal */ }
 
-			// Query files for these sessions
 			let files: SessionFileInfo[] = [];
 			try {
-				const filesQuery = `SELECT session_id, file_path, tool_name FROM session_files WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')}) LIMIT 200`;
+				const filesQuery = `SELECT session_id, file_path, tool_name FROM session_files WHERE session_id IN (${inClause}) LIMIT 200`;
 				const filesResult = await client.executeQuery(filesQuery);
 				if (filesResult && filesResult.rows.length > 0) {
 					files = filesResult.rows.map(r => ({
@@ -512,14 +536,8 @@ Join sessions with turns/files/refs using session_id for complete analysis.`;
 				}
 			} catch { /* non-fatal */ }
 
-			return { sessions, refs, turns, files };
-		} catch (err) {
-
-			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
-				subcommand: 'standup',
-				querySource: 'cloud',
-				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
-			}, {});
+			return { turns, files };
+		} catch {
 			return empty;
 		}
 	}

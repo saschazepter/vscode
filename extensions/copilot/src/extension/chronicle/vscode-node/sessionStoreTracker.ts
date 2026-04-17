@@ -283,11 +283,14 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 			userMessages.push({ turnIndex: 0, content: userRequest });
 		}
 
-		// Use the first user message as the session summary (if not already set by a previous span)
-		const firstMessage = userMessages[0]?.content ?? userRequest;
-		if (firstMessage) {
-			const summary = firstMessage.length > 100 ? firstMessage.slice(0, 100).trim() + '...' : firstMessage;
-			this._bufferSessionUpsert({ id: sessionId, summary });
+		// Use the first user message as the session summary if one hasn't been set yet
+		const existingSession = this._buffer.sessions.get(sessionId);
+		if (!existingSession?.summary) {
+			const firstMessage = userMessages[0]?.content ?? userRequest;
+			if (firstMessage) {
+				const summary = firstMessage.length > 100 ? firstMessage.slice(0, 100).trim() + '...' : firstMessage;
+				this._bufferSessionUpsert({ id: sessionId, summary });
+			}
 		}
 
 		// Extract assistant response from OUTPUT_MESSAGES attribute
