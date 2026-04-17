@@ -196,10 +196,9 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 		return this.options.conversation.getLatestTurn();
 	}
 
-	protected get agentName(): string {
+	protected get agentName(): string | undefined {
 		return (this.options.request as { subAgentName?: string }).subAgentName
-			?? (this.options.request as { participant?: string }).participant
-			?? 'GitHub Copilot Chat';
+			?? (this.options.request as { participant?: string }).participant;
 	}
 
 	constructor(
@@ -709,7 +708,7 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 	}
 
 	public async run(outputStream: ChatResponseStream | undefined, token: CancellationToken): Promise<IToolCallLoopResult> {
-		const agentName = this.agentName;
+		const agentName = this.agentName ?? 'GitHub Copilot Chat';
 
 		// Extract custom mode name for debug logging (kept separate from agentName to avoid metric cardinality)
 		const modeInstructions = (this.options.request as { modeInstructions2?: { name?: string; isBuiltin?: boolean } }).modeInstructions2;
