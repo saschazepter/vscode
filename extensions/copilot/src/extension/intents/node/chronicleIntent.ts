@@ -148,7 +148,7 @@ export class ChronicleIntent implements IIntent {
 		const localSessions = this._queryLocalStore();
 
 		// Query cloud if user has cloud consent for any repo
-		let cloudSessions: { sessions: AnnotatedSession[]; refs: AnnotatedRef[] } = { sessions: [], refs: [] };
+		let cloudSessions: { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; turns: SessionTurnInfo[]; files: SessionFileInfo[] } = { sessions: [], refs: [], turns: [], files: [] };
 		if (this._indexingPreference.hasCloudConsent()) {
 			cloudSessions = await this._queryCloudStore();
 		}
@@ -188,7 +188,7 @@ export class ChronicleIntent implements IIntent {
 		const cappedIds = new Set(capped.map(s => s.id));
 		const cappedRefs = refs.filter(r => cappedIds.has(r.session_id));
 
-		// Fetch turns and files for capped sessions (local only — lightweight detail)
+		// Fetch turns and files for capped sessions
 		let cappedTurns: SessionTurnInfo[] = [];
 		let cappedFiles: SessionFileInfo[] = [];
 		if (capped.length > 0) {
@@ -199,6 +199,26 @@ export class ChronicleIntent implements IIntent {
 			try {
 				cappedFiles = this._sessionStore.executeReadOnlyFallback(buildFilesQuery(ids)) as unknown as SessionFileInfo[];
 			} catch { /* non-fatal */ }
+
+			// Merge cloud turns (dedup by session_id + turn_index)
+			if (cloudSessions.turns.length > 0) {
+				const seenTurns = new Set(cappedTurns.map(t => `${t.session_id}:${t.turn_index}`));
+				for (const t of cloudSessions.turns) {
+					if (cappedIds.has(t.session_id) && !seenTurns.has(`${t.session_id}:${t.turn_index}`)) {
+						cappedTurns.push(t);
+					}
+				}
+			}
+
+			// Merge cloud files (dedup by session_id + file_path)
+			if (cloudSessions.files.length > 0) {
+				const seenFiles = new Set(cappedFiles.map(f => `${f.session_id}:${f.file_path}`));
+				for (const f of cloudSessions.files) {
+					if (cappedIds.has(f.session_id) && !seenFiles.has(`${f.session_id}:${f.file_path}`)) {
+						cappedFiles.push(f);
+					}
+				}
+			}
 		}
 
 		const standupPrompt = buildStandupPrompt(capped, cappedRefs, cappedTurns, cappedFiles, extra);
@@ -254,7 +274,7 @@ export class ChronicleIntent implements IIntent {
 
 		let prompt = `You have access to the session_store_sql tool that can execute read-only SQL queries against the user's Copilot session database.
 
-Your task: Analyze the user's Copilot usage patterns and provide personalized recommendations.
+Your task: Analyze the user's Copilot usage patterns and provide personalized, actionable recommendations.
 
 Database schema:
 
@@ -262,11 +282,22 @@ ${schema}
 
 Instructions:
 1. IMMEDIATELY call the session_store_sql tool to query sessions from the last 7 days. Do not explain what you will do first.
-2. After getting results, make additional queries for tool usage, prompting patterns, and session durations.
-3. Based on the data, provide 3-5 specific, actionable tips grounded in actual usage data.
-4. Consider VS Code features like inline chat, @workspace, agent mode, custom instructions, and prompt files.
-5. Only one query per call — do not combine multiple statements with semicolons.
-6. Always use LIMIT (max 50) in your queries and prefer aggregations (COUNT, GROUP BY) over raw row dumps.`;
+2. Query the turns table to understand what kinds of prompts the user writes and how conversations flow.
+3. Query session_files to see which files and tools are used most frequently.
+4. Query session_refs to see PR/issue/commit activity patterns.
+5. Based on ALL this data, provide 3-5 specific, actionable tips grounded in actual usage patterns.
+
+Analysis dimensions to explore:
+- **Prompting patterns**: Are user messages vague or specific? Do they provide context? Average turns per session?
+- **Tool usage**: Which tools are used most? Are there underutilized tools that could help?
+- **Session patterns**: How long are sessions? Are there many short abandoned sessions?
+- **File patterns**: Which areas of the codebase get the most attention? Any repeated edits to the same files?
+- **Workflow**: Is the user leveraging agent mode, inline chat, custom instructions, prompt files?
+
+Query guidelines:
+- Only one query per call — do not combine multiple statements with semicolons.
+- Always use LIMIT (max 50) in your queries and prefer aggregations (COUNT, GROUP BY) over raw row dumps.
+- Use the turns table to understand conversation quality, not just session metadata.`;
 
 		if (extra) {
 			prompt += `\n\nThe user is especially interested in: ${extra}`;
@@ -300,6 +331,10 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 - Only SELECT queries are allowed
 - Only one query per call — do not combine multiple statements with semicolons
 - Always use LIMIT (max 50) and prefer aggregations (COUNT, GROUP BY) over raw row dumps
+- Query the **turns** table for conversation content (user_message, assistant_response) — this gives the richest insight into what happened
+- Query **session_files** for file paths and tool usage patterns
+- Query **session_refs** for PR/issue/commit links
+- Join tables to correlate sessions with their turns, files, and refs for complete answers
 - Present results in a clear, readable format with markdown tables or bullet points`;
 
 		this._sendTelemetry('freeform', 0, 0);
@@ -360,19 +395,21 @@ Use the session_store_sql tool to run queries. Start with a broad query, then dr
 		return hasCloud
 			? `Available tables (cloud SQL syntax):
 - **sessions**: id, repository, branch, summary, created_at, updated_at (TIMESTAMP). NOTE: cwd is always NULL in the cloud.
-- **turns**: session_id, turn_index, user_message, assistant_response, timestamp (TIMESTAMP)
-- **session_files**: session_id, file_path, tool_name, turn_index
-- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index
+- **turns**: session_id, turn_index, user_message, assistant_response, timestamp (TIMESTAMP). The richest source of what actually happened — contains the user's prompts and the assistant's replies.
+- **session_files**: session_id, file_path, tool_name, turn_index. Tracks which files were read/edited and which tools were used.
+- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index. Tracks PRs created, issues referenced, commits made.
 
-Use \`now() - INTERVAL '1 day'\` for date math, \`ILIKE\` for text search.`
+Use \`now() - INTERVAL '1 day'\` for date math, \`ILIKE\` for text search.
+Join sessions with turns/files/refs using session_id for complete analysis.`
 			: `Available tables (SQLite syntax — local):
-- **sessions**: id, cwd, repository, branch, summary, created_at, updated_at
-- **turns**: session_id, turn_index, user_message, assistant_response, timestamp
-- **session_files**: session_id, file_path, tool_name, turn_index
-- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index
+- **sessions**: id, cwd, repository, branch, summary, host_type, created_at, updated_at
+- **turns**: session_id, turn_index, user_message, assistant_response, timestamp. The richest source of what actually happened — contains the user's prompts and the assistant's replies.
+- **session_files**: session_id, file_path, tool_name, turn_index. Tracks which files were read/edited and which tools were used.
+- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index. Tracks PRs created, issues referenced, commits made.
 - **search_index**: FTS5 table. Use \`WHERE search_index MATCH 'query'\`
 
-Use \`datetime('now', '-1 day')\` for date math.`;
+Use \`datetime('now', '-1 day')\` for date math.
+Join sessions with turns/files/refs using session_id for complete analysis.`;
 	}
 
 	/**
@@ -403,8 +440,8 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 		}
 	}
 
-	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[] }> {
-		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[] };
+	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[]; turns: SessionTurnInfo[]; files: SessionFileInfo[] }> {
+		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[], turns: [] as SessionTurnInfo[], files: [] as SessionFileInfo[] };
 		try {
 			const client = new CloudSessionStoreClient(this._tokenManager, this._authService, this._fetcherService);
 
@@ -446,7 +483,36 @@ Use \`datetime('now', '-1 day')\` for date math.`;
 				}, {});
 			}
 
-			return { sessions, refs };
+			// Query turns for these sessions (user messages + assistant responses)
+			let turns: SessionTurnInfo[] = [];
+			try {
+				const turnsQuery = `SELECT session_id, turn_index, substring(user_message, 1, 120) as user_message, substring(assistant_response, 1, 200) as assistant_response FROM turns WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')}) AND (user_message IS NOT NULL OR assistant_response IS NOT NULL) ORDER BY session_id, turn_index`;
+				const turnsResult = await client.executeQuery(turnsQuery);
+				if (turnsResult && turnsResult.rows.length > 0) {
+					turns = turnsResult.rows.map(r => ({
+						session_id: r.session_id as string,
+						turn_index: r.turn_index as number,
+						user_message: r.user_message as string | undefined,
+						assistant_response: r.assistant_response as string | undefined,
+					}));
+				}
+			} catch { /* non-fatal */ }
+
+			// Query files for these sessions
+			let files: SessionFileInfo[] = [];
+			try {
+				const filesQuery = `SELECT session_id, file_path, tool_name FROM session_files WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')}) LIMIT 200`;
+				const filesResult = await client.executeQuery(filesQuery);
+				if (filesResult && filesResult.rows.length > 0) {
+					files = filesResult.rows.map(r => ({
+						session_id: r.session_id as string,
+						file_path: r.file_path as string,
+						tool_name: r.tool_name as string | undefined,
+					}));
+				}
+			} catch { /* non-fatal */ }
+
+			return { sessions, refs, turns, files };
 		} catch (err) {
 
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle', {
