@@ -85,7 +85,8 @@ enum LayoutClasses {
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND = 'experimental-shell-gradient-background',
 	FULLSCREEN = 'fullscreen',
-	MAXIMIZED = 'maximized'
+	MAXIMIZED = 'maximized',
+	STARTING_UP = 'starting-up'
 }
 
 //#endregion
@@ -623,6 +624,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Restore parts (open default view containers)
 		this.restoreParts();
 
+		// Remove starting-up class after the initial paint so that
+		// part-reveal transitions are suppressed on first render but
+		// enabled for subsequent user-driven visibility changes.
+		// Double rAF guarantees at least one painted frame before
+		// re-enabling transitions (rAF fires before paint in Chromium).
+		mainWindow.requestAnimationFrame(() => mainWindow.requestAnimationFrame(() => this.mainContainer.classList.remove(LayoutClasses.STARTING_UP)));
+
 		// Set lifecycle phase to `Restored`
 		lifecycleService.phase = LifecyclePhase.Restored;
 
@@ -970,6 +978,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	getLayoutClasses(): string[] {
 		return coalesce([
+			LayoutClasses.STARTING_UP, // suppress part-reveal animations until first paint
 			!this.partVisibility.sidebar ? LayoutClasses.SIDEBAR_HIDDEN : undefined,
 			!this.partVisibility.editor ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
