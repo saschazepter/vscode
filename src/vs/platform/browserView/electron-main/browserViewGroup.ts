@@ -84,10 +84,17 @@ export class BrowserViewGroup extends Disposable implements ICDPBrowserTarget, I
 		this.knownContextIds.add(view.session.id);
 		this._onDidAddView.fire({ viewId: view.id });
 
+		// Register the close listener before any async work so we never
+		// miss a close event that fires during the await.
+		const closeListener = Event.once(view.onDidClose)(() => {
+			this.removeView(viewId);
+		});
+
 		const info = await view.debugger.getTargetInfo();
 
 		if (this.views.get(viewId) !== view) {
 			// View was removed while we were awaiting target info
+			closeListener.dispose();
 			return;
 		}
 
@@ -96,13 +103,10 @@ export class BrowserViewGroup extends Disposable implements ICDPBrowserTarget, I
 		this.viewTargets.set(view.id, target);
 
 		const store = new DisposableStore();
+		store.add(closeListener);
 		target.onClose(() => store.dispose());
 
 		this.debugger.registerTarget(target);
-
-		store.add(Event.once(view.onDidClose)(() => {
-			this.removeView(viewId);
-		}));
 
 		// Register sub-targets of the view
 		for (const targetInfo of view.debugger.knownTargets.values()) {
