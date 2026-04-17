@@ -1963,7 +1963,7 @@ suite('RunInTerminalTool', () => {
 		// and completion notification is registered (the fix ensures isBackground stays false).
 		runInTerminalTool.sessionTerminalAssociations.set(sessionResource, {
 			instance: terminalInstance,
-			shellIntegrationQuality: ShellIntegrationQuality.Full,
+			shellIntegrationQuality: ShellIntegrationQuality.Rich,
 			isBackground: false,
 		});
 
