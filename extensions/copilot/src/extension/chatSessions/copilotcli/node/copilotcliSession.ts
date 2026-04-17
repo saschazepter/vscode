@@ -5,8 +5,11 @@
 
 import type { Attachment, SendOptions, Session, SessionOptions } from '@github/copilot/sdk';
 import * as l10n from '@vscode/l10n';
+import * as cp from 'child_process';
 import type * as vscode from 'vscode';
 import type { ChatParticipantToolToken } from 'vscode';
+import { IAuthenticationService } from '../../../../platform/authentication/common/authentication';
+import { IRunCommandExecutionService } from '../../../../platform/commands/common/runCommandExecutionService';
 import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { GenAiMetrics } from '../../../../platform/otel/common/genAiMetrics';
@@ -41,13 +44,47 @@ import { IQuestion, IUserQuestionHandler } from './userInputHelpers';
 /**
  * Known commands that can be sent to a CopilotCLI session instead of a free-form prompt.
  */
-export type CopilotCLICommand = 'compact' | 'plan' | 'fleet';
+export type CopilotCLICommand = 'compact' | 'plan' | 'fleet' | 'remote';
 
 /**
  * The set of all known CopilotCLI commands.  Used by callers that need to
  * distinguish a slash-command from a regular prompt at runtime.
  */
-export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'plan', 'fleet'] as const;
+export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'plan', 'fleet', 'remote'] as const;
+
+/** Event structure sent to the Mission Control API. */
+interface McEvent {
+	id: string;
+	timestamp: string;
+	parentId: string | null;
+	type: string;
+	data: Record<string, unknown>;
+}
+
+/** Command structure returned from the Mission Control API. */
+interface McCommand {
+	id: string;
+	content: string;
+	type?: string;
+	state: string;
+}
+
+/**
+ * Shared Mission Control state keyed by SDK session ID.
+ * CopilotCLISession instances are recreated per request, so MC state
+ * must be stored externally to persist across turns.
+ */
+interface McSharedState {
+	mcSessionId: string;
+	mcApiUrl: string;
+	mcGithubToken: string;
+	mcEventBuffer: McEvent[];
+	mcCompletedCommandIds: string[];
+	mcFlushInterval: ReturnType<typeof setInterval> | undefined;
+	mcPollInterval: ReturnType<typeof setInterval> | undefined;
+	mcLastEventId: string | null;
+}
+const mcStateBySessionId = new Map<string, McSharedState>();
 
 export const builtinSlashSCommands = {
 	commit: '/commit',
@@ -139,6 +176,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	private _bridgeProcessor: CopilotCliBridgeSpanProcessor | undefined;
 	private readonly _todoSqlQuery = new TodoSqlQuery();
 
+	/** Get or create shared MC state for this SDK session. */
+	private get _mcState(): McSharedState | undefined {
+		return mcStateBySessionId.get(this.sessionId);
+	}
+
 	/** Callback to propagate trace context to the SDK's OtelLifecycle. */
 	private _updateSdkTraceContext: ((traceparent?: string, tracestate?: string) => void) | undefined;
 	public get pendingPrompt(): string | undefined {
@@ -168,6 +210,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IOTelService private readonly _otelService: IOTelService,
 		@IGitService private readonly _gitService: IGitService,
+		@IRunCommandExecutionService private readonly _commandExecutionService: IRunCommandExecutionService,
+		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 	) {
 		super();
 		this.sessionId = _sdkSession.sessionId;
@@ -439,6 +483,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const shouldHandleExitPlanModeRequests = this.configurationService.getConfig(ConfigKey.Advanced.CLIPlanExitModeEnabled);
 			disposables.add(toDisposable(this._sdkSession.on('*', (event) => {
 				this.logService.trace(`[CopilotCLISession] CopilotCLI Event: ${JSON.stringify(event, null, 2)}`);
+				this.logService.info(`[CopilotCLISession] on(*) fired: ${event.type}`);
+				// Forward events to Mission Control if remote control is active
+				this._bufferMcEvent(event);
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('permission.requested', async (event) => {
 				const permissionRequest = event.data.permissionRequest;
@@ -890,6 +937,10 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					await this._startFleetAndWaitForIdle(input);
 					break;
 				}
+				case 'remote': {
+					await this._handleRemoteControl(input);
+					break;
+				}
 			}
 		} else {
 			if ('command' in input && input.command === 'plan') {
@@ -929,6 +980,451 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			await promise;
 		} catch (error) {
 			this.logService.error(`[CopilotCLISession] Fleet error: ${error}`);
+		}
+	}
+
+	/**
+	 * Handle `/remote` command — enables or disables Mission Control remote
+	 * control for this session by calling the Copilot API directly.
+	 */
+	private async _handleRemoteControl(input: CopilotCLISessionInput): Promise<void> {
+		const args = ('prompt' in input ? input.prompt : '')?.trim().toLowerCase();
+		const enable = args !== 'off';
+
+		try {
+			if (!enable) {
+				await this._teardownRemoteControl();
+				this._stream?.markdown(l10n.t('Remote control disabled.'));
+				return;
+			}
+
+			this._stream?.progress(l10n.t('Enabling remote control...'));
+
+			// Step 1: Get GitHub token
+			const session = await this._authenticationService.getGitHubSession('any', { silent: true });
+			if (!session?.accessToken) {
+				this._stream?.markdown(l10n.t('Unable to enable remote control: no GitHub authentication available.'));
+				return;
+			}
+			const githubToken = session.accessToken;
+
+			// Step 2: Exchange GitHub token for Copilot API URL
+			const apiUrl = await this._getCopilotApiUrl(githubToken);
+			if (!apiUrl) {
+				this._stream?.markdown(l10n.t('Unable to enable remote control: could not resolve Copilot API.'));
+				return;
+			}
+
+			// Step 3: Resolve git context (owner/repo)
+			const workingDir = getWorkingDirectory(this._workspaceInfo);
+			if (!workingDir) {
+				this._stream?.markdown(l10n.t('Unable to enable remote control: no workspace folder found.'));
+				return;
+			}
+
+			const nwo = await this._resolveGitHubNwo(workingDir);
+			if (!nwo) {
+				this._stream?.markdown(l10n.t('Unable to enable remote control: this workspace is not a GitHub repository.'));
+				return;
+			}
+
+			// Step 4: Resolve numeric owner/repo IDs via GitHub API
+			const repoResponse = await fetch(`https://api.github.com/repos/${nwo.owner}/${nwo.repo}`, {
+				headers: { 'Authorization': `token ${githubToken}`, 'Accept': 'application/json' },
+			});
+			if (!repoResponse.ok) {
+				this._stream?.markdown(l10n.t('Unable to enable remote control: could not resolve repository {0}/{1}.', nwo.owner, nwo.repo));
+				return;
+			}
+			const repoData = await repoResponse.json() as { id: number; owner: { id: number } };
+
+			// Step 5: Create Mission Control session
+			const agentTaskId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+			const mcUrl = `${apiUrl}/agents/sessions`;
+			this.logService.info(`[CopilotCLISession] Creating MC session at ${mcUrl}`);
+
+			const mcResponse = await fetch(mcUrl, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${githubToken}`,
+					'Content-Type': 'application/json',
+					'Copilot-Integration-Id': 'copilot-developer-cli',
+				},
+				body: JSON.stringify({
+					owner_id: repoData.owner.id,
+					repo_id: repoData.id,
+					agent_task_id: agentTaskId,
+				}),
+			});
+
+			if (!mcResponse.ok) {
+				const body = await mcResponse.text().catch(() => '');
+				this.logService.error(`[CopilotCLISession] MC session creation failed: ${mcResponse.status} ${mcResponse.statusText} - ${body}`);
+				this._stream?.markdown(l10n.t('Unable to enable remote control: session creation failed ({0}).', `${mcResponse.status}`));
+				return;
+			}
+
+			const mcData = await mcResponse.json() as { id: string; task_id?: string };
+			const taskId = mcData.task_id ?? agentTaskId;
+
+			// Step 6: Store MC state in the shared map (keyed by SDK session ID)
+			// so it persists across CopilotCLISession instances.
+			const sharedState: McSharedState = {
+				mcSessionId: mcData.id,
+				mcApiUrl: apiUrl,
+				mcGithubToken: githubToken,
+				mcEventBuffer: [],
+				mcCompletedCommandIds: [],
+				mcFlushInterval: undefined,
+				mcPollInterval: undefined,
+				mcLastEventId: null,
+			};
+			mcStateBySessionId.set(this.sessionId, sharedState);
+			this.logService.info(`[CopilotCLISession] Set shared MC state for session ${this.sessionId}, mcSessionId=${mcData.id}`);
+
+			// Step 7: Send the initial session.start event — MC requires this to
+			// transition out of "Fueling the runtime engines..." loading state.
+			const sessionStartEvent = this._createMcEvent('session.start', {
+				sessionId: sharedState.mcSessionId,
+				version: 1,
+				producer: 'copilot-developer-cli',
+				copilotVersion: '1.0.0',
+				startTime: new Date().toISOString(),
+				remoteSteerable: true,
+				context: {
+					cwd: workingDir,
+					gitRoot: workingDir,
+					repository: `${nwo.owner}/${nwo.repo}`,
+				},
+			});
+			sharedState.mcEventBuffer.push(sessionStartEvent);
+
+			// Also send a session.remote_steerable_changed event to explicitly
+			// enable steering on the MC web UI.
+			sharedState.mcEventBuffer.push(this._createMcEvent('session.remote_steerable_changed', {
+				remoteSteerable: true,
+			}));
+
+			await this._flushMcEvents();
+
+			// Step 8: Construct and display the frontend URL
+			const frontendUrl = `https://github.com/${nwo.owner}/${nwo.repo}/tasks/${taskId}`;
+			this.logService.info(`[CopilotCLISession] MC session created, URL: ${frontendUrl}`);
+
+			// Show a notification popup with an "Open" button
+			const vsCodeApi = require('vscode') as typeof vscode;
+			const openAction = l10n.t('Open in Browser');
+			vsCodeApi.window.showInformationMessage(
+				l10n.t('Remote control enabled. View this session on GitHub.'),
+				openAction
+			).then(selection => {
+				if (selection === openAction) {
+					vsCodeApi.env.openExternal(vsCodeApi.Uri.parse(frontendUrl));
+				}
+			});
+
+			// Also show the link inline in the chat stream
+			this._stream?.markdown(l10n.t(
+				'Remote control enabled. Open this session from any device:\n\n[{0}]({1})',
+				frontendUrl, frontendUrl
+			));
+
+			// Step 9: Start continuous event exporter and command poller
+			this._startMcEventExporter();
+			this._startMcCommandPoller();
+		} catch (error) {
+			this.logService.error(`[CopilotCLISession] Remote control error: ${error}`);
+			this._stream?.markdown(l10n.t('Unable to enable remote control: {0}', error instanceof Error ? error.message : String(error)));
+		}
+	}
+
+	/**
+	 * Tear down an active Mission Control session.
+	 */
+	private async _teardownRemoteControl(): Promise<void> {
+		// Stop exporter and poller
+		this._stopMcEventExporter();
+		this._stopMcCommandPoller();
+
+		const state = this._mcState;
+		if (!state) {
+			this.logService.info('[CopilotCLISession] No active MC session to tear down');
+			return;
+		}
+
+		const mcSessionId = state.mcSessionId;
+		mcStateBySessionId.delete(this.sessionId);
+		this.logService.info(`[CopilotCLISession] Tearing down MC session ${mcSessionId}`);
+
+		try {
+			const session = await this._authenticationService.getGitHubSession('any', { silent: true });
+			if (!session?.accessToken) {
+				return;
+			}
+			const apiUrl = await this._getCopilotApiUrl(session.accessToken);
+			if (apiUrl) {
+				await fetch(`${apiUrl}/agents/sessions/${mcSessionId}`, {
+					method: 'DELETE',
+					headers: {
+						'Authorization': `Bearer ${session.accessToken}`,
+						'Copilot-Integration-Id': 'copilot-developer-cli',
+					},
+				});
+			}
+		} catch {
+			this.logService.warn(`[CopilotCLISession] Failed to tear down MC session ${mcSessionId}`);
+		}
+	}
+
+	/**
+	 * Exchange a GitHub token for the Copilot API URL.
+	 */
+	private async _getCopilotApiUrl(githubToken: string): Promise<string | undefined> {
+		const tokenResponse = await fetch('https://api.github.com/copilot_internal/v2/token', {
+			headers: {
+				'Authorization': `token ${githubToken}`,
+				'Accept': 'application/json',
+			},
+		});
+		if (!tokenResponse.ok) {
+			return undefined;
+		}
+		const tokenData = await tokenResponse.json() as { token: string; endpoints?: { api?: string } };
+		return tokenData.endpoints?.api;
+	}
+
+	/**
+	 * Parse owner/repo from the git remote URL of a working directory.
+	 */
+	private _resolveGitHubNwo(workingDirectory: vscode.Uri): Promise<{ owner: string; repo: string } | undefined> {
+		return new Promise((resolve) => {
+			cp.execFile('git', ['remote', 'get-url', 'origin'], { cwd: workingDirectory.fsPath, timeout: 5000 }, (_error, stdout) => {
+				if (!stdout) {
+					resolve(undefined);
+					return;
+				}
+				const url = stdout.trim();
+				const match = url.match(/github\.com[:/](?<owner>[^/]+)\/(?<repo>[^/]+?)(?:\.git)?$/);
+				if (match?.groups) {
+					resolve({ owner: match.groups.owner, repo: match.groups.repo });
+				} else {
+					resolve(undefined);
+				}
+			});
+		});
+	}
+
+	// ── Mission Control event exporter ───────────────────────────────────
+
+	/**
+	 * Start listening to SDK events and flushing them to Mission Control.
+	 * Events are batched and sent every 500ms.
+	 */
+	private _startMcEventExporter(): void {
+		this._stopMcEventExporter();
+		const state = this._mcState;
+		if (!state) { return; }
+
+		// Event buffering is handled by _bufferMcEvent(), which is called from
+		// the per-send on('*') handler. We only need the flush interval here.
+		state.mcFlushInterval = setInterval(() => {
+			this._flushMcEvents().catch(err => {
+				this.logService.warn(`[CopilotCLISession] MC event flush failed: ${err}`);
+			});
+		}, 500);
+
+		this.logService.info('[CopilotCLISession] MC event exporter started');
+	}
+
+	/** Stop the MC event exporter. */
+	private _stopMcEventExporter(): void {
+		const state = this._mcState;
+		if (state?.mcFlushInterval) {
+			clearInterval(state.mcFlushInterval);
+			state.mcFlushInterval = undefined;
+		}
+		if (state) {
+			state.mcEventBuffer.length = 0;
+		}
+	}
+
+	/**
+	 * Buffer an SDK event for Mission Control. Called from the per-send
+	 * on('*') handler so that events are captured on every turn.
+	 */
+	private _bufferMcEvent(event: { type?: string; data?: unknown; id?: string }): void {
+		const state = this._mcState;
+		const eventType = event.type ?? 'unknown';
+		if (!state) {
+			return;
+		}
+		// Skip events that should not be forwarded to MC
+		if (
+			eventType === 'assistant.message_delta' ||
+			eventType === 'assistant.streaming_delta' ||
+			eventType === 'session.idle' ||
+			eventType === 'session.shutdown' ||
+			eventType === 'session.error' ||
+			eventType === 'session.usage_info' ||
+			eventType === 'assistant.usage' ||
+			eventType === 'session.title_changed' ||
+			eventType === 'pending_messages.modified' ||
+			eventType === 'session.mcp_server_status_changed' ||
+			eventType === 'session.mcp_servers_loaded' ||
+			eventType === 'session.skills_loaded' ||
+			eventType === 'session.tools_updated'
+		) {
+			return;
+		}
+		this.logService.info(`[CopilotCLISession] MC buffered event: ${eventType}`);
+		state.mcEventBuffer.push(this._createMcEvent(eventType, (event.data ?? {}) as Record<string, unknown>));
+	}
+
+	/** Create an MC event with a unique ID and parentId chain. */
+	private _createMcEvent(type: string, data: Record<string, unknown>): McEvent {
+		const state = this._mcState;
+		const id = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+		const event: McEvent = {
+			id,
+			timestamp: new Date().toISOString(),
+			parentId: state?.mcLastEventId,
+			type,
+			data,
+		};
+		if (state) {
+			state.mcLastEventId = id;
+		}
+		return event;
+	}
+
+	/**
+	 * Flush buffered events to the Mission Control API.
+	 */
+	private async _flushMcEvents(): Promise<void> {
+		const state = this._mcState;
+		if (!state || !state.mcSessionId || !state.mcApiUrl || !state.mcGithubToken || state.mcEventBuffer.length === 0) {
+			return;
+		}
+
+		const events = state.mcEventBuffer.splice(0, 500);
+		const completedCommandIds = state.mcCompletedCommandIds.splice(0);
+
+		const eventTypes = events.map(e => e.type).join(', ');
+		this.logService.info(`[CopilotCLISession] Flushing ${events.length} MC event(s): [${eventTypes}]`);
+
+		try {
+			const url = `${state.mcApiUrl}/agents/sessions/${state.mcSessionId}/events`;
+			const body = JSON.stringify({
+				events,
+				completed_command_ids: completedCommandIds.length > 0 ? completedCommandIds : undefined,
+			});
+			this.logService.info(`[CopilotCLISession] POST ${url} (${body.length} bytes)`);
+
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${state.mcGithubToken}`,
+					'Content-Type': 'application/json',
+					'Copilot-Integration-Id': 'copilot-developer-cli',
+				},
+				body,
+			});
+
+			if (!response.ok) {
+				const respBody = await response.text().catch(() => '');
+				this.logService.warn(`[CopilotCLISession] MC event submission failed: ${response.status} ${response.statusText} - ${respBody}`);
+				// Re-queue events on failure (but don't grow unbounded)
+				if (state.mcEventBuffer.length < 2000) {
+					state.mcEventBuffer.unshift(...events);
+				}
+			} else {
+				this.logService.info(`[CopilotCLISession] MC event flush OK: ${response.status}`);
+			}
+		} catch (err) {
+			this.logService.warn(`[CopilotCLISession] MC event submission error: ${err}`);
+		}
+	}
+
+	// ── Mission Control command poller ───────────────────────────────────
+
+	/**
+	 * Start polling Mission Control for steering commands from the web UI.
+	 * Polls every 3 seconds.
+	 */
+	private _startMcCommandPoller(): void {
+		this._stopMcCommandPoller();
+		const state = this._mcState;
+		if (!state) { return; }
+
+		state.mcPollInterval = setInterval(() => {
+			this._pollMcCommands().catch(err => {
+				this.logService.warn(`[CopilotCLISession] MC command poll failed: ${err}`);
+			});
+		}, 3000);
+
+		this.logService.info('[CopilotCLISession] MC command poller started');
+	}
+
+	/** Stop the MC command poller. */
+	private _stopMcCommandPoller(): void {
+		const state = this._mcState;
+		if (state?.mcPollInterval) {
+			clearInterval(state.mcPollInterval);
+			state.mcPollInterval = undefined;
+		}
+	}
+
+	/**
+	 * Poll Mission Control for pending commands and process them.
+	 */
+	private async _pollMcCommands(): Promise<void> {
+		const state = this._mcState;
+		if (!state || !state.mcSessionId || !state.mcApiUrl || !state.mcGithubToken) {
+			return;
+		}
+
+		try {
+			const response = await fetch(`${state.mcApiUrl}/agents/sessions/${state.mcSessionId}/commands`, {
+				headers: {
+					'Authorization': `Bearer ${state.mcGithubToken}`,
+					'Copilot-Integration-Id': 'copilot-developer-cli',
+				},
+			});
+
+			if (!response.ok) {
+				return;
+			}
+
+			const data = await response.json() as { commands?: McCommand[] };
+			const commands = data.commands ?? [];
+
+			for (const cmd of commands) {
+				if (cmd.state !== 'in_progress') {
+					continue;
+				}
+				this.logService.info(`[CopilotCLISession] Processing MC command: ${cmd.type ?? 'user_message'} (${cmd.id})`);
+
+				switch (cmd.type) {
+					case 'abort':
+						this._sdkSession.abort();
+						break;
+					case 'user_message':
+					default:
+						// Inject as a steering message into the running session
+						this._sdkSession.send({
+							prompt: cmd.content,
+							mode: 'immediate',
+						}).catch(err => {
+							this.logService.warn(`[CopilotCLISession] MC steering send failed: ${err}`);
+						});
+						break;
+				}
+
+				// Mark command as processed
+				state.mcCompletedCommandIds.push(cmd.id);
+			}
+		} catch {
+			// Silently ignore polling errors
 		}
 	}
 
