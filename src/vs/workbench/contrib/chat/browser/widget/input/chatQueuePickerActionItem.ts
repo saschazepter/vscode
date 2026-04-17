@@ -8,10 +8,8 @@ import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEv
 import { ActionViewItem, BaseActionViewItem, IActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { Action, IAction } from '../../../../../../base/common/actions.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { decodeKeybinding } from '../../../../../../base/common/keybindings.js';
-import { KeyCode, KeyMod } from '../../../../../../base/common/keyCodes.js';
+import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, IDisposable } from '../../../../../../base/common/lifecycle.js';
-import { OS } from '../../../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { IActionViewItemService } from '../../../../../../platform/actions/browser/actionViewItemService.js';
@@ -53,7 +51,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IActionWidgetService actionWidgetService: IActionWidgetService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@ITelemetryService telemetryService: ITelemetryService,
 	) {
 		super(undefined, action);
@@ -65,13 +63,13 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 			'chat.queuePickerPrimary',
 			isSteerDefault ? localize('chat.steerWithMessage', "Steer with Message") : localize('chat.queueMessage', "Add to Queue"),
 			ThemeIcon.asClassName(isSteerDefault ? Codicon.arrowUp : Codicon.add),
-			!!contextKeyService.getContextKeyValue(ChatContextKeys.inputHasText.key),
+			!!this.contextKeyService.getContextKeyValue(ChatContextKeys.inputHasText.key),
 			() => this._runDefaultAction()
 		));
 		this._primaryAction = this._register(new ActionViewItem(undefined, this._primaryActionAction, { icon: true, label: false }));
 
-		this._register(contextKeyService.onDidChangeContext(e => {
-			this._primaryActionAction.enabled = !!contextKeyService.getContextKeyValue(ChatContextKeys.inputHasText.key);
+		this._register(this.contextKeyService.onDidChangeContext(e => {
+			this._primaryActionAction.enabled = !!this.contextKeyService.getContextKeyValue(ChatContextKeys.inputHasText.key);
 		}));
 
 		// Dropdown - action widget with hover descriptions and chevron-down icon
@@ -84,7 +82,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 			},
 			actionWidgetService,
 			this.keybindingService,
-			contextKeyService,
+			this.contextKeyService,
 			telemetryService,
 		));
 
@@ -106,14 +104,6 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 
 	private _isSteerDefault(): boolean {
 		return this.configurationService.getValue<string>(ChatConfiguration.RequestQueueingDefaultAction) === 'steer';
-	}
-
-	private _resolveKeybinding(keybinding: number) {
-		const decoded = decodeKeybinding(keybinding, OS);
-		if (!decoded) {
-			return undefined;
-		}
-		return this.keybindingService.resolveKeybinding(decoded)[0];
 	}
 
 	private _isEffectiveSteer(): boolean {
@@ -186,16 +176,15 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 	private _getDropdownActions(): IActionWidgetDropdownAction[] {
 		const isSteerDefault = this._isSteerDefault();
 
-		// Resolve display keybindings explicitly: the dropdown's default keybinding lookup uses
-		// the global context, where the chat input's scoped context keys (`inChatInput`,
-		// `requestInProgress`) are not visible — so none of the queue/steer keybinding `when`
-		// clauses match and the resolver falls back to the last-registered binding, which can
-		// produce labels that contradict actual behavior. We know which key is bound to each
-		// action based on the user's configured default, so resolve them directly here.
-		const enterKeybinding = this._resolveKeybinding(KeyCode.Enter);
-		const altEnterKeybinding = this._resolveKeybinding(KeyMod.Alt | KeyCode.Enter);
-		const queueKeybinding = isSteerDefault ? altEnterKeybinding : enterKeybinding;
-		const steerKeybinding = isSteerDefault ? enterKeybinding : altEnterKeybinding;
+		// Resolve display keybindings against the scoped chat input context so the labels
+		// reflect the bindings actually active for the current state, including any user
+		// customizations and scoped overrides (e.g. when editing a queued/steer request).
+		// Without an explicit context the dropdown falls back to the global context, where
+		// `inChatInput`/`requestInProgress` are not set — none of the `when` clauses match
+		// and the resolver falls back to the last-registered binding, producing labels that
+		// contradict actual behavior.
+		const queueKeybinding = this.keybindingService.lookupKeybinding(ChatQueueMessageAction.ID, this.contextKeyService, true);
+		const steerKeybinding = this.keybindingService.lookupKeybinding(ChatSteerWithMessageAction.ID, this.contextKeyService, true);
 
 		const queueAction: IActionWidgetDropdownAction = {
 			id: ChatQueueMessageAction.ID,
