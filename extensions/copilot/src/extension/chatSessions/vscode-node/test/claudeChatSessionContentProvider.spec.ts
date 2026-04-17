@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
 import type * as vscode from 'vscode';
 // eslint-disable-next-line no-duplicate-imports
 import * as vscodeShim from 'vscode';
@@ -177,7 +178,7 @@ function buildPermissionModeGroup(selectedMode: string = 'acceptEdits'): vscode.
  */
 function buildFolderGroup(selectedFolderPath: string, allFolderPaths?: string[]): vscode.ChatSessionProviderOptionGroup {
 	const paths = allFolderPaths ?? [selectedFolderPath];
-	const items = paths.map(p => ({ id: p, name: p.split('/').pop()! }));
+	const items = paths.map(p => ({ id: p, name: path.basename(p) }));
 	const selected = items.find(i => i.id === selectedFolderPath) ?? items[0];
 	return {
 		id: 'folder',
