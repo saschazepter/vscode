@@ -432,10 +432,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.agent-sessions-workbench .part.auxiliarybar,
-	.agent-sessions-workbench .part.panel,
-	.agent-sessions-workbench .part.chatbar,
-	.agent-sessions-workbench .part.sidebar > .content {
+	.agent-sessions-workbench.animations-ready .part.auxiliarybar,
+	.agent-sessions-workbench.animations-ready .part.panel,
+	.agent-sessions-workbench.animations-ready .part.chatbar,
+	.agent-sessions-workbench.animations-ready .part.sidebar > .content {
 		transition: none;
 	}
 }

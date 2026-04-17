@@ -25,10 +25,10 @@ const changesViewContainer = viewContainersRegistry.registerViewContainer({
 	title: localize2('changes', 'Changes'),
 	ctorDescriptor: new SyncDescriptor(ChangesViewPaneContainer),
 	icon: changesViewIcon,
-	order: 10,
+	order: 11,
 	hideIfEmpty: true,
 	windowVisibility: WindowVisibility.Sessions
-}, ViewContainerLocation.AuxiliaryBar, { doNotRegisterOpenCommand: true, isDefault: true });
+}, ViewContainerLocation.AuxiliaryBar, { doNotRegisterOpenCommand: true });
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
