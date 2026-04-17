@@ -163,7 +163,7 @@ jobs:
               --name "$MAPPING_BLOB" \
               --file "/tmp/commit-version.json" \
               --content-type "application/json" \
-              --content-cache-control "max-age=31536000, public" \
+              --content-cache-control "no-cache, no-store, must-revalidate" \
               --auth-mode login \
               --overwrite \
               --only-show-errors
