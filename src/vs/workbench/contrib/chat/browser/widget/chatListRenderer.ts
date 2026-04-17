@@ -1048,9 +1048,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		if (element.isComplete) {
 			return undefined;
 		}
-		if (!showProgressDetails && element.isComplete) {
-			return undefined;
-		}
 
 		const workingState = {
 			confirmationAdjustedTimestamp: element.confirmationAdjustedTimestamp,
@@ -1059,10 +1056,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			completedAt: element.model.completedAt,
 			elapsedMs: element.model.elapsedMs,
 		};
-
-		if (showProgressDetails && element.isComplete) {
-			return { kind: 'working', state: workingState };
-		}
 
 		if (!checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
 			return undefined;
