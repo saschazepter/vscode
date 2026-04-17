@@ -16,6 +16,22 @@ import { ITerminalProfileProvider, ITerminalProfileService } from '../../../../.
 
 const AGENT_HOST_PROFILE_EXT_ID = 'vscode.agent-host-terminal';
 
+/**
+ * Converts a caller-supplied cwd (string path or URI) into a URI, dropping
+ * empty or root `file:///` values that the terminal service hands us when
+ * the window has no workspace folder.
+ */
+function resolveCallerCwd(cwd: string | URI | undefined): URI | undefined {
+	if (!cwd) {
+		return undefined;
+	}
+	const uri = typeof cwd === 'string' ? URI.file(cwd) : cwd;
+	if (uri.scheme === 'file' && (!uri.path || uri.path === '/')) {
+		return undefined;
+	}
+	return uri;
+}
+
 export interface IAgentHostEntry {
 	/** Display name for the profile */
 	readonly name: string;
@@ -126,11 +142,21 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 		return entries;
 	}
 
+	/**
+	 * Subclasses may override to supply a context-aware default cwd (e.g. the
+	 * active session's worktree) when the terminal service did not provide one.
+	 * The returned URI is forwarded as-is, so it must already be transport-safe.
+	 */
+	protected _getDefaultCwd(_address: string): URI | undefined {
+		return undefined;
+	}
+
 	private _registerProfile(key: string, entry: IAgentHostEntry, allEntries: IAgentHostEntry[]): void {
 		const provider: ITerminalProfileProvider = {
 			createContributedTerminalProfile: async (options) => {
 				let connection: IAgentConnection | undefined;
 				let displayName = entry.name;
+				let resolvedAddress = entry.address;
 
 				if (key === '__quickpick__') {
 					// Show quickpick to let user choose a host
@@ -148,6 +174,7 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 					this._usedHosts.add(pick.address);
 					this._reconcile();
 					displayName = pick.hostName;
+					resolvedAddress = pick.address;
 					connection = allEntries.find(e => e.address === pick.address)?.getConnection();
 				} else {
 					connection = entry.getConnection();
@@ -157,9 +184,11 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 					return;
 				}
 
+				const cwd = resolveCallerCwd(options.cwd) ?? this._getDefaultCwd(resolvedAddress);
+
 				await this._agentHostTerminalService.createTerminal(connection, {
 					name: localize('agentHostTerminal.profileName', "Agent Host ({0})", displayName),
-					cwd: options.cwd ? (typeof options.cwd === 'string' ? URI.file(options.cwd) : options.cwd) : undefined,
+					cwd,
 					location: options.location,
 				});
 			},
