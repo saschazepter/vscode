@@ -101,7 +101,7 @@ export interface IPromptFileResource {
  * Returns whether a customization can be used in the provided chat session type.
  */
 export function matchesSessionType(sessionTypes: readonly string[] | undefined, currentSessionType: string | undefined): boolean {
-	return sessionTypes === undefined || (currentSessionType !== undefined && sessionTypes.includes(currentSessionType));
+	return sessionTypes === undefined || currentSessionType === undefined || sessionTypes.includes(currentSessionType);
 }
 
 /**
