@@ -115,7 +115,8 @@ for (let visibleIndex = 1; visibleIndex <= 9; visibleIndex++) {
 	const sessionIndex = visibleIndex === 9 ? -1 : visibleIndex - 1;
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
 		id: OPEN_SESSION_AT_INDEX_COMMAND_ID + visibleIndex,
-		weight: KeybindingWeight.WorkbenchContrib,
+		// Higher than WorkbenchContrib to override `workbench.action.openEditorAtIndexN` (Ctrl+N on macOS)
+		weight: KeybindingWeight.WorkbenchContrib + 1,
 		when: IsSessionsWindowContext,
 		// Always use Ctrl (not Cmd on macOS) to avoid conflicting with Cmd+N view focus shortcuts
 		primary: KeyMod.CtrlCmd | digitToKeyCode(visibleIndex),
