@@ -52,13 +52,6 @@ function hasShownElevatedWarning(level: ChatPermissionLevel, storageService: ISt
 	if (key && storageService.getBoolean(key, StorageScope.PROFILE, false)) {
 		return true;
 	}
-	// Autopilot is stricter than AutoApprove, so confirming Autopilot in this
-	// session implies the user already accepted the AutoApprove risks. We do
-	// not extend this to the persisted "don't show again" setting — that
-	// choice is scoped to the level the user made it on.
-	if (level === ChatPermissionLevel.AutoApprove && shownWarnings.has(ChatPermissionLevel.Autopilot)) {
-		return true;
-	}
 	return false;
 }
 
