@@ -129,7 +129,6 @@ export class ChatStatusDashboard extends DomWidget {
 	private readonly dateFormatter = safeIntl.DateTimeFormat(language, { month: 'short', day: 'numeric' });
 	private readonly timeFormatter = safeIntl.DateTimeFormat(language, { hour: 'numeric', minute: 'numeric' });
 	private readonly quotaPercentageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 0 });
-	private readonly quotaOverageFormatter = safeIntl.NumberFormat(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 
 	constructor(
 		private readonly options: IChatStatusDashboardOptions | undefined,
@@ -325,31 +324,34 @@ export class ChatStatusDashboard extends DomWidget {
 
 			let chatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (chatQuota && !chatQuota.unlimited && chatQuota.percentRemaining > 0) {
-				chatQuotaIndicator = this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), false, resetLabel);
+				chatQuotaIndicator = this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), resetLabel);
 			}
 
 			let premiumChatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (!hasTokenBasedBillingQuotas && premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.percentRemaining > 0) {
-				const premiumChatLabel = premiumChatQuota.overageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
-				premiumChatQuotaIndicator = this.createQuotaIndicator(container, this._store, premiumChatQuota, premiumChatLabel, true, resetLabel);
+				const premiumChatLabel = this.chatEntitlementService.quotas.overageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
+				premiumChatQuotaIndicator = this.createQuotaIndicator(container, this._store, premiumChatQuota, premiumChatLabel, resetLabel);
 			}
 
 			let sessionLimitQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (sessionLimitQuota && !sessionLimitQuota.unlimited) {
 				const sessionResetLabel = this.formatResetAtLabel(sessionLimitQuota.resetAt);
-				sessionLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, sessionLimitQuota, localize('sessionLimitLabel', "Session Limit"), false, sessionResetLabel);
+				sessionLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, sessionLimitQuota, localize('sessionLimitLabel', "Session Limit"), sessionResetLabel);
 			}
 
 			let weeklyLimitQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (weeklyLimitQuota && !weeklyLimitQuota.unlimited) {
 				const weeklyResetLabel = this.formatResetAtLabel(weeklyLimitQuota.resetAt);
-				weeklyLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, weeklyLimitQuota, localize('weeklyLimitLabel', "Weekly Limit"), false, weeklyResetLabel);
+				weeklyLimitQuotaIndicator = this.createQuotaIndicator(container, this._store, weeklyLimitQuota, localize('weeklyLimitLabel', "Weekly Limit"), weeklyResetLabel);
 			}
 
 			let completionsQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.percentRemaining > 0) {
-				completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), false, resetLabel);
+				completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), resetLabel);
 			}
+
+			// Global quota callout (shown once at the bottom)
+			const globalCalloutUpdater = this.createGlobalQuotaCallout(container, this._store);
 
 			if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && (Number(chatQuota?.percentRemaining) <= 25 || Number(completionsQuota?.percentRemaining) <= 25)) {
 				const upgradeProButton = this._store.add(new Button(container, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: this.canUseChat() /* use secondary color when chat can still be used */ }));
@@ -379,12 +381,13 @@ export class ChatStatusDashboard extends DomWidget {
 				if (completionsQuota) {
 					completionsQuotaIndicator?.(completionsQuota);
 				}
+				globalCalloutUpdater();
 			})();
 		}
 
 		// Anonymous Indicator
 		else if (this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed) {
-			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('chatsLabel', "Chat messages"), false);
+			this.createQuotaIndicator(container, this._store, localize('quotaLimited', "Limited"), localize('chatsLabel', "Chat messages"));
 		}
 	}
 
@@ -502,7 +505,7 @@ export class ChatStatusDashboard extends DomWidget {
 		return localize('quotaResetsAt', "Resets {0} at {1}", this.dateFormatter.value.format(resetDate), this.timeFormatter.value.format(resetDate));
 	}
 
-	private createQuotaIndicator(container: HTMLElement, disposables: DisposableStore, quota: IQuotaSnapshot | string, label: string, supportsOverage: boolean, resetLabel?: string): (quota: IQuotaSnapshot | string) => void {
+	private createQuotaIndicator(container: HTMLElement, disposables: DisposableStore, quota: IQuotaSnapshot | string, label: string, resetLabel?: string): (quota: IQuotaSnapshot | string) => void {
 		const quotaValue = $('span.quota-value');
 		const quotaValueSuffix = $('span.quota-value-suffix');
 		const quotaBit = $('div.quota-bit');
@@ -526,20 +529,6 @@ export class ChatStatusDashboard extends DomWidget {
 			)
 		));
 
-		// Callout for quota limit states
-		const calloutIcon = $('span.callout-icon');
-		const calloutText = $('span.callout-text');
-		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
-		quotaCallout.style.display = 'none';
-
-		if (supportsOverage && (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus)) {
-			const manageOverageButton = disposables.add(new Button(container, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
-			manageOverageButton.label = localize('enableAdditionalUsage', "Manage paid premium requests");
-			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
-		}
-
-		const isEnterpriseUser = this.chatEntitlementService.entitlement === ChatEntitlement.Enterprise || this.chatEntitlementService.entitlement === ChatEntitlement.Business;
-
 		const update = (quota: IQuotaSnapshot | string) => {
 			quotaIndicator.classList.remove('error');
 			quotaIndicator.classList.remove('warning');
@@ -556,9 +545,6 @@ export class ChatStatusDashboard extends DomWidget {
 			if (typeof quota === 'string') {
 				quotaValue.textContent = quota;
 				quotaValueSuffix.textContent = '';
-			} else if (quota.overageCount) {
-				quotaValue.textContent = `+${this.quotaOverageFormatter.value.format(quota.overageCount)}`;
-				quotaValueSuffix.textContent = ` ${localize('quotaOverageRequests', "requests")}`;
 			} else {
 				quotaValue.textContent = localize('quotaDisplay', "{0}%", this.quotaPercentageFormatter.value.format(usedPercentage));
 				quotaValueSuffix.textContent = ` ${localize('quotaUsed', "used")}`;
@@ -566,34 +552,67 @@ export class ChatStatusDashboard extends DomWidget {
 
 			quotaBit.style.width = `${usedPercentage}%`;
 
-			const overageEnabled = supportsOverage && typeof quota !== 'string' && quota?.overageEnabled;
+			const overageEnabled = this.chatEntitlementService.quotas.overageEnabled;
 
-			if (usedPercentage >= 100 && overageEnabled) {
-				// Limit exhausted with overage: dim the indicator, show info callout
+			if (usedPercentage >= 100) {
 				quotaIndicator.classList.add('dimmed');
+			} else if (usedPercentage >= 75 && overageEnabled) {
+				quotaIndicator.classList.add('info');
+			} else if (usedPercentage >= 75) {
+				quotaIndicator.classList.add('warning');
+			}
+		};
+
+		update(quota);
+
+		return update;
+	}
+
+	private createGlobalQuotaCallout(container: HTMLElement, disposables: DisposableStore): () => void {
+		const calloutIcon = $('span.callout-icon');
+		const calloutText = $('span.callout-text');
+		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
+		quotaCallout.style.display = 'none';
+
+		if (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus) {
+			const manageOverageButton = disposables.add(new Button(container, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
+			manageOverageButton.label = localize('enableAdditionalUsage', "Manage paid premium requests");
+			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
+		}
+
+		const update = () => {
+			const quotas = this.chatEntitlementService.quotas;
+			const overageEnabled = quotas.overageEnabled ?? false;
+			const isEnterpriseUser = this.chatEntitlementService.entitlement === ChatEntitlement.Enterprise || this.chatEntitlementService.entitlement === ChatEntitlement.Business;
+
+			const allQuotas: IQuotaSnapshot[] = [];
+			const hasTokenBasedBilling = !!quotas.tokenBasedBilling;
+			if (quotas.chat && !quotas.chat.unlimited) { allQuotas.push(quotas.chat); }
+			if (!hasTokenBasedBilling && quotas.premiumChat && !quotas.premiumChat.unlimited) { allQuotas.push(quotas.premiumChat); }
+			if (quotas.sessionLimit && !quotas.sessionLimit.unlimited) { allQuotas.push(quotas.sessionLimit); }
+			if (quotas.weeklyLimit && !quotas.weeklyLimit.unlimited) { allQuotas.push(quotas.weeklyLimit); }
+			if (quotas.completions && !quotas.completions.unlimited) { allQuotas.push(quotas.completions); }
+
+			const maxUsedPercentage = allQuotas.length > 0 ? Math.max(...allQuotas.map(q => Math.max(0, 100 - q.percentRemaining))) : 0;
+
+			if (maxUsedPercentage >= 100 && overageEnabled) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout info';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
 				calloutText.textContent = localize('quotaOverageActive', "Using Overage Budget until limits reset.");
-			} else if (usedPercentage >= 75 && overageEnabled) {
-				// Approaching limit with overage: highlight in blue, show info callout
-				quotaIndicator.classList.add('info');
+			} else if (maxUsedPercentage >= 75 && overageEnabled) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout info';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
 				calloutText.textContent = localize('quotaOverageApproaching', "Once the limit is reached, your Overage Budget will be used.");
-			} else if (usedPercentage >= 100 && !overageEnabled) {
-				// Limit reached without overage: dim the indicator and show error callout
-				quotaIndicator.classList.add('dimmed');
+			} else if (maxUsedPercentage >= 100 && !overageEnabled) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout error';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.error)}`;
 				calloutText.textContent = isEnterpriseUser
 					? localize('quotaPausedEnterprise', "Copilot is paused until the limit resets. Contact your administrator for more information.")
 					: localize('quotaPaused', "Copilot is paused until the limit resets.");
-			} else if (usedPercentage >= 75 && !overageEnabled) {
-				// Approaching limit without overage: warning styling and callout
-				quotaIndicator.classList.add('warning');
+			} else if (maxUsedPercentage >= 75 && !overageEnabled) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout warning';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.warning)}`;
@@ -605,7 +624,7 @@ export class ChatStatusDashboard extends DomWidget {
 			}
 		};
 
-		update(quota);
+		update();
 
 		return update;
 	}

@@ -599,9 +599,6 @@ interface IEntitlements {
 export interface IQuotaSnapshot {
 	readonly percentRemaining: number;
 
-	readonly overageEnabled: boolean;
-	readonly overageCount: number;
-
 	readonly unlimited: boolean;
 
 	readonly resetAt?: number;
@@ -617,6 +614,8 @@ interface IQuotas {
 	readonly sessionLimit?: IQuotaSnapshot;
 	readonly weeklyLimit?: IQuotaSnapshot;
 	readonly tokenBasedBilling?: boolean;
+	readonly overageEnabled?: boolean;
+	readonly overageCount?: number;
 }
 
 export class ChatEntitlementRequests extends Disposable {
@@ -759,8 +758,6 @@ export class ChatEntitlementRequests extends Disposable {
 		if (entitlementsData.monthly_quotas?.chat && typeof entitlementsData.limited_user_quotas?.chat === 'number') {
 			quotas.chat = {
 				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.chat / entitlementsData.monthly_quotas.chat) * 100)),
-				overageEnabled: false,
-				overageCount: 0,
 				unlimited: false
 			};
 		}
@@ -768,8 +765,6 @@ export class ChatEntitlementRequests extends Disposable {
 		if (entitlementsData.monthly_quotas?.completions && typeof entitlementsData.limited_user_quotas?.completions === 'number') {
 			quotas.completions = {
 				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.completions / entitlementsData.monthly_quotas.completions) * 100)),
-				overageEnabled: false,
-				overageCount: 0,
 				unlimited: false
 			};
 		}
@@ -786,8 +781,6 @@ export class ChatEntitlementRequests extends Disposable {
 				}
 				const quotaSnapshot: IQuotaSnapshot = {
 					percentRemaining: Math.min(100, Math.max(0, rawQuotaSnapshot.percent_remaining)),
-					overageEnabled: rawQuotaSnapshot.overage_permitted,
-					overageCount: rawQuotaSnapshot.overage_count,
 					unlimited: rawQuotaSnapshot.unlimited,
 					resetAt: rawQuotaSnapshot.quota_reset_at || undefined,
 				};
@@ -810,11 +803,19 @@ export class ChatEntitlementRequests extends Disposable {
 						break;
 				}
 			}
+
+			// Global overage: in TBB world read from immediate_usage_interval, otherwise from premium_interactions
+			const overageSource = hasTokenBasedBilling
+				? entitlementsData.quota_snapshots['immediate_usage_interval']
+				: entitlementsData.quota_snapshots['premium_interactions'];
+			quotas.overageEnabled = overageSource?.overage_permitted ?? false;
+			quotas.overageCount = overageSource?.overage_count ?? 0;
 		}
 
 		// DEBUG: Override quota values for testing. Uncomment and tweak as needed.
-		// quotas.sessionLimit = { percentRemaining: 0, overageEnabled: false, overageCount: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
-		// quotas.weeklyLimit = { percentRemaining: 0, overageEnabled: false, overageCount: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
+		quotas.sessionLimit = { percentRemaining: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
+		quotas.weeklyLimit = { percentRemaining: 20, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
+		quotas.overageEnabled = false;
 
 		return quotas;
 	}
