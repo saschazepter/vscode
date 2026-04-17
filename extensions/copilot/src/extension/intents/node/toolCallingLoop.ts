@@ -690,7 +690,7 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 			if (isFirstTurn) {
 				const startHookResult = await this.executeSessionStartHook({
 					source: 'new',
-					model: this.options.request.model?.id,
+					model: this.options.request.model?.id ?? 'unknown',
 					agent_type: this.agentName,
 				}, sessionId, outputStream, token);
 				if (startHookResult.additionalContext) {

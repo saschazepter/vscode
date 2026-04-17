@@ -175,7 +175,7 @@ export interface SessionStartHookInput {
 	/**
 	 * The model identifier (e.g. "claude-sonnet-4-6").
 	 */
-	readonly model?: string;
+	readonly model: string;
 	/**
 	 * The agent or mode name, if applicable.
 	 */
