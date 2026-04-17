@@ -1119,7 +1119,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		controllerData.onDidChangeChatSessionItemStateEmitter.fire(item);
 	}
 
-	async $provideChatSessionInputState(controllerHandle: number, sessionResourceComponents: UriComponents, token: CancellationToken): Promise<vscode.ChatSessionProviderOptionGroup[] | undefined> {
+	async $provideChatSessionInputState(controllerHandle: number, sessionResourceComponents: UriComponents | undefined, token: CancellationToken): Promise<vscode.ChatSessionProviderOptionGroup[] | undefined> {
 		const controllerData = this._chatSessionItemControllers.get(controllerHandle);
 		if (!controllerData) {
 			this._logService.warn(`No controller found for handle ${controllerHandle}`);
@@ -1127,10 +1127,9 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}
 
 		const handler = controllerData.controller.getChatSessionInputState;
-		if (!handler) {
+		if (!handler || !sessionResourceComponents) {
 			return undefined;
 		}
-
 		const sessionResource = URI.revive(sessionResourceComponents);
 		const inputState = await handler(isUntitledChatSession(sessionResource) ? undefined : sessionResource, { previousInputState: undefined }, token);
 		if (!inputState) {
