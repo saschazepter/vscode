@@ -564,47 +564,15 @@
 	margin-right: 4px;
 }
 
-.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-action-separator {
-	align-self: center;
-	width: 1px;
-	height: 16px;
-	margin: 0 4px;
-	background-color: var(--vscode-titleBar-activeForeground);
-	opacity: 0.3;
-}
-
-.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-actions-trailing {
-	cursor: default;
-	flex: initial;
-	padding: 0 8px 0 0;
-	height: var(--editor-group-tab-height);
-}
-
-.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-actions-trailing.hidden {
+.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-actions-separator {
 	display: none;
 }
 
-.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-actions-trailing .action-item {
-	margin-right: 4px;
+.monaco-workbench .part.editor > .content .editor-group-container > .title .editor-layout-actions {
+	display: none;
 }
 
-.monaco-workbench .part.editor > .content .editor-group-container > .title > .tabs-and-actions-container.wrapping .editor-actions {
-
-	/* When tabs are wrapped, position the editor actions at the end of the very last row */
-	position: absolute;
-	bottom: 0;
-	right: var(--last-tab-layout-actions-width, 0);
-}
-
-.monaco-workbench .part.editor > .content .editor-group-container > .title > .tabs-and-actions-container.wrapping .editor-actions-trailing {
-	/* When tabs are wrapped, position the trailing editor actions at the end of the very last row */
-	position: absolute;
-	bottom: 0;
-	right: 0;
-}
-
-.monaco-workbench .part.editor > .content .editor-group-container > .title.two-tab-bars > .tabs-and-actions-container:first-child .editor-actions,
-.monaco-workbench .part.editor > .content .editor-group-container > .title.two-tab-bars > .tabs-and-actions-container:first-child .editor-actions-trailing {
+.monaco-workbench .part.editor > .content .editor-group-container > .title.two-tab-bars > .tabs-and-actions-container:first-child .editor-actions {
 
 	/* When multiple tab bars are visible, only show editor actions for the last tab bar */
 	display: none;

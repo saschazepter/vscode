@@ -189,12 +189,10 @@ export abstract class EditorTabsControl extends Themable implements IEditorTabsC
 
 		this.handleEditorActionToolBarVisibility(this.editorActionsToolbarContainer);
 
-		this.editorLayoutActionsSeparator = $('div.editor-action-separator');
+		this.editorLayoutActionsSeparator = $('div.editor-actions-separator');
 		parent.appendChild(this.editorLayoutActionsSeparator);
-		setVisibility(false, this.editorLayoutActionsSeparator);
 
 		this.editorLayoutActionsToolbarContainer = $('div.editor-layout-actions');
-		this.editorLayoutActionsToolbarContainer.classList.add(...classes);
 		parent.appendChild(this.editorLayoutActionsToolbarContainer);
 
 		this.handleEditorLayoutActionsToolBarVisibility(this.editorLayoutActionsToolbarContainer);
@@ -236,6 +234,13 @@ export abstract class EditorTabsControl extends Themable implements IEditorTabsC
 		}
 
 		container.classList.toggle('hidden', !editorActionsEnabled);
+
+		// Keep the sibling separator in sync with the toolbar. The separator lives outside
+		// the hidden containers so it must be explicitly hidden whenever the layout toolbar
+		// is disabled/removed; otherwise it would remain visible as an orphan line.
+		if (this.editorLayoutActionsSeparator && !editorActionsEnabled) {
+			setVisibility(false, this.editorLayoutActionsSeparator);
+		}
 	}
 
 	private doCreateEditorActionsToolBar(container: HTMLElement): void {
@@ -370,6 +375,9 @@ export abstract class EditorTabsControl extends Themable implements IEditorTabsC
 		editorActionsToolbar.setActions([], []);
 
 		this.editorLayoutActionsToolbar?.setActions([], []);
+		if (this.editorLayoutActionsSeparator) {
+			setVisibility(false, this.editorLayoutActionsSeparator);
+		}
 	}
 
 	protected onGroupDragStart(e: DragEvent, element: HTMLElement): boolean {
