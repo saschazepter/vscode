@@ -1029,6 +1029,8 @@
 }
 
 .ai-customization-management-editor .editor-back-button {
+	flex-shrink: 0;
+	align-self: flex-start;
 	display: flex;
 	align-items: center;
 	justify-content: center;
