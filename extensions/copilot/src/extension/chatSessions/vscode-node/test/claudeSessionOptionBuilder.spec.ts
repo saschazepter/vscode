@@ -346,6 +346,12 @@ describe('ClaudePermissionModeBuilder', () => {
 		expect(group.selected?.locked).toBeUndefined();
 	});
 
+	it('normalizes dontAsk to acceptEdits for existing sessions', () => {
+		const builder = createPermissionBuilder();
+		const group = builder.buildExistingSessionGroup('dontAsk');
+		expect(group.selected?.id).toBe('acceptEdits');
+	});
+
 	it('tracks last used permission mode', () => {
 		const builder = createPermissionBuilder();
 		expect(builder.lastUsedPermissionMode).toBe('acceptEdits');
@@ -479,5 +485,68 @@ describe('extractFolderGroups / extractNonFolderGroups', () => {
 
 		expect(extractFolderGroups(groups)).toEqual([folderGroup]);
 		expect(extractNonFolderGroups(groups)).toEqual([permGroup]);
+	});
+});
+
+describe('ClaudeSessionOptionBuilder.createFolderProxy', () => {
+	let builder: ClaudeSessionOptionBuilder;
+	const store = new DisposableStore();
+
+	afterEach(() => {
+		store.clear();
+	});
+
+	function createBuilder(workspaceFolders: URI[]): ClaudeSessionOptionBuilder {
+		const workspaceService = new TestWorkspaceService(workspaceFolders);
+		const mockFolderMruService = new MockChatFolderMruService();
+		const serviceCollection = store.add(createExtensionUnitTestingServices(store));
+		serviceCollection.set(IWorkspaceService, workspaceService);
+		const accessor = serviceCollection.createTestingAccessor();
+		const configService = accessor.get(IConfigurationService);
+		return new ClaudeSessionOptionBuilder(configService, mockFolderMruService, workspaceService);
+	}
+
+	it('reassembles real state groups after proxy folder updates', () => {
+		builder = createBuilder([URI.file('/a'), URI.file('/b')]);
+		const initialFolderGroup: vscode.ChatSessionProviderOptionGroup = {
+			id: 'folder', name: 'Folder', description: '', items: [{ id: '/a', name: 'a' }], selected: { id: '/a', name: 'a' },
+		};
+		const updatedFolderGroup: vscode.ChatSessionProviderOptionGroup = {
+			id: 'folder', name: 'Folder', description: '', items: [{ id: '/b', name: 'b' }], selected: { id: '/b', name: 'b' },
+		};
+		const permGroup: vscode.ChatSessionProviderOptionGroup = {
+			id: 'permissionMode', name: 'Permission', description: '', items: [{ id: 'plan', name: 'Plan' }], selected: { id: 'plan', name: 'Plan' },
+		};
+
+		const realState = {
+			groups: [initialFolderGroup, permGroup] as vscode.ChatSessionProviderOptionGroup[],
+			sessionResource: undefined,
+			onDidChange: Event.None,
+		} as vscode.ChatSessionInputState;
+
+		const { proxyState, dispose } = builder.createFolderProxy(realState);
+		store.add(dispose);
+
+		proxyState.groups = [updatedFolderGroup];
+
+		expect(realState.groups).toHaveLength(2);
+		expect(realState.groups[0]).toEqual(updatedFolderGroup);
+		expect(realState.groups[1]).toEqual(permGroup);
+	});
+
+	it('dispose cleans up proxy resources', () => {
+		builder = createBuilder([URI.file('/a')]);
+		const realState = {
+			groups: [] as vscode.ChatSessionProviderOptionGroup[],
+			sessionResource: undefined,
+			onDidChange: Event.None,
+		} as vscode.ChatSessionInputState;
+
+		const { proxyState, dispose } = builder.createFolderProxy(realState);
+		dispose.dispose();
+
+		// After dispose, writing to proxy should not throw but also not update real state
+		proxyState.groups = [{ id: 'folder', name: 'Folder', description: '', items: [] }];
+		expect(realState.groups).toHaveLength(0);
 	});
 });

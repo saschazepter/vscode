@@ -10,6 +10,7 @@ import { ConfigKey, IConfigurationService } from '../../../platform/configuratio
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { Emitter } from '../../../util/vs/base/common/event';
+import { IDisposable } from '../../../util/vs/base/common/lifecycle';
 import { basename } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
 import { IChatFolderMruService } from '../common/folderRepositoryManager';
@@ -74,7 +75,9 @@ export class ClaudePermissionModeBuilder {
 
 	buildExistingSessionGroup(permissionMode: PermissionMode): vscode.ChatSessionProviderOptionGroup {
 		const permissionGroup = this.buildPermissionModeGroup();
-		const selectedItem = permissionGroup.items.find(i => i.id === permissionMode) ?? permissionGroup.items[0];
+		// `dontAsk` is an SDK-level mode that maps to `acceptEdits` in the UI
+		const normalizedMode = permissionMode === 'dontAsk' ? 'acceptEdits' : permissionMode;
+		const selectedItem = permissionGroup.items.find(i => i.id === normalizedMode) ?? permissionGroup.items[0];
 		return {
 			...permissionGroup,
 			selected: selectedItem,
@@ -238,7 +241,7 @@ export class ClaudeFolderOptionBuilder {
 export function createFolderBuilderProxy(
 	realState: vscode.ChatSessionInputState,
 	folderGroups: vscode.ChatSessionProviderOptionGroup[],
-): { proxyState: vscode.ChatSessionInputState; onDidProxyGroupsChange: vscode.Event<void> } {
+): { proxyState: vscode.ChatSessionInputState; onDidProxyGroupsChange: vscode.Event<void>; dispose: () => void } {
 	const onDidProxyGroupsChangeEmitter = new Emitter<void>();
 	let currentFolderGroups = folderGroups;
 
@@ -259,6 +262,7 @@ export function createFolderBuilderProxy(
 	return {
 		proxyState,
 		onDidProxyGroupsChange: onDidProxyGroupsChangeEmitter.event,
+		dispose: () => onDidProxyGroupsChangeEmitter.dispose(),
 	};
 }
 
@@ -352,20 +356,24 @@ export class ClaudeSessionOptionBuilder {
 	 * the callback re-assembles the full groups array on the real state.
 	 *
 	 * @param realState The real input state whose groups contain all option groups.
-	 * @returns A proxy state to pass to the folder builder's mutation methods.
+	 * @returns A proxy state to pass to the folder builder's mutation methods,
+	 *   and a disposable to clean up the proxy's internal emitter.
 	 */
-	createFolderProxy(realState: vscode.ChatSessionInputState): vscode.ChatSessionInputState {
+	createFolderProxy(realState: vscode.ChatSessionInputState): { proxyState: vscode.ChatSessionInputState; dispose: IDisposable } {
 		const folderGroups = extractFolderGroups(realState.groups);
-		const { proxyState, onDidProxyGroupsChange } = createFolderBuilderProxy(realState, folderGroups);
+		const { proxyState, onDidProxyGroupsChange, dispose } = createFolderBuilderProxy(realState, folderGroups);
 
-		onDidProxyGroupsChange(() => {
+		const subscription = onDidProxyGroupsChange(() => {
 			const nonFolderGroups = extractNonFolderGroups(realState.groups);
 			const newFolderGroups = [...proxyState.groups];
-			// Assemble: folder groups first, then the rest (preserving original order)
+			// Assemble: place folder groups first, followed by the remaining non-folder groups.
 			realState.groups = [...newFolderGroups, ...nonFolderGroups];
 		});
 
-		return proxyState;
+		return {
+			proxyState,
+			dispose: { dispose: () => { subscription.dispose(); dispose(); } },
+		};
 	}
 }
 
