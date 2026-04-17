@@ -871,13 +871,14 @@ suite('RunSubagentTool', () => {
 				},
 			};
 
-			const mockInstantiationService: Pick<IInstantiationService, 'createInstance' | 'createChild'> = {
+			const mockInstantiationService: Pick<IInstantiationService, 'createInstance' | 'createChild' | 'dispose'> = {
 				createInstance(..._args: never[]): { collect: () => Promise<void> } {
 					return { collect: async () => { } };
 				},
 				createChild() {
 					return mockInstantiationService as IInstantiationService;
 				},
+				dispose() { },
 			};
 
 			const tool = testDisposables.add(new RunSubagentTool(
