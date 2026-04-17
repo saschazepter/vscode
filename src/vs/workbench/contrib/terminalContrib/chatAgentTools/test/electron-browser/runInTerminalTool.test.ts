@@ -1949,6 +1949,7 @@ suite('RunInTerminalTool', () => {
 
 		const commandFinishedEmitter = new Emitter<{ exitCode: number | undefined }>();
 		const terminalDisposedEmitter = new Emitter<void>();
+		const inputNeededEmitter = new Emitter<void>();
 		const inputDataEmitter = new Emitter<string>();
 
 		const terminalInstance = {
@@ -1959,22 +1960,36 @@ suite('RunInTerminalTool', () => {
 			onDidInputData: inputDataEmitter.event,
 		} as unknown as ITerminalInstance;
 
-		// Simulate the state after inputNeeded: fg terminal association is preserved
-		// and completion notification is registered (the fix ensures isBackground stays false).
+		const outputMonitor = {
+			onDidDetectInputNeeded: inputNeededEmitter.event,
+			continueMonitoringAsync: () => { },
+			dispose: () => { },
+		} as unknown as { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void };
+
+		// Set up fg terminal association and active execution
 		runInTerminalTool.sessionTerminalAssociations.set(sessionResource, {
 			instance: terminalInstance,
 			shellIntegrationQuality: ShellIntegrationQuality.Rich,
 			isBackground: false,
 		});
 
-		// eslint-disable-next-line @typescript-eslint/naming-convention
-		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: undefined) => void })
-			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'ssh host', undefined);
+		(runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string }> })._activeExecutions.set(termId, {
+			getOutput: () => 'Password:',
+		});
 
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void }) => void })
+			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'ssh host', outputMonitor);
+
+		// Fire inputNeeded — this simulates the output monitor detecting a prompt
+		inputNeededEmitter.fire();
+		strictEqual(capturedSteeringRequests.length, 1, 'Should send steering request for input needed');
+
+		// The key assertion: fg terminal association is preserved (not deleted)
 		ok(runInTerminalTool.sessionTerminalAssociations.has(sessionResource), 'Session terminal association should be preserved for fg reuse');
 		strictEqual(runInTerminalTool.sessionTerminalAssociations.get(sessionResource)!.isBackground, false, 'Terminal should remain foreground');
 
-		// After command finishes, the notification is disposed but the fg association persists
+		// After command finishes, the fg association still persists
 		commandFinishedEmitter.fire({ exitCode: 0 });
 		ok(runInTerminalTool.sessionTerminalAssociations.has(sessionResource), 'Session terminal association should still be preserved after command finishes');
 		strictEqual(runInTerminalTool.sessionTerminalAssociations.get(sessionResource)!.isBackground, false, 'Terminal should still be foreground after command finishes');

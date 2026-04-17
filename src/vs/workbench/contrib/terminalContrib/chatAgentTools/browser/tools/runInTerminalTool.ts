@@ -1621,7 +1621,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			didSandboxWrapCommand,
 			requestUnsandboxedExecution: args.requestUnsandboxedExecution === true,
 			isPersistentSession: executionOptions.persistentSession,
-			isBackgroundExecution,
+			isBackgroundExecution: isBackgroundExecution || didInputNeeded,
 			didTimeout,
 			exitCode,
 			output: terminalResult,
