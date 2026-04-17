@@ -206,7 +206,7 @@
 	color: var(--vscode-gauge-errorForeground);
 }
 
-/* Dimmed state when quota limit is reached without overage */
+/* Dimmed state when quota limit is fully exhausted */
 
 .chat-status-bar-entry-tooltip .quota-indicator.dimmed {
 	border-color: var(--vscode-editorWidget-border);
