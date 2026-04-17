@@ -88,6 +88,8 @@ interface McSharedState {
 	mcSdkSession: Session;
 	/** Dispose function for the persistent on('*') listener for MC events. */
 	mcEventListenerDispose: (() => void) | undefined;
+	/** VS Code session resource URI for routing steering through the chat UI. */
+	mcSessionResource: import('vscode').Uri;
 }
 const mcStateBySessionId = new Map<string, McSharedState>();
 
@@ -1085,6 +1087,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				mcLastEventId: null,
 				mcSdkSession: this._sdkSession,
 				mcEventListenerDispose: undefined,
+				mcSessionResource: this._sessionResource,
 			};
 			mcStateBySessionId.set(this.sessionId, sharedState);
 			this.logService.info(`[CopilotCLISession] Set shared MC state for session ${this.sessionId}, mcSessionId=${mcData.id}`);
@@ -1513,17 +1516,21 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						state.mcSdkSession.abort();
 						break;
 					case 'user_message':
-					default:
-						// Inject as a steering message into the running session.
-						// Uses the stored SDK session ref which remains valid
-						// across CopilotCLISession instance recreations.
-						state.mcSdkSession.send({
-							prompt: cmd.content,
-							mode: 'immediate',
-						}).catch(err => {
+					default: {
+						// Route steering messages through the VS Code chat UI so
+						// they appear in the chat panel with proper rendering.
+						const vsCodeApi = require('vscode') as typeof import('vscode');
+						vsCodeApi.commands.executeCommand(
+							'workbench.action.chat.openSessionWithPrompt.copilotcli',
+							{
+								resource: state.mcSessionResource,
+								prompt: cmd.content,
+							}
+						).then(undefined, err => {
 							logService.warn(`[CopilotCLISession] MC steering send failed: ${err}`);
 						});
 						break;
+					}
 				}
 
 				// Mark command as processed
