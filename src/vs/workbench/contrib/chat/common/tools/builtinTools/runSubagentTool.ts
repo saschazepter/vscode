@@ -312,9 +312,9 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			const scopedContextKeyService = this.contextKeyService.createOverlay([
 				[ChatContextKeys.chatSessionType.key, getChatSessionType(invocation.context.sessionResource)]
 			]);
-			const scopedInstantiationService = this.instantiationService.createChild(
+			const scopedInstantiationService = store.add(this.instantiationService.createChild(
 				new ServiceCollection([IContextKeyService, scopedContextKeyService])
-			);
+			));
 			const computer = scopedInstantiationService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, modeTools, undefined);
 			await computer.collect(variableSet, token);
 

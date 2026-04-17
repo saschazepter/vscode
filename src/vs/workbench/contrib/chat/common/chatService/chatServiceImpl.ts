@@ -1130,9 +1130,9 @@ export class ChatService extends Disposable implements IChatService {
 					const scopedContextKeyService = this.contextKeyService.createOverlay([
 						[ChatContextKeys.chatSessionType.key, getChatSessionType(sessionResource)]
 					]);
-					const scopedInstantiationService = this.instantiationService.createChild(
+					const scopedInstantiationService = store.add(this.instantiationService.createChild(
 						new ServiceCollection([IContextKeyService, scopedContextKeyService])
-					);
+					));
 					const computer = scopedInstantiationService.createInstance(ComputeAutomaticInstructions, ctx.modeKind, ctx.enabledTools, ctx.enabledSubAgents);
 					await computer.collect(variableSet, token);
 					// Return only the entries that were added by instruction collection
