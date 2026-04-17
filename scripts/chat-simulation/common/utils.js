@@ -17,7 +17,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
-const { execSync, spawn } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
 const DATA_DIR = path.join(ROOT, '.chat-simulation-data');
@@ -164,7 +164,12 @@ function preseedStorage(userDataDir) {
 	const globalStorageDir = path.join(userDataDir, 'User', 'globalStorage');
 	fs.mkdirSync(globalStorageDir, { recursive: true });
 	const dbPath = path.join(globalStorageDir, 'state.vscdb');
-	execSync(`sqlite3 "${dbPath}" "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB); INSERT INTO ItemTable (key, value) VALUES ('builtinChatExtensionEnablementMigration', 'true'); INSERT INTO ItemTable (key, value) VALUES ('chat.tools.global.autoApprove.optIn', 'true');"`);
+	const sql = [
+		'CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);',
+		'INSERT INTO ItemTable (key, value) VALUES (\'builtinChatExtensionEnablementMigration\', \'true\');',
+		'INSERT INTO ItemTable (key, value) VALUES (\'chat.tools.global.autoApprove.optIn\', \'true\');',
+	].join(' ');
+	execFileSync('sqlite3', [dbPath, sql]);
 }
 
 // -- Launch helpers ----------------------------------------------------------

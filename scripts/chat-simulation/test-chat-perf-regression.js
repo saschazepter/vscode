@@ -133,6 +133,13 @@ function parseArgs() {
 	}
 	if (opts.scenarios.length === 0) {
 		opts.scenarios = getScenarioIds();
+	} else {
+		const knownIds = new Set(getScenarioIds());
+		const unknown = opts.scenarios.filter(s => !knownIds.has(s));
+		if (unknown.length > 0) {
+			console.error(`Unknown scenario(s): ${unknown.join(', ')}\nAvailable: ${[...knownIds].join(', ')}`);
+			process.exit(1);
+		}
 	}
 	return opts;
 }

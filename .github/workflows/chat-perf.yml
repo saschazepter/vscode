@@ -55,6 +55,9 @@ env:
   TEST_COMMIT: ${{ inputs.test_commit || '' }}
   PERF_RUNS: ${{ inputs.runs || '' }}
   PERF_THRESHOLD: ${{ inputs.threshold || '' }}
+  SCENARIOS_INPUT: ${{ inputs.scenarios || '' }}
+  TEST_SETTINGS_INPUT: ${{ inputs.test_settings || '' }}
+  BASELINE_SETTINGS_INPUT: ${{ inputs.baseline_settings || '' }}
 
 jobs:
   # ── Shared setup: build once, cache everything ──────────────────────
@@ -196,12 +199,12 @@ jobs:
             const fs = require('fs');
             require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
             const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
-            const userInput = '${{ inputs.scenarios }}';
+            const userInput = process.env.SCENARIOS_INPUT || '';
             const allScens = userInput
               ? userInput.split(',').map(s => s.trim()).filter(Boolean)
               : getScenarioIds();
             const groups = 4;
-            const group = ${{ matrix.group }};
+            const group = parseInt(process.env.MATRIX_GROUP, 10);
             // Distribute scenarios round-robin across groups
             const groupScens = allScens.filter((_, i) => (i % groups) + 1 === group);
             if (groupScens.length === 0) {
@@ -214,42 +217,49 @@ jobs:
               console.log('Group ' + group + ' (' + groupScens.length + '/' + allScens.length + '): ' + groupScens.join(', '));
             }
           "
+        env:
+          MATRIX_GROUP: ${{ matrix.group }}
 
       - name: Run chat perf comparison
         id: perf
         if: steps.scenarios.outputs.skip != 'true'
+        env:
+          SCENARIO_ARGS: ${{ steps.scenarios.outputs.args }}
         run: |
-          PERF_ARGS="--ci"
+          PERF_ARGS=("--ci")
           if [[ -n "$BASELINE_COMMIT" ]]; then
-            PERF_ARGS="$PERF_ARGS --baseline-build $BASELINE_COMMIT"
+            PERF_ARGS+=("--baseline-build" "$BASELINE_COMMIT")
           fi
           if [[ -n "$TEST_COMMIT" ]]; then
-            PERF_ARGS="$PERF_ARGS --build $TEST_COMMIT"
+            PERF_ARGS+=("--build" "$TEST_COMMIT")
           fi
           if [[ -n "$PERF_RUNS" ]]; then
-            PERF_ARGS="$PERF_ARGS --runs $PERF_RUNS"
+            PERF_ARGS+=("--runs" "$PERF_RUNS")
           fi
           if [[ -n "$PERF_THRESHOLD" ]]; then
-            PERF_ARGS="$PERF_ARGS --threshold $PERF_THRESHOLD"
+            PERF_ARGS+=("--threshold" "$PERF_THRESHOLD")
           fi
-          PERF_ARGS="$PERF_ARGS --production-build"
+          PERF_ARGS+=("--production-build")
 
-          # Convert JSON settings objects to --test-set / --baseline-set flags
-          if [[ -n '${{ inputs.test_settings }}' ]]; then
+          # Convert JSON settings objects to --test-setting / --baseline-setting flags
+          if [[ -n "$TEST_SETTINGS_INPUT" ]]; then
             while IFS='=' read -r key value; do
-              PERF_ARGS="$PERF_ARGS --test-setting $key=$value"
-            done < <(node -e "const s=JSON.parse(process.argv[1]); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)" '${{ inputs.test_settings }}')
+              PERF_ARGS+=("--test-setting" "$key=$value")
+            done < <(node -e "const s=JSON.parse(process.env.TEST_SETTINGS_INPUT); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)")
           fi
-          if [[ -n '${{ inputs.baseline_settings }}' ]]; then
+          if [[ -n "$BASELINE_SETTINGS_INPUT" ]]; then
             while IFS='=' read -r key value; do
-              PERF_ARGS="$PERF_ARGS --baseline-setting $key=$value"
-            done < <(node -e "const s=JSON.parse(process.argv[1]); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)" '${{ inputs.baseline_settings }}')
+              PERF_ARGS+=("--baseline-setting" "$key=$value")
+            done < <(node -e "const s=JSON.parse(process.env.BASELINE_SETTINGS_INPUT); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)")
           fi
+
+          # Split SCENARIO_ARGS on whitespace into array elements
+          read -ra SCENARIO_ARR <<< "$SCENARIO_ARGS"
 
           set +eo pipefail
           xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \
-            $PERF_ARGS \
-            ${{ steps.scenarios.outputs.args }} \
+            "${PERF_ARGS[@]}" \
+            "${SCENARIO_ARR[@]}" \
             2>&1 | tee perf-output.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
