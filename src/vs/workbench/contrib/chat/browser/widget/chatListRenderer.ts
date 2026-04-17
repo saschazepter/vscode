@@ -857,10 +857,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// - And it has some content
 		// - And the response is not complete
 		//   - Or, we previously started a progressive rendering of this element (if the element is complete, we will finish progressive rendering with a very fast rate)
-		if (isResponseVM(element) && index === this.delegate.getListLength() - 1 && (!element.isComplete || element.renderData)) {
+		const smoothStreaming = this.configService.getValue<boolean>(ChatConfiguration.SmoothStreaming);
+		if (isResponseVM(element) && index === this.delegate.getListLength() - 1 && (!element.isComplete || element.renderData || smoothStreaming)) {
 			this.traceLayout('renderElement', `start progressive render, index=${index}`);
 
-			if (this.configService.getValue<boolean>(ChatConfiguration.SmoothStreaming) && !element.renderData) {
+			if (smoothStreaming && !element.renderData) {
 				// Smooth streaming: event-driven flow, no timer.
 				// renderElement is called each time the model changes, so
 				// this method runs on every content update.
@@ -1393,6 +1394,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return;
 		}
 
+		// Always update the word buffer's reveal rate, including on the
+		// completion pass so the buffer switches to a fast drain rate.
+		const rate = this.getProgressiveRenderRate(element);
+		this._updateMorpherRate(templateData, rate, element.isComplete || element.isCanceled);
+
 		if (element.isCanceled || element.isComplete) {
 			// The morpher has already rendered the markdown content
 			// correctly through the standard pipeline. Clear renderData
@@ -1406,11 +1412,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		templateData.rowContainer.classList.toggle('chat-response-loading', true);
-
-		// Update the word buffer's reveal rate from the model's stream stats,
-		// so it matches the model's token production speed.
-		const rate = this.getProgressiveRenderRate(element);
-		this._updateMorpherRate(templateData, rate, element.isComplete);
 
 		const contentForThisTurn = this.getNextProgressiveRenderContent(element, templateData);
 		const partsToRender = this.diff(templateData.renderedParts ?? [], contentForThisTurn.content, element);

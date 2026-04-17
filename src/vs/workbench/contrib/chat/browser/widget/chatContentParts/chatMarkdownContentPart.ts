@@ -158,16 +158,6 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 				this.markdown = { ...this.markdown, content };
 				doRenderMarkdown();
 			});
-			// Observe the morpher's container for any height changes.
-			// The morpher renders in rAF — outside the normal renderElement
-			// flow — so without this observer the list's scroll position
-			// can drift out of sync. A ResizeObserver is more reliable than
-			// a synchronous fire after doRenderMarkdown() because embedded
-			// widgets (code blocks, tables) may resize asynchronously.
-			const resizeObserver = this._register(new dom.DisposableResizeObserver(() => {
-				this._onDidChangeHeight.fire();
-			}));
-			this._register(resizeObserver.observe(this.domNode));
 		}
 
 		const renderStore = this._register(new MutableDisposable<DisposableStore>());

@@ -28,10 +28,12 @@ export function lastBlockBoundary(text: string): number {
 	let inFence = false;
 
 	for (let i = 0; i < text.length; i++) {
-		// Detect fenced code blocks: ``` at the start of a line.
-		if ((i === 0 || text[i - 1] === '\n') && text[i] === '`' && text[i + 1] === '`' && text[i + 2] === '`') {
+		// Detect fenced code blocks: ``` or ~~~ at the start of a line.
+		if ((i === 0 || text[i - 1] === '\n') &&
+			((text[i] === '`' && text[i + 1] === '`' && text[i + 2] === '`') ||
+				(text[i] === '~' && text[i + 1] === '~' && text[i + 2] === '~'))) {
 			inFence = !inFence;
-			i += 2; // skip past the triple backtick
+			i += 2; // skip past the triple backtick/tilde
 			continue;
 		}
 		// Detect block boundary outside code fences.

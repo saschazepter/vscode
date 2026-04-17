@@ -40,7 +40,10 @@ export class BlockAnimation implements ISmoothStreamingAnimation {
 			child.style.setProperty('--chat-smooth-duration', `${ANIMATION_DURATION_MS}ms`);
 			child.style.setProperty('--chat-smooth-delay', `${childDelay}ms`);
 
-			child.addEventListener('animationend', () => {
+			child.addEventListener('animationend', (e) => {
+				if (e.target !== child) {
+					return;
+				}
 				child.classList.remove(className);
 				child.style.removeProperty('--chat-smooth-duration');
 				child.style.removeProperty('--chat-smooth-delay');

@@ -80,6 +80,21 @@ suite('lastBlockBoundary', () => {
 		const text = 'text ``` not a fence\n\nafter';
 		assert.strictEqual(lastBlockBoundary(text), 20);
 	});
+
+	test('ignores block boundaries inside a tilde-fenced code block', () => {
+		const text = '~~~\ncode\n\nmore code\n~~~';
+		assert.strictEqual(lastBlockBoundary(text), -1);
+	});
+
+	test('finds boundary after closing a tilde fence', () => {
+		const text = '~~~\ncode\n~~~\n\nafter fence';
+		assert.strictEqual(lastBlockBoundary(text), 12);
+	});
+
+	test('handles unclosed tilde fence', () => {
+		const text = '~~~\ncode\n\nmore\n\nstill inside';
+		assert.strictEqual(lastBlockBoundary(text), -1);
+	});
 });
 
 suite('SmoothStreamingDOMMorpher', () => {
