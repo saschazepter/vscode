@@ -272,6 +272,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private pluginContentContainer: HTMLElement | undefined;
 	private modelsContentContainer: HTMLElement | undefined;
 	private modelsFooterElement: HTMLElement | undefined;
+	private contentBackBar: HTMLElement | undefined;
 
 	// Embedded editor state
 	private editorContentContainer: HTMLElement | undefined;
@@ -783,6 +784,20 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private createContent(): void {
 		const contentInner = DOM.append(this.contentContainer, $('.content-inner'));
 
+		// Back-to-overview bar shown above per-section content (Agents, Skills, etc.)
+		this.contentBackBar = DOM.append(contentInner, $('.content-back-bar'));
+		const backButton = DOM.append(this.contentBackBar, $('button.content-back-button'));
+		backButton.setAttribute('aria-label', localize('backToOverview', "Back to overview"));
+		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), backButton, localize('backToOverviewTooltip', "Back to overview")));
+		const backIcon = DOM.append(backButton, $('span.content-back-icon'));
+		backIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.arrowLeft));
+		backIcon.setAttribute('aria-hidden', 'true');
+		const backLabel = DOM.append(backButton, $('span.content-back-label'));
+		backLabel.textContent = localize('backToOverviewLabel', "Back");
+		this.editorDisposables.add(DOM.addDisposableListener(backButton, 'click', () => {
+			this.showWelcomePage();
+		}));
+
 		// Welcome page (shown when no section is selected)
 		this.createWelcomePage(contentInner);
 
@@ -1077,6 +1092,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		if (this.welcomePage) {
 			this.welcomePage.container.style.display = isWelcome && !isEditorMode && !isDetailMode ? '' : 'none';
+		}
+		if (this.contentBackBar) {
+			// Show the back bar whenever a section screen is visible (not on welcome, editor, or detail views).
+			const showBackBar = !isWelcome && !isEditorMode && !isDetailMode;
+			this.contentBackBar.style.display = showBackBar ? '' : 'none';
 		}
 		if (this.promptsContentContainer) {
 			this.promptsContentContainer.style.display = !isEditorMode && !isDetailMode && isPromptsSection ? '' : 'none';

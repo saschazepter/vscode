@@ -146,6 +146,44 @@
 	height: 100%;
 	padding: 10px;
 	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+}
+
+.ai-customization-management-editor .content-back-bar {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.ai-customization-management-editor .content-back-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--vscode-foreground);
+	cursor: pointer;
+	font-size: 12px;
+	font-family: inherit;
+	line-height: 18px;
+}
+
+.ai-customization-management-editor .content-back-button:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.ai-customization-management-editor .content-back-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.ai-customization-management-editor .content-back-icon {
+	font-size: 14px;
+	opacity: 0.85;
 }
 
 /* List Widget */
@@ -653,7 +691,8 @@
 .ai-customization-management-editor .mcp-content-container,
 .ai-customization-management-editor .plugin-content-container,
 .ai-customization-management-editor .models-content-container {
-	height: 100%;
+	flex: 1;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 }
