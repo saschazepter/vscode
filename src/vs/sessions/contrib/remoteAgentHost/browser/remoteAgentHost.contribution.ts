@@ -19,6 +19,7 @@ import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurati
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import product from '../../../../platform/product/common/product.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
@@ -50,10 +51,13 @@ class ConnectionState extends Disposable {
 
 	constructor(
 		readonly name: string | undefined,
-		loggedConnection: LoggingAgentConnection,
+		connection: IAgentConnection,
+		channelId: string,
+		channelLabel: string,
+		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
-		this.loggedConnection = loggedConnection;
+		this.loggedConnection = this._register(instantiationService.createInstance(LoggingAgentConnection, connection, channelId, channelLabel));
 	}
 }
 
@@ -266,8 +270,8 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 
 		const { address, name } = connectionInfo;
 		const channelLabel = `Agent Host (${name || address})`;
-		const loggedConnection = this._instantiationService.createInstance(LoggingAgentConnection, connection, `agenthost.${connection.clientId}`, channelLabel);
-		const connState = new ConnectionState(name, loggedConnection);
+		const connState = this._instantiationService.createInstance(ConnectionState, name, connection, `agenthost.${connection.clientId}`, channelLabel);
+		const loggedConnection = connState.loggedConnection;
 		this._connections.set(address, connState);
 		const store = connState.store;
 
@@ -574,7 +578,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		[RemoteAgentHostsEnabledSettingId]: {
 			type: 'boolean',
 			description: nls.localize('chat.remoteAgentHosts.enabled', "Enable connecting to remote agent hosts."),
-			default: false,
+			default: product.quality === 'insider',
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental', 'advanced'],
 		},
@@ -612,3 +616,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		},
 	},
 });
+
+// Side-effect registrations for the remote agent host feature
+import './remoteAgentHostActions.js';
+import '../../chat/browser/agentHostModelPicker.js';
