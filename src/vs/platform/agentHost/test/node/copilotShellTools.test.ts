@@ -12,7 +12,7 @@ import { InstantiationService } from '../../../instantiation/common/instantiatio
 import { ServiceCollection } from '../../../instantiation/common/serviceCollection.js';
 import { ILogService, NullLogService } from '../../../log/common/log.js';
 import type { ICreateTerminalParams } from '../../common/state/protocol/commands.js';
-import type { ITerminalClaim } from '../../common/state/protocol/state.js';
+import type { ITerminalClaim, ITerminalInfo } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
 import { ShellManager } from '../../node/copilot/copilotShellTools.js';
 
@@ -35,7 +35,7 @@ class TestAgentHostTerminalManager implements IAgentHostTerminalManager {
 	getExitCode(): number | undefined { return undefined; }
 	supportsCommandDetection(): boolean { return false; }
 	disposeTerminal(): void { }
-	getTerminalInfos(): [] { return []; }
+	getTerminalInfos(): ITerminalInfo[] { return []; }
 	getTerminalState(): undefined { return undefined; }
 }
 
@@ -53,14 +53,16 @@ suite('CopilotShellTools', () => {
 		services.set(IAgentHostTerminalManager, terminalManager);
 		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
 		services.set(IInstantiationService, instantiationService);
-		const shellManager = disposables.add(instantiationService.createInstance(ShellManager, URI.parse('copilot:/session-1'), URI.file('/workspace/worktree')));
+		const worktreePath = URI.file('/workspace/worktree').fsPath;
+		const explicitCwd = URI.file('/explicit/cwd').fsPath;
+		const shellManager = disposables.add(instantiationService.createInstance(ShellManager, URI.parse('copilot:/session-1'), URI.file(worktreePath)));
 
 		await shellManager.getOrCreateShell('bash', 'turn-1', 'tool-1');
-		await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2', '/explicit/cwd');
+		await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2', explicitCwd);
 
 		assert.deepStrictEqual(terminalManager.created.map(c => c.cwd), [
-			'/workspace/worktree',
-			'/explicit/cwd',
+			worktreePath,
+			explicitCwd,
 		]);
 	});
 });
