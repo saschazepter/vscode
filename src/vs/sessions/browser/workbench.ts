@@ -8,7 +8,7 @@ import './media/style.css';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
 import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
-import { DeferredPromise, disposableTimeout, RunOnceScheduler } from '../../base/common/async.js';
+import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
 import { isFullscreen, onDidChangeFullscreen, isChrome, isFirefox, isSafari } from '../../base/browser/browser.js';
 import { mark } from '../../base/common/performance.js';
 import { onUnexpectedError, setUnexpectedErrorHandler } from '../../base/common/errors.js';
@@ -624,19 +624,25 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Restore parts (open default view containers)
 		this.restoreParts();
 
-		// Enable part-reveal transitions only after the initial startup
-		// phase has settled. Both the `transition` declarations and the
-		// `@starting-style` rules are scoped behind `.animations-ready`,
-		// so any parts revealed during startup (including async pane-
-		// composite opens triggered by session loading) appear instantly.
-		// Subsequent user-driven toggles animate normally.
-		disposableTimeout(() => this.mainContainer.classList.add(LayoutClasses.ANIMATIONS_READY), 1500, this._store);
-
 		// Set lifecycle phase to `Restored`
 		lifecycleService.phase = LifecyclePhase.Restored;
 
 		// Mark as restored
 		this.setRestored();
+
+		// Enable part-reveal transitions once the workbench reaches the
+		// `Eventually` lifecycle phase. Both the `transition` declarations
+		// and the `@starting-style` rules are scoped behind `.animations-ready`,
+		// so any parts revealed during startup — including async pane-
+		// composite opens triggered by session-loading autoruns — appear
+		// instantly. `Eventually` is a well-defined signal that startup
+		// work has fully settled, avoiding any magic-number timing.
+		lifecycleService.when(LifecyclePhase.Eventually).then(() => {
+			if (this._store.isDisposed) {
+				return;
+			}
+			this.mainContainer.classList.add(LayoutClasses.ANIMATIONS_READY);
+		});
 
 		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
 		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {
