@@ -4538,7 +4538,7 @@
 					},
 					"github.copilot.chat.cli.showExternalSessions": {
 						"type": "boolean",
-						"default": false,
+						"default": true,
 						"markdownDescription": "%github.copilot.config.cli.showExternalSessions%",
 						"tags": [
 							"advanced"
