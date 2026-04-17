@@ -150,14 +150,6 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 			return;
 		}
 
-		// Agent-host sessions open terminals through the agent-host terminal
-		// profile; creating a local "home" terminal here would route through
-		// that same profile and produce a duplicate.
-		const repo = session.workspace.get()?.repositories[0];
-		if (repo?.uri.scheme === AGENT_HOST_SCHEME || repo?.workingDirectory?.scheme === AGENT_HOST_SCHEME) {
-			return;
-		}
-
 		const sessionCwd = getSessionCwd(session);
 
 		const targetPath = sessionCwd ?? await this._pathService.userHome();

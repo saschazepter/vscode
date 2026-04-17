@@ -16,6 +16,24 @@ import { StateComponents } from '../../../../platform/agentHost/common/state/ses
 import { BasePty } from '../common/basePty.js';
 
 /**
+ * Resolves an optional working-directory URI to the `cwd` value sent in
+ * `createTerminal`. For `file://` URIs we send the raw filesystem path so
+ * older agent-host servers (which pass `cwd` directly to node-pty) accept
+ * it; other schemes fall back to the URI string. Empty or root paths are
+ * dropped so the server can use its own default.
+ */
+function resolveCreateTerminalCwd(cwd: URI | undefined): string | undefined {
+	if (!cwd) {
+		return undefined;
+	}
+	const value = cwd.scheme === 'file' ? cwd.fsPath : cwd.toString();
+	if (!value || value === '/') {
+		return undefined;
+	}
+	return value;
+}
+
+/**
  * Options for creating a new terminal on an agent host.
  */
 export interface IAgentHostPtyOptions {
@@ -135,7 +153,7 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 					terminal: this._terminalUri.toString(),
 					claim: { kind: TerminalClaimKind.Client, clientId: this._connection.clientId },
 					name: this._options?.name,
-					cwd: this._options?.cwd?.toString(),
+					cwd: resolveCreateTerminalCwd(this._options?.cwd),
 					cols: this._lastDimensions.cols > 0 ? this._lastDimensions.cols : undefined,
 					rows: this._lastDimensions.rows > 0 ? this._lastDimensions.rows : undefined,
 				});
