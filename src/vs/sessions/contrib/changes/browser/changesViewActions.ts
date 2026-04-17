@@ -26,9 +26,6 @@ import { ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { ChangesViewPane } from './changesView.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../files/browser/files.contribution.js';
 import { SESSIONS_FILES_VIEW_ID } from '../../files/browser/filesView.js';
-import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
-import { EditorMaximizedContext } from '../../../common/contextkeys.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -204,85 +201,3 @@ class OpenPullRequestAction extends Action2 {
 }
 
 registerAction2(OpenPullRequestAction);
-
-class MaximizeMainEditorPartAction extends Action2 {
-	static readonly ID = 'workbench.action.agentSessions.maximizeMainEditorPart';
-
-	constructor() {
-		super({
-			id: MaximizeMainEditorPartAction.ID,
-			title: localize2('maximizeMainEditorPart', "Maximize Editor"),
-			icon: Codicon.screenFull,
-			f1: false,
-			menu: {
-				id: MenuId.EditorTitleLayout,
-				group: 'navigation',
-				order: 1,
-				when: ContextKeyExpr.and(
-					IsSessionsWindowContext,
-					EditorMaximizedContext.negate())
-			}
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const layoutService = accessor.get(IAgentWorkbenchLayoutService);
-		layoutService.setEditorMaximized(true);
-	}
-}
-
-registerAction2(MaximizeMainEditorPartAction);
-
-class RestoreMainEditorPartAction extends Action2 {
-	static readonly ID = 'workbench.action.agentSessions.restoreMainEditorPart';
-
-	constructor() {
-		super({
-			id: RestoreMainEditorPartAction.ID,
-			title: localize2('restoreMainEditorPart', "Restore Editor"),
-			icon: Codicon.screenNormal,
-			f1: false,
-			menu: {
-				id: MenuId.EditorTitleLayout,
-				group: 'navigation',
-				order: 1,
-				when: ContextKeyExpr.and(
-					IsSessionsWindowContext,
-					EditorMaximizedContext)
-			}
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const layoutService = accessor.get(IAgentWorkbenchLayoutService);
-		layoutService.setEditorMaximized(false);
-	}
-}
-
-registerAction2(RestoreMainEditorPartAction);
-
-class CloseMainEditorPartAction extends Action2 {
-	static readonly ID = 'workbench.action.agentSessions.closeMainEditorPart';
-
-	constructor() {
-		super({
-			id: CloseMainEditorPartAction.ID,
-			title: localize2('closeMainEditorPart', "Close Editor"),
-			icon: Codicon.close,
-			f1: false,
-			menu: {
-				id: MenuId.EditorTitleLayout,
-				group: 'navigation',
-				order: 100,
-				when: IsSessionsWindowContext
-			}
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const commandService = accessor.get(ICommandService);
-		await commandService.executeCommand('workbench.action.closeAllGroups');
-	}
-}
-
-registerAction2(CloseMainEditorPartAction);
