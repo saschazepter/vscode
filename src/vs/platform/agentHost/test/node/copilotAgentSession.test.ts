@@ -617,11 +617,10 @@ suite('CopilotAgentSession', () => {
 			const { session } = await createAgentSession(disposables, { clientSnapshot: snapshot });
 
 			// Completion arrives before handler — pre-creates deferred
-			const handled = session.handleClientToolCallComplete('tc-unknown', {
+			session.handleClientToolCallComplete('tc-unknown', {
 				success: true,
 				pastTenseMessage: 'done',
 			});
-			assert.strictEqual(handled, true);
 
 			// Handler picks up the pre-completed result
 			const tools = session.createClientSdkTools();
@@ -698,11 +697,10 @@ suite('CopilotAgentSession', () => {
 
 			// A second complete for the same toolCallId should create a new
 			// deferred (not fail). This tests the cleanup path.
-			const handled = session.handleClientToolCallComplete('tc-cleanup', {
+			session.handleClientToolCallComplete('tc-cleanup', {
 				success: true,
 				pastTenseMessage: 'done again',
 			});
-			assert.strictEqual(handled, true);
 		});
 
 		test('tool_start stores pending auto-ready data for client tools', async () => {
