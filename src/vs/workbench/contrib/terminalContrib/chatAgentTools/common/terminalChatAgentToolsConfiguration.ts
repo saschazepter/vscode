@@ -541,7 +541,7 @@ export const terminalChatAgentToolsConfiguration: IStringDictionary<IConfigurati
 		policy: {
 			name: 'ChatAgentSandboxEnabled',
 			category: PolicyCategory.IntegratedTerminal,
-			minimumVersion: '1.117',
+			minimumVersion: '1.116',
 			localization: {
 				description: {
 					key: 'agentSandbox.enabledSetting',
