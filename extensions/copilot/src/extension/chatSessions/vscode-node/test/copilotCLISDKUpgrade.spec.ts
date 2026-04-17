@@ -8,7 +8,6 @@ import { isBinaryFile } from 'isbinaryfile';
 import * as path from 'path';
 import { beforeAll, describe, it } from 'vitest';
 import { TestLogService } from '../../../../platform/testing/common/testLogService';
-import { copyNodePtyFiles } from '../../copilotcli/node/nodePtyShim';
 import { copyRipgrepShim } from '../../copilotcli/node/ripgrepShim';
 
 describe('CopilotCLI SDK Upgrade', function () {
@@ -91,13 +90,11 @@ describe('CopilotCLI SDK Upgrade', function () {
 
 		// Exclude ripgrep files that we copy over in src/extension/agents/copilotcli/node/ripgrepShim.ts (until we get better API/solution from SDK)
 		const ripgrepFilesWeCopy = path.join(copilotSDKPath, 'sdk', 'ripgrep', 'bin');
-		// Exclude nodepty files that we copy over in src/extension/agents/copilotcli/node/nodePtyShim.ts (until we get better API/solution from SDK)
-		const nodeptyFilesWeCopy = path.join(copilotSDKPath, 'sdk', 'prebuilds');
 
 		const errors: string[] = [];
 		// Look for new binaries
 		for (const binary of existingBinaries) {
-			if (binary.startsWith(ripgrepFilesWeCopy) || binary.startsWith(nodeptyFilesWeCopy)) {
+			if (binary.startsWith(ripgrepFilesWeCopy)) {
 				continue;
 			}
 			const binaryName = path.basename(binary);
@@ -110,7 +107,7 @@ describe('CopilotCLI SDK Upgrade', function () {
 		}
 		// Look for removed binaries.
 		for (const binary of knownBinaries) {
-			if (binary.startsWith(ripgrepFilesWeCopy) || binary.startsWith(nodeptyFilesWeCopy)) {
+			if (binary.startsWith(ripgrepFilesWeCopy)) {
 				continue;
 			}
 			if (!existingBinaries.has(binary)) {
@@ -124,19 +121,13 @@ describe('CopilotCLI SDK Upgrade', function () {
 	});
 
 	it('should be able to load the @github/copilot module without errors', async function () {
-		await copyNodePtyFiles(
-			extensionPath,
-			path.join(copilotSDKPath, 'prebuilds', process.platform + '-' + process.arch),
-			new TestLogService()
-		);
 		await import('@github/copilot/sdk');
 	});
 });
 
 async function copyBinaries(extensionPath: string) {
-	const nodePtyPrebuilds = path.join(extensionPath, 'node_modules', '@github', 'copilot', 'prebuilds', process.platform + '-' + process.arch);
-	const vscodeRipgrepPath = path.join(extensionPath, 'node_modules', '@github', 'copilot', 'ripgrep', 'bin', process.platform + '-' + process.arch);
-	await copyNodePtyFiles(extensionPath, nodePtyPrebuilds, new TestLogService());
+	const copilotSDKPath = path.join(extensionPath, 'node_modules', '@github', 'copilot');
+	const vscodeRipgrepPath = path.join(copilotSDKPath, 'ripgrep', 'bin', process.platform + '-' + process.arch);
 	await copyRipgrepShim(extensionPath, vscodeRipgrepPath, new TestLogService());
 }
 async function findAllBinaries(dir: string): Promise<string[]> {
