@@ -529,12 +529,15 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			() => {
 				const backend = resolvedSession ?? this._sessionToBackend.get(sessionResource);
 				if (!backend) {
-					return false;
+					// Nothing to cancel. Treat as a successful noop so ChatService
+					// does not install a phantom pending request.
+					return true;
 				}
 				const sessionKey = backend.toString();
 				const turnId = this._getSessionState(sessionKey)?.activeTurn?.id;
 				if (!turnId) {
-					return false;
+					// No active turn (likely a race with completion). Noop-success.
+					return true;
 				}
 				this._logService.info(`[AgentHost] Cancellation requested for ${sessionKey}, dispatching turnCancelled`);
 				this._config.connection.dispatch({

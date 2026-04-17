@@ -1127,16 +1127,16 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}
 
 		const handler = controllerData.controller.getChatSessionInputState;
-		if (!handler || !sessionResourceComponents) {
+		if (!handler) {
 			return undefined;
 		}
-		const sessionResource = URI.revive(sessionResourceComponents);
-		const inputState = await handler(isUntitledChatSession(sessionResource) ? undefined : sessionResource, { previousInputState: undefined }, token);
+		const sessionResource = sessionResourceComponents ? URI.revive(sessionResourceComponents) : undefined;
+		const inputState = await handler(!sessionResource || isUntitledChatSession(sessionResource) ? undefined : sessionResource, { previousInputState: undefined }, token);
 		if (!inputState) {
 			return undefined;
 		}
 
-		if (inputState instanceof ChatSessionInputStateImpl) {
+		if (inputState instanceof ChatSessionInputStateImpl && sessionResource) {
 			if (isUntitledChatSession(sessionResource)) {
 				inputState.untitledSessionResource = sessionResource;
 			} else {
