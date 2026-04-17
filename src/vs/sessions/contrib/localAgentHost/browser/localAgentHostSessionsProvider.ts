@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../../base/common/htmlContent.js';
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { constObservable, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { basename } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -16,9 +16,10 @@ import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { AgentSession, IAgentHostService, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
-import type { IFileEdit, IModelSelection, IRootState, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { IFileEdit, IModelSelection, IRootState, ISessionConfigPropertySchema, ISessionState, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IResolveSessionConfigResult, ISessionConfigValueItem } from '../../../../platform/agentHost/common/state/protocol/commands.js';
+import { StateComponents } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatSendRequestOptions, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
@@ -57,6 +58,37 @@ function buildMutableConfigSchema(config: Record<string, string>): Record<string
 		};
 	}
 	return properties;
+}
+
+/**
+ * Shallow structural equality for resolved session configs. Returns true when
+ * both values record the same keys with the same string values and the same
+ * set of property keys in the schema. The schema property objects themselves
+ * are compared by identity since they originate from the same protocol
+ * snapshot.
+ */
+function resolvedConfigsEqual(a: IResolveSessionConfigResult, b: IResolveSessionConfigResult): boolean {
+	const aValueKeys = Object.keys(a.values);
+	const bValueKeys = Object.keys(b.values);
+	if (aValueKeys.length !== bValueKeys.length) {
+		return false;
+	}
+	for (const key of aValueKeys) {
+		if (a.values[key] !== b.values[key]) {
+			return false;
+		}
+	}
+	const aPropKeys = Object.keys(a.schema.properties);
+	const bPropKeys = Object.keys(b.schema.properties);
+	if (aPropKeys.length !== bPropKeys.length) {
+		return false;
+	}
+	for (const key of aPropKeys) {
+		if (a.schema.properties[key] !== b.schema.properties[key]) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**
@@ -273,6 +305,17 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 
 	/** Config for running sessions (session-mutable properties only), keyed by session ID. */
 	private readonly _runningSessionConfigs = new Map<string, IResolveSessionConfigResult>();
+
+	/**
+	 * Lazy session-state subscriptions used to seed {@link _runningSessionConfigs}
+	 * for sessions that already exist on the agent host (e.g. created in a prior
+	 * window). The underlying wire subscription is reference-counted by
+	 * {@link IAgentConnection.getSubscription}, so when the session handler is
+	 * also subscribed (i.e. chat content is loaded) no extra wire subscribe is
+	 * issued. Keyed by session ID. Each entry owns the subscription `IReference`
+	 * plus the `onDidChange` listener.
+	 */
+	private readonly _sessionStateSubscriptions = this._register(new DisposableMap<string, DisposableStore>());
 
 	private _cacheInitialized = false;
 
@@ -504,7 +547,16 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 	}
 
 	getSessionConfig(sessionId: string): IResolveSessionConfigResult | undefined {
-		return this._newSessionConfigs.get(sessionId) ?? this._runningSessionConfigs.get(sessionId);
+		// New-session config wins (during pre-creation flow). Otherwise lazily
+		// subscribe to the session's state so the running picker can seed its
+		// schema/values from the AHP `ISessionState.config` snapshot for sessions
+		// that weren't created in this window.
+		const newSessionConfig = this._newSessionConfigs.get(sessionId);
+		if (newSessionConfig) {
+			return newSessionConfig;
+		}
+		this._ensureSessionStateSubscription(sessionId);
+		return this._runningSessionConfigs.get(sessionId);
 	}
 
 	async setSessionConfigValue(sessionId: string, property: string, value: string): Promise<void> {
@@ -918,6 +970,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 		if (cached) {
 			this._sessionCache.delete(rawId);
 			this._runningSessionConfigs.delete(cached.sessionId);
+			this._sessionStateSubscriptions.deleteAndDispose(cached.sessionId);
 			this._onDidChangeSessions.fire({ added: [], removed: [cached], changed: [] });
 		}
 	}
@@ -1026,6 +1079,78 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 				values: config,
 			});
 		}
+		this._onDidChangeSessionConfig.fire(sessionId);
+	}
+
+	/**
+	 * Lazily acquire a session-state subscription for `sessionId` so that
+	 * `_runningSessionConfigs` is seeded from the AHP `ISessionState.config`
+	 * snapshot. Safe to call repeatedly — no-op once a subscription exists.
+	 *
+	 * The subscription is reference-counted by {@link IAgentConnection.getSubscription},
+	 * so when the session handler is also subscribed (chat content open) this
+	 * shares the existing wire subscription rather than opening a new one.
+	 */
+	private _ensureSessionStateSubscription(sessionId: string): void {
+		if (this._sessionStateSubscriptions.has(sessionId)) {
+			return;
+		}
+		const rawId = this._rawIdFromChatId(sessionId);
+		if (!rawId) {
+			return;
+		}
+		const cached = this._sessionCache.get(rawId);
+		if (!cached) {
+			return;
+		}
+		const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
+		const ref = this._agentHostService.getSubscription(StateComponents.Session, sessionUri);
+		const store = new DisposableStore();
+		store.add(ref);
+		store.add(ref.object.onDidChange(state => this._seedRunningConfigFromState(sessionId, state)));
+		this._sessionStateSubscriptions.set(sessionId, store);
+
+		// Seed from the current snapshot if it has already arrived.
+		const value = ref.object.value;
+		if (value && !(value instanceof Error)) {
+			this._seedRunningConfigFromState(sessionId, value);
+		}
+	}
+
+	/**
+	 * Filter `state.config` to session-mutable properties and update
+	 * {@link _runningSessionConfigs} if changed. No-op if the seeded value is
+	 * structurally equal to the existing entry to avoid spurious
+	 * `onDidChangeSessionConfig` fires.
+	 */
+	private _seedRunningConfigFromState(sessionId: string, state: ISessionState): void {
+		const stateConfig = state.config;
+		if (!stateConfig) {
+			return;
+		}
+		const properties: Record<string, ISessionConfigPropertySchema> = {};
+		const values: Record<string, string> = {};
+		for (const [key, propSchema] of Object.entries(stateConfig.schema.properties)) {
+			if (!propSchema.sessionMutable) {
+				continue;
+			}
+			properties[key] = propSchema;
+			if (Object.hasOwn(stateConfig.values, key)) {
+				values[key] = stateConfig.values[key];
+			}
+		}
+		if (Object.keys(properties).length === 0) {
+			return;
+		}
+		const seeded: IResolveSessionConfigResult = {
+			schema: { type: 'object', properties },
+			values,
+		};
+		const existing = this._runningSessionConfigs.get(sessionId);
+		if (existing && resolvedConfigsEqual(existing, seeded)) {
+			return;
+		}
+		this._runningSessionConfigs.set(sessionId, seeded);
 		this._onDidChangeSessionConfig.fire(sessionId);
 	}
 
