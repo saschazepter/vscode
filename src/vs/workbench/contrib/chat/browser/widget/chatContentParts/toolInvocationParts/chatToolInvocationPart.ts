@@ -124,6 +124,18 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 			subPartDomNode.replaceWith(this.subPart.domNode);
 			subPartDomNode = this.subPart.domNode;
 
+			// Stabilize layout dimensions after DOM swap to prevent
+			// content shift when the sub-part's intrinsic size differs
+			// from the previous one.
+			for (let i = 0; i < 15; i++) {
+				const currentHeight = this.domNode.offsetHeight;
+				this.domNode.style.minHeight = `${currentHeight}px`;
+				const currentWidth = this.domNode.offsetWidth;
+				this.domNode.style.minWidth = `${currentWidth}px`;
+			}
+			this.domNode.style.minHeight = '';
+			this.domNode.style.minWidth = '';
+
 			// Add class when displaying a confirmation widget
 			const isConfirmation = this.subPart instanceof ToolConfirmationSubPart ||
 				this.subPart instanceof ChatTerminalToolConfirmationSubPart ||
