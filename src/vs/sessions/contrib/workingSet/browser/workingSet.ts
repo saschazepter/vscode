@@ -85,14 +85,14 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 			}
 
 			// Session changed (save, apply)
-			reader.store.add(runOnChange(activeSession, async (session, previousSession) => {
+			reader.store.add(runOnChange(activeSession, (session, previousSession) => {
 				// Save working set for previous session (skip for untitled sessions)
 				if (previousSession && previousSession.status.read(undefined) !== SessionStatus.Untitled) {
 					this._saveWorkingSet(previousSession.resource);
 				}
 
 				// Apply working set for current session
-				await this._applyWorkingSet(session?.resource);
+				void this._applyWorkingSet(session?.resource);
 			}));
 
 			// Session state changed (archive, delete)
