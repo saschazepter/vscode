@@ -1128,11 +1128,23 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 			// Step 7b: Replay existing conversation history so the MC web UI
 			// shows all messages that occurred before /remote was invoked.
+			// Only replay conversation-content events — skip session lifecycle
+			// events that would override the remoteSteerable state we just set.
+			const replayableTypes = new Set([
+				'user.message', 'assistant.message', 'assistant.turn_start',
+				'assistant.turn_complete', 'tool.execution_start',
+				'tool.execution_complete',
+			]);
 			const existingEvents = this._sdkSession.getEvents();
-			this.logService.info(`[CopilotCLISession] Replaying ${existingEvents.length} existing events to MC`);
+			let replayed = 0;
 			for (const event of existingEvents) {
-				this._bufferMcEvent(event as { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null });
+				const e = event as { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null };
+				if (e.type && replayableTypes.has(e.type)) {
+					this._bufferMcEvent(e);
+					replayed++;
+				}
 			}
+			this.logService.info(`[CopilotCLISession] Replayed ${replayed}/${existingEvents.length} existing events to MC`);
 
 			await this._flushMcEvents();
 
