@@ -1943,6 +1943,42 @@ suite('RunInTerminalTool', () => {
 		strictEqual(capturedSteeringRequests.length, 2, 'Expected a changed prompt to trigger a new notification');
 	});
 
+	test('should clean up stale _activeExecutions entry after inputNeeded command finishes', () => {
+		const termId = 'test-input-cleanup-term';
+		const sessionResource = LocalChatSessionUri.forSession('test-input-cleanup-session');
+
+		const commandFinishedEmitter = new Emitter<{ exitCode: number | undefined }>();
+		const terminalDisposedEmitter = new Emitter<void>();
+		const inputNeededEmitter = new Emitter<void>();
+		const inputDataEmitter = new Emitter<string>();
+
+		const terminalInstance = {
+			capabilities: {
+				get: (cap: TerminalCapability) => cap === TerminalCapability.CommandDetection ? { onCommandFinished: commandFinishedEmitter.event } : undefined,
+			},
+			onDisposed: terminalDisposedEmitter.event,
+			onDidInputData: inputDataEmitter.event,
+		} as unknown as ITerminalInstance;
+
+		const activeExecutions = (runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string; instance: ITerminalInstance; dispose(): void }> })._activeExecutions;
+		activeExecutions.set(termId, {
+			getOutput: () => 'Password:',
+			instance: terminalInstance,
+			dispose: () => { },
+		});
+
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: undefined) => void })
+			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'ssh host', undefined);
+
+		ok(activeExecutions.has(termId), 'Execution should exist before command finishes');
+
+		// Simulate the command finishing after the user provided input
+		commandFinishedEmitter.fire({ exitCode: 0 });
+
+		ok(!activeExecutions.has(termId), 'Stale execution should be cleaned up after command finishes');
+	});
+
 	suite('auto approve warning acceptance mechanism', () => {
 		test('should require confirmation for auto-approvable commands when warning not accepted', async () => {
 			setConfig(TerminalChatAgentToolsSettingId.EnableAutoApprove, true);
