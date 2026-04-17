@@ -118,17 +118,17 @@ const CAPTURED_DOMAINS = ['Browser', 'Target'];
 				return obj;
 			}
 			if (typeof obj === 'string') {
-				// Replace workspace root in URLs/paths (handles both raw and URI-encoded forms)
-				const normalizedRoot = workspaceRoot.replace(/\\/g, '/');
-				const encodedRoot = encodeURI(normalizedRoot).replace(/%5C/gi, '/');
-				let result = obj.split(encodedRoot).join('<workspace>');
-				result = result.split(normalizedRoot).join('<workspace>');
-				result = result.split(workspaceRoot).join('<workspace>');
-				// Replace file:// URIs with <omitted>/basename
-				result = result.replace(/file:\/\/\/[^\s"')}\]]+/g, (match) => {
+				// Replace file:// URIs with <omitted>/basename (must run before workspace root replacement)
+				let result = obj.replace(/file:\/\/\/[^\s"')}\]]+/g, (match) => {
 					const basename = decodeURIComponent(match.split('/').pop() || match);
 					return `<omitted>/${basename}`;
 				});
+				// Replace workspace root in remaining paths (handles both raw and URI-encoded forms)
+				const normalizedRoot = workspaceRoot.replace(/\\/g, '/');
+				const encodedRoot = encodeURI(normalizedRoot).replace(/%5C/gi, '/');
+				result = result.split(encodedRoot).join('<workspace>');
+				result = result.split(normalizedRoot).join('<workspace>');
+				result = result.split(workspaceRoot).join('<workspace>');
 				return result;
 			}
 			if (Array.isArray(obj)) {
