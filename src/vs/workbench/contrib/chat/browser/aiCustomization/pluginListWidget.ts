@@ -786,6 +786,13 @@ export class PluginListWidget extends Disposable {
 		this.filterPlugins();
 	}
 
+	/**
+	 * Prepends an element to the search row (left of the search input).
+	 */
+	prependToSearchRow(element: HTMLElement): void {
+		this.searchAndButtonContainer.insertBefore(element, this.searchAndButtonContainer.firstChild);
+	}
+
 	layout(height: number, width: number): void {
 		this.lastHeight = height;
 		this.lastWidth = width;
