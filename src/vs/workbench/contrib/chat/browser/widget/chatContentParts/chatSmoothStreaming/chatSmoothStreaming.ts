@@ -10,6 +10,7 @@ import { IConfigurationService } from '../../../../../../../platform/configurati
 import { ChatConfiguration } from '../../../../common/constants.js';
 import { ISmoothStreamingBuffer } from './buffers/buffer.js';
 import { LineBuffer } from './buffers/lineBuffer.js';
+import { WordBuffer } from './buffers/wordBuffer.js';
 import { BUFFER_MODES, BufferModeName } from './buffers/bufferRegistry.js';
 import { ISmoothStreamingAnimation } from './animations/animation.js';
 import { ANIMATION_STYLES, AnimationStyleName } from './animations/animationRegistry.js';
@@ -133,6 +134,15 @@ export class SmoothStreamingDOMMorpher extends Disposable {
 	}
 
 	/**
+	 * Forward the stream's word-rate estimate to the word buffer.
+	 */
+	updateStreamRate(rate: number, isComplete: boolean): void {
+		if (this._buffer instanceof WordBuffer) {
+			this._buffer.setRate(rate, isComplete);
+		}
+	}
+
+	/**
 	 * Seeds the renderer with the initial markdown string.
 	 *
 	 * @param animateInitial When `true`, the children already in the
@@ -211,7 +221,14 @@ export class SmoothStreamingDOMMorpher extends Disposable {
 		if (this._buffer.filterFlush) {
 			const filtered = this._buffer.filterFlush(markdown);
 			if (filtered === undefined) {
-				return; // Buffer says skip this commit.
+				// Buffer says skip — but if it needs another frame
+				// (e.g. typewriter still revealing words), re-schedule
+				// with the same pending content.
+				if (this._buffer.needsNextFrame) {
+					this._pendingMarkdown = markdown;
+					this._scheduleRender();
+				}
+				return;
 			}
 			markdown = filtered;
 		}
@@ -219,6 +236,13 @@ export class SmoothStreamingDOMMorpher extends Disposable {
 		this._renderedMarkdown = markdown;
 		this._renderCallback(markdown);
 		this._animateNewChildren();
+
+		// If the buffer has more content to reveal, keep the rAF
+		// loop running even though no new tokens arrived.
+		if (this._buffer.needsNextFrame) {
+			this._pendingMarkdown = this._lastMarkdown;
+			this._scheduleRender();
+		}
 	}
 
 	// ---- animation ----

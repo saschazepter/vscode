@@ -73,17 +73,17 @@
 	to   { opacity: 1; transform: translateX(0); }
 }
 
-/* ---- lineFade ---- */
-.chat-smooth-animate-lineFade {
+/* ---- reveal ---- */
+.chat-smooth-animate-reveal {
 	-webkit-mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent);
 	mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent);
 	-webkit-mask-size: 100% 0%;
 	mask-size: 100% 0%;
 	-webkit-mask-repeat: no-repeat;
 	mask-repeat: no-repeat;
-	animation: chatSmoothLineFade var(--chat-smooth-duration, 600ms) cubic-bezier(0.0, 0.0, 0.2, 1) var(--chat-smooth-delay, 0ms) forwards;
+	animation: chatSmoothReveal var(--chat-smooth-duration, 600ms) cubic-bezier(0.0, 0.0, 0.2, 1) var(--chat-smooth-delay, 0ms) forwards;
 }
-@keyframes chatSmoothLineFade {
+@keyframes chatSmoothReveal {
 	from {
 		-webkit-mask-size: 100% 0%;
 		mask-size: 100% 0%;
@@ -94,16 +94,6 @@
 	}
 }
 
-/* ---- typewriter (word-level) ---- */
-.chat-smooth-typewriter-word {
-	opacity: 0;
-	animation: chatSmoothTypewriterWord 80ms ease-out var(--chat-smooth-delay, 0ms) forwards;
-}
-@keyframes chatSmoothTypewriterWord {
-	from { opacity: 0; }
-	to   { opacity: 1; }
-}
-
 /* ---- Respect prefers-reduced-motion ---- */
 @media (prefers-reduced-motion: reduce) {
 	.chat-smooth-animate-fade,
@@ -111,8 +101,7 @@
 	.chat-smooth-animate-blur,
 	.chat-smooth-animate-scale,
 	.chat-smooth-animate-slide,
-	.chat-smooth-animate-lineFade,
-	.chat-smooth-typewriter-word {
+	.chat-smooth-animate-reveal {
 		animation: none !important;
 		opacity: 1 !important;
 		transform: none !important;

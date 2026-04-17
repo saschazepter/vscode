@@ -158,6 +158,16 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 				this.markdown = { ...this.markdown, content };
 				doRenderMarkdown();
 			});
+			// Observe the morpher's container for any height changes.
+			// The morpher renders in rAF — outside the normal renderElement
+			// flow — so without this observer the list's scroll position
+			// can drift out of sync. A ResizeObserver is more reliable than
+			// a synchronous fire after doRenderMarkdown() because embedded
+			// widgets (code blocks, tables) may resize asynchronously.
+			const resizeObserver = this._register(new dom.DisposableResizeObserver(() => {
+				this._onDidChangeHeight.fire();
+			}));
+			this._register(resizeObserver.observe(this.domNode));
 			// Shadow render for visual-line measurement (line buffering mode).
 			// Uses a lightweight render — no code block processing — into a
 			// hidden off-screen div to measure scrollHeight.
@@ -498,6 +508,13 @@ export class ChatMarkdownContentPart extends Disposable implements IChatContentP
 		}
 
 		return success;
+	}
+
+	/**
+	 * Forward the stream's word-rate estimate to the morpher's buffer.
+	 */
+	updateStreamRate(rate: number, isComplete: boolean): void {
+		this._smoothMorpher?.updateStreamRate(rate, isComplete);
 	}
 
 	layout(width: number): void {

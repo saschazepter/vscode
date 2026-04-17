@@ -42,6 +42,13 @@ export interface ISmoothStreamingBuffer {
 	filterFlush?(markdown: string): string | undefined;
 
 	/**
+	 * Whether the buffer needs another rAF frame to continue revealing
+	 * content (e.g. typewriter drip-feeding words). When `true`, the
+	 * orchestrator re-schedules a render after the current flush.
+	 */
+	readonly needsNextFrame?: boolean;
+
+	/**
 	 * Called when the buffer is no longer needed.
 	 */
 	dispose?(): void;

@@ -22,7 +22,7 @@ const STAGGER_DELAY_MS = 150;
  */
 export class BlockAnimation implements ISmoothStreamingAnimation {
 
-	constructor(private readonly _style: 'fade' | 'rise' | 'blur' | 'scale' | 'slide' | 'lineFade') { }
+	constructor(private readonly _style: 'fade' | 'rise' | 'blur' | 'scale' | 'slide' | 'reveal') { }
 
 	animate(children: HTMLCollection, fromIndex: number, currentCount: number, elapsed: number): void {
 		const className = `chat-smooth-animate-${this._style}`;

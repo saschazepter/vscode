@@ -357,16 +357,31 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.SmoothStreamingStyle]: {
 			type: 'string',
-			enum: ['fade', 'rise', 'blur', 'scale', 'slide'],
+			enum: ['none', 'fade', 'rise', 'blur', 'scale', 'slide', 'reveal'],
 			enumDescriptions: [
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.none', "No animation. Content appears instantly."),
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.fade', "Simple opacity fade from 0 to 1."),
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.rise', "Content fades in while rising upward."),
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.blur', "Content fades in from a blurred state."),
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.scale', "Content scales up from slightly smaller."),
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.slide', "Content slides in from the left."),
+				nls.localize('chat.experimental.smoothStreaming.animationStyle.reveal', "Content reveals top-to-bottom with a soft gradient edge."),
 			],
 			description: nls.localize('chat.experimental.smoothStreaming.animationStyle', "Controls the animation style for smooth streaming."),
 			default: 'fade',
+			tags: ['experimental'],
+		},
+		[ChatConfiguration.SmoothStreamingBuffering]: {
+			type: 'string',
+			enum: ['off', 'word', 'line', 'paragraph'],
+			enumDescriptions: [
+				nls.localize('chat.experimental.smoothStreaming.buffering.off', "Renders content immediately as tokens arrive."),
+				nls.localize('chat.experimental.smoothStreaming.buffering.word', "Reveals content word by word."),
+				nls.localize('chat.experimental.smoothStreaming.buffering.line', "Buffers content until a new visual line appears before rendering."),
+				nls.localize('chat.experimental.smoothStreaming.buffering.paragraph', "Buffers content until a paragraph break before rendering."),
+			],
+			description: nls.localize('chat.experimental.smoothStreaming.buffering', "Controls how content is buffered before rendering during smooth streaming. Lower buffering levels render faster but may show incomplete sentences or partially formed markdown."),
+			default: 'word',
 			tags: ['experimental'],
 		},
 		'chat.detectParticipant.enabled': {

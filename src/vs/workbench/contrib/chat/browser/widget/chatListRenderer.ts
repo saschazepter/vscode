@@ -1407,11 +1407,32 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		templateData.rowContainer.classList.toggle('chat-response-loading', true);
 
+		// Update the word buffer's reveal rate from the model's stream stats,
+		// so it matches the model's token production speed.
+		const rate = this.getProgressiveRenderRate(element);
+		this._updateMorpherRate(templateData, rate, element.isComplete);
+
 		const contentForThisTurn = this.getNextProgressiveRenderContent(element, templateData);
 		const partsToRender = this.diff(templateData.renderedParts ?? [], contentForThisTurn.content, element);
 		const contentIsAlreadyRendered = partsToRender.every(part => part === null);
 		if (!contentIsAlreadyRendered) {
 			this.renderChatContentDiff(partsToRender, contentForThisTurn.content, element, index, templateData);
+		}
+	}
+
+	/**
+	 * Propagate the stream's word-rate estimate to any active morpher's
+	 * word buffer so it reveals content at the model's speed.
+	 */
+	private _updateMorpherRate(templateData: IChatListItemTemplate, rate: number, isComplete: boolean): void {
+		const renderedParts = templateData.renderedParts;
+		if (!renderedParts) {
+			return;
+		}
+		for (const part of renderedParts) {
+			if (part instanceof ChatMarkdownContentPart) {
+				part.updateStreamRate(rate, isComplete);
+			}
 		}
 	}
 
