@@ -148,6 +148,16 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 	}
 
 	@memoize
+	get appSharedDataLocation(): URI {
+		const cliSharedDataDir = this.args['shared-data-dir'];
+		if (cliSharedDataDir) {
+			return URI.file(resolve(cliSharedDataDir));
+		}
+
+		return joinPath(this.userHome, `${this.productService.dataFolderName}-shared`);
+	}
+
+	@memoize
 	get agentPluginsPath(): string {
 		const cliAgentPluginsDir = this.args['agent-plugins-dir'];
 		if (cliAgentPluginsDir) {

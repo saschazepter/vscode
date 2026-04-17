@@ -12,8 +12,8 @@ import { join } from '../../../base/common/path.js';
 import { StopWatch } from '../../../base/common/stopwatch.js';
 import { URI } from '../../../base/common/uri.js';
 import { Promises } from '../../../base/node/pfs.js';
-import { InMemoryStorageDatabase, IStorage, Storage, StorageHint, StorageState } from '../../../base/parts/storage/common/storage.js';
-import { ISQLiteStorageDatabaseLoggingOptions, SQLiteStorageDatabase } from '../../../base/parts/storage/node/storage.js';
+import { InMemoryStorageDatabase, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage, StorageHint, StorageState } from '../../../base/parts/storage/common/storage.js';
+import { ISQLiteStorageDatabaseLoggingOptions, ISQLiteStorageDatabaseOptions, SQLiteStorageDatabase } from '../../../base/parts/storage/node/storage.js';
 import { IEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { ILogService, LogLevel } from '../../log/common/log.js';
@@ -22,6 +22,7 @@ import { IUserDataProfile, IUserDataProfilesService } from '../../userDataProfil
 import { currentSessionDateStorageKey, firstSessionDateStorageKey, lastSessionDateStorageKey } from '../../telemetry/common/telemetry.js';
 import { isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IAnyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { Schemas } from '../../../base/common/network.js';
+import { ICrossAppIPCMessage, ICrossAppIPCService } from '../../crossAppIpc/electron-main/crossAppIpcService.js';
 
 export interface IStorageMainOptions {
 
@@ -348,6 +349,58 @@ export class ApplicationStorageMain extends BaseProfileAwareStorageMain {
 	}
 }
 
+export class ApplicationSharedStorageMain extends BaseStorageMain {
+
+	private static readonly STORAGE_NAME = 'state.vscdb';
+
+	get path(): string | undefined {
+		if (!this.options.useInMemoryStorage) {
+			return join(this.storageFolderPath, ApplicationSharedStorageMain.STORAGE_NAME);
+		}
+
+		return undefined;
+	}
+
+	constructor(
+		private readonly options: IStorageMainOptions,
+		private readonly storageFolderPath: string,
+		logService: ILogService,
+		fileService: IFileService,
+		private readonly crossAppIPCService: ICrossAppIPCService
+	) {
+		super(logService, fileService);
+	}
+
+	protected async doCreate(): Promise<Storage> {
+		const { storageFilePath, wasCreated } = await this.prepareStorageFolder();
+
+		const database = new SharedSQLiteStorageDatabase(storageFilePath, {
+			logging: this.createLoggingOptions(),
+			useWAL: true
+		}, this.crossAppIPCService);
+		this._register(database);
+
+		return new Storage(database, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
+	}
+
+	private async prepareStorageFolder(): Promise<{ storageFilePath: string; wasCreated: boolean }> {
+		if (this.options.useInMemoryStorage) {
+			return { storageFilePath: SQLiteStorageDatabase.IN_MEMORY_PATH, wasCreated: true };
+		}
+
+		const storageDatabasePath = join(this.storageFolderPath, ApplicationSharedStorageMain.STORAGE_NAME);
+
+		const storageExists = await Promises.exists(this.storageFolderPath);
+		if (storageExists) {
+			return { storageFilePath: storageDatabasePath, wasCreated: false };
+		}
+
+		await fs.promises.mkdir(this.storageFolderPath, { recursive: true });
+
+		return { storageFilePath: storageDatabasePath, wasCreated: true };
+	}
+}
+
 export class WorkspaceStorageMain extends BaseStorageMain {
 
 	private static readonly WORKSPACE_STORAGE_NAME = 'state.vscdb';
@@ -423,6 +476,89 @@ export class WorkspaceStorageMain extends BaseStorageMain {
 				this.logService.error(`[storage main] ensureWorkspaceStorageFolderMeta(): Unable to create workspace storage metadata due to ${error}`);
 			}
 		}
+	}
+}
+
+const enum SharedStorageMessageType {
+	Changed = 'sharedStorage:changed'
+}
+
+interface ISharedStorageChangedMessage extends ICrossAppIPCMessage {
+	readonly type: SharedStorageMessageType.Changed;
+	readonly data: {
+		readonly changed?: [string, string][];
+		readonly deleted?: string[];
+	};
+}
+
+/**
+ * A SQLite storage database wrapper that detects external changes
+ * via CrossAppIPC. When the sibling app (VS Code or Sessions app)
+ * writes to the shared storage, it sends an IPC message with the
+ * changed keys for instant notification.
+ */
+class SharedSQLiteStorageDatabase extends Disposable implements IStorageDatabase {
+
+	private readonly _onDidChangeItemsExternal = this._register(new Emitter<IStorageItemsChangeEvent>());
+	readonly onDidChangeItemsExternal = this._onDidChangeItemsExternal.event;
+
+	private readonly database: SQLiteStorageDatabase;
+	private initialized = false;
+
+	constructor(
+		path: string,
+		options: ISQLiteStorageDatabaseOptions | undefined,
+		private readonly crossAppIPCService: ICrossAppIPCService
+	) {
+		super();
+
+		this.database = new SQLiteStorageDatabase(path, options);
+
+		this.registerListeners();
+	}
+
+	private registerListeners(): void {
+		this._register(this.crossAppIPCService.onDidReceiveMessage(msg => {
+			if (!this.initialized) {
+				return; // Ignore queued messages from before initialization
+			}
+
+			if (msg.type === SharedStorageMessageType.Changed) {
+				const { changed, deleted } = (msg as ISharedStorageChangedMessage).data;
+
+				this._onDidChangeItemsExternal.fire({
+					changed: changed ? new Map(changed) : undefined,
+					deleted: deleted ? new Set(deleted) : undefined
+				});
+			}
+		}));
+	}
+
+	async getItems(): Promise<Map<string, string>> {
+		const items = await this.database.getItems();
+		this.initialized = true;
+		return items;
+	}
+
+	async updateItems(request: IUpdateRequest): Promise<void> {
+		await this.database.updateItems(request);
+
+		// Notify the sibling app via IPC
+		this.crossAppIPCService.sendMessage({
+			type: SharedStorageMessageType.Changed,
+			data: {
+				changed: request.insert ? Array.from(request.insert.entries()) : undefined,
+				deleted: request.delete ? Array.from(request.delete.values()) : undefined
+			}
+		});
+	}
+
+	async optimize(): Promise<void> {
+		return this.database.optimize();
+	}
+
+	async close(recovery?: () => Map<string, string>): Promise<void> {
+		return this.database.close(recovery);
 	}
 }
 

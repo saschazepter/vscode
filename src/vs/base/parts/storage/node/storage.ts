@@ -22,6 +22,7 @@ interface IDatabaseConnection {
 
 export interface ISQLiteStorageDatabaseOptions {
 	readonly logging?: ISQLiteStorageDatabaseLoggingOptions;
+	readonly useWAL?: boolean;
 }
 
 export interface ISQLiteStorageDatabaseLoggingOptions {
@@ -41,6 +42,7 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 	private readonly name: string;
 
 	private readonly logger: SQLiteStorageDatabaseLogger;
+	private readonly useWAL: boolean;
 
 	private readonly whenConnected: Promise<IDatabaseConnection>;
 
@@ -50,6 +52,7 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 	) {
 		this.name = basename(this.path);
 		this.logger = new SQLiteStorageDatabaseLogger(options.logging);
+		this.useWAL = !!options.useWAL;
 		this.whenConnected = this.connect(this.path);
 	}
 
@@ -258,6 +261,13 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 		return integrity;
 	}
 
+	async getDataVersion(): Promise<number> {
+		const connection = await this.whenConnected;
+		const row = await this.get(connection, 'PRAGMA data_version');
+
+		return (row as { data_version: number }).data_version;
+	}
+
 	private async connect(path: string, retryOnBusy = true): Promise<IDatabaseConnection> {
 		this.logger.trace(`[storage ${this.name}] open(${path}, retryOnBusy: ${retryOnBusy})`);
 
@@ -330,6 +340,12 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 							'PRAGMA user_version = 1;',
 							'CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)'
 						].join('')).then(() => {
+							if (this.useWAL) {
+								return this.exec(connection, 'PRAGMA journal_mode=WAL;').then(() => resolve(connection), error => {
+									this.logger.error(`[storage ${this.name}] Failed to enable WAL mode: ${error}`);
+									return resolve(connection); // non-fatal, continue with default journal mode
+								});
+							}
 							return resolve(connection);
 						}, error => {
 							return connection.db.close(() => reject(error));

@@ -26,12 +26,27 @@ import { UserDataProfilesMainService } from '../../../userDataProfile/electron-m
 import { TestLifecycleMainService } from '../../../test/electron-main/workbenchTestServices.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Event } from '../../../../base/common/event.js';
+import { ICrossAppIPCService } from '../../../crossAppIpc/electron-main/crossAppIpcService.js';
 
 suite('StorageMainService', function () {
 
 	const disposables = new DisposableStore();
 
 	const productService: IProductService = { _serviceBrand: undefined, ...product };
+
+	const nullCrossAppIPCService: ICrossAppIPCService = {
+		_serviceBrand: undefined,
+		isSupported: false,
+		initialized: false,
+		connected: false,
+		isServer: false,
+		onDidConnect: Event.None,
+		onDidDisconnect: Event.None,
+		onDidReceiveMessage: Event.None,
+		sendMessage: () => { },
+		initialize: () => { }
+	};
 
 	const inMemoryProfileRoot = URI.file('/location').with({ scheme: Schemas.inMemory });
 	const inMemoryProfile: IUserDataProfile = {
@@ -116,7 +131,7 @@ suite('StorageMainService', function () {
 		const environmentService = new NativeEnvironmentService(parseArgs(process.argv, OPTIONS), productService);
 		const fileService = disposables.add(new FileService(new NullLogService()));
 		const uriIdentityService = disposables.add(new UriIdentityService(fileService));
-		const testStorageService = disposables.add(new TestStorageMainService(new NullLogService(), environmentService, disposables.add(new UserDataProfilesMainService(disposables.add(new StateService(SaveStrategy.DELAYED, environmentService, new NullLogService(), fileService)), disposables.add(uriIdentityService), environmentService, fileService, new NullLogService())), lifecycleMainService, fileService, uriIdentityService));
+		const testStorageService = disposables.add(new TestStorageMainService(new NullLogService(), environmentService, disposables.add(new UserDataProfilesMainService(disposables.add(new StateService(SaveStrategy.DELAYED, environmentService, new NullLogService(), fileService)), disposables.add(uriIdentityService), environmentService, fileService, new NullLogService())), lifecycleMainService, fileService, uriIdentityService, nullCrossAppIPCService));
 
 		disposables.add(testStorageService.applicationStorage);
 

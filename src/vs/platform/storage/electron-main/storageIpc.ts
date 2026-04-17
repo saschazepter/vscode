@@ -19,6 +19,7 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 	private static readonly STORAGE_CHANGE_DEBOUNCE_TIME = 100;
 
 	private readonly onDidChangeApplicationStorageEmitter = this._register(new Emitter<ISerializableItemsChangeEvent>());
+	private readonly onDidChangeApplicationSharedStorageEmitter = this._register(new Emitter<ISerializableItemsChangeEvent>());
 
 	private readonly mapProfileToOnDidChangeProfileStorageEmitter = new Map<string /* profile ID */, Emitter<ISerializableItemsChangeEvent>>();
 
@@ -29,6 +30,7 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 		super();
 
 		this.registerStorageChangeListeners(storageMainService.applicationStorage, this.onDidChangeApplicationStorageEmitter);
+		this.registerStorageChangeListeners(storageMainService.applicationSharedStorage, this.onDidChangeApplicationSharedStorageEmitter);
 	}
 
 	//#region Storage Change Events
@@ -77,8 +79,12 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 			case 'onDidChangeStorage': {
 				const profile = arg.profile ? revive<IUserDataProfile>(arg.profile) : undefined;
 
-				// Without profile: application scope
+				// Without profile: application or application-shared scope
 				if (!profile) {
+					if (arg.applicationShared) {
+						return this.onDidChangeApplicationSharedStorageEmitter.event;
+					}
+
 					return this.onDidChangeApplicationStorageEmitter.event;
 				}
 
@@ -103,9 +109,10 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 	async call(_: unknown, command: string, arg: IBaseSerializableStorageRequest): Promise<any> {
 		const profile = arg.profile ? revive<IUserDataProfile>(arg.profile) : undefined;
 		const workspace = reviveIdentifier(arg.workspace);
+		const applicationShared = arg.applicationShared;
 
 		// Get storage to be ready
-		const storage = await this.withStorageInitialized(profile, workspace);
+		const storage = await this.withStorageInitialized(profile, workspace, applicationShared);
 
 		// handle call
 		switch (command) {
@@ -144,12 +151,14 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 		}
 	}
 
-	private async withStorageInitialized(profile: IUserDataProfile | undefined, workspace: IAnyWorkspaceIdentifier | undefined): Promise<IStorageMain> {
+	private async withStorageInitialized(profile: IUserDataProfile | undefined, workspace: IAnyWorkspaceIdentifier | undefined, applicationShared?: boolean): Promise<IStorageMain> {
 		let storage: IStorageMain;
 		if (workspace) {
 			storage = this.storageMainService.workspaceStorage(workspace);
 		} else if (profile) {
 			storage = this.storageMainService.profileStorage(profile);
+		} else if (applicationShared) {
+			storage = this.storageMainService.applicationSharedStorage;
 		} else {
 			storage = this.storageMainService.applicationStorage;
 		}
@@ -157,7 +166,7 @@ export class StorageDatabaseChannel extends Disposable implements IServerChannel
 		try {
 			await storage.init();
 		} catch (error) {
-			this.logService.error(`StorageIPC#init: Unable to init ${workspace ? 'workspace' : profile ? 'profile' : 'application'} storage due to ${error}`);
+			this.logService.error(`StorageIPC#init: Unable to init ${workspace ? 'workspace' : profile ? 'profile' : applicationShared ? 'application-shared' : 'application'} storage due to ${error}`);
 		}
 
 		return storage;
