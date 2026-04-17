@@ -145,6 +145,9 @@ const CAPTURED_DOMAINS = ['Browser', 'Target'];
 						out[key] = replaceId('context', value as string);
 					} else if (key === 'title' && obj['type'] === 'browser') {
 						out[key] = '<browser-title>';
+					} else if ((key === 'title' || key === 'url') && (value === '' || value === 'about:blank')) {
+						// On Linux, '' can show up instead of 'about:blank'. So normalize both to '<blank>'.
+						out[key] = '<blank>';
 					} else if (key === 'ts') {
 						// Skip timestamps
 						continue;
@@ -182,8 +185,8 @@ const CAPTURED_DOMAINS = ['Browser', 'Target'];
 
 		const pageUrl = vscode.Uri.file(path.join(workspaceRoot, 'index.html')).toString();
 
-		// 1. Open a browser tab with an empty URL (mirrors js-debug EditorBrowserLauncher opening about:blank)
-		const tab = await window.openBrowserTab('about:blank');
+		// 1. Open a browser tab with an empty URL
+		const tab = await window.openBrowserTab('');
 		const session = await tab.startCDPSession();
 		const { log, cdpSend, waitForEvent } = createHarness(session);
 
@@ -264,14 +267,14 @@ const CAPTURED_DOMAINS = ['Browser', 'Target'];
 
 		const expected: CdpLog[] = [
 			{ direction: 'send', method: 'Target.attachToBrowserTarget' },
-			{ direction: 'recv', method: 'Target.attachedToTarget', params: { sessionId: '<session-0>', targetInfo: { targetId: '<target-0>', type: 'browser', title: '<browser-title>', url: '', attached: true, canAccessOpener: false }, waitingForDebugger: false } },
+			{ direction: 'recv', method: 'Target.attachedToTarget', params: { sessionId: '<session-0>', targetInfo: { targetId: '<target-0>', type: 'browser', title: '<browser-title>', url: '<blank>', attached: true, canAccessOpener: false }, waitingForDebugger: false } },
 			{ direction: 'resp', method: 'Target.attachToBrowserTarget', result: { sessionId: '<session-0>' } },
 			{ direction: 'send', method: 'Target.setDiscoverTargets', params: { discover: true }, sessionId: '<session-0>' },
-			{ direction: 'recv', method: 'Target.targetCreated', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '', type: 'page', url: 'about:blank' } }, sessionId: '<session-0>' },
+			{ direction: 'recv', method: 'Target.targetCreated', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '<blank>', type: 'page', url: '<blank>' } }, sessionId: '<session-0>' },
 			{ direction: 'resp', method: 'Target.setDiscoverTargets', result: {} },
 			{ direction: 'send', method: 'Target.attachToTarget', params: { targetId: '<target-1>', flatten: true }, sessionId: '<session-0>' },
-			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '', type: 'page', url: 'about:blank' } }, sessionId: '<session-0>' },
-			{ direction: 'recv', method: 'Target.attachedToTarget', params: { sessionId: '<session-1>', targetInfo: { attached: true, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '', type: 'page', url: 'about:blank' }, waitingForDebugger: false }, sessionId: '<session-0>' },
+			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '<blank>', type: 'page', url: '<blank>' } }, sessionId: '<session-0>' },
+			{ direction: 'recv', method: 'Target.attachedToTarget', params: { sessionId: '<session-1>', targetInfo: { attached: true, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '<blank>', type: 'page', url: '<blank>' }, waitingForDebugger: false }, sessionId: '<session-0>' },
 			{ direction: 'resp', method: 'Target.attachToTarget', result: { sessionId: '<session-1>' } },
 			{ direction: 'send', method: 'Target.setAutoAttach', params: { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId: '<session-1>' },
 			{ direction: 'resp', method: 'Target.setAutoAttach', result: {} },
@@ -279,7 +282,7 @@ const CAPTURED_DOMAINS = ['Browser', 'Target'];
 			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-2>', title: '<omitted>/worker.js', type: 'worker', url: '<omitted>/worker.js' } }, sessionId: '<session-0>' },
 			{ direction: 'recv', method: 'Target.attachedToTarget', params: { sessionId: '<session-2>', targetInfo: { attached: true, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-2>', title: '<omitted>/worker.js', type: 'worker', url: '<omitted>/worker.js' }, waitingForDebugger: true }, sessionId: '<session-1>' },
 			{ direction: 'send', method: 'Target.closeTarget', params: { targetId: '<target-1>' }, sessionId: '<session-0>' },
-			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '', type: 'page', url: 'about:blank' } }, sessionId: '<session-0>' },
+			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-1>', title: '<blank>', type: 'page', url: '<blank>' } }, sessionId: '<session-0>' },
 			{ direction: 'recv', method: 'Target.detachedFromTarget', params: { sessionId: '<session-1>', targetId: '<target-1>' }, sessionId: '<session-0>' },
 			{ direction: 'recv', method: 'Target.targetDestroyed', params: { targetId: '<target-1>' }, sessionId: '<session-0>' },
 			{ direction: 'recv', method: 'Target.targetInfoChanged', params: { targetInfo: { attached: false, browserContextId: '<context-0>', canAccessOpener: false, targetId: '<target-2>', title: '<omitted>/worker.js', type: 'worker', url: '<omitted>/worker.js' } }, sessionId: '<session-0>' },
