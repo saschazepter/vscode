@@ -150,6 +150,7 @@
 
 .ai-customization-management-editor .section-back-arrow-button {
 	flex-shrink: 0;
+	align-self: flex-start;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
