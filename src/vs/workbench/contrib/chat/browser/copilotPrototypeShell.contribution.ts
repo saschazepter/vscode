@@ -841,7 +841,8 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		if (isEnterprise && state === 'Overage Reached') {
 			return {
 				title: localize('inlineEntMonthlyReachedTitle', "You've reached your Monthly Limit."),
-				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1 at 10:00 AM. Contact your administrator for more information."),
+				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1 at 10:00 AM. Your admin: Logan Ramos (logan.ramos@acme.com)"),
+				buttonLabel: localize('requestMoreUsage', "Request More Usage"),
 			};
 		}
 
@@ -1153,13 +1154,13 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		}
 
 		if (isEnterprise) {
-			// Enterprise: title row + combined view, no tabs
-			const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
-			const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
 			const entTitle = sku === 'Ent/Bus ULB'
 				? localize('dashboardTitleEntULB', "Copilot Enterprise ULB")
 				: localize('dashboardTitleEnterprise', "Copilot Enterprise");
-			titleText.textContent = entTitle;
+
+			const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
+			const headerLeft = append(header, $('div.copilot-prototype-dashboard-header-left'));
+			append(headerLeft, $('div.copilot-prototype-dashboard-title')).textContent = entTitle;
 
 			const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
 			const settingsIcon = append(headerActions, $('div.copilot-prototype-dashboard-icon'));
@@ -1170,10 +1171,11 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			const contentWrapper = append(dashboard, $('div.copilot-prototype-dashboard-content-wrapper'));
 			const combinedContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content.active'));
 			this.renderEnterpriseCombinedTab(combinedContent, disposables, sku, state);
+			this.renderCollapsibleQuickSettings(contentWrapper, disposables);
 			return dashboard;
 		}
 
-		// Non-enterprise: title row, then tabs below
+		// Non-enterprise: header with copilot icon + plan title, usage always visible, quick settings collapsible
 		let planTitle: string;
 		switch (sku) {
 			case 'Edu/Free': planTitle = localize('dashboardTitleFree', "Copilot Free"); break;
@@ -1183,53 +1185,23 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			default: planTitle = localize('dashboardTitleDefault', "Copilot"); break;
 		}
 
-		const titleRow = append(dashboard, $('div.copilot-prototype-dashboard-header'));
-		const titleText = append(titleRow, $('div.copilot-prototype-dashboard-title'));
-		titleText.textContent = planTitle;
+		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
+		const headerLeft = append(header, $('div.copilot-prototype-dashboard-header-left'));
+		append(headerLeft, $('div.copilot-prototype-dashboard-title')).textContent = planTitle;
 
-		// Tabs inline with title
-		const tabsContainer = append(titleRow, $('div.copilot-prototype-dashboard-tabs'));
-		const tokenUsageTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab.active'));
-		tokenUsageTab.textContent = localize('tab.usage', "Usage");
-		tokenUsageTab.title = localize('tab.usage', "Usage");
-		tokenUsageTab.tabIndex = 0;
-		tokenUsageTab.role = 'tab';
-		const inlineSuggestionsTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab'));
-		inlineSuggestionsTab.textContent = localize('tab.quickSettings', "Quick Settings");
-		inlineSuggestionsTab.title = localize('tab.quickSettings', "Quick Settings");
-		inlineSuggestionsTab.tabIndex = 0;
-		inlineSuggestionsTab.role = 'tab';
-
-		const titleActions = append(titleRow, $('div.copilot-prototype-dashboard-header-actions'));
+		const titleActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
 		const settingsIcon = append(titleActions, $('div.copilot-prototype-dashboard-icon'));
 		settingsIcon.append(...renderLabelWithIcons('$(settings)'));
 		settingsIcon.title = localize('settings', "Settings");
 		settingsIcon.tabIndex = 0;
 
-		// Tab content wrapper (grid overlap so both tabs size the container)
+		// Usage content (always visible)
 		const contentWrapper = append(dashboard, $('div.copilot-prototype-dashboard-content-wrapper'));
 		const copilotContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content.active'));
-		const inlineContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content'));
-
-		// === Token Usage Tab Content ===
 		this.renderCopilotTab(copilotContent, disposables, sku, state);
 
-		// === Inline Suggestions Tab Content ===
-		this.renderInlineTab(inlineContent, disposables, sku, state);
-
-		// Tab switching
-		tokenUsageTab.addEventListener('click', () => {
-			tokenUsageTab.classList.add('active');
-			inlineSuggestionsTab.classList.remove('active');
-			copilotContent.classList.add('active');
-			inlineContent.classList.remove('active');
-		});
-		inlineSuggestionsTab.addEventListener('click', () => {
-			inlineSuggestionsTab.classList.add('active');
-			tokenUsageTab.classList.remove('active');
-			inlineContent.classList.add('active');
-			copilotContent.classList.remove('active');
-		});
+		// Collapsible Quick Settings section
+		this.renderCollapsibleQuickSettings(contentWrapper, disposables);
 
 		return dashboard;
 	}
@@ -1423,15 +1395,6 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		// --- Gauge cards row ---
 		const cards = append(content, $('div.copilot-prototype-dashboard-cards'));
 
-		// Inline Suggestions card (Free only) — first with separator
-		if (!isPro) {
-			this.createCard(cards, {
-				name: localize('cardInlineSuggestions', "Inline Suggestions"),
-				resetLabel: localize('cardResetMay1Inline', "Resets May 1 at 10:00 AM"),
-				percent: 12,
-			});
-		}
-
 		// Five-Hour Limit card (Max has no session limit)
 		const isResetState = state === 'Session Reset' || state === 'Weekly Reset';
 		if (!isMax) {
@@ -1460,6 +1423,15 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			highlight: weeklyApproached,
 			disabled: weeklyReached || state === 'Session Reached',
 		});
+
+		// Inline Suggestions card (Free only) — last card
+		if (!isPro) {
+			this.createCard(cards, {
+				name: localize('cardInlineSuggestions', "Inline Suggestions"),
+				resetLabel: localize('cardResetApr24Inline', "Resets April 24 at 10:00 AM"),
+				percent: 12,
+			});
+		}
 
 		// --- Warning callout ---
 		if (state === 'Session Approached' || state === 'Weekly Approached') {
@@ -1740,10 +1712,8 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		nesRow.appendChild(nesCheckbox.domNode);
 		append(nesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('nesShortLabel', "NES");
 
-		// Right column: dropdowns
-		const rightCol = append(settingsGrid, $('div.copilot-prototype-dashboard-settings-col'));
-
-		const eagernessRow = append(rightCol, $('div.copilot-prototype-dashboard-dropdown-row'));
+		// Eagerness — full-width row above snooze
+		const eagernessRow = append(content, $('div.copilot-prototype-dashboard-dropdown-row'));
 		append(eagernessRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('eagerness', "Eagerness");
 		const eagernessSelect = append(eagernessRow, $('select.copilot-prototype-dashboard-select'));
 		for (const opt of ['Auto', 'Low', 'Medium', 'High']) {
@@ -1752,11 +1722,26 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			option.setAttribute('value', opt);
 		}
 
-		// Snooze — full width below
+		// Snooze — label on left, button on right
 		const snoozeRow = append(content, $('div.copilot-prototype-dashboard-snooze'));
+		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
 		const snoozeBtn = disposables.add(new Button(snoozeRow, { ...defaultButtonStyles, secondary: true }));
 		snoozeBtn.label = localize('snooze', "Snooze");
-		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
+	}
+
+	private renderCollapsibleQuickSettings(container: HTMLElement, disposables: DisposableStore): void {
+		const collapsibleHeader = append(container, $('div.copilot-prototype-dashboard-collapsible-header'));
+		const chevronEl = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-chevron'));
+		chevronEl.append(...renderLabelWithIcons('$(chevron-right)'));
+		append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-label')).textContent = localize('tab.quickSettings', "Quick Settings");
+
+		const collapsibleContent = append(container, $('div.copilot-prototype-dashboard-collapsible-content'));
+		this.renderInlineTab(collapsibleContent, disposables, '', '');
+
+		collapsibleHeader.addEventListener('click', () => {
+			const isExpanded = collapsibleContent.classList.toggle('expanded');
+			chevronEl.classList.toggle('expanded', isExpanded);
+		});
 	}
 
 	private renderEnterpriseCombinedTab(content: HTMLElement, disposables: DisposableStore, _sku: string, _state: string): void {
@@ -1791,62 +1776,28 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon'));
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
-			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyApproachWarning', "Copilot will pause when the limit is reached. Contact your administrator for more information.")));
+			const warningBody = append(warning, $('div.copilot-prototype-dashboard-warning-text'));
+			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyApproachWarning', "Copilot will pause when the limit is reached.")));
+			const adminRow = append(warningBody, $('div.copilot-prototype-dashboard-warning-admin-row'));
+			append(adminRow, $('span.copilot-prototype-dashboard-warning-admin-name')).textContent = localize('adminIdentity', "Your admin: Logan Ramos");
+			const requestBtn = append(adminRow, $('button.copilot-prototype-dashboard-warning-admin-btn'));
+			requestBtn.textContent = localize('requestMoreUsage', "Request More Usage");
+			requestBtn.addEventListener('click', () => this.advanceState());
 		} else if (isULB && _state === 'Overage Reached') {
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning.error'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon.error'));
 			warningIcon.append(...renderLabelWithIcons('$(error)'));
-			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyReachedWarning', "Copilot is paused until the limit resets. Contact your administrator for more information.")));
+			const warningBody = append(warning, $('div.copilot-prototype-dashboard-warning-text'));
+			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyReachedWarning', "Copilot is paused until the limit resets.")));
+			const adminRow = append(warningBody, $('div.copilot-prototype-dashboard-warning-admin-row'));
+			append(adminRow, $('span.copilot-prototype-dashboard-warning-admin-name')).textContent = localize('adminIdentity', "Your admin: Logan Ramos");
+			const requestBtn = append(adminRow, $('button.copilot-prototype-dashboard-warning-admin-btn'));
+			requestBtn.textContent = localize('requestMoreUsage', "Request More Usage");
+			requestBtn.addEventListener('click', () => this.advanceState());
 		} else if (isULB && _state === 'Overage Reset') {
 			this.createInfoMessage(content, localize('resetAvailableAgain', "Copilot is available again."), true);
 		}
 
-		// Quick Settings section title
-		{
-			const sectionTitle = append(content, $('div.copilot-prototype-dashboard-section-title'));
-			append(sectionTitle, $('span')).textContent = localize('quickSettingsSection', "Quick Settings");
-		}
-
-		// Settings — two-column layout
-		const settingsGrid = append(content, $('div.copilot-prototype-dashboard-settings-grid'));
-
-		// Left column: checkboxes
-		const leftCol = append(settingsGrid, $('div.copilot-prototype-dashboard-settings-col'));
-
-		const allFilesCheckbox = disposables.add(new Checkbox(localize('allFiles', "All files"), true, { ...defaultCheckboxStyles }));
-		const allFilesRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		allFilesRow.appendChild(allFilesCheckbox.domNode);
-		append(allFilesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('allFiles', "All files");
-
-		const tsCheckbox = disposables.add(new Checkbox(localize('typescript', "TypeScript"), true, { ...defaultCheckboxStyles }));
-		const tsRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		tsRow.appendChild(tsCheckbox.domNode);
-		append(tsRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('typescript', "TypeScript");
-
-		const nesCheckbox = disposables.add(new Checkbox(localize('nextEditSuggestions', "Next edit suggestions"), true, { ...defaultCheckboxStyles }));
-		const nesRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		nesRow.appendChild(nesCheckbox.domNode);
-		append(nesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('nesShortLabel', "NES");
-
-		// Right column: eagerness dropdown
-		const rightCol = append(settingsGrid, $('div.copilot-prototype-dashboard-settings-col'));
-
-		const eagernessRow = append(rightCol, $('div.copilot-prototype-dashboard-dropdown-row'));
-		append(eagernessRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('eagerness', "Eagerness");
-		const eagernessSelect = append(eagernessRow, $('select.copilot-prototype-dashboard-select'));
-		for (const opt of ['Auto', 'Low', 'Medium', 'High']) {
-			const option = append(eagernessSelect, $('option'));
-			option.textContent = opt;
-			option.setAttribute('value', opt);
-		}
-
-		// Snooze — full width below
-		const snoozeRow = append(content, $('div.copilot-prototype-dashboard-snooze'));
-		const snoozeBtn = disposables.add(new Button(snoozeRow, { ...defaultButtonStyles, secondary: true }));
-		snoozeBtn.label = localize('snooze', "Snooze");
-		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
 	}
 
 	private createCard(container: HTMLElement, opts: {
@@ -2314,7 +2265,7 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 			return dashboard;
 		}
 
-		// Title + tabs
+		// Header: copilot icon + plan title + settings icon (no tabs)
 		let planTitle: string;
 		switch (sku) {
 			case 'Free': planTitle = localize('cmTitleFree', "Copilot Free"); break;
@@ -2322,44 +2273,23 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 			default: planTitle = localize('cmTitleDefault', "Copilot"); break;
 		}
 
-		const titleRow = append(dashboard, $('div.copilot-prototype-dashboard-header'));
-		append(titleRow, $('div.copilot-prototype-dashboard-title')).textContent = planTitle;
+		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
+		const headerLeft = append(header, $('div.copilot-prototype-dashboard-header-left'));
+		append(headerLeft, $('div.copilot-prototype-dashboard-title')).textContent = planTitle;
 
-		const tabsContainer = append(titleRow, $('div.copilot-prototype-dashboard-tabs'));
-		const usageTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab.active'));
-		usageTab.textContent = localize('tab.usage', "Usage");
-		usageTab.tabIndex = 0;
-		usageTab.role = 'tab';
-		const inlineTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab'));
-		inlineTab.textContent = localize('tab.quickSettings', "Quick Settings");
-		inlineTab.tabIndex = 0;
-		inlineTab.role = 'tab';
-
-		const titleActions = append(titleRow, $('div.copilot-prototype-dashboard-header-actions'));
+		const titleActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
 		const settingsIcon = append(titleActions, $('div.copilot-prototype-dashboard-icon'));
 		settingsIcon.append(...renderLabelWithIcons('$(settings)'));
 		settingsIcon.title = localize('settings', "Settings");
 		settingsIcon.tabIndex = 0;
 
+		// Usage content (always visible)
 		const contentWrapper = append(dashboard, $('div.copilot-prototype-dashboard-content-wrapper'));
 		const usageContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content.active'));
-		const inlineContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content'));
-
 		this.renderUsageTab(usageContent, disposables, sku, state);
-		this.renderInlineTab(inlineContent, disposables, sku);
 
-		usageTab.addEventListener('click', () => {
-			usageTab.classList.add('active');
-			inlineTab.classList.remove('active');
-			usageContent.classList.add('active');
-			inlineContent.classList.remove('active');
-		});
-		inlineTab.addEventListener('click', () => {
-			inlineTab.classList.add('active');
-			usageTab.classList.remove('active');
-			inlineContent.classList.add('active');
-			usageContent.classList.remove('active');
-		});
+		// Collapsible Quick Settings section
+		this.renderCollapsibleQuickSettings(contentWrapper, disposables);
 
 		return dashboard;
 	}
@@ -2368,15 +2298,6 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 		const isFree = sku === 'Free';
 
 		const cards = append(content, $('div.copilot-prototype-dashboard-cards'));
-
-		// Inline Suggestions card (Free only) — first with separator
-		if (isFree) {
-			this.createCard(cards, {
-				name: localize('cmCardInline', "Inline Suggestions"),
-				resetLabel: localize('cmResetMay1', "Resets May 1 at 10:00 AM"),
-				percent: 12,
-			});
-		}
 
 		// Premium Requests card
 		const premiumPct = state === 'Premium Approached' ? 75
@@ -2407,6 +2328,13 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 				percent: chatPct,
 				severity: chatSev,
 				highlight: chatApproached || chatExhausted,
+			});
+
+			// Inline Suggestions card (Free only) — last card
+			this.createCard(cards, {
+				name: localize('cmCardInline', "Inline Suggestions"),
+				resetLabel: localize('cmResetApr24Inline', "Resets April 24 at 10:00 AM"),
+				percent: 12,
 			});
 		}
 
@@ -2470,8 +2398,8 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 		nesRow.appendChild(nesCheckbox.domNode);
 		append(nesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('nesShortLabel', "NES");
 
-		const rightCol = append(settingsGrid, $('div.copilot-prototype-dashboard-settings-col'));
-		const eagernessRow = append(rightCol, $('div.copilot-prototype-dashboard-dropdown-row'));
+		// Eagerness — full-width row above snooze
+		const eagernessRow = append(content, $('div.copilot-prototype-dashboard-dropdown-row'));
 		append(eagernessRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('eagerness', "Eagerness");
 		const eagernessSelect = append(eagernessRow, $('select.copilot-prototype-dashboard-select'));
 		for (const opt of ['Auto', 'Low', 'Medium', 'High']) {
@@ -2481,15 +2409,31 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 		}
 
 		const snoozeRow = append(content, $('div.copilot-prototype-dashboard-snooze'));
+		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
 		const snoozeBtn = disposables.add(new Button(snoozeRow, { ...defaultButtonStyles, secondary: true }));
 		snoozeBtn.label = localize('snooze', "Snooze");
-		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
+	}
+
+	private renderCollapsibleQuickSettings(container: HTMLElement, disposables: DisposableStore): void {
+		const collapsibleHeader = append(container, $('div.copilot-prototype-dashboard-collapsible-header'));
+		const chevronEl = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-chevron'));
+		chevronEl.append(...renderLabelWithIcons('$(chevron-right)'));
+		append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-label')).textContent = localize('tab.quickSettings', "Quick Settings");
+
+		const collapsibleContent = append(container, $('div.copilot-prototype-dashboard-collapsible-content'));
+		this.renderInlineTab(collapsibleContent, disposables, '');
+
+		collapsibleHeader.addEventListener('click', () => {
+			const isExpanded = collapsibleContent.classList.toggle('expanded');
+			chevronEl.classList.toggle('expanded', isExpanded);
+		});
 	}
 
 	private renderEnterpriseDashboard(dashboard: HTMLElement, disposables: DisposableStore, _sku: string, _state: string): void {
 		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
-		const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
-		titleText.textContent = localize('cmTitleEnt', "Copilot Enterprise");
+		const headerLeft = append(header, $('div.copilot-prototype-dashboard-header-left'));
+		append(headerLeft, $('div.copilot-prototype-dashboard-title')).textContent = localize('cmTitleEnt', "Copilot Enterprise");
+
 		const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
 		const settingsIcon = append(headerActions, $('div.copilot-prototype-dashboard-icon'));
 		settingsIcon.append(...renderLabelWithIcons('$(settings)'));
@@ -2506,6 +2450,8 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 			percent: 0,
 			includedMessage: localize('cmEntIncluded', "Included with your organization's plan."),
 		});
+
+		this.renderCollapsibleQuickSettings(contentWrapper, disposables);
 	}
 
 	private renderFirstTime(dashboard: HTMLElement, disposables: DisposableStore, sku: string): void {
