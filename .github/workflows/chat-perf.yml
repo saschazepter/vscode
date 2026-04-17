@@ -3,34 +3,34 @@ name: Chat Performance Comparison
 on:
   pull_request:
     paths:
-      - '.github/workflows/chat-perf.yml'
+      - ".github/workflows/chat-perf.yml"
   workflow_dispatch:
     inputs:
       baseline_commit:
-        description: 'Baseline commit SHA or version (e.g. "1.115.0", "abc1234")'
+        description: "Baseline commit SHA or version (e.g. \"1.115.0\", \"abc1234\")"
         required: false
         type: string
       test_commit:
-        description: 'Test commit SHA or version (e.g. "1.115.0", "abc1234")'
+        description: "Test commit SHA or version (e.g. \"1.115.0\", \"abc1234\")"
         required: false
         type: string
       runs:
-        description: 'Runs per scenario (default: 7 for statistical significance)'
+        description: "Runs per scenario (default: 7 for statistical significance)"
         required: false
         type: number
         default: 7
       scenarios:
-        description: 'Comma-separated scenario list (empty = all)'
+        description: "Comma-separated scenario list (empty = all)"
         required: false
         type: string
-        default: ''
+        default: ""
       threshold:
-        description: 'Regression threshold fraction (default: 0.2 = 20%)'
+        description: "Regression threshold fraction (default: 0.2 = 20%)"
         required: false
         type: number
         default: 0.2
       skip_leak_check:
-        description: 'Skip the memory leak check step'
+        description: "Skip the memory leak check step"
         required: false
         type: boolean
         default: false
@@ -130,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [1, 2, 3, 4]
+        group: [ 1, 2, 3, 4 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -246,7 +246,8 @@ jobs:
           retention-days: 30
 
       - name: Check for regressions
-        if: always() && steps.perf.outputs.exit_code != '' && steps.perf.outputs.exit_code != '0'
+        if: always() && steps.perf.outputs.exit_code != '' &&
+          steps.perf.outputs.exit_code != '0'
         run: |
           echo "::error::Chat perf regression detected (exit code ${{ steps.perf.outputs.exit_code }}). See perf-output.log for details."
           exit 1
@@ -336,7 +337,8 @@ jobs:
           retention-days: 30
 
       - name: Check for leaks
-        if: always() && steps.leak.outputs.exit_code != '' && steps.leak.outputs.exit_code != '0'
+        if: always() && steps.leak.outputs.exit_code != '' &&
+          steps.leak.outputs.exit_code != '0'
         run: |
           echo "::error::Chat memory leak detected (exit code ${{ steps.leak.outputs.exit_code }}). See leak-output.log for details."
           exit 1
@@ -344,7 +346,7 @@ jobs:
   # ── Report: collect results, write summary, fail on regression ──────
   report:
     name: Report
-    needs: [chat-perf, leak-check]
+    needs: [ chat-perf, leak-check ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -385,9 +387,18 @@ jobs:
 
           cat ci-summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload CI summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chat-perf-summary
+          path: ci-summary.md
+          retention-days: 30
+
       - name: Fail on regression
         id: regression
-        if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true && needs.leak-check.result == 'failure')
+        if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true &&
+          needs.leak-check.result == 'failure')
         run: |
           if [[ "${{ needs.chat-perf.result }}" == "failure" ]]; then
             echo "::error::Chat performance regression detected. See job summary for details."
