@@ -692,21 +692,27 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				const result = event.data.result ? `result: ${event.data.result?.content}` : '';
 				const parts = [success, error, result].filter(part => part.length > 0).join(', ');
 
-
 				// When a sql tool execution completes that modifies the todos table,
 				// query the session database and update the todo list widget.
 				if (toolName === 'sql' && event.data.success) {
 					const toolCallData = toolCalls.get(event.data.toolCallId);
-					const query = (toolCallData?.arguments as { query?: string } | undefined)?.query ?? '';
-					if (isTodoRelatedSqlQuery(query)) {
-						const sessionDir = getCopilotCLISessionDir(this.sessionId);
-						this._todoSqlQuery.queryTodos(sessionDir).then(items => {
-							if (items.length > 0) {
-								return updateTodoListFromSqlItems(items, this._toolsService, request.toolInvocationToken, token);
-							}
-						}).catch(err => {
-							this.logService.error(`[CopilotCLISession] Failed to query todos from session database`, err);
-						});
+					try {
+						const query = (toolCallData?.arguments as { query?: string } | undefined)?.query ?? '';
+						if (isTodoRelatedSqlQuery(query)) {
+							const sessionDir = getCopilotCLISessionDir(this.sessionId);
+							this._todoSqlQuery.queryTodos(sessionDir).then(items => {
+								if (token.isCancellationRequested) {
+									return;
+								}
+								if (items.length > 0) {
+									return updateTodoListFromSqlItems(items, this._toolsService, request.toolInvocationToken, token);
+								}
+							}).catch(err => {
+								this.logService.error(`[CopilotCLISession] Failed to query todos from session database`, err);
+							});
+						}
+					} catch (ex) {
+						this.logService.error(ex, `[CopilotCLISession] Failed to process completed sql tool call for todos`);
 					}
 				}
 

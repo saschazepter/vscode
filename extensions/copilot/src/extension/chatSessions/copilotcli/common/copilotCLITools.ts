@@ -1546,11 +1546,16 @@ function formatUpdateTodoInvocationCompleted(invocation: ChatToolInvocationPart,
 
 
 /**
- * Check whether a SQL query targets the `todos` or `todo_deps` table.
+ * Check whether a SQL query writes to the `todos` or `todo_deps` table.
+ * Pure reads (SELECT) are ignored to avoid unnecessary widget refreshes.
  */
 export function isTodoRelatedSqlQuery(query: string): boolean {
 	const normalized = query.replace(/\s+/g, ' ').toLowerCase();
-	return /\btodos\b/.test(normalized) || /\btodo_deps\b/.test(normalized);
+	const targetsTodoTable = /\btodos\b/.test(normalized) || /\btodo_deps\b/.test(normalized);
+	if (!targetsTodoTable) {
+		return false;
+	}
+	return /\b(insert|update|delete|create|drop|alter)\b/.test(normalized);
 }
 
 interface SqlTodoItem {
