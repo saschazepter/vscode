@@ -449,7 +449,7 @@ export class OpenPermissionPickerAction extends Action2 {
 			precondition: ChatContextKeys.enabled,
 			menu: {
 				id: MenuId.ChatInputSecondary,
-				order: 10,
+				order: 1,
 				group: 'navigation',
 				when:
 					ContextKeyExpr.and(
@@ -621,22 +621,11 @@ export class OpenWorkspacePickerAction extends Action2 {
 			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, ChatContextKeys.inAgentSessionsWelcome),
 			menu: [
 				{
-					id: MenuId.ChatInput,
-					order: 0.6,
-					when: ContextKeyExpr.and(
-						ChatContextKeys.inAgentSessionsWelcome,
-						ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType),
-						IsSessionsWindowContext
-					),
-					group: 'navigation',
-				},
-				{
 					id: MenuId.ChatInputSecondary,
 					order: 0.6,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.inAgentSessionsWelcome,
-						ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType),
-						IsSessionsWindowContext.negate()
+						ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType)
 					),
 					group: 'navigation',
 				},
@@ -658,22 +647,44 @@ export class ChatSessionPrimaryPickerAction extends Action2 {
 			category: CHAT_CATEGORY,
 			f1: false,
 			precondition: ChatContextKeys.enabled,
-			menu: {
-				id: MenuId.ChatInput,
-				order: 4,
-				group: 'navigation',
-				when:
-					ContextKeyExpr.and(
-						ChatContextKeys.chatSessionHasModels,
-						ContextKeyExpr.or(
-							ChatContextKeys.lockedToCodingAgent,
-							ContextKeyExpr.and(
-								ChatContextKeys.inAgentSessionsWelcome,
-								ChatContextKeys.chatSessionType.notEqualsTo('local')
+			menu: [
+				{
+					// Cloud sessions: keep on the primary chat input toolbar
+					id: MenuId.ChatInput,
+					order: 4,
+					group: 'navigation',
+					when:
+						ContextKeyExpr.and(
+							ChatContextKeys.chatSessionHasModels,
+							ChatContextKeys.chatSessionType.isEqualTo(AgentSessionProviders.Cloud),
+							ContextKeyExpr.or(
+								ChatContextKeys.lockedToCodingAgent,
+								ContextKeyExpr.and(
+									ChatContextKeys.inAgentSessionsWelcome,
+									ChatContextKeys.chatSessionType.notEqualsTo('local')
+								)
 							)
 						)
-					)
-			}
+				},
+				{
+					// All other coding agents (CLI, Claude, etc.): show in the secondary toolbar
+					id: MenuId.ChatInputSecondary,
+					order: 4,
+					group: 'navigation',
+					when:
+						ContextKeyExpr.and(
+							ChatContextKeys.chatSessionHasModels,
+							ChatContextKeys.chatSessionType.notEqualsTo(AgentSessionProviders.Cloud),
+							ContextKeyExpr.or(
+								ChatContextKeys.lockedToCodingAgent,
+								ContextKeyExpr.and(
+									ChatContextKeys.inAgentSessionsWelcome,
+									ChatContextKeys.chatSessionType.notEqualsTo('local')
+								)
+							)
+						)
+				},
+			]
 		});
 	}
 
