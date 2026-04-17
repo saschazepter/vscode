@@ -60,6 +60,7 @@ function parseArgs() {
 		metricThresholds: CONFIG.metricThresholds ?? {},
 		/** @type {string | undefined} */
 		resume: undefined,
+		productionBuild: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -288,6 +289,7 @@ function exceedsThreshold(threshold, change, absoluteDelta) {
  *   minorGCs: number,
  *   gcDurationMs: number,
  *   layoutCount: number,
+ *   layoutDurationMs: number,
  *   recalcStyleCount: number,
  *   forcedReflowCount: number,
  *   longTaskCount: number,
@@ -371,7 +373,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 	let extHostInspector = null;
 	/** @type {{ usedSize: number, totalSize: number } | null} */
 	let extHostHeapBefore = null;
-	/** @type {Omit<RunMetrics, 'majorGCs' | 'minorGCs' | 'gcDurationMs' | 'longTaskCount' | 'longAnimationFrameCount' | 'longAnimationFrameTotalMs' | 'timeToUIUpdated' | 'timeToFirstToken' | 'timeToComplete' | 'instructionCollectionTime' | 'agentInvokeTime' | 'hasInternalMarks' | 'internalFirstToken'> | null} */
+	/** @type {Omit<RunMetrics, 'majorGCs' | 'minorGCs' | 'gcDurationMs' | 'longTaskCount' | 'longAnimationFrameCount' | 'longAnimationFrameTotalMs' | 'timeToUIUpdated' | 'timeToFirstToken' | 'timeToComplete' | 'timeToRenderComplete' | 'layoutDurationMs' | 'instructionCollectionTime' | 'agentInvokeTime' | 'hasInternalMarks' | 'internalFirstToken'> | null} */
 	let partialMetrics = null;
 	// Timing vars hoisted for access in post-close trace parsing
 	let submitTime = 0;
@@ -819,6 +821,14 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		else { minorGCs++; } // default unknown GC events to minor
 		if (event.dur) { gcDurationMs += event.dur / 1000; }
 	}
+	// Parse Layout duration from devtools.timeline trace events.
+	let layoutDurationMs = 0;
+	for (const event of traceEvents) {
+		if (event.name === 'Layout' && event.ph === 'X' && event.dur) {
+			layoutDurationMs += event.dur / 1000;
+		}
+	}
+
 	let longTaskCount = 0;
 	for (const event of traceEvents) {
 		if (event.name === 'RunTask' && event.dur && event.dur > 50_000) { longTaskCount++; }
@@ -855,6 +865,7 @@ async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, ru
 		internalFirstToken,
 		majorGCs, minorGCs,
 		gcDurationMs: Math.round(gcDurationMs * 100) / 100,
+		layoutDurationMs: Math.round(layoutDurationMs * 100) / 100,
 		longTaskCount,
 		longAnimationFrameCount,
 		longAnimationFrameTotalMs: Math.round(longAnimationFrameTotalMs * 100) / 100,
@@ -931,7 +942,7 @@ function generateCISummary(jsonReport, baseline, opts) {
 		['extHostHeapDelta', 'extHost', 'MB'],
 		['extHostHeapDeltaPostGC', 'extHost', 'MB'],
 	];
-	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'layoutCount', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
+	const regressionMetricNames = new Set(['timeToFirstToken', 'timeToComplete', 'forcedReflowCount', 'longTaskCount', 'longAnimationFrameCount']);
 
 	const lines = [];
 	const scenarios = Object.keys(jsonReport.scenarios);
@@ -1540,6 +1551,7 @@ async function main() {
 		console.log('');
 		console.log('  Rendering:');
 		console.log(summarize(results.map(r => r.layoutCount), '  Layouts               ', ''));
+		console.log(summarize(results.map(r => r.layoutDurationMs), '  Layout duration       ', 'ms'));
 		console.log(summarize(results.map(r => r.recalcStyleCount), '  Style recalcs         ', ''));
 		console.log(summarize(results.map(r => r.forcedReflowCount), '  Forced reflows        ', ''));
 		console.log(summarize(results.map(r => r.longTaskCount), '  Long tasks (>50ms)    ', ''));

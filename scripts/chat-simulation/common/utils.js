@@ -785,6 +785,7 @@ const METRIC_DEFS = [
 	['heapDeltaPostGC', 'memory', 'MB'],
 	['gcDurationMs', 'memory', 'ms'],
 	['layoutCount', 'rendering', ''],
+	['layoutDurationMs', 'rendering', 'ms'],
 	['recalcStyleCount', 'rendering', ''],
 	['forcedReflowCount', 'rendering', ''],
 	['longTaskCount', 'rendering', ''],
