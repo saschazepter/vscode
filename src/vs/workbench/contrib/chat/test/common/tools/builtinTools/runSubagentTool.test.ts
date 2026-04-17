@@ -1065,7 +1065,11 @@ suite('RunSubagentTool', () => {
 				model: modelQualifiedNames,
 				source: { storage: PromptsStorage.local },
 				target: Target.Undefined,
-				visibility: { userInvocable: true, agentInvocable: true }
+				visibility: { userInvocable: true, agentInvocable: true },
+				agentInstructions: {
+					content: 'test',
+					toolReferences: [],
+				}
 			};
 		}
 
