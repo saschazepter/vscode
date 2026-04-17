@@ -214,9 +214,9 @@ class MaximizeMainEditorPartAction extends Action2 {
 			icon: Codicon.screenFull,
 			f1: false,
 			menu: {
-				id: MenuId.EditorTitle,
+				id: MenuId.EditorTitleLayout,
 				group: 'navigation',
-				order: 100001,
+				order: 1,
 				when: ContextKeyExpr.and(
 					IsSessionsWindowContext,
 					EditorMaximizedContext.negate())
@@ -242,9 +242,9 @@ class RestoreMainEditorPartAction extends Action2 {
 			icon: Codicon.screenNormal,
 			f1: false,
 			menu: {
-				id: MenuId.EditorTitle,
+				id: MenuId.EditorTitleLayout,
 				group: 'navigation',
-				order: 100001,
+				order: 1,
 				when: ContextKeyExpr.and(
 					IsSessionsWindowContext,
 					EditorMaximizedContext)
@@ -259,3 +259,29 @@ class RestoreMainEditorPartAction extends Action2 {
 }
 
 registerAction2(RestoreMainEditorPartAction);
+
+class CloseMainEditorPartAction extends Action2 {
+	static readonly ID = 'workbench.action.agentSessions.closeMainEditorPart';
+
+	constructor() {
+		super({
+			id: CloseMainEditorPartAction.ID,
+			title: localize2('closeMainEditorPart', "Close Editor"),
+			icon: Codicon.close,
+			f1: false,
+			menu: {
+				id: MenuId.EditorTitleLayout,
+				group: 'navigation',
+				order: 100,
+				when: IsSessionsWindowContext
+			}
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const layoutService = accessor.get(IAgentWorkbenchLayoutService);
+		layoutService.setEditorMaximized(false);
+	}
+}
+
+registerAction2(CloseMainEditorPartAction);
