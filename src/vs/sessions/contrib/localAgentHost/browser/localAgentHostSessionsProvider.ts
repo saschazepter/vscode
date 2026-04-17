@@ -9,7 +9,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { constObservable, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
+import { constObservable, derived, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { basename } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -89,7 +89,7 @@ class LocalSessionAdapter implements ISession {
 	readonly modelId: ISettableObservable<string | undefined>;
 	modelSelection: IModelSelection | undefined;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
-	readonly loading = observableValue(this, false);
+	readonly loading: IObservable<boolean>;
 	readonly isArchived = observableValue('isArchived', false);
 	readonly isRead = observableValue('isRead', true);
 	readonly description: ISettableObservable<IMarkdownString | undefined>;
@@ -107,6 +107,7 @@ class LocalSessionAdapter implements ISession {
 		providerId: string,
 		resourceScheme: string,
 		logicalSessionType: string,
+		authenticationPending: IObservable<boolean>,
 	) {
 		const rawId = AgentSession.id(metadata.session);
 		this.agentProvider = AgentSession.provider(metadata.session) ?? DEFAULT_AGENT_PROVIDER;
@@ -123,6 +124,9 @@ class LocalSessionAdapter implements ISession {
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', new MarkdownString().appendText(localize('localAgentHostDescription', "Local")));
 		this.workspace = observableValue('workspace', LocalAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory));
+		// Cached sessions surface as loading while the local agent host is still
+		// authenticating. They have no per-session loading state of their own.
+		this.loading = authenticationPending;
 
 		if (metadata.isRead === false) {
 			this.isRead.set(false, undefined);
@@ -480,7 +484,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 			changes,
 			modelId,
 			mode,
-			loading,
+			loading: derived(reader => loading.read(reader) || this._agentHostService.authenticationPending.read(reader)),
 			isArchived,
 			isRead,
 			description,
@@ -830,7 +834,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 					}
 				} else {
 					const sessionType = this._sessionTypeForMetadata(meta);
-					const cached = new LocalSessionAdapter(meta, this.id, sessionType, sessionType);
+					const cached = new LocalSessionAdapter(meta, this.id, sessionType, sessionType, this._agentHostService.authenticationPending);
 					this._sessionCache.set(rawId, cached);
 					added.push(cached);
 				}
@@ -902,7 +906,7 @@ export class LocalAgentHostSessionsProvider extends Disposable implements IAgent
 			isDone: summary.isDone,
 		};
 		const sessionType = this._sessionTypeForMetadata(meta);
-		const cached = new LocalSessionAdapter(meta, this.id, sessionType, sessionType);
+		const cached = new LocalSessionAdapter(meta, this.id, sessionType, sessionType, this._agentHostService.authenticationPending);
 		this._sessionCache.set(rawId, cached);
 		this._onDidChangeSessions.fire({ added: [cached], removed: [], changed: [] });
 	}

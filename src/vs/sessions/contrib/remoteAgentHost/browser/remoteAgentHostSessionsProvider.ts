@@ -11,7 +11,7 @@ import { IMarkdownString, MarkdownString } from '../../../../base/common/htmlCon
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { basename } from '../../../../base/common/resources.js';
-import { constObservable, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
+import { constObservable, derived, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -298,6 +298,29 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 
 	private readonly _connectionStatus = observableValue<RemoteAgentHostConnectionStatus>('connectionStatus', RemoteAgentHostConnectionStatus.Disconnected);
 	readonly connectionStatus: IObservable<RemoteAgentHostConnectionStatus> = this._connectionStatus;
+
+	/**
+	 * `true` while we are still resolving and pushing tokens for the host's
+	 * `protectedResources`. Defaults to `true` so that sessions surface as
+	 * loading until the first authentication pass settles. Toggled by
+	 * {@link RemoteAgentHostContribution} around each per-connection auth pass.
+	 */
+	private readonly _authenticationPending = observableValue('authenticationPending', true);
+	readonly authenticationPending: IObservable<boolean> = this._authenticationPending;
+	private _authenticationSettled = false;
+
+	setAuthenticationPending(pending: boolean): void {
+		// Sticky: once the first authentication pass settles, never surface
+		// pending again. Subsequent re-auths (account/session changes, reconnect)
+		// happen silently in the background and should not flicker the UI.
+		if (this._authenticationSettled) {
+			return;
+		}
+		if (!pending) {
+			this._authenticationSettled = true;
+		}
+		this._authenticationPending.set(pending, undefined);
+	}
 
 	private readonly _onDidChangeSessions = this._register(new Emitter<ISessionChangeEvent>());
 	readonly onDidChangeSessions: Event<ISessionChangeEvent> = this._onDidChangeSessions.event;
@@ -1323,7 +1346,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements IAgen
 			changes: chat.changes,
 			modelId: chat.modelId,
 			mode: chat.mode,
-			loading: chat.loading,
+			loading: derived(reader => chat.loading.read(reader) || this._authenticationPending.read(reader)),
 			isArchived: chat.isArchived,
 			isRead: chat.isRead,
 			description: chat.description,

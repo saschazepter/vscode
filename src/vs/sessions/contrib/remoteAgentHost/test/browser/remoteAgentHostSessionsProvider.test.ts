@@ -702,6 +702,24 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(session.loading.get(), true);
 	});
 
+	test('cached session loading reflects authenticationPending', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		connection.addSession(createSession('cached-auth', { summary: 'Cached' }));
+		const provider = createProvider(disposables, connection);
+		await timeout(0);
+
+		const session = provider.getSessions().find(s => s.title.get() === 'Cached');
+		assert.ok(session);
+		// Default at construction is `true`; clear it and verify.
+		assert.strictEqual(session!.loading.get(), true);
+
+		provider.setAuthenticationPending(false);
+		assert.strictEqual(session!.loading.get(), false);
+
+		// Sticky: a subsequent re-auth pass must not flicker the UI back to loading.
+		provider.setAuthenticationPending(true);
+		assert.strictEqual(session!.loading.get(), false);
+	}));
+
 	test('sendAndCreateChat throws for unknown session', async () => {
 		const provider = createProvider(disposables, connection);
 		await assert.rejects(

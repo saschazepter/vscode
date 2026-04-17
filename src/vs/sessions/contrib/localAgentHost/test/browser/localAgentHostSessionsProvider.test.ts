@@ -7,6 +7,7 @@ import assert from 'assert';
 import { timeout } from '../../../../../base/common/async.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { ISettableObservable, observableValue, type IObservable } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { runWithFakedTimers } from '../../../../../base/test/common/timeTravelScheduler.js';
@@ -48,6 +49,12 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	public dispatchedActions: { action: ISessionAction | ITerminalAction; clientId: string; clientSeq: number }[] = [];
 	public failResolveSessionConfig = false;
 	public resolveSessionConfigResult: IResolveSessionConfigResult = { schema: { type: 'object', properties: {} }, values: { isolation: 'worktree' } };
+
+	private readonly _authenticationPending: ISettableObservable<boolean> = observableValue('authenticationPending', false);
+	override readonly authenticationPending: IObservable<boolean> = this._authenticationPending;
+	override setAuthenticationPending(pending: boolean): void {
+		this._authenticationPending.set(pending, undefined);
+	}
 
 	private _nextSeq = 0;
 
@@ -707,6 +714,38 @@ suite('LocalAgentHostSessionsProvider', () => {
 		await waitForSessionConfig(provider, session.sessionId, config => config?.schema.required?.includes('branch') === true);
 
 		assert.strictEqual(session.loading.get(), true);
+	});
+
+	test('cached session loading reflects authenticationPending', async () => {
+		agentHost.setAuthenticationPending(true);
+		agentHost.addSession(createSession('cached-auth-loading', { summary: 'Cached' }));
+
+		const provider = createProvider(disposables, agentHost);
+		provider.getSessions();
+		await timeout(0);
+
+		const session = provider.getSessions().find(s => s.title.get() === 'Cached');
+		assert.ok(session);
+		assert.strictEqual(session!.loading.get(), true);
+
+		agentHost.setAuthenticationPending(false);
+		assert.strictEqual(session!.loading.get(), false);
+	});
+
+	test('new session loading reflects authenticationPending until config resolves', async () => {
+		agentHost.setAuthenticationPending(true);
+		const provider = createProvider(disposables, agentHost);
+		const session = provider.createNewSession(URI.parse('file:///home/user/project'), provider.sessionTypes[0].id);
+		// Wait for the resolved config (the mock returns `values.isolation: 'worktree'`)
+		// so that the per-session loading flag has been turned off.
+		await waitForSessionConfig(provider, session.sessionId, config => config?.values.isolation === 'worktree');
+
+		// Even though config has resolved (per-session loading is false), the
+		// auth-pending flag keeps the session in the loading state.
+		assert.strictEqual(session.loading.get(), true);
+
+		agentHost.setAuthenticationPending(false);
+		assert.strictEqual(session.loading.get(), false);
 	});
 
 	// ---- sendAndCreateChat -------
