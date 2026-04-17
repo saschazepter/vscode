@@ -6,6 +6,7 @@
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { Emitter } from '../../../base/common/event.js';
 import * as platform from '../../../base/common/platform.js';
+import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
@@ -179,7 +180,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 
 		const nodePty = await getNodePty();
 
-		const cwd = params.cwd ?? process.cwd();
+		const cwd = await this._resolveCwd(params.cwd, uri);
 		const cols = params.cols ?? 80;
 		const rows = params.rows ?? 24;
 
@@ -644,6 +645,38 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			return process.env['COMSPEC'] || 'cmd.exe';
 		}
 		return process.env['SHELL'] || '/bin/sh';
+	}
+
+	/**
+	 * Resolves the cwd string from {@link ICreateTerminalParams} to an
+	 * accessible filesystem path, falling back to $HOME if the requested
+	 * directory is missing (otherwise node-pty exits silently with code 1).
+	 */
+	private async _resolveCwd(cwd: string | undefined, uri: string): Promise<string> {
+		let resolved = process.cwd();
+		if (cwd) {
+			try {
+				const parsed = URI.parse(cwd);
+				if (parsed.scheme === 'file' && parsed.fsPath && parsed.fsPath !== '/') {
+					resolved = parsed.fsPath;
+				} else {
+					this._logService.warn(`[TerminalManager] Ignoring non-file cwd for ${uri}: ${cwd}`);
+				}
+			} catch {
+				this._logService.warn(`[TerminalManager] Failed to parse cwd URI for ${uri}: ${cwd}`);
+			}
+		}
+		try {
+			const stat = await fs.promises.stat(resolved);
+			if (stat.isDirectory()) {
+				return resolved;
+			}
+		} catch {
+			// fall through to fallback
+		}
+		const fallback = process.env['HOME'] || process.env['USERPROFILE'] || process.cwd();
+		this._logService.warn(`[TerminalManager] cwd '${resolved}' is not accessible, falling back to ${fallback}`);
+		return fallback;
 	}
 
 	/** Dispatch root/terminalsChanged with the current terminal list. */

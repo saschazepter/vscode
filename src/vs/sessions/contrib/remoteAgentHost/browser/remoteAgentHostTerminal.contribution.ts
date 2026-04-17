@@ -5,6 +5,8 @@
 
 import { localize } from '../../../../nls.js';
 import { isWeb } from '../../../../base/common/platform.js';
+import { URI } from '../../../../base/common/uri.js';
+import { AGENT_HOST_SCHEME, agentHostAuthority, fromAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { IAgentHostService } from '../../../../platform/agentHost/common/agentService.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -14,10 +16,12 @@ import { AgentHostTerminalContribution, IAgentHostEntry } from '../../../../work
 import { LoggingAgentConnection } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
 import { IAgentHostTerminalService } from '../../../../workbench/contrib/terminal/browser/agentHostTerminalService.js';
 import { ITerminalProfileService } from '../../../../workbench/contrib/terminal/common/terminal.js';
+import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 
 export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContribution {
 	constructor(
 		@IRemoteAgentHostService private readonly _remoteAgentHostService: IRemoteAgentHostService,
+		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
 		@IAgentHostService agentHostService: IAgentHostService,
 		@ITerminalProfileService terminalProfileService: ITerminalProfileService,
 		@IQuickInputService quickInputService: IQuickInputService,
@@ -29,7 +33,7 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 			terminalProfileService,
 			quickInputService,
 			instantiationService,
-			agentHostTerminalService
+			agentHostTerminalService,
 		);
 
 
@@ -74,6 +78,18 @@ export class RemoteAgentHostTerminalContribution extends AgentHostTerminalContri
 		}
 
 		return isWeb ? entries : [...entries, ...super._collectEntries()];
+	}
+
+	protected override _getDefaultCwd(address: string): URI | undefined {
+		// Agent-host sessions never materialize workspace folders in the
+		// browser, so the terminal service has no cwd. Derive one from the
+		// active session's worktree instead, scoped to the chosen host.
+		const repo = this._sessionsManagementService?.activeSession.get()?.workspace.get()?.repositories[0];
+		const worktree = repo?.workingDirectory ?? repo?.uri;
+		if (worktree?.scheme !== AGENT_HOST_SCHEME || worktree.authority !== agentHostAuthority(address)) {
+			return undefined;
+		}
+		return fromAgentHostUri(worktree);
 	}
 }
 registerWorkbenchContribution2(AgentHostTerminalContribution.ID, RemoteAgentHostTerminalContribution, WorkbenchPhase.AfterRestored);
