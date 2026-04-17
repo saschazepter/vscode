@@ -64,22 +64,22 @@ export function getCopilotExcludeFilter(platform: string, arch: string): string[
 }
 
 /**
- * Materializes copilot CLI ripgrep shim directly inside the built-in copilot extension.
+ * Materializes the copilot CLI ripgrep shim directly inside the built-in copilot extension.
  *
  * This is used when copilot is shipped as a built-in extension so startup does
- * not need to create shims at runtime. The destination layout matches the
+ * not need to create the shim at runtime. The destination layout matches the
  * runtime shim logic in the copilot extension:
  * - ripgrep:  node_modules/@github/copilot/sdk/ripgrep/bin/{platform-arch}
  * - marker:   node_modules/@github/copilot/shims.txt
  *
- * Note: `node-pty` is no longer shimmed here. The copilot CLI SDK resolves
+ * Note: `node-pty` is no longer shimmed. The copilot CLI SDK resolves
  * `node-pty` from the embedder (VS Code) via `hostRequire` and falls back to
  * its bundled copy only if that fails.
  *
  * Failures throw to fail the build because built-in packaging must guarantee
- * these artifacts are present.
+ * this artifact is present.
  */
-export function prepareBuiltInCopilotExtensionShims(platform: string, arch: string, builtInCopilotExtensionDir: string, appNodeModulesDir: string): void {
+export function prepareBuiltInCopilotRipgrepShim(platform: string, arch: string, builtInCopilotExtensionDir: string, appNodeModulesDir: string): void {
 	const { nodePlatform, nodeArch } = toNodePlatformArch(platform, arch);
 	const platformArch = `${nodePlatform}-${nodeArch}`;
 
@@ -87,12 +87,12 @@ export function prepareBuiltInCopilotExtensionShims(platform: string, arch: stri
 	const copilotBase = path.join(extensionNodeModules, '@github', 'copilot');
 	const copilotSdkBase = path.join(copilotBase, 'sdk');
 	if (!fs.existsSync(copilotSdkBase)) {
-		throw new Error(`[prepareBuiltInCopilotExtensionShims] Copilot SDK directory not found at ${copilotSdkBase}`);
+		throw new Error(`[prepareBuiltInCopilotRipgrepShim] Copilot SDK directory not found at ${copilotSdkBase}`);
 	}
 
 	const ripgrepSource = path.join(appNodeModulesDir, '@vscode', 'ripgrep', 'bin');
 	if (!fs.existsSync(ripgrepSource)) {
-		throw new Error(`[prepareBuiltInCopilotExtensionShims] ripgrep source not found at ${ripgrepSource}`);
+		throw new Error(`[prepareBuiltInCopilotRipgrepShim] ripgrep source not found at ${ripgrepSource}`);
 	}
 
 	const ripgrepDest = path.join(copilotSdkBase, 'ripgrep', 'bin', platformArch);
@@ -103,8 +103,8 @@ export function prepareBuiltInCopilotExtensionShims(platform: string, arch: stri
 		fs.cpSync(ripgrepSource, ripgrepDest, { recursive: true });
 
 		fs.writeFileSync(shimMarkerPath, 'Shims created successfully');
-		console.log(`[prepareBuiltInCopilotExtensionShims] Materialized shims for ${platformArch} in ${builtInCopilotExtensionDir}`);
+		console.log(`[prepareBuiltInCopilotRipgrepShim] Materialized ripgrep shim for ${platformArch} in ${builtInCopilotExtensionDir}`);
 	} catch (err) {
-		throw new Error(`[prepareBuiltInCopilotExtensionShims] Failed to materialize shims for ${platformArch}: ${err}`);
+		throw new Error(`[prepareBuiltInCopilotRipgrepShim] Failed to materialize ripgrep shim for ${platformArch}: ${err}`);
 	}
 }
