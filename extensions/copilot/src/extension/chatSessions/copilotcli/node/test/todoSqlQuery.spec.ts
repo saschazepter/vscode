@@ -40,7 +40,7 @@ describe('TodoSqlQuery', () => {
 	it('queryTodos passes the correct database path to the worker', async () => {
 		mockQueryTodos.mockResolvedValue([]);
 		await query.queryTodos('/some/session/dir');
-		expect(mockQueryTodos).toHaveBeenCalledWith(expect.stringContaining('/some/session/dir/session.db'));
+		expect(mockQueryTodos).toHaveBeenCalledWith(expect.stringMatching(/[\\/]some[\\/]session[\\/]dir[\\/]session\.db$/));
 	});
 
 	it('queryTodos returns items from the worker', async () => {

@@ -704,11 +704,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 								if (token.isCancellationRequested) {
 									return;
 								}
-								if (items.length > 0) {
-									return updateTodoListFromSqlItems(items, this._toolsService, request.toolInvocationToken, token);
-								}
+								return updateTodoListFromSqlItems(items, this._toolsService, request.toolInvocationToken, token);
 							}).catch(err => {
-								this.logService.error(`[CopilotCLISession] Failed to query todos from session database`, err);
+								this.logService.error(err, '[CopilotCLISession] Failed to query todos from session database');
 							});
 						}
 					} catch (ex) {

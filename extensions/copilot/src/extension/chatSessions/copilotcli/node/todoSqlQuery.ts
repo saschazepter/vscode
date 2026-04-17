@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { join } from 'path';
-import { RpcProxy, WorkerWithRpcProxy } from '../../../../util/node/worker';
+import { WorkerWithRpcProxy, type RpcProxy } from '../../../../util/node/worker';
 import type { TodoItem, TodoSqlWorkerApi } from './copilotCLITodoWorker';
 
 const DATABASE_FILENAME = 'session.db';
