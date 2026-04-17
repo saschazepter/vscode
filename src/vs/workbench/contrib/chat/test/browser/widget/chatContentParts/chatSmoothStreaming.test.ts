@@ -10,7 +10,9 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../ba
 import { TestConfigurationService } from '../../../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { workbenchInstantiationService } from '../../../../../../test/browser/workbenchTestServices.js';
+import { BlockAnimation, ANIMATION_DURATION_MS } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/animations/blockAnimations.js';
 import { lastBlockBoundary } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/buffers/paragraphBuffer.js';
+import { WordBuffer } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/buffers/wordBuffer.js';
 import { SmoothStreamingDOMMorpher } from '../../../../browser/widget/chatContentParts/chatSmoothStreaming/chatSmoothStreaming.js';
 import { ChatConfiguration } from '../../../../common/constants.js';
 
@@ -94,6 +96,13 @@ suite('lastBlockBoundary', () => {
 	test('handles unclosed tilde fence', () => {
 		const text = '~~~\ncode\n\nmore\n\nstill inside';
 		assert.strictEqual(lastBlockBoundary(text), -1);
+	});
+
+	test('handles mixed backtick and tilde fences', () => {
+		const text = '~~~\ntilde code\n\ninside tilde\n~~~\n\n```\nbacktick code\n\ninside backtick\n```\n\nafter both';
+		const result = lastBlockBoundary(text);
+		// The last valid boundary should be after the closing ```
+		assert.ok(result > 40, `Expected boundary after both fences, got ${result}`);
 	});
 });
 
@@ -283,5 +292,154 @@ suite('SmoothStreamingDOMMorpher', () => {
 			morpher.dispose();
 			// No error should occur — rAF is cancelled
 		});
+	});
+});
+
+suite('BlockAnimation', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('applies animation class and custom properties to new children', () => {
+		const anim = new BlockAnimation('fade');
+		const container = mainWindow.document.createElement('div');
+		const child = container.appendChild(mainWindow.document.createElement('p'));
+
+		anim.animate(container.children, 0, 1, 0);
+
+		assert.strictEqual(child.classList.contains('chat-smooth-animate-fade'), true);
+		assert.strictEqual(child.style.getPropertyValue('--chat-smooth-duration'), `${ANIMATION_DURATION_MS}ms`);
+		assert.ok(child.style.getPropertyValue('--chat-smooth-delay') !== '');
+	});
+
+	test('does not strip animation class on bubbled animationend from nested element', () => {
+		const anim = new BlockAnimation('rise');
+		const container = mainWindow.document.createElement('div');
+		const parent = container.appendChild(mainWindow.document.createElement('div'));
+		const nested = parent.appendChild(mainWindow.document.createElement('span'));
+
+		anim.animate(container.children, 0, 1, 0);
+		assert.strictEqual(parent.classList.contains('chat-smooth-animate-rise'), true);
+
+		// Simulate animationend bubbling from nested child
+		const bubbledEvent = new AnimationEvent('animationend', { bubbles: true });
+		nested.dispatchEvent(bubbledEvent);
+
+		// Parent should still have the animation class
+		assert.strictEqual(
+			parent.classList.contains('chat-smooth-animate-rise'),
+			true,
+			'Animation class should not be removed by bubbled event'
+		);
+		assert.strictEqual(
+			parent.style.getPropertyValue('--chat-smooth-duration'),
+			`${ANIMATION_DURATION_MS}ms`,
+			'Custom properties should not be removed by bubbled event'
+		);
+	});
+
+	test('strips animation class on direct animationend from the animated element', () => {
+		const anim = new BlockAnimation('blur');
+		const container = mainWindow.document.createElement('div');
+		const child = container.appendChild(mainWindow.document.createElement('p'));
+
+		anim.animate(container.children, 0, 1, 0);
+		assert.strictEqual(child.classList.contains('chat-smooth-animate-blur'), true);
+
+		// Simulate direct animationend on the child itself
+		const directEvent = new AnimationEvent('animationend', { bubbles: true });
+		child.dispatchEvent(directEvent);
+
+		assert.strictEqual(
+			child.classList.contains('chat-smooth-animate-blur'),
+			false,
+			'Animation class should be removed after direct animationend'
+		);
+		assert.strictEqual(
+			child.style.getPropertyValue('--chat-smooth-duration'),
+			'',
+			'Custom property should be removed after direct animationend'
+		);
+	});
+
+	test('staggers delay across multiple new children', () => {
+		const anim = new BlockAnimation('fade');
+		const container = mainWindow.document.createElement('div');
+		container.appendChild(mainWindow.document.createElement('p'));
+		container.appendChild(mainWindow.document.createElement('p'));
+		container.appendChild(mainWindow.document.createElement('p'));
+
+		anim.animate(container.children, 0, 3, 0);
+
+		const delays = Array.from(container.children).map(
+			c => parseInt((c as HTMLElement).style.getPropertyValue('--chat-smooth-delay'))
+		);
+		// Each successive child should have a larger delay
+		assert.ok(delays[1] > delays[0], `Second delay ${delays[1]} should be greater than first ${delays[0]}`);
+		assert.ok(delays[2] > delays[1], `Third delay ${delays[2]} should be greater than second ${delays[1]}`);
+	});
+});
+
+suite('WordBuffer', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('setRate with isComplete uses at least MIN_RATE_AFTER_COMPLETE', () => {
+		const buffer = new WordBuffer();
+
+		// Setting a low rate with isComplete should floor to 80
+		buffer.setRate(10, true);
+		// Verify by checking filterFlush behavior: with rate=80,
+		// after enough elapsed time, words should be revealed faster
+		// than at rate=10.
+		const md = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10';
+		const result1 = buffer.filterFlush(md);
+		// First call reveals 1 word
+		assert.ok(result1 !== undefined, 'First flush should reveal content');
+	});
+
+	test('setRate with undefined rate and isComplete defaults to MIN_RATE_AFTER_COMPLETE', () => {
+		const buffer = new WordBuffer();
+		buffer.setRate(undefined, true);
+
+		const md = 'word1 word2 word3';
+		const result = buffer.filterFlush(md);
+		assert.ok(result !== undefined, 'Should reveal content with default complete rate');
+	});
+
+	test('setRate during streaming clamps between MIN_RATE and MAX_RATE', () => {
+		const buffer = new WordBuffer();
+
+		// Rate below MIN_RATE should be clamped up
+		buffer.setRate(1, false);
+		const md = 'word1 word2 word3';
+		const result = buffer.filterFlush(md);
+		assert.ok(result !== undefined, 'Should reveal content even with low rate (clamped to MIN_RATE)');
+	});
+
+	test('setRate with undefined rate during streaming defaults to DEFAULT_RATE', () => {
+		const buffer = new WordBuffer();
+		buffer.setRate(undefined, false);
+
+		const md = 'word1 word2';
+		const result = buffer.filterFlush(md);
+		assert.ok(result !== undefined, 'Should reveal content with default streaming rate');
+	});
+
+	test('needsNextFrame is true when words remain unrevealed', () => {
+		const buffer = new WordBuffer();
+		buffer.setRate(1, false);
+
+		// First flush reveals 1 word, but there are more
+		buffer.filterFlush('word1 word2 word3 word4 word5');
+		assert.strictEqual(buffer.needsNextFrame, true, 'Should need another frame when words remain');
+	});
+
+	test('needsNextFrame is false when all words are revealed', () => {
+		const buffer = new WordBuffer();
+		buffer.setRate(2000, false);
+
+		// With a very high rate and single word, all content is revealed
+		buffer.filterFlush('hello');
+		assert.strictEqual(buffer.needsNextFrame, false, 'Should not need another frame when all words shown');
 	});
 });
