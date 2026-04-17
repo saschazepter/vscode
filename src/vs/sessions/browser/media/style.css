@@ -169,6 +169,34 @@
 	border-radius: var(--vscode-sash-size);
 }
 
+/* ---- Scrollbars ---- */
+
+/* Thinner, rounded scrollbar sliders scoped to the agents app.
+ * The scrollbar widget sets the slider's size inline to match the full
+ * track. We hide that default background and paint a narrower, rounded
+ * slider via an inset box-shadow so all four corners round consistently
+ * and the full hit area is preserved. */
+.agent-sessions-workbench .monaco-scrollable-element > .scrollbar > .slider {
+	background: transparent !important;
+}
+
+.agent-sessions-workbench .monaco-scrollable-element > .scrollbar.vertical > .slider::before,
+.agent-sessions-workbench .monaco-scrollable-element > .scrollbar.horizontal > .slider::before {
+	content: '';
+	position: absolute;
+	inset: 1px;
+	border-radius: 10px;
+	background: var(--vscode-scrollbarSlider-background);
+}
+
+.agent-sessions-workbench .monaco-scrollable-element > .scrollbar > .slider:hover::before {
+	background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.agent-sessions-workbench .monaco-scrollable-element > .scrollbar > .slider.active::before {
+	background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
 .monaco-workbench.vs.agent-sessions-workbench .part.chatbar,
 .monaco-workbench.vs.agent-sessions-workbench .part.editor:not(.modal-editor-part),
 .monaco-workbench.vs.agent-sessions-workbench .part.auxiliarybar,
