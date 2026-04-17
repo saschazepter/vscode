@@ -75,7 +75,7 @@ class TestPromptContextKeyService extends MockContextKeyService {
 	fireDidChangeContext(keys: string[]): void {
 		const changedKeys = new Set(keys);
 		this._onDidChangeContextEmitter.fire({
-			affectsSome: trackedKeys => Array.from(trackedKeys).some(key => changedKeys.has(key)),
+			affectsSome: trackedKeys => keys.some(key => trackedKeys.has(key)),
 			allKeysContainedIn: trackedKeys => Array.from(changedKeys).every(key => trackedKeys.has(key)),
 		});
 	}
