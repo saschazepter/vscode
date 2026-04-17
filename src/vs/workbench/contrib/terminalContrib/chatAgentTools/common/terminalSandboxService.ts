@@ -19,7 +19,7 @@ import { IEnvironmentService } from '../../../../../platform/environment/common/
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
-import { TerminalChatAgentToolsSandboxEnabledValue, TerminalChatAgentToolsSettingId } from './terminalChatAgentToolsConfiguration.js';
+import { TerminalChatAgentToolsSettingId } from './terminalChatAgentToolsConfiguration.js';
 import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 import { matchesDomainPattern, normalizeDomain } from '../../../../../platform/networkFilter/common/domainMatcher.js';
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
@@ -33,6 +33,7 @@ import { ChatElicitationRequestPart } from '../../../chat/common/model/chatProgr
 import { ChatModel } from '../../../chat/common/model/chatModel.js';
 import { ElicitationState, IChatService } from '../../../chat/common/chatService/chatService.js';
 import { SANDBOX_HELPER_CHANNEL_NAME, SandboxHelperChannelClient } from '../../../../../platform/sandbox/common/sandboxHelperIpc.js';
+import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ISandboxDependencyInstallOptions, type ISandboxDependencyInstallResult, type ITerminalSandboxPrerequisiteCheckResult, type ITerminalSandboxResolvedNetworkDomains, type ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 
 export { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
@@ -92,8 +93,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		this._register(Event.runAndSubscribe(this._configurationService.onDidChangeConfiguration, (e: IConfigurationChangeEvent | undefined) => {
 			// If terminal sandbox settings changed, update sandbox config.
 			if (
-				e?.affectsConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxEnabled) ||
-				e?.affectsConfiguration(TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxEnabled) ||
+				e?.affectsConfiguration(AgentSandboxSettingId.AgentSandboxEnabled) ||
+				e?.affectsConfiguration(AgentSandboxSettingId.DeprecatedAgentSandboxEnabled) ||
 				e?.affectsConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains) ||
 				e?.affectsConfiguration(AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains) ||
 				e?.affectsConfiguration(AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains) ||
@@ -469,7 +470,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (os === OperatingSystem.Windows) {
 			return false;
 		}
-		return this._isSandboxEnabled(this._getSettingValue<TerminalChatAgentToolsSandboxEnabledValue | boolean>(TerminalChatAgentToolsSettingId.AgentSandboxEnabled, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxEnabled) ?? TerminalChatAgentToolsSandboxEnabledValue.Off);
+		return this._isSandboxEnabled(this._getSettingValue<AgentSandboxEnabledValue | boolean>(AgentSandboxSettingId.AgentSandboxEnabled, AgentSandboxSettingId.DeprecatedAgentSandboxEnabled) ?? AgentSandboxEnabledValue.Off);
 	}
 
 	private async _resolveSrtPath(): Promise<void> {
@@ -627,11 +628,11 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 
-	private _isSandboxEnabled(value: TerminalChatAgentToolsSandboxEnabledValue | boolean): boolean {
-		return value === true || value === TerminalChatAgentToolsSandboxEnabledValue.On;
+	private _isSandboxEnabled(value: AgentSandboxEnabledValue | boolean): boolean {
+		return value === true || value === AgentSandboxEnabledValue.On;
 	}
 
-	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId, ...deprecatedSettingIds: (TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId)[]): T | undefined {
+	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId, ...deprecatedSettingIds: (TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId)[]): T | undefined {
 		const setting = this._configurationService.inspect<T>(settingId);
 		if (setting.userValue !== undefined) {
 			return setting.value;

@@ -11,6 +11,7 @@ import { ConfigurationTarget } from '../../../configuration/common/configuration
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { AgentNetworkFilterService } from '../../common/networkFilterService.js';
 import { AgentNetworkDomainSettingId } from '../../common/settings.js';
+import { AgentSandboxSettingId } from '../../../sandbox/common/settings.js';
 import { ITerminalSandboxService, NullTerminalSandboxService } from '../../../sandbox/common/terminalSandboxService.js';
 
 suite('AgentNetworkFilterService', () => {
@@ -152,7 +153,7 @@ suite('AgentNetworkFilterService', () => {
 		disposables.add(service.onDidChange(() => { fired = true; }));
 
 		terminalSandboxEnabled = true;
-		fireConfigChange('chat.agent.sandbox.enabled');
+		fireConfigChange(AgentSandboxSettingId.AgentSandboxEnabled);
 		await Promise.resolve();
 
 		assert.strictEqual(fired, true);
