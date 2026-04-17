@@ -24,16 +24,38 @@ import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 
 // Track whether warnings have been shown this VS Code session
 const shownWarnings = new Set<ChatPermissionLevel>();
 
-function hasShownElevatedWarning(level: ChatPermissionLevel): boolean {
+// Storage keys for persisting the user's choice to skip the warning dialog
+// across sessions when "Don't show again" is checked.
+const AUTOPILOT_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autopilot.dontShowWarningAgain';
+const AUTO_APPROVE_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autoApprove.dontShowWarningAgain';
+
+function dontShowAgainKey(level: ChatPermissionLevel): string | undefined {
+	if (level === ChatPermissionLevel.Autopilot) {
+		return AUTOPILOT_DONT_SHOW_AGAIN_KEY;
+	}
+	if (level === ChatPermissionLevel.AutoApprove) {
+		return AUTO_APPROVE_DONT_SHOW_AGAIN_KEY;
+	}
+	return undefined;
+}
+
+function hasShownElevatedWarning(level: ChatPermissionLevel, storageService: IStorageService): boolean {
 	if (shownWarnings.has(level)) {
 		return true;
 	}
-	// Autopilot is stricter than AutoApprove, so confirming Autopilot
-	// implies the user already accepted the AutoApprove risks.
+	const key = dontShowAgainKey(level);
+	if (key && storageService.getBoolean(key, StorageScope.PROFILE, false)) {
+		return true;
+	}
+	// Autopilot is stricter than AutoApprove, so confirming Autopilot in this
+	// session implies the user already accepted the AutoApprove risks. We do
+	// not extend this to the persisted "don't show again" setting — that
+	// choice is scoped to the level the user made it on.
 	if (level === ChatPermissionLevel.AutoApprove && shownWarnings.has(ChatPermissionLevel.Autopilot)) {
 		return true;
 	}
@@ -57,6 +79,7 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 		@IConfigurationService configurationService: IConfigurationService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@IOpenerService openerService: IOpenerService,
+		@IStorageService storageService: IStorageService,
 	) {
 		const isAutoApprovePolicyRestricted = () => configurationService.inspect<boolean>(ChatConfiguration.GlobalAutoApprove).policyValue === false;
 		const isAutopilotEnabled = () => configurationService.getValue<boolean>(ChatConfiguration.AutopilotEnabled) !== false;
@@ -98,7 +121,7 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 								: localize('permissions.autoApprove.description', "Auto-approve all tool calls and retry on errors"),
 						},
 						run: async () => {
-							if (!hasShownElevatedWarning(ChatPermissionLevel.AutoApprove)) {
+							if (!hasShownElevatedWarning(ChatPermissionLevel.AutoApprove, storageService)) {
 								const result = await this.dialogService.prompt({
 									type: Severity.Warning,
 									message: localize('permissions.autoApprove.warning.title', "Enable Bypass Approvals?"),
@@ -112,6 +135,10 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 											run: () => false
 										},
 									],
+									checkbox: {
+										label: localize('permissions.warning.dontShowAgain', "Don't show again"),
+										checked: false,
+									},
 									custom: {
 										icon: Codicon.warning,
 										markdownDetails: [{
@@ -121,6 +148,9 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 								});
 								if (result.result !== true) {
 									return;
+								}
+								if (result.checkboxChecked) {
+									storageService.store(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
 								}
 								shownWarnings.add(ChatPermissionLevel.AutoApprove);
 							}
@@ -147,7 +177,7 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 								: localize('permissions.autopilot.description', "Auto-approve all tool calls and continue until the task is done"),
 						},
 						run: async () => {
-							if (!hasShownElevatedWarning(ChatPermissionLevel.Autopilot)) {
+							if (!hasShownElevatedWarning(ChatPermissionLevel.Autopilot, storageService)) {
 								const result = await this.dialogService.prompt({
 									type: Severity.Warning,
 									message: localize('permissions.autopilot.warning.title', "Enable Autopilot?"),
@@ -161,6 +191,10 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 											run: () => false
 										},
 									],
+									checkbox: {
+										label: localize('permissions.warning.dontShowAgain', "Don't show again"),
+										checked: false,
+									},
 									custom: {
 										icon: Codicon.rocket,
 										markdownDetails: [{
@@ -170,6 +204,9 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 								});
 								if (result.result !== true) {
 									return;
+								}
+								if (result.checkboxChecked) {
+									storageService.store(AUTOPILOT_DONT_SHOW_AGAIN_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
 								}
 								shownWarnings.add(ChatPermissionLevel.Autopilot);
 							}
