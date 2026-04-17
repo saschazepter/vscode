@@ -13,15 +13,19 @@ import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
+import { ServiceCollection } from '../../../../../../platform/instantiation/common/serviceCollection.js';
+import { ChatContextKeys } from '../../actions/chatContextKeys.js';
 import { ChatRequestVariableSet } from '../../attachments/chatVariableEntries.js';
 import { IChatProgress, IChatService } from '../../chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, GeneralPurposeAgentName } from '../../constants.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../languageModels.js';
 import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
 import { IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../participants/chatAgents.js';
+import { getChatSessionType } from '../../model/chatUri.js';
 import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
 import { ChatRequestHooks, mergeHooks } from '../../promptSyntax/hookSchema.js';
 import { HookType } from '../../promptSyntax/hookTypes.js';
@@ -84,6 +88,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IProductService private readonly productService: IProductService,
 	) {
 		super();
@@ -301,7 +306,16 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			}
 
 			const variableSet = new ChatRequestVariableSet();
-			const computer = this.instantiationService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, modeTools, undefined);
+			// Create a scoped context key service with chatSessionType set so
+			// that extension-contributed skills with session-type when clauses
+			// (e.g. "chatSessionType == local") are correctly evaluated.
+			const scopedContextKeyService = this.contextKeyService.createOverlay([
+				[ChatContextKeys.chatSessionType.key, getChatSessionType(invocation.context.sessionResource)]
+			]);
+			const scopedInstantiationService = this.instantiationService.createChild(
+				new ServiceCollection([IContextKeyService, scopedContextKeyService])
+			);
+			const computer = scopedInstantiationService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, modeTools, undefined);
 			await computer.collect(variableSet, token);
 
 			// Collect hooks from hook .json files

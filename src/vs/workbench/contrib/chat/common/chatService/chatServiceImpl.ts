@@ -22,6 +22,7 @@ import { generateUuid } from '../../../../../base/common/uuid.js';
 import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { localize } from '../../../../../nls.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { Progress } from '../../../../../platform/progress/common/progress.js';
@@ -49,9 +50,11 @@ import { IChatSlashCommandService } from '../participants/chatSlashCommands.js';
 import { IChatTransferService } from '../model/chatTransferService.js';
 import { chatSessionResourceToId, getChatSessionType, isUntitledChatSession, LocalChatSessionUri } from '../model/chatUri.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptTextVariableEntry } from '../attachments/chatVariableEntries.js';
+import { ChatContextKeys } from '../actions/chatContextKeys.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { ChatMessageRole, IChatMessage, ILanguageModelsService } from '../languageModels.js';
 import { ILanguageModelToolsService } from '../tools/languageModelToolsService.js';
+import { ServiceCollection } from '../../../../../platform/instantiation/common/serviceCollection.js';
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING, TROUBLESHOOT_COMMAND_NAME, TROUBLESHOOT_SKILL_PATH, COPILOT_SKILL_URI_SCHEME } from '../promptSyntax/promptTypes.js';
@@ -162,6 +165,7 @@ export class ChatService extends Disposable implements IChatService {
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IChatSlashCommandService private readonly chatSlashCommandService: IChatSlashCommandService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
@@ -1120,7 +1124,16 @@ export class ChatService extends Disposable implements IChatService {
 					// resolution can see them. We filter them back out below
 					// to return only the entries that were newly added.
 					const variableSet = new ChatRequestVariableSet(options?.attachedContext);
-					const computer = this.instantiationService.createInstance(ComputeAutomaticInstructions, ctx.modeKind, ctx.enabledTools, ctx.enabledSubAgents);
+					// Create a scoped context key service with chatSessionType set so
+					// that extension-contributed skills with session-type when clauses
+					// (e.g. "chatSessionType == local") are correctly evaluated.
+					const scopedContextKeyService = this.contextKeyService.createOverlay([
+						[ChatContextKeys.chatSessionType.key, getChatSessionType(sessionResource)]
+					]);
+					const scopedInstantiationService = this.instantiationService.createChild(
+						new ServiceCollection([IContextKeyService, scopedContextKeyService])
+					);
+					const computer = scopedInstantiationService.createInstance(ComputeAutomaticInstructions, ctx.modeKind, ctx.enabledTools, ctx.enabledSubAgents);
 					await computer.collect(variableSet, token);
 					// Return only the entries that were added by instruction collection
 					const originalIds = new Set((options?.attachedContext ?? []).map(v => v.id));
