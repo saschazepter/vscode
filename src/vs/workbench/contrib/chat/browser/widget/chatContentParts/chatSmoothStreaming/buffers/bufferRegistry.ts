@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ISmoothStreamingBuffer } from './buffer.js';
-import { LineBuffer } from './lineBuffer.js';
 import { OffBuffer } from './offBuffer.js';
 import { ParagraphBuffer } from './paragraphBuffer.js';
 import { WordBuffer } from './wordBuffer.js';
@@ -16,11 +15,6 @@ import { WordBuffer } from './wordBuffer.js';
 export const BUFFER_MODES = {
 	off: (_domNode: HTMLElement): ISmoothStreamingBuffer => new OffBuffer(),
 	word: (_domNode: HTMLElement): ISmoothStreamingBuffer => new WordBuffer(),
-	line: (domNode: HTMLElement): ISmoothStreamingBuffer => {
-		const buf = new LineBuffer();
-		buf.setDomNode(domNode);
-		return buf;
-	},
 	paragraph: (_domNode: HTMLElement): ISmoothStreamingBuffer => new ParagraphBuffer(),
 } as const satisfies Record<string, (domNode: HTMLElement) => ISmoothStreamingBuffer>;
 

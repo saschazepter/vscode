@@ -60,9 +60,6 @@ export class WordBuffer implements ISmoothStreamingBuffer {
 	/** Estimated word production rate (words/sec). */
 	private _rate: number = DEFAULT_RATE;
 
-	/** Whether the response has completed. */
-	private _isComplete: boolean = false;
-
 	get needsNextFrame(): boolean {
 		return this._needsNextFrame;
 	}
@@ -72,7 +69,6 @@ export class WordBuffer implements ISmoothStreamingBuffer {
 	 * `impliedWordLoadRate`. Called by the orchestrator.
 	 */
 	setRate(rate: number | undefined, isComplete: boolean): void {
-		this._isComplete = isComplete;
 		if (isComplete) {
 			this._rate = typeof rate === 'number'
 				? Math.max(rate, MIN_RATE_AFTER_COMPLETE)

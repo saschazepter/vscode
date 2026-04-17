@@ -9,7 +9,6 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { ChatConfiguration } from '../../../../common/constants.js';
 import { ISmoothStreamingBuffer } from './buffers/buffer.js';
-import { LineBuffer } from './buffers/lineBuffer.js';
 import { WordBuffer } from './buffers/wordBuffer.js';
 import { BUFFER_MODES, BufferModeName } from './buffers/bufferRegistry.js';
 import { ISmoothStreamingAnimation } from './animations/animation.js';
@@ -114,27 +113,8 @@ export class SmoothStreamingDOMMorpher extends Disposable {
 	}
 
 	/**
-	 * Register the shadow render callback for line-buffering mode.
-	 */
-	setShadowRenderCallback(cb: (newMarkdown: string) => void): void {
-		if (this._buffer instanceof LineBuffer) {
-			this._buffer.setShadowRenderCallback(cb);
-		}
-	}
-
-	/**
-	 * Returns the shadow node for line-buffering mode (for the owner
-	 * to render into).
-	 */
-	getShadowNode(): HTMLElement | undefined {
-		if (this._buffer instanceof LineBuffer) {
-			return this._buffer.getShadowNode();
-		}
-		return undefined;
-	}
-
-	/**
-	 * Forward the stream's word-rate estimate to the word buffer.
+	 * Forward the stream's word-rate estimate to the active buffer
+	 * (word buffer or line buffer).
 	 */
 	updateStreamRate(rate: number, isComplete: boolean): void {
 		if (this._buffer instanceof WordBuffer) {
@@ -150,9 +130,27 @@ export class SmoothStreamingDOMMorpher extends Disposable {
 	 */
 	seed(markdown: string, animateInitial?: boolean): void {
 		this._lastMarkdown = markdown;
+		this._animationStartTime = 0;
+
+		// For drip-feed buffers (word), clear the DOM and let the
+		// buffer reveal content from scratch — the initial
+		// doRenderMarkdown() ran to initialize pipeline state but
+		// the visible content should be built up by the buffer.
+		if (this._buffer.handlesFlush && markdown.length > 0) {
+			this._renderedMarkdown = '';
+			this._revealedChildCount = 0;
+			// Clear the DOM so the buffer starts from empty.
+			while (this._domNode.firstChild) {
+				this._domNode.removeChild(this._domNode.firstChild);
+			}
+			// Schedule the first drip-feed render.
+			this._pendingMarkdown = markdown;
+			this._scheduleRender();
+			return;
+		}
+
 		this._renderedMarkdown = markdown;
 		this._revealedChildCount = animateInitial ? 0 : this._domNode.children.length;
-		this._animationStartTime = 0;
 		if (animateInitial) {
 			this._animateNewChildren();
 		}

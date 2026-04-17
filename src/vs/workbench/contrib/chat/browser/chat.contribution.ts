@@ -368,16 +368,15 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.experimental.smoothStreaming.animationStyle.reveal', "Content reveals top-to-bottom with a soft gradient edge."),
 			],
 			description: nls.localize('chat.experimental.smoothStreaming.animationStyle', "Controls the animation style for smooth streaming."),
-			default: 'fade',
+			default: 'none',
 			tags: ['experimental'],
 		},
 		[ChatConfiguration.SmoothStreamingBuffering]: {
 			type: 'string',
-			enum: ['off', 'word', 'line', 'paragraph'],
+			enum: ['off', 'word', 'paragraph'],
 			enumDescriptions: [
 				nls.localize('chat.experimental.smoothStreaming.buffering.off', "Renders content immediately as tokens arrive."),
 				nls.localize('chat.experimental.smoothStreaming.buffering.word', "Reveals content word by word."),
-				nls.localize('chat.experimental.smoothStreaming.buffering.line', "Buffers content until a new visual line appears before rendering."),
 				nls.localize('chat.experimental.smoothStreaming.buffering.paragraph', "Buffers content until a paragraph break before rendering."),
 			],
 			description: nls.localize('chat.experimental.smoothStreaming.buffering', "Controls how content is buffered before rendering during smooth streaming. Lower buffering levels render faster but may show incomplete sentences or partially formed markdown."),
