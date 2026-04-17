@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { parentPort } from 'worker_threads';
 import { RcpResponseHandler, RpcRequest, RpcResponse } from '../../../../util/node/worker';
@@ -43,9 +44,13 @@ function handleRequest(fn: string, args: unknown[]): unknown {
 }
 
 function queryTodos(dbPath: string): TodoItem[] {
+	if (!existsSync(dbPath)) {
+		return [];
+	}
 	let db: DatabaseSync | undefined;
 	try {
 		db = new DatabaseSync(dbPath, { open: true });
+		db.exec('PRAGMA busy_timeout = 2000');
 		// Check if the todos table exists
 		const tableCheck = db.prepare(
 			'SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'todos\''
