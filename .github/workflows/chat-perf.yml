@@ -385,54 +385,6 @@ jobs:
 
           cat ci-summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Collect diagnostic outputs
-        run: |
-          mkdir -p collected
-          cp ci-summary.md collected/
-
-          # Collect perf logs from all groups
-          for f in perf-results/perf-results-*/perf-output.log; do
-            GROUP=$(basename "$(dirname "$f")")
-            cp "$f" "collected/perf-output-${GROUP}.log" 2>/dev/null || true
-          done
-          cp leak-results/leak-output.log collected/ 2>/dev/null || true
-
-          # Zip .chat-simulation-data from each group
-          if [[ -d perf-results ]]; then
-            for GROUP_DIR in perf-results/perf-results-*; do
-              GROUP=$(basename "$GROUP_DIR")
-              SIM_DIR="$GROUP_DIR/.chat-simulation-data"
-              if [[ -d "$SIM_DIR" ]]; then
-                cd "$SIM_DIR"
-                zip -r "$OLDPWD/collected/chat-perf-${GROUP}.zip" \
-                  . \
-                  2>/dev/null || true
-                cd "$OLDPWD"
-              fi
-            done
-          fi
-
-          if [[ -f leak-results/.chat-simulation-data/chat-simulation-leak-results.json ]]; then
-            cp leak-results/.chat-simulation-data/chat-simulation-leak-results.json collected/
-          fi
-
-      - name: Upload results
-        uses: actions/upload-artifact@v7
-        with:
-          name: chat-perf-results
-          path: collected/
-          retention-days: 30
-
-      - name: Delete intermediate artifacts
-        if: always()
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: |
-            build-output
-            perf-results-*
-            leak-results
-          failOnError: false
-
       - name: Fail on regression
         id: regression
         if: needs.chat-perf.result == 'failure' || (inputs.skip_leak_check != true && needs.leak-check.result == 'failure')
