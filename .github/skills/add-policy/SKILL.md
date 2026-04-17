@@ -223,7 +223,7 @@ Key details:
 
 ### Real-world examples
 
-See `chat.tools.autoApprove` and `chat.useHooks` in `src/vs/workbench/contrib/chat/browser/chat.contribution.ts` for existing settings that use this pattern.
+See `chat.tools.global.autoApprove` and `chat.useHooks` in `src/vs/workbench/contrib/chat/browser/chat.contribution.ts` for existing settings that use this pattern.
 
 ## Examples
 
