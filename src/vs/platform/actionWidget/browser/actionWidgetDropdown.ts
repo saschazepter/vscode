@@ -11,6 +11,7 @@ import { ThemeIcon } from '../../../base/common/themables.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { getActiveElement, isHTMLElement } from '../../../base/browser/dom.js';
 import { IKeybindingService } from '../../keybinding/common/keybinding.js';
+import { ResolvedKeybinding } from '../../../base/common/keybindings.js';
 import { IListAccessibilityProvider } from '../../../base/browser/ui/list/listWidget.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 
@@ -26,6 +27,13 @@ export interface IActionWidgetDropdownAction extends IAction {
 	 * Optional toolbar actions shown when the item is focused or hovered.
 	 */
 	toolbarActions?: IAction[];
+	/**
+	 * Optional keybinding to display next to the action. When provided, this overrides the
+	 * keybinding that would otherwise be looked up via {@link IKeybindingService.lookupKeybinding}.
+	 * Useful when the active keybinding depends on a scoped context (e.g. focus state) that the
+	 * dropdown cannot evaluate at display time.
+	 */
+	keybinding?: ResolvedKeybinding;
 }
 
 // TODO @lramos15 - Should we just make IActionProvider templated?
@@ -139,7 +147,7 @@ export class ActionWidgetDropdown extends BaseDropdown {
 					hideIcon: false,
 					label: action.label,
 					keybinding: this._options.showItemKeybindings ?
-						this.keybindingService.lookupKeybinding(action.id) :
+						(action.keybinding ?? this.keybindingService.lookupKeybinding(action.id)) :
 						undefined,
 				});
 			}

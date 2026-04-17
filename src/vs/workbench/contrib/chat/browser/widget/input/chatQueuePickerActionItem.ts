@@ -8,8 +8,10 @@ import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEv
 import { ActionViewItem, BaseActionViewItem, IActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { Action, IAction } from '../../../../../../base/common/actions.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { KeyCode } from '../../../../../../base/common/keyCodes.js';
+import { decodeKeybinding } from '../../../../../../base/common/keybindings.js';
+import { KeyCode, KeyMod } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { OS } from '../../../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { IActionViewItemService } from '../../../../../../platform/actions/browser/actionViewItemService.js';
@@ -50,7 +52,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 		@ICommandService private readonly commandService: ICommandService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IActionWidgetService actionWidgetService: IActionWidgetService,
-		@IKeybindingService keybindingService: IKeybindingService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@ITelemetryService telemetryService: ITelemetryService,
 	) {
@@ -81,7 +83,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 				showItemKeybindings: true,
 			},
 			actionWidgetService,
-			keybindingService,
+			this.keybindingService,
 			contextKeyService,
 			telemetryService,
 		));
@@ -104,6 +106,14 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 
 	private _isSteerDefault(): boolean {
 		return this.configurationService.getValue<string>(ChatConfiguration.RequestQueueingDefaultAction) === 'steer';
+	}
+
+	private _resolveKeybinding(keybinding: number) {
+		const decoded = decodeKeybinding(keybinding, OS);
+		if (!decoded) {
+			return undefined;
+		}
+		return this.keybindingService.resolveKeybinding(decoded)[0];
 	}
 
 	private _isEffectiveSteer(): boolean {
@@ -176,6 +186,17 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 	private _getDropdownActions(): IActionWidgetDropdownAction[] {
 		const isSteerDefault = this._isSteerDefault();
 
+		// Resolve display keybindings explicitly: the dropdown's default keybinding lookup uses
+		// the global context, where the chat input's scoped context keys (`inChatInput`,
+		// `requestInProgress`) are not visible — so none of the queue/steer keybinding `when`
+		// clauses match and the resolver falls back to the last-registered binding, which can
+		// produce labels that contradict actual behavior. We know which key is bound to each
+		// action based on the user's configured default, so resolve them directly here.
+		const enterKeybinding = this._resolveKeybinding(KeyCode.Enter);
+		const altEnterKeybinding = this._resolveKeybinding(KeyMod.Alt | KeyCode.Enter);
+		const queueKeybinding = isSteerDefault ? altEnterKeybinding : enterKeybinding;
+		const steerKeybinding = isSteerDefault ? enterKeybinding : altEnterKeybinding;
+
 		const queueAction: IActionWidgetDropdownAction = {
 			id: ChatQueueMessageAction.ID,
 			label: localize('chat.queueMessage', "Add to Queue"),
@@ -184,6 +205,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 			checked: !isSteerDefault,
 			icon: Codicon.add,
 			class: undefined,
+			keybinding: queueKeybinding,
 			hover: {
 				content: localize('chat.queueMessage.hover', "Queue this message to send after the current request completes. The current response will finish uninterrupted before the queued message is sent."),
 			},
@@ -200,6 +222,7 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 			checked: isSteerDefault,
 			icon: Codicon.arrowUp,
 			class: undefined,
+			keybinding: steerKeybinding,
 			hover: {
 				content: localize('chat.steerWithMessage.hover', "Send this message at the next opportunity, signaling the current request to yield. The current response will stop and the new message will be sent immediately."),
 			},
