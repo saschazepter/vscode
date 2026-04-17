@@ -30,7 +30,7 @@ const {
 	getNextExtHostInspectPort, connectToExtHostInspector, getRepoRoot,
 } = require('./common/utils');
 const { getUserTurns, getScenarioIds } = require('./common/mock-llm-server');
-const { registerPerfScenarios } = require('./common/perf-scenarios');
+const { registerPerfScenarios, getScenarioDescription } = require('./common/perf-scenarios');
 
 // -- Config (edit config.jsonc to change defaults) ---------------------------
 
@@ -61,6 +61,12 @@ function parseArgs() {
 		/** @type {string | undefined} */
 		resume: undefined,
 		productionBuild: false,
+		/** @type {Record<string, any>} */
+		settingsOverrides: {},
+		/** @type {Record<string, any>} */
+		testSettingsOverrides: {},
+		/** @type {Record<string, any>} */
+		baselineSettingsOverrides: {},
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -75,6 +81,20 @@ function parseArgs() {
 			case '--threshold': opts.threshold = parseFloat(args[++i]); break;
 			case '--resume': opts.resume = args[++i]; break;
 			case '--production-build': opts.productionBuild = true; break;
+			case '--setting': case '--test-setting': case '--baseline-setting': {
+				const kv = args[++i];
+				const eq = kv.indexOf('=');
+				if (eq === -1) { console.error(`${args[i - 1]} requires key=value, got: ${kv}`); process.exit(1); }
+				const key = kv.slice(0, eq);
+				const raw = kv.slice(eq + 1);
+				// Parse booleans and numbers, keep rest as strings
+				const val = raw === 'true' ? true : raw === 'false' ? false : /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+				const flag = args[i - 1];
+				if (flag === '--test-setting') { opts.testSettingsOverrides[key] = val; }
+				else if (flag === '--baseline-setting') { opts.baselineSettingsOverrides[key] = val; }
+				else { opts.settingsOverrides[key] = val; }
+				break;
+			}
 			case '--no-cache': opts.noCache = true; break;
 			case '--force': opts.force = true; break;
 			case '--ci': opts.ci = true; opts.noCache = true; break;
@@ -97,6 +117,10 @@ function parseArgs() {
 					'  --threshold <frac>  Regression threshold fraction (default: 0.2 = 20%)',
 					'  --production-build  Build a local bundled package (via gulp vscode) for',
 					'                       apples-to-apples comparison against a release baseline',
+					'  --setting <k=v>     Set a VS Code setting override for all builds (repeatable)',
+					'  --test-setting <k=v> Set a VS Code setting override for test build only',
+					'  --baseline-setting <k=v> Set a VS Code setting override for baseline build only',
+					'                       e.g. --setting chat.experimental.incrementalRendering.enabled=true',
 					'  --no-cache          Ignore cached baseline data, always run fresh',
 					'  --force             Skip build mode mismatch confirmation',
 					'  --ci                CI mode: write Markdown summary to ci-summary.md (implies --no-cache)',
@@ -323,10 +347,11 @@ function exceedsThreshold(threshold, change, absoluteDelta) {
  * @param {string} runIndex
  * @param {string} runDir - timestamped run directory for diagnostics
  * @param {'baseline' | 'test'} role - whether this is a baseline or test run
+ * @param {Record<string, any>} [settingsOverrides] - custom VS Code settings
  * @returns {Promise<RunMetrics>}
  */
-async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, runDir, role) {
-	const { userDataDir, extDir, logsDir } = prepareRunDir(runIndex, mockServer);
+async function runOnce(electronPath, scenario, mockServer, verbose, runIndex, runDir, role, settingsOverrides) {
+	const { userDataDir, extDir, logsDir } = prepareRunDir(runIndex, mockServer, settingsOverrides);
 	const isDevBuild = !electronPath.includes('.vscode-test') && !electronPath.includes('VSCode-');
 	// Extract a clean build label from the path.
 	// Dev:          .build/electron/Code - OSS.app/.../Code - OSS  → "dev"
@@ -920,7 +945,10 @@ function formatCompareLink(base, test) {
  */
 function generateCISummary(jsonReport, baseline, opts) {
 	const baseLabel = opts.baselineBuild || 'baseline';
-	const testLabel = opts.build || 'dev (local)';
+	const testBuildMode = jsonReport.buildMode || 'dev';
+	const testLabel = testBuildMode === 'dev' ? 'dev (local)'
+		: testBuildMode === 'production' ? 'production (local)'
+			: opts.build || testBuildMode;
 	const baseLink = formatBuildLink(baseLabel);
 	const testLink = formatBuildLink(testLabel);
 	const compareLink = formatCompareLink(baseLabel, testLabel);
@@ -1051,8 +1079,8 @@ function generateCISummary(jsonReport, baseline, opts) {
 	// -- At-a-glance overview table: one row per scenario --------------------
 	lines.push(`## Overview`);
 	lines.push('');
-	lines.push('| Scenario | TTFT | Complete | Layouts | Styles | LoAF | Verdict |');
-	lines.push('|----------|-----:|---------:|--------:|-------:|-----:|:-------:|');
+	lines.push('| Scenario | Description | TTFT | Complete | Layouts | Styles | LoAF | Verdict |');
+	lines.push('|----------|-------------|-----:|---------:|--------:|-------:|-----:|:-------:|');
 
 	for (const scenario of scenarios) {
 		const verdicts = scenarioVerdicts.get(scenario) || [];
@@ -1081,7 +1109,7 @@ function generateCISummary(jsonReport, baseline, opts) {
 		const keyVerdicts = [ttft, complete, layouts, styles, loaf].filter(Boolean);
 		const rowVerdict = fmtVerdict(/** @type {any[]} */(keyVerdicts));
 
-		lines.push(`| ${scenario} | ${fmtCell(ttft)} | ${fmtCell(complete)} | ${fmtCell(layouts)} | ${fmtCell(styles)} | ${fmtCell(loaf)} | ${rowVerdict} |`);
+		lines.push(`| ${scenario} | ${getScenarioDescription(scenario)} | ${fmtCell(ttft)} | ${fmtCell(complete)} | ${fmtCell(layouts)} | ${fmtCell(styles)} | ${fmtCell(loaf)} | ${rowVerdict} |`);
 	}
 	lines.push('');
 
@@ -1275,7 +1303,7 @@ async function main() {
 				const runIdx = `${scenario}-resume-${prevTestRuns.length + i}`;
 				console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 				try {
-					const m = await runOnce(testElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'test');
+					const m = await runOnce(testElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'test', { ...opts.settingsOverrides, ...opts.testSettingsOverrides });
 					prevTestRuns.push(m);
 					if (opts.verbose) {
 						const src = m.hasInternalMarks ? 'internal' : 'client-side';
@@ -1291,7 +1319,7 @@ async function main() {
 					const runIdx = `baseline-${scenario}-resume-${prevBaseRuns.length + i}`;
 					console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 					try {
-						const m = await runOnce(baselineElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'baseline');
+						const m = await runOnce(baselineElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'baseline', { ...opts.settingsOverrides, ...opts.baselineSettingsOverrides });
 						prevBaseRuns.push(m);
 					} catch (err) { console.error(`      Run ${i + 1} failed: ${err}`); }
 				}
@@ -1384,6 +1412,10 @@ async function main() {
 	fs.mkdirSync(runDir, { recursive: true });
 	console.log(`[chat-simulation] Output: ${runDir}`);
 
+	// Compute effective settings per role
+	const testSettings = { ...opts.settingsOverrides, ...opts.testSettingsOverrides };
+	const baselineSettings = { ...opts.settingsOverrides, ...opts.baselineSettingsOverrides };
+
 	// -- Baseline build --------------------------------------------------
 	if (opts.baselineBuild) {
 		// Use a sanitized label for file names — replace path separators for local paths
@@ -1430,7 +1462,7 @@ async function main() {
 					/** @type {RunMetrics[]} */
 					const newResults = [];
 					for (let i = 0; i < runsNeeded; i++) {
-						try { newResults.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${existingRuns.length + i}`, runDir, 'baseline')); }
+						try { newResults.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${existingRuns.length + i}`, runDir, 'baseline', baselineSettings)); }
 						catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 					}
 					const allRuns = [...existingRuns, ...newResults];
@@ -1456,7 +1488,7 @@ async function main() {
 				/** @type {RunMetrics[]} */
 				const results = [];
 				for (let i = 0; i < opts.runs; i++) {
-					try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline')); }
+					try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline', baselineSettings)); }
 					catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 				}
 				if (results.length > 0) { baselineResults[scenario] = results; }
@@ -1491,6 +1523,16 @@ async function main() {
 	}
 	console.log(`[chat-simulation] Runs per scenario: ${opts.runs}`);
 	console.log(`[chat-simulation] Scenarios: ${opts.scenarios.join(', ')}`);
+	if (Object.keys(opts.settingsOverrides).length > 0) {
+		console.log(`[chat-simulation] Settings overrides (all): ${JSON.stringify(opts.settingsOverrides)}`);
+	}
+	if (Object.keys(opts.testSettingsOverrides).length > 0) {
+		console.log(`[chat-simulation] Settings overrides (test): ${JSON.stringify(opts.testSettingsOverrides)}`);
+	}
+	if (Object.keys(opts.baselineSettingsOverrides).length > 0) {
+		console.log(`[chat-simulation] Settings overrides (baseline): ${JSON.stringify(opts.baselineSettingsOverrides)}`);
+	}
+
 	if (isMismatchedBuildMode) {
 		console.log('');
 		console.log(`[chat-simulation] ⚠ WARNING: Build mode mismatch — test is ${testBuildMode}, baseline is ${baselineBuildMode}.`);
@@ -1525,7 +1567,7 @@ async function main() {
 		for (let i = 0; i < opts.runs; i++) {
 			console.log(`[chat-simulation]   Run ${i + 1}/${opts.runs}...`);
 			try {
-				const metrics = await runOnce(electronPath, scenario, mockServer, opts.verbose, `${scenario}-${i}`, runDir, 'test');
+				const metrics = await runOnce(electronPath, scenario, mockServer, opts.verbose, `${scenario}-${i}`, runDir, 'test', testSettings);
 				results.push(metrics);
 				if (opts.verbose) {
 					const src = metrics.hasInternalMarks ? 'internal' : 'client-side';

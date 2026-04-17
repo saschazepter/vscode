@@ -34,6 +34,16 @@ on:
         required: false
         type: boolean
         default: false
+      test_settings:
+        description: 'JSON object of VS Code settings for the test build (e.g. {"chat.experimental.smoothStreaming.enabled": true})'
+        required: false
+        type: string
+        default: ""
+      baseline_settings:
+        description: 'JSON object of VS Code settings for the baseline build'
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -226,6 +236,18 @@ jobs:
             PERF_ARGS="$PERF_ARGS --threshold $PERF_THRESHOLD"
           fi
           PERF_ARGS="$PERF_ARGS --production-build"
+
+          # Convert JSON settings objects to --test-set / --baseline-set flags
+          if [[ -n '${{ inputs.test_settings }}' ]]; then
+            while IFS='=' read -r key value; do
+              PERF_ARGS="$PERF_ARGS --test-setting $key=$value"
+            done < <(node -e "const s=JSON.parse(process.argv[1]); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)" '${{ inputs.test_settings }}')
+          fi
+          if [[ -n '${{ inputs.baseline_settings }}' ]]; then
+            while IFS='=' read -r key value; do
+              PERF_ARGS="$PERF_ARGS --baseline-setting $key=$value"
+            done < <(node -e "const s=JSON.parse(process.argv[1]); for (const [k,v] of Object.entries(s)) console.log(k+'='+v)" '${{ inputs.baseline_settings }}')
+          fi
 
           set +eo pipefail
           xvfb-run node scripts/chat-simulation/test-chat-perf-regression.js \

@@ -256,8 +256,9 @@ function buildArgs(userDataDir, extDir, logsDir, { isDevBuild = true, extHostIns
  * Write VS Code settings that point the copilot extension at the mock server.
  * @param {string} userDataDir
  * @param {{ url: string }} mockServer
+ * @param {Record<string, any>} [overrides]
  */
-function writeSettings(userDataDir, mockServer) {
+function writeSettings(userDataDir, mockServer, overrides) {
 	const settingsDir = path.join(userDataDir, 'User');
 	fs.mkdirSync(settingsDir, { recursive: true });
 	fs.writeFileSync(path.join(settingsDir, 'settings.json'), JSON.stringify({
@@ -273,6 +274,7 @@ function writeSettings(userDataDir, mockServer) {
 		// Auto-approve all tool invocations (YOLO mode) so tool call
 		// scenarios don't block on confirmation dialogs.
 		'chat.tools.global.autoApprove': true,
+		...overrides,
 	}, null, '\t'));
 }
 
@@ -280,9 +282,10 @@ function writeSettings(userDataDir, mockServer) {
  * Prepare a fresh run directory (clean, create, preseed, write settings).
  * @param {string} runId
  * @param {{ url: string }} mockServer
+ * @param {Record<string, any>} [settingsOverrides]
  * @returns {{ userDataDir: string, extDir: string, logsDir: string }}
  */
-function prepareRunDir(runId, mockServer) {
+function prepareRunDir(runId, mockServer, settingsOverrides) {
 	const tmpBase = path.join(os.tmpdir(), 'vscode-chat-simulation');
 	const userDataDir = path.join(tmpBase, `run-${runId}`);
 	const extDir = path.join(DATA_DIR, 'extensions');
@@ -305,7 +308,7 @@ function prepareRunDir(runId, mockServer) {
 	fs.mkdirSync(extDir, { recursive: true });
 	fs.mkdirSync(logsDir, { recursive: true });
 	preseedStorage(userDataDir);
-	writeSettings(userDataDir, mockServer);
+	writeSettings(userDataDir, mockServer, settingsOverrides);
 	return { userDataDir, extDir, logsDir };
 }
 

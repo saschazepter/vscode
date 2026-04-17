@@ -59,6 +59,8 @@ function parseArgs() {
 		/** @type {string | undefined} */
 		build: undefined,
 		leakThresholdMB: CONFIG.leakThresholdMB ?? 5,
+		/** @type {Record<string, any>} */
+		settingsOverrides: {},
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -68,6 +70,16 @@ function parseArgs() {
 			case '--ci': opts.ci = true; break;
 			case '--build': case '-b': opts.build = args[++i]; break;
 			case '--threshold': opts.leakThresholdMB = parseFloat(args[++i]); break;
+			case '--setting': {
+				const kv = args[++i];
+				const eq = kv.indexOf('=');
+				if (eq === -1) { console.error(`--setting requires key=value, got: ${kv}`); process.exit(1); }
+				const key = kv.slice(0, eq);
+				const raw = kv.slice(eq + 1);
+				const val = raw === 'true' ? true : raw === 'false' ? false : /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+				opts.settingsOverrides[key] = val;
+				break;
+			}
 			case '--help': case '-h':
 				console.log([
 					'Chat memory leak checker (state-based)',
@@ -78,6 +90,7 @@ function parseArgs() {
 					'  --ci                CI mode: write Markdown summary to ci-summary.md',
 					'  --build <path|ver>  Path to VS Code build or version to download',
 					'  --threshold <MB>    Max total residual heap growth in MB (default: 5)',
+					'  --setting <k=v>     Set a VS Code setting override (repeatable)',
 					'  --verbose           Print per-step details',
 				].join('\n'));
 				process.exit(0);
@@ -245,11 +258,11 @@ async function runScenario(page, mockServer, scenarioId, label) {
 /**
  * @param {string} electronPath
  * @param {{ url: string, requestCount: () => number, waitForRequests: (n: number, ms: number) => Promise<void>, completionCount: () => number, waitForCompletion: (n: number, ms: number) => Promise<void> }} mockServer
- * @param {{ iterations: number, verbose: boolean }}  opts
+ * @param {{ iterations: number, verbose: boolean, settingsOverrides?: Record<string, any> }}  opts
  */
 async function runLeakCheck(electronPath, mockServer, opts) {
 	const { iterations, verbose } = opts;
-	const { userDataDir, extDir, logsDir } = prepareRunDir('leak-check', mockServer);
+	const { userDataDir, extDir, logsDir } = prepareRunDir('leak-check', mockServer, opts.settingsOverrides);
 	const isDevBuild = !electronPath.includes('.vscode-test');
 
 	const vscode = await launchVSCode(
@@ -280,25 +293,12 @@ async function runLeakCheck(electronPath, mockServer, opts) {
 		try { await mockServer.waitForRequests(reqsBefore + 4, 30_000); } catch { }
 		await new Promise(r => setTimeout(r, 3000));
 
-		// --- Warmup iteration (not measured) ---
-		// Cycle through all scenarios once to settle one-time caches and lazy init
 		const scenarioIds = getScenarioIds();
-		if (verbose) {
-			console.log(`  [leak] Warmup: cycling through ${scenarioIds.length} scenarios to settle caches...`);
-		}
-		for (let m = 0; m < scenarioIds.length; m++) {
-			if (verbose) {
-				console.log(`    [leak]   warmup: ${scenarioIds[m]}`);
-			}
-			await runScenario(page, mockServer, scenarioIds[m], 'Warmup');
-		}
-		await openNewChat(page);
-		await new Promise(r => setTimeout(r, 1000));
 
-		// --- Baseline measurement (fresh chat, post-warmup) ---
+		// --- Baseline measurement (fresh chat) ---
 		const baseline = await measure(cdp, page);
 		if (verbose) {
-			console.log(`  [leak] Baseline (post-warmup): heap=${baseline.heapMB}MB, domNodes=${baseline.domNodes}`);
+			console.log(`  [leak] Baseline: heap=${baseline.heapMB}MB, domNodes=${baseline.domNodes}`);
 		}
 
 		/** @type {{ beforeHeapMB: number, afterHeapMB: number, deltaHeapMB: number, beforeDomNodes: number, afterDomNodes: number, deltaDomNodes: number }[]} */
@@ -385,7 +385,7 @@ async function main() {
 
 	console.log('[chat-simulation] =================== Leak Check Results ===================');
 	console.log('');
-	console.log(`  Baseline (post-warmup): heap=${result.baseline.heapMB}MB, domNodes=${result.baseline.domNodes}`);
+	console.log(`  Baseline: heap=${result.baseline.heapMB}MB, domNodes=${result.baseline.domNodes}`);
 	console.log(`  Final:                  heap=${result.final.heapMB}MB, domNodes=${result.final.domNodes}`);
 	console.log('');
 	for (let i = 0; i < result.iterations.length; i++) {
@@ -442,12 +442,12 @@ function generateLeakCISummary(result, opts) {
 	lines.push('|---|---|');
 	lines.push(`| **Verdict** | ${verdict} |`);
 	lines.push(`| **Threshold** | ${opts.leakThresholdMB} MB |`);
-	lines.push(`| **Iterations** | ${opts.iterations} (+ 1 warmup) |`);
+	lines.push(`| **Iterations** | ${opts.iterations} |`);
 	lines.push(`| **Scenarios per iteration** | ${getScenarioIds().length} |`);
 	lines.push('');
 	lines.push('| Phase | Heap (MB) | DOM Nodes |');
 	lines.push('|-------|----------:|----------:|');
-	lines.push(`| Baseline (post-warmup) | ${result.baseline.heapMB} | ${result.baseline.domNodes} |`);
+	lines.push(`| Baseline | ${result.baseline.heapMB} | ${result.baseline.domNodes} |`);
 	for (let i = 0; i < result.iterations.length; i++) {
 		const it = result.iterations[i];
 		const sign = it.deltaHeapMB > 0 ? '+' : '';

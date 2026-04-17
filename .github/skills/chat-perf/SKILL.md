@@ -59,6 +59,9 @@ Launches VS Code via Playwright Electron, opens the chat panel, sends a message 
 | `--no-cache` | — | Ignore cached baseline data, always run fresh. |
 | `--force` | — | Skip build mode mismatch confirmation prompt. |
 | `--ci` | — | CI mode: write Markdown summary to `ci-summary.md` (implies `--no-cache`). |
+| `--setting <k=v>` | — | Set a VS Code setting override for all builds (repeatable). |
+| `--test-setting <k=v>` | — | Set a VS Code setting override for the test build only. |
+| `--baseline-setting <k=v>` | — | Set a VS Code setting override for the baseline build only. |
 | `--verbose` | — | Print per-run details including response content. |
 
 ### Comparing two remote builds
@@ -107,6 +110,27 @@ Using `--production-build` builds a local bundled package via `gulp vscode` for 
 npm run perf:chat -- --production-build --baseline-build 1.115.0 --runs 5
 ```
 
+### Settings overrides
+
+Use `--setting`, `--test-setting`, and `--baseline-setting` to inject VS Code settings into the launched instance. This is useful for A/B testing experimental features:
+
+```bash
+# Enable a feature for the test build only:
+npm run perf:chat -- --test-setting chat.experimental.incrementalRendering.enabled=true --runs 3
+
+# Compare two builds with different settings:
+npm run perf:chat -- \
+  --baseline-build "../vscode2/.build/electron/Code - OSS.app/Contents/MacOS/Code - OSS" \
+  --baseline-setting chat.experimental.incrementalRendering.enabled=true \
+  --test-setting chat.experimental.incrementalRendering.enabled=false \
+  --runs 3
+
+# Set a value for both builds:
+npm run perf:chat -- --setting chat.mcp.enabled=false --runs 3
+```
+
+Precedence: `--test-setting` / `--baseline-setting` override `--setting` for the same key. Values are auto-parsed: `true`/`false` become booleans, numbers become numbers, everything else stays a string.
+
 ### Resuming a run for more confidence
 
 When results exceed the threshold but aren't statistically significant, the tool prints a `--resume` hint. Use it to add more iterations to an existing run:
@@ -151,9 +175,24 @@ Run `npm run perf:chat -- --help` to see the full list of registered scenario ID
 
 ### Metrics collected
 
-- **Timing:** time to first token, time to complete (prefers internal `code/chat/*` perf marks, falls back to client-side measurement)
-- **Rendering:** layout count, style recalculation count, forced reflows, long tasks (>50ms)
-- **Memory:** heap before/after (informational, noisy for single requests)
+- **Timing:** time to first token, time to complete, time to render complete (includes typewriter animation)
+- **Rendering:** layout count, layout duration (ms), style recalculation count, forced reflows, long tasks (>50ms), long animation frame count and duration
+- **Memory:** heap before/after, heap delta post-GC (informational, noisy for single requests)
+- **Extension host:** heap before/after/delta via CDP inspector
+
+### Regression triggers vs informational metrics
+
+Only these metrics trigger a regression failure (when they exceed the threshold with statistical significance):
+- `timeToFirstToken`, `timeToComplete` — user-perceived latency
+- `forcedReflowCount` — forced synchronous layouts are always bad
+- `longTaskCount`, `longAnimationFrameCount` — main thread jank
+
+These are reported but **informational only** (won't fail CI):
+- `layoutCount` — inflated by CSS animations; use `layoutDurationMs` instead
+- `layoutDurationMs` — total layout time from trace (more meaningful than count)
+- `recalcStyleCount` — inflated by CSS animations (compositor-driven, cheap)
+- `timeToRenderComplete` — includes typewriter animation tail
+- Memory/heap metrics — too noisy for single-request benchmarks
 
 ### Statistics
 
@@ -173,6 +212,7 @@ Launches one VS Code session, sends N messages sequentially, forces GC between e
 | `--messages <n>` / `-n` | `10` | Number of messages to send. More = more accurate slope. |
 | `--build <path\|ver>` / `-b` | local dev | Build to test. |
 | `--threshold <MB>` | `2` | Max per-message heap growth in MB. |
+| `--setting <k=v>` | — | Set a VS Code setting override (repeatable). |
 | `--verbose` | — | Print per-message heap/DOM counts. |
 
 ### What it measures
