@@ -274,14 +274,14 @@ const TOOL_CALL_SCENARIOS = {
 		description: 'Read 8 files across 2 tool-call rounds',
 		scenario: /** @type {import('./mock-llm-server').MultiTurnScenario} */ ((() => {
 			const filesToRead = [
-				'lifecycle.ts',
-				'event.ts',
-				'uri.ts',
-				'errors.ts',
-				'async.ts',
-				'strings.ts',
-				'arrays.ts',
-				'types.ts',
+				'_chatperf_lifecycle.ts',
+				'_chatperf_event.ts',
+				'_chatperf_uri.ts',
+				'_chatperf_errors.ts',
+				'_chatperf_async.ts',
+				'_chatperf_strings.ts',
+				'_chatperf_arrays.ts',
+				'_chatperf_types.ts',
 			];
 			// Round 1: parallel read of first 4 files
 			// Round 2: parallel read of next 4 files
@@ -339,9 +339,9 @@ const TOOL_CALL_SCENARIOS = {
 		description: 'Read 3 files, edit 2 (read + write rounds)',
 		scenario: /** @type {import('./mock-llm-server').MultiTurnScenario} */ ((() => {
 			const readFiles = [
-				'lifecycle.ts',
-				'event.ts',
-				'errors.ts',
+				'_chatperf_lifecycle.ts',
+				'_chatperf_event.ts',
+				'_chatperf_errors.ts',
 			];
 			return {
 				type: 'multi-turn',
@@ -361,7 +361,7 @@ const TOOL_CALL_SCENARIOS = {
 							{
 								toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 								arguments: {
-									filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
+									filePath: path.join(FIXTURES_DIR, '_chatperf_lifecycle.ts'),
 									explanation: 'Update the benchmark marker comment in lifecycle.ts',
 									code: '// perf-benchmark-marker (updated)',
 								},
@@ -369,7 +369,7 @@ const TOOL_CALL_SCENARIOS = {
 							{
 								toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 								arguments: {
-									filePath: path.join(FIXTURES_DIR, 'event.ts'),
+									filePath: path.join(FIXTURES_DIR, '_chatperf_event.ts'),
 									explanation: 'Update the benchmark marker comment in event.ts',
 									code: '// perf-benchmark-marker (updated)',
 								},
@@ -443,7 +443,7 @@ const TOOL_CALL_SCENARIOS = {
 					toolCalls: [
 						{
 							toolNamePattern: /read.?file/i,
-							arguments: { filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'), startLine: 1, endLine: 50 },
+							arguments: { filePath: path.join(FIXTURES_DIR, '_chatperf_lifecycle.ts'), startLine: 1, endLine: 50 },
 						},
 					],
 				},
@@ -454,7 +454,7 @@ const TOOL_CALL_SCENARIOS = {
 						{
 							toolNamePattern: /insert.?edit|replace.?string|apply.?patch/i,
 							arguments: {
-								filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
+								filePath: path.join(FIXTURES_DIR, '_chatperf_lifecycle.ts'),
 								explanation: 'Fix the dispose call in the test',
 								code: '// perf-benchmark-marker (fixed)',
 							},
@@ -552,7 +552,7 @@ const MULTI_TURN_SCENARIOS = {
 						{
 							toolNamePattern: /read.?file/i,
 							arguments: {
-								filePath: path.join(FIXTURES_DIR, 'lifecycle.ts'),
+								filePath: path.join(FIXTURES_DIR, '_chatperf_lifecycle.ts'),
 								offset: 1,
 								limit: 50,
 							},
