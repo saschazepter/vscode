@@ -6,6 +6,7 @@
 import type { Attachment, SendOptions, Session, SessionOptions } from '@github/copilot/sdk';
 import * as l10n from '@vscode/l10n';
 import * as cp from 'child_process';
+import * as crypto from 'crypto';
 import type * as vscode from 'vscode';
 import type { ChatParticipantToolToken } from 'vscode';
 import { IAuthenticationService } from '../../../../platform/authentication/common/authentication';
@@ -83,6 +84,10 @@ interface McSharedState {
 	mcFlushInterval: ReturnType<typeof setInterval> | undefined;
 	mcPollInterval: ReturnType<typeof setInterval> | undefined;
 	mcLastEventId: string | null;
+	/** Reference to the SDK session for steering from the command poller. */
+	mcSdkSession: Session;
+	/** Dispose function for the persistent on('*') listener for MC events. */
+	mcEventListenerDispose: (() => void) | undefined;
 }
 const mcStateBySessionId = new Map<string, McSharedState>();
 
@@ -1078,6 +1083,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				mcFlushInterval: undefined,
 				mcPollInterval: undefined,
 				mcLastEventId: null,
+				mcSdkSession: this._sdkSession,
+				mcEventListenerDispose: undefined,
 			};
 			mcStateBySessionId.set(this.sessionId, sharedState);
 			this.logService.info(`[CopilotCLISession] Set shared MC state for session ${this.sessionId}, mcSessionId=${mcData.id}`);
@@ -1105,7 +1112,66 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				remoteSteerable: true,
 			}));
 
+			// Step 7b: Replay existing conversation history so the MC web UI
+			// shows all messages that occurred before /remote was invoked.
+			const existingEvents = this._sdkSession.getEvents();
+			this.logService.info(`[CopilotCLISession] Replaying ${existingEvents.length} existing events to MC`);
+			for (const event of existingEvents) {
+				this._bufferMcEvent(event as { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null });
+			}
+
 			await this._flushMcEvents();
+
+			// Step 7c: Register a persistent on('*') listener on the SDK session
+			// so that events emitted between requests (e.g. from MC steering sends)
+			// are captured and forwarded to MC. Per-request listeners are disposed
+			// after each request completes, so this persistent listener fills the gap.
+			const sessionId = this.sessionId;
+			sharedState.mcEventListenerDispose = this._sdkSession.on('*', (event) => {
+				const state = mcStateBySessionId.get(sessionId);
+				if (!state) { return; }
+				// Use the static helper instead of this._bufferMcEvent to avoid
+				// relying on the instance that started MC (it may be stale).
+				const eventType = (event as { type?: string }).type ?? 'unknown';
+				if (
+					eventType === 'assistant.message_delta' ||
+					eventType === 'assistant.streaming_delta' ||
+					eventType === 'session.idle' ||
+					eventType === 'session.shutdown' ||
+					eventType === 'session.error' ||
+					eventType === 'session.usage_info' ||
+					eventType === 'assistant.usage' ||
+					eventType === 'session.title_changed' ||
+					eventType === 'pending_messages.modified' ||
+					eventType === 'session.mcp_server_status_changed' ||
+					eventType === 'session.mcp_servers_loaded' ||
+					eventType === 'session.skills_loaded' ||
+					eventType === 'session.tools_updated'
+				) {
+					return;
+				}
+				const e = event as { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null };
+				if (e.id && e.timestamp) {
+					state.mcEventBuffer.push({
+						id: e.id,
+						timestamp: e.timestamp,
+						parentId: e.parentId ?? state.mcLastEventId ?? null,
+						type: eventType,
+						data: (e.data ?? {}) as Record<string, unknown>,
+					});
+					state.mcLastEventId = e.id;
+				} else {
+					const id = crypto.randomUUID();
+					state.mcEventBuffer.push({
+						id,
+						timestamp: new Date().toISOString(),
+						parentId: state.mcLastEventId ?? null,
+						type: eventType,
+						data: (e.data ?? {}) as Record<string, unknown>,
+					});
+					state.mcLastEventId = id;
+				}
+			});
 
 			// Step 8: Construct and display the frontend URL
 			const frontendUrl = `https://github.com/${nwo.owner}/${nwo.repo}/tasks/${taskId}`;
@@ -1150,6 +1216,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (!state) {
 			this.logService.info('[CopilotCLISession] No active MC session to tear down');
 			return;
+		}
+
+		// Clean up the persistent event listener
+		if (state.mcEventListenerDispose) {
+			state.mcEventListenerDispose();
+			state.mcEventListenerDispose = undefined;
 		}
 
 		const mcSessionId = state.mcSessionId;
@@ -1252,7 +1324,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	 * Buffer an SDK event for Mission Control. Called from the per-send
 	 * on('*') handler so that events are captured on every turn.
 	 */
-	private _bufferMcEvent(event: { type?: string; data?: unknown; id?: string }): void {
+	private _bufferMcEvent(event: { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null }): void {
 		const state = this._mcState;
 		const eventType = event.type ?? 'unknown';
 		if (!state) {
@@ -1277,17 +1349,32 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			return;
 		}
 		this.logService.info(`[CopilotCLISession] MC buffered event: ${eventType}`);
-		state.mcEventBuffer.push(this._createMcEvent(eventType, (event.data ?? {}) as Record<string, unknown>));
+
+		// If the SDK event already has a UUID id, pass it through directly
+		// to preserve the event identity chain. Otherwise create a new event.
+		if (event.id && event.timestamp) {
+			const mcEvent: McEvent = {
+				id: event.id,
+				timestamp: event.timestamp,
+				parentId: event.parentId ?? state.mcLastEventId ?? null,
+				type: eventType,
+				data: (event.data ?? {}) as Record<string, unknown>,
+			};
+			state.mcLastEventId = event.id;
+			state.mcEventBuffer.push(mcEvent);
+		} else {
+			state.mcEventBuffer.push(this._createMcEvent(eventType, (event.data ?? {}) as Record<string, unknown>));
+		}
 	}
 
-	/** Create an MC event with a unique ID and parentId chain. */
+	/** Create an MC event with a UUID v4 ID and parentId chain. */
 	private _createMcEvent(type: string, data: Record<string, unknown>): McEvent {
 		const state = this._mcState;
-		const id = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+		const id = crypto.randomUUID();
 		const event: McEvent = {
 			id,
 			timestamp: new Date().toISOString(),
-			parentId: state?.mcLastEventId,
+			parentId: state?.mcLastEventId ?? null,
 			type,
 			data,
 		};
@@ -1356,9 +1443,18 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		const state = this._mcState;
 		if (!state) { return; }
 
+		// Capture sessionId for use in the closure — avoid relying on `this`
+		// which may be a stale CopilotCLISession instance.
+		const sessionId = this.sessionId;
+		const logService = this.logService;
+
 		state.mcPollInterval = setInterval(() => {
-			this._pollMcCommands().catch(err => {
-				this.logService.warn(`[CopilotCLISession] MC command poll failed: ${err}`);
+			const currentState = mcStateBySessionId.get(sessionId);
+			if (!currentState || !currentState.mcSessionId || !currentState.mcApiUrl || !currentState.mcGithubToken) {
+				return;
+			}
+			CopilotCLISession._pollMcCommandsStatic(currentState, logService).catch(err => {
+				logService.warn(`[CopilotCLISession] MC command poll failed: ${err}`);
 			});
 		}, 3000);
 
@@ -1376,13 +1472,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 	/**
 	 * Poll Mission Control for pending commands and process them.
+	 * Static method to avoid capturing a stale `this` reference.
 	 */
-	private async _pollMcCommands(): Promise<void> {
-		const state = this._mcState;
-		if (!state || !state.mcSessionId || !state.mcApiUrl || !state.mcGithubToken) {
-			return;
-		}
-
+	private static async _pollMcCommandsStatic(state: McSharedState, logService: { info(msg: string): void; warn(msg: string): void }): Promise<void> {
 		try {
 			const response = await fetch(`${state.mcApiUrl}/agents/sessions/${state.mcSessionId}/commands`, {
 				headers: {
@@ -1402,20 +1494,22 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				if (cmd.state !== 'in_progress') {
 					continue;
 				}
-				this.logService.info(`[CopilotCLISession] Processing MC command: ${cmd.type ?? 'user_message'} (${cmd.id})`);
+				logService.info(`[CopilotCLISession] Processing MC command: ${cmd.type ?? 'user_message'} (${cmd.id})`);
 
 				switch (cmd.type) {
 					case 'abort':
-						this._sdkSession.abort();
+						state.mcSdkSession.abort();
 						break;
 					case 'user_message':
 					default:
-						// Inject as a steering message into the running session
-						this._sdkSession.send({
+						// Inject as a steering message into the running session.
+						// Uses the stored SDK session ref which remains valid
+						// across CopilotCLISession instance recreations.
+						state.mcSdkSession.send({
 							prompt: cmd.content,
 							mode: 'immediate',
 						}).catch(err => {
-							this.logService.warn(`[CopilotCLISession] MC steering send failed: ${err}`);
+							logService.warn(`[CopilotCLISession] MC steering send failed: ${err}`);
 						});
 						break;
 				}
