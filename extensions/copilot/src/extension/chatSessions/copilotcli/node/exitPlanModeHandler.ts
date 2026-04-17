@@ -163,7 +163,7 @@ async function resolveInteractive(
 			input: {
 				title: l10n.t('Review Plan'),
 				plan: planPath,
-				content: event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary,
+				content: event.summary,
 				actions,
 				canProvideFeedback: true
 			},
