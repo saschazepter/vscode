@@ -12,7 +12,6 @@ import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableResourceMap, DisposableStore, IReference, MutableDisposable, toDisposable, type IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
 import { autorun, derived, IObservable, observableValue } from '../../../../../../base/common/observable.js';
-import { observableConfigValue } from '../../../../../../platform/observable/common/platformObservableUtils.js';
 import { isEqual } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
@@ -22,28 +21,29 @@ import { ISessionTruncatedAction } from '../../../../../../platform/agentHost/co
 import { ICustomizationRef, TerminalClaimKind, ToolResultContentType, type IProtectedResourceMetadata, type IToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, ISessionTurnStartedAction, type ISessionAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type ICompletedToolCall, type IMessageAttachment, type IRootState, type IResponsePart, type ISessionInputAnswer, type ISessionInputRequest, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
+import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type ICompletedToolCall, type IMessageAttachment, type IModelSelection, type IResponsePart, type IRootState, type ISessionInputAnswer, type ISessionInputRequest, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
+import { observableConfigValue } from '../../../../../../platform/observable/common/platformObservableUtils.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
 import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
-import { ChatRequestQueueKind, ConfirmedReason, IChatProgress, IChatQuestion, IChatQuestionAnswers, IChatService, IChatToolInvocation, ToolConfirmKind, type IChatTerminalToolInvocationData, type IChatMultiSelectAnswer, type IChatSingleSelectAnswer } from '../../../common/chatService/chatService.js';
+import { ChatRequestQueueKind, ConfirmedReason, IChatProgress, IChatQuestion, IChatQuestionAnswers, IChatService, IChatToolInvocation, ToolConfirmKind, type IChatMultiSelectAnswer, type IChatSingleSelectAnswer, type IChatTerminalToolInvocationData } from '../../../common/chatService/chatService.js';
 import { IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionRequestHistoryItem } from '../../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../../common/constants.js';
 import { IChatEditingService } from '../../../common/editing/chatEditingService.js';
-import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ChatQuestionCarouselData } from '../../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
+import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ILanguageModelToolsService, IToolData, IToolInvocation, IToolResult, ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
-import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
 import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, getTerminalContentUri, makeAhpTerminalToolSessionId, parseAhpTerminalToolSessionId, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, type IToolCallFileEdit } from './stateToProgressAdapter.js';
-import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -454,7 +454,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 				const sessionState = this._getSessionState(resolvedSession.toString());
 				if (sessionState) {
-					const modelId = this._toLanguageModelId(sessionResource, sessionState.summary.model);
+					const modelId = this._toLanguageModelId(sessionResource, sessionState.summary.model?.id);
 					history.push(...turnsToHistory(resolvedSession, sessionState.turns, this._config.agentId, modelId));
 
 					// Enrich history with inner tool calls from subagent
@@ -594,7 +594,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// Resolve or create backend session
 		let resolvedSession = this._sessionToBackend.get(request.sessionResource);
 		if (!resolvedSession) {
-			resolvedSession = await this._createAndSubscribe(request.sessionResource, request.userSelectedModelId, undefined, request.agentHostSessionConfig, getAgentHostBranchNameHint(request.message));
+			resolvedSession = await this._createAndSubscribe(request.sessionResource, this._createModelSelection(request.userSelectedModelId, request.modelConfiguration), undefined, request.agentHostSessionConfig, getAgentHostBranchNameHint(request.message));
 			this._sessionToBackend.set(request.sessionResource, resolvedSession);
 		}
 
@@ -909,14 +909,14 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// If the user selected a different model since the session was created
 		// (or since the last turn), dispatch a model change action first so the
 		// agent backend picks up the new model before processing the turn.
-		const rawModelId = this._extractRawModelId(request.userSelectedModelId);
-		if (rawModelId) {
+		const selectedModel = this._createModelSelection(request.userSelectedModelId, request.modelConfiguration);
+		if (selectedModel) {
 			const currentModel = this._getSessionState(session.toString())?.summary.model;
-			if (currentModel !== rawModelId) {
+			if (!this._modelSelectionsEqual(currentModel, selectedModel)) {
 				this._config.connection.dispatch({
 					type: ActionType.SessionModelChanged,
 					session: session.toString(),
-					model: rawModelId,
+					model: selectedModel,
 				});
 			}
 		}
@@ -1162,8 +1162,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 * - `Completed` / post-execution `Cancelled` → `SessionToolCallComplete`
 	 *
 	 * When the tool call is cancelled externally via session state, the
-	 * entry's cancellation source is fired and `externallyCancelled` is set
-	 * so the autorun skips redundant dispatches (the server already knows).
+	 * entry's cancellation source is fired and `CancellationTokenSource` is
+	 * cancelled so the autorun skips redundant dispatches (the server already knows).
 	 *
 	 * The actual {@link ILanguageModelToolsService.invokeTool} call is
 	 * deferred until {@link _tryInvokeClientTool} sees the tool parameters.
@@ -2220,14 +2220,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	/** Creates a new backend session and subscribes to its state. */
-	private async _createAndSubscribe(sessionResource: URI, modelId?: string, fork?: { session: URI; turnIndex: number; turnId: string }, sessionConfig?: Record<string, string>, branchNameHint?: string): Promise<URI> {
-		const rawModelId = this._extractRawModelId(modelId);
+	private async _createAndSubscribe(sessionResource: URI, model: IModelSelection | undefined, fork?: { session: URI; turnIndex: number; turnId: string }, sessionConfig?: Record<string, string>, branchNameHint?: string): Promise<URI> {
 		const config = branchNameHint ? { ...sessionConfig, [AgentHostSessionConfigBranchNameHintKey]: branchNameHint } : sessionConfig;
 		const workingDirectory = this._config.resolveWorkingDirectory?.(sessionResource)
 			?? this._workingDirectoryResolver.resolve(sessionResource)
 			?? this._workspaceContextService.getWorkspace().folders[0]?.uri;
 
-		this._logService.trace(`[AgentHost] Creating new session, model=${rawModelId ?? '(default)'}, provider=${this._config.provider}${fork ? `, fork from ${fork.session.toString()} at index ${fork.turnIndex}` : ''}`);
+		this._logService.trace(`[AgentHost] Creating new session, model=${model?.id ?? '(default)'}, provider=${this._config.provider}${fork ? `, fork from ${fork.session.toString()} at index ${fork.turnIndex}` : ''}`);
 
 		// Eagerly authenticate before creating the session if the agent
 		// declares required protected resources. This avoids a wasted
@@ -2245,7 +2244,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		let session: URI;
 		try {
 			session = await this._config.connection.createSession({
-				model: rawModelId,
+				model,
 				provider: this._config.provider,
 				workingDirectory,
 				fork,
@@ -2258,7 +2257,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				const authenticated = await this._config.resolveAuthentication(protectedResources);
 				if (authenticated) {
 					session = await this._config.connection.createSession({
-						model: rawModelId,
+						model,
 						provider: this._config.provider,
 						workingDirectory,
 						fork,
@@ -2326,6 +2325,34 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return true;
 		}
 		return false;
+	}
+
+	private _createModelSelection(languageModelIdentifier: string | undefined, modelConfiguration: Record<string, unknown> | undefined): IModelSelection | undefined {
+		const rawModelId = this._extractRawModelId(languageModelIdentifier);
+		if (!rawModelId) {
+			return undefined;
+		}
+
+		const config: Record<string, string> = {};
+		for (const [key, value] of Object.entries(modelConfiguration ?? {})) {
+			if (typeof value === 'string') {
+				config[key] = value;
+			}
+		}
+
+		return Object.keys(config).length > 0 ? { id: rawModelId, config } : { id: rawModelId };
+	}
+
+	private _modelSelectionsEqual(a: IModelSelection | undefined, b: IModelSelection | undefined): boolean {
+		if (a?.id !== b?.id) {
+			return false;
+		}
+
+		const aConfig = a?.config ?? {};
+		const bConfig = b?.config ?? {};
+		const aKeys = Object.keys(aConfig);
+		const bKeys = Object.keys(bConfig);
+		return aKeys.length === bKeys.length && aKeys.every(key => aConfig[key] === bConfig[key]);
 	}
 
 	/**

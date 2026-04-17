@@ -566,12 +566,11 @@ suite('CopilotAgentSession', () => {
 			const handlerPromise = invokeClientToolHandler(tools[0], 'tc-client-1');
 
 			// Complete the tool call
-			const handled = session.handleClientToolCallComplete('tc-client-1', {
+			session.handleClientToolCallComplete('tc-client-1', {
 				success: true,
 				pastTenseMessage: 'did it',
 				content: [{ type: ToolResultContentType.Text, text: 'result text' }],
 			});
-			assert.strictEqual(handled, true);
 
 			const result = await handlerPromise;
 			assert.strictEqual(result.resultType, 'success');
