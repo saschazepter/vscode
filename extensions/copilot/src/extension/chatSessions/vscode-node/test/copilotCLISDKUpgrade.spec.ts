@@ -88,7 +88,7 @@ describe('CopilotCLI SDK Upgrade', function () {
 			'tree-sitter-scala.wasm',
 		].map(p => path.join(copilotSDKPath, p)));
 
-		// Exclude ripgrep files that we copy over in src/extension/agents/copilotcli/node/ripgrepShim.ts (until we get better API/solution from SDK)
+		// Exclude ripgrep files that we copy over in src/extension/chatSessions/copilotcli/node/ripgrepShim.ts (until we get better API/solution from SDK)
 		const ripgrepFilesWeCopy = path.join(copilotSDKPath, 'sdk', 'ripgrep', 'bin');
 
 		const errors: string[] = [];
