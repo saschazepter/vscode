@@ -17,7 +17,7 @@ import { workbenchInstantiationService } from '../../../../../test/browser/workb
 import type { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IChatService } from '../../../../chat/common/chatService/chatService.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { IChatWidgetService } from '../../../../chat/browser/chat.js';
+import { IChatWidget, IChatWidgetService } from '../../../../chat/browser/chat.js';
 import { ChatPermissionLevel } from '../../../../chat/common/constants.js';
 
 suite('SendToTerminalTool', () => {
@@ -373,7 +373,7 @@ suite('SendToTerminalTool', () => {
 						permissionLevel: ChatPermissionLevel.AutoApprove,
 					},
 				},
-			}),
+			}) as unknown as IChatWidget,
 			lastFocusedWidget: undefined,
 		});
 		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
