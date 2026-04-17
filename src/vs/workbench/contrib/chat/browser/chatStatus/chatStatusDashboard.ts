@@ -496,6 +496,12 @@ export class ChatStatusDashboard extends DomWidget {
 			)
 		));
 
+		// Enterprise/Business callout for quota limits without overage
+		const calloutIcon = $('span.callout-icon');
+		const calloutText = $('span.callout-text');
+		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
+		quotaCallout.style.display = 'none';
+
 		container.appendChild($('div.description', undefined, overageLabel));
 
 		if (supportsOverage && (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus)) {
@@ -504,9 +510,12 @@ export class ChatStatusDashboard extends DomWidget {
 			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
 		}
 
+		const isEnterpriseUser = this.chatEntitlementService.entitlement === ChatEntitlement.Enterprise || this.chatEntitlementService.entitlement === ChatEntitlement.Business;
+
 		const update = (quota: IQuotaSnapshot | string) => {
 			quotaIndicator.classList.remove('error');
 			quotaIndicator.classList.remove('warning');
+			quotaIndicator.classList.remove('dimmed');
 
 			let usedPercentage: number;
 			if (typeof quota === 'string') {
@@ -533,6 +542,28 @@ export class ChatStatusDashboard extends DomWidget {
 				quotaIndicator.classList.add('error');
 			} else if (usedPercentage >= 75 && !overageEnabled) {
 				quotaIndicator.classList.add('warning');
+			}
+
+			// Enterprise/Business callout for quota limits without overage
+			if (isEnterpriseUser && !overageEnabled) {
+				if (usedPercentage >= 90) {
+					// Error state: limit reached, dim the percentage
+					quotaIndicator.classList.add('dimmed');
+					quotaCallout.style.display = '';
+					quotaCallout.className = 'quota-callout error';
+					calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.error)}`;
+					calloutText.textContent = localize('quotaPausedEnterprise', "Copilot is paused until the limit resets. Contact your administrator for more information.");
+				} else if (usedPercentage >= 75) {
+					// Warning state: approaching limit
+					quotaCallout.style.display = '';
+					quotaCallout.className = 'quota-callout warning';
+					calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.warning)}`;
+					calloutText.textContent = localize('quotaWarningEnterprise', "Copilot will pause when the limit is reached. Contact your administrator for more information.");
+				} else {
+					quotaCallout.style.display = 'none';
+				}
+			} else {
+				quotaCallout.style.display = 'none';
 			}
 
 			if (supportsOverage) {

@@ -197,6 +197,46 @@
 	color: var(--vscode-gauge-errorForeground);
 }
 
+.chat-status-bar-entry-tooltip .quota-indicator.error.dimmed .quota-percentage .quota-value {
+	color: var(--vscode-disabledForeground);
+}
+
+/* Quota Callout */
+
+.chat-status-bar-entry-tooltip .quota-callout {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	border: 1px solid;
+	margin-bottom: 8px;
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.chat-status-bar-entry-tooltip .quota-callout .callout-icon {
+	flex-shrink: 0;
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.warning {
+	border-color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-foreground);
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.warning .callout-icon {
+	color: var(--vscode-gauge-warningForeground);
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.error {
+	border-color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-foreground);
+}
+
+.chat-status-bar-entry-tooltip .quota-callout.error .callout-icon {
+	color: var(--vscode-gauge-errorForeground);
+}
+
 /* Settings */
 
 .chat-status-bar-entry-tooltip .settings {
