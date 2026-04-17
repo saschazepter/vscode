@@ -6,6 +6,7 @@
 import { Event } from '../../../base/common/event.js';
 import { IReference } from '../../../base/common/lifecycle.js';
 import { IAuthorizationProtectedResourceMetadata } from '../../../base/common/oauth.js';
+import type { IObservable } from '../../../base/common/observable.js';
 import { URI } from '../../../base/common/uri.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import type { ISyncedCustomization } from './agentPluginManager.js';
@@ -438,8 +439,8 @@ export interface IAgent {
 	/** Return the descriptor for this agent. */
 	getDescriptor(): IAgentDescriptor;
 
-	/** List available models from this provider. */
-	listModels(): Promise<IAgentModelInfo[]>;
+	/** Available models from this provider. */
+	readonly models: IObservable<readonly IAgentModelInfo[]>;
 
 	/** List persisted sessions from this provider. */
 	listSessions(): Promise<IAgentSessionMetadata[]>;
