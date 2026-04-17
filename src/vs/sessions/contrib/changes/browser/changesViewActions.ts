@@ -28,6 +28,7 @@ import { SESSIONS_FILES_CONTAINER_ID } from '../../files/browser/files.contribut
 import { SESSIONS_FILES_VIEW_ID } from '../../files/browser/filesView.js';
 import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
 import { EditorMaximizedContext } from '../../../common/contextkeys.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -279,8 +280,8 @@ class CloseMainEditorPartAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const layoutService = accessor.get(IAgentWorkbenchLayoutService);
-		layoutService.setEditorMaximized(false);
+		const commandService = accessor.get(ICommandService);
+		await commandService.executeCommand('workbench.action.closeAllGroups');
 	}
 }
 
