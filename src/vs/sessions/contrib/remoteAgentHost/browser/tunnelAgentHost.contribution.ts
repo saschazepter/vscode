@@ -315,11 +315,17 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			}
 
 			// Only track previous status while the entry is present so a
-			// future re-registration starts from a clean slate.
+			// future re-registration starts from a clean slate. If the
+			// entry disappeared (e.g. user-initiated removal), also cancel
+			// any already-scheduled reconnect and clear its backoff state
+			// so the removal is honoured even if a timer was already armed.
 			if (current !== undefined) {
 				this._previousStatuses.set(address, current);
 			} else {
 				this._previousStatuses.delete(address);
+				this._cancelReconnect(address);
+				this._reconnectAttempts.delete(address);
+				this._reconnectPaused.delete(address);
 			}
 		}
 
@@ -378,6 +384,21 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 
 		const timer = setTimeout(() => {
 			this._reconnectTimeouts.delete(address);
+
+			// A manual (or other) connect may have started or completed while
+			// we were waiting. Re-check before counting this as a new attempt,
+			// otherwise `_connectTunnel` would just return the in-flight promise
+			// and we'd inflate the backoff counter without really trying again.
+			if (this._pendingConnects.has(address)) {
+				return;
+			}
+			const live = this._remoteAgentHostService.connections.find(c => c.address === address);
+			if (live && live.status === RemoteAgentHostConnectionStatus.Connected) {
+				this._reconnectAttempts.delete(address);
+				this._reconnectPaused.delete(address);
+				return;
+			}
+
 			this._reconnectAttempts.set(address, attempt + 1);
 			this._connectTunnel(address).catch(() => { /* _connectTunnel already re-schedules on failure */ });
 		}, delay);
