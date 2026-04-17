@@ -6,7 +6,7 @@
 import assert from 'assert';
 import * as sinon from 'sinon';
 import { CancellationToken } from '../../../../../../../base/common/cancellation.js';
-import { Event } from '../../../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../../../base/common/event.js';
 import { match } from '../../../../../../../base/common/glob.js';
 import { ResourceSet } from '../../../../../../../base/common/map.js';
 import { Schemas } from '../../../../../../../base/common/network.js';
@@ -51,10 +51,40 @@ import { IExtensionService } from '../../../../../../services/extensions/common/
 import { IRemoteAgentService } from '../../../../../../services/remote/common/remoteAgentService.js';
 import { ChatModeKind } from '../../../../common/constants.js';
 import { HookType } from '../../../../common/promptSyntax/hookTypes.js';
-import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyChangeEvent, IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
 import { MockContextKeyService } from '../../../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { IAgentPlugin, IAgentPluginAgent, IAgentPluginCommand, IAgentPluginHook, IAgentPluginInstruction, IAgentPluginMcpServerDefinition, IAgentPluginService, IAgentPluginSkill } from '../../../../common/plugins/agentPluginService.js';
 import { IWorkspaceTrustManagementService } from '../../../../../../../platform/workspace/common/workspaceTrust.js';
+
+class TestPromptContextKeyService extends MockContextKeyService {
+	private readonly _onDidChangeContextEmitter = new Emitter<IContextKeyChangeEvent>();
+	private _rulesMatch = false;
+
+	override get onDidChangeContext(): Event<IContextKeyChangeEvent> {
+		return this._onDidChangeContextEmitter.event;
+	}
+
+	override contextMatchesRules(): boolean {
+		return this._rulesMatch;
+	}
+
+	setRulesMatch(value: boolean): void {
+		this._rulesMatch = value;
+	}
+
+	fireDidChangeContext(keys: string[]): void {
+		const changedKeys = new Set(keys);
+		this._onDidChangeContextEmitter.fire({
+			affectsSome: trackedKeys => Array.from(trackedKeys).some(key => changedKeys.has(key)),
+			allKeysContainedIn: trackedKeys => Array.from(changedKeys).every(key => trackedKeys.has(key)),
+		});
+	}
+
+	override dispose(): void {
+		this._onDidChangeContextEmitter.dispose();
+		super.dispose();
+	}
+}
 
 suite('PromptsService', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -2113,6 +2143,44 @@ suite('PromptsService', () => {
 			assert.strictEqual(enabledFiles.length, 1, 'Should be included when the when clause matches');
 			assert.strictEqual(enabledFiles[0].uri.toString(), uri.toString());
 			enabledContextMatchesRulesStub.restore();
+
+			registered.dispose();
+		});
+
+		test('Provider when keys invalidate cached results when context changes', async () => {
+			const contextKeyService = disposables.add(new TestPromptContextKeyService());
+			instaService.stub(IContextKeyService, contextKeyService);
+			const promptsService = disposables.add(instaService.createInstance(PromptsService));
+			instaService.stub(IPromptsService, promptsService);
+
+			const uri = URI.parse('file://extensions/test/conditional.instructions.md');
+			await mockFiles(fileService, [{
+				path: uri.path,
+				contents: [
+					'---',
+					'description: "Conditional Instructions"',
+					'---',
+					'Instruction body',
+				],
+			}]);
+
+			const extension = {
+				identifier: { value: 'test.my-extension' },
+				enabledApiProposals: ['chatParticipantPrivate']
+			} as unknown as IExtensionDescription;
+
+			const registered = promptsService.registerPromptFileProvider(extension, PromptsType.instructions, {
+				providePromptFiles: async () => [{ uri, when: 'myFeature.enabled' }]
+			});
+
+			contextKeyService.setRulesMatch(true);
+			const enabledFiles = await promptsService.getInstructionFiles(CancellationToken.None);
+			assert.strictEqual(enabledFiles.length, 1, 'Should include the provider instruction when the context matches');
+
+			contextKeyService.setRulesMatch(false);
+			contextKeyService.fireDidChangeContext(['myFeature.enabled']);
+			const disabledFiles = await promptsService.getInstructionFiles(CancellationToken.None);
+			assert.strictEqual(disabledFiles.length, 0, 'Should invalidate the cached provider instruction when the tracked key changes');
 
 			registered.dispose();
 		});

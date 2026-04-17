@@ -81,6 +81,13 @@ export class SkillNameMismatchError extends Error {
 	}
 }
 
+type PromptFileProviderEntry = {
+	extension: IExtensionDescription;
+	type: PromptsType;
+	onDidChangePromptFiles?: Event<void>;
+	providePromptFiles: (context: IPromptFileContext, token: CancellationToken) => Promise<IPromptFileResource[] | undefined>;
+};
+
 /**
  * Provides prompt services.
  */
@@ -148,10 +155,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	};
 
 	/**
-	 * Context keys referenced by contributed file `when` clauses.
+	 * Context keys referenced by contributed and provider-supplied `when` clauses.
 	 */
 	private readonly _contributedWhenKeys = new Set<string>();
 	private readonly _contributedWhenClauses = new Map<string, string>();
+	private readonly _providerWhenClauses = new Map<PromptFileProviderEntry, readonly string[]>();
 	private readonly _onDidContributedWhenChange = this._register(new Emitter<void>());
 	private readonly _onDidChangeInstructions = this._register(new Emitter<void>());
 	private readonly _onDidPluginPromptFilesChange = this._register(new Emitter<void>());
@@ -391,12 +399,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Registry of prompt file provider instances (custom agents, instructions, prompt files).
 	 * Extensions can register providers via the proposed API.
 	 */
-	private readonly promptFileProviders: Array<{
-		extension: IExtensionDescription;
-		type: PromptsType;
-		onDidChangePromptFiles?: Event<void>;
-		providePromptFiles: (context: IPromptFileContext, token: CancellationToken) => Promise<IPromptFileResource[] | undefined>;
-	}> = [];
+	private readonly promptFileProviders: PromptFileProviderEntry[] = [];
 
 	/**
 	 * Registers a prompt file provider (CustomAgentProvider, InstructionsProvider, or PromptFileProvider).
@@ -428,6 +431,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const index = this.promptFileProviders.findIndex((p) => p === providerEntry);
 				if (index >= 0) {
 					this.promptFileProviders.splice(index, 1);
+					this._providerWhenClauses.delete(providerEntry);
+					this._updateContributedWhenKeys();
 					this.invalidatePromptFileCache(type);
 				}
 			}
@@ -472,6 +477,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 		for (const providerEntry of providers) {
 			try {
 				const files = await providerEntry.providePromptFiles({}, token);
+				this._providerWhenClauses.set(providerEntry, files?.flatMap(file => file.when ? [file.when] : []) ?? []);
+				this._updateContributedWhenKeys();
 				if (!files || token.isCancellationRequested) {
 					continue;
 				}
@@ -960,6 +967,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const expr = ContextKeyExpr.deserialize(whenClause);
 			for (const key of expr?.keys() ?? []) {
 				this._contributedWhenKeys.add(key);
+			}
+		}
+		for (const whenClauses of this._providerWhenClauses.values()) {
+			for (const whenClause of whenClauses) {
+				const expr = ContextKeyExpr.deserialize(whenClause);
+				for (const key of expr?.keys() ?? []) {
+					this._contributedWhenKeys.add(key);
+				}
 			}
 		}
 	}
