@@ -1394,7 +1394,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					}
 					resultText += pollingResult.output;
 					if (isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService)) {
-						resultText += `\nIf the command is waiting for input, determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.`;
+						resultText += `\nIf the command is waiting for input (not a normal shell prompt), determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.`;
 					} else {
 						resultText += `\nIf the command is waiting for input (not a normal shell prompt), call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each.`;
 					}
@@ -1703,9 +1703,10 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				resultText.push(`Note: This terminal execution was moved to the background using the ID ${termId}\n`);
 			}
 		}
+		const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 		if (didInputNeeded) {
-			if (isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService)) {
-				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. If it IS waiting for input, determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.\n\n`);
+			if (isAutoApproved) {
+				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. If it IS waiting for input (not a normal shell prompt), determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.\n\n`);
 			} else {
 				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. If it IS waiting for input (not a normal shell prompt), call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each.\n\n`);
 			}
@@ -1713,9 +1714,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			const notificationHint = shouldSendNotifications
 				? ' You will be automatically notified on your next turn when it completes.'
 				: '';
-			const inputAction = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService)
-				? `If it IS waiting for input, determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.`
-				: `If it IS waiting for input, call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each.`;
+			const inputAction = isAutoApproved
+				? `If it IS waiting for input (not a normal shell prompt), determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.`
+				: `If it IS waiting for input (not a normal shell prompt), call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each.`;
 			resultText.push(`Note: Command timed out after ${timeoutValue}ms. The command may still be running in terminal ID ${termId}.${notificationHint} Use ${TerminalToolId.GetTerminalOutput} to check output, ${TerminalToolId.SendToTerminal} to send input, or ${TerminalToolId.KillTerminal} to stop it. ${inputAction}\n\n`);
 		}
 		const outputAnalyzerMessage = await this._getOutputAnalyzerMessage(exitCode, terminalResult, command, didSandboxWrapCommand);
@@ -2199,8 +2200,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				lastInputNeededNotificationTime = now;
 				const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 				const inputAction = isAutoApproved
-					? `Determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time.`
-					: `Call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each.`;
+					? `Determine the answer and call ${TerminalToolId.SendToTerminal} with id "${termId}". Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time. A normal shell prompt does NOT count as waiting for input.`
+					: `Call the vscode_askQuestions tool to ask the user. Then send each answer using ${TerminalToolId.SendToTerminal} with id "${termId}", calling ${TerminalToolId.GetTerminalOutput} between each. A normal shell prompt does NOT count as waiting for input.`;
 				const message = `[Terminal ${termId} notification: command is waiting for input. ${inputAction}]\nTerminal output:\n${currentOutput}`;
 
 				this._logService.debug(`RunInTerminalTool: Input needed in background terminal ${termId}, notifying chat session`);
