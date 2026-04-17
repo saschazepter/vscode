@@ -205,7 +205,7 @@ Add a `value` function to the policy that returns a disabling value when `chat_p
 policy: {
     name: 'MyPreviewFeaturePolicy',
     category: PolicyCategory.InteractiveSession,
-    minimumVersion: '1.112',
+    minimumVersion: '1.xx', // Must match the first VS Code release that ships this policy.
     value: (policyData) => policyData.chat_preview_features_enabled === false ? false : undefined,
     localization: {
         description: {
