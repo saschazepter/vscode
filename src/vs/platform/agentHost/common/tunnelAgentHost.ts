@@ -74,6 +74,43 @@ export interface ICachedTunnel {
 	readonly authProvider?: 'github' | 'microsoft';
 }
 
+/**
+ * Deduplicate cached tunnel entries so that two cache entries referring to the
+ * same logical machine are consolidated into one.
+ *
+ * Dev tunnels are assigned a new {@link ICachedTunnel.tunnelId} every time the
+ * tunnel is recreated (e.g. `code tunnel` taken down and brought back up), so
+ * grouping by `tunnelId` alone leaves stale entries for the same machine. The
+ * user-chosen `name` (typically the machine hostname set via
+ * `code tunnel --name <hostname>`) is the stable identifier across
+ * recreations, so we consolidate by a normalized `name` first and fall back to
+ * `tunnelId` when a name is missing.
+ *
+ * The input order is treated as most-recent-first (the same convention used
+ * by the `cacheTunnel` producers) and preserved in the output.
+ */
+export function dedupeCachedTunnels(tunnels: readonly ICachedTunnel[]): ICachedTunnel[] {
+	const seenNames = new Set<string>();
+	const seenIds = new Set<string>();
+	const result: ICachedTunnel[] = [];
+	for (const tunnel of tunnels) {
+		const key = tunnel.name?.trim().toLowerCase();
+		if (key) {
+			if (seenNames.has(key)) {
+				continue;
+			}
+			seenNames.add(key);
+		} else {
+			if (seenIds.has(tunnel.tunnelId)) {
+				continue;
+			}
+			seenIds.add(tunnel.tunnelId);
+		}
+		result.push(tunnel);
+	}
+	return result;
+}
+
 /** Information about a discovered dev tunnel with an agent host. */
 export interface ITunnelInfo {
 	/** The tunnel's unique identifier. */

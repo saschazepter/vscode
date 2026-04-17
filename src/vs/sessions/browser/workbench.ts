@@ -62,6 +62,9 @@ import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/mar
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
 import { SessionsExperimentalShellGradientBackgroundSettingId } from '../common/configuration.js';
+import { HostBarPart } from './parts/hostBarPart.js';
+import { AgenticParts } from './parts/parts.js';
+import { RemoteAgentHostsEnabledSettingId } from '../../platform/agentHost/common/remoteAgentHostService.js';
 
 //#region Workbench Options
 
@@ -233,6 +236,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private editorPartView!: ISerializableView;
 
 	private chatBarPartView!: ISerializableView;
+
+	/** Host switcher rail — web-only, gated on `chat.remoteAgentHostsEnabled`. */
+	private hostBarPartView?: ISerializableView;
+	private hostBarEnabled = false;
 
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
@@ -540,18 +547,30 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Warm up font cache information before building up too many dom elements
 		this.restoreFontInfo(storageService, configurationService);
 
+		// Determine whether to show the host switcher rail (web + remote agent hosts enabled).
+		this.hostBarEnabled = isWeb && configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId) === true;
+		if (this.hostBarEnabled) {
+			// Instantiating the part auto-registers it with this layout service via Part base class.
+			instantiationService.createInstance(HostBarPart);
+		}
+
 		// Create Parts (editor starts hidden and is shown when an editor opens)
-		for (const { id, role, classes } of [
+		const partDescriptors: { id: string; role: string; classes: string[] }[] = [
 			{ id: Parts.TITLEBAR_PART, role: 'none', classes: ['titlebar'] },
 			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
 			{ id: Parts.PANEL_PART, role: 'none', classes: ['panel', 'basepanel', positionToString(this.getPanelPosition())] },
-		]) {
+		];
+		if (this.hostBarEnabled) {
+			partDescriptors.push({ id: AgenticParts.HOSTBAR_PART, role: 'none', classes: ['hostbar', 'left'] });
+		}
+
+		for (const { id, role, classes } of partDescriptors) {
 			const partContainer = this.createPartContainer(id, role, classes);
 
 			mark(`code/willCreatePart/${id}`);
-			this.getPart(id).create(partContainer);
+			this.getPart(id as Parts).create(partContainer);
 			mark(`code/didCreatePart/${id}`);
 		}
 
@@ -763,6 +782,16 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			[Parts.EDITOR_PART]: this.editorPartView
 		};
 
+		// Host switcher rail (web-only) — wired into the grid left of the sidebar.
+		let hostBarPart: Part | undefined;
+		if (this.hostBarEnabled) {
+			hostBarPart = this.parts.get(AgenticParts.HOSTBAR_PART);
+			if (hostBarPart) {
+				this.hostBarPartView = hostBarPart;
+				viewMap[AgenticParts.HOSTBAR_PART] = this.hostBarPartView;
+			}
+		}
+
 		const fromJSON = ({ type }: { type: string }) => viewMap[type];
 		const workbenchGrid = SerializableGrid.deserialize(
 			this.createGridDescriptor(),
@@ -818,10 +847,14 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const editorSize = 650;
 		const auxiliaryBarSize = 380;
 		const panelSize = 300;
+		const hostBarSize = 48;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
 
+		const hostBarVisible = this.hostBarEnabled && !!this.hostBarPartView;
+		const hostBarColumnWidth = hostBarVisible ? hostBarSize : 0;
+
 		// Calculate right section width and chat bar width
-		const rightSectionWidth = Math.max(0, width - sideBarSize);
+		const rightSectionWidth = Math.max(0, width - sideBarSize - hostBarColumnWidth);
 		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize - editorSize);
 
 		const contentHeight = height - titleBarHeight;
@@ -887,10 +920,21 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			root: {
 				type: 'branch',
 				size: height,
-				data: [
-					sideBarNode,
-					rightSection
-				]
+				data: hostBarVisible
+					? [
+						{
+							type: 'leaf',
+							data: { type: AgenticParts.HOSTBAR_PART },
+							size: hostBarSize,
+							visible: true
+						} satisfies ISerializedLeafNode,
+						sideBarNode,
+						rightSection
+					]
+					: [
+						sideBarNode,
+						rightSection
+					]
 			},
 			orientation: Orientation.HORIZONTAL,
 			width,

@@ -20,6 +20,7 @@ import { TUNNEL_ADDRESS_PREFIX } from '../../../../platform/agentHost/common/tun
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IPreferencesService } from '../../../../workbench/services/preferences/common/preferences.js';
 import { IOutputService } from '../../../../workbench/services/output/common/output.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -32,6 +33,7 @@ import { ISessionWorkspace, ISessionWorkspaceBrowseAction } from '../../../servi
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IAgentHostSessionsProvider, isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
+import { HostBarVisibleContext } from '../../../common/contextkeys.js';
 import { COPILOT_PROVIDER_ID } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
 
 const LEGACY_STORAGE_KEY_RECENT_PROJECTS = 'sessions.recentlyPickedProjects';
@@ -106,6 +108,7 @@ export class WorkspacePicker extends Disposable {
 		@IOutputService private readonly outputService: IOutputService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -311,17 +314,32 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * Collects browse actions from all registered providers.
+	 * Returns the providers whose workspaces and browse actions should populate
+	 * the picker. When the host switcher rail is driving selection
+	 * (vscode.dev/agents), the picker is scoped to the active provider; otherwise
+	 * it lists all providers.
+	 */
+	private _getProvidersForPicker(): import('../../../services/sessions/common/sessionsProvider.js').ISessionsProvider[] {
+		if (this.contextKeyService.getContextKeyValue<boolean>(HostBarVisibleContext.key)) {
+			return this._getActiveProviders();
+		}
+		return this.sessionsProvidersService.getProviders();
+	}
+
+	/**
+	 * Collects browse actions from the providers currently in scope for the picker.
 	 */
 	private _getAllBrowseActions(): ISessionWorkspaceBrowseAction[] {
-		return this.sessionsProvidersService.getProviders().flatMap(p => p.browseActions);
+		return this._getProvidersForPicker().flatMap(p => p.browseActions);
 	}
 
 	private _buildItems(): IActionListItem<IWorkspacePickerItem>[] {
 		const items: IActionListItem<IWorkspacePickerItem>[] = [];
 
-		// Collect recent workspaces from picker storage across all providers
-		const allProviders = this.sessionsProvidersService.getProviders();
+		// Collect recent workspaces from picker storage. Scoped to the active
+		// provider only when the host bar rail is driving selection
+		// (vscode.dev/agents); otherwise falls back to all providers.
+		const allProviders = this._getProvidersForPicker();
 		const providerIds = new Set(allProviders.map(p => p.id));
 		const recentWorkspaces = this._getRecentWorkspaces().filter(w => providerIds.has(w.providerId));
 		const hasMultipleProviders = allProviders.length > 1;

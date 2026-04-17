@@ -1,0 +1,148 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.monaco-workbench .part.hostbar {
+	width: 48px;
+	height: 100%;
+}
+
+.monaco-workbench .hostbar.bordered {
+	border-right: 1px solid;
+	border-color: inherit;
+	box-sizing: border-box;
+}
+
+.monaco-workbench .hostbar > .content {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 8px 0;
+	box-sizing: border-box;
+}
+
+.monaco-workbench .hostbar > .content > .actions-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.monaco-workbench .hostbar > .content > .footer-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding-top: 6px;
+}
+
+.monaco-workbench .hostbar .action-item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	cursor: pointer;
+	border-radius: 8px;
+	flex: none;
+}
+
+.monaco-workbench .hostbar .action-item:focus {
+	outline: 0 !important;
+}
+
+.monaco-workbench .hostbar .action-item:focus-visible::before {
+	content: '';
+	position: absolute;
+	inset: 2px;
+	border: 1px solid var(--vscode-focusBorder);
+	border-radius: 9px;
+	pointer-events: none;
+}
+
+/* Active indicator bar on the left edge, mirroring the project bar precedent. */
+.monaco-workbench .hostbar .action-item .active-item-indicator {
+	position: absolute;
+	left: -4px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 0;
+	background-color: var(--vscode-activityBar-activeBorder, var(--vscode-focusBorder));
+	border-radius: 0 2px 2px 0;
+	transition: height 0.1s ease;
+	pointer-events: none;
+}
+
+.monaco-workbench .hostbar .action-item.checked .active-item-indicator {
+	height: 24px;
+}
+
+/* Avatar badge — square tile containing a vm-active / vm-outline codicon.
+ * Unselected tiles are borderless so the repeated icon outlines don't pile up
+ * visually; hover and selected states bring the border back as affordance. */
+.monaco-workbench .hostbar .host-badge {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	background-color: transparent;
+	color: var(--vscode-activityBar-inactiveForeground);
+	user-select: none;
+	box-sizing: border-box;
+	border: 1px solid transparent;
+	transition: border-color 0.1s ease, color 0.1s ease, background-color 0.1s ease;
+}
+
+.monaco-workbench .hostbar .host-badge .host-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 18px;
+	line-height: 1;
+}
+
+.monaco-workbench .hostbar .host-badge .host-icon.connected {
+	color: var(--vscode-activityBar-foreground);
+}
+
+.monaco-workbench .hostbar .host-badge .host-icon.connecting,
+.monaco-workbench .hostbar .host-badge .host-icon.disconnected {
+	color: var(--vscode-activityBar-inactiveForeground);
+}
+
+.monaco-workbench .hostbar .action-item:hover .host-badge {
+	border-color: var(--vscode-activityBar-inactiveForeground);
+	color: var(--vscode-activityBar-foreground);
+}
+
+.monaco-workbench .hostbar .action-item.checked .host-badge {
+	border-color: var(--vscode-activityBar-activeBorder, var(--vscode-focusBorder));
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-activityBar-foreground);
+}
+
+/* Add host button. */
+.monaco-workbench .hostbar .add-host .action-label {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	font-size: 16px;
+	color: var(--vscode-activityBar-inactiveForeground);
+	border: 1px dashed var(--vscode-activityBar-inactiveForeground);
+	box-sizing: border-box;
+}
+
+.monaco-workbench .hostbar .add-host:hover .action-label {
+	color: var(--vscode-activityBar-foreground);
+	border-color: var(--vscode-activityBar-foreground);
+}

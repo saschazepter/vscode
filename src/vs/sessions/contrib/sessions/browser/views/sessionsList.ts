@@ -23,7 +23,7 @@ import { localize } from '../../../../../nls.js';
 import { MenuId, IMenuService } from '../../../../../platform/actions/common/actions.js';
 import { MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
-import { ChatSessionProviderIdContext } from '../../../../common/contextkeys.js';
+import { ChatSessionProviderIdContext, HostBarVisibleContext } from '../../../../common/contextkeys.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
@@ -841,6 +841,17 @@ export class SessionsList extends Disposable implements ISessionsList {
 			}
 		}));
 
+		// Re-update when the active provider changes so the list scopes to the
+		// selected host (driven by the host bar rail in vscode.dev/agents).
+		// The actual filter is only applied when the host bar rail is visible;
+		// on desktop (no rail) all providers continue to surface.
+		this._register(autorun(reader => {
+			this._sessionsManagementService.activeProviderId.read(reader);
+			if (this.visible && this._isHostBarActive()) {
+				this.update();
+			}
+		}));
+
 		this.refresh();
 	}
 
@@ -849,11 +860,21 @@ export class SessionsList extends Disposable implements ISessionsList {
 		this.update();
 	}
 
+	private _isHostBarActive(): boolean {
+		return !!this.contextKeyService.getContextKeyValue<boolean>(HostBarVisibleContext.key);
+	}
+
 	update(expandAll?: boolean): void {
 		const activeSession = this._sessionsManagementService.activeSession.get();
+		const activeProviderId = this._sessionsManagementService.activeProviderId.get();
 
-		// Filter by session type and status
+		// Filter by session type and status.
 		let filtered = this.sessions;
+		// Scope to the active provider only when the host bar rail is driving
+		// selection (vscode.dev/agents). On desktop, keep showing all providers.
+		if (activeProviderId && this._isHostBarActive()) {
+			filtered = filtered.filter(s => s.providerId === activeProviderId);
+		}
 		if (this.excludedSessionTypes.size > 0) {
 			filtered = filtered.filter(s => !this.excludedSessionTypes.has(s.sessionType));
 		}

@@ -32,3 +32,9 @@ export const ChatBarVisibleContext = new RawContextKey<boolean>('chatBarVisible'
 export const SessionsWelcomeVisibleContext = new RawContextKey<boolean>('sessionsWelcomeVisible', false, localize('sessionsWelcomeVisible', "Whether the sessions welcome overlay is visible"));
 
 //#endregion
+
+//#region < --- Host Bar --- >
+
+export const HostBarVisibleContext = new RawContextKey<boolean>('hostBarVisible', false, localize('hostBarVisible', "Whether the agent host switcher rail is visible"));
+
+//#endregion

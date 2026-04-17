@@ -18,6 +18,7 @@ import {
 	ITunnelAgentHostService,
 	TUNNEL_AGENT_HOST_CHANNEL,
 	TunnelAgentHostsSettingId,
+	dedupeCachedTunnels,
 	type ICachedTunnel,
 	type ITunnelAgentHostMainService,
 	type ITunnelInfo,
@@ -241,7 +242,17 @@ export class TunnelAgentHostService extends Disposable implements ITunnelAgentHo
 			return [];
 		}
 		try {
-			return JSON.parse(raw);
+			const parsed = JSON.parse(raw) as ICachedTunnel[];
+			const deduped = dedupeCachedTunnels(parsed);
+			if (deduped.length !== parsed.length) {
+				// Persist the consolidated list so stale duplicates do not come back
+				// on next read.
+				this._storeCachedTunnels(deduped);
+				// Notify consumers so UI providers can be reconciled against the
+				// now-consolidated cache.
+				queueMicrotask(() => this._onDidChangeTunnels.fire());
+			}
+			return deduped;
 		} catch {
 			return [];
 		}
@@ -249,7 +260,16 @@ export class TunnelAgentHostService extends Disposable implements ITunnelAgentHo
 
 	cacheTunnel(tunnel: ITunnelInfo, authProvider?: 'github' | 'microsoft'): void {
 		const cached = this.getCachedTunnels();
-		const filtered = cached.filter(t => t.tunnelId !== tunnel.tunnelId);
+		const nameKey = tunnel.name?.trim().toLowerCase();
+		const filtered = cached.filter(t => {
+			if (t.tunnelId === tunnel.tunnelId) {
+				return false;
+			}
+			if (nameKey && t.name?.trim().toLowerCase() === nameKey) {
+				return false;
+			}
+			return true;
+		});
 		filtered.unshift({
 			tunnelId: tunnel.tunnelId,
 			clusterId: tunnel.clusterId,

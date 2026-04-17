@@ -19,13 +19,17 @@ The Agent Sessions Workbench (`Workbench` in `sessions/browser/workbench.ts`) pr
 ### 2.1 Visual Representation
 
 ```
-┌─────────┬────────────────────────────────────────────────────────────────────┐
-│         │                            Titlebar                                │
-│         ├───────────────────────────┬────────────────┬───────────────────────┤
-│ Sidebar │         Chat Bar          │ Editor (hid.) │     Auxiliary Bar     │
-│         ├───────────────────────────┴────────────────┴───────────────────────┤
-│         │                              Panel                                 │
-└─────────┴────────────────────────────────────────────────────────────────────┘
+┌────┬─────────┬────────────────────────────────────────────────────────────────────┐
+│    │         │                            Titlebar                                │
+│ H  │         ├───────────────────────────┬────────────────┬───────────────────────┤
+│ o  │ Sidebar │         Chat Bar          │ Editor (hid.) │     Auxiliary Bar     │
+│ s  │         ├───────────────────────────┴────────────────┴───────────────────────┤
+│ t  │         │                              Panel                                 │
+└────┴─────────┴────────────────────────────────────────────────────────────────────┘
+
+The Host Bar column on the far left is only rendered in web builds
+(vscode.dev/agents) when `chat.remoteAgentHostsEnabled` is true. When
+absent, the Sidebar starts at the left edge as before.
 
 Editors open via MODAL_GROUP into the standard ModalEditorPart overlay
 (created on-demand by EditorParts.createModalEditorPart). The main
@@ -39,8 +43,9 @@ editor opens or restores that target the main editor part.
 
 | Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
 |------|-------------|----------|------------|----------------------|
+| Host Bar | `AgenticParts.HOSTBAR_PART` | Far left (48px rail), spans full height | Visible in web only, gated on `chat.remoteAgentHostsEnabled` | — |
 | Titlebar | `Parts.TITLEBAR_PART` | Top of right section | Always visible | — |
-| Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
+| Sidebar | `Parts.SIDEBAR_PART` | Left (after Host Bar), spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | Top-right section, in the grid but hidden by default; explicit opens or restores that target the main editor part can reveal it while modal editors still open via `MODAL_GROUP` into `ModalEditorPart` overlay | Hidden | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
@@ -370,6 +375,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/chatBarPart.ts` |
 | Titlebar | `TitlebarPart` / `MainTitlebarPart` | `Part` | `sessions/browser/parts/titlebarPart.ts` |
 | Project Bar | `ProjectBarPart` | `Part` | `sessions/browser/parts/projectBarPart.ts` |
+| Host Bar | `HostBarPart` | `Part` | `sessions/browser/parts/hostBarPart.ts` |
 
 ### 9.2 Key Differences from Standard Parts
 
@@ -524,6 +530,7 @@ src/vs/sessions/
 │       ├── panelPart.ts                    # Agent session panel
 │       ├── chatBarPart.ts                  # Chat Bar part implementation
 │       ├── projectBarPart.ts              # Project bar part (folder entries, icon customization)
+│       ├── hostBarPart.ts                  # Host Bar part — web-only provider switcher rail (avatar + status dot + add)
 │       ├── parts.ts                        # AgenticParts enum
 │       ├── agentSessionsChatInputPart.ts   # Chat input part adapter
 │       ├── agentSessionsChatWelcomePart.ts # Chat welcome part
@@ -532,6 +539,7 @@ src/vs/sessions/
 │           ├── sidebarPart.css
 │           ├── chatBarPart.css
 │           ├── projectBarPart.css
+│           ├── hostBarPart.css
 │           └── agentSessionsChatWelcomePart.css
 ├── electron-browser/                       # Desktop-specific entry points
 │   ├── sessions.main.ts
@@ -657,6 +665,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-16 | Added the Host Bar (`HostBarPart`) — a 48px left rail rendered in web builds when `chat.remoteAgentHostsEnabled` is true. Lists registered sessions providers as letter-initial avatars with a connection-status dot; selecting an entry calls `ISessionsManagementService.setActiveProvider`, which scopes both the sessions list and the workspace picker to that provider. An "+" footer button runs `sessions.remoteAgentHost.add`. Wired as the first leaf in the grid root (`[hostBarNode, sideBarNode, rightSection]`). Sets the `hostBarVisible` context key. |
 | 2026-04-16 | Updated the layout visual representation to show the editor part in the top-right row and mark it as hidden by default. |
 | 2026-04-16 | Fixed the sessions workbench so modal editor opens no longer hide an already visible main editor part, and documented that the main editor stays hidden by default but can be revealed by explicit non-modal editor flows. |
 | 2026-04-15 | Updated the Sessions sidebar so pinned chats render in their own "Pinned" section header using the standard uppercase section styling, and that header only exposes the "Mark All as Done" section action. |

@@ -84,7 +84,25 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 	private _reconcileProviders(): void {
 		const enabled = this._configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId);
 		const cached = enabled ? this._tunnelService.getCachedTunnels() : [];
-		const desiredAddresses = new Set(cached.map(t => `${TUNNEL_ADDRESS_PREFIX}${t.tunnelId}`));
+
+		// Consolidate by name (case-insensitive). The cache-read path already
+		// dedupes, but we dedupe again here to guarantee a single tile per
+		// logical machine even if legacy entries with a missing or blank name
+		// somehow survive (those fall back to per-tunnelId entries).
+		const seenNames = new Set<string>();
+		const consolidated: typeof cached = [];
+		for (const tunnel of cached) {
+			const key = tunnel.name?.trim().toLowerCase();
+			if (key) {
+				if (seenNames.has(key)) {
+					continue;
+				}
+				seenNames.add(key);
+			}
+			consolidated.push(tunnel);
+		}
+
+		const desiredAddresses = new Set(consolidated.map(t => `${TUNNEL_ADDRESS_PREFIX}${t.tunnelId}`));
 
 		// Remove providers no longer cached
 		for (const [address] of this._providerStores) {
@@ -95,7 +113,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 		}
 
 		// Add providers for cached tunnels
-		for (const tunnel of cached) {
+		for (const tunnel of consolidated) {
 			const address = `${TUNNEL_ADDRESS_PREFIX}${tunnel.tunnelId}`;
 			if (!this._providerStores.has(address)) {
 				this._createProvider(address, tunnel.name);
