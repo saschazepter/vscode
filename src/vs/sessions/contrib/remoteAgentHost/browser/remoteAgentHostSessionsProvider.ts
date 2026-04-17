@@ -36,7 +36,7 @@ import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '..
 import { isSessionConfigComplete } from '../../../common/sessionConfig.js';
 import { diffsToChanges, diffsEqual, mapProtocolStatus } from '../../../common/agentHostDiffs.js';
 import { ISessionChangeEvent, ISendRequestOptions } from '../../../services/sessions/common/sessionsProvider.js';
-import { IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
+import { IAgentHostSessionsProvider, resolvedConfigsEqual } from '../../../common/agentHostSessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, ISessionType, COPILOT_CLI_SESSION_TYPE } from '../../../services/sessions/common/session.js';
 import { remoteAgentHostSessionTypeId } from '../common/remoteAgentHostSessionType.js';
 
@@ -93,37 +93,6 @@ function buildMutableConfigSchema(config: Record<string, string>): Record<string
 		};
 	}
 	return properties;
-}
-
-/**
- * Shallow structural equality for resolved session configs. Returns true when
- * both values record the same keys with the same string values and the same
- * set of property keys in the schema. The schema property objects themselves
- * are compared by identity since they originate from the same protocol
- * snapshot.
- */
-function resolvedConfigsEqual(a: IResolveSessionConfigResult, b: IResolveSessionConfigResult): boolean {
-	const aValueKeys = Object.keys(a.values);
-	const bValueKeys = Object.keys(b.values);
-	if (aValueKeys.length !== bValueKeys.length) {
-		return false;
-	}
-	for (const key of aValueKeys) {
-		if (a.values[key] !== b.values[key]) {
-			return false;
-		}
-	}
-	const aPropKeys = Object.keys(a.schema.properties);
-	const bPropKeys = Object.keys(b.schema.properties);
-	if (aPropKeys.length !== bPropKeys.length) {
-		return false;
-	}
-	for (const key of aPropKeys) {
-		if (a.schema.properties[key] !== b.schema.properties[key]) {
-			return false;
-		}
-	}
-	return true;
 }
 
 function toLocalProjectUri(uri: URI, connectionAuthority: string): URI {

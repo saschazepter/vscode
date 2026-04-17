@@ -570,7 +570,7 @@ suite('AgentService (node dispatcher)', () => {
 			await new Promise(r => setTimeout(r, 50));
 
 			// Simulate a server restart: drop the in-memory state
-			localService.stateManager.removeSession(session);
+			localService.stateManager.removeSession(session.toString());
 
 			localAgent.sessionMessages = [
 				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },

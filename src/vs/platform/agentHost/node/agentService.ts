@@ -283,7 +283,9 @@ export class AgentService extends Disposable implements IAgentService {
 			state.config = sessionConfig;
 		}
 		// Persist initial config values so a subsequent `restoreSession` can
-		// re-hydrate them. Mid-session changes are persisted by `AgentSideEffects`
+		// re-hydrate them. We persist the full resolved values (not just the
+		// user's input) so clients can render them on restore without having
+		// to re-resolve. Mid-session changes are persisted by `AgentSideEffects`
 		// when handling `SessionConfigChanged`.
 		if (sessionConfig?.values && Object.keys(sessionConfig.values).length > 0) {
 			this._persistConfigValues(session, sessionConfig.values);
