@@ -526,7 +526,7 @@ async function promptToConnectViaTunnel(
 		// Trigger interactive auth for the chosen provider
 		const scopes = productService.tunnelApplicationConfig?.authenticationProviders?.[authProvider]?.scopes ?? [];
 		try {
-			if (!authenticationService.getSessions(authProvider, scopes)) {
+			if (!(await authenticationService.getSessions(authProvider, scopes)).length) {
 				await authenticationService.createSession(authProvider, scopes, { activateImmediate: true });
 			}
 		} catch {
