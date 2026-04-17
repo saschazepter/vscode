@@ -24,6 +24,13 @@ import { DeferredPromise, raceCancellablePromises, timeout } from '../../../base
 
 const WAIT_FOR_PROMPT_TIMEOUT = 10_000;
 
+/** Returns true for POSIX absolute paths, Windows drive paths, and UNC paths. */
+function isAbsoluteFileSystemPath(path: string): boolean {
+	return path.startsWith('/')
+		|| /^[a-zA-Z]:[\\/]/.test(path)
+		|| path.startsWith('\\\\');
+}
+
 export const IAgentHostTerminalManager = createDecorator<IAgentHostTerminalManager>('agentHostTerminalManager');
 
 export interface ICommandFinishedEvent {
@@ -651,19 +658,24 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 	 * Resolves the cwd string from {@link ICreateTerminalParams} to an
 	 * accessible filesystem path, falling back to $HOME if the requested
 	 * directory is missing (otherwise node-pty exits silently with code 1).
+	 * Accepts either a `file://` URI string or a raw absolute filesystem path.
 	 */
 	private async _resolveCwd(cwd: string | undefined, uri: string): Promise<string> {
 		let resolved = process.cwd();
 		if (cwd) {
-			try {
-				const parsed = URI.parse(cwd);
-				if (parsed.scheme === 'file' && parsed.fsPath && parsed.fsPath !== '/') {
-					resolved = parsed.fsPath;
-				} else {
-					this._logService.warn(`[TerminalManager] Ignoring non-file cwd for ${uri}: ${cwd}`);
+			if (isAbsoluteFileSystemPath(cwd)) {
+				resolved = cwd;
+			} else {
+				try {
+					const parsed = URI.parse(cwd);
+					if (parsed.scheme === 'file' && parsed.fsPath && parsed.fsPath !== '/') {
+						resolved = parsed.fsPath;
+					} else {
+						this._logService.warn(`[TerminalManager] Ignoring non-file cwd for ${uri}: ${cwd}`);
+					}
+				} catch {
+					this._logService.warn(`[TerminalManager] Failed to parse cwd URI for ${uri}: ${cwd}`);
 				}
-			} catch {
-				this._logService.warn(`[TerminalManager] Failed to parse cwd URI for ${uri}: ${cwd}`);
 			}
 		}
 		try {
