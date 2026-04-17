@@ -16,57 +16,56 @@
 	margin-bottom: 8px;
 }
 
-/* Tab Bar */
+/* Collapsible Quick Settings */
 
-.chat-status-bar-entry-tooltip .tab-bar {
+.chat-status-bar-entry-tooltip .collapsible-header {
 	display: flex;
-	gap: 0;
-	margin-bottom: 8px;
-	border-bottom: 1px solid var(--vscode-editorWidget-border);
-}
-
-.chat-status-bar-entry-tooltip .tab-bar .tab {
-	padding: 4px 12px;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+	padding: 6px 0;
 	border: none;
 	background: none;
 	cursor: pointer;
 	font-size: inherit;
 	font-family: inherit;
-	color: var(--vscode-descriptionForeground);
-	border-bottom: 2px solid transparent;
-	margin-bottom: -1px;
-}
-
-.chat-status-bar-entry-tooltip .tab-bar .tab:hover {
-	color: var(--vscode-foreground);
-}
-
-.chat-status-bar-entry-tooltip .tab-bar .tab.active {
-	color: var(--vscode-foreground);
-	border-bottom-color: var(--vscode-focusBorder);
 	font-weight: 600;
+	color: var(--vscode-foreground);
 }
 
-.chat-status-bar-entry-tooltip .tab-bar .tab:focus-visible {
+.chat-status-bar-entry-tooltip .collapsible-header:hover {
+	color: var(--vscode-foreground);
+}
+
+.chat-status-bar-entry-tooltip .collapsible-header:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
 
-/* Tab Content — grid overlay keeps height stable across tab switches */
+.chat-status-bar-entry-tooltip .collapsible-chevron {
+	font-size: 12px;
+	display: flex;
+	align-items: center;
+}
 
-.chat-status-bar-entry-tooltip .tab-content-container {
+.chat-status-bar-entry-tooltip .collapsible-content {
 	display: grid;
+	grid-template-rows: 1fr;
+	transition: grid-template-rows 200ms ease;
 }
 
-.chat-status-bar-entry-tooltip .tab-content-container > .tab-content {
-	grid-area: 1 / 1;
-	visibility: hidden;
-	pointer-events: none;
+.chat-status-bar-entry-tooltip .collapsible-content.collapsed {
+	grid-template-rows: 0fr;
 }
 
-.chat-status-bar-entry-tooltip .tab-content-container > .tab-content.active {
-	visibility: visible;
-	pointer-events: auto;
+.chat-status-bar-entry-tooltip .collapsible-content > .collapsible-inner {
+	overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.chat-status-bar-entry-tooltip .collapsible-content {
+		transition: none;
+	}
 }
 
 .chat-status-bar-entry-tooltip div.header {

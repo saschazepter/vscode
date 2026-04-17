@@ -23,6 +23,7 @@ import { ILanguageService } from '../../../../../editor/common/languages/languag
 import { ITextResourceConfigurationService } from '../../../../../editor/common/services/textResourceConfiguration.js';
 import { ILanguageFeaturesService } from '../../../../../editor/common/services/languageFeatures.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import * as languages from '../../../../../editor/common/languages.js';
 import { localize } from '../../../../../nls.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -124,6 +125,8 @@ export interface IChatStatusDashboardOptions {
 
 export class ChatStatusDashboard extends DomWidget {
 
+	private static readonly QUICK_SETTINGS_COLLAPSED_KEY = 'chatStatusDashboard.quickSettingsCollapsed';
+
 	readonly element = $('div.chat-status-bar-entry-tooltip');
 
 	private readonly dateFormatter = safeIntl.DateTimeFormat(language, { month: 'short', day: 'numeric' });
@@ -145,6 +148,7 @@ export class ChatStatusDashboard extends DomWidget {
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
 
@@ -185,77 +189,40 @@ export class ChatStatusDashboard extends DomWidget {
 		// Always trigger a fresh quota fetch when the dashboard opens
 		const updatePromise = this.chatEntitlementService.update(token);
 
-		// Tabbed layout when both Usage and Inline Suggestions sections are available
-		if (hasVisibleUsageContent && hasInlineSuggestionsSection) {
-			const usageContent = $('div.tab-content.active');
-			usageContent.setAttribute('role', 'tabpanel');
-			usageContent.id = 'chat-status-usage-panel';
+		// Usage section — always shown inline
+		if (hasVisibleUsageContent) {
+			this.renderUsageContent(this.element, token, updatePromise);
+		}
 
-			const inlineSuggestionsContent = $('div.tab-content');
-			inlineSuggestionsContent.setAttribute('role', 'tabpanel');
-			inlineSuggestionsContent.id = 'chat-status-inline-suggestions-panel';
-			inlineSuggestionsContent.inert = true;
+		// Quick Settings — collapsible region
+		if (hasInlineSuggestionsSection) {
+			const collapsed = this.storageService.getBoolean(ChatStatusDashboard.QUICK_SETTINGS_COLLAPSED_KEY, StorageScope.PROFILE, true);
 
-			// Tab bar
-			const tabBar = this.element.appendChild($('div.tab-bar'));
-			tabBar.setAttribute('role', 'tablist');
+			const disclosureHeader = this.element.appendChild($('button.collapsible-header'));
+			disclosureHeader.setAttribute('aria-expanded', String(!collapsed));
 
-			const usageTab = tabBar.appendChild($('button.tab.active'));
-			usageTab.textContent = localize('usageTab', "Usage");
-			usageTab.setAttribute('role', 'tab');
-			usageTab.setAttribute('aria-selected', 'true');
-			usageTab.setAttribute('aria-controls', usageContent.id);
-			usageTab.setAttribute('tabindex', '0');
+			const chevron = disclosureHeader.appendChild($('span.collapsible-chevron'));
+			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
 
-			const quickSettingsTab = tabBar.appendChild($('button.tab'));
-			quickSettingsTab.textContent = localize('quickSettingsTab', "Quick Settings");
-			quickSettingsTab.setAttribute('role', 'tab');
-			quickSettingsTab.setAttribute('aria-selected', 'false');
-			quickSettingsTab.setAttribute('aria-controls', inlineSuggestionsContent.id);
-			quickSettingsTab.setAttribute('tabindex', '-1');
+			disclosureHeader.appendChild($('span.collapsible-label', undefined, localize('quickSettingsTab', "Quick Settings")));
 
-			const switchTab = (activeTab: HTMLElement, inactiveTab: HTMLElement, showContent: HTMLElement, hideContent: HTMLElement) => {
-				activeTab.classList.add('active');
-				activeTab.setAttribute('aria-selected', 'true');
-				activeTab.setAttribute('tabindex', '0');
-				inactiveTab.classList.remove('active');
-				inactiveTab.setAttribute('aria-selected', 'false');
-				inactiveTab.setAttribute('tabindex', '-1');
-				showContent.classList.add('active');
-				showContent.inert = false;
-				hideContent.classList.remove('active');
-				hideContent.inert = true;
+			const collapsibleContent = this.element.appendChild($('div.collapsible-content'));
+			const collapsibleInner = collapsibleContent.appendChild($('div.collapsible-inner'));
+			if (collapsed) {
+				collapsibleContent.classList.add('collapsed');
+			}
+
+			const toggle = () => {
+				const isCollapsed = collapsibleContent.classList.toggle('collapsed');
+				disclosureHeader.setAttribute('aria-expanded', String(!isCollapsed));
+				chevron.className = 'collapsible-chevron';
+				chevron.classList.add(...ThemeIcon.asClassNameArray(isCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
+				this.storageService.store(ChatStatusDashboard.QUICK_SETTINGS_COLLAPSED_KEY, isCollapsed, StorageScope.PROFILE, StorageTarget.USER);
 			};
 
-			this._store.add(addDisposableListener(usageTab, EventType.CLICK, () => switchTab(usageTab, quickSettingsTab, usageContent, inlineSuggestionsContent)));
-			this._store.add(addDisposableListener(quickSettingsTab, EventType.CLICK, () => switchTab(quickSettingsTab, usageTab, inlineSuggestionsContent, usageContent)));
+			this._store.add(addDisposableListener(disclosureHeader, EventType.CLICK, () => toggle()));
 
-			// Keyboard navigation between tabs
-			this._store.add(addDisposableListener(tabBar, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-				if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-					e.preventDefault();
-					if (usageTab.classList.contains('active')) {
-						switchTab(quickSettingsTab, usageTab, inlineSuggestionsContent, usageContent);
-						quickSettingsTab.focus();
-					} else {
-						switchTab(usageTab, quickSettingsTab, usageContent, inlineSuggestionsContent);
-						usageTab.focus();
-					}
-				}
-			}));
-
-			// Grid container: both panels overlap in the same cell so the
-			// container always sizes to the taller panel, preventing layout jumps.
-			const tabContentContainer = this.element.appendChild($('div.tab-content-container'));
-			tabContentContainer.appendChild(usageContent);
-			tabContentContainer.appendChild(inlineSuggestionsContent);
-
-			this.renderUsageContent(usageContent, token, updatePromise);
-			this.renderInlineSuggestionsContent(inlineSuggestionsContent, token, updatePromise);
-		} else if (hasVisibleUsageContent) {
-			this.renderUsageContent(this.element, token, updatePromise);
-		} else if (hasInlineSuggestionsSection) {
-			this.renderInlineSuggestionsContent(this.element, token, updatePromise);
+			this.renderInlineSuggestionsContent(collapsibleInner, token, updatePromise);
 		}
 
 		// New to Chat / Signed out

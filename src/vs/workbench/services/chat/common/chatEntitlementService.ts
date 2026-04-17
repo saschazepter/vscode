@@ -813,9 +813,9 @@ export class ChatEntitlementRequests extends Disposable {
 		}
 
 		// DEBUG: Override quota values for testing. Uncomment and tweak as needed.
-		quotas.sessionLimit = { percentRemaining: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
-		quotas.weeklyLimit = { percentRemaining: 20, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
-		quotas.overageEnabled = false;
+		// quotas.sessionLimit = { percentRemaining: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
+		// quotas.weeklyLimit = { percentRemaining: 20, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
+		// quotas.overageEnabled = false;
 
 		return quotas;
 	}
