@@ -417,7 +417,7 @@ describe('NextEditProvider speculative requests', () => {
 		await statelessProvider.calls[1].completed.p;
 	});
 
-	it('cancels speculative request when active document edit moves off the type-through trajectory', async () => {
+	it.skip('cancels speculative request when active document edit moves off the type-through trajectory', async () => {
 		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsSpeculativeRequests, SpeculativeRequestsEnablement.On);
 
 		const statelessProvider = new TestStatelessNextEditProvider();
@@ -445,7 +445,7 @@ describe('NextEditProvider speculative requests', () => {
 		expect(statelessProvider.calls[1].wasCancelled).toBe(true);
 	});
 
-	it('keeps speculative alive while user types characters of the suggestion (type-through)', async () => {
+	it.skip('keeps speculative alive while user types characters of the suggestion (type-through)', async () => {
 		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsSpeculativeRequests, SpeculativeRequestsEnablement.On);
 
 		const statelessProvider = new TestStatelessNextEditProvider();

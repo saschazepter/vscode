@@ -215,7 +215,8 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		mapObservableArrayCached(this, this._workspace.openDocuments, (doc, store) => {
 			store.add(runOnChange(doc.value, (value) => {
 				this._cancelPendingRequestDueToDocChange(doc.id, value);
-				this._specManager.onActiveDocumentChanged(doc.id, value.value);
+				// FIXME: don't invoke before fixing false positive cancellations
+				// this._specManager.onActiveDocumentChanged(doc.id, value.value);
 			}));
 			// When the per-doc store is disposed, the document was removed from
 			// openDocuments. Cancel any speculative targeting it — its cached result
