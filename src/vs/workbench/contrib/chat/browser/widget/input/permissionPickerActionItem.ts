@@ -31,8 +31,8 @@ const shownWarnings = new Set<ChatPermissionLevel>();
 
 // Storage keys for persisting the user's choice to skip the warning dialog
 // across sessions when "Don't show again" is checked.
-const AUTOPILOT_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autopilot.dontShowWarningAgain';
-const AUTO_APPROVE_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autoApprove.dontShowWarningAgain';
+export const AUTOPILOT_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autopilot.dontShowWarningAgain';
+export const AUTO_APPROVE_DONT_SHOW_AGAIN_KEY = 'chat.permissions.autoApprove.dontShowWarningAgain';
 
 function dontShowAgainKey(level: ChatPermissionLevel): string | undefined {
 	if (level === ChatPermissionLevel.Autopilot) {
