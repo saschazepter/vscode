@@ -10,7 +10,7 @@ import { parse as parseJSONC } from '../../../../../base/common/json.js';
 import { ResourceMap } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { OS } from '../../../../../base/common/platform.js';
-import { basename, isEqualOrParent } from '../../../../../base/common/resources.js';
+import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -155,6 +155,7 @@ export async function expandHookFileItems(
 							description: truncatedCmd || localize('hookUnset', "(unset)"),
 							enabled: item.enabled,
 							groupKey: item.groupKey,
+							storage: item.storage,
 						});
 					}
 				}
@@ -229,17 +230,25 @@ export class AICustomizationItemNormalizer {
 	private resolveSource(item: ICustomizationItem): { storage?: PromptsStorage; groupKey?: string; isBuiltin?: boolean; extensionLabel?: string } {
 		const inferred = this.inferStorageAndGroup(item.uri);
 
-		// Use provider-supplied storage when available; otherwise fall back to URI inference.
+		// Use provider-supplied values when available; otherwise fall back to URI inference.
 		const storage = item.storage ?? inferred.storage;
-		const extensionLabel = inferred.extensionLabel;
+		const extensionLabel = item.extensionLabel ?? inferred.extensionLabel;
 
 		if (!item.groupKey) {
-			return { ...inferred, storage };
+			return { ...inferred, storage, extensionLabel };
 		}
 
 		switch (item.groupKey) {
-			case BUILTIN_STORAGE:
-				return { storage: PromptsStorage.extension, groupKey: BUILTIN_STORAGE, isBuiltin: true, extensionLabel };
+			case BUILTIN_STORAGE: {
+				// Preserve a provider-supplied BUILTIN_STORAGE so the management
+				// editor's "edit built-in and save as user/workspace copy" flow
+				// activates. Otherwise fall back to extension storage (the
+				// historical source of built-in items).
+				const builtinStorage = (item.storage as PromptsStorage | typeof BUILTIN_STORAGE | undefined) === BUILTIN_STORAGE
+					? (BUILTIN_STORAGE as unknown as PromptsStorage)
+					: PromptsStorage.extension;
+				return { storage: builtinStorage, groupKey: BUILTIN_STORAGE, isBuiltin: true, extensionLabel };
+			}
 			default:
 				return { storage, groupKey: item.groupKey, extensionLabel };
 		}
@@ -345,18 +354,106 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			return [];
 		}
 
-		let providerItems: readonly ICustomizationItem[] = promptType === PromptsType.hook
-			? await expandHookFileItems(
-				allItems.filter(item => item.type === PromptsType.hook),
-				this.workspaceService, this.fileService, this.pathService,
-			)
-			: allItems.filter(item => item.type === promptType);
+		let providerItems: readonly ICustomizationItem[];
+		if (promptType === PromptsType.hook) {
+			const hookItems = allItems.filter(item => item.type === PromptsType.hook);
+			// Plugin hooks are pre-expanded by plugin manifests — skip re-expansion.
+			const toExpand = hookItems.filter(item => item.storage !== PromptsStorage.plugin);
+			const preExpanded = hookItems.filter(item => item.storage === PromptsStorage.plugin);
+			const expanded = await expandHookFileItems(
+				toExpand, this.workspaceService, this.fileService, this.pathService,
+			);
+			providerItems = [...expanded, ...preExpanded];
+		} else {
+			providerItems = allItems.filter(item => item.type === promptType);
+		}
 
 		if (promptType === PromptsType.skill) {
 			providerItems = await this.addSkillDescriptionFallbacks(providerItems);
 		}
 
-		return this.itemNormalizer.normalizeItems(providerItems, promptType);
+		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
+		if (promptType === PromptsType.skill) {
+			return this.mergeBuiltinSkills(normalized, promptType);
+		}
+		return normalized;
+	}
+
+	/**
+	 * Merges built-in skills (bundled with the app under `vs/sessions/skills/`)
+	 * into the provider's items. The provider may re-discover the bundled
+	 * copies when scanning disk — those duplicates are dropped (deduped by
+	 * URI) and replaced with the authoritative built-in entry tagged
+	 * `groupKey: BUILTIN_STORAGE` so the UI renders them in the "Built-in"
+	 * group. User-authored overrides (different URI, same name) are preserved.
+	 *
+	 * A workbench that uses the base `PromptsService` will throw on
+	 * `BUILTIN_STORAGE` — we catch and return the items unchanged in that case.
+	 */
+	private async mergeBuiltinSkills(items: readonly IAICustomizationListItem[], promptType: PromptsType): Promise<IAICustomizationListItem[]> {
+		let builtinPaths: readonly { uri: URI; name?: string; description?: string }[] = [];
+		try {
+			builtinPaths = await this.promptsService.listPromptFilesForStorage(PromptsType.skill, BUILTIN_STORAGE as unknown as PromptsStorage, CancellationToken.None);
+		} catch {
+			return [...items];
+		}
+		if (builtinPaths.length === 0) {
+			return [...items];
+		}
+
+		const builtinUris = new ResourceMap<typeof builtinPaths[number]>();
+		for (const p of builtinPaths) {
+			builtinUris.set(p.uri, p);
+		}
+
+		// Drop provider items that are the same URI as a built-in (the provider
+		// re-discovered the bundled copy by scanning disk).
+		const deduped = items.filter(item => !builtinUris.has(item.uri));
+
+		const uiIntegrations = this.workspaceService.getSkillUIIntegrations();
+		const uiIntegrationBadge = localize('uiIntegrationBadge', "UI Integration");
+
+		// Collect names of user/workspace skills so we can hide the built-in
+		// copy once the user has added an override at either level.
+		const overriddenNames = new Set<string>();
+		for (const item of deduped) {
+			if (item.storage === PromptsStorage.local || item.storage === PromptsStorage.user) {
+				if (item.name) {
+					overriddenNames.add(item.name);
+				}
+			}
+		}
+
+		// Append authoritative built-in entries (excluding any that have been
+		// overridden by a workspace or user copy with the same name).
+		const uriUseCounts = new ResourceMap<number>();
+		for (const item of deduped) {
+			uriUseCounts.set(item.uri, (uriUseCounts.get(item.uri) ?? 0) + 1);
+		}
+		const appended: IAICustomizationListItem[] = [];
+		const disabledPromptFiles = this.promptsService.getDisabledPromptFiles(PromptsType.skill);
+		for (const p of builtinPaths) {
+			const name = p.name ?? basename(p.uri);
+			if (overriddenNames.has(name)) {
+				continue;
+			}
+			const folderName = basename(dirname(p.uri));
+			const uiTooltip = uiIntegrations.get(folderName);
+			const builtinItem: ICustomizationItem = {
+				uri: p.uri,
+				type: PromptsType.skill,
+				name,
+				description: p.description,
+				storage: BUILTIN_STORAGE as unknown as PromptsStorage,
+				groupKey: BUILTIN_STORAGE,
+				enabled: !disabledPromptFiles.has(p.uri),
+				badge: uiTooltip ? uiIntegrationBadge : undefined,
+				badgeTooltip: uiTooltip,
+			};
+			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
+		}
+
+		return [...deduped, ...appended];
 	}
 
 	private async addSkillDescriptionFallbacks(items: readonly ICustomizationItem[]): Promise<readonly ICustomizationItem[]> {

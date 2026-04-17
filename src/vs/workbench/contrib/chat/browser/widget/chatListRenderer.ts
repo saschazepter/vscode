@@ -907,8 +907,13 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const label = dom.append(dividerContent, dom.$('span.pending-divider-label'));
 
 		if (element.dividerKind === ChatRequestQueueKind.Steering) {
-			label.textContent = localize('steeringDivider', "Steering");
-			label.title = localize('steeringDividerTooltip', "Steering message will be sent after the next tool call happens");
+			if (element.isSystemInitiated) {
+				label.textContent = localize('systemNotificationDivider', "System Notification");
+				label.title = localize('systemNotificationDividerTooltip', "System notification will be sent after the next tool call happens");
+			} else {
+				label.textContent = localize('steeringDivider', "Steering");
+				label.title = localize('steeringDividerTooltip', "Steering message will be sent after the next tool call happens");
+			}
 		} else {
 			label.textContent = localize('queuedDivider', "Queued");
 			label.title = localize('queuedDividerTooltip', "Queued messages will be sent after the current request completes");
@@ -2241,6 +2246,16 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private renderToolInvocation(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): IChatContentPart | undefined {
+		// Skip rendering completed tool invocations that have no meaningful content - ie, autopilot "task complete"
+		if (IChatToolInvocation.isComplete(toolInvocation)) {
+			const msg = toolInvocation.pastTenseMessage ?? toolInvocation.invocationMessage;
+			const text = typeof msg === 'string' ? msg : msg?.value;
+			if (!text || text.trim().length === 0) {
+				return this.renderNoContent((other) =>
+					(other.kind === 'toolInvocation' || other.kind === 'toolInvocationSerialized') && other.toolCallId === toolInvocation.toolCallId);
+			}
+		}
+
 		if (this.configService.getValue<CollapsedToolsDisplayMode>('chat.agent.thinking.collapsedTools') === CollapsedToolsDisplayMode.Off) {
 			this.finalizeCurrentThinkingPart(context, templateData);
 		}
