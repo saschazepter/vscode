@@ -1011,7 +1011,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			content.push(fileChangesSummaryPart);
 		}
 
-		// Show "Finished in..." summary for completed responses
 		const workingProgress = this.shouldShowWorkingProgress(element, content, false, templateData);
 		if (workingProgress) {
 			content.push(workingProgress);
@@ -1041,10 +1040,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false;
-		// TODO: Re-enable the "Finished in {time} with {n} tokens" summary on completed
-		// responses. Shipping a minimal version for now — nothing is rendered for
-		// completed responses. The setting and downstream working-state plumbing
-		// remain in place so this can be brought back without re-plumbing the data.
 		if (element.isComplete) {
 			return undefined;
 		}
