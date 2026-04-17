@@ -642,7 +642,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 				return;
 			}
 			this.mainContainer.classList.add(LayoutClasses.ANIMATIONS_READY);
-		});
+		}, onUnexpectedError);
 
 		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
 		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {
