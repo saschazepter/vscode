@@ -1943,13 +1943,12 @@ suite('RunInTerminalTool', () => {
 		strictEqual(capturedSteeringRequests.length, 2, 'Expected a changed prompt to trigger a new notification');
 	});
 
-	test('should clean up stale _activeExecutions entry after inputNeeded command finishes', () => {
+	test('should preserve session terminal association after inputNeeded so fg terminal is reused', () => {
 		const termId = 'test-input-cleanup-term';
 		const sessionResource = LocalChatSessionUri.forSession('test-input-cleanup-session');
 
 		const commandFinishedEmitter = new Emitter<{ exitCode: number | undefined }>();
 		const terminalDisposedEmitter = new Emitter<void>();
-		const inputNeededEmitter = new Emitter<void>();
 		const inputDataEmitter = new Emitter<string>();
 
 		const terminalInstance = {
@@ -1960,23 +1959,25 @@ suite('RunInTerminalTool', () => {
 			onDidInputData: inputDataEmitter.event,
 		} as unknown as ITerminalInstance;
 
-		const activeExecutions = (runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string; instance: ITerminalInstance; dispose(): void }> })._activeExecutions;
-		activeExecutions.set(termId, {
-			getOutput: () => 'Password:',
+		// Simulate the state after inputNeeded: fg terminal association is preserved
+		// and completion notification is registered (the fix ensures isBackground stays false).
+		runInTerminalTool.sessionTerminalAssociations.set(sessionResource, {
 			instance: terminalInstance,
-			dispose: () => { },
+			shellIntegrationQuality: ShellIntegrationQuality.Full,
+			isBackground: false,
 		});
 
 		// eslint-disable-next-line @typescript-eslint/naming-convention
 		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: undefined) => void })
 			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'ssh host', undefined);
 
-		ok(activeExecutions.has(termId), 'Execution should exist before command finishes');
+		ok(runInTerminalTool.sessionTerminalAssociations.has(sessionResource), 'Session terminal association should be preserved for fg reuse');
+		strictEqual(runInTerminalTool.sessionTerminalAssociations.get(sessionResource)!.isBackground, false, 'Terminal should remain foreground');
 
-		// Simulate the command finishing after the user provided input
+		// After command finishes, the notification is disposed but the fg association persists
 		commandFinishedEmitter.fire({ exitCode: 0 });
-
-		ok(!activeExecutions.has(termId), 'Stale execution should be cleaned up after command finishes');
+		ok(runInTerminalTool.sessionTerminalAssociations.has(sessionResource), 'Session terminal association should still be preserved after command finishes');
+		strictEqual(runInTerminalTool.sessionTerminalAssociations.get(sessionResource)!.isBackground, false, 'Terminal should still be foreground after command finishes');
 	});
 
 	suite('auto approve warning acceptance mechanism', () => {
