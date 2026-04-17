@@ -79,11 +79,10 @@
 	flex-shrink: 0;
 }
 
-/* Small, transparent, square icon buttons in the title bar — matches the
- * chat-tool-carousel-header-button and question carousel collapse toggle. */
+/* Small, transparent title-bar buttons — matches the question carousel
+ * chat-question-collapse-toggle / chat-question-close styles. */
 .interactive-session .chat-plan-review-container .monaco-button.chat-plan-review-title-button {
 	min-width: 22px;
-	width: auto;
 	height: 22px;
 	padding: 0 6px;
 	border: none !important;
@@ -99,18 +98,59 @@
 	background: var(--vscode-toolbar-hoverBackground) !important;
 }
 
+/* Icon-only square buttons (restore, chevron). Exactly 22x22 with no padding,
+ * matching `.monaco-button.chat-question-collapse-toggle`. */
+.interactive-session .chat-plan-review-container .monaco-button.chat-plan-review-title-icon-button {
+	width: 22px;
+	padding: 0;
+}
+
 .interactive-session .chat-plan-review-container .monaco-button.chat-plan-review-edit {
 	font-size: var(--vscode-chat-font-size-body-s);
 	color: var(--vscode-foreground) !important;
 }
 
-/* ---------- Scrollable markdown body ---------- */
+/* Inline slot in the title bar. The action buttons (Approve + Reject) get
+ * re-rendered here when the widget is collapsed so the user can act on the
+ * plan without expanding it. */
+.interactive-session .chat-plan-review-container .chat-plan-review-inline-actions {
+	display: none;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	margin-left: auto;
+	margin-right: 4px;
+}
+
+.interactive-session .chat-plan-review-container.chat-plan-review-collapsed .chat-plan-review-inline-actions {
+	display: flex;
+}
+
+.interactive-session .chat-plan-review-container .chat-plan-review-inline-actions .monaco-button {
+	width: auto;
+	min-width: auto;
+	padding: 0 10px;
+	height: 22px;
+}
+
+.interactive-session .chat-plan-review-container .chat-plan-review-inline-actions .monaco-button-dropdown {
+	width: auto;
+}
+
+/* ---------- Scrollable markdown body ----------
+ * Mirrors the flex + max-height chain used by
+ * chatToolConfirmationCarouselPart so the DomScrollableElement has something
+ * to clip and display its scrollbar against. DomScrollableElement sets the
+ * inner element's `overflow: hidden` inline, so we don't set overflow here. */
 .interactive-session .chat-plan-review-container .chat-confirmation-widget-message-scrollable.chat-plan-review-body-scrollable {
-	flex: 1 1 auto;
+	flex: 1;
 	min-height: 0;
 }
 
 .interactive-session .chat-plan-review-container .chat-confirmation-widget-message.chat-plan-review-body {
+	flex: 1;
+	min-height: 0;
+	max-height: min(300px, 40vh);
 	padding: 6px 12px;
 	background: transparent;
 	border-bottom: none;
@@ -143,7 +183,7 @@
 .interactive-session .chat-plan-review-container .chat-plan-review-feedback-textarea {
 	width: 100%;
 	min-height: 24px;
-	max-height: calc(1.4em * 5 + 8px);
+	max-height: 200px;
 	padding: 3px 8px;
 	border: 1px solid var(--vscode-input-border, var(--vscode-chat-requestBorder));
 	background-color: var(--vscode-input-background);
@@ -152,7 +192,6 @@
 	resize: none;
 	font-family: var(--vscode-chat-font-family, inherit);
 	font-size: var(--vscode-chat-font-size-body-s);
-	line-height: 1.4;
 	box-sizing: border-box;
 	overflow-y: hidden;
 	align-content: center;
@@ -169,9 +208,10 @@
 
 /* ---------- Footer buttons ---------- */
 .interactive-session .chat-plan-review-container > .chat-confirmation-widget2.chat-plan-review > .chat-confirmation-widget-buttons.chat-plan-review-footer {
-	justify-content: flex-end;
+	justify-content: flex-start;
 	border-top: 1px solid var(--vscode-chat-requestBorder);
 	padding: 6px 8px;
+	flex-shrink: 0;
 }
 
 .interactive-session .chat-plan-review-container > .chat-confirmation-widget2.chat-plan-review > .chat-confirmation-widget-buttons.chat-plan-review-footer .chat-buttons {

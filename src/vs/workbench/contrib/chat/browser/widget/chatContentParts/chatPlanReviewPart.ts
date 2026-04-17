@@ -45,6 +45,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private readonly _messageContentDisposables = this._register(new MutableDisposable<DisposableStore>());
 
 	private readonly _titleActionsEl: HTMLElement;
+	private readonly _inlineActionsEl: HTMLElement;
 	private readonly _footerButtonsEl: HTMLElement;
 	private readonly _messageEl: HTMLElement;
 	private readonly _messageScrollable: DomScrollableElement;
@@ -83,6 +84,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			dom.h('.chat-confirmation-widget2.chat-plan-review@root', [
 				dom.h('.chat-confirmation-widget-title.chat-plan-review-title@title', [
 					dom.h('.chat-plan-review-title-label@titleLabel'),
+					dom.h('.chat-plan-review-inline-actions@inlineActions'),
 					dom.h('.chat-plan-review-title-actions@titleActions'),
 				]),
 				dom.h('.chat-confirmation-widget-message.chat-plan-review-body@message'),
@@ -99,6 +101,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		this.domNode.setAttribute('aria-label', localize('chat.planReview.ariaLabel', 'Plan review: {0}', review.title));
 
 		this._titleActionsEl = elements.titleActions;
+		this._inlineActionsEl = elements.inlineActions;
 		this._footerButtonsEl = elements.footerButtons;
 		this._messageEl = elements.message;
 
@@ -117,12 +120,12 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		// Restore/expand toggle.
 		this._restoreButton = this._register(new Button(this._titleActionsEl, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		this._restoreButton.element.classList.add('chat-plan-review-title-button');
+		this._restoreButton.element.classList.add('chat-plan-review-title-button', 'chat-plan-review-title-icon-button');
 		this._register(this._restoreButton.onDidClick(() => this.toggleExpanded()));
 
 		// Chevron collapse toggle.
 		this._collapseButton = this._register(new Button(this._titleActionsEl, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		this._collapseButton.element.classList.add('chat-plan-review-title-button');
+		this._collapseButton.element.classList.add('chat-plan-review-title-button', 'chat-plan-review-title-icon-button');
 		this._register(this._collapseButton.onDidClick(() => this.toggleCollapsed()));
 
 		// Scrollable message area (markdown).
@@ -147,7 +150,10 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			dom.hide(elements.feedback);
 		}
 
-		this.renderActionButtons(this._footerButtonsEl);
+		this.renderActionButtons(
+			this._isCollapsed ? this._inlineActionsEl : this._footerButtonsEl,
+			{ includeReject: !this._isCollapsed },
+		);
 
 		this.updateCollapsedPresentation();
 		this.updateExpandedPresentation();
@@ -196,13 +202,11 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		textarea.placeholder = localize('chat.planReview.feedbackPlaceholder', 'Suggest changes or add instructions...');
 		this._feedbackTextarea = textarea;
 
-		// Grow up to 5 lines, then scroll internally (matches CSS max-height).
+		// Matches the behaviour of the question carousel freeform textarea:
+		// grow to fit content, capped via CSS `max-height`.
 		const autoResize = () => {
 			textarea.style.height = 'auto';
-			const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight);
-			const safeLine = Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 18;
-			const maxPx = safeLine * 5 + 8;
-			textarea.style.height = `${Math.min(textarea.scrollHeight, maxPx)}px`;
+			textarea.style.height = `${textarea.scrollHeight}px`;
 			this._onDidChangeHeight.fire();
 		};
 
@@ -224,18 +228,13 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		}));
 	}
 
-	private renderActionButtons(container: HTMLElement): void {
+	private renderActionButtons(container: HTMLElement, options?: { includeReject?: boolean }): void {
+		const includeReject = options?.includeReject ?? true;
 		this._buttonStore.clear();
 		dom.clearNode(container);
 
-		// Reject button (grey secondary).
-		const rejectButton = new Button(container, { ...defaultButtonStyles, secondary: true });
-		rejectButton.label = localize('chat.planReview.reject', 'Reject');
-		this._buttonStore.add(rejectButton);
-		this._buttonStore.add(rejectButton.onDidClick(() => this.submitRejection()));
-
-		// Approve button (blue). Uses ButtonWithDropdown when there are extra
-		// actions; otherwise a plain Button.
+		// Approve button first (blue). Uses ButtonWithDropdown when there are
+		// extra actions; otherwise a plain Button.
 		const primary = this._selectedAction;
 		const moreActions = this.review.actions.filter(a => a !== primary);
 
@@ -271,6 +270,16 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			approveButton.element.title = primary.description;
 		}
 		this._buttonStore.add(approveButton.onDidClick(() => this.submitApproval(primary)));
+
+		// Reject button (grey secondary) after the approve button — omitted in
+		// the collapsed title bar (parity with chatToolConfirmationCarouselPart
+		// which only surfaces the primary action when collapsed).
+		if (includeReject) {
+			const rejectButton = new Button(container, { ...defaultButtonStyles, secondary: true });
+			rejectButton.label = localize('chat.planReview.reject', 'Reject');
+			this._buttonStore.add(rejectButton);
+			this._buttonStore.add(rejectButton.onDidClick(() => this.submitRejection()));
+		}
 	}
 
 	private toggleCollapsed(): void {
@@ -307,6 +316,16 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		this._collapseButton.element.setAttribute('aria-label', collapseTooltip);
 		this._collapseButton.element.setAttribute('aria-expanded', String(!this._isCollapsed));
 		this._collapseButton.setTitle(collapseTooltip);
+
+		// Move the action buttons between the footer and the inline title
+		// slot so the user can approve while collapsed. Reject is omitted in
+		// the collapsed view (matches chatToolConfirmationCarouselPart).
+		if (!this._isSubmitted) {
+			const target = this._isCollapsed ? this._inlineActionsEl : this._footerButtonsEl;
+			const other = this._isCollapsed ? this._footerButtonsEl : this._inlineActionsEl;
+			dom.clearNode(other);
+			this.renderActionButtons(target, { includeReject: !this._isCollapsed });
+		}
 	}
 
 	private updateExpandedPresentation(): void {

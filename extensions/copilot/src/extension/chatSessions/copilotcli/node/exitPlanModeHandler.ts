@@ -18,8 +18,8 @@ type ExitPlanModeActionType = Parameters<NonNullable<SessionOptions['onExitPlanM
 
 const actionDescriptions: Record<ExitPlanModeActionType, { label: string; description: string }> = {
 	'autopilot': { label: 'Autopilot', description: l10n.t('Auto-approve all tool calls and continue until the task is done') },
-	'interactive': { label: 'Interactive', description: l10n.t('Let the agent continue in interactive mode, asking for input and approval for each action.') },
-	'exit_only': { label: 'Approve and exit', description: l10n.t('Exit planning, but do not execute the plan. I will execute the plan myself.') },
+	'interactive': { label: 'Approve and Implement', description: l10n.t('Let the agent continue in interactive mode, asking for input and approval for each action.') },
+	'exit_only': { label: 'Approve', description: l10n.t('Approve plan, but do not execute the plan. I will execute the plan myself.') },
 	'autopilot_fleet': { label: 'Autopilot Fleet', description: l10n.t('Auto-approve all tool calls, including fleet management actions, and continue until the task is done.') },
 };
 
@@ -163,7 +163,7 @@ async function resolveInteractive(
 			input: {
 				title: l10n.t('Review Plan'),
 				plan: planPath,
-				content: event.summary,
+				content: event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary + '\n' + event.summary,
 				actions,
 				canProvideFeedback: true
 			},

@@ -204,7 +204,7 @@ describe('handleExitPlanMode', () => {
 		});
 
 		it('maps "Approve and exit" label to exit_only', async () => {
-			toolService.setResult({ rejected: false, action: 'Approve and exit' });
+			toolService.setResult({ rejected: false, action: 'Approve' });
 			const event = makeEvent();
 			const result = await handleExitPlanMode(event, session as unknown as Session, 'interactive', FAKE_TOKEN, workspaceService, logService, toolService, CANCEL_TOKEN);
 			expect(result.selectedAction).toBe('exit_only');
@@ -233,7 +233,7 @@ describe('handleExitPlanMode', () => {
 			const input = call.input as any;
 			expect(input.actions).toHaveLength(2);
 			expect(input.actions[0]).toEqual(expect.objectContaining({ label: 'Autopilot', default: false }));
-			expect(input.actions[1]).toEqual(expect.objectContaining({ label: 'Approve and exit', default: true }));
+			expect(input.actions[1]).toEqual(expect.objectContaining({ label: 'Approve', default: true }));
 		});
 
 		it('includes plan path in tool input when plan path exists', async () => {
