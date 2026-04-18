@@ -3246,7 +3246,7 @@
 					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
 						"type": "boolean",
 						"default": false,
-						"markdownDescription": "Enable cloud sync of chat session data.",
+						"markdownDescription": "%github.copilot.config.sessionSearch.cloudSync.enabled%",
 						"tags": [
 							"experimental",
 							"onExp"
