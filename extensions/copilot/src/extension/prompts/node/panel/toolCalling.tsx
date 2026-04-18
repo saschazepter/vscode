@@ -314,7 +314,7 @@ function buildToolResultElement(accessor: ServicesAccessor, props: ToolResultOpt
 					sendInvokedToolTelemetry(promptEndpoint.acquireTokenizer(), telemetryService, props.toolCall.name, toolResult);
 
 					// Run hook context handling after tool execution
-					appendHookContext(toolResult, hookResult, chatHookService, props, inputObj, promptContext);
+					await appendHookContext(toolResult, hookResult, chatHookService, props, inputObj, promptContext);
 
 					if (transcriptSessionId) {
 						sessionTranscriptService.logToolExecutionComplete(transcriptSessionId, props.toolCall.id, true);

@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'vitest';
 import type * as vscode from 'vscode';
-import { IChatHookService, type IPreToolUseHookResult } from '../../../../../platform/chat/common/chatHookService';
+import { IChatHookService, type IPostToolUseHookResult, type IPreToolUseHookResult } from '../../../../../platform/chat/common/chatHookService';
 import { ConfigKey, IConfigurationService } from '../../../../../platform/configuration/common/configurationService';
 import { IEndpointProvider } from '../../../../../platform/endpoint/common/endpointProvider';
 import { DeferredPromise } from '../../../../../util/vs/base/common/async';
@@ -39,6 +39,7 @@ class CapturingChatHookService implements IChatHookService {
 
 	constructor(
 		private readonly hookResult: IPreToolUseHookResult | undefined,
+		private readonly postHookResult?: IPostToolUseHookResult | undefined,
 	) { }
 
 	logConfiguredHooks(): void { }
@@ -59,9 +60,9 @@ class CapturingChatHookService implements IChatHookService {
 		return this.hookResult;
 	}
 
-	async executePostToolUseHook(): Promise<undefined> {
+	async executePostToolUseHook(): Promise<IPostToolUseHookResult | undefined> {
 		this.postToolUseCalled = true;
-		return undefined;
+		return this.postHookResult;
 	}
 }
 
@@ -450,6 +451,75 @@ describe('ChatToolCalls (toolCalling.tsx)', () => {
 		expect(contentText).toContain('<PreToolUse-context>');
 		expect(contentText).toContain(denyContext);
 		expect(contentText).not.toContain('<PostToolUse-context>');
+	});
+
+	test('appends postToolUse hook additionalContext to the tool result on the same turn', async () => {
+		const toolName = 'myTool';
+		const toolArgs = JSON.stringify({ x: 1 });
+		const toolCallId = 'call-post-1';
+		const postHookContext = 'Important post-tool context for the model';
+
+		const hooks: vscode.ChatRequestHooks = { PostToolUse: [] };
+
+		const toolInfo: vscode.LanguageModelToolInformation = {
+			name: toolName,
+			description: 'test tool',
+			source: undefined,
+			inputSchema: undefined,
+			tags: [],
+		};
+
+		const postHookResult: IPostToolUseHookResult = {
+			additionalContext: [postHookContext],
+		};
+
+		const testingServiceCollection = createExtensionUnitTestingServices();
+		const toolsService = new CapturingToolsService(toolInfo);
+		const hookService = new CapturingChatHookService(undefined, postHookResult);
+		testingServiceCollection.define(IToolsService, toolsService);
+		testingServiceCollection.define(IChatHookService, hookService);
+
+		const accessor = testingServiceCollection.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const endpointProvider = accessor.get(IEndpointProvider);
+		const endpoint = await endpointProvider.getChatEndpoint('copilot-base');
+
+		const round: IToolCallRound = {
+			id: 'round-1',
+			response: 'calling tool',
+			toolInputRetry: 0,
+			toolCalls: [{ name: toolName, arguments: toolArgs, id: toolCallId }],
+		};
+
+		const conversation = { sessionId: 'session-post-1' } as unknown as Conversation;
+		const promptContext: IBuildPromptContext = {
+			query: 'test',
+			history: [],
+			chatVariables: new ChatVariablesCollection(),
+			conversation,
+			request: { hooks } as unknown as vscode.ChatRequest,
+			tools: {
+				toolReferences: [],
+				toolInvocationToken: {} as vscode.ChatParticipantToolToken,
+				availableTools: [toolInfo],
+			},
+		};
+
+		const { messages } = await renderPromptElement(instantiationService, endpoint, ChatToolCalls, {
+			promptContext,
+			toolCallRounds: [round],
+			toolCallResults: undefined,
+		});
+
+		// PostToolUse hook was called
+		expect(hookService.postToolUseCalled).toBe(true);
+
+		// PostToolUse additionalContext is present in the rendered messages
+		// (asserting on serialized messages rather than the mutable tool result
+		// array ensures this test fails if the await is accidentally removed)
+		const serialized = JSON.stringify(messages);
+		expect(serialized).toContain('PostToolUse-context');
+		expect(serialized).toContain(postHookContext);
 	});
 
 	test('replaces images with placeholders for historical turns', async () => {
