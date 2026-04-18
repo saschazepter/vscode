@@ -3243,6 +3243,15 @@
 			{
 				"id": "experimental",
 				"properties": {
+					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "Enable cloud sync of chat session data.",
+						"tags": [
+							"experimental",
+							"onExp"
+						]
+					},
 					"github.copilot.chat.getSearchViewResultsSkill.enabled": {
 						"type": "boolean",
 						"default": false,
