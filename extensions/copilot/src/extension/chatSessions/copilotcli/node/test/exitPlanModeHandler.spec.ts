@@ -242,7 +242,7 @@ describe('handleExitPlanMode', () => {
 			const event = makeEvent();
 			await handleExitPlanMode(event, session as unknown as Session, 'interactive', FAKE_TOKEN, workspaceService, logService, toolService, CANCEL_TOKEN);
 			const input = toolService.invokeToolCalls[0].input as any;
-			expect(input.plan).toBe('/session/plan.md');
+			expect(input.plan).toBe('file:///session/plan.md');
 		});
 
 		it('passes undefined plan when no plan path', async () => {
