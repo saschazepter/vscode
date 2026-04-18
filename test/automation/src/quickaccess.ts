@@ -98,6 +98,11 @@ export class QuickAccess {
 			}
 
 			await this.quickInput.closeQuickInput();
+
+			// Back off between retries so that slow file search
+			// indexing (e.g. browser/remote on CI) has a chance to
+			// catch up before we hammer it again.
+			await this.code.wait(250 * retries);
 		}
 
 		if (!success) {
