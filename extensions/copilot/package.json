@@ -3243,15 +3243,6 @@
 			{
 				"id": "experimental",
 				"properties": {
-					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
-						"type": "boolean",
-						"default": false,
-						"markdownDescription": "%github.copilot.config.sessionSearch.cloudSync.enabled%",
-						"tags": [
-							"experimental",
-							"onExp"
-						]
-					},
 					"github.copilot.chat.getSearchViewResultsSkill.enabled": {
 						"type": "boolean",
 						"default": false,
@@ -3977,6 +3968,15 @@
 			{
 				"id": "advanced",
 				"properties": {
+					"github.copilot.chat.sessionSearch.cloudSync.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.sessionSearch.cloudSync.enabled%",
+						"tags": [
+							"advanced",
+							"onExp"
+						]
+					},
 					"github.copilot.chat.reasoningEffortOverride": {
 						"type": [
 							"string",
