@@ -52,6 +52,9 @@
 	max-height: min(720px, 75vh);
 }
 
+.interactive-session .chat-plan-review-container.chat-plan-review-expanded .chat-confirmation-widget-message.chat-plan-review-body {
+	max-height: min(600px, 65vh);
+}
 /* ---------- Title bar ---------- */
 .interactive-session .chat-plan-review-container .chat-plan-review-title {
 	display: flex;

@@ -153,10 +153,11 @@ async function resolveInteractive(
 	const planFileMonitor = planPath ? new PlanFileMonitor(Uri.file(planPath), session, workspaceService, logService) : undefined;
 
 	try {
-		const actions: { label: string; description: string; icon?: string; default: boolean }[] = event.actions.map(a => ({
+		const actions: { label: string; description: string; default: boolean; permissionLevel?: 'autopilot' }[] = event.actions.map(a => ({
 			label: actionDescriptions[a as ExitPlanModeActionType]?.label ?? a,
 			default: a === event.recommendedAction,
 			description: actionDescriptions[a as ExitPlanModeActionType]?.description ?? '',
+			...(a === 'autopilot' || a === 'autopilot_fleet' ? { permissionLevel: 'autopilot' as const } : {}),
 		}));
 
 		const result = await toolService.invokeTool('vscode_reviewPlan', {

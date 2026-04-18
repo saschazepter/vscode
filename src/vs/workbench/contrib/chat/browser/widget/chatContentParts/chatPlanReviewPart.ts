@@ -14,12 +14,13 @@ import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
+import Severity from '../../../../../../base/common/severity.js';
 import { basename } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
+import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { IMarkdownRendererService } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { defaultButtonStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
@@ -57,6 +58,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private _isSubmitted = false;
 	private _selectedAction: IChatPlanApprovalAction;
 	private _feedbackTextarea: HTMLTextAreaElement | undefined;
+	private _feedbackSection: HTMLElement | undefined;
+	private _isFeedbackMode = false;
 
 	constructor(
 		public readonly review: IChatPlanReview,
@@ -64,6 +67,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		private readonly _options: IChatPlanReviewPartOptions,
 		@IMarkdownRendererService private readonly _markdownRendererService: IMarkdownRendererService,
 		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
+		@IDialogService private readonly _dialogService: IDialogService,
 		@IEditorService private readonly _editorService: IEditorService,
 		@IHoverService private readonly _hoverService: IHoverService,
 	) {
@@ -146,6 +150,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		if (review.canProvideFeedback) {
 			this.renderFeedback(elements.feedback);
+			this._feedbackSection = elements.feedback;
+			dom.hide(elements.feedback); // Hidden until user clicks "Provide Feedback"
 		} else {
 			dom.hide(elements.feedback);
 		}
@@ -195,7 +201,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private renderFeedback(section: HTMLElement): void {
 		dom.clearNode(section);
 		const label = dom.append(section, dom.$('.chat-plan-review-feedback-label'));
-		label.textContent = localize('chat.planReview.feedbackLabel', 'Approve with additional feedback');
+		label.textContent = localize('chat.planReview.feedbackLabel', 'Additional feedback');
 
 		const textarea = dom.append(section, dom.$<HTMLTextAreaElement>('textarea.chat-plan-review-feedback-textarea'));
 		textarea.rows = 1;
@@ -217,13 +223,13 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			}
 		}));
 
-		// Enter submits (using currently selected action); Shift+Enter inserts a newline.
+		// Enter submits feedback; Shift+Enter inserts a newline.
 		this._register(dom.addDisposableListener(textarea, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const ev = new StandardKeyboardEvent(e);
 			if (ev.keyCode === KeyCode.Enter && !ev.shiftKey) {
 				e.preventDefault();
 				e.stopPropagation();
-				this.submitApproval(this._selectedAction);
+				this.submitFeedback();
 			}
 		}));
 	}
@@ -232,6 +238,22 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		const includeReject = options?.includeReject ?? true;
 		this._buttonStore.clear();
 		dom.clearNode(container);
+
+		// In feedback mode, show Submit + Reject.
+		if (this._isFeedbackMode) {
+			const submitButton = new Button(container, { ...defaultButtonStyles, supportIcons: true });
+			submitButton.label = localize('chat.planReview.submitFeedback', 'Submit');
+			this._buttonStore.add(submitButton);
+			this._buttonStore.add(submitButton.onDidClick(() => this.submitFeedback()));
+
+			if (includeReject) {
+				const rejectButton = new Button(container, { ...defaultButtonStyles, secondary: true });
+				rejectButton.label = localize('chat.planReview.reject', 'Reject');
+				this._buttonStore.add(rejectButton);
+				this._buttonStore.add(rejectButton.onDidClick(() => this.submitRejection()));
+			}
+			return;
+		}
 
 		// Approve button first (blue). Uses ButtonWithDropdown when there are
 		// extra actions; otherwise a plain Button.
@@ -246,11 +268,10 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 				contextMenuProvider: this._contextMenuService,
 				addPrimaryActionToDropdown: false,
 				actions: moreActions.map(action => {
-					const iconClass = action.icon ? ThemeIcon.asClassName(ThemeIcon.fromId(action.icon)) : undefined;
 					const button = new Action(
 						action.label,
 						action.label,
-						iconClass,
+						undefined,
 						true,
 						() => {
 							this.submitApproval(action);
@@ -265,11 +286,20 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			approveButton = new Button(container, { ...defaultButtonStyles, supportIcons: true });
 		}
 		this._buttonStore.add(approveButton);
-		approveButton.label = primary.icon ? `$(${primary.icon}) ${primary.label}` : primary.label;
+		approveButton.label = primary.label;
 		if (primary.description) {
 			approveButton.element.title = primary.description;
 		}
 		this._buttonStore.add(approveButton.onDidClick(() => this.submitApproval(primary)));
+
+		// Provide Feedback button (grey secondary) — shown only when feedback
+		// is enabled and we are not in collapsed mode.
+		if (this.review.canProvideFeedback && includeReject) {
+			const feedbackButton = new Button(container, { ...defaultButtonStyles, secondary: true });
+			feedbackButton.label = localize('chat.planReview.provideFeedback', 'Provide Feedback');
+			this._buttonStore.add(feedbackButton);
+			this._buttonStore.add(feedbackButton.onDidClick(() => this.enterFeedbackMode()));
+		}
 
 		// Reject button (grey secondary) after the approve button — omitted in
 		// the collapsed title bar (parity with chatToolConfirmationCarouselPart
@@ -321,6 +351,12 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		// slot so the user can approve while collapsed. Reject is omitted in
 		// the collapsed view (matches chatToolConfirmationCarouselPart).
 		if (!this._isSubmitted) {
+			if (this._isCollapsed && this._isFeedbackMode) {
+				this._isFeedbackMode = false;
+				if (this._feedbackSection) {
+					dom.hide(this._feedbackSection);
+				}
+			}
 			const target = this._isCollapsed ? this._inlineActionsEl : this._footerButtonsEl;
 			const other = this._isCollapsed ? this._footerButtonsEl : this._inlineActionsEl;
 			dom.clearNode(other);
@@ -349,13 +385,18 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		await this._editorService.openEditor({ resource: uri });
 	}
 
-	private submitApproval(action: IChatPlanApprovalAction): void {
+	private async submitApproval(action: IChatPlanApprovalAction): Promise<void> {
 		if (this._isSubmitted) {
 			return;
 		}
+		if (action.permissionLevel === 'autopilot') {
+			const confirmed = await this.confirmAutopilot();
+			if (!confirmed) {
+				return;
+			}
+		}
 		this._isSubmitted = true;
-		const feedback = this._feedbackTextarea?.value.trim() || undefined;
-		this._options.onSubmit({ action: action.label, rejected: false, feedback });
+		this._options.onSubmit({ action: action.label, rejected: false });
 		this.markUsed();
 	}
 
@@ -364,9 +405,55 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return;
 		}
 		this._isSubmitted = true;
-		const feedback = this._feedbackTextarea?.value.trim() || undefined;
-		this._options.onSubmit({ rejected: true, feedback });
+		this._options.onSubmit({ rejected: true });
 		this.markUsed();
+	}
+
+	private enterFeedbackMode(): void {
+		this._isFeedbackMode = true;
+		if (this._feedbackSection) {
+			dom.show(this._feedbackSection);
+		}
+		this.renderActionButtons(this._footerButtonsEl, { includeReject: true });
+		this._feedbackTextarea?.focus();
+		this._onDidChangeHeight.fire();
+	}
+
+	private submitFeedback(): void {
+		if (this._isSubmitted) {
+			return;
+		}
+		const feedback = this._feedbackTextarea?.value.trim();
+		if (!feedback) {
+			return;
+		}
+		this._isSubmitted = true;
+		this._options.onSubmit({ rejected: false, feedback });
+		this.markUsed();
+	}
+
+	private async confirmAutopilot(): Promise<boolean> {
+		const result = await this._dialogService.prompt({
+			type: Severity.Warning,
+			message: localize('chat.planReview.autopilot.title', 'Enable Autopilot?'),
+			buttons: [
+				{
+					label: localize('chat.planReview.autopilot.confirm', 'Enable'),
+					run: () => true
+				},
+				{
+					label: localize('chat.planReview.autopilot.cancel', 'Cancel'),
+					run: () => false
+				},
+			],
+			custom: {
+				icon: Codicon.rocket,
+				markdownDetails: [{
+					markdown: new MarkdownString(localize('chat.planReview.autopilot.detail', 'Autopilot will auto-approve all tool calls and continue working autonomously until the task is complete. This includes terminal commands, file edits, and external tool calls. The agent will make decisions on your behalf without asking for confirmation.\n\nYou can stop the agent at any time by clicking the stop button. This applies to the current session only.')),
+				}],
+			},
+		});
+		return result.result === true;
 	}
 
 	private markUsed(): void {

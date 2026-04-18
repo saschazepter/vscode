@@ -1011,8 +1011,8 @@ export interface IChatPlanApprovalAction {
 	label: string;
 	description?: string;
 	default?: boolean;
-	/** Optional codicon id (e.g. 'check', 'rocket') shown next to the action. */
-	icon?: string;
+	/** When set to 'autopilot', a confirmation dialog is shown before proceeding. */
+	permissionLevel?: 'autopilot';
 }
 
 /** The result of reviewing a plan. */

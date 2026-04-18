@@ -46,9 +46,10 @@ export function createReviewPlanToolData(): IToolData {
 				type: 'boolean',
 				description: 'Whether this action should be selected by default.'
 			},
-			icon: {
+			permissionLevel: {
 				type: 'string',
-				description: 'Optional codicon id (e.g. "check", "rocket") shown alongside the action.'
+				enum: ['autopilot'],
+				description: 'When set to "autopilot", a confirmation dialog is shown before proceeding.'
 			}
 		},
 		required: ['label']
