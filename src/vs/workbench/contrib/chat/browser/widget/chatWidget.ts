@@ -465,6 +465,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					this.updateChatViewVisibility();
 				}
 			}
+			if (e.affectsConfiguration(ChatConfiguration.DeveloperJoy)) {
+				this.updateWorkingProgressBorder();
+			}
 		}));
 
 		this._register(bindContextKey(decidedChatEditingResourceContextKey, contextKeyService, (reader) => {
@@ -654,6 +657,20 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private get inlineInputPart(): ChatInputPart {
 		return this.inlineInputPartDisposable.value!;
+	}
+
+	private updateWorkingProgressBorder(): void {
+		const inputPart = this.inputPartDisposable.value;
+		if (!inputPart) {
+			return;
+		}
+		const inputContainer = inputPart.inputContainerElement;
+		if (!inputContainer) {
+			return;
+		}
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.DeveloperJoy) === true;
+		const inProgress = !!this.viewModel?.model.requestInProgress.get();
+		inputContainer.classList.toggle('working', enabled && inProgress);
 	}
 
 	get inputEditor(): ICodeEditor {
@@ -2032,6 +2049,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 			this.requestInProgress.set(this.viewModel.model.requestInProgress.get());
 			this.hasActiveRequest.set(this.viewModel.model.hasActiveRequest.get());
+			this.updateWorkingProgressBorder();
 
 			// Update the editor's placeholder text when it changes in the view model
 			if (events?.some(e => e?.kind === 'changePlaceholder')) {

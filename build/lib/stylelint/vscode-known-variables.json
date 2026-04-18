@@ -1036,6 +1036,7 @@
 		"--monaco-editor-warning-decoration",
 		"--animation-angle",
 		"--animation-opacity",
+		"--chat-input-anim-angle",
 		"--chat-setup-dialog-glow-angle",
 		"--vscode-chat-font-family",
 		"--vscode-chat-font-size-body-l",
