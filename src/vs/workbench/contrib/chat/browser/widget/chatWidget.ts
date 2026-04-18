@@ -1994,6 +1994,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.finishedEditing();
 			}
 			this.viewModel = undefined;
+			this.updateWorkingProgressBorder();
 			this.onDidChangeItems();
 			this._hasPendingRequestsContextKey.set(false);
 			return;
@@ -2068,6 +2069,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 			// Disposes the viewmodel and listeners
 			this.viewModel = undefined;
+			this.updateWorkingProgressBorder();
 			this.onDidChangeItems();
 		}));
 		this._sessionIsEmptyContextKey.set(model.getRequests().length === 0);
