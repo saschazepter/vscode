@@ -8,7 +8,7 @@ import { CancellationToken, CancellationTokenSource } from '../../../../../../ba
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { DisposableStore, IReference, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { observableValue } from '../../../../../../base/common/observable.js';
+import { ISettableObservable, observableValue, type IObservable } from '../../../../../../base/common/observable.js';
 import { mock, upcastPartial } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
@@ -61,6 +61,12 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	override readonly onDidNotification = this._onDidNotification.event;
 	override readonly onAgentHostExit = Event.None;
 	override readonly onAgentHostStart = Event.None;
+
+	private readonly _authenticationPending: ISettableObservable<boolean> = observableValue('authenticationPending', false);
+	override readonly authenticationPending: IObservable<boolean> = this._authenticationPending;
+	override setAuthenticationPending(pending: boolean): void {
+		this._authenticationPending.set(pending, undefined);
+	}
 
 	// Track live subscriptions so fireAction can route to them
 	private readonly _liveSubscriptions = new Map<string, { state: ISessionState; emitter: Emitter<ISessionState> }>();
@@ -324,6 +330,10 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	});
 	instantiationService.stub(IAgentHostTerminalService, {
 		reviveTerminal: async () => undefined!,
+		createTerminalForEntry: async () => undefined,
+		profiles: observableValue('test', []),
+		getProfileForConnection: () => undefined,
+		registerEntry: () => ({ dispose() { } }),
 	});
 	instantiationService.stub(IAgentHostSessionWorkingDirectoryResolver, {
 		registerResolver: () => toDisposable(() => { }),
@@ -351,7 +361,7 @@ function createContribution(disposables: DisposableStore) {
 	return { contribution, listController, sessionHandler, agentHostService, chatAgentService };
 }
 
-function makeRequest(overrides: Partial<{ message: string; sessionResource: URI; variables: IChatAgentRequest['variables']; userSelectedModelId: string; agentHostSessionConfig: Record<string, string>; agentId: string }> = {}): IChatAgentRequest {
+function makeRequest(overrides: Partial<{ message: string; sessionResource: URI; variables: IChatAgentRequest['variables']; userSelectedModelId: string; modelConfiguration: Record<string, unknown>; agentHostSessionConfig: Record<string, string>; agentId: string }> = {}): IChatAgentRequest {
 	return upcastPartial<IChatAgentRequest>({
 		sessionResource: overrides.sessionResource ?? URI.from({ scheme: 'untitled', path: '/chat-1' }),
 		requestId: 'req-1',
@@ -360,6 +370,7 @@ function makeRequest(overrides: Partial<{ message: string; sessionResource: URI;
 		variables: overrides.variables ?? { variables: [] },
 		location: ChatAgentLocation.Chat,
 		userSelectedModelId: overrides.userSelectedModelId,
+		modelConfiguration: overrides.modelConfiguration,
 		agentHostSessionConfig: overrides.agentHostSessionConfig,
 	});
 }
@@ -387,6 +398,7 @@ async function startTurn(
 		sessionResource: URI;
 		variables: IChatAgentRequest['variables'];
 		userSelectedModelId: string;
+		modelConfiguration: Record<string, unknown>;
 		agentHostSessionConfig: Record<string, string>;
 		cancellationToken: CancellationToken;
 		agentId: string;
@@ -413,6 +425,7 @@ async function startTurn(
 			sessionResource,
 			variables: overrides?.variables,
 			userSelectedModelId: overrides?.userSelectedModelId,
+			modelConfiguration: overrides?.modelConfiguration,
 			agentHostSessionConfig: overrides?.agentHostSessionConfig,
 			agentId,
 		}),
@@ -660,7 +673,22 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
-			assert.strictEqual(agentHostService.createSessionCalls[0].model, 'claude-sonnet-4-20250514');
+			assert.deepStrictEqual(agentHostService.createSessionCalls[0].model, { id: 'claude-sonnet-4-20250514' });
+		}));
+
+		test('passes selected model configuration through create session', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+
+			const { turnPromise, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables, {
+				message: 'Hi',
+				userSelectedModelId: 'agent-host-copilot:claude-sonnet-4-20250514',
+				modelConfiguration: { thinkingLevel: 'high', ignored: 1 },
+			});
+			fire({ type: 'session/turnComplete', session, turnId } as ISessionAction);
+			await turnPromise;
+
+			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
+			assert.deepStrictEqual(agentHostService.createSessionCalls[0].model, { id: 'claude-sonnet-4-20250514', config: { thinkingLevel: 'high' } });
 		}));
 
 		test('passes model id as-is when no vendor prefix', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -674,7 +702,7 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
-			assert.strictEqual(agentHostService.createSessionCalls[0].model, 'gpt-4o');
+			assert.deepStrictEqual(agentHostService.createSessionCalls[0].model, { id: 'gpt-4o' });
 		}));
 
 		test('does not create backend session eagerly for untitled sessions', async () => {
@@ -1443,6 +1471,45 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(models.length, 1);
 			assert.strictEqual(models[0].metadata.name, 'GPT-4o');
+		});
+
+		test('maps model config schema to picker configuration schema', async () => {
+			const provider = disposables.add(new AgentHostLanguageModelProvider('agent-host-copilot', 'agent-host-copilot'));
+			provider.updateModels([
+				{
+					provider: 'copilot',
+					id: 'claude-sonnet-4.5',
+					name: 'Claude Sonnet 4.5',
+					maxContextWindow: 128000,
+					supportsVision: false,
+					configSchema: {
+						type: 'object',
+						properties: {
+							thinkingLevel: {
+								type: 'string',
+								title: 'Thinking Level',
+								default: 'medium',
+								enum: ['low', 'medium', 'high'],
+								enumLabels: ['Low', 'Medium', 'High'],
+							},
+						},
+					},
+				},
+			]);
+
+			const models = await provider.provideLanguageModelChatInfo({}, CancellationToken.None);
+
+			assert.deepStrictEqual(models[0].metadata.configurationSchema?.properties?.thinkingLevel, {
+				type: 'string',
+				title: 'Thinking Level',
+				description: undefined,
+				default: 'medium',
+				enum: ['low', 'medium', 'high'],
+				enumItemLabels: ['Low', 'Medium', 'High'],
+				enumDescriptions: undefined,
+				readOnly: undefined,
+				group: 'navigation',
+			});
 		});
 
 		test('returns empty when no models set', async () => {
