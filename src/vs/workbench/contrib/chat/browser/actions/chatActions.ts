@@ -1090,7 +1090,7 @@ export function registerChatActions() {
 		constructor() {
 			super({
 				id: 'workbench.action.chat.toggleSessionCloudSync',
-				title: localize2('chat.toggleSessionCloudSync', "Sync Chat Session to Cloud"),
+				title: localize2('chat.toggleSessionCloudSync', "Sync Chat Sessions to Cloud"),
 				category: CHAT_CATEGORY,
 				f1: false,
 				toggled: ContextKeyExpr.equals(`config.${ToggleSessionCloudSyncAction._settingKey}`, true),
