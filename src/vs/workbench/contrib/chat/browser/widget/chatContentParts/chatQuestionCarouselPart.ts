@@ -600,6 +600,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		return !this._accessibilityService.isScreenReaderOptimized();
 	}
 
+	private shouldAutoAdvanceSingleSelect(): boolean {
+		return !isPlanningMiddlewareQuestionCarousel(this.carousel.resolveId);
+	}
+
 	/**
 	 * Updates the aria-label of the carousel container based on the current question.
 	 */
@@ -1117,7 +1121,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				listItem.classList.add('selected');
 			}
 
-			// if we select an option, clear text and go to next question
+			// For planning middleware, let users review/select before advancing.
 			this._inputBoxes.add(dom.addDisposableListener(listItem, dom.EventType.CLICK, (e: MouseEvent) => {
 				e.preventDefault();
 				e.stopPropagation();
@@ -1126,7 +1130,9 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				if (freeform) {
 					freeform.value = '';
 				}
-				this.handleNextOrSubmit();
+				if (this.shouldAutoAdvanceSingleSelect()) {
+					this.handleNextOrSubmit();
+				}
 			}));
 
 			this._inputBoxes.add(this._hoverService.setupDelayedHover(listItem, {
