@@ -571,6 +571,13 @@ export class AgentSideEffects extends Disposable {
 	 */
 	completeSubagentSession(parentSession: ProtocolURI, toolCallId: string): void {
 		const key = `${parentSession}:${toolCallId}`;
+
+		// Drop any events that were buffered waiting for a `subagent_started`
+		// that never arrived (e.g. the parent tool failed before the subagent
+		// was created). Without this, the buffer entry would leak until the
+		// parent session is disposed.
+		this._pendingSubagentEvents.delete(key);
+
 		const subagentUri = this._subagentSessions.get(key);
 		if (!subagentUri) {
 			return;

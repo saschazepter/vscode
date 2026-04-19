@@ -1370,6 +1370,51 @@ suite('AgentSideEffects', () => {
 			assert.strictEqual(parentInnerTool, undefined, 'inner tool call should NOT be in parent session');
 		});
 
+		test('completeSubagentSession clears pending buffered events when subagent never started', () => {
+			// Regression: if the parent tool completes (or fails) before any
+			// `subagent_started` arrives, buffered inner events would
+			// otherwise leak in `_pendingSubagentEvents` until session
+			// disposal. After completion, a late `subagent_started` for the
+			// same toolCallId must not replay stale events.
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Run Subagent', invocationMessage: 'Delegating...' });
+
+			// Inner event arrives but `subagent_started` never does.
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'inner-1',
+				toolName: 'read',
+				displayName: 'Read',
+				invocationMessage: 'Reading...',
+				parentToolCallId: 'tc-1',
+			});
+
+			// Parent tool completes (e.g. it errored before delegating).
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_complete',
+				toolCallId: 'tc-1',
+				result: { success: false, pastTenseMessage: 'Failed' },
+			});
+
+			// Now a late `subagent_started` for the same toolCallId arrives.
+			// This is unusual but possible after a reconnect/replay. The
+			// drain must NOT replay the (cleared) buffered inner tool call.
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState, 'subagent session should still be created');
+			const innerTool = subState!.activeTurn?.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'inner-1'
+			);
+			assert.strictEqual(innerTool, undefined, 'stale buffered inner tool call must not be replayed');
+		});
+
 		test('completeSubagentSession completes the subagent turn when parent tool completes', () => {
 			setupSession();
 			startTurn('turn-1');
