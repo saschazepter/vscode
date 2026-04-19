@@ -20,6 +20,7 @@ import { IStorageService } from '../../../../../../platform/storage/common/stora
 import { IWorkbenchContribution } from '../../../../../common/contributions.js';
 import { IAgentHostFileSystemService } from '../../../../../services/agentHost/common/agentHostFileSystemService.js';
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { ICustomizationHarnessService } from '../../../common/customizationHarnessService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
@@ -54,6 +55,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	/** Model providers keyed by agent provider, for pushing model updates. */
 	private readonly _modelProviders = new Map<AgentProvider, AgentHostLanguageModelProvider>();
 
+	private readonly _isSessionsWindow: boolean;
+
 	constructor(
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
 		@IChatSessionsService private readonly _chatSessionsService: IChatSessionsService,
@@ -67,8 +70,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
+		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
 		super();
+
+		this._isSessionsWindow = environmentService.isSessionsWindow;
 
 		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
 			return;
@@ -140,6 +146,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			description: agent.description,
 			canDelegate: true,
 			requiresCustomModels: true,
+			supportsDelegation: !this._isSessionsWindow,
 			capabilities: {
 				supportsCheckpoints: true,
 			},
