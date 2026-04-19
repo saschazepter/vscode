@@ -33,7 +33,8 @@
 		outline: none !important;
 	}
 
-	&:focus-visible {
+	&:focus-visible,
+	&:focus-within {
 		border-color: var(--vscode-focusBorder);
 	}
 
