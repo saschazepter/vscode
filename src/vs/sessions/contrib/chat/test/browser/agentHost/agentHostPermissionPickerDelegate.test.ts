@@ -11,7 +11,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IResolveSessionConfigResult, ISessionConfigPropertySchema } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { ChatPermissionLevel } from '../../../../../../workbench/contrib/chat/common/constants.js';
-import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema } from '../../../browser/agentHost/agentHostPermissionPickerActionItem.js';
+import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema } from '../../../browser/agentHost/agentHostPermissionPickerDelegate.js';
 import { IAgentHostSessionsProvider } from '../../../../../common/agentHostSessionsProvider.js';
 import { ISessionsProvidersChangeEvent, ISessionsProvidersService } from '../../../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsProvider } from '../../../../../services/sessions/common/sessionsProvider.js';
@@ -103,44 +103,44 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		const { delegate, provider } = setup(undefined);
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('returns Default when the active session has no config seeded yet', () => {
 		const { delegate, provider } = setup(makeActiveSession());
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('reflects the active session\'s autoApprove value and updates on provider change', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'autoApprove');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.AutoApprove);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.AutoApprove);
 
 		provider.config = makeWellKnownConfig('autopilot');
 		provider.fireChange();
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Autopilot);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Autopilot);
 
 		provider.config = makeWellKnownConfig('default');
 		provider.fireChange();
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('falls back to Default when the stored value is unrecognized', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'something-else');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
 	});
 
-	test('setPermissionLevel writes through to the active session\'s provider', () => {
+	test('setLevel writes through to the active session\'s provider', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'default');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
-		delegate.setPermissionLevel(ChatPermissionLevel.Autopilot);
+		delegate.setLevel(ChatPermissionLevel.AutoApprove);
+		delegate.setLevel(ChatPermissionLevel.Autopilot);
 
 		assert.deepStrictEqual(provider.setCalls, [
 			[SESSION_ID, 'autoApprove', 'autoApprove'],
@@ -148,34 +148,34 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		]);
 	});
 
-	test('setPermissionLevel is a no-op when there is no active session', () => {
+	test('setLevel is a no-op when there is no active session', () => {
 		const { delegate, provider } = setup(undefined);
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
+		delegate.setLevel(ChatPermissionLevel.AutoApprove);
 
 		assert.deepStrictEqual(provider.setCalls, []);
 	});
 
-	test('isWellKnownActiveSession reacts to active session and config changes', () => {
+	test('isApplicable reacts to active session and config changes', () => {
 		const { delegate, provider, activeSessionObs } = setup(undefined);
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
 		// No active session → false
-		assert.strictEqual(delegate.isWellKnownActiveSession.get(), false);
+		assert.strictEqual(delegate.isApplicable.get(), false);
 
 		// Active session, no config seeded → false
 		activeSessionObs.set(makeActiveSession(), undefined);
-		assert.strictEqual(delegate.isWellKnownActiveSession.get(), false);
+		assert.strictEqual(delegate.isApplicable.get(), false);
 
 		// Active session with well-known schema → true
 		provider.config = makeWellKnownConfig('default');
 		provider.fireChange();
-		assert.strictEqual(delegate.isWellKnownActiveSession.get(), true);
+		assert.strictEqual(delegate.isApplicable.get(), true);
 
 		// Active session cleared → false (covers the 'back to new chat view' regression)
 		activeSessionObs.set(undefined, undefined);
-		assert.strictEqual(delegate.isWellKnownActiveSession.get(), false);
+		assert.strictEqual(delegate.isApplicable.get(), false);
 	});
 });
 

@@ -12,16 +12,3 @@
 .sessions-chat-agent-host-config:empty {
 	display: none;
 }
-
-/* The agent-host auto-approve picker reuses the workbench PermissionPickerActionItem widget. Override the surrounding .new-chat-in-session toolbar rules (which are intentionally smaller for the sessions-custom pickers) so this widget matches the regular workbench chat-input-toolbar styling. */
-.sessions-agent-host-permission-picker .chat-input-picker-item .action-label {
-	height: 16px;
-	padding: 3px 1px 3px 7px;
-	font-size: 13px;
-	display: flex;
-	align-items: center;
-}
-
-.sessions-agent-host-permission-picker .chat-input-picker-item .action-label span + .chat-input-picker-label {
-	margin-left: 2px;
-}
