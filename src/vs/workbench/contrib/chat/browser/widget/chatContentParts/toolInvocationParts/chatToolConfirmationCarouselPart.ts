@@ -98,7 +98,11 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		this.dismissButton = this._register(new Button(elements.overlayActions, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
 		this.dismissButton.element.classList.add('chat-tool-carousel-dismiss-button');
 		this.dismissButton.label = `$(${Codicon.close.id})`;
-		this.dismissButton.element.setAttribute('aria-label', localize('skipAll', "Skip All"));
+		const dismissButtonLabel = this.items.length === 1
+			? localize('skip', "Skip")
+			: localize('skipAll', "Skip All");
+		this.dismissButton.element.setAttribute('aria-label', dismissButtonLabel);
+		this.dismissButton.element.title = dismissButtonLabel;
 		this._register(this.dismissButton.onDidClick(() => this.skipAll()));
 
 		this.prevButton = this._register(new Button(elements.navArrows, {
