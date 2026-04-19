@@ -2551,7 +2551,7 @@ suite('AgentHostChatContribution', () => {
 	suite('subagent grouping', () => {
 
 		/**
-		 * Build a child session state containing a single completed inner tool call.
+		 * Build a child session state containing a single inner tool call in the running state.
 		 */
 		function makeChildState(childUri: string, innerToolCallId: string): ISessionState {
 			const summary: ISessionSummary = {

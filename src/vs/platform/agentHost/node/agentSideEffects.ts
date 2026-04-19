@@ -295,12 +295,17 @@ export class AgentSideEffects extends Disposable {
 	 * `subagent_started` arrives.
 	 */
 	private _handleAgentProgress(agent: IAgent, agentMapper: AgentEventMapper, e: IAgentProgressEvent): void {
-		// Track tool calls so handleAction can route confirmations
-		if (e.type === 'tool_start') {
-			this._toolCallAgents.set(`${e.session.toString()}:${e.toolCallId}`, agent.id);
-		}
-
 		const sessionKey = e.session.toString();
+
+		// Track tool calls so handleAction can route confirmations. Defer
+		// registration for inner subagent tool calls (those carrying a
+		// `parentToolCallId`) until we know which subagent session they
+		// belong to — otherwise we'd register them under the parent
+		// session key and a later `tool_ready` (which lacks
+		// `parentToolCallId`) could be routed against the wrong session.
+		if (e.type === 'tool_start' && !this._getParentToolCallId(e)) {
+			this._toolCallAgents.set(`${sessionKey}:${e.toolCallId}`, agent.id);
+		}
 
 		// Handle subagent_started: create the subagent session, then drain
 		// any inner events that arrived before us.
@@ -336,7 +341,7 @@ export class AgentSideEffects extends Disposable {
 			// can replay it after `subagent_started` arrives. Without this,
 			// inner tool calls would leak into the parent session and the
 			// UI would render them flat at the top level.
-			this._logService.info(`[AgentSideEffects] Buffering ${e.type} for pending subagent ${subagentKey}`);
+			this._logService.trace(`[AgentSideEffects] Buffering ${e.type} for pending subagent ${subagentKey}`);
 			let buffer = this._pendingSubagentEvents.get(subagentKey);
 			if (!buffer) {
 				buffer = [];
@@ -434,7 +439,7 @@ export class AgentSideEffects extends Disposable {
 			return;
 		}
 		this._pendingSubagentEvents.delete(subagentKey);
-		this._logService.info(`[AgentSideEffects] Draining ${buffer.length} buffered event(s) for subagent ${subagentKey}`);
+		this._logService.trace(`[AgentSideEffects] Draining ${buffer.length} buffered event(s) for subagent ${subagentKey}`);
 		for (const { event, agent, agentMapper } of buffer) {
 			this._handleAgentProgress(agent, agentMapper, event);
 		}

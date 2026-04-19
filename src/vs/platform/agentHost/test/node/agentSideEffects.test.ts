@@ -18,7 +18,7 @@ import { NullLogService } from '../../../log/common/log.js';
 import { AgentSession, IAgent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { ActionType, IActionEnvelope, ISessionAction } from '../../common/state/sessionActions.js';
-import { PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
+import { buildSubagentSessionUri, PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
 import { AgentSideEffects } from '../../node/agentSideEffects.js';
@@ -1519,7 +1519,7 @@ suite('AgentSideEffects', () => {
 			// 3. subagent_started arrives later.
 			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-parent', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
 
-			const subagentUri = `${sessionUri.toString()}/subagent/tc-parent`;
+			const subagentUri = buildSubagentSessionUri(sessionUri.toString(), 'tc-parent');
 			const subState = stateManager.getSessionState(subagentUri);
 			assert.ok(subState?.activeTurn, 'subagent session should exist');
 
