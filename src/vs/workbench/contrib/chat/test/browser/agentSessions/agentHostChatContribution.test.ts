@@ -41,7 +41,6 @@ import { TestFileService } from '../../../../../test/common/workbenchTestService
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { MockLabelService } from '../../../../../services/label/test/common/mockLabelService.js';
 import { IAgentHostFileSystemService } from '../../../../../services/agentHost/common/agentHostFileSystemService.js';
-import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { ICustomizationHarnessService } from '../../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { IStorageService, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
@@ -340,7 +339,6 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 		registerResolver: () => toDisposable(() => { }),
 		resolve: sessionResource => workingDirectoryResolver?.resolve(sessionResource),
 	});
-	instantiationService.stub(IWorkbenchEnvironmentService, { isSessionsWindow: false } as Partial<IWorkbenchEnvironmentService>);
 
 	return { instantiationService, agentHostService, chatAgentService };
 }
