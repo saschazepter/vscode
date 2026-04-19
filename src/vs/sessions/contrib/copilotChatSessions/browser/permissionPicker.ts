@@ -78,9 +78,13 @@ export class PermissionPicker extends Disposable {
 		this._renderDisposables.clear();
 
 		// Initialize the picker to reflect the configured default permission level
-		// (`chat.permissions.default`) whenever it is (re-)rendered.
+		// (`chat.permissions.default`) whenever it is (re-)rendered. If enterprise
+		// policy disables global auto-approval, clamp to Default regardless of the
+		// configured default so we never show an elevated level the user can't pick.
+		const policyRestricted = this.configurationService.inspect<boolean>(ChatConfiguration.GlobalAutoApprove).policyValue === false;
 		const configuredDefault = this.configurationService.getValue<string>(ChatConfiguration.DefaultPermissionLevel);
-		this._currentLevel = isChatPermissionLevel(configuredDefault) ? configuredDefault : ChatPermissionLevel.Default;
+		const initialLevel = isChatPermissionLevel(configuredDefault) ? configuredDefault : ChatPermissionLevel.Default;
+		this._currentLevel = policyRestricted ? ChatPermissionLevel.Default : initialLevel;
 
 		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
 		this._renderDisposables.add({ dispose: () => slot.remove() });
