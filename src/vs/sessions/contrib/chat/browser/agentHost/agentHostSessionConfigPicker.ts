@@ -13,12 +13,12 @@ import { Delayer } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../../base/common/observable.js';
+import { autorun, observableValue } from '../../../../../base/common/observable.js';
 import Severity from '../../../../../base/common/severity.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { IActionViewItemService } from '../../../../../platform/actions/browser/actionViewItemService.js';
-import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { IActionViewItemService, type IActionViewItemFactory } from '../../../../../platform/actions/browser/actionViewItemService.js';
+import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
@@ -28,6 +28,7 @@ import type { ISessionConfigPropertySchema, ISessionConfigValueItem } from '../.
 import { ChatConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { ChatContextKeyExprs } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../workbench/common/contributions.js';
+import { type IChatInputPickerOptions } from '../../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { Menus } from '../../../../browser/menus.js';
 import { ActiveSessionProviderIdContext } from '../../../../common/contextkeys.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
@@ -35,6 +36,7 @@ import { ISessionsManagementService } from '../../../../services/sessions/common
 import type { ISessionsProvider } from '../../../../services/sessions/common/sessionsProvider.js';
 import { type IAgentHostSessionsProvider, isAgentHostProvider } from '../../../../common/agentHostSessionsProvider.js';
 import { PermissionPicker } from '../../../copilotChatSessions/browser/permissionPicker.js';
+import { AgentHostPermissionPickerActionItem } from './agentHostPermissionPickerActionItem.js';
 import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema } from './agentHostPermissionPickerDelegate.js';
 
 const IsActiveSessionRemoteAgentHost = ContextKeyExpr.regex(ActiveSessionProviderIdContext.key, /^agenthost-/);
@@ -439,33 +441,46 @@ class AgentHostSessionConfigPickerContribution extends Disposable implements IWo
 		this._register(actionViewItemService.register(
 			Menus.NewSessionControl,
 			NEW_SESSION_APPROVE_PICKER_ID,
-			() => this._createUnifiedPermissionPicker(),
+			() => this._createNewSessionPermissionPicker(),
 		));
 		this._register(actionViewItemService.register(
 			MenuId.ChatInputSecondary,
 			RUNNING_SESSION_CONFIG_PICKER_ID,
-			() => this._createUnifiedPermissionPicker(),
+			this._createRunningSessionPermissionPickerFactory(),
 		));
 	}
 
 	/**
-	 * Builds the unified {@link PermissionPicker} backed by an
-	 * {@link AgentHostPermissionPickerDelegate}. The picker reactively hides
-	 * itself when the active session's `autoApprove` schema doesn't match the
-	 * well-known shape (or when there is no active session). This is
-	 * important because the active session changes over the lifetime of the
-	 * rendered menu, and the `IActionViewItemService` factory is only invoked
-	 * once per render.
-	 *
-	 * Non-conforming agents that still expose `autoApprove` fall through to
-	 * the generic per-property picker rendered by
-	 * {@link AgentHostSessionConfigPicker} (in the new-session welcome view;
-	 * running sessions don't get a fallback).
+	 * On the new-chat page (left of the toolbar), use the sessions
+	 * {@link PermissionPicker} so the styling matches the surrounding sessions
+	 * pickers (font size, padding, icon size).
 	 */
-	private _createUnifiedPermissionPicker(): PickerActionViewItem {
+	private _createNewSessionPermissionPicker(): PickerActionViewItem {
 		const delegate = this._instantiationService.createInstance(AgentHostPermissionPickerDelegate);
 		const picker = this._instantiationService.createInstance(PermissionPicker, delegate);
 		return new PickerActionViewItem(picker, delegate);
+	}
+
+	/**
+	 * Inside a running chat widget (`ChatInputSecondary`), use the workbench
+	 * {@link PermissionPickerActionItem} so it matches the rest of the
+	 * chat-input secondary toolbar (which is what the extension-host CLI
+	 * already uses).
+	 */
+	private _createRunningSessionPermissionPickerFactory(): IActionViewItemFactory {
+		return (action, _options, instantiationService) => {
+			if (!(action instanceof MenuItemAction)) {
+				return undefined;
+			}
+			const pickerOptions: IChatInputPickerOptions = {
+				hideChevrons: observableValue('hideChevrons', false),
+			};
+			return instantiationService.createInstance(
+				AgentHostPermissionPickerActionItem,
+				action,
+				pickerOptions,
+			);
+		};
 	}
 }
 

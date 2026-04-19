@@ -59,11 +59,11 @@ export function isWellKnownAutoApproveSchema(schema: ISessionConfigPropertySchem
  * {@link IPermissionPickerDelegate} backed by the active session's AHP
  * `autoApprove` config property.
  *
- * - `currentLevel` derives from the active session's
+ * - `currentPermissionLevel` derives from the active session's
  *   `provider.getSessionConfig(...).values.autoApprove`, recomputed when the
  *   active session changes or when any agent-host provider fires
  *   `onDidChangeSessionConfig`.
- * - `setLevel(level)` calls `provider.setSessionConfigValue(sessionId,
+ * - `setPermissionLevel(level)` calls `provider.setSessionConfigValue(sessionId,
  *   'autoApprove', level)` for the active session's provider.
  * - `isApplicable` is `true` only when the active session's `autoApprove`
  *   schema matches the well-known shape, so the picker hides itself for
@@ -76,7 +76,7 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 	private readonly _configChangedSignal = observableSignal('agentHostPermissionPicker.configChanged');
 	private readonly _providerSubscriptions = this._register(new DisposableMap<string>());
 
-	readonly currentLevel: IObservable<ChatPermissionLevel>;
+	readonly currentPermissionLevel: IObservable<ChatPermissionLevel>;
 	readonly isApplicable: IObservable<boolean>;
 
 	constructor(
@@ -94,11 +94,11 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 			this._configChangedSignal.trigger(undefined);
 		}));
 
-		this.currentLevel = derived(this, reader => this._readLevel(reader));
+		this.currentPermissionLevel = derived(this, reader => this._readLevel(reader));
 		this.isApplicable = derived(this, reader => this._readIsWellKnown(reader));
 	}
 
-	setLevel(level: ChatPermissionLevel): void {
+	setPermissionLevel(level: ChatPermissionLevel): void {
 		const session = this._sessionsManagementService.activeSession.get();
 		if (!session) {
 			return;

@@ -103,44 +103,44 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		const { delegate, provider } = setup(undefined);
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('returns Default when the active session has no config seeded yet', () => {
 		const { delegate, provider } = setup(makeActiveSession());
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('reflects the active session\'s autoApprove value and updates on provider change', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'autoApprove');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.AutoApprove);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.AutoApprove);
 
 		provider.config = makeWellKnownConfig('autopilot');
 		provider.fireChange();
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Autopilot);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Autopilot);
 
 		provider.config = makeWellKnownConfig('default');
 		provider.fireChange();
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('falls back to Default when the stored value is unrecognized', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'something-else');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		assert.strictEqual(delegate.currentLevel.get(), ChatPermissionLevel.Default);
+		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
-	test('setLevel writes through to the active session\'s provider', () => {
+	test('setPermissionLevel writes through to the active session\'s provider', () => {
 		const { delegate, provider } = setup(makeActiveSession(), 'default');
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		delegate.setLevel(ChatPermissionLevel.AutoApprove);
-		delegate.setLevel(ChatPermissionLevel.Autopilot);
+		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
+		delegate.setPermissionLevel(ChatPermissionLevel.Autopilot);
 
 		assert.deepStrictEqual(provider.setCalls, [
 			[SESSION_ID, 'autoApprove', 'autoApprove'],
@@ -148,11 +148,11 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		]);
 	});
 
-	test('setLevel is a no-op when there is no active session', () => {
+	test('setPermissionLevel is a no-op when there is no active session', () => {
 		const { delegate, provider } = setup(undefined);
 		store.add(delegate); store.add({ dispose: () => provider.dispose() });
 
-		delegate.setLevel(ChatPermissionLevel.AutoApprove);
+		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
 
 		assert.deepStrictEqual(provider.setCalls, []);
 	});

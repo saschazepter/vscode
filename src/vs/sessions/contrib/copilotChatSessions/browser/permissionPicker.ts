@@ -38,7 +38,7 @@ export interface IPermissionPickerDelegate {
 	 * omitted, the picker manages its own internal state and starts at
 	 * {@link ChatPermissionLevel.Default}.
 	 */
-	readonly currentLevel?: IObservable<ChatPermissionLevel>;
+	readonly currentPermissionLevel?: IObservable<ChatPermissionLevel>;
 
 	/**
 	 * If provided, the picker hides itself when this is `false`. Used by
@@ -50,7 +50,7 @@ export interface IPermissionPickerDelegate {
 	 * Called after the user selects a level (and any required confirmation
 	 * dialog has been accepted).
 	 */
-	setLevel(level: ChatPermissionLevel): void;
+	setPermissionLevel(level: ChatPermissionLevel): void;
 }
 
 interface IPermissionItem {
@@ -106,10 +106,10 @@ export class PermissionPicker extends Disposable {
 			}
 		}));
 
-		const currentLevel = this._delegate.currentLevel;
-		if (currentLevel) {
+		const currentPermissionLevel = this._delegate.currentPermissionLevel;
+		if (currentPermissionLevel) {
 			this._renderDisposables.add(autorun(reader => {
-				this._currentLevel = currentLevel.read(reader);
+				this._currentLevel = currentPermissionLevel.read(reader);
 				this._updateTriggerLabel(this._triggerElement);
 			}));
 		}
@@ -284,7 +284,7 @@ export class PermissionPicker extends Disposable {
 
 		this._currentLevel = level;
 		this._updateTriggerLabel(this._triggerElement);
-		this._delegate.setLevel(level);
+		this._delegate.setPermissionLevel(level);
 	}
 
 	private _updateTriggerLabel(trigger: HTMLElement | undefined): void {
@@ -326,7 +326,7 @@ export class PermissionPicker extends Disposable {
  * Default-Copilot {@link IPermissionPickerDelegate}: writes the user's chosen
  * level back to the active {@link CopilotChatSessionsProvider} session.
  *
- * Does not provide `currentLevel` or ` the picker manages itsisApplicable` 
+ * Does not provide `currentPermissionLevel` or ` the picker manages itsisApplicable` 
  * own state and is always visible (visibility is gated at the menu
  * contribution level via `when` clauses).
  */
@@ -338,7 +338,7 @@ export class CopilotPermissionPickerDelegate extends Disposable implements IPerm
 		super();
 	}
 
-	setLevel(level: ChatPermissionLevel): void {
+	setPermissionLevel(level: ChatPermissionLevel): void {
 		const session = this._sessionsManagementService.activeSession.get();
 		if (!session) {
 			return;
