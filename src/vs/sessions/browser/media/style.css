@@ -31,36 +31,30 @@
 @supports (background: color-mix(in srgb, black 0%, white)) {
 	.agent-sessions-workbench.experimental-shell-gradient-background::before {
 		background:
-			linear-gradient(
-				to bottom right,
+			linear-gradient(to bottom right,
 				transparent 0%,
 				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 5%, transparent) 58%,
 				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 7%, transparent) 82%,
-				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 9%, transparent) 100%
-			),
+				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 9%, transparent) 100%),
 			var(--vscode-agents-background);
 	}
 
 	.monaco-workbench.vs.agent-sessions-workbench.experimental-shell-gradient-background::before {
 		background:
-			linear-gradient(
-				to bottom right,
+			linear-gradient(to bottom right,
 				transparent 0%,
 				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 1%, transparent) 45%,
 				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 6%, transparent) 75%,
-				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 12%, transparent) 100%
-			),
+				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 12%, transparent) 100%),
 			var(--vscode-agents-background);
 	}
 
 	.monaco-workbench.vs-dark.agent-sessions-workbench.experimental-shell-gradient-background::before {
-		background: linear-gradient(
-			to bottom right,
-			var(--vscode-agents-background) 0%,
-			color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 7%, var(--vscode-agents-background)) 56%,
-			color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 10%, var(--vscode-agents-background)) 82%,
-			color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 13%, var(--vscode-agents-background)) 100%
-		);
+		background: linear-gradient(to bottom right,
+				var(--vscode-agents-background) 0%,
+				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 7%, var(--vscode-agents-background)) 56%,
+				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 10%, var(--vscode-agents-background)) 82%,
+				color-mix(in srgb, var(--vscode-agentsGradient-tintColor) 13%, var(--vscode-agents-background)) 100%);
 	}
 }
 
@@ -393,6 +387,13 @@
 	border-color: var(--vscode-agentsChatInput-focusBorder, var(--vscode-focusBorder)) !important;
 }
 
+/* While the developer-joy animated border is active, suppress the static
+	border so it doesn't visually conflict with the spinning gradient ring. */
+.interactive-session .chat-input-container.working,
+.interactive-session .chat-input-container.working.focused {
+	border-color: transparent !important;
+}
+
 /* Make the Monaco editor inside the chat input transparent so it inherits the chatInput.background */
 .agent-sessions-workbench .interactive-session .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor,
 .agent-sessions-workbench .interactive-session .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor .monaco-editor-background {
@@ -461,6 +462,7 @@
 .agent-sessions-workbench .interactive-session .interactive-response .interactive-result-code-block {
 	border-color: var(--vscode-editorWidget-border, var(--vscode-widget-border));
 }
+
 /* ---- Modal Editor Block ---- */
 
 .agent-sessions-workbench .monaco-modal-editor-block {
@@ -545,6 +547,7 @@
 }
 
 @starting-style {
+
 	/* Shared starting values */
 	.agent-sessions-workbench .part.auxiliarybar,
 	.agent-sessions-workbench .part.panel,
@@ -582,6 +585,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
 	.agent-sessions-workbench .part.auxiliarybar,
 	.agent-sessions-workbench .part.panel,
 	.agent-sessions-workbench .part.chatbar {
