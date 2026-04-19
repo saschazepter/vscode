@@ -359,7 +359,7 @@ export function getToolKind(toolName: string): 'terminal' | 'subagent' | undefin
 /**
  * Extracts subagent metadata (agent name, description) from the parsed
  * arguments of a Copilot SDK subagent tool call. The Copilot `task` tool
- * uses snake_case (`agent_type`), which this normalizes into the generic
+ * uses `agent_type` (snake_case), which this normalizes into the generic
  * `subagentAgentName` / `subagentDescription` shape used by the rest of the
  * agent host code.
  *
@@ -369,13 +369,13 @@ export function getSubagentMetadata(parameters: Record<string, unknown> | undefi
 	if (!parameters) {
 		return {};
 	}
-	const agentName = (typeof parameters.agentName === 'string' && parameters.agentName.length > 0 && parameters.agentName)
-		|| (typeof parameters.agent_type === 'string' && parameters.agent_type.length > 0 && parameters.agent_type)
-		|| undefined;
+	const agentName = typeof parameters.agent_type === 'string' && parameters.agent_type.length > 0
+		? parameters.agent_type
+		: undefined;
 	const description = typeof parameters.description === 'string' && parameters.description.length > 0
 		? parameters.description
 		: undefined;
-	return { agentName: agentName || undefined, description };
+	return { agentName, description };
 }
 
 /**
