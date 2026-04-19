@@ -43,7 +43,7 @@ import { ILanguageModelToolsService, IToolData, IToolInvocation, IToolResult, To
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
-import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, getTerminalContentUri, makeAhpTerminalToolSessionId, parseAhpTerminalToolSessionId, rawMarkdownToString, stringOrMarkdownToString, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, type IToolCallFileEdit } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, getTerminalContentUri, isSubagentToolName, makeAhpTerminalToolSessionId, parseAhpTerminalToolSessionId, rawMarkdownToString, stringOrMarkdownToString, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, type IToolCallFileEdit } from './stateToProgressAdapter.js';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -1794,7 +1794,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			if (rp.kind === ResponsePartKind.ToolCall) {
 				const tc = rp.toolCall;
 				const existing = activeToolInvocations.get(tc.toolCallId);
-				if (existing && !observedSubagentToolIds.has(tc.toolCallId) && (getToolKind(tc) === 'subagent' || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
+				if (existing && !observedSubagentToolIds.has(tc.toolCallId) && (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName) || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
 					observedSubagentToolIds.add(tc.toolCallId);
 					this._observeSubagentSession(backendSession, tc.toolCallId, progress, disposables, observedSubagentToolIds);
 				}

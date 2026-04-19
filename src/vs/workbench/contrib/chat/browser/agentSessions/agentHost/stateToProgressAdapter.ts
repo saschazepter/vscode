@@ -65,7 +65,7 @@ function getSubagentAgentName(tc: { _meta?: Record<string, unknown> }): string |
  */
 const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set(['task']);
 
-function isSubagentToolName(toolName: string): boolean {
+export function isSubagentToolName(toolName: string): boolean {
 	return SUBAGENT_TOOL_NAMES.has(toolName);
 }
 
@@ -476,6 +476,33 @@ export function toolCallStateToInvocation(tc: IToolCallState, subAgentInvocation
 			message: stringOrMarkdownToString(tc.invocationMessage, connectionAuthority),
 		};
 
+		// Subagent-spawning tools may briefly be observed in PendingConfirmation
+		// state before `tool_ready` auto-confirms them (the SDK auto-emits
+		// readyAction with confirmed:NotNeeded for `task`). If we don't set
+		// subagent toolSpecificData here, the renderer will create a regular
+		// tool invocation widget and a subsequent transition to Running won't
+		// re-group it — causing the parent to render separately from the
+		// generic subagent container that the inner tool calls create.
+		if (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName)) {
+			const invocation = new ChatToolInvocation(
+				{
+					invocationMessage: stringOrMarkdownToString(tc.invocationMessage, connectionAuthority),
+					confirmationMessages,
+					presentation: ToolInvocationPresentation.HiddenAfterComplete,
+					toolSpecificData: {
+						kind: 'subagent',
+						description: getSubagentTaskDescription(tc),
+						agentName: getSubagentAgentName(tc),
+					},
+				},
+				toolData,
+				tc.toolCallId,
+				subAgentInvocationId,
+				undefined,
+			);
+			return invocation;
+		}
+
 		let toolSpecificData: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatModifiedFilesConfirmationData | undefined;
 		const pendingEdits = tc.edits?.items;
 		if (pendingEdits && pendingEdits.length > 0) {
@@ -592,6 +619,23 @@ export function updateRunningToolSpecificData(existing: ChatToolInvocation, tc: 
 		// toolSpecificData is a plain property — notify state observers
 		// so ChatSubagentContentPart re-reads the updated metadata.
 		existing.notifyToolSpecificDataChanged();
+		return;
+	}
+
+	// No Subagent content block yet, but the tool itself is a subagent-spawning
+	// tool (e.g. `task`). Upgrade the toolSpecificData so the renderer groups
+	// it as a subagent container before the child session starts producing
+	// content. Without this, an invocation created during PendingConfirmation
+	// would stay as a regular tool invocation and the inner child tool calls
+	// would render in a separate generic subagent container.
+	if (existing.toolSpecificData?.kind !== 'subagent'
+		&& (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName))) {
+		existing.toolSpecificData = {
+			kind: 'subagent',
+			description: getSubagentTaskDescription(tc),
+			agentName: getSubagentAgentName(tc),
+		};
+		existing.notifyToolSpecificDataChanged();
 	}
 }
 
@@ -645,6 +689,18 @@ export function finalizeToolInvocation(invocation: ChatToolInvocation, tc: ITool
 				description: getSubagentTaskDescription(tc),
 				agentName: subagentContent.agentName,
 				result: resultText,
+			};
+		} else if (invocation.toolSpecificData?.kind !== 'subagent'
+			&& (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName))) {
+			// Subagent-spawning tool that completed without a Subagent content
+			// block (e.g. it transitioned PendingConfirmation → Completed
+			// directly). Ensure the parent stays as a subagent container so
+			// it doesn't render separately from the inner tool calls.
+			invocation.toolSpecificData = {
+				kind: 'subagent',
+				description: getSubagentTaskDescription(tc),
+				agentName: getSubagentAgentName(tc),
+				result: getToolOutputText(tc),
 			};
 		}
 	}

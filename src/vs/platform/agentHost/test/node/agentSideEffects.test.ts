@@ -1493,5 +1493,138 @@ suite('AgentSideEffects', () => {
 			const textEntry = content.find(c => hasKey(c, { type: true }) && c.type === ToolResultContentType.Text);
 			assert.ok(textEntry, 'Completed tool should also have the SDK result content');
 		});
+
+		test('inner tool_start arriving BEFORE subagent_started routes to subagent (not parent)', () => {
+			// Reproduces the regression where inner subagent tool calls show up
+			// flat at the top level of the parent session because the SDK can
+			// emit `tool_start` (with parentToolCallId) before `subagent_started`.
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// 1. Parent tool starts (the `task` invocation).
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-parent', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating...' });
+
+			// 2. Inner tool fires BEFORE subagent_started (race condition).
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'inner-tc-1',
+				toolName: 'readFile',
+				displayName: 'Read File',
+				invocationMessage: 'Reading file...',
+				parentToolCallId: 'tc-parent',
+			});
+
+			// 3. subagent_started arrives later.
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-parent', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-parent`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState?.activeTurn, 'subagent session should exist');
+
+			const innerTool = subState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'inner-tc-1'
+			);
+			assert.ok(innerTool, 'inner tool fired before subagent_started should still end up in the subagent session');
+
+			// Parent must NOT have the inner tool.
+			const parentState = stateManager.getSessionState(sessionUri.toString());
+			const parentInnerTool = parentState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'inner-tc-1'
+			);
+			assert.strictEqual(parentInnerTool, undefined, 'inner tool must not leak into parent session');
+		});
+
+		test('reads inside parent working directory are auto-approved for tools in subagent sessions', () => {
+			// Subagent sessions don't carry their own workingDirectory or
+			// autoApprove config. Without inheritance from the parent, every
+			// tool call inside a subagent (even a read in the workspace) would
+			// surface a confirmation dialog.
+			setupSession(URI.file('/workspace').toString());
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Parent task tool spawns a subagent.
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-parent', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-parent', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			// Inner tool inside the subagent requests permission to read a file
+			// inside the parent workspace.
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'inner-read-1',
+				toolName: 'read',
+				displayName: 'Read',
+				invocationMessage: 'Read file',
+				parentToolCallId: 'tc-parent',
+			});
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_ready',
+				toolCallId: 'inner-read-1',
+				invocationMessage: 'Read src/app.ts',
+				permissionKind: 'read',
+				permissionPath: '/workspace/src/app.ts',
+			});
+
+			assert.deepStrictEqual(agent.respondToPermissionCalls, [
+				{ requestId: 'inner-read-1', approved: true },
+			]);
+		});
+
+		test('session-level autoApprove on the parent is inherited by tools in subagent sessions', () => {
+			setupSession(URI.file('/workspace').toString());
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Set the parent session to "Bypass Approvals" via session config.
+			const parentState = stateManager.getSessionState(sessionUri.toString());
+			if (parentState) {
+				parentState.config = {
+					schema: {
+						type: 'object',
+						properties: {
+							autoApprove: {
+								type: 'string',
+								title: 'Approvals',
+								enum: ['default', 'autoApprove', 'autopilot'],
+								default: 'default',
+								sessionMutable: true,
+							},
+						},
+					},
+					values: { autoApprove: 'autoApprove' },
+				};
+			}
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-parent', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-parent', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			// Inner write outside the workspace would normally NOT auto-approve,
+			// but session-level autoApprove on the parent must apply.
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'inner-write-1',
+				toolName: 'write',
+				displayName: 'Write',
+				invocationMessage: 'Write file',
+				parentToolCallId: 'tc-parent',
+			});
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_ready',
+				toolCallId: 'inner-write-1',
+				invocationMessage: 'Write /tmp/foo',
+				permissionKind: 'write',
+				permissionPath: '/tmp/foo',
+			});
+
+			assert.deepStrictEqual(agent.respondToPermissionCalls, [
+				{ requestId: 'inner-write-1', approved: true },
+			]);
+		});
 	});
 });

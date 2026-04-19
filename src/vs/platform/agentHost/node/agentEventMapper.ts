@@ -104,8 +104,13 @@ export class AgentEventMapper {
 						if (typeof args.description === 'string') {
 							meta.subagentDescription = args.description;
 						}
-						if (typeof args.agentName === 'string') {
-							meta.subagentAgentName = args.agentName;
+						// `agentName` (camelCase) is the canonical field; the
+						// Copilot SDK's `task` tool uses `agent_type`.
+						const agentName = (typeof args.agentName === 'string' && args.agentName)
+							|| (typeof args.agent_type === 'string' && args.agent_type)
+							|| undefined;
+						if (agentName) {
+							meta.subagentAgentName = agentName;
 						}
 					} catch { /* ignore parse errors */ }
 				}

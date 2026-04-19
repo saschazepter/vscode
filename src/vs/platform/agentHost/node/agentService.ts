@@ -39,9 +39,14 @@ function extractSubagentMeta(start: IAgentToolStartEvent | undefined): { subagen
 	}
 	try {
 		const args = JSON.parse(start.toolArguments) as Record<string, unknown>;
+		// `agentName` (camelCase) is the canonical field; the Copilot SDK's
+		// `task` tool uses `agent_type`.
+		const agentName = (typeof args.agentName === 'string' && args.agentName.length > 0 && args.agentName)
+			|| (typeof args.agent_type === 'string' && args.agent_type.length > 0 && args.agent_type)
+			|| undefined;
 		return {
 			subagentDescription: typeof args.description === 'string' && args.description.length > 0 ? args.description : undefined,
-			subagentAgentName: typeof args.agentName === 'string' && args.agentName.length > 0 ? args.agentName : undefined,
+			subagentAgentName: agentName || undefined,
 		};
 	} catch {
 		return {};
