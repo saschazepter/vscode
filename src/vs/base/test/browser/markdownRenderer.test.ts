@@ -41,7 +41,7 @@ suite('MarkdownRenderer', () => {
 			assert.strictEqual(result.querySelector('a'), null);
 		});
 
-		test('Preserves link with disallowed scheme when augmented through allowedLinkSchemes', () => {
+		test('Preserves link when scheme is allowed via allowedLinkSchemes.augment', () => {
 			const markdown = { value: `Read [](vscode-agent-host://my-host/file/-/path/to/foo.ts)` };
 			const result: HTMLElement = store.add(renderMarkdown(markdown, {
 				sanitizerConfig: {
