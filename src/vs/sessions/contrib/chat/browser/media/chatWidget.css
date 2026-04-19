@@ -102,10 +102,6 @@
 	min-width: 0;
 }
 
-.chat-controls-container .monaco-editor-background {
-	background-color: var(--vscode-input-background) !important;
-}
-
 /* Pickers row - two equal halves */
 .session-workspace-picker {
 	display: flex;
