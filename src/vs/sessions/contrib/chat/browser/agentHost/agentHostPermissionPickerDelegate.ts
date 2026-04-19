@@ -21,7 +21,7 @@ import { ISessionsManagementService } from '../../../../services/sessions/common
  * permission-picker UI. Agents that don't advertise this exact shape fall
  * back to the generic per-property picker.
  */
-export const AUTO_APPROVE_SESSION_CONFIG_PROPERTY = 'autoApprove';
+export const AUTO_APPROVE_PROPERTY = 'autoApprove';
 
 /**
  * The set of enum values the unified permission picker understands for the
@@ -107,7 +107,7 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 		if (!provider) {
 			return;
 		}
-		provider.setSessionConfigValue(session.sessionId, AUTO_APPROVE_SESSION_CONFIG_PROPERTY, level)
+		provider.setSessionConfigValue(session.sessionId, AUTO_APPROVE_PROPERTY, level)
 			.catch(() => { /* best-effort */ });
 	}
 
@@ -121,7 +121,7 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 		if (!provider) {
 			return ChatPermissionLevel.Default;
 		}
-		const value = provider.getSessionConfig(session.sessionId)?.values[AUTO_APPROVE_SESSION_CONFIG_PROPERTY];
+		const value = provider.getSessionConfig(session.sessionId)?.values[AUTO_APPROVE_PROPERTY];
 		return isChatPermissionLevel(value) ? value : ChatPermissionLevel.Default;
 	}
 
@@ -135,7 +135,7 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 		if (!provider) {
 			return false;
 		}
-		const schema = provider.getSessionConfig(session.sessionId)?.schema.properties[AUTO_APPROVE_SESSION_CONFIG_PROPERTY];
+		const schema = provider.getSessionConfig(session.sessionId)?.schema.properties[AUTO_APPROVE_PROPERTY];
 		return !!schema && isWellKnownAutoApproveSchema(schema);
 	}
 

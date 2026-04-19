@@ -37,7 +37,7 @@ import type { ISessionsProvider } from '../../../../services/sessions/common/ses
 import { type IAgentHostSessionsProvider, isAgentHostProvider } from '../../../../common/agentHostSessionsProvider.js';
 import { PermissionPicker } from '../../../copilotChatSessions/browser/permissionPicker.js';
 import { AgentHostPermissionPickerActionItem } from './agentHostPermissionPickerActionItem.js';
-import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema } from './agentHostPermissionPickerDelegate.js';
+import { AgentHostPermissionPickerDelegate, AUTO_APPROVE_PROPERTY, isWellKnownAutoApproveSchema } from './agentHostPermissionPickerDelegate.js';
 
 const IsActiveSessionRemoteAgentHost = ContextKeyExpr.regex(ActiveSessionProviderIdContext.key, /^agenthost-/);
 const IsActiveSessionLocalAgentHost = ContextKeyExpr.equals(ActiveSessionProviderIdContext.key, 'local-agent-host');
@@ -124,12 +124,6 @@ function renderPickerTrigger(slot: HTMLElement, disabled: boolean, disposables: 
 
 	return trigger;
 }
-
-/**
- * Special-cased property name for auto-approve session config.
- * Used to apply confirmation dialogs and policy enforcement.
- */
-const AUTO_APPROVE_PROPERTY = 'autoApprove';
 
 // Track whether auto-approve warnings have been shown this VS Code session
 const shownAutoApproveWarnings = new Set<string /* enum value */>();
