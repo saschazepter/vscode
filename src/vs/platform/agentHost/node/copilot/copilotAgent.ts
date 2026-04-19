@@ -142,6 +142,16 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private _githubToken: string | undefined;
 	private readonly _sessions = this._register(new DisposableMap<string, CopilotAgentSession>());
 	private readonly _createdWorktrees = new Map<string, ICreatedWorktree>();
+	/**
+	 * Per-session announcement (markdown string) that should be emitted as
+	 * a synthetic streaming `delta` event the first time {@link sendMessage}
+	 * is called for the session. Currently used to surface the "Created
+	 * isolated worktree for branch X" message live during the first turn.
+	 * The same announcement is also injected on restore via
+	 * {@link getSessionMessages} by prepending to the first assistant
+	 * message's content so it stays visible after the session is reopened.
+	 */
+	private readonly _pendingFirstTurnAnnouncements = new Map<string, string>();
 	private readonly _sessionSequencer = new SequencerByKey<string>();
 	private _shutdownPromise: Promise<void> | undefined;
 	private readonly _plugins: PluginController;
@@ -642,41 +652,22 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 			entry ??= await this._resumeSession(sessionId);
 
-			// If a worktree was created for this session and we haven't yet
-			// surfaced the announcement, fire it as a synthetic streaming
-			// delta before delegating to the SDK and persist a flag so we
-			// only do this once. The mapper treats it like regular assistant
-			// text — the SDK's subsequent deltas append to the same markdown
-			// part. State is durable across agent process restarts because
-			// both the branch name and the emitted flag live in the session
-			// DB. The active turn has already been started by the state
-			// manager at this point, so the event mapper can attach the
-			// delta to it.
-			await this._maybeEmitWorktreeAnnouncement(session);
+			// Emit any pending first-turn announcements (e.g. worktree
+			// created) as a synthetic streaming delta before delegating to
+			// the SDK. The mapper treats it like any other assistant text —
+			// the SDK's subsequent deltas append to the same markdown part.
+			// The active turn has already been started by the state manager
+			// at this point, so the event mapper can attach the delta to it.
+			const pending = this._pendingFirstTurnAnnouncements.get(sessionId);
+			if (pending) {
+				this._pendingFirstTurnAnnouncements.delete(sessionId);
+				const messageId = `copilot-announcement-${generateUuid()}`;
+				const event: IAgentDeltaEvent = { type: 'delta', session, messageId, content: pending };
+				this._onDidSessionProgress.fire(event);
+			}
 
 			await entry.send(prompt, attachments, turnId);
 		});
-	}
-
-	private async _maybeEmitWorktreeAnnouncement(session: URI): Promise<void> {
-		const sessionId = AgentSession.id(session);
-		try {
-			const branchName = await this._readWorktreeBranchMetadata(session);
-			if (!branchName) {
-				return;
-			}
-			const alreadyEmitted = await this._readWorktreeAnnouncementEmitted(session);
-			if (alreadyEmitted) {
-				return;
-			}
-			await this._writeWorktreeAnnouncementEmitted(session);
-			const messageId = `copilot-announcement-${generateUuid()}`;
-			const content = buildWorktreeAnnouncementText(branchName);
-			const event: IAgentDeltaEvent = { type: 'delta', session, messageId, content };
-			this._onDidSessionProgress.fire(event);
-		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to surface worktree announcement: ${error instanceof Error ? error.message : String(error)}`);
-		}
 	}
 
 	setPendingMessages(session: URI, steeringMessage: IPendingMessage | undefined, _queuedMessages: readonly IPendingMessage[]): void {
@@ -977,10 +968,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 		await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
 		await this._gitService.addWorktree(repositoryRoot, worktree, branchName, config.config.branch);
 		this._createdWorktrees.set(sessionId, { repositoryRoot, worktree });
-		// Persist the branch name so the announcement can be surfaced both
-		// live (on first sendMessage) and on session restore (via
-		// getSessionMessages). Using DB-backed state means a process restart
-		// between worktree creation and the first user prompt still works.
+		// Queue the worktree announcement so the first turn (live) and any
+		// subsequent restore (history) both surface the message in the chat.
+		this._pendingFirstTurnAnnouncements.set(sessionId, buildWorktreeAnnouncementText(branchName));
 		const sessionUri = AgentSession.uri(this.id, sessionId);
 		try {
 			await this._writeWorktreeBranchMetadata(sessionUri, branchName);
@@ -1012,7 +1002,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private static readonly _META_PROJECT_URI = 'copilot.project.uri';
 	private static readonly _META_PROJECT_DISPLAY_NAME = 'copilot.project.displayName';
 	private static readonly _META_WORKTREE_BRANCH = 'copilot.worktree.branchName';
-	private static readonly _META_WORKTREE_ANNOUNCEMENT_EMITTED = 'copilot.worktree.announcementEmitted';
 
 	private async _writeWorktreeBranchMetadata(session: URI, branchName: string): Promise<void> {
 		const dbRef = this._sessionDataService.openDatabase(session);
@@ -1033,28 +1022,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return value ?? undefined;
 		} finally {
 			ref.dispose();
-		}
-	}
-
-	private async _readWorktreeAnnouncementEmitted(session: URI): Promise<boolean> {
-		const ref = await this._sessionDataService.tryOpenDatabase(session);
-		if (!ref) {
-			return false;
-		}
-		try {
-			const value = await ref.object.getMetadata(CopilotAgent._META_WORKTREE_ANNOUNCEMENT_EMITTED);
-			return value === 'true';
-		} finally {
-			ref.dispose();
-		}
-	}
-
-	private async _writeWorktreeAnnouncementEmitted(session: URI): Promise<void> {
-		const dbRef = this._sessionDataService.openDatabase(session);
-		try {
-			await dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_ANNOUNCEMENT_EMITTED, 'true');
-		} finally {
-			dbRef.dispose();
 		}
 	}
 
