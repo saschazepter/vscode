@@ -66,7 +66,7 @@ export function getAgentSessionProviderName(provider: AgentSessionTarget): strin
 		case AgentSessionProviders.Growth:
 			return 'Growth';
 		case AgentSessionProviders.AgentHostCopilot:
-			return 'Agent Host - Copilot';
+			return 'Agent Host - Copilot CLI';
 		default:
 			return provider;
 	}
