@@ -353,6 +353,17 @@ export class MarkdownItEngine implements IMdParser {
 			// A string, including empty string, may be `href`.
 			if (typeof href === 'string') {
 				token.attrSet('data-href', href);
+				// For fragment-only links, rewrite the href to use the slugified fragment
+				// so that browser navigation matches the heading element id.
+				// For example, `#header 1` becomes `#header-1` to match the id set on `# header 1`.
+				if (href.startsWith('#')) {
+					try {
+						const fragment = decodeURIComponent(href.slice(1));
+						token.attrSet('href', '#' + this.slugifier.fromHeading(fragment).value);
+					} catch {
+						// Catch malformed URI encoding errors from decodeURIComponent
+					}
+				}
 			}
 			if (original) {
 				return original(tokens, idx, options, env, self);

@@ -30,6 +30,24 @@ suite('markdown.engine', () => {
 		});
 	});
 
+	suite('fragment-links', () => {
+		test('Rewrites fragment-only links with spaces to use slugified fragment', async () => {
+			const engine = createNewMarkdownEngine();
+			const result = await engine.render('[link](<#header 1>)');
+			// The href should be rewritten to use the slugified fragment (#header-1)
+			// while data-href preserves the original (#header%201)
+			assert.ok(result.html.includes('href="#header-1"'), `Expected href="#header-1" in: ${result.html}`);
+			assert.ok(result.html.includes('data-href="#header%201"'), `Expected data-href="#header%201" in: ${result.html}`);
+		});
+
+		test('Preserves fragment links that are already slugified', async () => {
+			const engine = createNewMarkdownEngine();
+			const result = await engine.render('[link](#header-1)');
+			assert.ok(result.html.includes('href="#header-1"'), `Expected href="#header-1" in: ${result.html}`);
+			assert.ok(result.html.includes('data-href="#header-1"'), `Expected data-href="#header-1" in: ${result.html}`);
+		});
+	});
+
 	suite('image-caching', () => {
 		const input = '![](img.png) [](no-img.png) ![](http://example.org/img.png) ![](img.png) ![](./img2.png)';
 

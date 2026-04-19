@@ -111,7 +111,20 @@ onceDocumentLoaded(() => {
 				state.fragment = undefined;
 				vscode.setState(state);
 
-				const element = getLineElementForFragment(fragment, documentVersion);
+				let element = getLineElementForFragment(fragment, documentVersion);
+				if (!element) {
+					// If not found with encoded fragment, try with a simplified slug
+					// to handle fragments with literal spaces (e.g. "header 1" → "header-1").
+					// Note: preview-src cannot import the full GitHub slugifier, so we apply
+					// only the space-to-dash transformation which covers the common case.
+					try {
+						// Catch malformed URI encoding errors from decodeURIComponent
+						const sluggedFragment = decodeURIComponent(fragment).trim().toLowerCase().replace(/\s+/g, '-');
+						element = getLineElementForFragment(sluggedFragment, documentVersion);
+					} catch {
+						// noop
+					}
+				}
 				if (element) {
 					scrollDisabledCount += 1;
 					scrollToRevealSourceLine(element.line, documentVersion, settings);
