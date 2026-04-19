@@ -4,10 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { PermissionRequestResult, SessionConfig, Tool, ToolResultObject } from '@github/copilot-sdk';
+import { homedir } from 'os';
 import { DeferredPromise } from '../../../../base/common/async.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable, IReference, toDisposable } from '../../../../base/common/lifecycle.js';
+import { join } from '../../../../base/common/path.js';
+import { extUriBiasedIgnorePathCase } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import type { IParsedPlugin } from '../../../agentPlugins/common/pluginParsers.js';
@@ -24,6 +27,14 @@ import { getEditFilePath, getInvocationMessage, getPastTenseMessage, getPermissi
 import { FileEditTracker } from './fileEditTracker.js';
 import { mapSessionEvents } from './mapSessionEvents.js';
 import { buildPendingEditContentUri } from './pendingEditContentStore.js';
+
+const COPILOT_HOME_DIRECTORY = '.copilot';
+const SESSION_STATE_DIRECTORY = join(COPILOT_HOME_DIRECTORY, 'session-state');
+
+function getCopilotCLISessionStateDir(): string {
+	const xdgHome = process.env['XDG_STATE_HOME'];
+	return xdgHome ? join(xdgHome, SESSION_STATE_DIRECTORY) : join(homedir(), SESSION_STATE_DIRECTORY);
+}
 
 /**
  * Immutable snapshot of the active client's contributions at session creation
@@ -373,6 +384,12 @@ export class CopilotAgentSession extends Disposable {
 			return { kind: 'denied-interactively-by-user' };
 		}
 
+		const sessionResourcePath = this._getInternalSessionResourcePath(request);
+		if (sessionResourcePath) {
+			this._logService.info(`[Copilot:${this.sessionId}] Auto-approving internal session resource ${sessionResourcePath}`);
+			return { kind: 'approved' };
+		}
+
 		this._logService.info(`[Copilot:${this.sessionId}] Requesting confirmation for tool call: ${toolCallId}`);
 
 		const deferred = new DeferredPromise<boolean>();
@@ -412,6 +429,23 @@ export class CopilotAgentSession extends Disposable {
 		const approved = await deferred.p;
 		this._logService.info(`[Copilot:${this.sessionId}] Permission response: toolCallId=${toolCallId}, approved=${approved}`);
 		return { kind: approved ? 'approved' : 'denied-interactively-by-user' };
+	}
+
+	private _getInternalSessionResourcePath(request: ITypedPermissionRequest): string | undefined {
+		let permissionPath: string | undefined;
+		if (request.kind === 'read') {
+			permissionPath = typeof request.path === 'string' ? request.path : undefined;
+		} else if (request.kind === 'write') {
+			permissionPath = typeof request.fileName === 'string' ? request.fileName : undefined;
+		}
+
+		if (!permissionPath) {
+			return undefined;
+		}
+
+		const sessionDir = URI.joinPath(URI.file(getCopilotCLISessionStateDir()), this.sessionId);
+		const permissionUri = URI.file(permissionPath);
+		return extUriBiasedIgnorePathCase.isEqualOrParent(permissionUri, sessionDir) ? permissionPath : undefined;
 	}
 
 	/**

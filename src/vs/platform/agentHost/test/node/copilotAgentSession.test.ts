@@ -8,6 +8,7 @@ import assert from 'assert';
 import { DeferredPromise } from '../../../../base/common/async.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { join } from '../../../../base/common/path.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { IFileService } from '../../../files/common/files.js';
 import { InstantiationService } from '../../../instantiation/common/instantiationService.js';
@@ -167,6 +168,28 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual(result.kind, 'approved');
 		});
 
+		test('auto-approves read permission for session-state plan files', async () => {
+			const previousXdgStateHome = process.env['XDG_STATE_HOME'];
+			process.env['XDG_STATE_HOME'] = '/mock-state-home';
+			try {
+				const { session, progressEvents } = await createAgentSession(disposables);
+				const result = await session.handlePermissionRequest({
+					kind: 'read',
+					path: join('/mock-state-home', '.copilot', 'session-state', 'test-session-1', 'plan.md'),
+					toolCallId: 'tc-read-plan',
+				});
+
+				assert.strictEqual(result.kind, 'approved');
+				assert.strictEqual(progressEvents.length, 0);
+			} finally {
+				if (previousXdgStateHome === undefined) {
+					delete process.env['XDG_STATE_HOME'];
+				} else {
+					process.env['XDG_STATE_HOME'] = previousXdgStateHome;
+				}
+			}
+		});
+
 		test('write permission fires tool_ready (deferred to side effects)', async () => {
 			const { session, progressEvents, waitForProgress } = await createAgentSession(disposables);
 			const resultPromise = session.handlePermissionRequest({
@@ -181,6 +204,54 @@ suite('CopilotAgentSession', () => {
 			assert.ok(session.respondToPermissionRequest('tc-1', true));
 			const result = await resultPromise;
 			assert.strictEqual(result.kind, 'approved');
+		});
+
+		test('auto-approves write permission for session-state plan files', async () => {
+			const previousXdgStateHome = process.env['XDG_STATE_HOME'];
+			process.env['XDG_STATE_HOME'] = '/mock-state-home';
+			try {
+				const { session, progressEvents } = await createAgentSession(disposables);
+				const result = await session.handlePermissionRequest({
+					kind: 'write',
+					fileName: join('/mock-state-home', '.copilot', 'session-state', 'test-session-1', 'plan.md'),
+					toolCallId: 'tc-write-plan',
+				});
+
+				assert.strictEqual(result.kind, 'approved');
+				assert.strictEqual(progressEvents.length, 0);
+			} finally {
+				if (previousXdgStateHome === undefined) {
+					delete process.env['XDG_STATE_HOME'];
+				} else {
+					process.env['XDG_STATE_HOME'] = previousXdgStateHome;
+				}
+			}
+		});
+
+		test('does not auto-approve session-state files from another session', async () => {
+			const previousXdgStateHome = process.env['XDG_STATE_HOME'];
+			process.env['XDG_STATE_HOME'] = '/mock-state-home';
+			try {
+				const { session, progressEvents, waitForProgress } = await createAgentSession(disposables);
+				const resultPromise = session.handlePermissionRequest({
+					kind: 'write',
+					fileName: join('/mock-state-home', '.copilot', 'session-state', 'different-session', 'plan.md'),
+					toolCallId: 'tc-write-other-plan',
+				});
+
+				await waitForProgress(e => e.type === 'tool_ready');
+				assert.strictEqual(progressEvents.length, 1);
+
+				assert.ok(session.respondToPermissionRequest('tc-write-other-plan', true));
+				const result = await resultPromise;
+				assert.strictEqual(result.kind, 'approved');
+			} finally {
+				if (previousXdgStateHome === undefined) {
+					delete process.env['XDG_STATE_HOME'];
+				} else {
+					process.env['XDG_STATE_HOME'] = previousXdgStateHome;
+				}
+			}
 		});
 
 		test('write permission outside working directory fires tool_ready', async () => {
