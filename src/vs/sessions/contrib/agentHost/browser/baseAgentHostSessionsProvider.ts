@@ -368,6 +368,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		this._selectedModelId = undefined;
 		this._currentNewSessionModelId = undefined;
 		this._currentNewSessionLoading = undefined;
+		this._currentNewSessionStatus = undefined;
 
 		const sessionType = this.sessionTypes.find(t => t.id === sessionTypeId);
 		if (!sessionType) {
