@@ -114,8 +114,17 @@ export function logChangesViewReviewCommentAdded(telemetryService: ITelemetrySer
 
 // --- Tunnel agent host connect ---
 
-export type TunnelConnectErrorCategory = 'relayConnectionFailed' | 'auth' | 'network' | 'other';
-export type TunnelConnectFailureReason = 'hostOffline' | 'maxAttemptsReached';
+export type TunnelConnectErrorCategory =
+	| 'relayConnectionFailed'
+	| 'auth'
+	| 'authExpired'
+	| 'network'
+	| 'other';
+
+export type TunnelConnectFailureReason =
+	| 'hostOffline'
+	| 'maxAttemptsReached'
+	| 'authExpired';
 
 type TunnelConnectAttemptEvent = {
 	isReconnect: boolean;
