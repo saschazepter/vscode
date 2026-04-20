@@ -24,6 +24,7 @@ import { IPromptsService } from '../../../../workbench/contrib/chat/common/promp
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { AICustomizationManagementSection } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
+import { AICustomizationManagementEditor } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, mcpServerIcon, pluginIcon, skillIcon } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IAICustomizationWorkspaceService } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
@@ -222,7 +223,13 @@ export class AICustomizationOverviewView extends ViewPane {
 
 	private async openOverview(): Promise<void> {
 		const input = AICustomizationManagementEditorInput.getOrCreate();
-		await this.editorService.openEditor(input, { pinned: true });
+		const editor = await this.editorService.openEditor(input, { pinned: true });
+
+		// Always reset to the welcome page when opening from the sidebar,
+		// so we don't restore the previously selected section.
+		if (editor instanceof AICustomizationManagementEditor) {
+			editor.showWelcomePage();
+		}
 	}
 
 	protected override layoutBody(height: number, width: number): void {
