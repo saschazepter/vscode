@@ -644,6 +644,7 @@ const fieldLabels: Record<keyof FormData, string> = {
 			assert.strictEqual(result!.newText, '\r\n');
 		});
 	});
+<<<<<<< HEAD
 
 	suite('multi-line range, no common prefix', () => {
 
@@ -665,4 +666,6 @@ const fieldLabels: Record<keyof FormData, string> = {
 			assert.isUndefined(toInlineSuggestion(cursorPosition, document, replaceRange, replaceText));
 		});
 	});
+=======
+>>>>>>> df2a4411 (nes: fix: do not insert spurious trailing newline after suggestion (#311441))
 });

@@ -16,11 +16,30 @@ export interface InlineSuggestionEdit {
  * which is required for VS Code to render ghost text.
  */
 export function toInlineSuggestion(cursorPos: Position, doc: TextDocument, range: Range, newText: string, advanced: boolean = true): InlineSuggestionEdit | undefined {
+<<<<<<< HEAD
 	// Special case: a multi-line insertion that starts on the line *after* the cursor
 	// can be re-expressed as a pure insertion at the cursor.
 	const nextLineInsertion = tryAdjustNextLineInsertion(cursorPos, doc, range, newText);
 	if (nextLineInsertion) {
 		return nextLineInsertion;
+=======
+	// If multi line insertion starts on the next line
+	// All new lines have to be newly created lines
+	if (range.isEmpty && cursorPos.line + 1 === range.start.line && range.start.character === 0
+		&& doc.lineAt(cursorPos.line).text.length === cursorPos.character // cursor is at the end of the line
+		&& (newText.endsWith('\n') || (newText.includes('\n') && doc.lineAt(range.end.line).text.length === range.end.character)) // no remaining content after insertion
+	) {
+		// Use an empty range at the cursor so the suggestion is a pure insertion
+		const adjustedRange = new Range(cursorPos, cursorPos);
+		const textBetweenCursorAndRange = doc.getText(new Range(cursorPos, range.start));
+		// The original range is on the next line, so the line terminator that
+		// already separates the cursor's line from range.start is preserved.
+		// Drop a single trailing line ending from newText (if present) to avoid
+		// inserting an extra blank line after the suggestion. Handle CRLF as
+		// well as LF so we don't leave a dangling '\r'.
+		const adjustedNewText = newText.replace(/\r?\n$/, '');
+		return { range: adjustedRange, newText: textBetweenCursorAndRange + adjustedNewText };
+>>>>>>> df2a4411 (nes: fix: do not insert spurious trailing newline after suggestion (#311441))
 	}
 
 	// If the range spans multiple lines, try to collapse it to a single line by
