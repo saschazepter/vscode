@@ -1317,6 +1317,18 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return;
 		}
 
+		const isHiddenCompleteAddedRequest = element.isCompleteAddedRequest && !element.messageText.trim();
+		templateData.rowContainer.classList.toggle('hidden-complete-added-request', isHiddenCompleteAddedRequest);
+		if (isHiddenCompleteAddedRequest) {
+			dom.clearNode(templateData.value);
+			dom.clearNode(templateData.detail);
+			if (templateData.renderedParts) {
+				dispose(templateData.renderedParts);
+				templateData.renderedParts = undefined;
+			}
+			return;
+		}
+
 		if (element.pendingKind && this._pendingDragController) {
 			templateData.rowContainer.dataset.pendingRequestId = element.id;
 			templateData.rowContainer.dataset.pendingKind = element.pendingKind;
