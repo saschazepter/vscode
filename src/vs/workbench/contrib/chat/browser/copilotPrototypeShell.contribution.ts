@@ -1476,12 +1476,10 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 				disposables.add(btn.onDidClick(() => this.advanceState()));
 			}
 		} else if (isPro) {
+			footerLabel.appendChild(mainWindow.document.createTextNode(localize('footerProManageDesc', "No overage budget currently in use.")));
 			const footerActions = append(footer, $('div.copilot-prototype-dashboard-footer-actions'));
-			const upgradeBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
-			upgradeBtn.label = localize('upgrade', "Upgrade");
-			upgradeBtn.enabled = false;
-			const configBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles }));
-			configBtn.label = localize('configureBudget', "Configure Budget");
+			const configBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
+			configBtn.label = localize('manageBudget', "Manage Budget");
 			disposables.add(configBtn.onDidClick(() => this.advanceState()));
 		} else {
 			footerLabel.appendChild(mainWindow.document.createTextNode(localize('footerFreeUpgrade', "Upgrade for higher limits and overage budgets")));
@@ -1578,6 +1576,12 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 
 		// --- Footer row ---
 		const footer = append(content, $('div.copilot-prototype-dashboard-footer'));
+		if (isMax) {
+			const overageActiveDesc = isOverageInUse
+				? localize('maxOverageDescActive', "Overage budget is active.")
+				: localize('maxOverageDescInactive', "No overage budget currently in use.");
+			append(footer, $('div.copilot-prototype-dashboard-footer-label')).textContent = overageActiveDesc;
+		}
 		const footerActions = append(footer, $('div.copilot-prototype-dashboard-footer-actions'));
 		if (this._microTransaction && state === 'Overage Reached') {
 			for (const amount of ['+$5', '+$10', '+$20']) {
@@ -1586,12 +1590,14 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 				disposables.add(btn.onDidClick(() => this.advanceState()));
 			}
 		} else {
-			const upgradeBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
-			upgradeBtn.label = localize('upgrade', "Upgrade");
-			disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
-			const editBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles }));
-			editBtn.label = localize('editBudget', "Edit Budget");
-			disposables.add(editBtn.onDidClick(() => this.advanceState()));
+			if (!isMax) {
+				const upgradeBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
+				upgradeBtn.label = localize('upgrade', "Upgrade");
+				disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
+			}
+			const manageBudgetBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
+			manageBudgetBtn.label = localize('manageBudget', "Manage Budget");
+			disposables.add(manageBudgetBtn.onDidClick(() => this.advanceState()));
 		}
 	}
 
@@ -1659,13 +1665,21 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 
 		// --- Footer row ---
 		const footer = append(content, $('div.copilot-prototype-dashboard-footer'));
+		if (isMax) {
+			const overageActiveDesc = isOverageState
+				? localize('maxOverageDescActive', "Overage budget is active.")
+				: localize('maxOverageDescInactive', "No overage budget currently in use.");
+			append(footer, $('div.copilot-prototype-dashboard-footer-label')).textContent = overageActiveDesc;
+		}
 		const footerActions = append(footer, $('div.copilot-prototype-dashboard-footer-actions'));
-		const upgradeBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
-		upgradeBtn.label = localize('upgrade', "Upgrade");
-		disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
-		const viewBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles }));
-		viewBtn.label = localize('viewBudget', "View Budget");
-		disposables.add(viewBtn.onDidClick(() => this.advanceState()));
+		if (!isMax) {
+			const upgradeBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
+			upgradeBtn.label = localize('upgrade', "Upgrade");
+			disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
+		}
+		const manageBtn = disposables.add(new Button(footerActions, { ...defaultButtonStyles, secondary: true }));
+		manageBtn.label = localize('manageBudget', "Manage Budget");
+		disposables.add(manageBtn.onDidClick(() => this.advanceState()));
 	}
 
 	private createInfoMessage(container: HTMLElement, message: string, highlight?: boolean): void {
