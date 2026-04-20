@@ -238,7 +238,7 @@
 .chat-status-bar-entry-tooltip .quota-callout.warning {
 	border-color: var(--vscode-gauge-warningForeground);
 	background-color: var(--vscode-gauge-warningBackground);
-	color: var(--vscode-foreground);
+	color: var(--vscode-descriptionForeground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.warning .callout-icon {
