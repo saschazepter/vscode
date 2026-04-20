@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { notStrictEqual, strictEqual } from 'assert';
+import { notStrictEqual, ok, strictEqual } from 'assert';
 import { Schemas } from '../../../../base/common/network.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -306,11 +306,6 @@ suite('StorageMainService', function () {
 		disposables.add(storage);
 		await storage.init();
 
-		// Verify that storing a value sends a cross-app IPC message
-		storage.set('testKey', 'testValue');
-		strictEqual(sentMessages.length, 1);
-		strictEqual(sentMessages[0].type, 'sharedStorage:changed');
-
 		// Verify that receiving a cross-app IPC message triggers a change event
 		let changeEvent: IStorageChangeEvent | undefined;
 		disposables.add(storage.onDidChangeStorage(e => { changeEvent = e; }));
@@ -325,6 +320,14 @@ suite('StorageMainService', function () {
 
 		strictEqual(changeEvent?.key, 'externalKey');
 		strictEqual(storage.get('externalKey'), 'externalValue');
+
+		// Verify that storing a value sends a cross-app IPC message
+		// (close flushes pending writes which triggers sendMessage)
+		const messagesBefore = sentMessages.length;
+		storage.set('testKey', 'testValue');
+		await storage.close();
+		ok(sentMessages.length > messagesBefore);
+		strictEqual(sentMessages[sentMessages.length - 1].type, 'sharedStorage:changed');
 
 		// Verify that messages received before init are ignored
 		const onDidReceiveMessage2 = disposables.add(new Emitter<ICrossAppIPCMessage>());
@@ -359,7 +362,6 @@ suite('StorageMainService', function () {
 
 		strictEqual(storage2.get('postInitKey'), 'postInitValue');
 
-		await storage.close();
 		await storage2.close();
 	});
 
