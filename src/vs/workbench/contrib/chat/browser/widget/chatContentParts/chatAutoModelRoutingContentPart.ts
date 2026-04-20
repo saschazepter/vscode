@@ -34,81 +34,97 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 	protected override initContent(): HTMLElement {
 		const content = $('.chat-auto-model-routing-details.chat-used-context-list');
 
-		// Header line: "Auto Model Selection"
+		// Header row: title + detected intent chip (if any)
+		const headerRow = $('.chat-auto-model-routing-header-row');
 		const header = $('.chat-auto-model-routing-header', undefined,
 			localize('autoModelRouting.header', "Copilot Auto Model Selection"));
-		content.appendChild(header);
-
-		// Selection reason
-		const reasonRow = this.makeRow(
-			localize('autoModelRouting.reason', "Reason"),
-			this.routingPart.selectionReason
-		);
-		content.appendChild(reasonRow);
-
-		// Detected intent
+		headerRow.appendChild(header);
 		if (this.routingPart.intent) {
-			content.appendChild(this.makeRow(
-				localize('autoModelRouting.intent', "Detected intent"),
-				this.routingPart.intent
-			));
+			headerRow.appendChild(this.makeChip(this.routingPart.intent));
 		}
+		content.appendChild(headerRow);
 
-		// Confidence
+		// Reason text
+		const reason = $('.chat-auto-model-routing-reason', undefined, this.routingPart.selectionReason);
+		content.appendChild(reason);
+
+		// Metadata chips row (confidence / latency / cost)
+		const meta = $('.chat-auto-model-routing-meta');
 		if (typeof this.routingPart.confidence === 'number') {
-			const pct = Math.round(this.routingPart.confidence * 100);
-			content.appendChild(this.makeRow(
-				localize('autoModelRouting.confidence', "Confidence"),
-				`${pct}%`
+			meta.appendChild(this.makeChip(
+				localize('autoModelRouting.confidence', "Confidence: {0}%", Math.round(this.routingPart.confidence * 100))
 			));
 		}
-
-		// Predicted latency
 		if (typeof this.routingPart.predictedLatencyMs === 'number') {
-			content.appendChild(this.makeRow(
-				localize('autoModelRouting.latency', "Predicted latency"),
-				`${this.routingPart.predictedLatencyMs} ms`
+			meta.appendChild(this.makeChip(
+				localize('autoModelRouting.latency', "~{0} ms", this.routingPart.predictedLatencyMs)
 			));
 		}
-
-		// Cost tier
 		if (this.routingPart.costTier) {
-			content.appendChild(this.makeRow(
-				localize('autoModelRouting.cost', "Cost tier"),
-				this.routingPart.costTier
+			meta.appendChild(this.makeChip(
+				localize('autoModelRouting.cost', "Cost: {0}", this.routingPart.costTier)
 			));
 		}
-
-		// Considered candidates
-		if (this.routingPart.candidates && this.routingPart.candidates.length > 0) {
-			const candHeader = $('.chat-auto-model-routing-subheader', undefined,
-				localize('autoModelRouting.candidates', "Other models considered"));
-			content.appendChild(candHeader);
-
-			const list = $('ul.chat-auto-model-routing-candidates');
-			for (const cand of this.routingPart.candidates) {
-				const li = $('li.chat-auto-model-routing-candidate');
-				const name = $('span.chat-auto-model-routing-candidate-name', undefined, cand.modelName);
-				const score = $('span.chat-auto-model-routing-candidate-score', undefined, `${Math.round(cand.score * 100)}%`);
-				li.appendChild(name);
-				li.appendChild(score);
-				if (cand.reason) {
-					const reason = $('span.chat-auto-model-routing-candidate-reason', undefined, cand.reason);
-					li.appendChild(reason);
-				}
-				list.appendChild(li);
-			}
-			content.appendChild(list);
+		if (meta.childElementCount > 0) {
+			content.appendChild(meta);
 		}
+
+		// Build a unified ranked list: selected model (with synthetic score = confidence ?? 1)
+		// followed by other candidates. Bars are scaled to the max score in the list so
+		// the highest-scoring entry visually fills the row.
+		const selectedScore = this.routingPart.confidence ?? 1;
+		type Row = { name: string; score: number; reason?: string; selected: boolean };
+		const rows: Row[] = [
+			{ name: this.routingPart.selectedModel, score: selectedScore, reason: this.routingPart.selectionReason, selected: true },
+			...(this.routingPart.candidates ?? []).map(c => ({ name: c.modelName, score: c.score, reason: c.reason, selected: false })),
+		];
+		const maxScore = Math.max(...rows.map(r => r.score), 0.0001);
+
+		const subheader = $('.chat-auto-model-routing-subheader', undefined,
+			localize('autoModelRouting.ranked', "Ranked candidates"));
+		content.appendChild(subheader);
+
+		const list = $('ul.chat-auto-model-routing-candidates');
+		for (const row of rows) {
+			list.appendChild(this.makeCandidateRow(row.name, row.score, maxScore, row.reason, row.selected));
+		}
+		content.appendChild(list);
 
 		return content;
 	}
 
-	private makeRow(label: string, value: string): HTMLElement {
-		const row = $('.chat-auto-model-routing-row');
-		row.appendChild($('span.chat-auto-model-routing-label', undefined, label));
-		row.appendChild($('span.chat-auto-model-routing-value', undefined, value));
-		return row;
+	private makeChip(text: string): HTMLElement {
+		return $('span.chat-auto-model-routing-chip', undefined, text);
+	}
+
+	private makeCandidateRow(name: string, score: number, maxScore: number, reason: string | undefined, selected: boolean): HTMLElement {
+		const li = $(`li.chat-auto-model-routing-candidate${selected ? '.selected' : ''}`);
+
+		const nameCol = $('.chat-auto-model-routing-candidate-name');
+		if (selected) {
+			const check = $('span.codicon.codicon-check.chat-auto-model-routing-check', { 'aria-hidden': 'true' });
+			nameCol.appendChild(check);
+		}
+		nameCol.appendChild($('span', undefined, name));
+		li.appendChild(nameCol);
+
+		const barCol = $('.chat-auto-model-routing-bar-col');
+		const bar = $('.chat-auto-model-routing-bar');
+		const fill = $('.chat-auto-model-routing-bar-fill');
+		const widthPct = Math.max(2, Math.round((score / maxScore) * 100));
+		fill.style.width = `${widthPct}%`;
+		bar.appendChild(fill);
+		barCol.appendChild(bar);
+		li.appendChild(barCol);
+
+		const scoreLabel = $('.chat-auto-model-routing-candidate-score', undefined, `${Math.round(score * 100)}%`);
+		li.appendChild(scoreLabel);
+
+		if (reason) {
+			const reasonRow = $('.chat-auto-model-routing-candidate-reason', undefined, reason);
+			li.appendChild(reasonRow);
+		}
+		return li;
 	}
 
 	hasSameContent(other: IChatRendererContent, _followingContent: IChatRendererContent[], _element: ChatTreeItem): boolean {
