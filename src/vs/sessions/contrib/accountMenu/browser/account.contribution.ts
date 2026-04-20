@@ -241,10 +241,15 @@ registerAction2(class extends Action2 {
 
 		const allSessions = await authenticationService.getSessions(providerId);
 		const sessions = allSessions.filter(session => session.account.label === accountLabel);
+
+		// Show the welcome overlay immediately, before the sessions are removed,
+		// so there is no flash where the titlebar shows "Signed Out" while the
+		// workbench is still visible.
+		resetSessionsWelcome(storageService, instantiationService, layoutService, chatEntitlementService, contextKeyService, environmentService, logService, /* skipInitialComplete */ true);
+
 		await Promise.all(sessions.map(session => authenticationService.removeSession(providerId, session.id)));
 		authenticationUsageService.removeAccountUsage(providerId, accountLabel);
 		authenticationAccessService.removeAllowedExtensions(providerId, accountLabel);
-		await showSessionsWelcomeAfterSignOut(chatEntitlementService, () => resetSessionsWelcome(storageService, instantiationService, layoutService, chatEntitlementService, contextKeyService, environmentService, logService));
 	}
 });
 

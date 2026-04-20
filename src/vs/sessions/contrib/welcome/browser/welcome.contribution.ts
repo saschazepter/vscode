@@ -58,6 +58,7 @@ export function resetSessionsWelcome(
 	contextKeyService: IContextKeyService,
 	environmentService: IWorkbenchEnvironmentService,
 	logService: ILogService,
+	skipInitialComplete: boolean = false,
 ): void {
 	// Clear completion marker
 	storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
@@ -77,9 +78,19 @@ export function resetSessionsWelcome(
 		layoutService.mainContainer,
 	));
 
+	// When skipInitialComplete is true, we are showing the overlay proactively
+	// (e.g. before a sign-out completes) so we skip the first synchronous autorun
+	// evaluation to avoid immediately dismissing the overlay while the user is
+	// still technically signed in.
+	let isFirstRun = skipInitialComplete;
 	store.add(autorun(reader => {
 		chatEntitlementService.sentimentObs.read(reader);
 		chatEntitlementService.entitlementObs.read(reader);
+
+		if (isFirstRun) {
+			isFirstRun = false;
+			return;
+		}
 
 		if (!needsChatSetup(chatEntitlementService)) {
 			storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
@@ -157,12 +168,35 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 			if (sessions.length > 0) {
 				this.logService.info('[sessions welcome] GitHub session found on web, skipping walkthrough');
 				this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+				this._watchWebSessionChanges();
 				return;
 			}
 		} catch {
 			// Provider not available yet — show walkthrough
 		}
 		this.showWalkthrough();
+	}
+
+	/**
+	 * Web-only: after confirming the user is authenticated, watch for session
+	 * removals. When all GitHub sessions are gone (real sign-out or expiry),
+	 * show the sign-in walkthrough so the user is never stuck seeing "Signed Out"
+	 * with the workbench still visible.
+	 */
+	private _watchWebSessionChanges(): void {
+		this._register(this.authenticationService.onDidChangeSessions(async ({ providerId, event }) => {
+			if (providerId !== 'github' || !event.removed?.length) {
+				return;
+			}
+			// Re-check sessions asynchronously so token refreshes (which remove
+			// and immediately re-add a session) are not treated as sign-outs.
+			const remaining = await this.authenticationService.getSessions('github').catch(() => [] as { id: string }[]);
+			if (remaining.length === 0) {
+				this.logService.info('[sessions welcome] All GitHub sessions removed on web, showing walkthrough');
+				this.storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
+				this.showWalkthrough();
+			}
+		}));
 	}
 
 	private showWalkthroughIfNeeded(): void {
@@ -205,6 +239,12 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 	private showWalkthrough(): void {
 		if (this.overlayRef.value) {
+			return;
+		}
+
+		// Guard against a second overlay if one was already created externally
+		// (e.g. by resetSessionsWelcome called from the sign-out action).
+		if (SessionsWelcomeVisibleContext.getValue(this.contextKeyService)) {
 			return;
 		}
 
