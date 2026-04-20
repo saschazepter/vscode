@@ -69,6 +69,21 @@
             "included": false
         },
         {
+            "key": "chat.approvedAccountOrganizations",
+            "name": "ChatApprovedAccountOrganizations",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.118",
+            "localization": {
+                "description": {
+                    "key": "chat.approvedAccountOrganizations.policy.description",
+                    "value": "Setting this policy to a non-empty value activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comma-separated list of GitHub organization logins. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced)."
+                }
+            },
+            "type": "string",
+            "default": "",
+            "included": false
+        },
+        {
             "key": "extensions.allowed",
             "name": "AllowedExtensions",
             "category": "Extensions",
@@ -265,6 +280,21 @@
             },
             "type": "boolean",
             "default": true,
+            "included": true
+        },
+        {
+            "key": "chat.disableAIFeatures",
+            "name": "ChatDisableAIFeatures",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.118",
+            "localization": {
+                "description": {
+                    "key": "chat.disableAIFeatures.policy.description",
+                    "value": "Force-disable built-in AI features. Set automatically when 'Approved Account Organizations' is configured and the user is not signed into an approved GitHub organization."
+                }
+            },
+            "type": "boolean",
+            "default": false,
             "included": true
         },
         {
@@ -478,36 +508,6 @@
             "type": "boolean",
             "default": true,
             "included": true
-        },
-        {
-            "key": "chat.disableAIFeatures",
-            "name": "ChatDisableAIFeatures",
-            "category": "InteractiveSession",
-            "minimumVersion": "1.118",
-            "localization": {
-                "description": {
-                    "key": "chat.disableAIFeatures.policy.description",
-                    "value": "Force-disable built-in AI features. Set automatically when 'Approved Account Organizations' is configured and the user is not signed into an approved GitHub organization."
-                }
-            },
-            "type": "boolean",
-            "default": false,
-            "included": true
-        },
-        {
-            "key": "chat.approvedAccountOrganizations",
-            "name": "ChatApprovedAccountOrganizations",
-            "category": "InteractiveSession",
-            "minimumVersion": "1.118",
-            "localization": {
-                "description": {
-                    "key": "chat.approvedAccountOrganizations.policy.description",
-                    "value": "Setting this policy to a non-empty value activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comma-separated list of GitHub organization logins. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced)."
-                }
-            },
-            "type": "string",
-            "default": "",
-            "included": false
         }
     ]
 }
