@@ -2176,6 +2176,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				}
 			}
 
+			_perfTestDelay_chatMarkdownRender();
+
 			if (content.kind === 'treeData') {
 				return this.renderTreeData(content, templateData, context);
 			} else if (content.kind === 'multiDiffData') {
@@ -3252,4 +3254,46 @@ function getSubagentId(invocation: IChatToolInvocation | IChatToolInvocationSeri
  */
 function isSubagentToolInvocation(invocation: IChatToolInvocation | IChatToolInvocationSerialized): boolean {
 	return !!getSubagentId(invocation);
+}
+
+const PERF_TEST_DELAY_MS = 100;
+
+/**
+ * Top-level entry point for the artificial delay injected into chat markdown
+ * rendering. Calls into a chain of named functions so the stack is deep and
+ * unmistakable in profiling tools.
+ */
+function _perfTestDelay_chatMarkdownRender(): void {
+	_perfTestDelay_processResponseLayout();
+}
+
+function _perfTestDelay_processResponseLayout(): void {
+	_perfTestDelay_computeContentMetrics();
+}
+
+function _perfTestDelay_computeContentMetrics(): void {
+	_perfTestDelay_resolveTokenBoundaries();
+}
+
+function _perfTestDelay_resolveTokenBoundaries(): void {
+	_perfTestDelay_executeBusyWait(PERF_TEST_DELAY_MS);
+}
+
+/**
+ * Synchronous busy-wait that keeps the CPU hot for the given duration.
+ * This ensures the delay shows up as actual on-CPU time in sampling profilers
+ * rather than being invisible idle time from setTimeout / requestAnimationFrame.
+ */
+function _perfTestDelay_executeBusyWait(ms: number): void {
+	const end = performance.now() + ms;
+	let accumulator = 0;
+	while (performance.now() < end) {
+		// Perform lightweight arithmetic to keep the CPU busy without
+		// triggering GC or allocation pressure.
+		accumulator += Math.sin(accumulator + 1);
+	}
+	// Prevent the optimizer from eliminating the loop as dead code.
+	if (accumulator > 1e15) {
+		console.log(accumulator);
+	}
 }
