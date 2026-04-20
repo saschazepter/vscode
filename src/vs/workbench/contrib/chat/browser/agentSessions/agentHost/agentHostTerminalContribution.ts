@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../../nls.js';
 import { AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -22,22 +22,38 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 	static readonly ID = 'workbench.contrib.agentHostTerminal';
 
 	private readonly _localEntry = this._register(new MutableDisposable());
+	private readonly _conditionalListeners = this._register(new MutableDisposable<DisposableStore>());
 
 	constructor(
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IConfigurationService configurationService: IConfigurationService,
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
 	) {
 		super();
 
-		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-			return;
-		}
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(AgentHostEnabledSettingId)) {
+				this._updateEnabled();
+			}
+		}));
 
-		this._register(this._agentHostService.onAgentHostStart(() => this._reconcile()));
-		this._register(this._agentHostService.onAgentHostExit(() => this._reconcile()));
-		this._reconcile();
+		this._updateEnabled();
+	}
+
+	private _updateEnabled(): void {
+		if (this._configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+			if (!this._conditionalListeners.value) {
+				const store = new DisposableStore();
+				store.add(this._agentHostService.onAgentHostStart(() => this._reconcile()));
+				store.add(this._agentHostService.onAgentHostExit(() => this._reconcile()));
+				this._conditionalListeners.value = store;
+				this._reconcile();
+			}
+		} else {
+			this._conditionalListeners.value = undefined;
+			this._localEntry.value = undefined;
+		}
 	}
 
 	private _reconcile(): void {
