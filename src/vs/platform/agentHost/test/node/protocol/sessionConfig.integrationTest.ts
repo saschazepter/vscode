@@ -203,10 +203,13 @@ suite('Protocol WebSocket - Session Config persistence across restarts', functio
 
 			client1.close();
 		} finally {
-			// The server's shutdown handler awaits in-flight persistence
-			// writes before exiting, so awaiting `exit` here is sufficient
-			// to guarantee the updated `configValues` reached SQLite.
-			server1.process.kill();
+			// Trigger graceful shutdown by closing stdin rather than sending
+			// SIGTERM — on Windows, `child.kill()` (SIGTERM) unconditionally
+			// terminates the process without invoking the shutdown handler,
+			// so in-flight `setMetadata` writes never reach SQLite. Closing
+			// stdin fires `process.stdin.on('end', shutdown)` in the server
+			// on every platform.
+			server1.process.stdin!.end();
 			await new Promise<void>(resolve => server1.process.once('exit', () => resolve()));
 		}
 
@@ -237,7 +240,7 @@ suite('Protocol WebSocket - Session Config persistence across restarts', functio
 
 			client2.close();
 		} finally {
-			server2.process.kill();
+			server2.process.stdin!.end();
 			await new Promise<void>(resolve => server2.process.once('exit', () => resolve()));
 		}
 	});
