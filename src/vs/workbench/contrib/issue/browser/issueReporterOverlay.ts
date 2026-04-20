@@ -81,6 +81,13 @@ export class IssueReporterOverlay {
 	private titleInput!: HTMLInputElement;
 	private reviewThumbCards: HTMLElement[] = [];
 	private uploading = false;
+	private includeSystemInfo = true;
+	private includeExtensions = true;
+	private includeExperiments = true;
+	private includeSettings = true;
+	private settingsContent: string | undefined;
+	private workspaceSettingsContent: string | undefined;
+	private activeThemeName: string | undefined;
 
 	// Navigation
 	private stepIndicator!: HTMLElement;
@@ -108,6 +115,12 @@ export class IssueReporterOverlay {
 			...data,
 			issueType: data.issueType || IssueType.Bug,
 			allExtensions: data.enabledExtensions,
+			includeSystemInfo: true,
+			includeWorkspaceInfo: true,
+			includeProcessInfo: true,
+			includeExtensions: true,
+			includeExperiments: true,
+			includeExtensionData: false,
 		});
 		this.selectedIssueType = data.issueType;
 
@@ -446,7 +459,7 @@ export class IssueReporterOverlay {
 		// Only visible on step 3
 		this.floatingBar.style.display = this.currentStep === WizardStep.Screenshots ? '' : 'none';
 
-		// Dragging
+		// Dragging (clamped to window bounds)
 		let dragStartX = 0;
 		let dragStartY = 0;
 		let barStartX = 0;
@@ -455,8 +468,14 @@ export class IssueReporterOverlay {
 		const onPointerMove = (e: PointerEvent) => {
 			const dx = e.clientX - dragStartX;
 			const dy = e.clientY - dragStartY;
-			this.floatingBar!.style.left = `${barStartX + dx}px`;
-			this.floatingBar!.style.top = `${barStartY + dy}px`;
+			const barW = this.floatingBar!.offsetWidth;
+			const barH = this.floatingBar!.offsetHeight;
+			const maxX = targetWindow.innerWidth - barW;
+			const maxY = targetWindow.innerHeight - barH;
+			const newX = Math.max(0, Math.min(barStartX + dx, maxX));
+			const newY = Math.max(0, Math.min(barStartY + dy, maxY));
+			this.floatingBar!.style.left = `${newX}px`;
+			this.floatingBar!.style.top = `${newY}px`;
 			this.floatingBar!.style.right = 'auto';
 		};
 
@@ -487,7 +506,14 @@ export class IssueReporterOverlay {
 		if (!this.floatingBar) {
 			return;
 		}
-		this.floatingBar.style.display = this.currentStep === WizardStep.Screenshots ? '' : 'none';
+		const shouldShow = this.currentStep === WizardStep.Screenshots;
+		this.floatingBar.style.display = shouldShow ? '' : 'none';
+		if (shouldShow) {
+			// Reset to default position
+			this.floatingBar.style.left = '';
+			this.floatingBar.style.top = '';
+			this.floatingBar.style.right = '';
+		}
 	}
 
 	// ── Step 4: Review & Submit ──
@@ -783,409 +809,635 @@ export class IssueReporterOverlay {
 				this.reviewThumbCards.push(card);
 			}
 		}
-	}
 
-	/** Called by the form service to show upload progress */
-	setUploading(uploading: boolean): void {
-		this.uploading = uploading;
-		const nextLabel = this.nextButton.querySelector('.wizard-next-label');
-		const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
+		// ── Diagnostic data sections with checkboxes + collapsible details ──
+		const diagContainer = append(details as HTMLElement, $('div.review-diagnostics'));
 
-		if (uploading) {
-			this.nextButton.classList.add('uploading');
-			if (nextLabel) {
-				nextLabel.textContent = localize('uploading', "Uploading...");
-			}
-			if (nextArrow) {
-				nextArrow.textContent = '';
-				const spinner = document.createElement('span');
-				spinner.className = 'wizard-btn-spinner';
-				nextArrow.appendChild(spinner);
-			}
-			this.backButton.style.display = 'none';
+		const modelData = this.model.getData();
+
+		// System Info
+		if (modelData.versionInfo || modelData.systemInfo) {
+			this.createDiagSection(diagContainer, {
+				id: 'system-info',
+				label: localize('systemInformation', "System Information"),
+				checked: this.includeSystemInfo,
+				onToggle: (checked) => {
+					this.includeSystemInfo = checked;
+					this.model.update({ includeSystemInfo: checked });
+				},
+				renderContent: (container) => {
+					const sysTable = append(container, $('table.review-diag-table'));
+					if (modelData.versionInfo) {
+						this.addDiagRow(sysTable, 'VS Code', modelData.versionInfo.vscodeVersion);
+						this.addDiagRow(sysTable, 'OS', modelData.versionInfo.os);
+					}
+					if (modelData.systemInfo) {
+						this.addDiagRow(sysTable, 'CPUs', modelData.systemInfo.cpus ?? '');
+						this.addDiagRow(sysTable, 'Memory', modelData.systemInfo.memory);
+						this.addDiagRow(sysTable, 'VM', modelData.systemInfo.vmHint);
+						this.addDiagRow(sysTable, 'Screen Reader', modelData.systemInfo.screenReader);
+					}
+					this.addDiagRow(sysTable, 'User Agent', navigator.userAgent);
+					this.addDiagRow(sysTable, 'Installation', modelData.isUnsupported ? 'Unsupported (modified)' : 'Supported (pure)');
+					if (modelData.restrictedMode) {
+						this.addDiagRow(sysTable, 'Mode', 'Restricted');
+					}
+				},
+			});
 		} else {
-			this.nextButton.classList.remove('uploading');
-			if (nextLabel) {
-				nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
+			const loading = append(diagContainer, $('div.review-diag-loading'));
+			loading.textContent = localize('loadingSystemInfo', "Loading system information...");
+		}
+
+		// Extensions (non-theme only)
+		const nonThemeExtensions = (modelData.allExtensions ?? []).filter(e => !e.isTheme && !e.isBuiltin);
+		if (nonThemeExtensions.length > 0) {
+			this.createDiagSection(diagContainer, {
+				id: 'extensions',
+				label: localize('extensions', "Extensions ({0})", nonThemeExtensions.length),
+				checked: this.includeExtensions,
+				onToggle: (checked) => {
+					this.includeExtensions = checked;
+					this.model.update({ includeExtensions: checked });
+				},
+				renderContent: (container) => {
+					const extTable = append(container, $('table.review-diag-table.review-ext-table'));
+					const header = append(extTable, $('tr'));
+					for (const h of ['Name', 'Identifier', 'Author', 'Version']) {
+						const th = append(header, $('th.review-ext-th'));
+						th.textContent = h;
+					}
+					for (const ext of nonThemeExtensions) {
+						const row = append(extTable, $('tr'));
+						append(row, $('td')).textContent = ext.displayName || ext.name;
+						append(row, $('td')).textContent = ext.id;
+						append(row, $('td')).textContent = ext.publisher ?? '';
+						append(row, $('td')).textContent = ext.version;
+					}
+				},
+			});
+		}
+
+		// Experiments
+		if (modelData.experimentInfo) {
+			this.createDiagSection(diagContainer, {
+				id: 'experiments',
+				label: localize('abExperiments', "A/B Experiments"),
+				checked: this.includeExperiments,
+				onToggle: (checked) => {
+					this.includeExperiments = checked;
+					this.model.update({ includeExperiments: checked });
+				},
+				renderContent: (container) => {
+					const pre = append(container, $('pre.review-diag-pre'));
+					pre.textContent = modelData.experimentInfo!;
+				},
+			});
+		}
+
+		// Settings
+		if (this.settingsContent) {
+			this.createDiagSection(diagContainer, {
+				id: 'settings',
+				label: localize('settings', "Settings"),
+				checked: this.includeSettings,
+				onToggle: (checked) => {
+					this.includeSettings = checked;
+				},
+				renderContent: (container) => {
+					const userLabel = append(container, $('div.review-diag-sublabel'));
+					userLabel.textContent = localize('userSettings', "User Settings");
+					const userPre = append(container, $('pre.review-diag-pre'));
+					userPre.textContent = this.settingsContent!;
+					if (this.workspaceSettingsContent) {
+						const wsLabel = append(container, $('div.review-diag-sublabel'));
+						wsLabel.textContent = localize('workspaceSettings', "Workspace Settings");
+						const wsPre = append(container, $('pre.review-diag-pre'));
+						wsPre.textContent = this.workspaceSettingsContent;
+					}
+				},
+			});
+		}
+
+		// Align all title widths dynamically to the widest title
+		const titles = diagContainer.querySelectorAll('.review-diag-title');
+		let maxWidth = 0;
+		for (const t of titles) {
+			(t as HTMLElement).style.minWidth = '';
+		}
+		for (const t of titles) {
+			maxWidth = Math.max(maxWidth, (t as HTMLElement).offsetWidth);
+		}
+		if (maxWidth > 0) {
+			for (const t of titles) {
+				(t as HTMLElement).style.minWidth = `${maxWidth}px`;
 			}
-			if (nextArrow) {
-				nextArrow.textContent = ' \u2192';
+		}
+
+		// Align all toggle button widths to the widest
+		const toggles = diagContainer.querySelectorAll('.review-diag-toggle');
+		let maxToggleWidth = 0;
+		for (const t of toggles) {
+			(t as HTMLElement).style.minWidth = '';
+		}
+		for (const t of toggles) {
+			maxToggleWidth = Math.max(maxToggleWidth, (t as HTMLElement).offsetWidth);
+		}
+		if (maxToggleWidth > 0) {
+			for (const t of toggles) {
+				(t as HTMLElement).style.minWidth = `${maxToggleWidth}px`;
 			}
 		}
 	}
 
-	/** Mark a specific attachment as uploading / done */
-	setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void {
-		const card = this.reviewThumbCards[index];
-		if (!card) {
-			return;
+	private createDiagSection(parent: HTMLElement, opts: {
+		id: string;
+		label: string;
+		checked: boolean;
+		onToggle: (checked: boolean) => void;
+		renderContent: (container: HTMLElement) => void;
+	}): void {
+		const group = append(parent, $('div.review-diag-group'));
+
+		// Header: title | "Include in issue" checkbox | Minimize/Expand button
+		const header = append(group, $('div.review-diag-header'));
+
+		const title = append(header, $('span.review-diag-title'));
+		title.textContent = opts.label;
+
+		const checkWrap = append(header, $('div.review-diag-check-wrap'));
+		const checkbox = append(checkWrap, $('input.review-diag-checkbox')) as HTMLInputElement;
+		checkbox.type = 'checkbox';
+		checkbox.checked = opts.checked;
+		checkbox.id = `diag-${opts.id}`;
+		const checkLabel = append(checkWrap, $('label.review-diag-check-label'));
+		checkLabel.setAttribute('for', `diag-${opts.id}`);
+		checkLabel.textContent = localize('includeInIssue', "Include in issue");
+		this.disposables.add(addDisposableListener(checkbox, EventType.CHANGE, () => {
+			opts.onToggle(checkbox.checked);
+		}));
+
+		const toggleBtn = append(header, $('div.wizard-nav-btn.review-diag-toggle'));
+		toggleBtn.setAttribute('role', 'button');
+		toggleBtn.setAttribute('tabindex', '0');
+		const toggleIcon = append(toggleBtn, $('span'));
+		toggleIcon.appendChild(renderIcon(Codicon.chevronUp));
+		const toggleLabel = append(toggleBtn, $('span'));
+		toggleLabel.textContent = localize('minimize', "Minimize");
+
+		// Content
+		const content = append(group, $('div.review-diag-content'));
+		opts.renderContent(content);
+
+		let expanded = true;
+		this.disposables.add(addDisposableListener(toggleBtn, EventType.CLICK, () => {
+			expanded = !expanded;
+			content.style.display = expanded ? '' : 'none';
+			toggleIcon.textContent = '';
+			toggleIcon.appendChild(renderIcon(expanded ? Codicon.chevronUp : Codicon.chevronDown));
+			toggleLabel.textContent = expanded
+				? localize('minimize', "Minimize")
+				: localize('expand', "Expand");
+		}));
+	}
+
+	private addDiagRow(table: HTMLElement, label: string, value: string): void {
+	const row = append(table, $('tr'));
+	const th = append(row, $('td.review-diag-key'));
+	th.textContent = label;
+	const td = append(row, $('td.review-diag-val'));
+	td.textContent = value;
+}
+
+/** Called by the form service to show upload progress */
+setUploading(uploading: boolean): void {
+	this.uploading = uploading;
+	const nextLabel = this.nextButton.querySelector('.wizard-next-label');
+	const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
+
+	if(uploading) {
+		this.nextButton.classList.add('uploading');
+		if (nextLabel) {
+			nextLabel.textContent = localize('uploading', "Uploading...");
 		}
+		if (nextArrow) {
+			nextArrow.textContent = '';
+			const spinner = document.createElement('span');
+			spinner.className = 'wizard-btn-spinner';
+			nextArrow.appendChild(spinner);
+		}
+		this.backButton.style.display = 'none';
+	} else {
+		this.nextButton.classList.remove('uploading');
+		if(nextLabel) {
+			nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
+		}
+			if(nextArrow) {
+			nextArrow.textContent = ' \u2192';
+		}
+	}
+}
+
+/** Mark a specific attachment as uploading / done */
+setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void {
+	const card = this.reviewThumbCards[index];
+	if(!card) {
+		return;
+	}
 		card.classList.remove('upload-pending', 'upload-uploading', 'upload-done');
-		card.classList.add(`upload-${state}`);
+	card.classList.add(`upload-${state}`);
 
-		const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
-		if (!overlay) {
-			return;
-		}
+	const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
+	if(!overlay) {
+		return;
+	}
 
-		if (state === 'done') {
-			// Replace ring with checkmark
-			overlay.textContent = '';
-			const check = document.createElement('span');
-			check.className = 'review-progress-check';
-			check.appendChild(renderIcon(Codicon.check));
-			overlay.appendChild(check);
-		}
+		if(state === 'done') {
+	// Replace ring with checkmark
+	overlay.textContent = '';
+	const check = document.createElement('span');
+	check.className = 'review-progress-check';
+	check.appendChild(renderIcon(Codicon.check));
+	overlay.appendChild(check);
+}
 	}
 
 	private submit(): void {
-		const title = this.titleInput.value.trim();
-		if (!title) {
-			this.titleInput.classList.add('invalid-input');
-			this.titleInput.focus();
-			return;
-		}
+	const title = this.titleInput.value.trim();
+	if(!title) {
+		this.titleInput.classList.add('invalid-input');
+		this.titleInput.focus();
+		return;
+	}
 
 		const description = this.descriptionTextarea.value.trim();
-		this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
+	this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
 
-		const body = this.buildIssueBody();
-		this._onDidSubmit.fire({ title, body });
+	const body = this.buildIssueBody();
+	this._onDidSubmit.fire({ title, body });
+}
+
+show(): void {
+	if(this.visible) {
+	return;
+}
+this.visible = true;
+
+this.wizardPanel.classList.add('open', 'wizard-embedded');
+this.wizardPanel.style.maxHeight = 'none';
+append(this.container, this.wizardPanel);
+this.descriptionTextarea.focus();
 	}
 
-	show(): void {
-		if (this.visible) {
-			return;
-		}
-		this.visible = true;
-
-		this.wizardPanel.classList.add('open', 'wizard-embedded');
-		this.wizardPanel.style.maxHeight = 'none';
-		append(this.container, this.wizardPanel);
-		this.descriptionTextarea.focus();
-	}
-
-	close(): void {
-		this.visible = false;
-		this._onDidClose.fire();
-	}
+close(): void {
+	this.visible = false;
+	this._onDidClose.fire();
+}
 
 	private getTotalAttachments(): number {
-		return this.screenshots.length + this.recordings.length;
-	}
+	return this.screenshots.length + this.recordings.length;
+}
 
-	addScreenshot(screenshot: IScreenshot): void {
-		if (this.getTotalAttachments() >= MAX_ATTACHMENTS) {
-			return;
-		}
-		this.screenshots.push(screenshot);
-		this.updateScreenshotThumbnails();
-		this.updateAttachmentButtons();
-		this.updateStepUI();
+addScreenshot(screenshot: IScreenshot): void {
+	if(this.getTotalAttachments() >= MAX_ATTACHMENTS) {
+	return;
+}
+this.screenshots.push(screenshot);
+this.updateScreenshotThumbnails();
+this.updateAttachmentButtons();
+this.updateStepUI();
 
-		// Immediately open the annotation editor for the new screenshot
-		this.openAnnotationEditor(this.screenshots.length - 1);
+// Immediately open the annotation editor for the new screenshot
+this.openAnnotationEditor(this.screenshots.length - 1);
 	}
 
 	private updateAttachmentButtons(): void {
-		const atMax = this.getTotalAttachments() >= MAX_ATTACHMENTS;
+	const atMax = this.getTotalAttachments() >= MAX_ATTACHMENTS;
 
-		this.captureBtn.classList.toggle('disabled', atMax);
-		this.captureLabel.textContent = atMax
+	this.captureBtn.classList.toggle('disabled', atMax);
+	this.captureLabel.textContent = atMax
+		? localize('maxAttachmentsReached', "Max attachments reached")
+		: localize('addScreenshot', "Add screenshot");
+
+	if(this.recordBtn) {
+	this.recordBtn.classList.toggle('disabled', atMax);
+	if (this.currentRecordingState !== RecordingState.Recording) {
+		this.recordLabel.textContent = atMax
 			? localize('maxAttachmentsReached', "Max attachments reached")
-			: localize('addScreenshot', "Add screenshot");
-
-		if (this.recordBtn) {
-			this.recordBtn.classList.toggle('disabled', atMax);
-			if (this.currentRecordingState !== RecordingState.Recording) {
-				this.recordLabel.textContent = atMax
-					? localize('maxAttachmentsReached', "Max attachments reached")
-					: localize('recordVideo', "Record video");
-			}
-		}
+			: localize('recordVideo', "Record video");
+	}
+}
 	}
 
 	private updateScreenshotThumbnails(): void {
-		this.screenshotContainer.textContent = '';
+	this.screenshotContainer.textContent = '';
 
-		if (this.screenshots.length === 0 && this.recordings.length === 0) {
-			const empty = append(this.screenshotContainer, $('div.wizard-screenshots-empty'));
-			empty.textContent = localize('noScreenshots', "No screenshots or recordings added yet");
-			return;
-		}
+	if(this.screenshots.length === 0 && this.recordings.length === 0) {
+	const empty = append(this.screenshotContainer, $('div.wizard-screenshots-empty'));
+	empty.textContent = localize('noScreenshots', "No screenshots or recordings added yet");
+	return;
+}
 
-		for (let i = 0; i < this.screenshots.length; i++) {
-			const screenshot = this.screenshots[i];
-			const card = append(this.screenshotContainer, $('div.wizard-screenshot-card'));
+for (let i = 0; i < this.screenshots.length; i++) {
+	const screenshot = this.screenshots[i];
+	const card = append(this.screenshotContainer, $('div.wizard-screenshot-card'));
 
-			const img = append(card, $('img')) as HTMLImageElement;
-			img.src = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
-			img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
+	const img = append(card, $('img')) as HTMLImageElement;
+	img.src = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
+	img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
 
-			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-				this._onDidRequestOpenScreenshot.fire(screenshot);
-			}));
+	this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+		this._onDidRequestOpenScreenshot.fire(screenshot);
+	}));
 
-			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
-			deleteBtn.setAttribute('role', 'button');
-			deleteBtn.setAttribute('aria-label', localize('deleteScreenshot', "Delete screenshot"));
-			deleteBtn.appendChild(renderIcon(Codicon.close));
-			this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
-				e.stopPropagation();
-				this.screenshots.splice(i, 1);
-				this.updateScreenshotThumbnails();
-				this.updateAttachmentButtons();
-				this.updateStepUI();
-			}));
-		}
-
-		// Recording thumbnails
-		for (let i = 0; i < this.recordings.length; i++) {
-			const rec = this.recordings[i];
-			const card = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-recording-card'));
-
-			// Show video thumbnail if available
-			if (rec.thumbnailDataUrl) {
-				const thumbImg = append(card, $('img.wizard-screenshot-img'));
-				thumbImg.setAttribute('src', rec.thumbnailDataUrl);
-				thumbImg.setAttribute('draggable', 'false');
-			}
-
-			// Dark overlay with play icon
-			const playOverlay = append(card, $('div.wizard-recording-play'));
-			playOverlay.appendChild(renderIcon(Codicon.play));
-
-			const durSec = Math.floor(rec.durationMs / 1000);
-			const durLabel = append(card, $('div.wizard-recording-duration'));
-			durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
-
-			// Click to open from OS
-			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-				this._onDidRequestOpenRecording.fire(rec.filePath);
-			}));
-
-			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
-			deleteBtn.setAttribute('role', 'button');
-			deleteBtn.setAttribute('aria-label', localize('deleteRecording', "Remove recording"));
-			deleteBtn.appendChild(renderIcon(Codicon.close));
-			this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
-				e.stopPropagation();
-				this.recordings.splice(i, 1);
-				this.updateScreenshotThumbnails();
-				this.updateAttachmentButtons();
-				this.updateStepUI();
-			}));
-		}
-
-		if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
-			const addCard = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-screenshot-add'));
-			const plus = append(addCard, $('div.wizard-screenshot-plus'));
-			plus.appendChild(renderIcon(Codicon.add));
-			this.disposables.add(addDisposableListener(addCard, EventType.CLICK, () => {
-				this._onDidRequestScreenshot.fire();
-			}));
-		}
-	}
-
-	private openAnnotationEditor(index: number): void {
-		if (index < 0 || index >= this.screenshots.length) {
-			return;
-		}
-
-		const screenshot = this.screenshots[index];
-		const targetWindow = getWindow(this.wizardPanel);
-		const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
-
-		editor.onDidSave(annotatedDataUrl => {
-			screenshot.annotatedDataUrl = annotatedDataUrl;
-			this.updateScreenshotThumbnails();
-		});
-
-		editor.onDidCancel(() => {
-			// nothing to do, editor disposes itself
-		});
-	}
-
-	getScreenshots(): readonly IScreenshot[] {
-		return this.screenshots;
-	}
-
-	getRecordings(): readonly { filePath: string; durationMs: number; thumbnailDataUrl?: string }[] {
-		return this.recordings;
-	}
-
-	private buildIssueBody(): string {
-		const description = this.descriptionTextarea.value;
-		this.model.update({ issueDescription: description });
-
-		let body = this.model.serialize();
-
-		if (this.screenshots.length > 0) {
-			body += '\n\n### Screenshots\n\n';
-			for (let i = 0; i < this.screenshots.length; i++) {
-				body += `<!-- Screenshot ${i + 1} will be uploaded -->\n`;
-			}
-		}
-
-		return body;
-	}
-
-	isVisible(): boolean {
-		return this.visible;
-	}
-
-	focus(): void {
-		this.wizardPanel.focus();
-	}
-
-	getPanel(): HTMLElement {
-		return this.wizardPanel;
-	}
-
-	hideFloatingBar(): void {
-		if (this.floatingBar) {
-			this.floatingBar.style.display = 'none';
-		}
-	}
-
-	showFloatingBar(): void {
-		if (this.floatingBar && this.currentStep === WizardStep.Screenshots) {
-			this.floatingBar.style.display = '';
-		}
-	}
-
-	hasUnsavedChanges(): boolean {
-		if (this.submitted) {
-			return false;
-		}
-		return this.hasUserInput();
-	}
-
-	private hasUserInput(): boolean {
-		return !!(
-			this.descriptionTextarea.value.trim() ||
-			this.titleInput.value.trim() ||
-			this.selectedIssueType !== undefined ||
-			this.screenshots.length > 0 ||
-			this.recordings.length > 0
-		);
-	}
-
-	/** Mark as submitted — locks navigation and disables discard dialog */
-	markAsSubmitted(): void {
-		this.submitted = true;
-	}
-
-	/** Show a "Close" button next to the submit button after successful submission */
-	showCloseButton(): void {
-		this.backButton.style.display = 'none';
-
-		// Add close button next to the existing preview button
-		const nav = this.nextButton.parentElement;
-		if (nav && !nav.querySelector('.wizard-close-btn')) {
-			const closeBtn = append(nav, $('div.wizard-nav-btn.wizard-close-btn'));
-			closeBtn.setAttribute('role', 'button');
-			closeBtn.setAttribute('tabindex', '0');
-			const closeLbl = append(closeBtn, $('span'));
-			closeLbl.textContent = localize('closeTab', "Close");
-			this.disposables.add(addDisposableListener(closeBtn, EventType.CLICK, () => {
-				this._onDidClose.fire();
-			}));
-		}
-	}
-
-	getWizardHeight(): number {
-		return this.wizardPanel.offsetHeight;
-	}
-
-	setRecordingState(state: RecordingState): void {
-		this.currentRecordingState = state;
-
-		if (state === RecordingState.Recording) {
-			// Switch to recording mode: disable all wizard UI except stop button
-			this.wizardPanel.classList.add('wizard-recording');
-			if (this.recordBtn) {
-				this.recordBtn.classList.add('recording');
-				this.recordLabel.textContent = localize('stopRecording', "Stop recording");
-				this.recordingElapsedLabel.style.display = '';
-				this.recordingStartTime = Date.now();
-				this.recordingElapsedLabel.textContent = '0:00';
-				this.recordingElapsedTimer = setInterval(() => {
-					const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-					const mins = Math.floor(elapsed / 60);
-					const secs = elapsed % 60;
-					const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-					this.recordingElapsedLabel.textContent = timeStr;
-					if (this.captureStripRecordElapsed) {
-						this.captureStripRecordElapsed.textContent = timeStr;
-					}
-				}, 1000);
-			}
-
-			// Update floating bar record button
-			if (this.captureStripRecordBtn) {
-				this.captureStripRecordBtn.classList.add('recording');
-				this.captureStripRecordBtn.title = localize('stopRecording', "Stop recording");
-				if (this.captureStripRecordLbl) {
-					this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
-				}
-				if (this.captureStripRecordElapsed) {
-					this.captureStripRecordElapsed.style.display = '';
-					this.captureStripRecordElapsed.textContent = '0:00';
-				}
-			}
-			// Dim other capture strip controls during recording
-			if (this.floatingBar) {
-				this.floatingBar.classList.add('wizard-strip-recording');
-			}
-		} else {
-			// Back to idle
-			this.wizardPanel.classList.remove('wizard-recording');
-			if (this.recordBtn) {
-				this.recordBtn.classList.remove('recording');
-				this.recordLabel.textContent = localize('recordVideo', "Record video");
-				this.recordingElapsedLabel.style.display = 'none';
-			}
-			if (this.recordingElapsedTimer !== undefined) {
-				clearInterval(this.recordingElapsedTimer);
-				this.recordingElapsedTimer = undefined;
-			}
-
-			// Update floating bar record button
-			if (this.captureStripRecordBtn) {
-				this.captureStripRecordBtn.classList.remove('recording');
-				this.captureStripRecordBtn.title = localize('recordVideo', "Record video");
-				if (this.captureStripRecordLbl) {
-					this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
-				}
-				if (this.captureStripRecordElapsed) {
-					this.captureStripRecordElapsed.style.display = 'none';
-				}
-			}
-			if (this.floatingBar) {
-				this.floatingBar.classList.remove('wizard-strip-recording');
-			}
-		}
-	}
-
-	addRecording(filePath: string, durationMs: number, thumbnailDataUrl?: string): void {
-		this.recordings.push({ filePath, durationMs, thumbnailDataUrl });
+	const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
+	deleteBtn.setAttribute('role', 'button');
+	deleteBtn.setAttribute('aria-label', localize('deleteScreenshot', "Delete screenshot"));
+	deleteBtn.appendChild(renderIcon(Codicon.close));
+	this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+		e.stopPropagation();
+		this.screenshots.splice(i, 1);
 		this.updateScreenshotThumbnails();
 		this.updateAttachmentButtons();
 		this.updateStepUI();
+	}));
+}
+
+// Recording thumbnails
+for (let i = 0; i < this.recordings.length; i++) {
+	const rec = this.recordings[i];
+	const card = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-recording-card'));
+
+	// Show video thumbnail if available
+	if (rec.thumbnailDataUrl) {
+		const thumbImg = append(card, $('img.wizard-screenshot-img'));
+		thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+		thumbImg.setAttribute('draggable', 'false');
 	}
 
-	dispose(): void {
-		if (this.recordingElapsedTimer !== undefined) {
-			clearInterval(this.recordingElapsedTimer);
+	// Dark overlay with play icon
+	const playOverlay = append(card, $('div.wizard-recording-play'));
+	playOverlay.appendChild(renderIcon(Codicon.play));
+
+	const durSec = Math.floor(rec.durationMs / 1000);
+	const durLabel = append(card, $('div.wizard-recording-duration'));
+	durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
+
+	// Click to open from OS
+	this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+		this._onDidRequestOpenRecording.fire(rec.filePath);
+	}));
+
+	const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
+	deleteBtn.setAttribute('role', 'button');
+	deleteBtn.setAttribute('aria-label', localize('deleteRecording', "Remove recording"));
+	deleteBtn.appendChild(renderIcon(Codicon.close));
+	this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+		e.stopPropagation();
+		this.recordings.splice(i, 1);
+		this.updateScreenshotThumbnails();
+		this.updateAttachmentButtons();
+		this.updateStepUI();
+	}));
+}
+
+if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
+	const addCard = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-screenshot-add'));
+	const plus = append(addCard, $('div.wizard-screenshot-plus'));
+	plus.appendChild(renderIcon(Codicon.add));
+	this.disposables.add(addDisposableListener(addCard, EventType.CLICK, () => {
+		this._onDidRequestScreenshot.fire();
+	}));
+}
+	}
+
+	private openAnnotationEditor(index: number): void {
+	if(index < 0 || index >= this.screenshots.length) {
+	return;
+}
+
+const screenshot = this.screenshots[index];
+const targetWindow = getWindow(this.wizardPanel);
+const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
+
+editor.onDidSave(annotatedDataUrl => {
+	screenshot.annotatedDataUrl = annotatedDataUrl;
+	this.updateScreenshotThumbnails();
+});
+
+editor.onDidCancel(() => {
+	// nothing to do, editor disposes itself
+});
+	}
+
+getScreenshots(): readonly IScreenshot[] {
+	return this.screenshots;
+}
+
+getRecordings(): readonly { filePath: string; durationMs: number; thumbnailDataUrl ?: string } [] {
+	return this.recordings;
+}
+
+	private buildIssueBody(): string {
+	const description = this.descriptionTextarea.value;
+	this.model.update({ issueDescription: description });
+
+	let body = this.model.serialize();
+
+	if (this.includeSettings && this.settingsContent) {
+		body += `\n<details><summary>User Settings</summary>\n\n\`\`\`json\n${this.settingsContent}\n\`\`\`\n\n</details>`;
+		if (this.workspaceSettingsContent) {
+			body += `\n<details><summary>Workspace Settings</summary>\n\n\`\`\`json\n${this.workspaceSettingsContent}\n\`\`\`\n\n</details>`;
 		}
-		this.disposables.dispose();
-		this._onDidClose.dispose();
-		this._onDidSubmit.dispose();
-		this._onDidRequestScreenshot.dispose();
-		this._onDidRequestStartRecording.dispose();
-		this._onDidRequestStopRecording.dispose();
-		this._onDidRequestOpenRecording.dispose();
-		this._onDidRequestOpenScreenshot.dispose();
+	}
+
+	if (this.screenshots.length > 0) {
+		body += '\n\n### Screenshots\n\n';
+		for (let i = 0; i < this.screenshots.length; i++) {
+			body += `<!-- Screenshot ${i + 1} will be uploaded -->\n`;
+		}
+	}
+
+	return body;
+}
+
+isVisible(): boolean {
+	return this.visible;
+}
+
+focus(): void {
+	this.wizardPanel.focus();
+}
+
+getPanel(): HTMLElement {
+	return this.wizardPanel;
+}
+
+hideFloatingBar(): void {
+	if(this.floatingBar) {
+	this.floatingBar.style.display = 'none';
+}
+	}
+
+showFloatingBar(): void {
+	if(this.floatingBar && this.currentStep === WizardStep.Screenshots) {
+	this.floatingBar.style.display = '';
+}
+	}
+
+/** Update the internal model with additional data loaded asynchronously */
+updateModel(newData: Record<string, unknown>): void {
+	this.model.update(newData);
+	// Refresh review details if we're on the review step (async data may have arrived)
+	if(this.currentStep === WizardStep.Review) {
+	this.updateReviewDetails();
+}
+	}
+
+setSettingsContent(userSettings: string, workspaceSettings ?: string): void {
+	this.settingsContent = userSettings;
+	this.workspaceSettingsContent = workspaceSettings;
+	if(this.currentStep === WizardStep.Review) {
+	this.updateReviewDetails();
+}
+	}
+
+setActiveThemeName(name: string): void {
+	this.activeThemeName = name;
+}
+
+hasUnsavedChanges(): boolean {
+	if (this.submitted) {
+		return false;
+	}
+	return this.hasUserInput();
+}
+
+	private hasUserInput(): boolean {
+	return !!(
+		this.descriptionTextarea.value.trim() ||
+		this.titleInput.value.trim() ||
+		this.selectedIssueType !== undefined ||
+		this.screenshots.length > 0 ||
+		this.recordings.length > 0
+	);
+}
+
+/** Mark as submitted — locks navigation and disables discard dialog */
+markAsSubmitted(): void {
+	this.submitted = true;
+}
+
+/** Show a "Close" button next to the submit button after successful submission */
+showCloseButton(): void {
+	this.backButton.style.display = 'none';
+
+	// Add close button next to the existing preview button
+	const nav = this.nextButton.parentElement;
+	if(nav && !nav.querySelector('.wizard-close-btn')) {
+	const closeBtn = append(nav, $('div.wizard-nav-btn.wizard-close-btn'));
+	closeBtn.setAttribute('role', 'button');
+	closeBtn.setAttribute('tabindex', '0');
+	const closeLbl = append(closeBtn, $('span'));
+	closeLbl.textContent = localize('closeTab', "Close");
+	this.disposables.add(addDisposableListener(closeBtn, EventType.CLICK, () => {
+		this._onDidClose.fire();
+	}));
+}
+	}
+
+getWizardHeight(): number {
+	return this.wizardPanel.offsetHeight;
+}
+
+setRecordingState(state: RecordingState): void {
+	this.currentRecordingState = state;
+
+	if(state === RecordingState.Recording) {
+	// Switch to recording mode: disable all wizard UI except stop button
+	this.wizardPanel.classList.add('wizard-recording');
+	if (this.recordBtn) {
+		this.recordBtn.classList.add('recording');
+		this.recordLabel.textContent = localize('stopRecording', "Stop recording");
+		this.recordingElapsedLabel.style.display = '';
+		this.recordingStartTime = Date.now();
+		this.recordingElapsedLabel.textContent = '0:00';
+		this.recordingElapsedTimer = setInterval(() => {
+			const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+			const mins = Math.floor(elapsed / 60);
+			const secs = elapsed % 60;
+			const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+			this.recordingElapsedLabel.textContent = timeStr;
+			if (this.captureStripRecordElapsed) {
+				this.captureStripRecordElapsed.textContent = timeStr;
+			}
+		}, 1000);
+	}
+
+	// Update floating bar record button
+	if (this.captureStripRecordBtn) {
+		this.captureStripRecordBtn.classList.add('recording');
+		this.captureStripRecordBtn.title = localize('stopRecording', "Stop recording");
+		if (this.captureStripRecordLbl) {
+			this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
+		}
+		if (this.captureStripRecordElapsed) {
+			this.captureStripRecordElapsed.style.display = '';
+			this.captureStripRecordElapsed.textContent = '0:00';
+		}
+	}
+	// Dim other capture strip controls during recording
+	if (this.floatingBar) {
+		this.floatingBar.classList.add('wizard-strip-recording');
+	}
+} else {
+	// Back to idle
+	this.wizardPanel.classList.remove('wizard-recording');
+	if (this.recordBtn) {
+		this.recordBtn.classList.remove('recording');
+		this.recordLabel.textContent = localize('recordVideo', "Record video");
+		this.recordingElapsedLabel.style.display = 'none';
+	}
+	if (this.recordingElapsedTimer !== undefined) {
+		clearInterval(this.recordingElapsedTimer);
+		this.recordingElapsedTimer = undefined;
+	}
+
+	// Update floating bar record button
+	if (this.captureStripRecordBtn) {
+		this.captureStripRecordBtn.classList.remove('recording');
+		this.captureStripRecordBtn.title = localize('recordVideo', "Record video");
+		if (this.captureStripRecordLbl) {
+			this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+		}
+		if (this.captureStripRecordElapsed) {
+			this.captureStripRecordElapsed.style.display = 'none';
+		}
+	}
+	if (this.floatingBar) {
+		this.floatingBar.classList.remove('wizard-strip-recording');
+	}
+}
+	}
+
+addRecording(filePath: string, durationMs: number, thumbnailDataUrl ?: string): void {
+	this.recordings.push({ filePath, durationMs, thumbnailDataUrl });
+	this.updateScreenshotThumbnails();
+	this.updateAttachmentButtons();
+	this.updateStepUI();
+}
+
+dispose(): void {
+	if(this.recordingElapsedTimer !== undefined) {
+	clearInterval(this.recordingElapsedTimer);
+}
+this.disposables.dispose();
+this._onDidClose.dispose();
+this._onDidSubmit.dispose();
+this._onDidRequestScreenshot.dispose();
+this._onDidRequestStartRecording.dispose();
+this._onDidRequestStopRecording.dispose();
+this._onDidRequestOpenRecording.dispose();
+this._onDidRequestOpenScreenshot.dispose();
 	}
 }

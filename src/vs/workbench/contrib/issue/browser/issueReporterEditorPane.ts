@@ -27,6 +27,12 @@ import { IRecordingService, IRecordingData, RecordingState } from './recordingSe
 import { IScreenshotService } from './screenshotService.js';
 import { IIssueFormService } from '../common/issue.js';
 import { IssueFormService } from './issueFormService.js';
+import { IProcessService } from '../../../../platform/process/common/process.js';
+import { IWorkbenchAssignmentService } from '../../../services/assignment/common/assignmentService.js';
+import product from '../../../../platform/product/common/product.js';
+import { isLinuxSnap } from '../../../../base/common/platform.js';
+import { INativeHostService } from '../../../../platform/native/common/native.js';
+import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 
 /**
  * Editor pane that hosts the issue reporter wizard inside an editor tab.
@@ -51,6 +57,10 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IIssueFormService private readonly issueFormService: IIssueFormService,
+		@IProcessService private readonly processService: IProcessService,
+		@IWorkbenchAssignmentService private readonly experimentService: IWorkbenchAssignmentService,
+		@INativeHostService private readonly nativeHostService: INativeHostService,
+		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -111,6 +121,13 @@ export class IssueReporterEditorPane extends EditorPane {
 		}));
 
 		this.wizard.show();
+
+		// Set active theme name
+		const colorTheme = this.themeService.getColorTheme();
+		this.wizard.setActiveThemeName(colorTheme.label);
+
+		// Populate system info in background (non-blocking)
+		this.populateSystemInfo();
 
 		// Wire screenshot capture
 		this.inputDisposables.add(this.wizard.onDidRequestScreenshot(async () => {
@@ -214,6 +231,65 @@ export class IssueReporterEditorPane extends EditorPane {
 	override clearInput(): void {
 		// Don't destroy wizard on tab switch — preserve state
 		super.clearInput();
+	}
+
+	private async populateSystemInfo(): Promise<void> {
+		if (!this.wizard) {
+			return;
+		}
+
+		const input = this.input as IssueReporterEditorInput | undefined;
+		const data = input?.data;
+
+		try {
+			// Version info
+			const osProps = await this.nativeHostService.getOSProperties();
+			const vscodeVersion = `${product.nameShort} ${!!product.darwinUniversalAssetId ? `${product.version} (Universal)` : product.version} (${product.commit || 'Commit unknown'}, ${product.date || 'Date unknown'})`;
+			const os = `${osProps.type} ${osProps.arch} ${osProps.release}${isLinuxSnap ? ' snap' : ''}`;
+
+			this.wizard.updateModel({
+				versionInfo: { vscodeVersion, os },
+			});
+
+			// System info (CPUs, GPU, memory, etc.)
+			const systemInfo = await this.processService.getSystemInfo();
+			this.wizard.updateModel({
+				systemInfo,
+				systemInfoWeb: navigator.userAgent,
+			});
+		} catch (err) {
+			this.logService.error('[IssueReporterEditorPane] Failed to collect system info:', err);
+		}
+
+		// Experiments (independent from system info)
+		try {
+			const experiments = await this.experimentService.getCurrentExperiments();
+			this.wizard?.updateModel({ experimentInfo: experiments?.join('\n') ?? localize('noExperiments', "No current experiments.") });
+		} catch {
+			// Ignore
+		}
+
+		// Extensions — data may have been populated by the issue service's async background task.
+		// Give it a moment to finish, then sync.
+		await new Promise(r => setTimeout(r, 500));
+		if (data && data.enabledExtensions.length > 0) {
+			const nonTheme = data.enabledExtensions.filter(e => !e.isTheme && !e.isBuiltin);
+			const themeCount = data.enabledExtensions.filter(e => e.isTheme).length;
+			this.wizard?.updateModel({
+				allExtensions: data.enabledExtensions,
+				enabledNonThemeExtesions: nonTheme,
+				numberOfThemeExtesions: themeCount,
+			});
+		}
+
+		// User settings
+		try {
+			const settingsUri = this.userDataProfileService.currentProfile.settingsResource;
+			const settingsContent = await this.fileService.readFile(settingsUri);
+			this.wizard?.setSettingsContent(settingsContent.value.toString());
+		} catch {
+			// Ignore — no settings file
+		}
 	}
 
 	private destroyWizard(): void {
