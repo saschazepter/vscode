@@ -671,7 +671,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 	private readonly listContainer: HTMLElement;
 	private readonly tree: WorkbenchObjectTree<SessionListItem, FuzzyScore>;
 	private sessions: ISession[] = [];
-	private _visibleSessions: ISession[] = [];
 	private visible = true;
 	private readonly excludedSessionTypes: Set<string>;
 	private readonly excludedStatuses: Set<SessionStatus>;
@@ -888,7 +887,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 		const hasTodaySessions = sections.some(s => s.id === 'today' && s.sessions.length > 0);
 
 		const children: IObjectTreeElement<SessionListItem>[] = [];
-		const visibleSessions: ISession[] = [];
 
 		children.push(...sections.map(section => {
 			const isWorkspaceGroup = grouping === SessionsGrouping.Workspace
@@ -906,10 +904,8 @@ export class SessionsList extends Disposable implements ISessionsList {
 					...visible.map(session => ({ element: session as SessionListItem })),
 					{ element: { showMore: true as const, sectionLabel: section.label, remainingCount } },
 				];
-				visibleSessions.push(...visible);
 			} else {
 				sectionChildren = section.sessions.map(session => ({ element: session as SessionListItem }));
-				visibleSessions.push(...section.sessions);
 			}
 
 			// Default collapse state for older time sections
@@ -933,12 +929,37 @@ export class SessionsList extends Disposable implements ISessionsList {
 		}));
 
 		this.tree.setChildren(null, children);
-		this._visibleSessions = visibleSessions;
 		this._onDidUpdate.fire();
 	}
 
 	getVisibleSessions(): readonly ISession[] {
-		return this._visibleSessions;
+		// Derive the visible session list from the tree model so that index-based
+		// navigation matches what the user actually sees: this respects collapsed
+		// sections, find-widget filtering, and excludes section / show-more nodes.
+		const sessions = new Set<ISession>(this.sessions);
+		const visibleSessions: ISession[] = [];
+
+		const collect = (node: ITreeNode<SessionListItem | null, FuzzyScore | undefined>): void => {
+			if (!node.visible) {
+				return;
+			}
+			if (node.element && sessions.has(node.element as ISession)) {
+				visibleSessions.push(node.element as ISession);
+			}
+			if (node.collapsed) {
+				return;
+			}
+			for (const child of node.children) {
+				collect(child);
+			}
+		};
+
+		const root = this.tree.getNode();
+		for (const child of root.children) {
+			collect(child);
+		}
+
+		return visibleSessions;
 	}
 
 	reveal(sessionResource: URI): boolean {
