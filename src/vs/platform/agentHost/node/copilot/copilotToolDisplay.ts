@@ -253,7 +253,7 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 		case CopilotToolName.WebFetch: {
 			const args = parameters as ICopilotWebFetchToolArgs | undefined;
 			if (args?.url) {
-				return md(localize('toolInvoke.webFetch', "Fetching {0}", appendEscapedMarkdownInlineCode(truncate(args.url, 80))));
+				return localize('toolInvoke.webFetch', "Fetching {0}", args.url);
 			}
 			return localize('toolInvoke.webFetchGeneric', "Fetching web content");
 		}
@@ -315,7 +315,7 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 		case CopilotToolName.WebFetch: {
 			const args = parameters as ICopilotWebFetchToolArgs | undefined;
 			if (args?.url) {
-				return md(localize('toolComplete.webFetch', "Fetched {0}", appendEscapedMarkdownInlineCode(truncate(args.url, 80))));
+				return localize('toolComplete.webFetch', "Fetched {0}", args.url);
 			}
 			return localize('toolComplete.webFetchGeneric', "Fetched web content");
 		}
