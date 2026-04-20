@@ -39,8 +39,12 @@ export function toInlineSuggestion(cursorPos: Position, doc: TextDocument, range
 
 /**
  * If the cursor is at the end of a line and the edit is an empty-range insertion
- * at column 0 of the next line (with no leftover content after the insertion),
- * rewrite it as a pure insertion at the cursor position.
+ * at column 0 of the next line, rewrite it as a pure insertion at the cursor
+ * position. This is allowed when either:
+ *  - `newText` ends with a newline (any existing content on the target line is
+ *    pushed onto the following line), or
+ *  - `newText` contains a newline and the target line is fully consumed by the
+ *    insertion (no leftover content after the insertion).
  */
 function tryAdjustNextLineInsertion(cursorPos: Position, doc: TextDocument, range: Range, newText: string): InlineSuggestionEdit | undefined {
 	if (!range.isEmpty) {
