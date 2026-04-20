@@ -1202,6 +1202,7 @@ class FakeGitService extends mock<IGitService>() {
 	}
 
 	override dispose(): void {
+		super.dispose();
 		this._onDidOpenRepository.dispose();
 		this._onDidCloseRepository.dispose();
 	}
