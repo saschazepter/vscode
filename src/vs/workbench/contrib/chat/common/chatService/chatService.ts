@@ -490,6 +490,13 @@ export interface IChatAutoModelRoutingCandidate {
 	readonly reason?: string;
 }
 
+export interface IChatAutoModelRoutingCapability {
+	/** Human-readable capability name, e.g. "Reasoning". */
+	readonly name: string;
+	/** How much this task needs this capability (0-1). */
+	readonly score: number;
+}
+
 export interface IChatAutoModelRoutingPart {
 	kind: 'autoModelRouting';
 	/** The model that was selected (e.g. "GPT-5"). */
@@ -506,6 +513,8 @@ export interface IChatAutoModelRoutingPart {
 	readonly intent?: string;
 	/** Other models that were considered and not chosen. */
 	readonly candidates?: ReadonlyArray<IChatAutoModelRoutingCandidate>;
+	/** Predicted capability requirements for this task. */
+	readonly capabilities?: ReadonlyArray<IChatAutoModelRoutingCapability>;
 }
 
 export interface IChatHookPart {

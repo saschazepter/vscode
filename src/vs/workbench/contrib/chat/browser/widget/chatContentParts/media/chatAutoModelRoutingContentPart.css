@@ -3,164 +3,32 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.chat-auto-model-routing-details {
+.chat-auto-model-routing-body {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	padding: 10px 12px 12px 12px;
+	gap: 8px;
+	padding: 4px 12px 10px 12px;
 	font-size: var(--vscode-chat-font-size-body-s);
 }
 
-/* Header row: title + intent chip */
-.chat-auto-model-routing-header-row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex-wrap: wrap;
-}
-
-.chat-auto-model-routing-header {
-	font-weight: 600;
-	color: var(--vscode-foreground);
-}
-
-.chat-auto-model-routing-reason {
+/* Prose sentence */
+.chat-auto-model-routing-prose {
 	color: var(--vscode-descriptionForeground);
-	white-space: pre-wrap;
+	line-height: 1.5;
 }
 
-/* Chip row */
-.chat-auto-model-routing-meta {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
-}
-
-.chat-auto-model-routing-chip {
-	display: inline-flex;
-	align-items: center;
-	padding: 1px 8px;
-	border-radius: 10px;
-	font-size: 11px;
-	line-height: 16px;
-	color: var(--vscode-foreground);
-	background-color: var(--vscode-badge-background);
-	opacity: 0.85;
-}
-
-.chat-auto-model-routing-subheader {
-	margin-top: 4px;
-	font-weight: 600;
+/* Footer / prose paragraph */
+.chat-auto-model-routing-footer {
 	color: var(--vscode-descriptionForeground);
-	text-transform: uppercase;
-	font-size: 10px;
-	letter-spacing: 0.04em;
+	font-size: var(--vscode-chat-font-size-body-s);
+	line-height: 1.5;
 }
 
-/* Ranked candidate list */
-.chat-auto-model-routing-candidates {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
+.chat-auto-model-routing-learn-more {
+	color: var(--vscode-textLink-foreground);
+	text-decoration: none;
 }
 
-.chat-auto-model-routing-candidate {
-	display: grid;
-	grid-template-columns: minmax(140px, 30%) 1fr 40px;
-	align-items: center;
-	column-gap: 12px;
-	padding: 6px 8px;
-	border-radius: 4px;
-	border: 1px solid transparent;
-}
-
-.chat-auto-model-routing-candidate.selected {
-	background-color: var(--vscode-list-hoverBackground);
-	border-color: var(--vscode-chat-requestBorder, var(--vscode-editorWidget-border));
-}
-
-.chat-auto-model-routing-candidate-name-col {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
-}
-
-.chat-auto-model-routing-candidate-name {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	color: var(--vscode-foreground);
-	min-width: 0;
-}
-
-.chat-auto-model-routing-candidate-name-text {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.chat-auto-model-routing-candidate.selected .chat-auto-model-routing-candidate-name {
-	font-weight: 600;
-}
-
-.chat-auto-model-routing-check {
-	color: var(--vscode-charts-green, var(--vscode-foreground));
-	font-size: 12px !important;
-}
-
-.chat-auto-model-routing-bar-col {
-	display: flex;
-	align-items: center;
-	min-width: 0;
-}
-
-.chat-auto-model-routing-bar {
-	position: relative;
-	width: 100%;
-	height: 8px;
-	border-radius: 4px;
-	background-color: var(--vscode-scrollbarSlider-background);
-	overflow: hidden;
-	opacity: 0.5;
-}
-
-.chat-auto-model-routing-candidate.selected .chat-auto-model-routing-bar {
-	opacity: 1;
-}
-
-.chat-auto-model-routing-bar-fill {
-	height: 100%;
-	background-color: var(--vscode-foreground);
-	opacity: 0.55;
-	border-radius: 4px;
-	transition: width 200ms ease-out;
-}
-
-.chat-auto-model-routing-candidate.selected .chat-auto-model-routing-bar-fill {
-	background-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
-	opacity: 1;
-}
-
-.chat-auto-model-routing-candidate-score {
-	color: var(--vscode-descriptionForeground);
-	font-variant-numeric: tabular-nums;
-	text-align: right;
-	font-size: 11px;
-}
-
-.chat-auto-model-routing-candidate.selected .chat-auto-model-routing-candidate-score {
-	color: var(--vscode-foreground);
-}
-
-.chat-auto-model-routing-candidate-reason {
-	color: var(--vscode-descriptionForeground);
-	font-size: 11px;
-	line-height: 1.4;
-	white-space: normal;
-	overflow: hidden;
-	text-overflow: ellipsis;
+.chat-auto-model-routing-learn-more:hover {
+	text-decoration: underline;
 }

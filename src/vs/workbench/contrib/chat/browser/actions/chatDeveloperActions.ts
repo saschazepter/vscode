@@ -290,23 +290,27 @@ class SimulateAutoModelRoutingAction extends Action2 {
 
 		const routingPart: IChatAutoModelRoutingPart = {
 			kind: 'autoModelRouting',
-			selectedModel: 'GPT-5',
-			selectionReason: 'Best fit for multi-file refactoring with strong code reasoning',
-			intent: 'Code edit (multi-file refactor)',
-			confidence: 0.86,
-			predictedLatencyMs: 4200,
-			costTier: 'medium',
+			selectedModel: 'Claude Opus 4.6',
+			selectionReason: 'Best match for deep reasoning and long-context debugging tasks',
+			intent: 'Complex debugging',
+			confidence: 0.91,
+			capabilities: [
+				{ name: 'Reasoning', score: 0.92 },
+				{ name: 'Code Gen', score: 0.61 },
+				{ name: 'Debugging', score: 0.88 },
+				{ name: 'Tool Use', score: 0.34 },
+			],
 			candidates: [
-				{ modelName: 'Claude Sonnet 4.5', score: 0.81, reason: 'Strong reasoning, slightly higher latency' },
-				{ modelName: 'GPT-4.1', score: 0.74, reason: 'Lower cost, weaker on large refactors' },
-				{ modelName: 'o3-mini', score: 0.62, reason: 'Fast, but limited code-edit accuracy' },
+				{ modelName: 'GPT-5', score: 0.84, reason: 'Strong general purpose, slightly lower on long-context reasoning' },
+				{ modelName: 'Claude Sonnet 4.5', score: 0.76, reason: 'Fast, but less capable on complex multi-step debugging' },
+				{ modelName: 'GPT-4.1', score: 0.61, reason: 'Lower cost option, weaker on deep reasoning tasks' },
 			],
 		};
 
 		const message: IChatProgress[] = [
 			{ kind: 'markdownContent', content: new MarkdownString('Routing your request through Copilot Auto…') },
 			routingPart,
-			{ kind: 'markdownContent', content: new MarkdownString('Done — using **GPT-5** for this turn.') },
+			{ kind: 'markdownContent', content: new MarkdownString('Done — using **Claude Opus 4.6** for this turn.') },
 		];
 
 		await chatService.addCompleteRequest(

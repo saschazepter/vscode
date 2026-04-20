@@ -32,100 +32,32 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 	}
 
 	protected override initContent(): HTMLElement {
-		const content = $('.chat-auto-model-routing-details.chat-used-context-list');
+		const container = $('.chat-auto-model-routing-body');
 
-		// Header row: title + detected intent chip (if any)
-		const headerRow = $('.chat-auto-model-routing-header-row');
-		const header = $('.chat-auto-model-routing-header', undefined,
-			localize('autoModelRouting.header', "Copilot Auto Model Selection"));
-		headerRow.appendChild(header);
-		if (this.routingPart.intent) {
-			headerRow.appendChild(this.makeChip(this.routingPart.intent));
-		}
-		content.appendChild(headerRow);
-
-		// Reason text
-		const reason = $('.chat-auto-model-routing-reason', undefined, this.routingPart.selectionReason);
-		content.appendChild(reason);
-
-		// Metadata chips row (confidence / latency / cost)
-		const meta = $('.chat-auto-model-routing-meta');
-		if (typeof this.routingPart.confidence === 'number') {
-			meta.appendChild(this.makeChip(
-				localize('autoModelRouting.confidence', "Confidence: {0}%", Math.round(this.routingPart.confidence * 100))
-			));
-		}
-		if (typeof this.routingPart.predictedLatencyMs === 'number') {
-			meta.appendChild(this.makeChip(
-				localize('autoModelRouting.latency', "~{0} ms", this.routingPart.predictedLatencyMs)
-			));
-		}
-		if (this.routingPart.costTier) {
-			meta.appendChild(this.makeChip(
-				localize('autoModelRouting.cost', "Cost: {0}", this.routingPart.costTier)
-			));
-		}
-		if (meta.childElementCount > 0) {
-			content.appendChild(meta);
+		// Build capability sentence from top 2 capabilities by score
+		const caps = this.routingPart.capabilities;
+		let capSentence: string;
+		if (caps && caps.length >= 2) {
+			const top = [...caps].sort((a, b) => b.score - a.score).slice(0, 2).map(c => c.name.toLowerCase());
+			capSentence = localize('autoModelRouting.capSentence', "{0} is selected for high {1} and {2} capability. ",
+				this.routingPart.selectedModel, top[0], top[1]);
+		} else if (caps && caps.length === 1) {
+			capSentence = localize('autoModelRouting.capSentenceSingle', "{0} is selected for high {1} capability. ",
+				this.routingPart.selectedModel, caps[0].name.toLowerCase());
+		} else {
+			capSentence = '';
 		}
 
-		// Build a unified ranked list: selected model (with synthetic score = confidence ?? 1)
-		// followed by other candidates. Bars are scaled to the max score in the list so
-		// the highest-scoring entry visually fills the row.
-		const selectedScore = this.routingPart.confidence ?? 1;
-		type Row = { name: string; score: number; reason?: string; selected: boolean };
-		const rows: Row[] = [
-			{ name: this.routingPart.selectedModel, score: selectedScore, reason: this.routingPart.selectionReason, selected: true },
-			...(this.routingPart.candidates ?? []).map(c => ({ name: c.modelName, score: c.score, reason: c.reason, selected: false })),
-		];
-		const maxScore = Math.max(...rows.map(r => r.score), 0.0001);
+		const para = $('.chat-auto-model-routing-footer');
+		para.appendChild($('span', undefined, capSentence));
+		para.appendChild($('span', undefined,
+			localize('autoModelRouting.footer', "Auto routes based on your task and real-time system health and model performance. ")));
+		const learnMore = $('a.chat-auto-model-routing-learn-more', { href: 'https://aka.ms/copilot-auto-model', target: '_blank' },
+			localize('autoModelRouting.learnMore', "Learn more"));
+		para.appendChild(learnMore);
+		container.appendChild(para);
 
-		const subheader = $('.chat-auto-model-routing-subheader', undefined,
-			localize('autoModelRouting.ranked', "Ranked candidates"));
-		content.appendChild(subheader);
-
-		const list = $('ul.chat-auto-model-routing-candidates');
-		for (const row of rows) {
-			list.appendChild(this.makeCandidateRow(row.name, row.score, maxScore, row.reason, row.selected));
-		}
-		content.appendChild(list);
-
-		return content;
-	}
-
-	private makeChip(text: string): HTMLElement {
-		return $('span.chat-auto-model-routing-chip', undefined, text);
-	}
-
-	private makeCandidateRow(name: string, score: number, maxScore: number, reason: string | undefined, selected: boolean): HTMLElement {
-		const li = $(`li.chat-auto-model-routing-candidate${selected ? '.selected' : ''}`);
-
-		const nameCol = $('.chat-auto-model-routing-candidate-name-col');
-		const nameRow = $('.chat-auto-model-routing-candidate-name');
-		if (selected) {
-			const check = $('span.codicon.codicon-check.chat-auto-model-routing-check', { 'aria-hidden': 'true' });
-			nameRow.appendChild(check);
-		}
-		nameRow.appendChild($('span.chat-auto-model-routing-candidate-name-text', undefined, name));
-		nameCol.appendChild(nameRow);
-		if (reason) {
-			nameCol.appendChild($('.chat-auto-model-routing-candidate-reason', undefined, reason));
-		}
-		li.appendChild(nameCol);
-
-		const barCol = $('.chat-auto-model-routing-bar-col');
-		const bar = $('.chat-auto-model-routing-bar');
-		const fill = $('.chat-auto-model-routing-bar-fill');
-		const widthPct = Math.max(2, Math.round((score / maxScore) * 100));
-		fill.style.width = `${widthPct}%`;
-		bar.appendChild(fill);
-		barCol.appendChild(bar);
-		li.appendChild(barCol);
-
-		const scoreLabel = $('.chat-auto-model-routing-candidate-score', undefined, `${Math.round(score * 100)}%`);
-		li.appendChild(scoreLabel);
-
-		return li;
+		return container;
 	}
 
 	hasSameContent(other: IChatRendererContent, _followingContent: IChatRendererContent[], _element: ChatTreeItem): boolean {
@@ -133,11 +65,7 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 			return false;
 		}
 		if (other.selectedModel !== this.routingPart.selectedModel
-			|| other.selectionReason !== this.routingPart.selectionReason
-			|| other.confidence !== this.routingPart.confidence
-			|| other.predictedLatencyMs !== this.routingPart.predictedLatencyMs
-			|| other.costTier !== this.routingPart.costTier
-			|| other.intent !== this.routingPart.intent) {
+			|| other.selectionReason !== this.routingPart.selectionReason) {
 			return false;
 		}
 		const a = this.routingPart.candidates ?? [];
@@ -146,12 +74,22 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 			return false;
 		}
 		for (let i = 0; i < a.length; i++) {
-			if (a[i].modelName !== b[i].modelName
-				|| a[i].score !== b[i].score
-				|| a[i].reason !== b[i].reason) {
+			if (a[i].modelName !== b[i].modelName) {
+				return false;
+			}
+		}
+		const ca = this.routingPart.capabilities ?? [];
+		const cb = other.capabilities ?? [];
+		if (ca.length !== cb.length) {
+			return false;
+		}
+		for (let i = 0; i < ca.length; i++) {
+			if (ca[i].name !== cb[i].name || ca[i].score !== cb[i].score) {
 				return false;
 			}
 		}
 		return true;
 	}
 }
+
+
