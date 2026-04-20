@@ -137,22 +137,18 @@ export class SessionDataService implements ISessionDataService {
 	}
 
 	async whenIdle(): Promise<void> {
-		// Re-check after each pass: a write completing may release the last
-		// reference and destroy a DB, while another caller may have just
-		// opened a new one. Loop until quiescent.
+		// Each `SessionDatabase.whenIdle()` already loops internally until
+		// that DB is quiescent, so the outer loop only needs to handle the
+		// case where a new DB was opened (and writes queued against it)
+		// while we were awaiting an earlier pass.
 		while (true) {
 			const dbs = [...this._databases.liveDatabases];
 			if (dbs.length === 0) {
 				return;
 			}
 			await Promise.all(dbs.map(db => db.whenIdle()));
-			if (this._databases.liveDatabases.size === 0) {
-				return;
-			}
-			// If the live set shrunk to a subset of what we just awaited, do
-			// one more pass to catch any work queued in the meantime.
-			const after = [...this._databases.liveDatabases];
-			if (after.every(db => dbs.includes(db))) {
+			const newOnes = [...this._databases.liveDatabases].filter(db => !dbs.includes(db));
+			if (newOnes.length === 0) {
 				return;
 			}
 		}

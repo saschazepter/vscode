@@ -265,6 +265,11 @@ async function main(): Promise<void> {
 		}
 		shuttingDown = true;
 		logService.info('[AgentHostServer] Shutting down...');
+		// Close the WebSocket server first so no further actions can be
+		// dispatched while we wait for in-flight writes to flush — otherwise
+		// a late-arriving action could keep queuing DB writes and either
+		// undermine the flush or push us past the timeout.
+		wsServer.dispose();
 		// Wait for in-flight persistence writes to flush to the per-session
 		// SQLite databases. Without this, a SIGTERM arriving while a
 		// `setMetadata` write (configValues, customTitle, isRead, isDone,
