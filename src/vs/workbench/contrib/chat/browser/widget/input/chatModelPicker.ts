@@ -259,14 +259,6 @@ export function buildModelPickerItems(
 					}
 					return 'admin';
 				}
-				// All other plans: the chat control manifest does not currently distinguish
-				// Pro vs Pro+ tiers, so we cannot reliably tell whether an unavailable paid
-				// model represents a real upgrade path or a model that has been removed from
-				// the user's plan. To avoid misleading "Upgrade" prompts (e.g. asking a Pro+
-				// user to upgrade for a model that no longer exists on any plan), hide these
-				// entries entirely. The 'upgrade' rendering path is intentionally kept in
-				// createUnavailableModelItem so it can be re-enabled once the manifest carries
-				// per-entry plan information.
 				return undefined;
 			};
 
