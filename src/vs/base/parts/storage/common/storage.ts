@@ -81,6 +81,13 @@ export interface IStorage extends IDisposable {
 	readonly items: Map<string, string>;
 	readonly size: number;
 
+	/**
+	 * Optional fallback storage to read from when a key is not
+	 * found in this storage. On hit, the value is automatically
+	 * written through to this storage so it is persisted locally.
+	 */
+	fallbackStorage: IStorage | undefined;
+
 	init(): Promise<void>;
 
 	get(key: string, fallbackValue: string): string;
@@ -131,6 +138,13 @@ export class Storage extends Disposable implements IStorage {
 	private pendingClose: Promise<void> | undefined = undefined;
 
 	private readonly whenFlushedCallbacks: Function[] = [];
+
+	/**
+	 * Optional fallback storage to read from when a key is not
+	 * found in this storage. On hit, the value is automatically
+	 * written through to this storage so it is persisted locally.
+	 */
+	fallbackStorage: IStorage | undefined;
 
 	constructor(
 		protected readonly database: IStorageDatabase,
@@ -218,11 +232,20 @@ export class Storage extends Disposable implements IStorage {
 	get(key: string, fallbackValue?: string): string | undefined {
 		const value = this.cache.get(key);
 
-		if (isUndefinedOrNull(value)) {
-			return fallbackValue;
+		if (!isUndefinedOrNull(value)) {
+			return value;
 		}
 
-		return value;
+		// Check fallback storage and auto-migrate on hit
+		if (this.fallbackStorage) {
+			const fallbackStorageValue = this.fallbackStorage.get(key);
+			if (!isUndefinedOrNull(fallbackStorageValue)) {
+				this.set(key, fallbackStorageValue);
+				return fallbackStorageValue;
+			}
+		}
+
+		return fallbackValue;
 	}
 
 	getBoolean(key: string, fallbackValue: boolean): boolean;

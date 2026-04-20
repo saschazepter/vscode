@@ -441,59 +441,19 @@ export abstract class AbstractStorageService extends Disposable implements IStor
 	get(key: string, scope: StorageScope, fallbackValue: string): string;
 	get(key: string, scope: StorageScope): string | undefined;
 	get(key: string, scope: StorageScope, fallbackValue?: string): string | undefined {
-		const value = this.getStorage(scope)?.get(key);
-		if (!isUndefinedOrNull(value)) {
-			return value;
-		}
-
-		// For APPLICATION_SHARED scope, fall back to APPLICATION scope
-		// to support transparent migration of keys. When a key is found
-		// in APPLICATION storage, it is written through to APPLICATION_SHARED
-		// so the shared DB is populated for the sibling app.
-		if (scope === StorageScope.APPLICATION_SHARED) {
-			const applicationValue = this.getStorage(StorageScope.APPLICATION)?.get(key);
-			if (!isUndefinedOrNull(applicationValue)) {
-				return applicationValue;
-			}
-		}
-
-		return fallbackValue;
+		return this.getStorage(scope)?.get(key, fallbackValue);
 	}
 
 	getBoolean(key: string, scope: StorageScope, fallbackValue: boolean): boolean;
 	getBoolean(key: string, scope: StorageScope): boolean | undefined;
 	getBoolean(key: string, scope: StorageScope, fallbackValue?: boolean): boolean | undefined {
-		const value = this.getStorage(scope)?.get(key);
-		if (!isUndefinedOrNull(value)) {
-			return value === 'true';
-		}
-
-		if (scope === StorageScope.APPLICATION_SHARED) {
-			const applicationValue = this.getStorage(StorageScope.APPLICATION)?.get(key);
-			if (!isUndefinedOrNull(applicationValue)) {
-				return applicationValue === 'true';
-			}
-		}
-
-		return fallbackValue;
+		return this.getStorage(scope)?.getBoolean(key, fallbackValue);
 	}
 
 	getNumber(key: string, scope: StorageScope, fallbackValue: number): number;
 	getNumber(key: string, scope: StorageScope): number | undefined;
 	getNumber(key: string, scope: StorageScope, fallbackValue?: number): number | undefined {
-		const value = this.getStorage(scope)?.get(key);
-		if (!isUndefinedOrNull(value)) {
-			return parseInt(value, 10);
-		}
-
-		if (scope === StorageScope.APPLICATION_SHARED) {
-			const applicationValue = this.getStorage(StorageScope.APPLICATION)?.get(key);
-			if (!isUndefinedOrNull(applicationValue)) {
-				return parseInt(applicationValue, 10);
-			}
-		}
-
-		return fallbackValue;
+		return this.getStorage(scope)?.getNumber(key, fallbackValue);
 	}
 
 	getObject(key: string, scope: StorageScope, fallbackValue: object): object;

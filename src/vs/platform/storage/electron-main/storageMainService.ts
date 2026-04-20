@@ -126,6 +126,10 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 
 			this.applicationStorage.init();
 			this.applicationSharedStorage.init();
+
+			// Wire up APPLICATION as fallback for APPLICATION_SHARED after both are ready
+			await Promise.all([this.applicationStorage.whenInit, this.applicationSharedStorage.whenInit]);
+			this.applicationSharedStorage.storage.fallbackStorage = this.applicationStorage.storage;
 		})();
 
 		this._register(this.lifecycleMainService.onWillLoadWindow(e => {

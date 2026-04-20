@@ -62,6 +62,11 @@ export class RemoteStorageService extends AbstractStorageService {
 		const storageDataBaseClient = this._register(new ApplicationSharedStorageDatabaseClient(this.remoteService.getChannel('storage')));
 		const applicationSharedStorage = this._register(new Storage(storageDataBaseClient));
 
+		// Fall back to APPLICATION storage for transparent migration of
+		// keys that have been moved to APPLICATION_SHARED scope. On hit,
+		// values are automatically written through to the shared storage.
+		applicationSharedStorage.fallbackStorage = this.applicationStorage;
+
 		this._register(applicationSharedStorage.onDidChangeStorage(e => this.emitDidChangeValue(StorageScope.APPLICATION_SHARED, e)));
 
 		return applicationSharedStorage;
