@@ -523,6 +523,8 @@ export class ChatStatusDashboard extends DomWidget {
 			const overageEnabled = this.chatEntitlementService.quotas.overageEnabled;
 
 			if (usedPercentage >= 100) {
+				// Keep the bar highlighted in the error color while dimming the number.
+				quotaIndicator.classList.add('error');
 				quotaIndicator.classList.add('dimmed');
 			} else if (usedPercentage >= 75 && overageEnabled) {
 				quotaIndicator.classList.add('info');
