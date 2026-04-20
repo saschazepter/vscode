@@ -1603,7 +1603,7 @@ export async function updateTodoListFromSqlItems(
 
 export async function clearTodoList(toolsService: IToolsService,
 	toolInvocationToken: ChatParticipantToolToken,
-	token: CancellationToken) {
+	token: CancellationToken): Promise<void> {
 	await toolsService.invokeTool(ToolName.CoreManageTodoList, {
 		input: {
 			operation: 'write',
