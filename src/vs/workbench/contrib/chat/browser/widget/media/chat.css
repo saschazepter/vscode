@@ -872,7 +872,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 /* Animated gradient border shown around the chat input while the agent is
-	working or thinking. Toggled by the `chat.developerJoy.enabled`
+	working or thinking. Toggled by the `chat.progressBorder.enabled`
 	setting and the chat widget's request-in-progress state. The ring is
 	rendered inside the container (using a mask trick) so it works whether or
 	not the parent has `overflow: hidden`. */
@@ -897,14 +897,14 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	0%,
 	100% {
 		box-shadow:
-			0 0 4px 0 color-mix(in srgb, #b44aff 18%, transparent),
-			0 0 10px 0 color-mix(in srgb, #51a2ff 8%, transparent);
+			0 0 4px 0 color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 18%, transparent),
+			0 0 10px 0 color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor3) 8%, transparent);
 	}
 
 	50% {
 		box-shadow:
-			0 0 6px 0 color-mix(in srgb, #4af0c0 22%, transparent),
-			0 0 14px 1px color-mix(in srgb, #b44aff 12%, transparent);
+			0 0 6px 0 color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor2) 22%, transparent),
+			0 0 14px 1px color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 12%, transparent);
 	}
 }
 
@@ -913,11 +913,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	background:
 		linear-gradient(var(--vscode-input-background), var(--vscode-input-background)) padding-box,
 		conic-gradient(from var(--chat-input-anim-angle),
-			#b44aff,
-			#4af0c0,
-			#51a2ff,
-			#4af0c0,
-			#b44aff) border-box;
+			var(--vscode-chat-inputWorkingBorderColor1),
+			var(--vscode-chat-inputWorkingBorderColor2),
+			var(--vscode-chat-inputWorkingBorderColor3),
+			var(--vscode-chat-inputWorkingBorderColor2),
+			var(--vscode-chat-inputWorkingBorderColor1)) border-box;
 	animation:
 		chat-input-working-border-spin 1.2s linear infinite,
 		chat-input-working-border-glow 3s ease-in-out infinite;

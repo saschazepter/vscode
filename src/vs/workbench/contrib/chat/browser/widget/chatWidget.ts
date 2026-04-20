@@ -465,7 +465,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					this.updateChatViewVisibility();
 				}
 			}
-			if (e.affectsConfiguration(ChatConfiguration.DeveloperJoy)) {
+			if (e.affectsConfiguration(ChatConfiguration.ProgressBorder)) {
 				this.updateWorkingProgressBorder();
 			}
 		}));
@@ -668,7 +668,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!inputContainer) {
 			return;
 		}
-		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.DeveloperJoy) === true;
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true;
 		const inProgress = !!this.viewModel?.model.requestInProgress.get();
 		inputContainer.classList.toggle('working', enabled && inProgress);
 	}

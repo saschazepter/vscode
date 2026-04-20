@@ -638,12 +638,12 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.ChatPersistentProgressEnabled]: {
 			type: 'boolean',
 			default: product.quality !== 'stable',
-			description: nls.localize('chat.persistentProgress.enabled', "Show elapsed time and token usage in chat response progress."),
+			description: nls.localize('chat.persistentProgress.enabled', "Always show progress in chat."),
 		},
-		[ChatConfiguration.DeveloperJoy]: {
+		[ChatConfiguration.ProgressBorder]: {
 			type: 'boolean',
 			default: false,
-			description: nls.localize('chat.developerJoy.enabled', "Show an animated gradient border and soft glow around the chat input while the agent is working or thinking."),
+			description: nls.localize('chat.progressBorder.enabled', "Show an animated gradient border and soft glow around the chat input while the agent is working or thinking. When enabled, this overrides {0} to be off.", '`#chat.persistentProgress.enabled#`'),
 		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'string',
