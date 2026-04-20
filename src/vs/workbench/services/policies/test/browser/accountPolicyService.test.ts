@@ -16,7 +16,7 @@ import { AbstractPolicyService, IPolicyService, PolicyValue } from '../../../../
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { TestProductService } from '../../../../test/common/workbenchTestServices.js';
 import { DefaultAccountService } from '../../../accounts/browser/defaultAccount.js';
-import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, AccountPolicyService, APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME } from '../../common/accountPolicyService.js';
+import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, AccountPolicyService, APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, IAccountPolicyGateInfo } from '../../common/accountPolicyService.js';
 
 const BASE_DEFAULT_ACCOUNT: IDefaultAccount = {
 	authenticationProvider: {
@@ -324,6 +324,129 @@ suite('AccountPolicyService', () => {
 	test('approved org list empty (or whitespace-only): gate inactive', async () => {
 		const { policyService } = await setupGate({ approvedOrgs: '   ', account: APPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Inactive);
+	});
+
+	test('gate active, signed in with non-GitHub provider: WrongProvider reason', async () => {
+		// Custom provider whose configured GitHub provider differs from the account's actual provider.
+		class MismatchedProvider extends DefaultAccountProvider {
+			override getDefaultAccountAuthenticationProvider(): IDefaultAccountAuthenticationProvider {
+				return { id: 'github', name: 'GitHub', enterprise: false };
+			}
+		}
+		const NON_GITHUB_ACCOUNT: IDefaultAccount = {
+			...APPROVED_ORG_ACCOUNT,
+			authenticationProvider: { id: 'microsoft', name: 'Microsoft', enterprise: false },
+		};
+
+		const managed = disposables.add(new FakeManagedPolicyService());
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, 'ApprovedOrg');
+		const accountService = disposables.add(new DefaultAccountService(TestProductService));
+		accountService.setDefaultAccountProvider(new MismatchedProvider(NON_GITHUB_ACCOUNT, {}));
+		await accountService.refresh();
+		const service = disposables.add(new AccountPolicyService(logService, accountService, managed));
+		const defaultConfiguration = disposables.add(new DefaultConfiguration(new NullLogService()));
+		await defaultConfiguration.initialize();
+		const config = disposables.add(new PolicyConfiguration(defaultConfiguration, service, new NullLogService()));
+		await config.initialize();
+
+		assert.strictEqual(service.gateInfo.state, AccountPolicyGateState.Restricted);
+		assert.strictEqual(service.gateInfo.reason, AccountPolicyGateUnsatisfiedReason.WrongProvider);
+	});
+
+	test('explicit `restrictedValue` is honored when gate is restricted', async () => {
+		const node: IConfigurationNode = {
+			id: 'restrictedValueConfig',
+			order: 2,
+			title: 'r',
+			type: 'object',
+			properties: {
+				'setting.RV': {
+					type: 'string',
+					default: 'open',
+					policy: {
+						name: 'PolicySettingRV',
+						category: PolicyCategory.Extensions,
+						minimumVersion: '1.0.0',
+						localization: { description: { key: '', value: '' } },
+						restrictedValue: 'locked',
+					}
+				}
+			}
+		};
+		Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration(node);
+		try {
+			const { policyService } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: null });
+			assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
+			assert.strictEqual(policyService.getPolicyValue('PolicySettingRV'), 'locked');
+		} finally {
+			Registry.as<IConfigurationRegistry>(Extensions.Configuration).deregisterConfigurations([node]);
+		}
+	});
+
+	test('onDidChangeGateInfo fires on state/reason transitions', async () => {
+		const { policyService, managed } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: APPROVED_ORG_ACCOUNT, policyData: {} });
+		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Satisfied);
+
+		const events: IAccountPolicyGateInfo[] = [];
+		disposables.add(policyService.onDidChangeGateInfo(info => events.push(info)));
+
+		// Satisfied → Restricted (org no longer approved)
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, 'OnlyOtherOrg');
+		await new Promise(resolve => setTimeout(resolve, 0));
+		// Restricted → Inactive (gate disabled)
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, '');
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		assert.deepStrictEqual(
+			events.map(e => ({ state: e.state, reason: e.reason })),
+			[
+				{ state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved },
+				{ state: AccountPolicyGateState.Inactive, reason: undefined },
+			]
+		);
+	});
+
+	test('boot race: gate is fail-closed until async managed policy service resolves', async () => {
+		// Simulate the IPC boundary: managed service only knows about its policies AFTER
+		// `updatePolicyDefinitions` has resolved. Before that, `getPolicyValue` returns undefined.
+		class AsyncManagedPolicyService extends FakeManagedPolicyService {
+			private _seeded = false;
+			private readonly _seedValue: string;
+			constructor(seedValue: string) {
+				super();
+				this._seedValue = seedValue;
+			}
+			override getPolicyValue(name: string): PolicyValue | undefined {
+				if (!this._seeded) {
+					return undefined;
+				}
+				return super.getPolicyValue(name);
+			}
+			protected override async _updatePolicyDefinitions(): Promise<void> {
+				// Yield, then seed (mimics IPC round-trip).
+				await new Promise(resolve => setTimeout(resolve, 0));
+				if (!this._seeded) {
+					this._seeded = true;
+					this.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, this._seedValue);
+				}
+			}
+		}
+
+		const managed = disposables.add(new AsyncManagedPolicyService('OnlyOtherOrg'));
+		const accountService = disposables.add(new DefaultAccountService(TestProductService));
+		accountService.setDefaultAccountProvider(new DefaultAccountProvider(APPROVED_ORG_ACCOUNT, {}));
+		await accountService.refresh();
+
+		const service = disposables.add(new AccountPolicyService(logService, accountService, managed));
+		const defaultConfiguration = disposables.add(new DefaultConfiguration(new NullLogService()));
+		await defaultConfiguration.initialize();
+		const config = disposables.add(new PolicyConfiguration(defaultConfiguration, service, new NullLogService()));
+		await config.initialize();
+
+		// Gate must reflect the admin policy that was unknown at construction time;
+		// without the boot-race fix, this would be Inactive (false-open).
+		assert.strictEqual(service.gateInfo.state, AccountPolicyGateState.Restricted);
+		assert.strictEqual(service.gateInfo.reason, AccountPolicyGateUnsatisfiedReason.OrgNotApproved);
 	});
 
 	test('managed policy change re-evaluates the gate and fires onDidChange', async () => {

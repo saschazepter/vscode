@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IStringDictionary } from '../../../../base/common/collections.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { AbstractPolicyService, getRestrictedPolicyValue, IPolicyService, PolicyDefinition, PolicyValue } from '../../../../platform/policy/common/policy.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -40,10 +42,28 @@ export interface IAccountPolicyGateInfo {
 	readonly reason?: AccountPolicyGateUnsatisfiedReason;
 }
 
-export class AccountPolicyService extends AbstractPolicyService implements IPolicyService {
+/**
+ * Read-only accessor for the Account Policy gate state. Backed by the same
+ * `AccountPolicyService` instance that drives policy enforcement, so UX/observability
+ * consumers (notifications, context keys, telemetry) cannot drift from the
+ * authoritative gate decision.
+ */
+export const IAccountPolicyGateService = createDecorator<IAccountPolicyGateService>('accountPolicyGateService');
+export interface IAccountPolicyGateService {
+	readonly _serviceBrand: undefined;
+	readonly gateInfo: IAccountPolicyGateInfo;
+	readonly onDidChangeGateInfo: Event<IAccountPolicyGateInfo>;
+}
+
+export class AccountPolicyService extends AbstractPolicyService implements IPolicyService, IAccountPolicyGateService {
+
+	declare readonly _serviceBrand: undefined;
 
 	private _gateInfo: IAccountPolicyGateInfo = { state: AccountPolicyGateState.Inactive };
 	get gateInfo(): IAccountPolicyGateInfo { return this._gateInfo; }
+
+	private readonly _onDidChangeGateInfo = this._register(new Emitter<IAccountPolicyGateInfo>());
+	readonly onDidChangeGateInfo = this._onDidChangeGateInfo.event;
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
@@ -70,10 +90,30 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 
 	protected async _updatePolicyDefinitions(policyDefinitions: IStringDictionary<PolicyDefinition>): Promise<void> {
 		this.logService.trace(`AccountPolicyService#_updatePolicyDefinitions: Got ${Object.keys(policyDefinitions).length} policy definitions`);
+
+		// Fail-closed boot ordering: the gate decision depends on the managed policy
+		// service knowing about `ChatApprovedAccountOrganizations`. If we computed the
+		// gate before the managed service had fetched its values (which is async on
+		// desktop because it crosses an IPC boundary to the main process), the gate
+		// would be evaluated as Inactive even when the admin has actually configured
+		// it — leaving AI features briefly unrestricted at startup. Pushing the
+		// definitions through the managed service first guarantees its values are
+		// loaded before we decide. (The call is a no-op when no new definitions need
+		// to be registered — see AbstractPolicyService.updatePolicyDefinitions.)
+		if (this.managedPolicyService) {
+			try {
+				await this.managedPolicyService.updatePolicyDefinitions(policyDefinitions);
+			} catch (err) {
+				this.logService.error('AccountPolicyService#_updatePolicyDefinitions: managed policy service update failed; proceeding fail-closed.', err);
+			}
+		}
+
 		const updated: string[] = [];
 		const policyData = this.defaultAccountService.policyData;
 
+		const previousInfo = this._gateInfo;
 		this._gateInfo = this.computeGateInfo();
+		const gateInfoChanged = previousInfo.state !== this._gateInfo.state || previousInfo.reason !== this._gateInfo.reason;
 		const gateRestricted = this._gateInfo.state === AccountPolicyGateState.Restricted;
 
 		for (const key in policyDefinitions) {
@@ -104,6 +144,9 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 
 		if (updated.length) {
 			this._onDidChange.fire(updated);
+		}
+		if (gateInfoChanged) {
+			this._onDidChangeGateInfo.fire(this._gateInfo);
 		}
 	}
 

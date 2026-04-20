@@ -3,19 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { IPolicyService } from '../../../../platform/policy/common/policy.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { DEFAULT_ACCOUNT_SIGN_IN_COMMAND } from '../../accounts/browser/defaultAccount.js';
-import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, IAccountPolicyGateInfo } from '../common/accountPolicyService.js';
+import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, IAccountPolicyGateInfo, IAccountPolicyGateService } from '../common/accountPolicyService.js';
 
 const NOTIFICATION_DISMISSED_KEY = 'accountPolicy.gateNotificationDismissed';
 
@@ -28,32 +26,32 @@ type AccountPolicyGateStateEvent = {
 type AccountPolicyGateStateClassification = {
 	owner: 'copilot';
 	comment: 'Tracks the Account Policy gate state for diagnosing account-driven restriction issues. No PII (organization names are NOT logged).';
-	gateActive: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'True if the Require Approved Account policy is in effect.' };
+	gateActive: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'True if an admin has activated the Approved Account gate (non-empty approved-organization list).' };
 	gateSatisfied: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'True if the gate is satisfied (signed-in approved account with resolved policy).' };
 	reasonNotSatisfied: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Bucketed reason the gate is unsatisfied: noAccount, wrongProvider, orgNotApproved, policyNotResolved.' };
 };
 
 /**
- * Observes the inputs to the Account Policy gate (managed policy values + default account state)
- * and:
+ * Observes the Account Policy gate computed by `IAccountPolicyGateService` and:
  *   - mirrors the gate state into a workbench context key so welcome views/menus can react;
- *   - shows a one-time notification with a Sign In action when the gate is active but unsatisfied;
+ *   - shows a notification with a Sign In action when the gate is active but unsatisfied;
  *   - emits telemetry whenever the gate state changes.
  *
  * The actual restriction of feature values lives in `AccountPolicyService` itself; this
- * contribution only handles UX/observability.
+ * contribution is a thin UX/observability adapter and does NOT re-evaluate the gate.
  */
 export class AccountPolicyGateContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.accountPolicyGate';
 
 	private readonly contextKey: IContextKey<boolean>;
-	private lastInfo: IAccountPolicyGateInfo = { state: AccountPolicyGateState.Inactive };
+	private lastInfo: IAccountPolicyGateInfo;
+
 	private readonly notificationHandle = this._register(new MutableDisposable());
+	private dismissedReason: AccountPolicyGateUnsatisfiedReason | undefined;
 
 	constructor(
-		@IPolicyService private readonly policyService: IPolicyService,
-		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		@IAccountPolicyGateService private readonly gateService: IAccountPolicyGateService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -62,20 +60,17 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	) {
 		super();
 		this.contextKey = ChatContextKeys.accountPolicyGateActive.bindTo(contextKeyService);
+		this.lastInfo = this.gateService.gateInfo;
 
-		this.update();
-		this._register(this.policyService.onDidChange(names => {
-			if (names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
-				this.update();
-			}
-		}));
-		this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => this.update()));
-		this._register(this.defaultAccountService.onDidChangePolicyData(() => this.update()));
+		// Seed any consumer that initialised before us (e.g. context-key when-clauses).
+		this.apply(this.lastInfo, /*forceTelemetry*/ true);
+
+		this._register(this.gateService.onDidChangeGateInfo(info => this.apply(info, /*forceTelemetry*/ false)));
 	}
 
-	private update(): void {
-		const info = this.computeGateInfo();
-		const stateChanged = info.state !== this.lastInfo.state || info.reason !== this.lastInfo.reason;
+	private apply(info: IAccountPolicyGateInfo, forceTelemetry: boolean): void {
+		const stateChanged = forceTelemetry || info.state !== this.lastInfo.state || info.reason !== this.lastInfo.reason;
+		const reasonChanged = info.reason !== this.lastInfo.reason;
 		this.lastInfo = info;
 
 		const isRestricted = info.state === AccountPolicyGateState.Restricted;
@@ -89,53 +84,46 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			});
 		}
 
-		if (isRestricted) {
-			this.maybeShowNotification(info.reason);
-		} else {
+		if (info.state !== AccountPolicyGateState.Restricted) {
+			// Gate is no longer restricting anything → close any open notification AND reset
+			// the "Don't Show Again" preference so a later flip back to Restricted is visible
+			// again. Also reset the in-memory dismissed-reason so reason transitions get a
+			// fresh notification.
 			this.notificationHandle.clear();
+			this.dismissedReason = undefined;
+			this.storageService.remove(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
+			return;
 		}
-	}
 
-	private computeGateInfo(): IAccountPolicyGateInfo {
-		const approvedRaw = this.policyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
-		const approved = typeof approvedRaw === 'string' ? approvedRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
-		if (approved.length === 0) {
-			return { state: AccountPolicyGateState.Inactive };
+		// Restricted. Show or refresh the notification if the reason has changed since the
+		// last shown/dismissed message. This covers cases like NoAccount → OrgNotApproved
+		// where the user needs to see updated guidance.
+		if (reasonChanged) {
+			this.notificationHandle.clear();
+			this.dismissedReason = undefined;
 		}
-		const account = this.defaultAccountService.currentDefaultAccount;
-		if (!account) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.NoAccount };
-		}
-		const configuredProvider = this.defaultAccountService.getDefaultAccountAuthenticationProvider();
-		if (account.authenticationProvider.id !== configuredProvider.id) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.WrongProvider };
-		}
-		if (this.defaultAccountService.policyData === null) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved };
-		}
-		if (approved.includes('*')) {
-			return { state: AccountPolicyGateState.Satisfied };
-		}
-		const orgs = (account.entitlementsData?.organization_login_list ?? []).map(o => o.toLowerCase());
-		if (!orgs.some(o => approved.includes(o))) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
-		}
-		return { state: AccountPolicyGateState.Satisfied };
+		this.maybeShowNotification(info.reason);
 	}
 
 	private maybeShowNotification(reason: AccountPolicyGateUnsatisfiedReason | undefined): void {
 		if (this.notificationHandle.value) {
-			return; // already showing
+			return; // already showing for this reason
 		}
-		if (this.storageService.getBoolean(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION, false)) {
-			return;
+		if (this.dismissedReason === reason) {
+			return; // user dismissed for this reason this session
 		}
+		const persistedDismissed = this.storageService.get(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
+		if (persistedDismissed === (reason ?? '')) {
+			return; // user clicked "Don't Show Again" for this same reason on this machine
+		}
+
 		const message = reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved
 			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.")
 			: reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved
 				? localize('accountPolicy.notification.unresolved', "Waiting for your GitHub account policy to load before AI features can be enabled\u2026")
 				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.");
 
+		const handleDisposables = new DisposableStore();
 		const handle = this.notificationService.prompt(
 			Severity.Warning,
 			message,
@@ -146,11 +134,21 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 				},
 				{
 					label: localize('accountPolicy.notification.dontShowAgain', "Don't Show Again"),
-					run: () => this.storageService.store(NOTIFICATION_DISMISSED_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE),
+					run: () => this.storageService.store(NOTIFICATION_DISMISSED_KEY, reason ?? '', StorageScope.APPLICATION, StorageTarget.MACHINE),
 				}
 			],
 			{ sticky: true }
 		);
-		this.notificationHandle.value = toDisposable(() => handle.close());
+
+		// Capture which reason the toast is showing for so a manual close treats it as a
+		// session-scoped dismissal — but only for THIS reason. A subsequent reason change
+		// will reset `dismissedReason` and re-show.
+		const reasonAtShow = reason;
+		handleDisposables.add(handle.onDidClose(() => {
+			this.dismissedReason = reasonAtShow;
+			this.notificationHandle.clear();
+		}));
+		handleDisposables.add({ dispose: () => handle.close() });
+		this.notificationHandle.value = handleDisposables;
 	}
 }
