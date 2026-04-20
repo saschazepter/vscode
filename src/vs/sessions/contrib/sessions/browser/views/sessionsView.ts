@@ -258,8 +258,8 @@ export class SessionsView extends ViewPane {
 			this.sessionsManagementService.openNewSessionView();
 		}));
 
-		newSessionButton.label = localize('newCompact', "New");
-		const buttonLabel = $('span.new-session-button-label', undefined, localize('newCompact', "New"));
+		const newSessionLabel = localize('newCompact', "New");
+		const buttonLabel = $('span.new-session-button-label', undefined, newSessionLabel);
 		const keybindingHint = $('span.new-session-keybinding-hint');
 		const keybindingHintLabel = this._register(new KeybindingLabel(keybindingHint, OS, {
 			disableTitle: true,
