@@ -18,7 +18,7 @@ import { IInlineCompletionsService } from '../../../../../editor/browser/service
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ChatStatusDashboard } from './chatStatusDashboard.js';
 import { mainWindow } from '../../../../../base/browser/window.js';
-import { disposableWindowInterval } from '../../../../../base/browser/dom.js';
+import { disposableWindowInterval, isHTMLElement } from '../../../../../base/browser/dom.js';
 import { isNewUser } from './chatStatus.js';
 import product from '../../../../../platform/product/common/product.js';
 import { isCompletionsEnabled } from '../../../../../editor/common/services/completionsEnablement.js';
@@ -33,6 +33,8 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 	private readonly activeCodeEditorListener = this._register(new MutableDisposable());
 
 	private runningSessionsCount: number;
+
+	private _wasLoading = false;
 
 	constructor(
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
@@ -54,6 +56,10 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 
 	private update(): void {
 		const sentiment = this.chatEntitlementService.sentiment;
+		const isLoading = this.chatEntitlementService.entitlement === ChatEntitlement.Unresolved;
+		const wasLoading = this._wasLoading;
+		this._wasLoading = isLoading;
+
 		if (!sentiment.hidden) {
 			const props = this.getEntryProps();
 			if (this.entry) {
@@ -61,9 +67,24 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 			} else {
 				this.entry = this.statusbarService.addEntry(props, 'chat.statusBarEntry', StatusbarAlignment.RIGHT, { location: { id: 'status.editor.mode', priority: 100.1 }, alignment: StatusbarAlignment.RIGHT });
 			}
+
+			// Animate the icon when loading completes to draw attention that the
+			// Copilot status is now ready for interaction
+			if (wasLoading && !isLoading) {
+				this.animateReadyState();
+			}
 		} else {
 			this.entry?.dispose();
 			this.entry = undefined;
+		}
+	}
+
+	private animateReadyState(): void {
+		// eslint-disable-next-line no-restricted-syntax
+		const node = mainWindow.document.querySelector('.monaco-workbench .statusbar DIV#chat\\.statusBarEntry A>SPAN.codicon');
+		if (isHTMLElement(node)) {
+			node.classList.add('ready');
+			node.addEventListener('animationend', () => node.classList.remove('ready'), { once: true });
 		}
 	}
 
@@ -106,6 +127,17 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 	}
 
 	private getEntryProps(): IStatusbarEntry {
+		// Show a loading indicator while entitlement is being resolved
+		if (this.chatEntitlementService.entitlement === ChatEntitlement.Unresolved) {
+			return {
+				name: localize('chatStatus', "Copilot Status"),
+				text: '$(loading~spin)',
+				ariaLabel: localize('chatLoadingAria', "Copilot, getting things ready"),
+				tooltip: localize('gettingThingsReady', "Getting things ready..."),
+				showInAllWindows: true,
+			};
+		}
+
 		let text = '$(copilot)';
 		let ariaLabel = localize('chatStatusAria', "Copilot status");
 		let kind: StatusbarEntryKind | undefined;
