@@ -100,12 +100,17 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 	private makeCandidateRow(name: string, score: number, maxScore: number, reason: string | undefined, selected: boolean): HTMLElement {
 		const li = $(`li.chat-auto-model-routing-candidate${selected ? '.selected' : ''}`);
 
-		const nameCol = $('.chat-auto-model-routing-candidate-name');
+		const nameCol = $('.chat-auto-model-routing-candidate-name-col');
+		const nameRow = $('.chat-auto-model-routing-candidate-name');
 		if (selected) {
 			const check = $('span.codicon.codicon-check.chat-auto-model-routing-check', { 'aria-hidden': 'true' });
-			nameCol.appendChild(check);
+			nameRow.appendChild(check);
 		}
-		nameCol.appendChild($('span', undefined, name));
+		nameRow.appendChild($('span.chat-auto-model-routing-candidate-name-text', undefined, name));
+		nameCol.appendChild(nameRow);
+		if (reason) {
+			nameCol.appendChild($('.chat-auto-model-routing-candidate-reason', undefined, reason));
+		}
 		li.appendChild(nameCol);
 
 		const barCol = $('.chat-auto-model-routing-bar-col');
@@ -120,10 +125,6 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 		const scoreLabel = $('.chat-auto-model-routing-candidate-score', undefined, `${Math.round(score * 100)}%`);
 		li.appendChild(scoreLabel);
 
-		if (reason) {
-			const reasonRow = $('.chat-auto-model-routing-candidate-reason', undefined, reason);
-			li.appendChild(reasonRow);
-		}
 		return li;
 	}
 
