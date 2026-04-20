@@ -3,33 +3,26 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
+import * as fs from 'fs';
+import { DeferredPromise, raceCancellablePromises, timeout } from '../../../base/common/async.js';
 import { Emitter } from '../../../base/common/event.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { dirname } from '../../../base/common/path.js';
 import * as platform from '../../../base/common/platform.js';
 import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
-import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { getShellIntegrationInjection } from '../../terminal/node/terminalEnvironment.js';
 import { ActionType } from '../common/state/protocol/actions.js';
 import type { ICreateTerminalParams } from '../common/state/protocol/commands.js';
 import { ITerminalClaim, ITerminalContentPart, ITerminalInfo, ITerminalState, TerminalClaimKind } from '../common/state/protocol/state.js';
 import { isTerminalAction } from '../common/state/sessionActions.js';
-import { getShellIntegrationInjection } from '../../terminal/node/terminalEnvironment.js';
-import { Osc633Event, Osc633EventType, Osc633Parser } from './osc633Parser.js';
 import type { AgentHostStateManager } from './agentHostStateManager.js';
-import * as fs from 'fs';
-import { dirname } from '../../../base/common/path.js';
-import { DeferredPromise, raceCancellablePromises, timeout } from '../../../base/common/async.js';
+import { Osc633Event, Osc633EventType, Osc633Parser } from './osc633Parser.js';
 
 const WAIT_FOR_PROMPT_TIMEOUT = 10_000;
-
-/** Returns true for POSIX absolute paths, Windows drive paths, and UNC paths. */
-function isAbsoluteFileSystemPath(path: string): boolean {
-	return path.startsWith('/')
-		|| /^[a-zA-Z]:[\\/]/.test(path)
-		|| path.startsWith('\\\\');
-}
 
 export const IAgentHostTerminalManager = createDecorator<IAgentHostTerminalManager>('agentHostTerminalManager');
 
@@ -45,7 +38,7 @@ export interface ICommandFinishedEvent {
  */
 export interface IAgentHostTerminalManager {
 	readonly _serviceBrand: undefined;
-	createTerminal(params: ICreateTerminalParams, options?: { shell?: string }): Promise<void>;
+	createTerminal(params: ICreateTerminalParams, options?: { shell?: string; preventShellHistory?: boolean }): Promise<void>;
 	writeInput(uri: string, data: string): void;
 	onData(uri: string, cb: (data: string) => void): IDisposable;
 	onExit(uri: string, cb: (exitCode: number) => void): IDisposable;
@@ -179,7 +172,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 	 * Create a new terminal backed by node-pty.
 	 * Spawns the user's default shell.
 	 */
-	async createTerminal(params: ICreateTerminalParams, options?: { shell?: string }): Promise<void> {
+	async createTerminal(params: ICreateTerminalParams, options?: { shell?: string; preventShellHistory?: boolean }): Promise<void> {
 		const uri = params.terminal;
 		if (this._terminals.has(uri)) {
 			throw new Error(`Terminal already exists: ${uri}`);
@@ -199,6 +192,13 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		// Shell integration — inject scripts so the shell emits OSC 633 sequences
 		const nonce = generateUuid();
 		const env: Record<string, string> = { ...process.env as Record<string, string> };
+		if (options?.preventShellHistory) {
+			// Picked up by the shell integration scripts to set HISTCONTROL=ignorespace
+			// (bash) / HIST_IGNORE_SPACE (zsh), or suppress PSReadLine history (pwsh).
+			// Combined with the leading-space prefix applied at command-write time, this
+			// prevents agent-executed commands from polluting the user's shell history.
+			env['VSCODE_PREVENT_SHELL_HISTORY'] = '1';
+		}
 		let shellArgs: string[] = [];
 
 		const injection = await getShellIntegrationInjection(
@@ -660,32 +660,28 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 	 * directory is missing (otherwise node-pty exits silently with code 1).
 	 * Accepts either a `file://` URI string or a raw absolute filesystem path.
 	 */
-	private async _resolveCwd(cwd: string | undefined, uri: string): Promise<string> {
-		let resolved = process.cwd();
+	private async _resolveCwd(cwd: string | undefined, terminalURI: string): Promise<string> {
+		let resolved = cwd;
 		if (cwd) {
-			if (isAbsoluteFileSystemPath(cwd)) {
-				resolved = cwd;
+			const parsed = URI.parse(cwd);
+			if (parsed.scheme === 'file' && parsed.fsPath && parsed.fsPath !== '/') {
+				resolved = parsed.fsPath;
 			} else {
-				try {
-					const parsed = URI.parse(cwd);
-					if (parsed.scheme === 'file' && parsed.fsPath && parsed.fsPath !== '/') {
-						resolved = parsed.fsPath;
-					} else {
-						this._logService.warn(`[TerminalManager] Ignoring non-file cwd for ${uri}: ${cwd}`);
-					}
-				} catch {
-					this._logService.warn(`[TerminalManager] Failed to parse cwd URI for ${uri}: ${cwd}`);
-				}
+				this._logService.warn(`[TerminalManager] Ignoring non-file cwd for ${terminalURI}: ${cwd}`);
 			}
 		}
+
 		try {
-			const stat = await fs.promises.stat(resolved);
-			if (stat.isDirectory()) {
-				return resolved;
+			if (resolved) {
+				const stat = await fs.promises.stat(resolved);
+				if (stat.isDirectory()) {
+					return resolved;
+				}
 			}
 		} catch {
 			// fall through to fallback
 		}
+
 		const fallback = process.env['HOME'] || process.env['USERPROFILE'] || process.cwd();
 		this._logService.warn(`[TerminalManager] cwd '${resolved}' is not accessible, falling back to ${fallback}`);
 		return fallback;

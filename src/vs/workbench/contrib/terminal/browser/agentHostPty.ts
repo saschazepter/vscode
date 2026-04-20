@@ -9,29 +9,12 @@ import { DisposableStore, IReference } from '../../../../base/common/lifecycle.j
 import { URI } from '../../../../base/common/uri.js';
 import { IProcessPropertyMap, ITerminalChildProcess, ITerminalLaunchError, ITerminalLaunchResult, ProcessPropertyType } from '../../../../platform/terminal/common/terminal.js';
 import { IAgentConnection } from '../../../../platform/agentHost/common/agentService.js';
+import { AGENT_HOST_SCHEME, fromAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { ActionType, IActionEnvelope } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import { TerminalClaimKind, type ITerminalContentPart, type ITerminalState } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { IAgentSubscription } from '../../../../platform/agentHost/common/state/agentSubscription.js';
 import { StateComponents } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { BasePty } from '../common/basePty.js';
-
-/**
- * Resolves an optional working-directory URI to the `cwd` value sent in
- * `createTerminal`. For `file://` URIs we send the raw filesystem path so
- * older agent-host servers (which pass `cwd` directly to node-pty) accept
- * it; other schemes fall back to the URI string. Empty or root paths are
- * dropped so the server can use its own default.
- */
-function resolveCreateTerminalCwd(cwd: URI | undefined): string | undefined {
-	if (!cwd) {
-		return undefined;
-	}
-	const value = cwd.scheme === 'file' ? cwd.fsPath : cwd.toString();
-	if (!value || value === '/') {
-		return undefined;
-	}
-	return value;
-}
 
 /**
  * Options for creating a new terminal on an agent host.
@@ -153,7 +136,7 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 					terminal: this._terminalUri.toString(),
 					claim: { kind: TerminalClaimKind.Client, clientId: this._connection.clientId },
 					name: this._options?.name,
-					cwd: resolveCreateTerminalCwd(this._options?.cwd),
+					cwd: this._resolveCwdForProtocol(this._options?.cwd),
 					cols: this._lastDimensions.cols > 0 ? this._lastDimensions.cols : undefined,
 					rows: this._lastDimensions.rows > 0 ? this._lastDimensions.rows : undefined,
 				});
@@ -301,6 +284,20 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Resolves a cwd URI for sending over the protocol. Agent-host URIs
+	 * are unwrapped to their original URI via {@link fromAgentHostUri}.
+	 */
+	private _resolveCwdForProtocol(cwd: URI | undefined): string | undefined {
+		if (!cwd) {
+			return undefined;
+		}
+		if (cwd.scheme === AGENT_HOST_SCHEME) {
+			return fromAgentHostUri(cwd).toString();
+		}
+		return cwd.toString();
 	}
 
 	input(data: string): void {

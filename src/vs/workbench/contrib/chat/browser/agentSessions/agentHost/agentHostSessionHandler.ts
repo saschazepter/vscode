@@ -21,7 +21,6 @@ import { ISessionTruncatedAction } from '../../../../../../platform/agentHost/co
 import { ICustomizationRef, TerminalClaimKind, ToolResultContentType, type IProtectedResourceMetadata, type IToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, ISessionTurnStartedAction, type ISessionAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type ICompletedToolCall, type IMessageAttachment, type IModelSelection, type IResponsePart, type IRootState, type ISessionInputAnswer, type ISessionInputRequest, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
@@ -43,7 +42,7 @@ import { ILanguageModelToolsService, IToolData, IToolInvocation, IToolResult, To
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
-import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, getTerminalContentUri, makeAhpTerminalToolSessionId, parseAhpTerminalToolSessionId, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, type IToolCallFileEdit } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, getTerminalContentUri, isSubagentTool, makeAhpTerminalToolSessionId, parseAhpTerminalToolSessionId, rawMarkdownToString, stringOrMarkdownToString, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, type IToolCallFileEdit } from './stateToProgressAdapter.js';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -457,7 +456,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				const sessionState = this._getSessionState(resolvedSession.toString());
 				if (sessionState) {
 					const modelId = this._toLanguageModelId(sessionResource, sessionState.summary.model?.id);
-					history.push(...turnsToHistory(resolvedSession, sessionState.turns, this._config.agentId, modelId));
+					history.push(...turnsToHistory(resolvedSession, sessionState.turns, this._config.agentId, this._config.connectionAuthority, modelId));
 
 					// Enrich history with inner tool calls from subagent
 					// child sessions. Subscribes to each child session so
@@ -1151,11 +1150,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				existing = confirmInvocation;
 			}
 		} else if (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.PendingResultConfirmation) {
-			existing.invocationMessage = typeof tc.invocationMessage === 'string'
-				? tc.invocationMessage
-				: new MarkdownString(tc.invocationMessage.markdown);
+			existing.invocationMessage = stringOrMarkdownToString(tc.invocationMessage, this._config.connectionAuthority);
 			this._reviveTerminalIfNeeded(existing, tc, ctx.backendSession);
-			updateRunningToolSpecificData(existing, tc);
+			updateRunningToolSpecificData(existing, tc, this._config.connectionAuthority);
 		}
 
 		// Finalize terminal-state tools
@@ -1164,7 +1161,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			// Running was skipped due to throttling and terminal content
 			// only appears at Completed time.
 			this._reviveTerminalIfNeeded(existing, tc, ctx.backendSession);
-			fileEdits = finalizeToolInvocation(existing, tc, ctx.backendSession);
+			fileEdits = finalizeToolInvocation(existing, tc, ctx.backendSession, this._config.connectionAuthority);
 		}
 
 		return { invocation: existing, fileEdits };
@@ -1556,7 +1553,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 							// string gets merged into the edit part in chatModel.ts
 							// which breaks rendering because the thinking content
 							// part does not deal with this.
-							ctx.progress([{ kind: 'markdownContent', content: new MarkdownString(delta, { supportHtml: true }) }]);
+							ctx.progress([{ kind: 'markdownContent', content: rawMarkdownToString(delta, this._config.connectionAuthority, { supportHtml: true }) }]);
 						}
 						break;
 					}
@@ -1731,7 +1728,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			/* resolveId */ undefined,
 			/* data */ undefined,
 			/* isUsed */ undefined,
-			/* message */ new MarkdownString(inputReq.message),
+			/* message */ rawMarkdownToString(inputReq.message, this._config.connectionAuthority),
 		);
 
 		progress([carousel]);
@@ -1796,7 +1793,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			if (rp.kind === ResponsePartKind.ToolCall) {
 				const tc = rp.toolCall;
 				const existing = activeToolInvocations.get(tc.toolCallId);
-				if (existing && !observedSubagentToolIds.has(tc.toolCallId) && (getToolKind(tc) === 'subagent' || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
+				if (existing && !observedSubagentToolIds.has(tc.toolCallId) && (isSubagentTool(tc) || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
 					observedSubagentToolIds.add(tc.toolCallId);
 					this._observeSubagentSession(backendSession, tc.toolCallId, progress, disposables, observedSubagentToolIds);
 				}
@@ -1859,7 +1856,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									if (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) {
 										const completedTc = tc as ICompletedToolCall;
 										const fileEditParts = completedToolCallToEditParts(completedTc);
-										const serialized = completedToolCallToSerialized(completedTc, toolCallId, URI.parse(childSessionUri));
+										const serialized = completedToolCallToSerialized(completedTc, toolCallId, URI.parse(childSessionUri), this._config.connectionAuthority);
 										if (fileEditParts.length > 0) {
 											serialized.presentation = ToolInvocationPresentation.Hidden;
 										}
@@ -1927,11 +1924,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 							this._awaitToolConfirmation(confirmInvocation, tc.toolCallId, URI.parse(childSessionUri), turnId, childCts.token);
 						}
 					} else if (tc.status === ToolCallStatus.Running) {
-						updateRunningToolSpecificData(existing, tc);
+						updateRunningToolSpecificData(existing, tc, this._config.connectionAuthority);
 					}
 
 					if (existing && (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) && !IChatToolInvocation.isComplete(existing)) {
-						finalizeToolInvocation(existing, tc, URI.parse(childSessionUri));
+						finalizeToolInvocation(existing, tc, URI.parse(childSessionUri), this._config.connectionAuthority);
 					}
 				}
 			}

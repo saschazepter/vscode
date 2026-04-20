@@ -233,6 +233,18 @@ export interface IAgentToolStartEvent extends IAgentProgressEventBase {
 	readonly language?: string;
 	/** Serialized JSON of the tool arguments, if available. */
 	readonly toolArguments?: string;
+	/**
+	 * For `toolKind === 'subagent'`, the internal name of the agent being
+	 * spawned (e.g. 'explore'). Adapters are responsible for extracting this
+	 * from their SDK-specific tool argument shape.
+	 */
+	readonly subagentAgentName?: string;
+	/**
+	 * For `toolKind === 'subagent'`, a human-readable description of the
+	 * subagent's task. Adapters are responsible for extracting this from
+	 * their SDK-specific tool argument shape.
+	 */
+	readonly subagentDescription?: string;
 	readonly mcpServerName?: string;
 	readonly mcpToolName?: string;
 	readonly parentToolCallId?: string;
@@ -671,6 +683,21 @@ export interface IAgentHostService extends IAgentConnection {
 
 	readonly onAgentHostExit: Event<number>;
 	readonly onAgentHostStart: Event<void>;
+
+	/**
+	 * `true` while we are in the middle of authenticating against the local
+	 * agent host (resolving tokens for any advertised `protectedResources` and
+	 * pushing them via {@link authenticate}). Defaults to `true` at startup so
+	 * that the period before the first auth pass is also covered.
+	 *
+	 * Producers (the workbench `AgentHostContribution`) flip this around their
+	 * auth pass; consumers (e.g. the local sessions provider) read it to mark
+	 * sessions as still loading.
+	 */
+	readonly authenticationPending: IObservable<boolean>;
+
+	/** Update {@link authenticationPending}. Internal — only the auth driver should call this. */
+	setAuthenticationPending(pending: boolean): void;
 
 	restartAgentHost(): Promise<void>;
 

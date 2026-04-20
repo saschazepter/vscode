@@ -10,7 +10,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/
 import { ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, type IActiveTurn, type ICompletedToolCall, type IToolCallRunningState, type ITurn, type IToolCallResponsePart, ToolCallCancellationReason } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatToolInvocationSerialized, type IChatMarkdownContent } from '../../../common/chatService/chatService.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
-import { turnsToHistory, activeTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 
 // ---- Helper factories -------------------------------------------------------
 
@@ -56,7 +56,19 @@ function toolCallStateToInvocation(tc: Parameters<typeof rawToolCallStateToInvoc
 }
 
 function finalizeToolInvocation(invocation: Parameters<typeof rawFinalizeToolInvocation>[0], tc: Parameters<typeof rawFinalizeToolInvocation>[1]) {
-	return rawFinalizeToolInvocation(invocation, tc, URI.file('/'));
+	return rawFinalizeToolInvocation(invocation, tc, URI.file('/'), undefined);
+}
+
+function turnsToHistory(backendSession: Parameters<typeof rawTurnsToHistory>[0], turns: Parameters<typeof rawTurnsToHistory>[1], participantId: Parameters<typeof rawTurnsToHistory>[2], modelId?: Parameters<typeof rawTurnsToHistory>[4]) {
+	return rawTurnsToHistory(backendSession, turns, participantId, undefined, modelId);
+}
+
+function activeTurnToProgress(sessionResource: Parameters<typeof rawActiveTurnToProgress>[0], activeTurn: Parameters<typeof rawActiveTurnToProgress>[1], connectionAuthority?: Parameters<typeof rawActiveTurnToProgress>[2]) {
+	return rawActiveTurnToProgress(sessionResource, activeTurn, connectionAuthority);
+}
+
+function updateRunningToolSpecificData(existing: Parameters<typeof rawUpdateRunningToolSpecificData>[0], tc: Parameters<typeof rawUpdateRunningToolSpecificData>[1]) {
+	return rawUpdateRunningToolSpecificData(existing, tc, undefined);
 }
 
 // ---- Tests ------------------------------------------------------------------
@@ -217,6 +229,70 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual((response.parts[0] as IChatMarkdownContent).content.value, 'Hello world');
 		});
 
+		test('markdown links in response content are rewritten through the agent host scheme', () => {
+			const turn = createTurn({
+				responseParts: [{
+					kind: ResponsePartKind.Markdown,
+					id: 'md-links',
+					content: 'See [local](file:///a/b.ts), [content](agenthost-content:///s/x), [external](https://example.com) and [rel](./foo.md).',
+				}],
+			});
+
+			const history = rawTurnsToHistory(URI.file('/'), [turn], 'p', 'my-host');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const part = response.parts[0] as IChatMarkdownContent;
+			assert.deepStrictEqual(part.content.value,
+				'See [](vscode-agent-host://my-host/file/-/a/b.ts), ' +
+				'[](vscode-agent-host://my-host/agenthost-content/-/s/x), ' +
+				'[external](https://example.com) and ' +
+				'[rel](./foo.md).'
+			);
+		});
+
+		test('markdown link syntax inside fenced code blocks is preserved verbatim', () => {
+			const input = [
+				'Use [real](file:///a.ts) directly.',
+				'',
+				'```md',
+				'[fake](file:///b.ts)',
+				'```',
+				'',
+				'And then [another](file:///c.ts).',
+			].join('\n');
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.Markdown, id: 'md-code', content: input }],
+			});
+
+			const history = rawTurnsToHistory(URI.file('/'), [turn], 'p', 'my-host');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const value = (response.parts[0] as IChatMarkdownContent).content.value;
+			assert.ok(value.includes('[](vscode-agent-host://my-host/file/-/a.ts)'));
+			assert.ok(value.includes('[](vscode-agent-host://my-host/file/-/c.ts)'));
+			// The link inside the fenced code block must NOT be rewritten.
+			assert.ok(value.includes('[fake](file:///b.ts)'));
+			assert.ok(!value.includes('[fake](vscode-agent-host'));
+		});
+
+		test('markdown link syntax inside inline code spans is preserved verbatim', () => {
+			const input = 'Real [one](file:///a.ts) and literal `[two](file:///b.ts)` here.';
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.Markdown, id: 'md-codespan', content: input }],
+			});
+
+			const history = rawTurnsToHistory(URI.file('/'), [turn], 'p', 'my-host');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const value = (response.parts[0] as IChatMarkdownContent).content.value;
+			assert.strictEqual(value,
+				'Real [](vscode-agent-host://my-host/file/-/a.ts) and literal `[two](file:///b.ts)` here.'
+			);
+		});
+
 		test('error turn produces error message in history', () => {
 			const turn = createTurn({
 				state: TurnState.Error,
@@ -320,6 +396,27 @@ suite('stateToProgressAdapter', () => {
 	});
 
 	suite('finalizeToolInvocation', () => {
+
+		test('rewrites markdown links in pastTenseMessage through the agent host scheme', () => {
+			const tc = createToolCallState({ status: ToolCallStatus.Running });
+			const invocation = toolCallStateToInvocation(tc);
+
+			rawFinalizeToolInvocation(invocation, {
+				status: ToolCallStatus.Completed,
+				toolCallId: 'tc-1',
+				toolName: 'view_file',
+				displayName: 'View File',
+				invocationMessage: 'Reading file...',
+				confirmed: ToolCallConfirmationReason.NotNeeded,
+				success: true,
+				pastTenseMessage: { markdown: 'Read [foo.ts](file:///path/to/foo.ts)' },
+			} as ICompletedToolCall, URI.file('/'), 'ssh__macbook-air');
+
+			assert.ok(invocation.pastTenseMessage);
+			assert.strictEqual(typeof invocation.pastTenseMessage, 'object');
+			const value = (invocation.pastTenseMessage as { value: string }).value;
+			assert.strictEqual(value, 'Read [](vscode-agent-host://ssh__macbook-air/file/-/path/to/foo.ts)');
+		});
 
 		test('finalizes terminal tool with output and exit code', () => {
 			const tc = createToolCallState({
