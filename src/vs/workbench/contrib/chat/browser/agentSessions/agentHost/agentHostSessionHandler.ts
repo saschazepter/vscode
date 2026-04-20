@@ -1723,13 +1723,21 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			});
 		}
 
+		// Suppress the carousel-level message when it would duplicate the only
+		// question's text. Agents typically populate `inputReq.message` and a
+		// single question's `message` from the same source, so rendering both
+		// produces the same prompt twice in the UI.
+		const carouselMessage = questions.length === 1 && questions[0].title === inputReq.message
+			? undefined
+			: rawMarkdownToString(inputReq.message, this._config.connectionAuthority);
+
 		const carousel = new ChatQuestionCarouselData(
 			questions,
 			/* allowSkip */ true,
 			/* resolveId */ undefined,
 			/* data */ undefined,
 			/* isUsed */ undefined,
-			/* message */ rawMarkdownToString(inputReq.message, this._config.connectionAuthority),
+			/* message */ carouselMessage,
 		);
 
 		progress([carousel]);
