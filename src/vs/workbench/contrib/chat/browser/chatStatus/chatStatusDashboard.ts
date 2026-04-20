@@ -321,7 +321,8 @@ export class ChatStatusDashboard extends DomWidget {
 			const globalCalloutUpdater = this.createGlobalQuotaCallout(container, this._store);
 
 			if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && (Number(chatQuota?.percentRemaining) <= 25 || Number(completionsQuota?.percentRemaining) <= 25)) {
-				const upgradeProButton = this._store.add(new Button(container, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: this.canUseChat() /* use secondary color when chat can still be used */ }));
+				const buttonContainer = container.appendChild($('div.button-right'));
+				const upgradeProButton = this._store.add(new Button(buttonContainer, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: this.canUseChat() /* use secondary color when chat can still be used */ }));
 				upgradeProButton.label = localize('upgradeToCopilotPro', "Upgrade to GitHub Copilot Pro");
 				this._store.add(upgradeProButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
 			}
@@ -542,8 +543,9 @@ export class ChatStatusDashboard extends DomWidget {
 		quotaCallout.style.display = 'none';
 
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus) {
-			const manageOverageButton = disposables.add(new Button(container, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
-			manageOverageButton.label = localize('enableAdditionalUsage', "Manage paid premium requests");
+			const buttonContainer = container.appendChild($('div.button-right'));
+			const manageOverageButton = disposables.add(new Button(buttonContainer, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
+			manageOverageButton.label = localize('manageBudget', "Manage Budget");
 			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
 		}
 
