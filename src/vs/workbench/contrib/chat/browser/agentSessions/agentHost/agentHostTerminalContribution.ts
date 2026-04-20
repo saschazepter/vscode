@@ -5,7 +5,8 @@
 
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../../nls.js';
-import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
 import { LoggingAgentConnection } from '../../../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
@@ -14,6 +15,8 @@ import { IAgentHostTerminalService } from '../../../../../../workbench/contrib/t
 /**
  * Registers local agent host terminal entries with
  * {@link IAgentHostTerminalService} so they appear in the terminal dropdown.
+ *
+ * Gated on the `chat.agentHost.enabled` setting.
  */
 export class AgentHostTerminalContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.agentHostTerminal';
@@ -24,8 +27,13 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IConfigurationService configurationService: IConfigurationService,
 	) {
 		super();
+
+		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+			return;
+		}
 
 		this._register(this._agentHostService.onAgentHostStart(() => this._reconcile()));
 		this._register(this._agentHostService.onAgentHostExit(() => this._reconcile()));
