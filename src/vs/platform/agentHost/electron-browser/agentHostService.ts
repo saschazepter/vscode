@@ -94,6 +94,16 @@ class AgentHostServiceClient extends Disposable implements IAgentHostService {
 
 		if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
 			this._connect();
+		} else {
+			// Allow enabling at runtime without an app restart. The first time
+			// the setting flips to true, kick off the connection. Disable
+			// requires a restart (we don't tear down the singleton).
+			const listener = this._register(configurationService.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration(AgentHostEnabledSettingId) && configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+					listener.dispose();
+					this._connect();
+				}
+			}));
 		}
 	}
 

@@ -65,7 +65,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ILogService private readonly _logService: ILogService,
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IAgentHostFileSystemService _agentHostFileSystemService: IAgentHostFileSystemService,
+		@IAgentHostFileSystemService private readonly _agentHostFileSystemService: IAgentHostFileSystemService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IStorageService private readonly _storageService: IStorageService,
@@ -76,10 +76,21 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 
 		this._isSessionsWindow = environmentService.isSessionsWindow;
 
-		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-			return;
+		if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+			this._enable();
+		} else {
+			// Allow enabling at runtime without an app restart. Disable still
+			// requires a restart.
+			const listener = this._register(configurationService.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration(AgentHostEnabledSettingId) && configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+					listener.dispose();
+					this._enable();
+				}
+			}));
 		}
+	}
 
+	private _enable(): void {
 		// Wrap the agent host service with logging to a dedicated output channel
 		this._loggedConnection = this._register(this._instantiationService.createInstance(
 			LoggingAgentConnection,
@@ -87,7 +98,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			`agenthost.${this._agentHostService.clientId}`,
 			'Agent Host (Local)'));
 
-		this._register(_agentHostFileSystemService.registerAuthority('local', this._agentHostService));
+		this._register(this._agentHostFileSystemService.registerAuthority('local', this._agentHostService));
 
 		// React to root state changes (agent discovery / removal)
 		this._register(this._agentHostService.rootState.onDidChange(rootState => {

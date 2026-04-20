@@ -1697,15 +1697,80 @@ suite('AgentHostChatContribution', () => {
 
 	suite('dynamic discovery', () => {
 
-		test('setting gate prevents registration', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		/**
+		 * Builds a contribution under test with a controllable
+		 * `chat.agentHost.enabled` setting and a way to count how many times
+		 * `_enable()` ran (via `registerAuthority` calls on the file system
+		 * service stub, which `_enable()` always invokes once).
+		 */
+		function setup(initialEnabled: boolean) {
 			const { instantiationService } = createTestServices(disposables);
-			instantiationService.stub(IConfigurationService, { getValue: () => false });
 
-			const contribution = disposables.add(instantiationService.createInstance(AgentHostContribution));
-			// Contribution should exist but not have registered any agents
-			assert.ok(contribution);
-			// Let async work settle
+			let enabled = initialEnabled;
+			const onDidChangeConfiguration = disposables.add(new Emitter<{ affectsConfiguration: (key: string) => boolean }>());
+			instantiationService.stub(IConfigurationService, {
+				onDidChangeConfiguration: onDidChangeConfiguration.event,
+				getValue: (key: string) => key === 'chat.agentHost.enabled' ? enabled : undefined,
+			} as Partial<IConfigurationService>);
+
+			let registerAuthorityCalls = 0;
+			instantiationService.stub(IAgentHostFileSystemService, {
+				registerAuthority: () => { registerAuthorityCalls++; return toDisposable(() => { }); },
+				ensureSyncedCustomizationProvider: () => { },
+			});
+
+			return {
+				instantiationService,
+				setEnabled: (value: boolean) => {
+					enabled = value;
+					onDidChangeConfiguration.fire({ affectsConfiguration: (key: string) => key === 'chat.agentHost.enabled' });
+				},
+				getEnableCount: () => registerAuthorityCalls,
+			};
+		}
+
+		test('setting=false at construction → does not enable', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { instantiationService, getEnableCount } = setup(/*initialEnabled*/ false);
+			disposables.add(instantiationService.createInstance(AgentHostContribution));
 			await timeout(10);
+			assert.strictEqual(getEnableCount(), 0);
+		}));
+
+		test('setting=true at construction → enables eagerly', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { instantiationService, getEnableCount } = setup(/*initialEnabled*/ true);
+			disposables.add(instantiationService.createInstance(AgentHostContribution));
+			await timeout(10);
+			assert.strictEqual(getEnableCount(), 1);
+		}));
+
+		test('setting flips false → true after construction → enables', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { instantiationService, setEnabled, getEnableCount } = setup(/*initialEnabled*/ false);
+			disposables.add(instantiationService.createInstance(AgentHostContribution));
+			assert.strictEqual(getEnableCount(), 0);
+
+			setEnabled(true);
+			await timeout(10);
+			assert.strictEqual(getEnableCount(), 1);
+		}));
+
+		test('one-shot: subsequent config changes do not re-enable', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { instantiationService, setEnabled, getEnableCount } = setup(/*initialEnabled*/ false);
+			disposables.add(instantiationService.createInstance(AgentHostContribution));
+
+			setEnabled(true);
+			setEnabled(false);
+			setEnabled(true);
+			await timeout(10);
+			assert.strictEqual(getEnableCount(), 1);
+		}));
+
+		test('flips ignored when setting did not change to true', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { instantiationService, setEnabled, getEnableCount } = setup(/*initialEnabled*/ false);
+			disposables.add(instantiationService.createInstance(AgentHostContribution));
+
+			setEnabled(false);
+			await timeout(10);
+			assert.strictEqual(getEnableCount(), 0);
 		}));
 	});
 
