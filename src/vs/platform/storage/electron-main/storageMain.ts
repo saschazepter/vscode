@@ -361,6 +361,8 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		return undefined;
 	}
 
+	private sharedDatabase: SharedSQLiteStorageDatabase | undefined;
+
 	constructor(
 		private readonly options: IStorageMainOptions,
 		private readonly storageFolderPath: string,
@@ -374,13 +376,23 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 	protected async doCreate(): Promise<Storage> {
 		const { storageFilePath, wasCreated } = await this.prepareStorageFolder();
 
-		const database = new SharedSQLiteStorageDatabase(storageFilePath, {
+		this.sharedDatabase = new SharedSQLiteStorageDatabase(storageFilePath, {
 			logging: this.createLoggingOptions(),
 			useWAL: true
-		}, this.crossAppIPCService);
-		this._register(database);
+		}, this.crossAppIPCService, this.logService);
+		this._register(this.sharedDatabase);
 
-		return new Storage(database, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
+		return new Storage(this.sharedDatabase, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
+	}
+
+	protected override async doInit(storage: IStorage): Promise<void> {
+		await super.doInit(storage);
+
+		// Mark the shared database as initialized so that
+		// cross-app IPC messages are processed from now on.
+		// This must happen after Storage.init() completes to
+		// avoid processing stale queued messages.
+		this.sharedDatabase?.setInitialized();
 	}
 
 	private async prepareStorageFolder(): Promise<{ storageFilePath: string; wasCreated: boolean }> {
@@ -508,7 +520,8 @@ class SharedSQLiteStorageDatabase extends Disposable implements IStorageDatabase
 	constructor(
 		path: string,
 		options: ISQLiteStorageDatabaseOptions | undefined,
-		private readonly crossAppIPCService: ICrossAppIPCService
+		private readonly crossAppIPCService: ICrossAppIPCService,
+		private readonly logService: ILogService
 	) {
 		super();
 
@@ -519,29 +532,41 @@ class SharedSQLiteStorageDatabase extends Disposable implements IStorageDatabase
 
 	private registerListeners(): void {
 		this._register(this.crossAppIPCService.onDidReceiveMessage(msg => {
+			if (msg.type !== SharedStorageMessageType.Changed) {
+				return;
+			}
+
 			if (!this.initialized) {
-				return; // Ignore queued messages from before initialization
+				this.logService.trace('[shared storage] Ignoring cross-app IPC message received before initialization');
+				return;
 			}
 
-			if (msg.type === SharedStorageMessageType.Changed) {
-				const { changed, deleted } = (msg as ISharedStorageChangedMessage).data;
+			const { changed, deleted } = (msg as ISharedStorageChangedMessage).data;
+			this.logService.trace(`[shared storage] Received cross-app IPC change: ${changed?.length ?? 0} changed, ${deleted?.length ?? 0} deleted`);
 
-				this._onDidChangeItemsExternal.fire({
-					changed: changed ? new Map(changed) : undefined,
-					deleted: deleted ? new Set(deleted) : undefined
-				});
-			}
+			this._onDidChangeItemsExternal.fire({
+				changed: changed ? new Map(changed) : undefined,
+				deleted: deleted ? new Set(deleted) : undefined
+			});
 		}));
+	}
+
+	setInitialized(): void {
+		this.initialized = true;
 	}
 
 	async getItems(): Promise<Map<string, string>> {
 		const items = await this.database.getItems();
-		this.initialized = true;
+		this.logService.trace(`[shared storage] Initialized with ${items.size} items`);
 		return items;
 	}
 
 	async updateItems(request: IUpdateRequest): Promise<void> {
 		await this.database.updateItems(request);
+
+		const changedCount = request.insert?.size ?? 0;
+		const deletedCount = request.delete?.size ?? 0;
+		this.logService.trace(`[shared storage] Sending cross-app IPC change: ${changedCount} changed, ${deletedCount} deleted`);
 
 		// Notify the sibling app via IPC
 		this.crossAppIPCService.sendMessage({

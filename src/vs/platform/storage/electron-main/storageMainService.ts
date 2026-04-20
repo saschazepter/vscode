@@ -6,8 +6,9 @@
 import { URI } from '../../../base/common/uri.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { join } from '../../../base/common/path.js';
 import { IStorage } from '../../../base/parts/storage/common/storage.js';
-import { IEnvironmentService, INativeEnvironmentService } from '../../environment/common/environment.js';
+import { IEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, LifecycleMainPhase, ShutdownReason } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -93,7 +94,7 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
-		@IEnvironmentService private readonly environmentService: INativeEnvironmentService,
+		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@IUserDataProfilesMainService private readonly userDataProfilesService: IUserDataProfilesMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@IFileService private readonly fileService: IFileService,
@@ -204,7 +205,7 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 	private createApplicationSharedStorage(): IStorageMain {
 		this.logService.trace(`StorageMainService: creating application shared storage`);
 
-		const sharedStorageFolderPath = this.environmentService.appSharedDataLocation.with({ scheme: Schemas.file }).fsPath;
+		const sharedStorageFolderPath = join(this.environmentService.appSharedDataHome.with({ scheme: Schemas.file }).fsPath, 'sharedStorage');
 		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService);
 
 		this._register(Event.once(applicationSharedStorage.onDidCloseStorage)(() => {

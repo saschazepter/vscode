@@ -437,12 +437,17 @@ export class GlobalStateInitializer extends AbstractInitializer {
 		}
 
 		const argv: IStringDictionary<any> = {};
+		const isDefaultProfile = this.storageService.hasScope(this.userDataProfilesService.defaultProfile);
 		const storage: IStringDictionary<any> = {};
 		for (const key of Object.keys(remoteGlobalState.storage)) {
 			if (key.startsWith(argvStoragePrefx)) {
 				argv[key.substring(argvStoragePrefx.length)] = remoteGlobalState.storage[key].value;
 			} else {
-				const scope = remoteGlobalState.storage[key].scope === StorageScope.APPLICATION_SHARED ? StorageScope.APPLICATION_SHARED : StorageScope.PROFILE;
+				const isSharedScope = remoteGlobalState.storage[key].scope === StorageScope.APPLICATION_SHARED;
+				if (isSharedScope && !isDefaultProfile) {
+					continue; // Skip APPLICATION_SHARED keys for non-default profiles
+				}
+				const scope = isSharedScope ? StorageScope.APPLICATION_SHARED : StorageScope.PROFILE;
 				if (this.storageService.get(key, scope) === undefined) {
 					storage[key] = { value: remoteGlobalState.storage[key].value, scope };
 				}
@@ -464,12 +469,7 @@ export class GlobalStateInitializer extends AbstractInitializer {
 		if (Object.keys(storage).length) {
 			const storageEntries: Array<IStorageEntry> = [];
 			for (const key of Object.keys(storage)) {
-				// Only write APPLICATION_SHARED scoped keys when initializing the default profile
-				const scope = storage[key].scope === StorageScope.APPLICATION_SHARED
-					&& this.storageService.hasScope(this.userDataProfilesService.defaultProfile)
-					? StorageScope.APPLICATION_SHARED
-					: StorageScope.PROFILE;
-				storageEntries.push({ key, value: storage[key].value, scope, target: StorageTarget.USER });
+				storageEntries.push({ key, value: storage[key].value, scope: storage[key].scope, target: StorageTarget.USER });
 			}
 			this.storageService.storeAll(storageEntries, true);
 		}

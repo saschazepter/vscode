@@ -148,7 +148,7 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 	}
 
 	@memoize
-	get appSharedDataLocation(): URI {
+	get appSharedDataHome(): URI {
 		const cliSharedDataDir = this.args['shared-data-dir'];
 		if (cliSharedDataDir) {
 			return URI.file(resolve(cliSharedDataDir));
