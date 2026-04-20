@@ -495,6 +495,11 @@ export class SessionDatabase implements ISessionDatabase {
 		}
 	}
 
+	async vacuumInto(targetPath: string) {
+		const db = await this._ensureDb();
+		await dbRun(db, 'VACUUM INTO ?', [targetPath]);
+	}
+
 	async close() {
 		await (this._closed ??= this._dbPromise?.then(db => db.close()).catch(() => { }) || true);
 	}
