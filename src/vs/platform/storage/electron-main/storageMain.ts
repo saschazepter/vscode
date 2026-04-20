@@ -369,8 +369,7 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		logService: ILogService,
 		fileService: IFileService,
 		private readonly crossAppIPCService: ICrossAppIPCService,
-		private readonly fallbackStorage: IStorageMain | undefined,
-		private readonly fallbackDatabasePath?: string
+		private readonly fallbackStorage: IStorageMain | undefined
 	) {
 		super(logService, fileService);
 	}
@@ -381,7 +380,7 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		this.sharedDatabase = new SharedSQLiteStorageDatabase(storageFilePath, {
 			logging: this.createLoggingOptions(),
 			useWAL: true
-		}, this.crossAppIPCService, this.logService, this.fallbackDatabasePath);
+		}, this.crossAppIPCService, this.logService);
 		this._register(this.sharedDatabase);
 
 		const storage = new Storage(this.sharedDatabase, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
@@ -531,8 +530,7 @@ class SharedSQLiteStorageDatabase extends Disposable implements IStorageDatabase
 		path: string,
 		options: ISQLiteStorageDatabaseOptions | undefined,
 		private readonly crossAppIPCService: ICrossAppIPCService,
-		private readonly logService: ILogService,
-		private readonly fallbackDatabasePath?: string
+		private readonly logService: ILogService
 	) {
 		super();
 
@@ -569,49 +567,7 @@ class SharedSQLiteStorageDatabase extends Disposable implements IStorageDatabase
 	async getItems(): Promise<Map<string, string>> {
 		const items = await this.database.getItems();
 		this.logService.trace(`[shared storage] Initialized with ${items.size} items`);
-
-		// Merge fallback items from the host app's application storage.
-		// This enables the Agents App to read VS Code's application
-		// storage keys that have been migrated to APPLICATION_SHARED
-		// scope even before VS Code has run with the new scope code.
-		// Shared DB items take precedence over fallback items.
-		if (this.fallbackDatabasePath) {
-			await this.mergeFallbackItems(items);
-		}
-
 		return items;
-	}
-
-	private async mergeFallbackItems(items: Map<string, string>): Promise<void> {
-		try {
-			const exists = await Promises.exists(this.fallbackDatabasePath!);
-			if (!exists) {
-				this.logService.trace('[shared storage] Fallback database does not exist, skipping merge');
-				return;
-			}
-
-			const fallbackDatabase = new SQLiteStorageDatabase(this.fallbackDatabasePath!, {
-				logging: { logError: error => this.logService.error(error) }
-			});
-
-			try {
-				const fallbackItems = await fallbackDatabase.getItems();
-				let mergedCount = 0;
-
-				for (const [key, value] of fallbackItems) {
-					if (!items.has(key)) {
-						items.set(key, value);
-						mergedCount++;
-					}
-				}
-
-				this.logService.trace(`[shared storage] Merged ${mergedCount} fallback items from host app storage (${fallbackItems.size} total in fallback)`);
-			} finally {
-				await fallbackDatabase.close();
-			}
-		} catch (error) {
-			this.logService.error(`[shared storage] Failed to merge fallback items: ${error}`);
-		}
 	}
 
 	async updateItems(request: IUpdateRequest): Promise<void> {
