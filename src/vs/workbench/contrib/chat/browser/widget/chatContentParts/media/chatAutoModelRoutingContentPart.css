@@ -17,6 +17,23 @@
 	line-height: 1.5;
 }
 
+/* Curved connector line when expanded (matches Thinking style) */
+.chat-auto-model-routing {
+	position: relative;
+}
+
+.chat-auto-model-routing:not(.chat-used-context-collapsed)::after {
+	content: '';
+	position: absolute;
+	left: 3px;
+	top: 22px;
+	height: 16px;
+	width: 5px;
+	border-left: 1px solid var(--vscode-chat-requestBorder);
+	border-bottom: 1px solid var(--vscode-chat-requestBorder);
+	border-bottom-left-radius: 5px;
+}
+
 /* Footer / prose paragraph */
 .chat-auto-model-routing-footer {
 	color: var(--vscode-descriptionForeground);
