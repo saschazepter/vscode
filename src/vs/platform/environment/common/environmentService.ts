@@ -154,6 +154,11 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 			return URI.file(resolve(cliSharedDataDir));
 		}
 
+		const vscodePortable = env['VSCODE_PORTABLE'];
+		if (vscodePortable) {
+			return URI.file(join(vscodePortable, 'shared-data'));
+		}
+
 		return joinPath(this.userHome, `${this.productService.dataFolderName}-shared`);
 	}
 
