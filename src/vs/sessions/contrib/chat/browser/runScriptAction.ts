@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
+import { $, addDisposableGenericMouseDownListener, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { ActionViewItem, BaseActionViewItem, IActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { Action, IAction } from '../../../../base/common/actions.js';
@@ -432,7 +432,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 			quickWidget.widget = widget.domNode;
 			this._layoutService.mainContainer.classList.add(RUN_SCRIPT_ACTION_MODAL_VISIBLE_CLASS);
 			const backdrop = append(this._layoutService.mainContainer, $('.run-script-action-modal-backdrop'));
-			disposables.add(addDisposableListener(backdrop, EventType.MOUSE_DOWN, e => {
+			disposables.add(addDisposableGenericMouseDownListener(backdrop, e => {
 				e.preventDefault();
 				e.stopPropagation();
 				complete(undefined);
@@ -583,7 +583,9 @@ class RunScriptActionViewItem extends BaseActionViewItem {
 
 	override setFocusable(focusable: boolean): void {
 		this._primaryAction.setFocusable(focusable);
-		this._dropdown.setFocusable(focusable);
+		if (!focusable) {
+			this._dropdown.setFocusable(false);
+		}
 	}
 
 	private _getPrimaryActionTooltip(state: IRunScriptActionContext | undefined): string {

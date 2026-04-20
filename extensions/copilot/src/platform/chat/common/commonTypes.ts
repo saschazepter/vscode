@@ -187,7 +187,7 @@ export type ChatFetchRetriableError<T> =
 	/**
 	 * We requested conversation, the response was filtered by RAI, but we want to retry.
 	 */
-	{ type: ChatFetchResponseType.FilteredRetry; reason: string; category: FilterReason; value: T; requestId: string; serverRequestId: string | undefined }
+	{ type: ChatFetchResponseType.FilteredRetry; reason: string; category: FilterReason; value: T; requestId: string; serverRequestId: string | undefined };
 
 export type FetchSuccess<T> =
 	{ type: ChatFetchResponseType.Success; value: T; requestId: string; serverRequestId: string | undefined; usage: APIUsage | undefined; resolvedModel: string };
@@ -227,14 +227,14 @@ function getRateLimitMessage(fetchResult: ChatFetchError, copilotPlan: string | 
 	if (fetchResult.capiError?.code?.startsWith('user_global_rate_limited')) {
 		if (copilotPlan === 'free' || copilotPlan === 'individual' || copilotPlan === 'individual_pro') {
 			return l10n.t({
-				message: 'You\'ve hit your global rate limit. Please upgrade your plan or wait {0} for your limit to reset. [Learn More]({1})',
+				message: 'You\'ve hit your session rate limit. Please upgrade your plan or wait {0} for your limit to reset. [Learn More]({1})',
 				args: [retryAfterString, 'https://aka.ms/github-copilot-rate-limit-error'],
 				comment: [`{Locked=']({'}`]
 			});
 		}
 
 		return l10n.t({
-			message: 'You\'ve hit your global rate limit. Please wait {0} for your limit to reset. [Learn More]({1})',
+			message: 'You\'ve hit your session rate limit. Please wait {0} for your limit to reset. [Learn More]({1})',
 			args: [retryAfterString, 'https://aka.ms/github-copilot-rate-limit-error'],
 			comment: [`{Locked=']({'}`]
 		});

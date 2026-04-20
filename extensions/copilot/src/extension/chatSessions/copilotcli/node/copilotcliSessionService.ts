@@ -44,7 +44,7 @@ import { ICustomSessionTitleService } from '../common/customSessionTitleService'
 import { IChatDelegationSummaryService } from '../common/delegationSummaryService';
 import { SessionIdForCLI } from '../common/utils';
 import { getCopilotCLISessionDir } from './cliHelpers';
-import { getAgentFileNameFromFilePath, ICopilotCLIAgents, ICopilotCLISDK } from './copilotCli';
+import { getAgentFileNameFromFilePath, ICopilotCLIAgents, ICopilotCLISDK, isEnabledForCopilotCLI } from './copilotCli';
 import { CopilotCliBridgeSpanProcessor } from './copilotCliBridgeSpanProcessor';
 import { CopilotCLISession, ICopilotCLISession } from './copilotcliSession';
 import { ICopilotCLISkills } from './copilotCLISkills';
@@ -69,6 +69,7 @@ export type ISessionOptions = {
 	debugTargetSessionIds?: readonly string[];
 	mcpServerMappings?: McpServerMappings;
 	additionalWorkspaces?: IWorkspaceInfo[];
+	sessionParentId?: string;
 }
 export type IGetSessionOptions = ISessionOptions & { sessionId: string };
 export type ICreateSessionOptions = ISessionOptions & { sessionId?: string };
@@ -567,7 +568,15 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 			const session = this.createCopilotSession(sdkSession, options.workspace, options.agent?.name, sessionManager);
 			session.object.add(mcpGateway);
+
+			// Set origin
 			void this._chatSessionMetadataStore.setSessionOrigin(session.object.sessionId);
+
+			// Set session parent id
+			if (options.sessionParentId) {
+				void this._chatSessionMetadataStore.setSessionParentId(session.object.sessionId, options.sessionParentId);
+			}
+
 			return session;
 		}
 		catch (error) {
@@ -849,6 +858,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		const agents = await this._promptsService.getCustomAgents(CancellationToken.None);
 		const lookup = new Map<string, [ChatCustomAgent, Lazy<Promise<string>>]>();
 		for (const agent of agents) {
+			if (!isEnabledForCopilotCLI(agent)) {
+				continue;
+			}
 			const lazyContent = new Lazy(() => this._promptsService.parseFile(agent.uri, CancellationToken.None).then(parsed => parsed.body?.getContent() ?? ''));
 			const keys = [
 				agent.name?.trim(),
