@@ -200,15 +200,14 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			env['VSCODE_PREVENT_SHELL_HISTORY'] = '1';
 		}
 		if (options?.nonInteractive) {
-			// Suppress paging, and interactive prompts so that tool-spawned
-			// terminals produce clean, machine-friendly output.
-			env['TERM'] = 'dumb';
-			env['LANG'] = 'C.UTF-8';
-			env['LC_CTYPE'] = 'C.UTF-8';
+			// Suppress paging and interactive prompts so that tool-spawned
+			// terminals produce clean, machine-friendly output. An empty
+			// string disables paging in git, less, and most CLI tools and
+			// is safe on all platforms (unlike 'cat' which isn't on Windows PATH).
 			env['LC_ALL'] = 'C.UTF-8';
-			env['PAGER'] = 'cat';
-			env['GIT_PAGER'] = 'cat';
-			env['GH_PAGER'] = 'cat';
+			env['PAGER'] = '';
+			env['GIT_PAGER'] = '';
+			env['GH_PAGER'] = '';
 			env['GIT_TERMINAL_PROMPT'] = '0';
 			env['DEBIAN_FRONTEND'] = 'noninteractive';
 		}
