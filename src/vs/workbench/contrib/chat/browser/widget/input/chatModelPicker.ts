@@ -250,15 +250,24 @@ export function buildModelPickerItems(
 
 			const resolveModel = (id: string) => allModelsMap.get(id) ?? modelsByMetadataId.get(id);
 
-			const getUnavailableReason = (entry: IModelControlEntry): 'upgrade' | 'update' | 'admin' => {
-				const isBusinessOrEnterpriseUser = chatEntitlementService.entitlement === ChatEntitlement.Business || chatEntitlementService.entitlement === ChatEntitlement.Enterprise;
-				if (!isBusinessOrEnterpriseUser) {
-					return 'upgrade';
+			const getUnavailableReason = (entry: IModelControlEntry): 'upgrade' | 'update' | 'admin' | undefined => {
+				const entitlement = chatEntitlementService.entitlement;
+				// Business/Enterprise users may need an admin to enable a model, or a VS Code update.
+				if (entitlement === ChatEntitlement.Business || entitlement === ChatEntitlement.Enterprise) {
+					if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
+						return 'update';
+					}
+					return 'admin';
 				}
-				if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-					return 'update';
-				}
-				return 'admin';
+				// All other plans: the chat control manifest does not currently distinguish
+				// Pro vs Pro+ tiers, so we cannot reliably tell whether an unavailable paid
+				// model represents a real upgrade path or a model that has been removed from
+				// the user's plan. To avoid misleading "Upgrade" prompts (e.g. asking a Pro+
+				// user to upgrade for a model that no longer exists on any plan), hide these
+				// entries entirely. The 'upgrade' rendering path is intentionally kept in
+				// createUnavailableModelItem so it can be re-enabled once the manifest carries
+				// per-entry plan information.
+				return undefined;
 			};
 
 			// --- 1. Auto ---
@@ -294,8 +303,15 @@ export function buildModelPickerItems(
 				if (!model) {
 					const entry = controlModels[id];
 					if (entry && !entry.exists) {
+						const reason = getUnavailableReason(entry);
+						if (reason) {
+							markPlaced(id);
+							promotedItems.push({ kind: 'unavailable', id, entry, reason });
+							return true;
+						}
+						// Plan has no upgrade path for this model; mark placed so the recently-used
+						// id does not retry through other code paths, but do not render it.
 						markPlaced(id);
-						promotedItems.push({ kind: 'unavailable', id, entry, reason: getUnavailableReason(entry) });
 						return true;
 					}
 				}
@@ -331,8 +347,11 @@ export function buildModelPickerItems(
 						}
 					} else if (!model && !entry.exists) {
 						if (showUnavailableFeatured) {
-							markPlaced(entryId);
-							promotedItems.push({ kind: 'unavailable', id: entryId, entry, reason: getUnavailableReason(entry) });
+							const reason = getUnavailableReason(entry);
+							if (reason) {
+								markPlaced(entryId);
+								promotedItems.push({ kind: 'unavailable', id: entryId, entry, reason });
+							}
 						}
 					}
 				}

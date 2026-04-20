@@ -191,7 +191,7 @@ suite('buildModelPickerItems', () => {
 		assert.strictEqual(actions[1].label, 'Claude');
 	});
 
-	test('recently used model not in models list but in controlModels shows as unavailable (upgrade for free user)', () => {
+	test('recently used model not in models list but in controlModels is hidden for free user', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			recentModelIds: ['missing-model'],
@@ -201,12 +201,10 @@ suite('buildModelPickerItems', () => {
 			entitlement: ChatEntitlement.Free,
 		});
 		const actions = getActionItems(items);
-		const unavailable = actions.find(a => a.label === 'Missing Model');
-		assert.ok(unavailable);
-		assert.strictEqual(unavailable.disabled, true);
+		assert.strictEqual(actions.find(a => a.label === 'Missing Model'), undefined);
 	});
 
-	test('recently used model not in models list shows as unavailable (update for version mismatch)', () => {
+	test('recently used model not in models list with version mismatch is hidden for free user', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			recentModelIds: ['missing-model'],
@@ -214,14 +212,13 @@ suite('buildModelPickerItems', () => {
 				'missing-model': { label: 'Missing Model', minVSCodeVersion: '2.0.0', exists: false },
 			},
 			currentVSCodeVersion: '1.90.0',
+			entitlement: ChatEntitlement.Free,
 		});
 		const actions = getActionItems(items);
-		const unavailable = actions.find(a => a.label === 'Missing Model');
-		assert.ok(unavailable);
-		assert.strictEqual(unavailable.disabled, true);
+		assert.strictEqual(actions.find(a => a.label === 'Missing Model'), undefined);
 	});
 
-	test('recently used model not in models list shows as unavailable (admin for pro user without version issue)', () => {
+	test('recently used model not in models list is hidden for pro user (no upgrade path)', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			recentModelIds: ['missing-model'],
@@ -230,9 +227,20 @@ suite('buildModelPickerItems', () => {
 			},
 		});
 		const actions = getActionItems(items);
-		const unavailable = actions.find(a => a.label === 'Missing Model');
-		assert.ok(unavailable);
-		assert.strictEqual(unavailable.disabled, true);
+		assert.strictEqual(actions.find(a => a.label === 'Missing Model'), undefined);
+	});
+
+	test('recently used model not in models list is hidden for pro+ user (no upgrade path)', () => {
+		const auto = createAutoModel();
+		const items = callBuild([auto], {
+			recentModelIds: ['claude-opus-4-6'],
+			controlModels: {
+				'claude-opus-4-6': { label: 'Claude Opus 4.6', exists: false },
+			},
+			entitlement: ChatEntitlement.ProPlus,
+		});
+		const actions = getActionItems(items);
+		assert.strictEqual(actions.find(a => a.label === 'Claude Opus 4.6'), undefined);
 	});
 
 	test('featured control models appear in promoted section', () => {
@@ -250,7 +258,7 @@ suite('buildModelPickerItems', () => {
 		assert.strictEqual(actions[1].label, 'GPT-4o');
 	});
 
-	test('featured model not in models list shows as unavailable for free users (upgrade)', () => {
+	test('featured model not in models list is hidden for free users', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			controlModels: {
@@ -259,12 +267,10 @@ suite('buildModelPickerItems', () => {
 			entitlement: ChatEntitlement.Free,
 		});
 		const actions = getActionItems(items);
-		const unavailable = actions.find(a => a.label === 'Premium Model');
-		assert.ok(unavailable);
-		assert.strictEqual(unavailable.disabled, true);
+		assert.strictEqual(actions.find(a => a.label === 'Premium Model'), undefined);
 	});
 
-	test('featured model not in models list shows as unavailable for pro users (admin)', () => {
+	test('featured model not in models list is hidden for pro users (no upgrade path)', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			controlModels: {
@@ -272,9 +278,19 @@ suite('buildModelPickerItems', () => {
 			},
 		});
 		const actions = getActionItems(items);
-		const unavailable = actions.find(a => a.label === 'Premium Model');
-		assert.ok(unavailable);
-		assert.strictEqual(unavailable.disabled, true);
+		assert.strictEqual(actions.find(a => a.label === 'Premium Model'), undefined);
+	});
+
+	test('featured model not in models list is hidden for pro+ users (no upgrade path)', () => {
+		const auto = createAutoModel();
+		const items = callBuild([auto], {
+			controlModels: {
+				'claude-opus-4-6': { label: 'Claude Opus 4.6', featured: true, exists: false },
+			},
+			entitlement: ChatEntitlement.ProPlus,
+		});
+		const actions = getActionItems(items);
+		assert.strictEqual(actions.find(a => a.label === 'Claude Opus 4.6'), undefined);
 	});
 
 	test('featured model with minVSCodeVersion shows as unavailable (update) when version too low', () => {
@@ -334,7 +350,7 @@ suite('buildModelPickerItems', () => {
 			controlModels: {
 				'missing-model': { label: 'Missing Model', exists: false },
 			},
-			entitlement: ChatEntitlement.Free,
+			entitlement: ChatEntitlement.Business,
 		});
 		const actions = getActionItems(items);
 		// Auto, then GPT-4o (available), then Missing Model (unavailable)
@@ -587,7 +603,7 @@ suite('buildModelPickerItems', () => {
 			controlModels: {
 				'missing-model': { label: 'Missing Model' } as IModelControlEntry,
 			},
-			entitlement: ChatEntitlement.Free,
+			entitlement: ChatEntitlement.Business,
 		});
 
 		const unavailable = getActionItems(items).find(a => a.label === 'Missing Model');
@@ -596,7 +612,7 @@ suite('buildModelPickerItems', () => {
 		assert.strictEqual(unavailable.group?.icon?.id, Codicon.blank.id);
 	});
 
-	test('anonymous user sees upgrade description on each unavailable model', () => {
+	test('anonymous user does not see unavailable models in the picker', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			recentModelIds: ['model-a', 'model-b'],
@@ -608,15 +624,11 @@ suite('buildModelPickerItems', () => {
 			entitlement: ChatEntitlement.Unknown,
 		});
 		const actions = getActionItems(items);
-		const disabledItems = actions.filter(a => a.disabled);
-		assert.strictEqual(disabledItems.length, 2);
-		assert.ok(disabledItems[0].description instanceof MarkdownString);
-		assert.ok(disabledItems[0].description.value.includes('Upgrade'));
-		assert.ok(disabledItems[1].description instanceof MarkdownString);
-		assert.ok(disabledItems[1].description.value.includes('Upgrade'));
+		assert.strictEqual(actions.find(a => a.label === 'Model A'), undefined);
+		assert.strictEqual(actions.find(a => a.label === 'Model B'), undefined);
 	});
 
-	test('free user sees upgrade description on each unavailable model', () => {
+	test('free user does not see unavailable models in the picker', () => {
 		const auto = createAutoModel();
 		const items = callBuild([auto], {
 			recentModelIds: ['model-a', 'model-b'],
@@ -627,12 +639,8 @@ suite('buildModelPickerItems', () => {
 			entitlement: ChatEntitlement.Free,
 		});
 		const actions = getActionItems(items);
-		const disabledItems = actions.filter(a => a.disabled);
-		assert.strictEqual(disabledItems.length, 2);
-		assert.ok(disabledItems[0].description instanceof MarkdownString);
-		assert.ok(disabledItems[0].description.value.includes('Upgrade'));
-		assert.ok(disabledItems[1].description instanceof MarkdownString);
-		assert.ok(disabledItems[1].description.value.includes('Upgrade'));
+		assert.strictEqual(actions.find(a => a.label === 'Model A'), undefined);
+		assert.strictEqual(actions.find(a => a.label === 'Model B'), undefined);
 	});
 
 	test('anonymous user model selection triggers onSelect normally', () => {
