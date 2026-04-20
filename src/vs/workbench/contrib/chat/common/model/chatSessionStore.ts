@@ -842,7 +842,10 @@ async function getSessionMetadata(session: ChatModel | ISerializableChatData): P
 	// Persist draft input state only for external sessions; local sessions already
 	// have their full state serialized via storeSessions, so duplicating here would
 	// be wasteful and risk drift between the two locations.
-	const inputState = isExternal ? (session as ChatModel).inputModel.toJSON() : undefined;
+	// Attachments are excluded because they can contain large binary payloads
+	// (e.g. base64-encoded images) that would bloat the session index entry.
+	const rawInputState = isExternal ? (session as ChatModel).inputModel.toJSON() : undefined;
+	const inputState = rawInputState ? { ...rawInputState, attachments: [] } : undefined;
 
 	return {
 		sessionId: session.sessionId,
