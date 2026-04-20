@@ -268,7 +268,8 @@ suite('AccountPolicyService', () => {
 
 		const accountService = disposables.add(new DefaultAccountService(TestProductService));
 		if (opts.account !== null && opts.account !== undefined) {
-			accountService.setDefaultAccountProvider(new DefaultAccountProvider(opts.account, 'policyData' in opts ? opts.policyData as IPolicyData | null : {}));
+			const policyData = opts.policyData === undefined ? {} : opts.policyData;
+			accountService.setDefaultAccountProvider(new DefaultAccountProvider(opts.account, policyData));
 			await accountService.refresh();
 		}
 

@@ -5,6 +5,8 @@
 
 import { IStringDictionary } from '../../../../base/common/collections.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
+import { localize } from '../../../../nls.js';
+import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { AbstractPolicyService, getRestrictedPolicyValue, IPolicyService, PolicyDefinition, PolicyValue } from '../../../../platform/policy/common/policy.js';
@@ -41,6 +43,18 @@ export interface IAccountPolicyGateInfo {
 	readonly state: AccountPolicyGateState;
 	readonly reason?: AccountPolicyGateUnsatisfiedReason;
 }
+
+/**
+ * Context key that is `true` while the Account Policy gate is active and not satisfied
+ * (i.e. AI features are forced off until the user signs into an approved GitHub
+ * organization). Defined here in the services layer so both the gate contribution and
+ * `vs/workbench/contrib/chat` can use it without crossing layer boundaries.
+ */
+export const ChatAccountPolicyGateActiveContext = new RawContextKey<boolean>(
+	'chatAccountPolicyGateActive',
+	false,
+	{ type: 'boolean', description: localize('chatAccountPolicyGateActive', "True when the 'Require Approved Account' policy is in effect and the user is not yet signed into an approved GitHub organization, so all AI features are disabled until they sign in.") }
+);
 
 /**
  * Read-only accessor for the Account Policy gate state. Backed by the same

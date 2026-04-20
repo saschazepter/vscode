@@ -11,9 +11,8 @@ import { INotificationService, Severity } from '../../../../platform/notificatio
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { DEFAULT_ACCOUNT_SIGN_IN_COMMAND } from '../../accounts/browser/defaultAccount.js';
-import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, IAccountPolicyGateInfo, IAccountPolicyGateService } from '../common/accountPolicyService.js';
+import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, ChatAccountPolicyGateActiveContext, IAccountPolicyGateInfo, IAccountPolicyGateService } from '../common/accountPolicyService.js';
 
 const NOTIFICATION_DISMISSED_KEY = 'accountPolicy.gateNotificationDismissed';
 
@@ -59,7 +58,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 	) {
 		super();
-		this.contextKey = ChatContextKeys.accountPolicyGateActive.bindTo(contextKeyService);
+		this.contextKey = ChatAccountPolicyGateActiveContext.bindTo(contextKeyService);
 		this.lastInfo = this.gateService.gateInfo;
 
 		// Seed any consumer that initialised before us (e.g. context-key when-clauses).
