@@ -101,8 +101,9 @@ suite('toInlineSuggestion', () => {
 		assert.isDefined(result);
 		// Range is an empty range at the cursor for a pure insertion
 		assert.deepStrictEqual(result!.range, new Range(1, 15, 1, 15));
-		// Text is prepended with the newline between cursor and original range
-		assert.strictEqual(result!.newText, '\n' + replaceText);
+		// Text is prepended with the newline between cursor and original range,
+		// and the trailing newline is dropped so we don't introduce a blank line.
+		assert.strictEqual(result!.newText, '\n' + replaceText.replace(/\n$/, ''));
 	});
 
 	test('should not use ghost text when inserting on next line when none empty', () => {
@@ -149,7 +150,8 @@ suite('toInlineSuggestion', () => {
 		const result = toInlineSuggestion(cursorPosition, document, replaceRange, replaceText);
 		assert.isDefined(result);
 		assert.deepStrictEqual(result!.range, new Range(0, 13, 0, 13));
-		assert.strictEqual(result!.newText, '\n' + replaceText);
+		// Trailing '\n' is dropped to avoid a spurious blank line.
+		assert.strictEqual(result!.newText, '\n' + replaceText.replace(/\n$/, ''));
 	});
 
 	test('multi-line insertion without trailing newline rejected when target line has content', () => {
@@ -318,7 +320,8 @@ function createDocumentSymbol(
 		const result = toInlineSuggestion(cursorPosition, document, replaceRange, replaceText);
 		assert.isDefined(result);
 		assert.deepStrictEqual(result!.range, new Range(0, 6, 0, 6));
-		assert.strictEqual(result!.newText, '\n\n');
+		// Trailing '\n' is dropped — only the prepended newline remains.
+		assert.strictEqual(result!.newText, '\n');
 	});
 
 	test('next-line: cursor at end of an empty line', () => {
@@ -330,7 +333,8 @@ function createDocumentSymbol(
 		const result = toInlineSuggestion(cursorPosition, document, replaceRange, replaceText);
 		assert.isDefined(result);
 		assert.deepStrictEqual(result!.range, new Range(0, 0, 0, 0));
-		assert.strictEqual(result!.newText, '\nnew line\n');
+		// Trailing '\n' is dropped to avoid a spurious blank line.
+		assert.strictEqual(result!.newText, '\nnew line');
 	});
 
 	test('next-line: range on line before cursor is rejected', () => {
@@ -585,6 +589,8 @@ const fieldLabels: Record<keyof FormData, string> = {
 		const result = toInlineSuggestion(cursorPosition, document, replaceRange, replaceText, true);
 		assert.isDefined(result);
 		assert.deepStrictEqual(result!.range, new Range(22, 26, 22, 26));
-		assert.strictEqual(result!.newText, '\n' + replaceText);
+		// Trailing '\n' is dropped because the original line terminator after
+		// the cursor is preserved.
+		assert.strictEqual(result!.newText, '\n    password: "Password",');
 	});
 });

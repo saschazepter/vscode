@@ -26,7 +26,12 @@ export function toInlineSuggestion(cursorPos: Position, doc: TextDocument, range
 		// Use an empty range at the cursor so the suggestion is a pure insertion
 		const adjustedRange = new Range(cursorPos, cursorPos);
 		const textBetweenCursorAndRange = doc.getText(new Range(cursorPos, range.start));
-		return { range: adjustedRange, newText: textBetweenCursorAndRange + newText };
+		// The original range is on the next line, so the line terminator that
+		// already separates the cursor's line from range.start is preserved.
+		// Drop a single trailing '\n' from newText (if present) to avoid
+		// inserting an extra blank line after the suggestion.
+		const adjustedNewText = newText.endsWith('\n') ? newText.slice(0, -1) : newText;
+		return { range: adjustedRange, newText: textBetweenCursorAndRange + adjustedNewText };
 	}
 
 	if (advanced) {
