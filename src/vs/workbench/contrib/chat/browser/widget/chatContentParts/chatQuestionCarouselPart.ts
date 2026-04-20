@@ -736,14 +736,16 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			const isLong = messageContent.length > QUESTION_TITLE_TRUNCATION_THRESHOLD;
 			const renderTitle = (expanded: boolean) => {
 				dom.clearNode(title);
-				const rawValue = isMarkdownString(questionText) ? questionText.value : questionText;
-				const displayValue = (isLong && !expanded)
-					? rawValue.slice(0, QUESTION_TITLE_TRUNCATION_THRESHOLD).replace(/\s+\S*$/, '') + '…'
-					: rawValue;
-				const suffixed = question.required ? `${displayValue} *` : displayValue;
-				const md = isMarkdownString(questionText)
-					? new MarkdownString(suffixed, { isTrusted: questionText.isTrusted, supportThemeIcons: questionText.supportThemeIcons })
-					: new MarkdownString(suffixed);
+				const plainTextValue = isMarkdownString(questionText) ? renderAsPlaintext(questionText) : questionText;
+				const collapsedValue = isLong
+					? plainTextValue.slice(0, QUESTION_TITLE_TRUNCATION_THRESHOLD).replace(/\s+\S*$/, '') + '…'
+					: plainTextValue;
+				const md = expanded && isMarkdownString(questionText)
+					? new MarkdownString(
+						question.required ? `${questionText.value} *` : questionText.value,
+						{ isTrusted: questionText.isTrusted, supportThemeIcons: questionText.supportThemeIcons }
+					)
+					: new MarkdownString(question.required ? `${collapsedValue} *` : collapsedValue);
 				const rendered = questionRenderStore.add(this._markdownRendererService.render(md));
 				title.appendChild(rendered.element);
 			};
