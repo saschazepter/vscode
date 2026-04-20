@@ -12,6 +12,7 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IChatInputPickerOptions } from '../../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { PermissionPickerActionItem } from '../../../../../workbench/contrib/chat/browser/widget/input/permissionPickerActionItem.js';
@@ -40,6 +41,7 @@ export class AgentHostPermissionPickerActionItem extends PermissionPickerActionI
 		@IConfigurationService configurationService: IConfigurationService,
 		@IDialogService dialogService: IDialogService,
 		@IOpenerService openerService: IOpenerService,
+		@IStorageService storageService: IStorageService,
 	) {
 		const delegate = instantiationService.createInstance(AgentHostPermissionPickerDelegate);
 		super(
@@ -53,6 +55,7 @@ export class AgentHostPermissionPickerActionItem extends PermissionPickerActionI
 			configurationService,
 			dialogService,
 			openerService,
+			storageService,
 		);
 		this._delegate = this._register(delegate);
 
