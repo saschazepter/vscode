@@ -147,18 +147,7 @@ export class SessionsView extends ViewPane {
 
 		const headerActions = this.headerActions = DOM.append(headerRow, $('.agent-sessions-header-actions'));
 
-		const scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, this.scopedContextKeyService])));
-		this._register(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, headerActions, Menus.SidebarSessionsHeader, {
-			hiddenItemStrategy: HiddenItemStrategy.NoHide,
-			telemetrySource: 'sessionsView.header',
-			toolbarOptions: { primaryGroup: () => true },
-		}));
-
-		// Container for the tree's find widget (rendered in-place in the header)
-		const findWidgetContainer = this.findWidgetContainer = DOM.append(headerRow, $('.agent-sessions-find-widget-container'));
-		findWidgetContainer.style.display = 'none';
-
-		// Compact New Session Button
+		// Compact New Session Button (appended before the toolbar so visual order is: New, Filter, Search)
 		const newSessionButton = this._register(new Button(headerActions, {
 			...defaultButtonStyles,
 			buttonSecondaryBackground: asCssVariable(agentsNewSessionButtonBackground),
@@ -223,6 +212,17 @@ export class SessionsView extends ViewPane {
 				: localize('newSessionButtonAriaLabelWithoutKeybinding', "New Session"));
 		};
 		this._register(Event.runAndSubscribe(this.keybindingService.onDidUpdateKeybindings, updateNewSessionButton));
+
+		const scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, this.scopedContextKeyService])));
+		this._register(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, headerActions, Menus.SidebarSessionsHeader, {
+			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			telemetrySource: 'sessionsView.header',
+			toolbarOptions: { primaryGroup: () => true },
+		}));
+
+		// Container for the tree's find widget (toggled by the toolbar's Find action)
+		const findWidgetContainer = this.findWidgetContainer = DOM.append(headerRow, $('.agent-sessions-find-widget-container'));
+		findWidgetContainer.style.display = 'none';
 
 		// Sessions List Control
 		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
