@@ -115,12 +115,26 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 		if (other.kind !== 'autoModelRouting') {
 			return false;
 		}
-		return other.selectedModel === this.routingPart.selectedModel
-			&& other.selectionReason === this.routingPart.selectionReason
-			&& other.confidence === this.routingPart.confidence
-			&& other.predictedLatencyMs === this.routingPart.predictedLatencyMs
-			&& other.costTier === this.routingPart.costTier
-			&& other.intent === this.routingPart.intent
-			&& (other.candidates?.length ?? 0) === (this.routingPart.candidates?.length ?? 0);
+		if (other.selectedModel !== this.routingPart.selectedModel
+			|| other.selectionReason !== this.routingPart.selectionReason
+			|| other.confidence !== this.routingPart.confidence
+			|| other.predictedLatencyMs !== this.routingPart.predictedLatencyMs
+			|| other.costTier !== this.routingPart.costTier
+			|| other.intent !== this.routingPart.intent) {
+			return false;
+		}
+		const a = this.routingPart.candidates ?? [];
+		const b = other.candidates ?? [];
+		if (a.length !== b.length) {
+			return false;
+		}
+		for (let i = 0; i < a.length; i++) {
+			if (a[i].modelName !== b[i].modelName
+				|| a[i].score !== b[i].score
+				|| a[i].reason !== b[i].reason) {
+				return false;
+			}
+		}
+		return true;
 	}
 }
