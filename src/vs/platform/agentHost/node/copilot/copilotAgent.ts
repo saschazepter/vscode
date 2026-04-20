@@ -495,6 +495,15 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		const sessionId = config?.session ? AgentSession.id(config.session) : generateUuid();
 		const sessionUri = AgentSession.uri(this.id, sessionId);
+		let seededActiveClient = false;
+		if (config?.activeClient) {
+			const ac = this._getOrCreateActiveClient(sessionUri);
+			seededActiveClient = true;
+			ac.updateTools(config.activeClient.clientId, config.activeClient.tools);
+			if (config.activeClient.customizations !== undefined) {
+				await this._plugins.sync(config.activeClient.clientId, config.activeClient.customizations);
+			}
+		}
 		const activeClient = this._activeClients.get(sessionUri);
 		const snapshot = activeClient ? await activeClient.snapshot() : undefined;
 		const workingDirectory = await this._resolveSessionWorkingDirectory(config, sessionId);
@@ -518,6 +527,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 			agentSession = this._createAgentSession(factory, sessionId, shellManager, snapshot);
 			await agentSession.initializeSession();
 		} catch (error) {
+			if (seededActiveClient) {
+				this._activeClients.delete(sessionUri);
+			}
 			await this._removeCreatedWorktree(sessionId);
 			throw error;
 		}
