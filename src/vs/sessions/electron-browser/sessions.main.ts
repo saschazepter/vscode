@@ -216,9 +216,9 @@ export class SessionsMain extends Disposable {
 
 		// Policies
 		let policyService: IPolicyService;
-		const accountPolicy = new AccountPolicyService(logService, defaultAccountService);
-		if (this.configuration.policiesData) {
-			const policyChannel = new PolicyChannelClient(this.configuration.policiesData, mainProcessService.getChannel('policy'));
+		const policyChannel = this.configuration.policiesData ? new PolicyChannelClient(this.configuration.policiesData, mainProcessService.getChannel('policy')) : undefined;
+		const accountPolicy = new AccountPolicyService(logService, defaultAccountService, policyChannel);
+		if (policyChannel) {
 			policyService = new MultiplexPolicyService([policyChannel, accountPolicy], logService);
 		} else {
 			policyService = accountPolicy;

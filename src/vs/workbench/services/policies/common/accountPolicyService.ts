@@ -5,15 +5,54 @@
 
 import { IStringDictionary } from '../../../../base/common/collections.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { AbstractPolicyService, IPolicyService, PolicyDefinition } from '../../../../platform/policy/common/policy.js';
+import { AbstractPolicyService, getRestrictedPolicyValue, IPolicyService, PolicyDefinition, PolicyValue } from '../../../../platform/policy/common/policy.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 
+/**
+ * Policy name (declared by `chat.requireApprovedAccount` in chat.contribution.ts) that
+ * activates the "Require Approved Account" gate. When `true`, AI features are forced off
+ * until the user signs into a GitHub account from an approved organization AND the
+ * account-side policy data has resolved.
+ */
+export const REQUIRE_APPROVED_ACCOUNT_POLICY_NAME = 'ChatRequireApprovedAccount';
+
+/**
+ * Policy name (declared by `chat.approvedAccountOrganizations` in chat.contribution.ts)
+ * holding the comma-separated list of GitHub organization logins that satisfy the gate.
+ * The token `*` is treated as a wildcard that accepts any signed-in GitHub/GHE account.
+ */
+export const APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME = 'ChatApprovedAccountOrganizations';
+
+export const enum AccountPolicyGateState {
+	/** Gate is not active. Policies behave exactly as account policy data dictates. */
+	Inactive = 'inactive',
+	/** Gate active and satisfied. Account policy values flow through normally. */
+	Satisfied = 'satisfied',
+	/** Gate active and NOT satisfied — restricted values are applied to all gated policies. */
+	Restricted = 'restricted',
+}
+
+export const enum AccountPolicyGateUnsatisfiedReason {
+	NoAccount = 'noAccount',
+	WrongProvider = 'wrongProvider',
+	OrgNotApproved = 'orgNotApproved',
+	PolicyNotResolved = 'policyNotResolved',
+}
+
+export interface IAccountPolicyGateInfo {
+	readonly state: AccountPolicyGateState;
+	readonly reason?: AccountPolicyGateUnsatisfiedReason;
+}
 
 export class AccountPolicyService extends AbstractPolicyService implements IPolicyService {
 
+	private _gateInfo: IAccountPolicyGateInfo = { state: AccountPolicyGateState.Inactive };
+	get gateInfo(): IAccountPolicyGateInfo { return this._gateInfo; }
+
 	constructor(
 		@ILogService private readonly logService: ILogService,
-		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService
+		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		private readonly managedPolicyService?: IPolicyService,
 	) {
 		super();
 
@@ -21,6 +60,16 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		this._register(this.defaultAccountService.onDidChangePolicyData(() => {
 			this._updatePolicyDefinitions(this.policyDefinitions);
 		}));
+		this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => {
+			this._updatePolicyDefinitions(this.policyDefinitions);
+		}));
+		if (this.managedPolicyService) {
+			this._register(this.managedPolicyService.onDidChange(names => {
+				if (names.includes(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) || names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
+					this._updatePolicyDefinitions(this.policyDefinitions);
+				}
+			}));
+		}
 	}
 
 	protected async _updatePolicyDefinitions(policyDefinitions: IStringDictionary<PolicyDefinition>): Promise<void> {
@@ -28,9 +77,23 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		const updated: string[] = [];
 		const policyData = this.defaultAccountService.policyData;
 
+		this._gateInfo = this.computeGateInfo();
+		const gateRestricted = this._gateInfo.state === AccountPolicyGateState.Restricted;
+
 		for (const key in policyDefinitions) {
 			const policy = policyDefinitions[key];
-			const policyValue = policyData && policy.value ? policy.value(policyData) : undefined;
+
+			let policyValue: PolicyValue | undefined;
+			if (gateRestricted && (policy.value !== undefined || policy.restrictedValue !== undefined)) {
+				// Only policies that opt into the gate are restricted: either by declaring an
+				// account-side `value` (account-driven) or an explicit `restrictedValue`.
+				// MDM-only policies (no `value`, no `restrictedValue`) — including the two policies
+				// that DRIVE the gate itself — are left untouched so the admin remains in control.
+				policyValue = getRestrictedPolicyValue(policy);
+			} else if (policyData && policy.value) {
+				policyValue = policy.value(policyData);
+			}
+
 			if (policyValue !== undefined) {
 				if (this.policies.get(key) !== policyValue) {
 					this.policies.set(key, policyValue);
@@ -47,4 +110,56 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 			this._onDidChange.fire(updated);
 		}
 	}
+
+	private computeGateInfo(): IAccountPolicyGateInfo {
+		if (!this.managedPolicyService) {
+			return { state: AccountPolicyGateState.Inactive };
+		}
+		if (this.managedPolicyService.getPolicyValue(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) !== true) {
+			return { state: AccountPolicyGateState.Inactive };
+		}
+
+		const account = this.defaultAccountService.currentDefaultAccount;
+		if (!account) {
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.NoAccount };
+		}
+
+		// Sign-in: provider id must match the configured GitHub (default or enterprise) provider.
+		const configuredProvider = this.defaultAccountService.getDefaultAccountAuthenticationProvider();
+		if (account.authenticationProvider.id !== configuredProvider.id) {
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.WrongProvider };
+		}
+
+		// Account-side policy data must have resolved (rules out the pre-fetch window).
+		if (this.defaultAccountService.policyData === null) {
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved };
+		}
+
+		const approvedRaw = this.managedPolicyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
+		const approvedOrgs = parseApprovedOrganizations(approvedRaw);
+		if (approvedOrgs.length === 0) {
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
+		}
+		if (approvedOrgs.includes('*')) {
+			return { state: AccountPolicyGateState.Satisfied };
+		}
+
+		const accountOrgs = (account.entitlementsData?.organization_login_list ?? []).map(o => o.toLowerCase());
+		const intersects = accountOrgs.some(org => approvedOrgs.includes(org));
+		if (!intersects) {
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
+		}
+
+		return { state: AccountPolicyGateState.Satisfied };
+	}
+}
+
+function parseApprovedOrganizations(raw: PolicyValue | undefined): string[] {
+	if (typeof raw !== 'string' || raw.length === 0) {
+		return [];
+	}
+	return raw
+		.split(',')
+		.map(s => s.trim().toLowerCase())
+		.filter(s => s.length > 0);
 }

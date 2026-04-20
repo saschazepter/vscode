@@ -1464,7 +1464,56 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			description: nls.localize('chat.disableAIFeatures', "Disable and hide built-in AI features provided by GitHub Copilot, including chat and inline suggestions."),
 			default: false,
-			scope: ConfigurationScope.WINDOW
+			scope: ConfigurationScope.WINDOW,
+			policy: {
+				name: 'ChatDisableAIFeatures',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.118',
+				// `value` is intentionally omitted: this policy is not driven by IPolicyData. It is
+				// driven exclusively by the AccountPolicyService gate, which forces `restrictedValue`
+				// when an admin has enabled `ChatRequireApprovedAccount` and the gate is unsatisfied.
+				restrictedValue: true,
+				localization: {
+					description: {
+						key: 'chat.disableAIFeatures.policy.description',
+						value: nls.localize('chat.disableAIFeatures.policy.description', "Force-disable built-in AI features. Set automatically when the 'Require Approved Account' policy is in effect and the user is not signed into an approved GitHub organization.")
+					}
+				}
+			}
+		},
+		'chat.requireApprovedAccount': {
+			type: 'boolean',
+			description: nls.localize('chat.requireApprovedAccount', "Require sign-in with a GitHub account from an approved organization (and a resolved account-side policy) before any AI features become available."),
+			default: false,
+			included: false,
+			policy: {
+				name: 'ChatRequireApprovedAccount',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.118',
+				localization: {
+					description: {
+						key: 'chat.requireApprovedAccount.policy.description',
+						value: nls.localize('chat.requireApprovedAccount.policy.description', "When enabled, all AI features are disabled until the user signs in with a GitHub account whose organizations intersect 'Approved Account Organizations' AND the account-side policy data has resolved.")
+					}
+				}
+			}
+		},
+		'chat.approvedAccountOrganizations': {
+			type: 'string',
+			description: nls.localize('chat.approvedAccountOrganizations', "Comma-separated list of GitHub organization logins whose members satisfy the 'Require Approved Account' gate. Use '*' to accept any signed-in GitHub or GHE account."),
+			default: '',
+			included: false,
+			policy: {
+				name: 'ChatApprovedAccountOrganizations',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.118',
+				localization: {
+					description: {
+						key: 'chat.approvedAccountOrganizations.policy.description',
+						value: nls.localize('chat.approvedAccountOrganizations.policy.description', "Comma-separated list of GitHub organization logins. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced).")
+					}
+				}
+			}
 		},
 		'chat.allowAnonymousAccess': { // TODO@bpasero remove me eventually
 			type: 'boolean',
