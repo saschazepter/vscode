@@ -5,6 +5,7 @@
 
 import assert from 'assert';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../../base/common/observable.js';
 import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
@@ -66,12 +67,13 @@ interface ITestRig {
 	readonly activeSessionObs: ReturnType<typeof observableValue<IActiveSession | undefined>>;
 }
 
-function setup(activeSession: IActiveSession | undefined, configValue?: string): ITestRig {
+function setup(store: Pick<DisposableStore, 'add'>, activeSession: IActiveSession | undefined, configValue?: string): ITestRig {
 	const provider = new FakeProvider();
+	store.add({ dispose: () => provider.dispose() });
 	if (configValue !== undefined) {
 		provider.config = makeWellKnownConfig(configValue);
 	}
-	const onDidChangeProviders = new Emitter<ISessionsProvidersChangeEvent>();
+	const onDidChangeProviders = store.add(new Emitter<ISessionsProvidersChangeEvent>());
 	const sessionsProvidersService = new (class extends mock<ISessionsProvidersService>() {
 		override readonly onDidChangeProviders = onDidChangeProviders.event;
 		override getProviders(): ISessionsProvider[] { return [provider as unknown as ISessionsProvider]; }
@@ -84,11 +86,11 @@ function setup(activeSession: IActiveSession | undefined, configValue?: string):
 		override readonly activeSession = activeSessionObs;
 	})();
 
-	const insta = new TestInstantiationService();
+	const insta = store.add(new TestInstantiationService());
 	insta.set(ISessionsManagementService, sessionsManagementService);
 	insta.set(ISessionsProvidersService, sessionsProvidersService);
 
-	const delegate = insta.createInstance(AgentHostPermissionPickerDelegate);
+	const delegate = store.add(insta.createInstance(AgentHostPermissionPickerDelegate));
 	return { delegate, provider, activeSessionObs };
 }
 
@@ -100,22 +102,19 @@ suite('AgentHostPermissionPickerDelegate', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('returns Default when there is no active session', () => {
-		const { delegate, provider } = setup(undefined);
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate } = setup(store, undefined);
 
 		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('returns Default when the active session has no config seeded yet', () => {
-		const { delegate, provider } = setup(makeActiveSession());
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate } = setup(store, makeActiveSession());
 
 		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('reflects the active session\'s autoApprove value and updates on provider change', () => {
-		const { delegate, provider } = setup(makeActiveSession(), 'autoApprove');
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate, provider } = setup(store, makeActiveSession(), 'autoApprove');
 
 		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.AutoApprove);
 
@@ -129,15 +128,13 @@ suite('AgentHostPermissionPickerDelegate', () => {
 	});
 
 	test('falls back to Default when the stored value is unrecognized', () => {
-		const { delegate, provider } = setup(makeActiveSession(), 'something-else');
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate } = setup(store, makeActiveSession(), 'something-else');
 
 		assert.strictEqual(delegate.currentPermissionLevel.get(), ChatPermissionLevel.Default);
 	});
 
 	test('setPermissionLevel writes through to the active session\'s provider', () => {
-		const { delegate, provider } = setup(makeActiveSession(), 'default');
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate, provider } = setup(store, makeActiveSession(), 'default');
 
 		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
 		delegate.setPermissionLevel(ChatPermissionLevel.Autopilot);
@@ -149,8 +146,7 @@ suite('AgentHostPermissionPickerDelegate', () => {
 	});
 
 	test('setPermissionLevel is a no-op when there is no active session', () => {
-		const { delegate, provider } = setup(undefined);
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate, provider } = setup(store, undefined);
 
 		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
 
@@ -158,8 +154,7 @@ suite('AgentHostPermissionPickerDelegate', () => {
 	});
 
 	test('isApplicable reacts to active session and config changes', () => {
-		const { delegate, provider, activeSessionObs } = setup(undefined);
-		store.add(delegate); store.add({ dispose: () => provider.dispose() });
+		const { delegate, provider, activeSessionObs } = setup(store, undefined);
 
 		// No active session → false
 		assert.strictEqual(delegate.isApplicable.get(), false);

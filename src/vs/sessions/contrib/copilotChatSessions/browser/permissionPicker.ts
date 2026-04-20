@@ -326,8 +326,8 @@ export class PermissionPicker extends Disposable {
  * Default-Copilot {@link IPermissionPickerDelegate}: writes the user's chosen
  * level back to the active {@link CopilotChatSessionsProvider} session.
  *
- * Does not provide `currentPermissionLevel` or ` the picker manages itsisApplicable` 
- * own state and is always visible (visibility is gated at the menu
+ * Does not provide `currentPermissionLevel` or `isApplicable`, so the picker
+ * manages its own state and is always visible (visibility is gated at the menu
  * contribution level via `when` clauses).
  */
 export class CopilotPermissionPickerDelegate extends Disposable implements IPermissionPickerDelegate {
