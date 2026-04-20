@@ -12,6 +12,14 @@ import { ISessionDatabase, ISessionDataService, SESSION_DB_FILENAME } from '../c
 import { SessionDatabase } from './sessionDatabase.js';
 
 class SessionDatabaseCollection extends ReferenceCollection<ISessionDatabase> {
+
+	/**
+	 * The set of currently-open databases. Mirrors what's held by the
+	 * underlying ref-counted map, but exposed so {@link SessionDataService.whenIdle}
+	 * can iterate without reaching into private state.
+	 */
+	readonly liveDatabases = new Set<ISessionDatabase>();
+
 	constructor(
 		private readonly _getDbPath: (key: string) => string,
 		private readonly _logService: ILogService,
@@ -22,10 +30,13 @@ class SessionDatabaseCollection extends ReferenceCollection<ISessionDatabase> {
 	protected createReferencedObject(key: string): ISessionDatabase {
 		const dbPath = this._getDbPath(key);
 		this._logService.trace(`[SessionDataService] Opening database: ${dbPath}`);
-		return new SessionDatabase(dbPath);
+		const db = new SessionDatabase(dbPath);
+		this.liveDatabases.add(db);
+		return db;
 	}
 
 	protected destroyReferencedObject(_key: string, object: ISessionDatabase): void {
+		this.liveDatabases.delete(object);
 		object.dispose();
 	}
 }
@@ -122,6 +133,28 @@ export class SessionDataService implements ISessionDataService {
 			await Promise.all(deletions);
 		} catch (err) {
 			this._logService.warn('[SessionDataService] Failed to run orphan cleanup', err);
+		}
+	}
+
+	async whenIdle(): Promise<void> {
+		// Re-check after each pass: a write completing may release the last
+		// reference and destroy a DB, while another caller may have just
+		// opened a new one. Loop until quiescent.
+		while (true) {
+			const dbs = [...this._databases.liveDatabases];
+			if (dbs.length === 0) {
+				return;
+			}
+			await Promise.all(dbs.map(db => db.whenIdle()));
+			if (this._databases.liveDatabases.size === 0) {
+				return;
+			}
+			// If the live set shrunk to a subset of what we just awaited, do
+			// one more pass to catch any work queued in the meantime.
+			const after = [...this._databases.liveDatabases];
+			if (after.every(db => dbs.includes(db))) {
+				return;
+			}
 		}
 	}
 }

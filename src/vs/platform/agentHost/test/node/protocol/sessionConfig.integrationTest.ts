@@ -6,7 +6,6 @@
 import assert from 'assert';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { timeout } from '../../../../../base/common/async.js';
 import { URI } from '../../../../../base/common/uri.js';
 import type { IResolveSessionConfigResult, ISessionConfigCompletionsResult, ISubscribeResult } from '../../../common/state/protocol/commands.js';
 import { ActionType, type ISessionAddedNotification } from '../../../common/state/sessionActions.js';
@@ -202,12 +201,11 @@ suite('Protocol WebSocket - Session Config persistence across restarts', functio
 			const configChanged = await client1.waitForNotification(n => isActionNotification(n, ActionType.SessionConfigChanged));
 			assert.strictEqual(getActionEnvelope(configChanged).action.type, ActionType.SessionConfigChanged);
 
-			// `_persistConfigValues` is fire-and-forget; give the SQLite write
-			// a moment to flush before tearing down the server.
-			await timeout(500);
-
 			client1.close();
 		} finally {
+			// The server's shutdown handler awaits in-flight persistence
+			// writes before exiting, so awaiting `exit` here is sufficient
+			// to guarantee the updated `configValues` reached SQLite.
 			server1.process.kill();
 			await new Promise<void>(resolve => server1.process.once('exit', () => resolve()));
 		}
