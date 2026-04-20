@@ -11,7 +11,7 @@ import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHost
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { AgentHostFilterService } from '../../browser/agentHostFilterService.js';
-import { ALL_HOSTS_FILTER } from '../../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER } from '../../common/agentHostFilter.js';
 
 class StubRemoteAgentHostService implements Partial<IRemoteAgentHostService> {
 	declare readonly _serviceBrand: undefined;
@@ -71,10 +71,10 @@ suite('AgentHostFilterService', () => {
 		];
 		const service = createService(stub);
 
-		const hosts = [...service.hosts].map(h => ({ label: h.label, connected: h.connected, providerId: h.providerId }));
+		const hosts = [...service.hosts].map(h => ({ label: h.label, status: h.status, providerId: h.providerId }));
 		assert.deepStrictEqual(hosts, [
-			{ label: 'Host A', connected: true, providerId: pid('localhost:4321') },
-			{ label: 'Host B', connected: false, providerId: pid('localhost:9999') },
+			{ label: 'Host A', status: AgentHostFilterConnectionStatus.Connected, providerId: pid('localhost:4321') },
+			{ label: 'Host B', status: AgentHostFilterConnectionStatus.Disconnected, providerId: pid('localhost:9999') },
 		]);
 	});
 

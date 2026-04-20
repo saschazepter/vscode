@@ -9,7 +9,7 @@ import { agentHostAuthority } from '../../../../platform/agentHost/common/agentH
 import { getEntryAddress, IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 const STORAGE_KEY = 'sessions.agentHostFilter.selectedProviderId';
 
@@ -18,6 +18,15 @@ const STORAGE_KEY = 'sessions.agentHostFilter.selectedProviderId';
  */
 function providerIdForAddress(address: string): string {
 	return `agenthost-${agentHostAuthority(address)}`;
+}
+
+function mapStatus(s: RemoteAgentHostConnectionStatus): AgentHostFilterConnectionStatus {
+	switch (s) {
+		case RemoteAgentHostConnectionStatus.Connected: return AgentHostFilterConnectionStatus.Connected;
+		case RemoteAgentHostConnectionStatus.Connecting: return AgentHostFilterConnectionStatus.Connecting;
+		case RemoteAgentHostConnectionStatus.Disconnected:
+		default: return AgentHostFilterConnectionStatus.Disconnected;
+	}
 }
 
 export class AgentHostFilterService extends Disposable implements IAgentHostFilterService {
@@ -60,6 +69,17 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 		this._onDidChange.fire();
 	}
 
+	reconnect(providerId: string): void {
+		const host = this._hosts.find(h => h.providerId === providerId);
+		if (!host) {
+			return;
+		}
+		if (host.status !== AgentHostFilterConnectionStatus.Disconnected) {
+			return;
+		}
+		this._remoteAgentHostService.reconnect(host.address);
+	}
+
 	private _validate(providerId: string): string {
 		if (providerId === ALL_HOSTS_FILTER) {
 			return ALL_HOSTS_FILTER;
@@ -73,18 +93,19 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 
 		const byProviderId = new Map<string, IAgentHostFilterEntry>();
 
-		// Prefer live connection info (authoritative name + connected status).
+		// Prefer live connection info (authoritative name + connection status).
 		for (const conn of connections) {
 			const providerId = providerIdForAddress(conn.address);
 			byProviderId.set(providerId, {
 				providerId,
 				label: conn.name || conn.address,
 				address: conn.address,
-				connected: conn.status === RemoteAgentHostConnectionStatus.Connected,
+				status: mapStatus(conn.status),
 			});
 		}
 
-		// Fill in configured entries that are not currently connected.
+		// Fill in configured entries that are not currently tracked as a
+		// live connection.
 		for (const entry of entries) {
 			const address = getEntryAddress(entry);
 			const providerId = providerIdForAddress(address);
@@ -95,7 +116,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 				providerId,
 				label: entry.name || address,
 				address,
-				connected: false,
+				status: AgentHostFilterConnectionStatus.Disconnected,
 			});
 		}
 
@@ -104,7 +125,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 		const changed = hosts.length !== this._hosts.length
 			|| hosts.some((h, i) => h.providerId !== this._hosts[i].providerId
 				|| h.label !== this._hosts[i].label
-				|| h.connected !== this._hosts[i].connected);
+				|| h.status !== this._hosts[i].status);
 
 		this._hosts = hosts;
 

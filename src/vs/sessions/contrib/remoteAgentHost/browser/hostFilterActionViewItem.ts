@@ -16,16 +16,24 @@ import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { ALL_HOSTS_FILTER, IAgentHostFilterService } from '../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 /**
  * Dropdown button shown in the Agent Sessions titlebar (next to the toggle
  * sidebar button) that indicates the host the workbench is currently
  * scoped to, and lets the user pick a different host or "All Hosts".
+ *
+ * The pill also surfaces connection status for the selected host via a
+ * leading indicator icon:
+ *  - Connected    → green `debug-connected`
+ *  - Connecting   → non-interactive `debug-connected` in muted state
+ *  - Disconnected → clickable `debug-disconnect` that triggers a connect
  */
 export class HostFilterActionViewItem extends BaseActionViewItem {
 
+	private _statusElement: HTMLElement | undefined;
 	private _labelElement: HTMLElement | undefined;
+	private _statusHoverDisposable: { dispose(): void } | undefined;
 
 	constructor(
 		action: IAction,
@@ -50,7 +58,10 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		this.element.role = 'button';
 		this.element.setAttribute('aria-haspopup', 'menu');
 
-		// Leading icon
+		// Connection status indicator — shown only when a specific host is selected.
+		this._statusElement = dom.append(this.element, dom.$('span.agent-host-filter-status'));
+
+		// Leading icon (generic remote glyph)
 		const iconEl = dom.append(this.element, dom.$('span.agent-host-filter-icon'));
 		iconEl.append(...renderLabelWithIcons(`$(${Codicon.remote.id})`));
 
@@ -66,6 +77,10 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			() => localize('agentHostFilter.hover', "Change the host the sessions list is scoped to")));
 
 		this._register(dom.addDisposableListener(this.element, dom.EventType.CLICK, e => {
+			// Clicks on the status indicator are handled separately.
+			if (this._statusElement && dom.isHTMLElement(e.target) && this._statusElement.contains(e.target)) {
+				return;
+			}
 			e.preventDefault();
 			e.stopPropagation();
 			this._showMenu(e);
@@ -80,11 +95,17 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			}
 		}));
 
+		this._register(dom.addDisposableListener(this._statusElement, dom.EventType.CLICK, e => {
+			e.preventDefault();
+			e.stopPropagation();
+			this._onStatusClick();
+		}));
+
 		this._update();
 	}
 
 	private _update(): void {
-		if (!this._labelElement || !this.element) {
+		if (!this._labelElement || !this.element || !this._statusElement) {
 			return;
 		}
 
@@ -101,6 +122,71 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			: localize('agentHostFilter.aria.all', "Sessions from all hosts"));
 
 		this.element.classList.toggle('all-hosts', !selected);
+
+		this._updateStatus(selected);
+	}
+
+	private _updateStatus(selected: IAgentHostFilterEntry | undefined): void {
+		if (!this._statusElement) {
+			return;
+		}
+
+		// Reset
+		dom.clearNode(this._statusElement);
+		this._statusElement.classList.remove('connected', 'connecting', 'disconnected', 'clickable');
+		this._statusElement.removeAttribute('aria-disabled');
+		this._statusElement.removeAttribute('role');
+		this._statusElement.removeAttribute('tabindex');
+		this._statusHoverDisposable?.dispose();
+		this._statusHoverDisposable = undefined;
+
+		if (!selected) {
+			this._statusElement.style.display = 'none';
+			return;
+		}
+		this._statusElement.style.display = '';
+
+		let iconId: string;
+		let hoverText: string;
+		switch (selected.status) {
+			case AgentHostFilterConnectionStatus.Connected:
+				iconId = Codicon.debugConnected.id;
+				this._statusElement.classList.add('connected');
+				hoverText = localize('agentHostFilter.status.connected', "Connected to {0}", selected.label);
+				break;
+			case AgentHostFilterConnectionStatus.Connecting:
+				iconId = Codicon.debugConnected.id;
+				this._statusElement.classList.add('connecting');
+				this._statusElement.setAttribute('aria-disabled', 'true');
+				hoverText = localize('agentHostFilter.status.connecting', "Connecting to {0}…", selected.label);
+				break;
+			case AgentHostFilterConnectionStatus.Disconnected:
+			default:
+				iconId = Codicon.debugDisconnect.id;
+				this._statusElement.classList.add('disconnected', 'clickable');
+				this._statusElement.setAttribute('role', 'button');
+				this._statusElement.setAttribute('tabindex', '0');
+				hoverText = localize('agentHostFilter.status.disconnected', "Disconnected from {0}. Click to connect.", selected.label);
+				break;
+		}
+		this._statusElement.append(...renderLabelWithIcons(`$(${iconId})`));
+		this._statusElement.setAttribute('aria-label', hoverText);
+
+		const hoverDelegate = getDefaultHoverDelegate('element');
+		this._statusHoverDisposable = this._hoverService.setupManagedHover(hoverDelegate, this._statusElement, () => hoverText);
+		this._register(this._statusHoverDisposable);
+	}
+
+	private _onStatusClick(): void {
+		const selectedId = this._filterService.selectedProviderId;
+		if (selectedId === ALL_HOSTS_FILTER) {
+			return;
+		}
+		const host = this._filterService.hosts.find(h => h.providerId === selectedId);
+		if (!host || host.status !== AgentHostFilterConnectionStatus.Disconnected) {
+			return;
+		}
+		this._filterService.reconnect(selectedId);
 	}
 
 	private _showMenu(e: MouseEvent | KeyboardEvent): void {
@@ -125,9 +211,11 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		if (hosts.length > 0) {
 			actions.push(new Separator());
 			for (const host of hosts) {
-				const label = host.connected
+				const label = host.status === AgentHostFilterConnectionStatus.Connected
 					? host.label
-					: localize('agentHostFilter.hostDisconnected', "{0} (disconnected)", host.label);
+					: host.status === AgentHostFilterConnectionStatus.Connecting
+						? localize('agentHostFilter.hostConnecting', "{0} (connecting…)", host.label)
+						: localize('agentHostFilter.hostDisconnected', "{0} (disconnected)", host.label);
 				actions.push(new Action(
 					`agentHostFilter.host.${host.providerId}`,
 					label,

@@ -12,6 +12,15 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 export const ALL_HOSTS_FILTER = '__all__';
 
 /**
+ * Connection status of a host surfaced in the host filter.
+ */
+export const enum AgentHostFilterConnectionStatus {
+	Disconnected = 'disconnected',
+	Connecting = 'connecting',
+	Connected = 'connected',
+}
+
+/**
  * A single host entry the user can scope the sessions list to.
  */
 export interface IAgentHostFilterEntry {
@@ -21,8 +30,8 @@ export interface IAgentHostFilterEntry {
 	readonly label: string;
 	/** The raw host address (e.g. `localhost:4321`, `tunnel+abc123`). */
 	readonly address: string;
-	/** Whether the host is currently connected. */
-	readonly connected: boolean;
+	/** Current connection status for this host. */
+	readonly status: AgentHostFilterConnectionStatus;
 }
 
 export const IAgentHostFilterService = createDecorator<IAgentHostFilterService>('agentHostFilterService');
@@ -51,4 +60,11 @@ export interface IAgentHostFilterService {
 	 * {@link ALL_HOSTS_FILTER}.
 	 */
 	setSelectedProviderId(providerId: string): void;
+
+	/**
+	 * Attempt to (re)connect to the given host. No-op if the host is
+	 * unknown or already {@link AgentHostFilterConnectionStatus.Connected}
+	 * or {@link AgentHostFilterConnectionStatus.Connecting}.
+	 */
+	reconnect(providerId: string): void;
 }
