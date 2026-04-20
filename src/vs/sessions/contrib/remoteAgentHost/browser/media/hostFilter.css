@@ -1,0 +1,58 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.agent-host-filter {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	padding: 0 6px;
+	margin: 0 2px;
+	cursor: pointer;
+	color: var(--vscode-titleBar-activeForeground);
+	border-radius: 4px;
+	max-width: 200px;
+	font-size: 12px;
+	user-select: none;
+	-webkit-user-select: none;
+	touch-action: manipulation;
+}
+
+.agent-host-filter:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.agent-host-filter:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.agent-host-filter .agent-host-filter-icon,
+.agent-host-filter .agent-host-filter-chevron {
+	display: flex;
+	align-items: center;
+	flex: 0 0 auto;
+}
+
+.agent-host-filter .agent-host-filter-icon .codicon {
+	font-size: 14px;
+}
+
+.agent-host-filter .agent-host-filter-chevron .codicon {
+	font-size: 12px;
+	opacity: 0.8;
+}
+
+.agent-host-filter .agent-host-filter-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+.agent-host-filter.all-hosts .agent-host-filter-label {
+	opacity: 0.85;
+}
