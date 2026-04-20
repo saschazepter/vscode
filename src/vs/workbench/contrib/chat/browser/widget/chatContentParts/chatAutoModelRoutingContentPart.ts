@@ -59,6 +59,8 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 
 		// Capability score list
 		if (this.routingPart.capabilities && this.routingPart.capabilities.length > 0) {
+			container.appendChild($('span.chat-auto-model-routing-section-label', undefined,
+				localize('autoModelRouting.capabilities', "Task requirements")));
 			const list = $('ul.chat-auto-model-routing-scores');
 			for (const cap of this.routingPart.capabilities) {
 				const li = $('li.chat-auto-model-routing-score-row');
