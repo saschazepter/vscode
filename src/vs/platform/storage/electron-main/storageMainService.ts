@@ -126,10 +126,6 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 
 			this.applicationStorage.init();
 			this.applicationSharedStorage.init();
-
-			// Wire up APPLICATION as fallback for APPLICATION_SHARED after both are ready
-			await Promise.all([this.applicationStorage.whenInit, this.applicationSharedStorage.whenInit]);
-			(this.applicationSharedStorage as ApplicationSharedStorageMain).setFallbackStorage(this.applicationStorage.storage);
 		})();
 
 		this._register(this.lifecycleMainService.onWillLoadWindow(e => {
@@ -224,7 +220,7 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 			this.logService.trace(`StorageMainService: using host app fallback storage at ${fallbackDatabasePath}`);
 		}
 
-		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService, fallbackDatabasePath);
+		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService, this.applicationStorage, fallbackDatabasePath);
 
 		this._register(Event.once(applicationSharedStorage.onDidCloseStorage)(() => {
 			this.logService.trace(`StorageMainService: closed application shared storage`);

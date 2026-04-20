@@ -369,6 +369,7 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		logService: ILogService,
 		fileService: IFileService,
 		private readonly crossAppIPCService: ICrossAppIPCService,
+		private readonly fallbackStorage: IStorageMain | undefined,
 		private readonly fallbackDatabasePath?: string
 	) {
 		super(logService, fileService);
@@ -383,7 +384,15 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		}, this.crossAppIPCService, this.logService, this.fallbackDatabasePath);
 		this._register(this.sharedDatabase);
 
-		return new Storage(this.sharedDatabase, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
+		const storage = new Storage(this.sharedDatabase, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
+
+		// Set up fallback to application storage for transparent
+		// migration of keys moved to APPLICATION_SHARED scope
+		if (this.fallbackStorage) {
+			storage.fallbackStorage = this.fallbackStorage.storage;
+		}
+
+		return storage;
 	}
 
 	protected override async doInit(storage: IStorage): Promise<void> {
@@ -394,15 +403,6 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		// This must happen after Storage.init() completes to
 		// avoid processing stale queued messages.
 		this.sharedDatabase?.setInitialized();
-	}
-
-	/**
-	 * Sets a fallback storage to read from when a key is not found
-	 * in this shared storage. On hit, values are automatically
-	 * written through for migration.
-	 */
-	setFallbackStorage(fallbackStorage: IStorage): void {
-		(this.storage as Storage).fallbackStorage = fallbackStorage;
 	}
 
 	private async prepareStorageFolder(): Promise<{ storageFilePath: string; wasCreated: boolean }> {
