@@ -302,9 +302,12 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// repository state which we are passing along through the metadata
 		worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
 
+		const parentSessionId = await this.chatSessionMetadataStore.getParentSessionId(session.id);
+
 		if (worktreeProperties) {
 			// Worktree
 			metadata = {
+				parentSessionId,
 				autoCommit: worktreeProperties.autoCommit !== false,
 				baseCommit: worktreeProperties?.baseCommit,
 				baseBranchName: worktreeProperties.version === 2
@@ -367,6 +370,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 				: undefined;
 
 			metadata = {
+				parentSessionId,
 				isolationMode: IsolationMode.Workspace,
 				repositoryPath: repositoryProperties?.repositoryPath,
 				branchName: repositoryProperties?.branchName,
