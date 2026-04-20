@@ -399,20 +399,20 @@
 }
 
 .copilot-prototype-dashboard-cards > .copilot-prototype-dashboard-card:first-child:not(:last-child) {
-	margin-bottom: 4px;
-	padding-bottom: 10px;
+	margin-bottom: 0;
+	padding-bottom: 8px;
 }
 
 .copilot-prototype-dashboard-cards > .copilot-prototype-dashboard-card:first-child:not(:last-child):not(.highlight) {
-	border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+	border-bottom: none;
 }
 
 .copilot-prototype-dashboard-card {
 	flex: 1;
 	min-width: 0;
-	padding: 6px 6px 10px;
-	border-radius: var(--vscode-cornerRadius-small);
-	border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
+	padding: 6px 0 8px;
+	border-radius: 0;
+	border: none;
 }
 
 .copilot-prototype-dashboard-card.highlight {
@@ -421,8 +421,8 @@
 }
 
 .copilot-prototype-dashboard-card.highlight.warning {
-	border-color: var(--vscode-editorWarning-foreground);
-	background-color: rgba(255, 200, 0, 0.04);
+	border-color: transparent;
+	background-color: transparent;
 }
 
 .copilot-prototype-dashboard-card.highlight.info {
@@ -642,7 +642,8 @@
 	line-height: 1.4;
 	padding: 8px 10px;
 	border-radius: var(--vscode-cornerRadius-small);
-	border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
+	border: 1px solid var(--vscode-gauge-warningForeground, rgba(255,200,0,0.5));
+	background-color: rgba(255, 200, 0, 0.04);
 }
 
 .copilot-prototype-dashboard-warning.error {
@@ -703,7 +704,6 @@
 	justify-content: flex-end;
 	gap: 6px;
 	padding-top: 10px;
-	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
 }
 
 .copilot-prototype-dashboard-footer-label {
@@ -966,7 +966,7 @@
 .copilot-prototype-dashboard-warning-admin-row {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-end;
 	margin-top: 5px;
 	gap: 6px;
 	font-size: 11px;

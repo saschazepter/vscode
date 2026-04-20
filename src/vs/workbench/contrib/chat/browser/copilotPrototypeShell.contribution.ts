@@ -781,6 +781,13 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		const btnContainer = mainWindow.document.createElement('div');
 		btnContainer.className = 'copilot-prototype-inline-warning-actions';
 
+		// View Usage on the left, primary action button on the right
+		const viewUsageBtn = mainWindow.document.createElement('button');
+		viewUsageBtn.className = 'copilot-prototype-inline-warning-link';
+		viewUsageBtn.textContent = localize('viewUsage', "View Usage");
+		viewUsageBtn.addEventListener('click', () => this.openDashboard());
+		btnContainer.appendChild(viewUsageBtn);
+
 		if (content.budgetInput) {
 			// Budget input row: $ input + Add button
 			const inputRow = mainWindow.document.createElement('div');
@@ -819,13 +826,6 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			}
 		}
 
-		// Always add a View Usage link at the end
-		const viewUsageBtn = mainWindow.document.createElement('button');
-		viewUsageBtn.className = 'copilot-prototype-inline-warning-link';
-		viewUsageBtn.textContent = localize('viewUsage', "View Usage");
-		viewUsageBtn.addEventListener('click', () => this.openDashboard());
-		btnContainer.appendChild(viewUsageBtn);
-
 		card.append(header, desc, btnContainer);
 		this._warningCardElement = card;
 		protoContainer.appendChild(card);
@@ -841,7 +841,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		if (isEnterprise && state === 'Overage Reached') {
 			return {
 				title: localize('inlineEntMonthlyReachedTitle', "You've reached your Monthly Limit."),
-				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1 at 10:00 AM. Your admin: Logan Ramos (logan.ramos@acme.com)"),
+				description: localize('inlineEntMonthlyReachedDesc', "Copilot is paused until your limit resets May 1 at 10:00 AM."),
 				buttonLabel: localize('requestMoreUsage', "Request More Usage"),
 			};
 		}
@@ -1395,6 +1395,15 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 		// --- Gauge cards row ---
 		const cards = append(content, $('div.copilot-prototype-dashboard-cards'));
 
+		// Inline Suggestions card (Free only) — first card
+		if (!isPro) {
+			this.createCard(cards, {
+				name: localize('cardInlineSuggestions', "Inline Suggestions"),
+				resetLabel: localize('cardResetApr24Inline', "Resets April 24 at 10:00 AM"),
+				percent: 12,
+			});
+		}
+
 		// Five-Hour Limit card (Max has no session limit)
 		const isResetState = state === 'Session Reset' || state === 'Weekly Reset';
 		if (!isMax) {
@@ -1423,15 +1432,6 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			highlight: weeklyApproached,
 			disabled: weeklyReached || state === 'Session Reached',
 		});
-
-		// Inline Suggestions card (Free only) — last card
-		if (!isPro) {
-			this.createCard(cards, {
-				name: localize('cardInlineSuggestions', "Inline Suggestions"),
-				resetLabel: localize('cardResetApr24Inline', "Resets April 24 at 10:00 AM"),
-				percent: 12,
-			});
-		}
 
 		// --- Warning callout ---
 		if (state === 'Session Approached' || state === 'Weekly Approached') {
@@ -1779,7 +1779,6 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			const warningBody = append(warning, $('div.copilot-prototype-dashboard-warning-text'));
 			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyApproachWarning', "Copilot will pause when the limit is reached.")));
 			const adminRow = append(warningBody, $('div.copilot-prototype-dashboard-warning-admin-row'));
-			append(adminRow, $('span.copilot-prototype-dashboard-warning-admin-name')).textContent = localize('adminIdentity', "Your admin: Logan Ramos");
 			const requestBtn = append(adminRow, $('button.copilot-prototype-dashboard-warning-admin-btn'));
 			requestBtn.textContent = localize('requestMoreUsage', "Request More Usage");
 			requestBtn.addEventListener('click', () => this.advanceState());
@@ -1790,7 +1789,6 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			const warningBody = append(warning, $('div.copilot-prototype-dashboard-warning-text'));
 			warningBody.appendChild(mainWindow.document.createTextNode(localize('entMonthlyReachedWarning', "Copilot is paused until the limit resets.")));
 			const adminRow = append(warningBody, $('div.copilot-prototype-dashboard-warning-admin-row'));
-			append(adminRow, $('span.copilot-prototype-dashboard-warning-admin-name')).textContent = localize('adminIdentity', "Your admin: Logan Ramos");
 			const requestBtn = append(adminRow, $('button.copilot-prototype-dashboard-warning-admin-btn'));
 			requestBtn.textContent = localize('requestMoreUsage', "Request More Usage");
 			requestBtn.addEventListener('click', () => this.advanceState());
@@ -2299,6 +2297,15 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 
 		const cards = append(content, $('div.copilot-prototype-dashboard-cards'));
 
+		// Inline Suggestions card (Free only) — first card
+		if (isFree) {
+			this.createCard(cards, {
+				name: localize('cmCardInline', "Inline Suggestions"),
+				resetLabel: localize('cmResetApr24Inline', "Resets April 24 at 10:00 AM"),
+				percent: 12,
+			});
+		}
+
 		// Premium Requests card
 		const premiumPct = state === 'Premium Approached' ? 75
 			: state === 'Premium Exhausted' ? 100
@@ -2330,12 +2337,6 @@ export class CopilotCurrentModelStatusBarContribution extends Disposable impleme
 				highlight: chatApproached || chatExhausted,
 			});
 
-			// Inline Suggestions card (Free only) — last card
-			this.createCard(cards, {
-				name: localize('cmCardInline', "Inline Suggestions"),
-				resetLabel: localize('cmResetApr24Inline', "Resets April 24 at 10:00 AM"),
-				percent: 12,
-			});
 		}
 
 		// Pro/Pro+: chat is included
