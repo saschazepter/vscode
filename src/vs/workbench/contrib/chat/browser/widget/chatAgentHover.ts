@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../base/browser/dom.js';
-import { IManagedHoverOptions } from '../../../../../base/browser/ui/hover/hover.js';
+import { IHoverAction, IManagedHoverOptions } from '../../../../../base/browser/ui/hover/hover.js';
 import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
@@ -121,18 +121,21 @@ export class ChatAgentHover extends Disposable {
 }
 
 export function getChatAgentHoverOptions(getAgent: () => IChatAgentData | undefined, commandService: ICommandService): IManagedHoverOptions {
-	return {
-		actions: [
-			{
-				commandId: showExtensionsWithIdsCommandId,
-				label: localize('viewExtensionLabel', "View Extension"),
-				run: () => {
-					const agent = getAgent();
-					if (agent) {
-						commandService.executeCommand(showExtensionsWithIdsCommandId, [agent.extensionId.value]);
-					}
-				},
-			}
-		]
-	};
+	const actions: IHoverAction[] = [];
+
+	// Core agents (e.g. agent host) don't correspond to a real extension, so omit "View Extension".
+	if (!getAgent()?.isCore) {
+		actions.push({
+			commandId: showExtensionsWithIdsCommandId,
+			label: localize('viewExtensionLabel', "View Extension"),
+			run: () => {
+				const agent = getAgent();
+				if (agent) {
+					commandService.executeCommand(showExtensionsWithIdsCommandId, [agent.extensionId.value]);
+				}
+			},
+		});
+	}
+
+	return { actions };
 }
