@@ -57,6 +57,18 @@ export class ChatAutoModelRoutingContentPart extends ChatCollapsibleContentPart 
 		para.appendChild(learnMore);
 		container.appendChild(para);
 
+		// Capability score list
+		if (this.routingPart.capabilities && this.routingPart.capabilities.length > 0) {
+			const list = $('ul.chat-auto-model-routing-scores');
+			for (const cap of this.routingPart.capabilities) {
+				const li = $('li.chat-auto-model-routing-score-row');
+				li.appendChild($('span.chat-auto-model-routing-score-name', undefined, cap.name));
+				li.appendChild($('span.chat-auto-model-routing-score-pct', undefined, `${Math.round(cap.score * 100)}%`));
+				list.appendChild(li);
+			}
+			container.appendChild(list);
+		}
+
 		return container;
 	}
 

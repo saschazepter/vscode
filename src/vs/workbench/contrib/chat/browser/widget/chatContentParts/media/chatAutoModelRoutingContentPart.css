@@ -49,3 +49,36 @@
 .chat-auto-model-routing-learn-more:hover {
 	text-decoration: underline;
 }
+
+/* Capability score list */
+.chat-auto-model-routing-scores {
+	list-style: none;
+	margin: 4px 0 0 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	border-left: 1px solid var(--vscode-chat-requestBorder);
+	padding-left: 10px;
+}
+
+.chat-auto-model-routing-score-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 1px 0;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-auto-model-routing-score-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chat-auto-model-routing-score-pct {
+	font-variant-numeric: tabular-nums;
+	font-size: 11px;
+	white-space: nowrap;
+}
