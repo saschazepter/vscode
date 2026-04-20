@@ -584,10 +584,12 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 		const message = err instanceof Error ? err.message : String(err);
 		// Expired / invalid credential — callers short-circuit this category
 		// to avoid burning retry budget on a token the user has to refresh.
-		if (/\b(401|403)\b|token.*expired|expired.*token|unauthoriz|invalid[_ -]?grant/i.test(message)) {
+		if (/\b(401|403)\b|token.*expired|expired.*token|invalid[_ -]?grant/i.test(message)) {
 			return 'authExpired';
 		}
-		if (/authenticat|\btoken\b|unauthoriz/i.test(message)) {
+		// Match authentication-specific language but NOT "connection token"
+		// or other protocol uses of the word "token".
+		if (/authenticat|unauthoriz|auth.*(fail|error|invalid)/i.test(message)) {
 			return 'auth';
 		}
 		if (/WebSocket relay connection failed|failed to connect to relay/i.test(message)) {
@@ -696,10 +698,12 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 
 			// Auto-cache online tunnels that aren't cached yet so they
 			// appear in the UI on first discovery (e.g. fresh web session).
+			// Pass 'github' as authProvider so _handleSessionsChange can
+			// match these tunnels for teardown on session removal.
 			const cachedIds = new Set(cached.map(t => t.tunnelId));
 			for (const tunnel of onlineTunnels) {
 				if (!cachedIds.has(tunnel.tunnelId) && tunnel.hostConnectionCount > 0) {
-					this._tunnelService.cacheTunnel(tunnel);
+					this._tunnelService.cacheTunnel(tunnel, 'github');
 				}
 			}
 
