@@ -233,6 +233,9 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 		this._loadCachedSessions();
 
 		this._register(this._onDidChangeSessions.event(e => {
+			if (this._unpublished) {
+				return;
+			}
 			if (e.added.length > 0 || e.removed.length > 0 || e.changed.length > 0) {
 				this._cacheDirty = true;
 			}
