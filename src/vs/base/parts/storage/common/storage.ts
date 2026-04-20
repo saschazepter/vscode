@@ -81,13 +81,6 @@ export interface IStorage extends IDisposable {
 	readonly items: Map<string, string>;
 	readonly size: number;
 
-	/**
-	 * Optional fallback storage to read from when a key is not
-	 * found in this storage. On hit, the value is automatically
-	 * written through to this storage so it is persisted locally.
-	 */
-	fallbackStorage: IStorage | undefined;
-
 	init(): Promise<void>;
 
 	get(key: string, fallbackValue: string): string;

@@ -396,6 +396,15 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		this.sharedDatabase?.setInitialized();
 	}
 
+	/**
+	 * Sets a fallback storage to read from when a key is not found
+	 * in this shared storage. On hit, values are automatically
+	 * written through for migration.
+	 */
+	setFallbackStorage(fallbackStorage: IStorage): void {
+		(this.storage as Storage).fallbackStorage = fallbackStorage;
+	}
+
 	private async prepareStorageFolder(): Promise<{ storageFilePath: string; wasCreated: boolean }> {
 		if (this.options.useInMemoryStorage) {
 			return { storageFilePath: SQLiteStorageDatabase.IN_MEMORY_PATH, wasCreated: true };
