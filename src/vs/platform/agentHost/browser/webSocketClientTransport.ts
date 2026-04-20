@@ -96,7 +96,24 @@ export class WebSocketClientTransport extends Disposable implements IClientTrans
 
 			// Wire up long-lived listeners after connection
 			ws.addEventListener('message', (event: MessageEvent) => {
-				const text = typeof event.data === 'string' ? event.data : '';
+				if (typeof event.data !== 'string') {
+					this._malformedFrames++;
+					if (this._malformedFrames <= MALFORMED_FRAMES_LOG_CAP) {
+						const dataType = event.data instanceof ArrayBuffer ? 'ArrayBuffer' : event.data instanceof Blob ? 'Blob' : typeof event.data;
+						const byteLen = event.data instanceof ArrayBuffer ? event.data.byteLength : event.data instanceof Blob ? event.data.size : 0;
+						console.warn(
+							`[WebSocketClientTransport] Non-string frame #${this._malformedFrames} (type=${dataType}, bytes=${byteLen})`
+						);
+					}
+					if (this._malformedFrames > MALFORMED_FRAMES_FORCE_CLOSE_THRESHOLD) {
+						console.warn(
+							`[WebSocketClientTransport] Malformed frame threshold exceeded; forcing close of ${this._address}.`
+						);
+						this._ws?.close(4002, 'malformed-frames');
+					}
+					return;
+				}
+				const text = event.data;
 				let message: IProtocolMessage;
 				try {
 					message = JSON.parse(text) as IProtocolMessage;

@@ -282,7 +282,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 				// immediately and let `_handleSessionsChange` resume us when
 				// a new session appears.
 				if (errorCategory === 'authExpired' || errorCategory === 'auth') {
-					this._pauseReconnect(address, 'authExpired');
+					this._pauseReconnect(address, errorCategory);
 					throw err;
 				}
 
