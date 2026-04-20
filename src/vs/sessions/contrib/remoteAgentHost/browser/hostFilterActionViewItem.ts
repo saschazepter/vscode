@@ -13,27 +13,33 @@ import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js
 import { Action, IAction, Separator } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
+import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 /**
- * Dropdown button shown in the Agent Sessions titlebar (next to the toggle
- * sidebar button) that indicates the host the workbench is currently
- * scoped to, and lets the user pick a different host or "All Hosts".
+ * Compound titlebar widget shown next to the toggle sidebar button in the
+ * Agent Sessions window. It fills the remaining left-toolbar width (which
+ * matches the sidebar width) and renders two controls side-by-side:
  *
- * The pill also surfaces connection status for the selected host via a
- * leading indicator icon:
- *  - Connected    → green `debug-connected`
- *  - Connecting   → non-interactive `debug-connected` in muted state
- *  - Disconnected → clickable `debug-disconnect` that triggers a connect
+ *  - Left: a dropdown pill indicating the currently selected host; clicking
+ *    opens a context menu to pick a different host or "All Hosts".
+ *  - Right: a connection-status button for the selected host:
+ *      • Connected    → green `debug-connected` (non-interactive)
+ *      • Connecting   → `debug-connected` pulsing, non-interactive
+ *      • Disconnected → clickable `debug-disconnect`; click triggers reconnect
+ *    The connection button is hidden when "All Hosts" is selected.
  */
 export class HostFilterActionViewItem extends BaseActionViewItem {
 
-	private _statusElement: HTMLElement | undefined;
+	private _dropdownElement: HTMLElement | undefined;
 	private _labelElement: HTMLElement | undefined;
-	private _statusHoverDisposable: { dispose(): void } | undefined;
+	private _connectElement: HTMLElement | undefined;
+
+	private readonly _dropdownHover = this._register(new MutableDisposable());
+	private readonly _connectHover = this._register(new MutableDisposable());
 
 	constructor(
 		action: IAction,
@@ -53,40 +59,28 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			return;
 		}
 
-		this.element.classList.add('agent-host-filter');
-		this.element.tabIndex = 0;
-		this.element.role = 'button';
-		this.element.setAttribute('aria-haspopup', 'menu');
+		this.element.classList.add('agent-host-filter-combo');
 
-		// Connection status indicator — shown only when a specific host is selected.
-		this._statusElement = dom.append(this.element, dom.$('span.agent-host-filter-status'));
+		// --- Dropdown pill (left) -----------------------------------------------
+		this._dropdownElement = dom.append(this.element, dom.$('div.agent-host-filter-dropdown'));
+		this._dropdownElement.tabIndex = 0;
+		this._dropdownElement.role = 'button';
+		this._dropdownElement.setAttribute('aria-haspopup', 'menu');
 
-		// Leading icon (generic remote glyph)
-		const iconEl = dom.append(this.element, dom.$('span.agent-host-filter-icon'));
+		const iconEl = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-icon'));
 		iconEl.append(...renderLabelWithIcons(`$(${Codicon.remote.id})`));
 
-		// Label
-		this._labelElement = dom.append(this.element, dom.$('span.agent-host-filter-label'));
+		this._labelElement = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-label'));
 
-		// Chevron
-		const chevronEl = dom.append(this.element, dom.$('span.agent-host-filter-chevron'));
+		const chevronEl = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-chevron'));
 		chevronEl.append(...renderLabelWithIcons(`$(${Codicon.chevronDown.id})`));
 
-		const hoverDelegate = getDefaultHoverDelegate('element');
-		this._register(this._hoverService.setupManagedHover(hoverDelegate, this.element,
-			() => localize('agentHostFilter.hover', "Change the host the sessions list is scoped to")));
-
-		this._register(dom.addDisposableListener(this.element, dom.EventType.CLICK, e => {
-			// Clicks on the status indicator are handled separately.
-			if (this._statusElement && dom.isHTMLElement(e.target) && this._statusElement.contains(e.target)) {
-				return;
-			}
+		this._register(dom.addDisposableListener(this._dropdownElement, dom.EventType.CLICK, e => {
 			e.preventDefault();
 			e.stopPropagation();
 			this._showMenu(e);
 		}));
-
-		this._register(dom.addDisposableListener(this.element, dom.EventType.KEY_DOWN, e => {
+		this._register(dom.addDisposableListener(this._dropdownElement, dom.EventType.KEY_DOWN, e => {
 			const event = new StandardKeyboardEvent(e);
 			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
 				e.preventDefault();
@@ -95,17 +89,28 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			}
 		}));
 
-		this._register(dom.addDisposableListener(this._statusElement, dom.EventType.CLICK, e => {
+		// --- Connection button (right) ------------------------------------------
+		this._connectElement = dom.append(this.element, dom.$('div.agent-host-filter-connect'));
+
+		this._register(dom.addDisposableListener(this._connectElement, dom.EventType.CLICK, e => {
 			e.preventDefault();
 			e.stopPropagation();
-			this._onStatusClick();
+			this._onConnectClick();
+		}));
+		this._register(dom.addDisposableListener(this._connectElement, dom.EventType.KEY_DOWN, e => {
+			const event = new StandardKeyboardEvent(e);
+			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
+				e.preventDefault();
+				e.stopPropagation();
+				this._onConnectClick();
+			}
 		}));
 
 		this._update();
 	}
 
 	private _update(): void {
-		if (!this._labelElement || !this.element || !this._statusElement) {
+		if (!this.element || !this._dropdownElement || !this._labelElement || !this._connectElement) {
 			return;
 		}
 
@@ -114,70 +119,79 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			? undefined
 			: this._filterService.hosts.find(h => h.providerId === selectedId);
 
+		// Dropdown label + aria
 		const text = selected ? selected.label : localize('agentHostFilter.all', "All Hosts");
 		this._labelElement.textContent = text;
 
-		this.element.setAttribute('aria-label', selected
+		this._dropdownElement.setAttribute('aria-label', selected
 			? localize('agentHostFilter.aria.selected', "Sessions scoped to host {0}", selected.label)
 			: localize('agentHostFilter.aria.all', "Sessions from all hosts"));
 
 		this.element.classList.toggle('all-hosts', !selected);
 
-		this._updateStatus(selected);
+		const dropdownHoverDelegate = getDefaultHoverDelegate('element');
+		this._dropdownHover.value = this._hoverService.setupManagedHover(
+			dropdownHoverDelegate,
+			this._dropdownElement,
+			() => localize('agentHostFilter.hover', "Change the host the sessions list is scoped to"),
+		);
+
+		this._updateConnectButton(selected);
 	}
 
-	private _updateStatus(selected: IAgentHostFilterEntry | undefined): void {
-		if (!this._statusElement) {
+	private _updateConnectButton(selected: IAgentHostFilterEntry | undefined): void {
+		if (!this._connectElement) {
 			return;
 		}
 
-		// Reset
-		dom.clearNode(this._statusElement);
-		this._statusElement.classList.remove('connected', 'connecting', 'disconnected', 'clickable');
-		this._statusElement.removeAttribute('aria-disabled');
-		this._statusElement.removeAttribute('role');
-		this._statusElement.removeAttribute('tabindex');
-		this._statusHoverDisposable?.dispose();
-		this._statusHoverDisposable = undefined;
+		dom.clearNode(this._connectElement);
+		this._connectElement.classList.remove('connected', 'connecting', 'disconnected', 'clickable', 'hidden');
+		this._connectElement.removeAttribute('aria-disabled');
+		this._connectElement.removeAttribute('role');
+		this._connectElement.removeAttribute('tabindex');
+		this._connectHover.clear();
 
 		if (!selected) {
-			this._statusElement.style.display = 'none';
+			this._connectElement.classList.add('hidden');
 			return;
 		}
-		this._statusElement.style.display = '';
 
 		let iconId: string;
 		let hoverText: string;
 		switch (selected.status) {
 			case AgentHostFilterConnectionStatus.Connected:
 				iconId = Codicon.debugConnected.id;
-				this._statusElement.classList.add('connected');
+				this._connectElement.classList.add('connected');
+				this._connectElement.setAttribute('aria-disabled', 'true');
 				hoverText = localize('agentHostFilter.status.connected', "Connected to {0}", selected.label);
 				break;
 			case AgentHostFilterConnectionStatus.Connecting:
 				iconId = Codicon.debugConnected.id;
-				this._statusElement.classList.add('connecting');
-				this._statusElement.setAttribute('aria-disabled', 'true');
+				this._connectElement.classList.add('connecting');
+				this._connectElement.setAttribute('aria-disabled', 'true');
 				hoverText = localize('agentHostFilter.status.connecting', "Connecting to {0}…", selected.label);
 				break;
 			case AgentHostFilterConnectionStatus.Disconnected:
 			default:
 				iconId = Codicon.debugDisconnect.id;
-				this._statusElement.classList.add('disconnected', 'clickable');
-				this._statusElement.setAttribute('role', 'button');
-				this._statusElement.setAttribute('tabindex', '0');
+				this._connectElement.classList.add('disconnected', 'clickable');
+				this._connectElement.setAttribute('role', 'button');
+				this._connectElement.tabIndex = 0;
 				hoverText = localize('agentHostFilter.status.disconnected', "Disconnected from {0}. Click to connect.", selected.label);
 				break;
 		}
-		this._statusElement.append(...renderLabelWithIcons(`$(${iconId})`));
-		this._statusElement.setAttribute('aria-label', hoverText);
+		this._connectElement.append(...renderLabelWithIcons(`$(${iconId})`));
+		this._connectElement.setAttribute('aria-label', hoverText);
 
-		const hoverDelegate = getDefaultHoverDelegate('element');
-		this._statusHoverDisposable = this._hoverService.setupManagedHover(hoverDelegate, this._statusElement, () => hoverText);
-		this._register(this._statusHoverDisposable);
+		const connectHoverDelegate = getDefaultHoverDelegate('element');
+		this._connectHover.value = this._hoverService.setupManagedHover(
+			connectHoverDelegate,
+			this._connectElement,
+			() => hoverText,
+		);
 	}
 
-	private _onStatusClick(): void {
+	private _onConnectClick(): void {
 		const selectedId = this._filterService.selectedProviderId;
 		if (selectedId === ALL_HOSTS_FILTER) {
 			return;
@@ -190,7 +204,7 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 	}
 
 	private _showMenu(e: MouseEvent | KeyboardEvent): void {
-		if (!this.element) {
+		if (!this._dropdownElement) {
 			return;
 		}
 
@@ -199,14 +213,13 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 
 		const actions: IAction[] = [];
 
-		const allAction = new Action(
+		actions.push(new Action(
 			'agentHostFilter.all',
 			localize('agentHostFilter.all', "All Hosts"),
 			selectedId === ALL_HOSTS_FILTER ? 'codicon codicon-check' : undefined,
 			true,
 			async () => this._filterService.setSelectedProviderId(ALL_HOSTS_FILTER),
-		);
-		actions.push(allAction);
+		));
 
 		if (hosts.length > 0) {
 			actions.push(new Separator());
@@ -227,13 +240,13 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		}
 
 		const anchor = dom.isMouseEvent(e)
-			? new StandardMouseEvent(dom.getWindow(this.element), e)
-			: this.element;
+			? new StandardMouseEvent(dom.getWindow(this._dropdownElement), e)
+			: this._dropdownElement;
 
 		this._contextMenuService.showContextMenu({
 			getAnchor: () => anchor,
 			getActions: () => actions,
-			domForShadowRoot: this.element,
+			domForShadowRoot: this._dropdownElement,
 		});
 	}
 }

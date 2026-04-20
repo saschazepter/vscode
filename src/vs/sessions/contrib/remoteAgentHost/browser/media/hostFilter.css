@@ -3,106 +3,136 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.agent-host-filter {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	height: 22px;
-	padding: 0 6px;
-	margin: 0 2px;
-	cursor: pointer;
-	color: var(--vscode-titleBar-activeForeground);
-	border-radius: 4px;
-	max-width: 200px;
-	font-size: 12px;
-	user-select: none;
-	-webkit-user-select: none;
-	touch-action: manipulation;
-}
-
-.agent-host-filter:hover {
-	background-color: var(--vscode-toolbar-hoverBackground);
-}
-
-.agent-host-filter:focus-visible {
-	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
-}
-
-.agent-host-filter .agent-host-filter-icon,
-.agent-host-filter .agent-host-filter-chevron {
-	display: flex;
-	align-items: center;
-	flex: 0 0 auto;
-}
-
-.agent-host-filter .agent-host-filter-icon .codicon {
-	font-size: 14px;
-}
-
-.agent-host-filter .agent-host-filter-chevron .codicon {
-	font-size: 12px;
-	opacity: 0.8;
-}
-
-.agent-host-filter .agent-host-filter-label {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	flex: 0 1 auto;
+/* Compound widget (dropdown pill + connect button). Stretches to fill the left toolbar width so the connect button aligns with the sidebar's right edge. */
+.monaco-workbench .part.titlebar .left-toolbar-container .monaco-action-bar .action-item.agent-host-filter-combo,
+.monaco-workbench .part.titlebar .left-toolbar-container .monaco-action-bar .action-item:has(> .agent-host-filter-combo) {
+	flex: 1 1 auto;
 	min-width: 0;
 }
 
-.agent-host-filter.all-hosts .agent-host-filter-label {
-	opacity: 0.85;
+.agent-host-filter-combo {
+display: flex;
+align-items: center;
+flex: 1 1 auto;
+min-width: 0;
+gap: 4px;
+height: 22px;
+padding-right: 4px;
 }
 
-.agent-host-filter .agent-host-filter-status {
-	display: flex;
-	align-items: center;
-	flex: 0 0 auto;
-	padding: 0 2px;
-	border-radius: 3px;
+/* --- Dropdown pill ------------------------------------------------------ */
+
+.agent-host-filter-combo .agent-host-filter-dropdown {
+display: flex;
+align-items: center;
+gap: 4px;
+height: 22px;
+padding: 0 6px;
+margin: 0 2px;
+cursor: pointer;
+color: var(--vscode-titleBar-activeForeground);
+border-radius: 4px;
+font-size: 12px;
+user-select: none;
+-webkit-user-select: none;
+touch-action: manipulation;
+flex: 1 1 auto;
+min-width: 0;
+max-width: 260px;
 }
 
-.agent-host-filter .agent-host-filter-status .codicon {
-	font-size: 14px;
+.agent-host-filter-combo .agent-host-filter-dropdown:hover {
+background-color: var(--vscode-toolbar-hoverBackground);
 }
 
-.agent-host-filter .agent-host-filter-status.connected .codicon {
-	color: var(--vscode-testing-iconPassed, var(--vscode-debugIcon-startForeground, #388a34));
+.agent-host-filter-combo .agent-host-filter-dropdown:focus-visible {
+outline: 1px solid var(--vscode-focusBorder);
+outline-offset: -1px;
 }
 
-.agent-host-filter .agent-host-filter-status.connecting .codicon {
-	color: var(--vscode-debugIcon-startForeground, #388a34);
-	opacity: 0.6;
-	animation: agent-host-filter-pulse 1.2s ease-in-out infinite;
+.agent-host-filter-combo .agent-host-filter-icon,
+.agent-host-filter-combo .agent-host-filter-chevron {
+display: flex;
+align-items: center;
+flex: 0 0 auto;
 }
 
-.agent-host-filter .agent-host-filter-status.disconnected .codicon {
-	color: var(--vscode-descriptionForeground);
-	opacity: 0.85;
+.agent-host-filter-combo .agent-host-filter-icon .codicon {
+font-size: 14px;
 }
 
-.agent-host-filter .agent-host-filter-status.clickable {
-	cursor: pointer;
+.agent-host-filter-combo .agent-host-filter-chevron .codicon {
+font-size: 12px;
+opacity: 0.8;
 }
 
-.agent-host-filter .agent-host-filter-status.clickable:hover {
-	background-color: var(--vscode-toolbar-hoverBackground);
+.agent-host-filter-combo .agent-host-filter-label {
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+flex: 1 1 auto;
+min-width: 0;
 }
 
-.agent-host-filter .agent-host-filter-status.clickable:hover .codicon {
-	color: var(--vscode-foreground);
-	opacity: 1;
+.agent-host-filter-combo.all-hosts .agent-host-filter-label {
+opacity: 0.85;
 }
 
-.agent-host-filter .agent-host-filter-status.clickable:focus-visible {
-	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
+/* --- Connection button (right edge) ------------------------------------- */
+
+.agent-host-filter-combo .agent-host-filter-connect {
+display: flex;
+align-items: center;
+justify-content: center;
+flex: 0 0 auto;
+margin-left: auto;
+width: 22px;
+height: 22px;
+border-radius: 4px;
+touch-action: manipulation;
+-webkit-user-select: none;
+user-select: none;
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.hidden {
+display: none;
+}
+
+.agent-host-filter-combo .agent-host-filter-connect .codicon {
+font-size: 14px;
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.connected .codicon {
+color: var(--vscode-testing-iconPassed, var(--vscode-debugIcon-startForeground, #388a34));
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.connecting .codicon {
+color: var(--vscode-debugIcon-startForeground, #388a34);
+animation: agent-host-filter-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.disconnected .codicon {
+color: var(--vscode-descriptionForeground);
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.clickable {
+cursor: pointer;
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.clickable:hover {
+background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.clickable:hover .codicon {
+color: var(--vscode-foreground);
+}
+
+.agent-host-filter-combo .agent-host-filter-connect.clickable:focus-visible {
+outline: 1px solid var(--vscode-focusBorder);
+outline-offset: -1px;
 }
 
 @keyframes agent-host-filter-pulse {
-	0%, 100% { opacity: 0.4; }
-	50% { opacity: 1; }
+0%, 100% { opacity: 0.4; }
+50% { opacity: 1; }
 }
