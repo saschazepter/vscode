@@ -547,4 +547,44 @@ function createDocumentSymbol(
 		assert.deepStrictEqual(result!.range, new Range(1, 0, 1, 0));
 		assert.strictEqual(result!.newText, '');
 	});
+
+	test('insertion on next line in fieldLabels object', () => {
+		const doc = `import React, { useState } from "react";
+
+interface FormData {
+    firstName: string;
+    lastName: string;
+    password: string;
+    email: string;
+    age: string;
+    city: string;
+}
+
+const initialFormData: FormData = {
+    firstName: "",
+    lastName: "",
+    password: "",
+    email: "",
+    age: "",
+    city: "",
+};
+
+const fieldLabels: Record<keyof FormData, string> = {
+    firstName: "First Name",
+    lastName: "Last Name",
+    email: "Email Address",
+    age: "Age",
+    city: "City",
+};
+`;
+		const document = createTextDocumentData(Uri.from({ scheme: 'test', path: '/test/file.tsx' }), doc, 'typescriptreact').document;
+		const cursorPosition = new Position(22, 26); // end of `    lastName: "Last Name",`
+		const replaceRange = new Range(23, 0, 23, 0);
+		const replaceText = '    password: "Password",\n';
+
+		const result = toInlineSuggestion(cursorPosition, document, replaceRange, replaceText, true);
+		assert.isDefined(result);
+		assert.deepStrictEqual(result!.range, new Range(22, 26, 22, 26));
+		assert.strictEqual(result!.newText, '\n' + replaceText);
+	});
 });
