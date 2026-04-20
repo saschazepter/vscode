@@ -168,13 +168,13 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 
 		const collapseToggleTitle = localize('chat.questionCarousel.collapseTitle', 'Collapse Questions');
 		const collapseButton = interactiveStore.add(new Button(this._headerActionsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		collapseButton.element.classList.add('chat-question-collapse-toggle');
+		collapseButton.element.classList.add('chat-question-toggle', 'chat-question-collapse-toggle');
 		collapseButton.element.setAttribute('aria-label', collapseToggleTitle);
 		this._collapseButton = collapseButton;
 
 		// Expand button for showing/hiding full question text
 		const expandButton = interactiveStore.add(new Button(this._headerActionsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		expandButton.element.classList.add('chat-question-collapse-toggle');
+		expandButton.element.classList.add('chat-question-toggle', 'chat-question-expand-toggle');
 		this._expandButton = expandButton;
 		this._isQuestionTextExpanded = false;
 		this.updateExpandButton();
@@ -734,6 +734,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			title.setAttribute('aria-label', messageContent);
 
 			const isLong = messageContent.length > QUESTION_TITLE_TRUNCATION_THRESHOLD;
+			const titleRenderDisposable = questionRenderStore.add(new MutableDisposable());
 			const renderTitle = (expanded: boolean) => {
 				dom.clearNode(title);
 				const plainTextValue = isMarkdownString(questionText) ? renderAsPlaintext(questionText) : questionText;
@@ -741,12 +742,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 					? plainTextValue.slice(0, QUESTION_TITLE_TRUNCATION_THRESHOLD).replace(/\s+\S*$/, '') + '…'
 					: plainTextValue;
 				const md = expanded && isMarkdownString(questionText)
-					? new MarkdownString(
-						question.required ? `${questionText.value} *` : questionText.value,
-						{ isTrusted: questionText.isTrusted, supportThemeIcons: questionText.supportThemeIcons }
-					)
+					? MarkdownString.lift({ ...questionText, value: question.required ? `${questionText.value} *` : questionText.value })
 					: new MarkdownString(question.required ? `${collapsedValue} *` : collapsedValue);
-				const rendered = questionRenderStore.add(this._markdownRendererService.render(md));
+				const rendered = this._markdownRendererService.render(md);
+				titleRenderDisposable.value = rendered;
 				title.appendChild(rendered.element);
 			};
 
