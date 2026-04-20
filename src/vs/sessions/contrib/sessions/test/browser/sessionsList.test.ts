@@ -6,10 +6,11 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { observableValue } from '../../../../../base/common/observable.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IChat, ISession, SessionStatus } from '../../../../services/sessions/common/session.js';
-import { groupByWorkspace, groupSessionsForList, sortSessions, SessionsGrouping, SessionsSorting } from '../../browser/views/sessionsList.js';
+import { getSessionStatusIcon, groupByWorkspace, groupSessionsForList, sortSessions, SessionsGrouping, SessionsSorting } from '../../browser/views/sessionsListHelpers.js';
 
 function createSession(id: string, opts: {
 	workspaceLabel?: string;
@@ -183,6 +184,25 @@ suite('Sessions - SessionsList Helpers', () => {
 
 			assert.deepStrictEqual(sections.map(section => section.id), ['archived']);
 			assert.deepStrictEqual(sections[0].sessions.map(session => session.sessionId), ['archived-pinned']);
+		});
+	});
+
+	suite('getSessionStatusIcon', () => {
+
+		test('uses static loading icon when reduced motion is enabled', () => {
+			const icon = getSessionStatusIcon(SessionStatus.InProgress, true, false, true);
+
+			assert.strictEqual(icon.id, Codicon.loading.id);
+			assert.strictEqual(ThemeIcon.getModifier(icon), undefined);
+			assert.strictEqual(icon.color?.id, 'textLink.foreground');
+		});
+
+		test('uses spinning loading icon when reduced motion is disabled', () => {
+			const icon = getSessionStatusIcon(SessionStatus.InProgress, true, false, false);
+
+			assert.strictEqual(icon.id, `${Codicon.loading.id}~spin`);
+			assert.strictEqual(ThemeIcon.getModifier(icon), 'spin');
+			assert.strictEqual(icon.color?.id, 'textLink.foreground');
 		});
 	});
 });
