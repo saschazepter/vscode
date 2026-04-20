@@ -144,7 +144,7 @@
 			}
 		}
 
-		.monaco-button.chat-question-toggle {
+		.monaco-button.chat-question-collapse-toggle {
 			min-width: 22px;
 			width: 22px;
 			height: 22px;
@@ -155,7 +155,7 @@
 			color: var(--vscode-icon-foreground) !important;
 		}
 
-		.monaco-button.chat-question-toggle:hover:not(.disabled) {
+		.monaco-button.chat-question-collapse-toggle:hover:not(.disabled) {
 			background: var(--vscode-toolbar-hoverBackground) !important;
 		}
 	}

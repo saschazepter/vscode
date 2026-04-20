@@ -39,7 +39,6 @@ import './media/chatQuestionCarousel.css';
 
 const PREVIOUS_QUESTION_ACTION_ID = 'workbench.action.chat.previousQuestion';
 const NEXT_QUESTION_ACTION_ID = 'workbench.action.chat.nextQuestion';
-const QUESTION_TITLE_TRUNCATION_THRESHOLD = 200;
 export interface IChatQuestionCarouselOptions {
 	onSubmit: (answers: Map<string, IChatQuestionAnswerValue> | undefined) => void;
 	shouldAutoFocus?: boolean;
@@ -73,10 +72,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	private _skipAllButton: Button | undefined;
 
 	private _isSkipped = false;
-	private _isQuestionTextExpanded = false;
-	private _expandButton: Button | undefined;
-	private _renderQuestionTitle: ((expanded: boolean) => void) | undefined;
-	private _questionTitleIsLong = false;
 
 	private readonly _textInputBoxes: Map<string, InputBox> = new Map();
 	private readonly _singleSelectItems: Map<string, { items: HTMLElement[]; selectedIndex: number; optionIndices: number[] }> = new Map();
@@ -168,17 +163,9 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 
 		const collapseToggleTitle = localize('chat.questionCarousel.collapseTitle', 'Collapse Questions');
 		const collapseButton = interactiveStore.add(new Button(this._headerActionsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		collapseButton.element.classList.add('chat-question-toggle', 'chat-question-collapse-toggle');
+		collapseButton.element.classList.add('chat-question-collapse-toggle');
 		collapseButton.element.setAttribute('aria-label', collapseToggleTitle);
 		this._collapseButton = collapseButton;
-
-		// Expand button for showing/hiding full question text
-		const expandButton = interactiveStore.add(new Button(this._headerActionsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		expandButton.element.classList.add('chat-question-toggle', 'chat-question-expand-toggle');
-		this._expandButton = expandButton;
-		this._isQuestionTextExpanded = false;
-		this.updateExpandButton();
-		interactiveStore.add(expandButton.onDidClick(() => this.toggleQuestionTextExpanded()));
 
 		// Close/skip button (X) - placed in header row, only shown when allowSkip is true
 		if (carousel.allowSkip) {
@@ -325,31 +312,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		}
 	}
 
-	private toggleQuestionTextExpanded(): void {
-		this._isQuestionTextExpanded = !this._isQuestionTextExpanded;
-		if (this._renderQuestionTitle) {
-			this._renderQuestionTitle(this._isQuestionTextExpanded);
-		}
-		this.updateExpandButton();
-		this._onDidChangeHeight.fire();
-	}
-
-	private updateExpandButton(): void {
-		if (!this._expandButton) {
-			return;
-		}
-		const expanded = this._isQuestionTextExpanded;
-		const label = expanded
-			? localize('chat.questionCarousel.collapseQuestionText', "Collapse Question Text")
-			: localize('chat.questionCarousel.expandQuestionText', "Expand Question Text");
-		this._expandButton.label = expanded
-			? `$(${Codicon.screenNormal.id})`
-			: `$(${Codicon.screenFull.id})`;
-		this._expandButton.element.setAttribute('aria-label', label);
-		this._expandButton.element.setAttribute('aria-expanded', String(expanded));
-		this._expandButton.setTitle(label);
-	}
-
 	/**
 	 * Navigates the carousel by the given delta.
 	 * @param delta Negative for previous, positive for next
@@ -463,7 +425,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		this._closeButtonContainer = undefined;
 		this._focusTerminalButtonContainer = undefined;
 		this._collapseButton = undefined;
-		this._expandButton = undefined;
 		this._footerRow = undefined;
 		this._stepIndicator = undefined;
 		this._submitHint = undefined;
@@ -703,12 +664,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Clear previous content
 		dom.clearNode(this._questionContainer);
 
-		// Reset expand state for new question
-		this._isQuestionTextExpanded = false;
-		this._renderQuestionTitle = undefined;
-		this._questionTitleIsLong = false;
-		this.updateExpandButton();
-
 		const question = this.carousel.questions[this._currentIndex];
 		if (!question) {
 			return;
@@ -733,39 +688,20 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			const messageContent = this.getQuestionText(questionText);
 			title.setAttribute('aria-label', messageContent);
 
-			const isLong = messageContent.length > QUESTION_TITLE_TRUNCATION_THRESHOLD;
-			const titleRenderDisposable = questionRenderStore.add(new MutableDisposable());
-			const renderTitle = (expanded: boolean) => {
-				dom.clearNode(title);
-				const plainTextValue = isMarkdownString(questionText) ? renderAsPlaintext(questionText) : questionText;
-				const collapsedValue = isLong
-					? plainTextValue.slice(0, QUESTION_TITLE_TRUNCATION_THRESHOLD).replace(/\s+\S*$/, '') + '…'
-					: plainTextValue;
-				const md = expanded && isMarkdownString(questionText)
-					? MarkdownString.lift({ ...questionText, value: question.required ? `${questionText.value} *` : questionText.value })
-					: new MarkdownString(question.required ? `${collapsedValue} *` : collapsedValue);
-				const rendered = this._markdownRendererService.render(md);
-				titleRenderDisposable.value = rendered;
-				title.appendChild(rendered.element);
-			};
-
-			renderTitle(this._isQuestionTextExpanded);
-			this._renderQuestionTitle = renderTitle;
-			this._questionTitleIsLong = isLong;
+			const rawValue = isMarkdownString(questionText) ? questionText.value : questionText;
+			const suffixed = question.required ? `${rawValue} *` : rawValue;
+			const md = isMarkdownString(questionText)
+				? MarkdownString.lift({ ...questionText, value: suffixed })
+				: new MarkdownString(suffixed);
+			const rendered = questionRenderStore.add(this._markdownRendererService.render(md));
+			title.appendChild(rendered.element);
 			titleRow.appendChild(title);
-		} else {
-			this._renderQuestionTitle = undefined;
-			this._questionTitleIsLong = false;
 		}
 
 		headerRow.appendChild(titleRow);
 
 		if (this._headerActionsContainer) {
 			dom.clearNode(this._headerActionsContainer);
-			if (this._expandButton) {
-				this._headerActionsContainer.appendChild(this._expandButton.element);
-				dom.setVisibility(this._questionTitleIsLong, this._expandButton.element);
-			}
 			if (this._focusTerminalButtonContainer) {
 				this._headerActionsContainer.appendChild(this._focusTerminalButtonContainer);
 			}
