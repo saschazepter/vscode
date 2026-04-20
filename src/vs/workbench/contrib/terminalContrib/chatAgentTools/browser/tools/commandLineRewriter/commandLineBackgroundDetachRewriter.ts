@@ -48,7 +48,7 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 	private _rewriteForPosix(options: ICommandLineRewriterOptions): ICommandLineRewriterResult {
 		// If the command already ends with a single trailing `&` (background operator,
 		// as opposed to `&&` for command chaining), don't append another one.
-		const trimmed = options.commandLine.replace(/\s+$/, '');
+		const trimmed = options.commandLine.trimEnd();
 		const endsWithBackgroundAmp = /(?:^|[^&])&$/.test(trimmed);
 		const rewritten = endsWithBackgroundAmp
 			? `nohup ${trimmed}`
