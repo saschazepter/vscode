@@ -139,6 +139,22 @@
 		top: 1.5px;
 	}
 
+	/* Align the find widget close button with the toolbar's open/search button (22x22) */
+	.agent-sessions-find-widget-container > .monaco-tree-type-filter > .monaco-tree-type-filter-actionbar {
+		display: flex;
+		align-items: center;
+		margin-left: 4px;
+	}
+
+	.agent-sessions-find-widget-container > .monaco-tree-type-filter > .monaco-tree-type-filter-actionbar .monaco-action-bar .action-label {
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
 	/* Compact "New" button in header */
 	.agent-sessions-compact-new-button.monaco-button {
 		display: inline-flex;
