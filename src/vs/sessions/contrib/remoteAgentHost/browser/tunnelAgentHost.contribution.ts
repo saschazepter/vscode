@@ -7,7 +7,7 @@ import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../
 import { isWeb } from '../../../../base/common/platform.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import * as nls from '../../../../nls.js';
-import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { IRemoteAgentHostService, RemoteAgentHostAutoConnectSettingId, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ITunnelAgentHostService, TUNNEL_ADDRESS_PREFIX, type ITunnelInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -42,6 +42,12 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 	private readonly _providerInstances = new Map<string, RemoteAgentHostSessionsProvider>();
 	private readonly _pendingConnects = new Map<string, Promise<void>>();
 	private _lastStatusCheck = 0;
+	/**
+	 * `false` until the first {@link _silentStatusCheck} resolves. Until then
+	 * we keep newly-created providers in the `Connecting` state so the picker
+	 * doesn't briefly show every cached tunnel as "Offline" on startup.
+	 */
+	private _initialStatusChecked = false;
 
 	/** Previous connection status per address — used to detect Connected→Disconnected transitions. */
 	private readonly _previousStatuses = new Map<string, RemoteAgentHostConnectionStatus>();
@@ -171,9 +177,13 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			RemoteAgentHostSessionsProvider, {
 			address,
 			name,
-			connectOnDemand: () => this._connectTunnel(address),
+			connectOnDemand: () => this._connectTunnel(address, { userInitiated: true }),
 		},
 		);
+		// Surface as "Connecting" until the first silent status check or an
+		// auto-connect attempt determines the real state; otherwise the picker
+		// flashes "Offline" for every cached tunnel on startup.
+		provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Connecting);
 		store.add(provider);
 		store.add(this._sessionsProvidersService.registerProvider(provider));
 		this._providerInstances.set(address, provider);
@@ -189,6 +199,10 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			if (connectionInfo) {
 				provider.setConnectionStatus(connectionInfo.status);
 			} else if (this._pendingConnects.has(address)) {
+				provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Connecting);
+			} else if (!this._initialStatusChecked) {
+				// Keep the initial "Connecting" state so the picker doesn't
+				// flash "Offline" before the first silent status check runs.
 				provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Connecting);
 			} else {
 				provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Disconnected);
@@ -219,7 +233,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 	 * Establish a relay connection to a cached tunnel. Called on demand
 	 * when the user invokes the browse action on an online-but-not-connected tunnel.
 	 */
-	private _connectTunnel(address: string): Promise<void> {
+	private _connectTunnel(address: string, options: { readonly userInitiated: boolean }): Promise<void> {
 		const existing = this._pendingConnects.get(address);
 		if (existing) {
 			return existing;
@@ -239,15 +253,16 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 
 		const promise = (async () => {
 			// Show a progress notification after a short delay so quick
-			// connects don't flash a notification.
+			// connects don't flash a notification. Only show for user-initiated
+			// connects; background auto-connects and reconnects stay silent.
 			let handle: { close(): void } | undefined;
-			const timer = setTimeout(() => {
+			const timer = options.userInitiated ? setTimeout(() => {
 				handle = this._notificationService.notify({
 					severity: Severity.Info,
 					message: nls.localize('tunnelConnecting', "Connecting to tunnel '{0}'...", cached.name),
 					progress: { infinite: true },
 				});
-			}, 1000);
+			}, 1000) : undefined;
 
 			this._updateConnectionStatuses();
 			try {
@@ -279,7 +294,9 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 				}
 				throw err;
 			} finally {
-				clearTimeout(timer);
+				if (timer !== undefined) {
+					clearTimeout(timer);
+				}
 				handle?.close();
 				this._pendingConnects.delete(address);
 				this._updateConnectionStatuses();
@@ -412,7 +429,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			}
 
 			this._reconnectAttempts.set(address, attempt + 1);
-			this._connectTunnel(address).catch(() => { /* _connectTunnel already re-schedules on failure */ });
+			this._connectTunnel(address, { userInitiated: false }).catch(() => { /* _connectTunnel already re-schedules on failure */ });
 		}, delay);
 		this._reconnectTimeouts.set(address, timer);
 	}
@@ -607,6 +624,8 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 	private async _silentStatusCheck(): Promise<void> {
 		const enabled = this._configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId);
 		if (!enabled) {
+			this._initialStatusChecked = true;
+			this._updateConnectionStatuses();
 			return;
 		}
 
@@ -618,6 +637,8 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			onlineTunnels = await this._tunnelService.listTunnels({ silent: true });
 		} catch {
 			// No cached token or network error — leave statuses as-is
+			this._initialStatusChecked = true;
+			this._updateConnectionStatuses();
 			return;
 		}
 
@@ -643,7 +664,8 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			// Update online/offline status based on hostConnectionCount.
 			// For tunnels, Connected means "host is online" (clickable to connect),
 			// Disconnected means "host is offline". Actual relay connection
-			// establishment happens when the user clicks the tunnel.
+			// establishment happens when the user clicks the tunnel (or via
+			// auto-connect below when enabled).
 			const onlineTunnelMap = new Map(onlineTunnels.map(t => [t.tunnelId, t]));
 			for (const [address, provider] of this._providerInstances) {
 				// Skip tunnels that already have an active relay connection
@@ -660,13 +682,18 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 					provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Connected);
 				} else {
 					provider.setConnectionStatus(RemoteAgentHostConnectionStatus.Disconnected);
+					// Host is not online — drop any cached sessions we were
+					// showing for it so the UI doesn't list stale entries.
+					provider.unpublishCachedSessions();
 				}
 			}
 
-			// Auto-connect online tunnels that aren't connected yet.
-			// On web there is no workspace picker to trigger manual connection,
-			// so we connect eagerly when a tunnel is discovered and online.
-			if (isWeb) {
+			// Auto-connect online tunnels that aren't connected yet when the
+			// user has opted into auto-connect (default on). This mirrors the
+			// web embedder behaviour where no workspace picker is available
+			// to trigger manual connection.
+			const autoConnect = this._configurationService.getValue<boolean>(RemoteAgentHostAutoConnectSettingId);
+			if (autoConnect) {
 				for (const tunnel of onlineTunnels) {
 					if (tunnel.hostConnectionCount > 0) {
 						const address = `${TUNNEL_ADDRESS_PREFIX}${tunnel.tunnelId}`;
@@ -674,12 +701,15 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 							c => c.address === address && c.status === RemoteAgentHostConnectionStatus.Connected
 						);
 						if (!alreadyConnected) {
-							this._connectTunnel(address);
+							this._connectTunnel(address, { userInitiated: false });
 						}
 					}
 				}
 			}
 		}
+
+		this._initialStatusChecked = true;
+		this._updateConnectionStatuses();
 	}
 }
 

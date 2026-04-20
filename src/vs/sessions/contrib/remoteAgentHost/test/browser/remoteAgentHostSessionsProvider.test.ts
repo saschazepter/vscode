@@ -177,7 +177,7 @@ function createSession(id: string, opts?: { provider?: string; summary?: string;
 	};
 }
 
-function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined; sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; openSession?: boolean }): RemoteAgentHostSessionsProvider {
+function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined; sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; openSession?: boolean; storageService?: IStorageService; noConnection?: boolean }): RemoteAgentHostSessionsProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
 	instantiationService.stub(IFileDialogService, {});
@@ -196,7 +196,7 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	instantiationService.stub(ILanguageModelsService, {
 		lookupLanguageModel: () => undefined,
 	});
-	instantiationService.stub(IStorageService, disposables.add(new InMemoryStorageService()));
+	instantiationService.stub(IStorageService, overrides?.storageService ?? disposables.add(new InMemoryStorageService()));
 
 	const config: IRemoteAgentHostSessionsProviderConfig = {
 		address: overrides?.address ?? 'localhost:4321',
@@ -204,7 +204,9 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	};
 
 	const provider = disposables.add(instantiationService.createInstance(RemoteAgentHostSessionsProvider, config));
-	provider.setConnection(connection);
+	if (!overrides?.noConnection) {
+		provider.setConnection(connection);
+	}
 	return provider;
 }
 
@@ -759,6 +761,61 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		// Sticky: a subsequent re-auth pass must not flicker the UI back to loading.
 		provider.setAuthenticationPending(true);
 		assert.strictEqual(session!.loading.get(), false);
+	}));
+
+	test('unpublishCachedSessions hides sessions but retains persisted cache', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const storageService = disposables.add(new InMemoryStorageService());
+		connection.addSession(createSession('keep-me', { summary: 'Keep Me' }));
+		const provider = createProvider(disposables, connection, { storageService });
+		await timeout(0);
+		assert.strictEqual(provider.getSessions().length, 1);
+
+		const events: ISessionChangeEvent[] = [];
+		disposables.add(provider.onDidChangeSessions(e => events.push(e)));
+
+		provider.unpublishCachedSessions();
+
+		// Sessions are hidden from the listing immediately.
+		assert.deepStrictEqual(
+			{
+				sessionCount: provider.getSessions().length,
+				eventRemovedTitles: events.flatMap(e => e.removed.map(s => s.title.get())),
+			},
+			{ sessionCount: 0, eventRemovedTitles: ['Keep Me'] },
+		);
+
+		// Flush triggers onWillSaveState; the metadata must survive so the
+		// session re-serializes instead of being dropped from storage.
+		await storageService.flush();
+
+		const provider2 = createProvider(disposables, new MockAgentConnection(), { storageService, noConnection: true });
+		assert.deepStrictEqual(
+			provider2.getSessions().map(s => s.title.get()),
+			['Keep Me'],
+		);
+	}));
+
+	test('setConnection after unpublishCachedSessions restores cached sessions', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		connection.addSession(createSession('restore-me', { summary: 'Restore Me' }));
+		const provider = createProvider(disposables, connection);
+		await timeout(0);
+		assert.strictEqual(provider.getSessions().length, 1);
+
+		provider.unpublishCachedSessions();
+		assert.strictEqual(provider.getSessions().length, 0);
+
+		// Simulate the host coming back online with a fresh connection that
+		// still reports the same session.
+		const reconnected = new MockAgentConnection();
+		disposables.add(toDisposable(() => reconnected.dispose()));
+		reconnected.addSession(createSession('restore-me', { summary: 'Restore Me' }));
+		provider.setConnection(reconnected);
+		await timeout(0);
+
+		assert.deepStrictEqual(
+			provider.getSessions().map(s => s.title.get()),
+			['Restore Me'],
+		);
 	}));
 
 	test('sendAndCreateChat throws for unknown session', async () => {
