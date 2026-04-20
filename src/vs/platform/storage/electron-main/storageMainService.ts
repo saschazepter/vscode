@@ -8,7 +8,7 @@ import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { join } from '../../../base/common/path.js';
 import { IStorage } from '../../../base/parts/storage/common/storage.js';
-import { IEnvironmentService } from '../../environment/common/environment.js';
+import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, LifecycleMainPhase, ShutdownReason } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -21,6 +21,8 @@ import { IAnyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IUriIdentityService } from '../../uriIdentity/common/uriIdentity.js';
 import { Schemas } from '../../../base/common/network.js';
 import { ICrossAppIPCService } from '../../crossAppIpc/electron-main/crossAppIpcService.js';
+import { IProductService } from '../../product/common/productService.js';
+import { getHostUserDataPath } from '../../environment/node/userDataPath.js';
 
 //#region Storage Main Service (intent: make application, profile and workspace storage accessible to windows from main process)
 
@@ -94,12 +96,13 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
-		@IEnvironmentService private readonly environmentService: IEnvironmentService,
+		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@IUserDataProfilesMainService private readonly userDataProfilesService: IUserDataProfilesMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@IFileService private readonly fileService: IFileService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
-		@ICrossAppIPCService private readonly crossAppIPCService: ICrossAppIPCService
+		@ICrossAppIPCService private readonly crossAppIPCService: ICrossAppIPCService,
+		@IProductService private readonly productService: IProductService
 	) {
 		super();
 
@@ -206,7 +209,18 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 		this.logService.trace(`StorageMainService: creating application shared storage`);
 
 		const sharedStorageFolderPath = join(this.environmentService.appSharedDataHome.with({ scheme: Schemas.file }).fsPath, 'sharedStorage');
-		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService);
+
+		// When running as the embedded (Agents) app, compute the host (VS Code)
+		// app's application storage DB path so it can serve as a fallback for
+		// keys that have not yet been migrated to the shared storage.
+		let fallbackDatabasePath: string | undefined;
+		const hostUserDataPath = getHostUserDataPath(this.environmentService.args, this.productService.nameShort);
+		if (hostUserDataPath) {
+			fallbackDatabasePath = join(hostUserDataPath, 'User', 'globalStorage', 'state.vscdb');
+			this.logService.trace(`StorageMainService: using host app fallback storage at ${fallbackDatabasePath}`);
+		}
+
+		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService, fallbackDatabasePath);
 
 		this._register(Event.once(applicationSharedStorage.onDidCloseStorage)(() => {
 			this.logService.trace(`StorageMainService: closed application shared storage`);

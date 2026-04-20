@@ -42,6 +42,36 @@ export function getUserDataPath(cliArgs: NativeParsedArgs, productName: string):
 	return resolve(...pathsToResolve);
 }
 
+/**
+ * Returns the user data path for the host (VS Code) app when running
+ * as the embedded (Agents) app. Returns `undefined` when not running
+ * as the embedded app, or when the host path cannot be determined
+ * (portable mode, explicit --user-data-dir).
+ */
+export function getHostUserDataPath(cliArgs: NativeParsedArgs, productName: string): string | undefined {
+	if (!(process as INodeProcess).isEmbeddedApp) {
+		return undefined;
+	}
+
+	return doGetHostUserDataPath(cliArgs, productName);
+}
+
+function doGetHostUserDataPath(cliArgs: NativeParsedArgs, productName: string): string | undefined {
+
+	// Running out of sources: host is always 'code-oss-dev'
+	if (process.env['VSCODE_DEV']) {
+		productName = 'code-oss-dev';
+	}
+
+	// Portable mode and explicit --user-data-dir: we cannot know
+	// the host app's user data path, so return undefined.
+	if (process.env['VSCODE_PORTABLE'] || cliArgs['user-data-dir']) {
+		return undefined;
+	}
+
+	return resolve(getAppDataPath(productName));
+}
+
 function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): string {
 
 	// 0. Running out of sources has a fixed productName
@@ -60,7 +90,7 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
 	}
 
 	// 2. Support global VSCODE_APPDATA environment variable
-	let appDataPath = process.env['VSCODE_APPDATA'];
+	const appDataPath = process.env['VSCODE_APPDATA'];
 	if (appDataPath) {
 		return join(appDataPath, productName);
 	}
@@ -75,6 +105,15 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
 	}
 
 	// 4. Otherwise check per platform
+	return getAppDataPath(productName);
+}
+
+function getAppDataPath(productName: string): string {
+	let appDataPath = process.env['VSCODE_APPDATA'];
+	if (appDataPath) {
+		return join(appDataPath, productName);
+	}
+
 	switch (process.platform) {
 		case 'win32':
 			appDataPath = process.env['APPDATA'];
