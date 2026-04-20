@@ -128,21 +128,21 @@ for (let visibleIndex = 1; visibleIndex <= 9; visibleIndex++) {
 //  View Title Menu
 
 MenuRegistry.appendMenuItem(Menus.SidebarSessionsHeader, {
+	submenu: SessionsViewFilterSubMenu,
+	title: localize2('filterSessions', "Filter Sessions"),
+	icon: Codicon.settings,
+	group: 'navigation',
+	order: 10,
+});
+
+MenuRegistry.appendMenuItem(Menus.SidebarSessionsHeader, {
 	command: {
 		id: 'sessionsViewPane.find',
 		title: localize2('find', "Find Session"),
 		icon: Codicon.search,
 	},
 	group: 'navigation',
-	order: 0,
-});
-
-MenuRegistry.appendMenuItem(Menus.SidebarSessionsHeader, {
-	submenu: SessionsViewFilterSubMenu,
-	title: localize2('filterSessions', "Filter Sessions"),
-	icon: Codicon.settings,
-	group: 'navigation',
-	order: 1,
+	order: 20,
 });
 
 MenuRegistry.appendMenuItem(SessionsViewFilterSubMenu, {
@@ -781,6 +781,7 @@ registerAction2(class MarkSessionAsDoneAction extends Action2 {
 						ContextKeyExpr.and(
 							ContextKeyExpr.equals('sessions.hasGitRepository', true),
 							ContextKeyExpr.equals('sessions.hasPullRequest', false),
+							ContextKeyExpr.equals('sessions.hasIncomingChanges', false),
 							ContextKeyExpr.equals('sessions.hasOutgoingChanges', false),
 							ContextKeyExpr.equals('sessions.hasUncommittedChanges', false),
 						),
