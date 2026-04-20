@@ -470,12 +470,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 				const targetDbDir = this._sessionDataService.getSessionDataDirById(newSessionId);
 				const targetDbPath = URI.joinPath(targetDbDir, SESSION_DB_FILENAME);
 				try {
-					await fs.mkdir(targetDbDir.fsPath, { recursive: true });
-					const sourceDbRef = this._sessionDataService.openDatabase(config.fork!.session);
-					try {
-						await sourceDbRef.object.vacuumInto(targetDbPath.fsPath);
-					} finally {
-						sourceDbRef.dispose();
+					const sourceDbRef = await this._sessionDataService.tryOpenDatabase(config.fork!.session);
+					if (sourceDbRef) {
+						try {
+							await fs.mkdir(targetDbDir.fsPath, { recursive: true });
+							await sourceDbRef.object.vacuumInto(targetDbPath.fsPath);
+						} finally {
+							sourceDbRef.dispose();
+						}
 					}
 				} catch (err) {
 					this._logService.warn(`[Copilot] Failed to copy session database for fork: ${err instanceof Error ? err.message : String(err)}`);
