@@ -43,11 +43,11 @@ import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsListModelService } from './sessionsListModelService.js';
-import { getSessionStatusIcon, groupSessionsForList, ISessionSection, SessionsGrouping, SessionsSorting } from './sessionsListHelpers.js';
+import { getSessionStatusIcon, groupSessionsForList, type ISessionSection, SessionsGrouping, SessionsSorting } from './sessionsListHelpers.js';
 
 const $ = DOM.$;
 
-export { getSessionStatusIcon, groupByDate, groupByWorkspace, groupSessionsForList, ISessionSection, SessionsGrouping, SessionsSorting, sortSessions } from './sessionsListHelpers.js';
+export { getSessionStatusIcon, groupByDate, groupByWorkspace, groupSessionsForList, type ISessionSection, SessionsGrouping, SessionsSorting, sortSessions } from './sessionsListHelpers.js';
 
 export const SessionItemToolbarMenuId = new MenuId('SessionItemToolbar');
 export const SessionItemContextMenuId = new MenuId('SessionItemContextMenu');
