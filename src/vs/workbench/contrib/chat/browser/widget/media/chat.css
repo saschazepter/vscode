@@ -909,38 +909,22 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 .monaco-workbench .interactive-session .chat-input-container.working {
-	animation: chat-input-working-border-glow 3s ease-in-out infinite;
-}
-
-.monaco-workbench .interactive-session .chat-input-container.working::before {
-	content: '';
-	position: absolute;
-	inset: 0;
-	border-radius: inherit;
-	padding: 1px;
-	background: conic-gradient(from var(--chat-input-anim-angle),
+	border-color: transparent;
+	background:
+		linear-gradient(var(--vscode-input-background), var(--vscode-input-background)) padding-box,
+		conic-gradient(from var(--chat-input-anim-angle),
 			#b44aff,
 			#4af0c0,
 			#51a2ff,
 			#4af0c0,
-			#b44aff);
-	-webkit-mask:
-		linear-gradient(#fff 0 0) content-box,
-		linear-gradient(#fff 0 0);
-	-webkit-mask-composite: xor;
-	mask:
-		linear-gradient(#fff 0 0) content-box,
-		linear-gradient(#fff 0 0);
-	mask-composite: exclude;
-	pointer-events: none;
-	z-index: 1;
-	animation: chat-input-working-border-spin 1.2s linear infinite;
+			#b44aff) border-box;
+	animation:
+		chat-input-working-border-spin 1.2s linear infinite,
+		chat-input-working-border-glow 3s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-
-	.monaco-workbench .interactive-session .chat-input-container.working,
-	.monaco-workbench .interactive-session .chat-input-container.working::before {
+	.monaco-workbench .interactive-session .chat-input-container.working {
 		animation: none;
 	}
 }
