@@ -57,6 +57,18 @@ suite('SendToTerminalTool', () => {
 		} as unknown as IToolInvocation;
 	}
 
+	function createForegroundInvocation(terminalId: string, command: string): IToolInvocation {
+		return {
+			parameters: { terminalId, command },
+			callId: 'test-call-foreground',
+			context: { sessionId: 'test-session' },
+			toolId: 'send_to_terminal',
+			tokenBudget: 1000,
+			isComplete: () => false,
+			isCancellationRequested: false,
+		} as unknown as IToolInvocation;
+	}
+
 	function createMockExecution(output: string): IActiveTerminalExecution & { sentTexts: { text: string; shouldExecute: boolean; forceBracketedPasteMode?: boolean }[] } {
 		const sentTexts: { text: string; shouldExecute: boolean; forceBracketedPasteMode?: boolean }[] = [];
 		return {
@@ -456,5 +468,53 @@ suite('SendToTerminalTool', () => {
 
 		assert.strictEqual(mockExecution.sentTexts.length, 1);
 		assert.strictEqual(mockExecution.sentTexts[0].text, 'echo hello', 'single-line command should be trimmed');
+	});
+
+	test('foreground terminal path preserves newlines for heredoc commands', async () => {
+		const foregroundSent: { text: string; shouldExecute: boolean; forceBracketedPasteMode?: boolean }[] = [];
+		const foregroundInstance = {
+			sendText: async (text: string, shouldExecute: boolean, forceBracketedPasteMode?: boolean) => {
+				foregroundSent.push({ text, shouldExecute, forceBracketedPasteMode });
+			},
+		} as unknown as ITerminalInstance;
+		instantiationService.stub(ITerminalService, {
+			getInstanceFromId: () => foregroundInstance,
+		});
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const heredocCommand = 'cat > file.txt << \'EOF\'\nhello world\nEOF';
+		await tool.invoke(
+			createForegroundInvocation(KNOWN_TERMINAL_ID, heredocCommand),
+			async () => 0,
+			{ report: () => { } },
+			CancellationToken.None,
+		);
+
+		assert.strictEqual(foregroundSent.length, 1);
+		assert.strictEqual(foregroundSent[0].text, heredocCommand, 'foreground heredoc should preserve newlines');
+		assert.strictEqual(foregroundSent[0].forceBracketedPasteMode, true, 'foreground multiline should use bracketed paste mode');
+	});
+
+	test('foreground terminal path normalizes single-line commands', async () => {
+		const foregroundSent: { text: string; shouldExecute: boolean; forceBracketedPasteMode?: boolean }[] = [];
+		const foregroundInstance = {
+			sendText: async (text: string, shouldExecute: boolean, forceBracketedPasteMode?: boolean) => {
+				foregroundSent.push({ text, shouldExecute, forceBracketedPasteMode });
+			},
+		} as unknown as ITerminalInstance;
+		instantiationService.stub(ITerminalService, {
+			getInstanceFromId: () => foregroundInstance,
+		});
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		await tool.invoke(
+			createForegroundInvocation(KNOWN_TERMINAL_ID, '  echo hello  '),
+			async () => 0,
+			{ report: () => { } },
+			CancellationToken.None,
+		);
+
+		assert.strictEqual(foregroundSent.length, 1);
+		assert.strictEqual(foregroundSent[0].text, 'echo hello', 'foreground single-line command should be trimmed');
 	});
 });

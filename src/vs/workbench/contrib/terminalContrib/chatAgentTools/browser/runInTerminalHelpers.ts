@@ -87,6 +87,17 @@ export function normalizeCommandForExecution(command: string): string {
 	return command.replace(/\r\n|\r|\n/g, ' ').trim();
 }
 
+/**
+ * Whether a command spans multiple lines (heredoc, multi-statement block, etc.).
+ * Multi-line commands must be sent verbatim through bracketed paste mode so the
+ * shell treats them as a single paste instead of executing each line as it
+ * arrives. Accepts both `\n` and `\r` to catch commands that contain only bare
+ * carriage returns as well as `\r\n` sequences.
+ */
+export function isMultilineCommand(command: string): boolean {
+	return command.includes('\n') || command.includes('\r');
+}
+
 export function generateAutoApproveActions(commandLine: string, subCommands: string[], autoApproveResult: { subCommandResults: ICommandApprovalResultWithReason[]; commandLineResult: ICommandApprovalResultWithReason }): ToolConfirmationAction[] {
 	const actions: ToolConfirmationAction[] = [];
 
