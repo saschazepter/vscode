@@ -90,10 +90,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Allow cherry-pick bot PRs
         id: cherry_pick_exception
-        if: ${{ steps.engineering_systems_check.outputs.engineering_systems_modified == 'true' && steps.bot_field_exception.outputs.allowed != 'true' && github.event.pull_request.user.login == 'vs-code-engineering[bot]' && startsWith(github.event.pull_request.title, '[cherry-pick]') && contains(github.event.pull_request.labels.*.name, 'cherry-pick-artifact') }}
+        if: ${{ steps.engineering_systems_check.outputs.engineering_systems_modified == 'true' && steps.bot_field_exception.outputs.allowed != 'true' && github.event.pull_request.user.login == 'vs-code-engineering[bot]' && startsWith(github.event.pull_request.title, '[cherry-pick]') }}
         run: |
-          echo "Cherry-pick PR by vs-code-engineering bot with cherry-pick-artifact label — allowing"
-          echo "allowed=true" >> $GITHUB_OUTPUT
+          # The label is applied ~2s after PR creation, so the webhook payload
+          # may not include it yet. Fetch current labels from the API instead.
+          if gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels --jq '.[].name' | grep -qx 'cherry-pick-artifact'; then
+            echo "Cherry-pick PR by vs-code-engineering bot with cherry-pick-artifact label — allowing"
+            echo "allowed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Cherry-pick PR by bot but missing cherry-pick-artifact label — not allowed"
+            echo "allowed=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Prevent Copilot from modifying engineering systems
         if: ${{ steps.engineering_systems_check.outputs.engineering_systems_modified == 'true' && steps.bot_field_exception.outputs.allowed != 'true' && steps.cherry_pick_exception.outputs.allowed != 'true' && github.event.pull_request.user.login == 'Copilot' }}
         run: |
