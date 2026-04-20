@@ -103,6 +103,7 @@ class TestSessionDataService extends Disposable implements ISessionDataService {
 
 	deleteSessionData(): Promise<void> { return Promise.resolve(); }
 	cleanupOrphanedData(): Promise<void> { return Promise.resolve(); }
+	whenIdle(): Promise<void> { return Promise.resolve(); }
 }
 
 class TestCopilotClient implements ICopilotClient {
