@@ -479,6 +479,35 @@ export interface IChatThinkingPart {
  * Aligned with the hook output JSON structure: { stopReason, systemMessage, hookSpecificOutput }.
  * If {@link stopReason} is set, the hook blocked/denied the operation.
  */
+/**
+ * Prototype: a part describing how the "auto" model selector routed a request
+ * to a specific underlying language model. Rendered as a collapsible card,
+ * similar to thinking and tool-call parts.
+ */
+export interface IChatAutoModelRoutingCandidate {
+	readonly modelName: string;
+	readonly score: number;
+	readonly reason?: string;
+}
+
+export interface IChatAutoModelRoutingPart {
+	kind: 'autoModelRouting';
+	/** The model that was selected (e.g. "GPT-5"). */
+	readonly selectedModel: string;
+	/** A short, user-facing reason for the selection. */
+	readonly selectionReason: string;
+	/** Optional confidence (0-1) reported by the router. */
+	readonly confidence?: number;
+	/** Optional latency the router predicted for the chosen model, in ms. */
+	readonly predictedLatencyMs?: number;
+	/** Optional relative cost tier of the chosen model. */
+	readonly costTier?: 'low' | 'medium' | 'high';
+	/** Categorized intent the router detected for the prompt. */
+	readonly intent?: string;
+	/** Other models that were considered and not chosen. */
+	readonly candidates?: ReadonlyArray<IChatAutoModelRoutingCandidate>;
+}
+
 export interface IChatHookPart {
 	kind: 'hook';
 	/** The type of hook that was executed */
@@ -1126,6 +1155,7 @@ export type IChatProgress =
 	| IChatMcpServersStarting
 	| IChatMcpServersStartingSerialized
 	| IChatHookPart
+	| IChatAutoModelRoutingPart
 	| IChatExternalToolInvocationUpdate
 	| IChatDisabledClaudeHooksPart;
 
