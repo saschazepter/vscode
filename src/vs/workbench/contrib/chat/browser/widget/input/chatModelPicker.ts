@@ -131,7 +131,7 @@ function getModelConfigurationDescription(model: ILanguageModelChatMetadataAndId
 		}
 		const enumItemLabels = propSchema.enumItemLabels;
 		const enumIndex = propSchema.enum?.indexOf(value) ?? -1;
-		const label = enumItemLabels?.[enumIndex] ?? String(value);
+		const label = enumItemLabels?.[enumIndex] ?? (typeof value === 'string' && value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : String(value));
 		parts.push(label);
 	}
 
