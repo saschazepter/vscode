@@ -67,7 +67,6 @@ export class PermissionPicker extends Disposable {
 
 	private _currentLevel: ChatPermissionLevel = ChatPermissionLevel.Default;
 	private _triggerElement: HTMLElement | undefined;
-	private _slot: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 
 	constructor(
@@ -93,7 +92,6 @@ export class PermissionPicker extends Disposable {
 		this._currentLevel = policyRestricted ? ChatPermissionLevel.Default : initialLevel;
 
 		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
-		this._slot = slot;
 		this._renderDisposables.add({ dispose: () => slot.remove() });
 
 		const trigger = dom.append(slot, dom.$('a.action-label'));
@@ -119,17 +117,14 @@ export class PermissionPicker extends Disposable {
 		if (currentPermissionLevel) {
 			this._renderDisposables.add(autorun(reader => {
 				this._currentLevel = currentPermissionLevel.read(reader);
-				this._updateTriggerLabel(this._triggerElement);
+				this._updateTriggerLabel(trigger);
 			}));
 		}
 
 		const isApplicable = this._delegate.isApplicable;
 		if (isApplicable) {
 			this._renderDisposables.add(autorun(reader => {
-				const visible = isApplicable.read(reader);
-				if (this._slot) {
-					this._slot.style.display = visible ? '' : 'none';
-				}
+				slot.style.display = isApplicable.read(reader) ? '' : 'none';
 			}));
 		}
 
