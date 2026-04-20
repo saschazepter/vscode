@@ -15,7 +15,7 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { DEFAULT_ACCOUNT_SIGN_IN_COMMAND } from '../../accounts/browser/defaultAccount.js';
-import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, IAccountPolicyGateInfo, REQUIRE_APPROVED_ACCOUNT_POLICY_NAME } from '../common/accountPolicyService.js';
+import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, IAccountPolicyGateInfo } from '../common/accountPolicyService.js';
 
 const NOTIFICATION_DISMISSED_KEY = 'accountPolicy.gateNotificationDismissed';
 
@@ -65,7 +65,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 
 		this.update();
 		this._register(this.policyService.onDidChange(names => {
-			if (names.includes(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) || names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
+			if (names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
 				this.update();
 			}
 		}));
@@ -97,7 +97,9 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	}
 
 	private computeGateInfo(): IAccountPolicyGateInfo {
-		if (this.policyService.getPolicyValue(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) !== true) {
+		const approvedRaw = this.policyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
+		const approved = typeof approvedRaw === 'string' ? approvedRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+		if (approved.length === 0) {
 			return { state: AccountPolicyGateState.Inactive };
 		}
 		const account = this.defaultAccountService.currentDefaultAccount;
@@ -110,11 +112,6 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		}
 		if (this.defaultAccountService.policyData === null) {
 			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved };
-		}
-		const approvedRaw = this.policyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
-		const approved = typeof approvedRaw === 'string' ? approvedRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
-		if (approved.length === 0) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
 		}
 		if (approved.includes('*')) {
 			return { state: AccountPolicyGateState.Satisfied };

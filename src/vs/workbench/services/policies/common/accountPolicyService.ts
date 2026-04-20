@@ -9,17 +9,13 @@ import { AbstractPolicyService, getRestrictedPolicyValue, IPolicyService, Policy
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 
 /**
- * Policy name (declared by `chat.requireApprovedAccount` in chat.contribution.ts) that
- * activates the "Require Approved Account" gate. When `true`, AI features are forced off
- * until the user signs into a GitHub account from an approved organization AND the
- * account-side policy data has resolved.
- */
-export const REQUIRE_APPROVED_ACCOUNT_POLICY_NAME = 'ChatRequireApprovedAccount';
-
-/**
  * Policy name (declared by `chat.approvedAccountOrganizations` in chat.contribution.ts)
  * holding the comma-separated list of GitHub organization logins that satisfy the gate.
- * The token `*` is treated as a wildcard that accepts any signed-in GitHub/GHE account.
+ * Setting this policy to a non-empty value activates the "Approved Account" gate; AI
+ * features are forced off until the user signs into a GitHub account from an approved
+ * organization AND the account-side policy data has resolved.
+ *
+ * The token `*` is a wildcard that accepts any signed-in GitHub/GHE account.
  */
 export const APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME = 'ChatApprovedAccountOrganizations';
 
@@ -65,7 +61,7 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		}));
 		if (this.managedPolicyService) {
 			this._register(this.managedPolicyService.onDidChange(names => {
-				if (names.includes(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) || names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
+				if (names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
 					this._updatePolicyDefinitions(this.policyDefinitions);
 				}
 			}));
@@ -115,7 +111,11 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		if (!this.managedPolicyService) {
 			return { state: AccountPolicyGateState.Inactive };
 		}
-		if (this.managedPolicyService.getPolicyValue(REQUIRE_APPROVED_ACCOUNT_POLICY_NAME) !== true) {
+
+		// Gate is active iff the admin has set a non-empty approved-organizations list.
+		const approvedRaw = this.managedPolicyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
+		const approvedOrgs = parseApprovedOrganizations(approvedRaw);
+		if (approvedOrgs.length === 0) {
 			return { state: AccountPolicyGateState.Inactive };
 		}
 
@@ -135,11 +135,6 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved };
 		}
 
-		const approvedRaw = this.managedPolicyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
-		const approvedOrgs = parseApprovedOrganizations(approvedRaw);
-		if (approvedOrgs.length === 0) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
-		}
 		if (approvedOrgs.includes('*')) {
 			return { state: AccountPolicyGateState.Satisfied };
 		}
