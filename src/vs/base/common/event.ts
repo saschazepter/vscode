@@ -1030,12 +1030,13 @@ class LeakageMonitor {
 			this._warnCountdown = threshold * 0.5;
 
 			const [topStack, topCount] = this.getMostFrequentStack()!;
+			const emitterName = /^[0-9a-f]+$/i.test(this.name) ? undefined : this.name;
 			const message = `[${this.name}] potential listener LEAK detected, having ${listenerCount} listeners already. MOST frequent listener (${topCount}):`;
 			console.warn(message);
 			console.warn(topStack);
 
 			const kind = topCount / listenerCount > 0.3 ? 'dominated' : 'popular';
-			const error = new ListenerLeakError(kind, message, topStack, listenerCount, this.name);
+			const error = new ListenerLeakError(kind, message, topStack, listenerCount, emitterName);
 			this._errorHandler(error);
 		}
 
@@ -1082,7 +1083,8 @@ export class ListenerLeakError extends Error {
 	/**
 	 * The detailed message including listener count and most frequent stack.
 	 * Available locally for debugging but intentionally not used as the error
-	 * `message` so that all leak errors group under the same title in telemetry.
+	 * `message`. When `emitterName` is provided, errors group by emitter name
+	 * and kind in telemetry; otherwise they group by kind alone.
 	 */
 	readonly details: string;
 	constructor(kind: 'dominated' | 'popular', details: string, stack: string, listenerCount: number, emitterName?: string) {
@@ -1245,7 +1247,7 @@ export class Emitter<T> {
 
 				const tuple = this._leakageMon.getMostFrequentStack() ?? ['UNKNOWN stack', -1];
 				const kind = tuple[1] / this._size > 0.3 ? 'dominated' : 'popular';
-				const error = new ListenerRefusalError(kind, `${message}. HINT: Stack shows most frequent listener (${tuple[1]}-times)`, tuple[0], this._size, this._leakageMon.name);
+				const error = new ListenerRefusalError(kind, `${message}. HINT: Stack shows most frequent listener (${tuple[1]}-times)`, tuple[0], this._size, this._options?.leakWarningName);
 				const errorHandler = this._options?.onListenerError || onUnexpectedError;
 				errorHandler(error);
 
