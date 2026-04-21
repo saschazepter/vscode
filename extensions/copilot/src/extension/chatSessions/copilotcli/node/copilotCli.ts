@@ -214,7 +214,6 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 }
 
 function buildAutoModel(defaultModel?: CopilotCLIModelInfo): vscode.LanguageModelChatInformation {
-	// const multiplier = defaultModel?.multiplier === undefined ? undefined : `${defaultModel.multiplier}x`;
 	return {
 		id: 'auto',
 		name: 'Auto',
@@ -223,8 +222,6 @@ function buildAutoModel(defaultModel?: CopilotCLIModelInfo): vscode.LanguageMode
 		version: '',
 		maxInputTokens: defaultModel?.maxInputTokens ?? defaultModel?.maxContextWindowTokens ?? 0,
 		maxOutputTokens: defaultModel?.maxOutputTokens ?? 0,
-		// multiplier,
-		// multiplierNumeric: defaultModel?.multiplier,
 		isUserSelectable: true,
 		capabilities: {
 			imageInput: defaultModel?.supportsVision,
