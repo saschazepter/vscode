@@ -37,12 +37,12 @@ import { FakeToolsService } from '../../common/copilotCLITools';
 import { ICustomSessionTitleService } from '../../common/customSessionTitleService';
 import { IChatDelegationSummaryService } from '../../common/delegationSummaryService';
 import { getCopilotCLISessionDir } from '../cliHelpers';
-import { ICopilotCLIModels, ICopilotCLISDK } from '../copilotCli';
+import { ICopilotCLISDK } from '../copilotCli';
 import { CopilotCLISession, ICopilotCLISession } from '../copilotcliSession';
 import { CopilotCLISessionService, CopilotCLISessionWorkspaceTracker, ICopilotCLISessionItem } from '../copilotcliSessionService';
 import { CopilotCLIMCPHandler } from '../mcpHandler';
 import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from '../userInputHelpers';
-import { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullICopilotCLIImageSupport } from './testHelpers';
+import { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullCopilotCLIModels, NullICopilotCLIImageSupport } from './testHelpers';
 
 // Re-export for backward compatibility with other spec files
 export { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullCopilotCLIModels, NullICopilotCLIImageSupport } from './testHelpers';

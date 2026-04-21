@@ -1462,7 +1462,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 					// If we have more requests, that means we had the original request as well as at least one another steering request.
 					// Lets not swap anything here, until all pending requests have been completed.
 					if (pendingRequests.size > 0) {
-						return;
+						return result;
 					}
 				}
 
