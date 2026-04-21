@@ -379,7 +379,8 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 
 		this.sharedDatabase = new SharedSQLiteStorageDatabase(storageFilePath, {
 			logging: this.createLoggingOptions(),
-			useWAL: true
+			useWAL: true,
+			busyTimeout: 2000
 		}, this.crossAppIPCService, this.logService);
 		this._register(this.sharedDatabase);
 		await this.applicationStorage.init();
