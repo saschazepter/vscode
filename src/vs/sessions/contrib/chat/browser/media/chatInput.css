@@ -62,7 +62,7 @@
 
 /* Height constraints are driven by MIN_EDITOR_HEIGHT / MAX_EDITOR_HEIGHT in newChatViewPane.ts */
 .sessions-chat-editor {
-	padding: 0 8px 6px 10px;
+	padding: 6px 6px 0 6px;
 	flex-shrink: 1;
 }
 
@@ -77,7 +77,7 @@
 .sessions-chat-toolbar {
 	display: flex;
 	align-items: center;
-	padding: 0 6px 6px 6px;
+	padding: 4px 6px 6px 6px;
 	gap: 4px;
 	color: var(--vscode-icon-foreground);
 }
@@ -97,27 +97,42 @@
 
 .sessions-chat-config-toolbar .monaco-toolbar {
 	height: auto;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.sessions-chat-config-toolbar .monaco-action-bar,
+.sessions-chat-config-toolbar .monaco-action-bar .actions-container {
+	min-width: 0;
+	overflow: hidden;
 }
 
 .sessions-chat-config-toolbar .monaco-action-bar .action-item {
 	display: flex;
 	align-items: center;
+	min-width: 30px;
+	overflow: hidden;
+}
+
+/* Prevent the mode picker from shrinking so the model picker label
+ * ellipsizes first rather than the mode picker collapsing to icon-only. */
+.sessions-chat-config-toolbar .monaco-action-bar .action-item:has(.sessions-chat-dropdown-label) {
+	flex-shrink: 0;
 }
 
 .sessions-chat-config-toolbar .action-label {
 	display: flex;
 	align-items: center;
 	height: 16px;
-	padding: 3px 3px 3px 6px;
+	padding: 3px 1px 3px 7px;
 	background-color: transparent;
 	border: none;
 	border-radius: 4px;
-	font-size: 13px;
 	cursor: pointer;
 	touch-action: manipulation;
 	color: var(--vscode-icon-foreground);
 	white-space: nowrap;
-	min-width: 0;
+	min-width: 30px;
 	overflow: hidden;
 }
 
@@ -126,20 +141,55 @@
 	color: var(--vscode-foreground);
 }
 
-.sessions-chat-config-toolbar .action-label .codicon {
-	font-size: 14px;
-	flex-shrink: 0;
+.sessions-chat-config-toolbar .action-label,
+.sessions-chat-config-toolbar .action-label .chat-input-picker-label {
+	font-size: 11px;
 }
 
-.sessions-chat-config-toolbar .action-label .codicon-chevron-down {
-	font-size: 12px;
+/* Allow long labels (e.g. the model picker name) to ellipsize when space is tight */
+.sessions-chat-config-toolbar .action-label .chat-input-picker-label {
 	margin-left: 6px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+/* When the picker has no leading icon (e.g. model picker), drop the icon-to-label gap. */
+.sessions-chat-config-toolbar .action-label .chat-input-picker-label:first-child {
+	margin-left: 0;
+}
+
+.sessions-chat-config-toolbar .monaco-action-bar .action-item .action-label > .codicon {
+	font-size: 12px;
+	flex-shrink: 0;
+	/* Override the base .monaco-action-bar .action-item .codicon { width:16px; height:16px }
+	 * so the leading icon sizes naturally to its font-size, matching the bottom-row pickers. */
+	width: auto;
+	height: auto;
+}
+
+.sessions-chat-config-toolbar .monaco-action-bar .action-item .action-label > .codicon-chevron-down {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 10px;
+	margin-left: 2px;
+	line-height: 1;
+	width: 12px;
+	height: 12px;
+}
+
+/* Spacing between action items inside the chat input config toolbar (mode + model picker) */
+.sessions-chat-config-toolbar .monaco-action-bar .actions-container {
+	gap: 4px;
 }
 
 /* Send button - wraps a Button widget */
 .sessions-chat-send-button {
 	display: flex;
 	align-items: center;
+	flex-shrink: 0;
 }
 
 .sessions-chat-send-button .monaco-button {
@@ -165,8 +215,8 @@
 	background-color: var(--vscode-toolbar-hoverBackground) !important;
 }
 
-.sessions-chat-send-button .monaco-button .codicon {
-	font-size: 16px;
+.monaco-workbench .sessions-chat-send-button .monaco-button .codicon[class*='codicon-'] {
+	font-size: 14px;
 }
 
 /* Loading spinner in toolbar */
@@ -213,6 +263,7 @@
 	justify-content: center;
 	width: 22px;
 	height: 22px;
+	flex-shrink: 0;
 	border-radius: 4px;
 	cursor: pointer;
 	color: var(--vscode-icon-foreground);
@@ -230,8 +281,8 @@
 	outline-offset: -1px;
 }
 
-.sessions-chat-attach-button .codicon {
-	font-size: 16px;
+.monaco-workbench .sessions-chat-attach-button .codicon[class*='codicon-'] {
+	font-size: 14px;
 }
 
 /* Attached context container */
