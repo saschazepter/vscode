@@ -46,6 +46,11 @@ interface InputStateReactivePipeline {
 	readonly store: DisposableStore;
 }
 
+function getSelectedFolderUri(inputState: vscode.ChatSessionInputState | undefined): URI | undefined {
+	const selectedFolderId = inputState?.groups.find(group => group.id === FOLDER_OPTION_ID)?.selected?.id;
+	return selectedFolderId ? URI.file(selectedFolderId) : undefined;
+}
+
 export class ClaudeChatSessionContentProvider extends Disposable implements vscode.ChatSessionContentProvider {
 	private readonly _controller: ClaudeChatSessionItemController;
 
@@ -109,8 +114,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 				throw new Error(`Permission mode not set for session ${effectiveSessionId}`);
 			}
 			const permissionMode = selectedPermissionId;
-			const selectedFolderId = chatSessionContext.inputState.groups.find(group => group.id === FOLDER_OPTION_ID)?.selected?.id;
-			const selectedFolderUri = selectedFolderId ? URI.file(selectedFolderId) : undefined;
+			const selectedFolderUri = getSelectedFolderUri(chatSessionContext.inputState);
 			const folderInfo = await this._controller.getFolderInfoForSession(effectiveSessionId, selectedFolderUri);
 
 			// Commit UI state to session state service before invoking agent manager
@@ -243,10 +247,8 @@ export class ClaudeChatSessionItemController extends Disposable {
 			item.iconPath = new vscode.ThemeIcon('claude');
 			item.timing = { created: Date.now() };
 
-			// Resolve workspace folder so the session appears under the correct
-			// workspace section instead of "Unknown" in the sessions list.
-			const selectedFolderId = context.inputState?.groups.find(group => group.id === FOLDER_OPTION_ID)?.selected?.id;
-			const selectedFolderUri = selectedFolderId ? URI.file(selectedFolderId) : undefined;
+			// Set workspace metadata for correct session grouping
+			const selectedFolderUri = getSelectedFolderUri(context.inputState);
 			const folderInfo = await this.getFolderInfoForSession(newSessionId, selectedFolderUri);
 			if (folderInfo.cwd) {
 				item.metadata = { workingDirectoryPath: folderInfo.cwd };
@@ -290,8 +292,10 @@ export class ClaudeChatSessionItemController extends Disposable {
 			const newItem = this._controller.createChatSessionItem(ClaudeSessionUri.forSessionId(result.sessionId), title);
 			newItem.iconPath = new vscode.ThemeIcon('claude');
 			newItem.timing = { created: Date.now() };
-			// TODO: Should we copy _all_ metadata or just specific fields?
-			newItem.metadata = { ...item?.metadata };
+			// FYI, dropping any other metadata fields here...
+			if (item?.metadata?.workingDirectoryPath) {
+				newItem.metadata = { workingDirectoryPath: item.metadata.workingDirectoryPath };
+			}
 
 			// Copy parent session state to the forked session
 			const parentSessionId = ClaudeSessionUri.getSessionId(sessionResource);

@@ -1629,23 +1629,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 
 		// Load session model with selected options
-		const modelRef = await this.chatService.acquireOrLoadSession(session.resource, ChatAgentLocation.Chat, CancellationToken.None);
-		if (modelRef) {
-			const model = modelRef.object;
-			if (session.selectedModelId) {
-				const languageModel = this.languageModelsService.lookupLanguageModel(session.selectedModelId);
-				if (languageModel) {
-					model.inputModel.setState({ selectedModel: { identifier: session.selectedModelId, metadata: languageModel } });
-				}
-			}
-			if (session.chatMode) {
-				model.inputModel.setState({ mode: { id: session.chatMode.id, kind: session.chatMode.kind } });
-			}
-			if (session.selectedOptions.size > 0) {
-				this.chatSessionsService.updateSessionOptions(session.resource, session.selectedOptions);
-			}
-			modelRef.dispose();
-		}
+		await this._applySessionModelState(session.resource, session);
 
 		// Send request
 		this.logService.debug(`[CopilotChatSessionsProvider] Sending first chat for session ${session.id} with options:`, {
@@ -1756,23 +1740,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 
 		// Load session model and apply selected options
-		const modelRef = await this.chatService.acquireOrLoadSession(realResource, ChatAgentLocation.Chat, CancellationToken.None);
-		if (modelRef) {
-			const model = modelRef.object;
-			if (session.selectedModelId) {
-				const languageModel = this.languageModelsService.lookupLanguageModel(session.selectedModelId);
-				if (languageModel) {
-					model.inputModel.setState({ selectedModel: { identifier: session.selectedModelId, metadata: languageModel } });
-				}
-			}
-			if (session.chatMode) {
-				model.inputModel.setState({ mode: { id: session.chatMode.id, kind: session.chatMode.kind } });
-			}
-			if (session.selectedOptions.size > 0) {
-				this.chatSessionsService.updateSessionOptions(realResource, session.selectedOptions);
-			}
-			modelRef.dispose();
-		}
+		await this._applySessionModelState(realResource, session);
 
 		// Send request to the real URI — sendRequest skips the
 		// createNewChatSessionItem block since the URI is not untitled.
@@ -1826,6 +1794,34 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			session.dispose();
 			throw error;
 		}
+	}
+
+	/**
+	 * Loads the session model for the given resource and applies the selected
+	 * language model, chat mode, and session options from the new session object.
+	 */
+	private async _applySessionModelState(
+		resource: URI,
+		session: { selectedModelId?: string; chatMode?: IChatMode; selectedOptions: Map<string, IChatSessionProviderOptionItem> },
+	): Promise<void> {
+		const modelRef = await this.chatService.acquireOrLoadSession(resource, ChatAgentLocation.Chat, CancellationToken.None);
+		if (!modelRef) {
+			return;
+		}
+		const model = modelRef.object;
+		if (session.selectedModelId) {
+			const languageModel = this.languageModelsService.lookupLanguageModel(session.selectedModelId);
+			if (languageModel) {
+				model.inputModel.setState({ selectedModel: { identifier: session.selectedModelId, metadata: languageModel } });
+			}
+		}
+		if (session.chatMode) {
+			model.inputModel.setState({ mode: { id: session.chatMode.id, kind: session.chatMode.kind } });
+		}
+		if (session.selectedOptions.size > 0) {
+			this.chatSessionsService.updateSessionOptions(resource, session.selectedOptions);
+		}
+		modelRef.dispose();
 	}
 
 	/**
@@ -1893,23 +1889,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 
 		// Load session model with selected options
-		const modelRef = await this.chatService.acquireOrLoadSession(newChatSession.resource, ChatAgentLocation.Chat, CancellationToken.None);
-		if (modelRef) {
-			const model = modelRef.object;
-			if (newChatSession.selectedModelId) {
-				const languageModel = this.languageModelsService.lookupLanguageModel(newChatSession.selectedModelId);
-				if (languageModel) {
-					model.inputModel.setState({ selectedModel: { identifier: newChatSession.selectedModelId, metadata: languageModel } });
-				}
-			}
-			if (newChatSession.chatMode) {
-				model.inputModel.setState({ mode: { id: newChatSession.chatMode.id, kind: newChatSession.chatMode.kind } });
-			}
-			if (newChatSession.selectedOptions.size > 0) {
-				this.chatSessionsService.updateSessionOptions(newChatSession.resource, newChatSession.selectedOptions);
-			}
-			modelRef.dispose();
-		}
+		await this._applySessionModelState(newChatSession.resource, newChatSession);
 
 		// Send request
 		const result = await this.chatService.sendRequest(newChatSession.resource, query, sendOptions);
