@@ -313,7 +313,7 @@ export class FocusSessionActionViewItem extends SelectActionViewItem<IDebugSessi
 		const registerSessionListeners = (session: IDebugSession) => {
 			const sessionListeners = sessionListenersStore.add(new DisposableStore());
 			sessionListeners.add(session.onDidChangeName(() => this.update()));
-			sessionListeners.add(session.onDidEndAdapter(() => sessionListeners.dispose()));
+			sessionListeners.add(session.onDidEndAdapter(() => sessionListenersStore.delete(sessionListeners)));
 		};
 		this._register(this.debugService.onDidNewSession(session => {
 			registerSessionListeners(session);
