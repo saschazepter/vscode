@@ -2505,9 +2505,12 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							}
 							const current = sessionResource ? this.chatSessionsService.getSessionOption(sessionResource, group.id) : undefined;
 							const defaultId = group.selected?.id ?? group.items.find(i => i.default)?.id;
-							const selectedId = current === undefined
+							const rawSelectedId = current === undefined
 								? defaultId
 								: typeof current === 'string' ? current : current.id;
+							const selectedId = rawSelectedId !== undefined && group.items.some(i => i.id === rawSelectedId)
+								? rawSelectedId
+								: defaultId;
 							const sessionType = sessionResource
 								? getChatSessionType(sessionResource)
 								: (this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? '');

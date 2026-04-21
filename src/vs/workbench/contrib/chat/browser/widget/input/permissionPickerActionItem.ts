@@ -320,6 +320,7 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 
 		dom.reset(element, ...labelElements);
 		element.classList.toggle('warning', !ext && level === ChatPermissionLevel.Autopilot);
+		element.classList.toggle('info', !ext && level === ChatPermissionLevel.AutoApprove);
 
 		// Announce the current selection to screen readers — the underlying action
 		// title ("Open Permission Picker") doesn't convey which mode is active.
@@ -334,6 +335,9 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 	}
 
 	override dispose(): void {
+		if (this._store.isDisposed) {
+			return;
+		}
 		this._onDidDispose.fire();
 		super.dispose();
 	}
