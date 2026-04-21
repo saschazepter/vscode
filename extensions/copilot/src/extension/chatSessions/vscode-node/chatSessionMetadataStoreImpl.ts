@@ -371,7 +371,12 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 		return 'other';
 	}
 
-	async getParentSessionId(sessionId: string): Promise<string | undefined> {
+	public async setSessionParentId(sessionId: string, parentSessionId: string): Promise<void> {
+		await this._intialize.value;
+		await this.updateMetadataFields(sessionId, { parentSessionId, kind: 'sub-session' });
+	}
+
+	public async getSessionParentId(sessionId: string): Promise<string | undefined> {
 		const metadata = await this.getSessionMetadata(sessionId, false);
 		return metadata?.parentSessionId;
 	}

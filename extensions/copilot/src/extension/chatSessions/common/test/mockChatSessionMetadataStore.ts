@@ -144,7 +144,11 @@ export class MockChatSessionMetadataStore implements IChatSessionMetadataStore {
 		return this._sessionOrigins.get(sessionId) ?? 'vscode';
 	}
 
-	async getParentSessionId(_sessionId: string): Promise<string | undefined> {
-		return undefined;
+	setSessionParentId(_sessionId: string, _parentSessionId: string): Promise<void> {
+		return Promise.resolve();
+	}
+
+	getSessionParentId(_sessionId: string): Promise<string | undefined> {
+		return Promise.resolve(undefined);
 	}
 }

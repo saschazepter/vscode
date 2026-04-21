@@ -384,7 +384,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			title: localize('send', "Send"),
 			ariaLabel: localize('send', "Send"),
 		}));
-		sendButton.icon = Codicon.send;
+		sendButton.icon = Codicon.arrowUp;
 		this._register(sendButton.onDidClick(() => this._send()));
 	}
 
