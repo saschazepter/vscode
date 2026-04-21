@@ -214,7 +214,7 @@ suite('AiContributionFeature', () => {
 		disposables.dispose();
 	}));
 
-	test('persisted AI ranges survive a workspace reload', () => runWithFakedTimers({}, async () => {
+	test('persisted AI contribution levels survive a workspace reload', () => runWithFakedTimers({}, async () => {
 		const reloadStore = new DisposableStore();
 		const sharedStorage = reloadStore.add(new TestStorageService());
 

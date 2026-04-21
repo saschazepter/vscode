@@ -102,7 +102,7 @@ export class AiContributionFeature extends Disposable {
 
 	private _hasAiContributions(resources: UriComponents[], level: AiContributionLevel): boolean {
 		for (const r of resources) {
-			const recorded = this._contributions.get(URI.revive(r));
+			const recorded = this._contributions.get(URI.from(r, true));
 			if (recorded === undefined) {
 				continue;
 			}
@@ -122,7 +122,7 @@ export class AiContributionFeature extends Disposable {
 			}
 		} else {
 			for (const r of resources) {
-				if (this._contributions.delete(URI.revive(r))) {
+				if (this._contributions.delete(URI.from(r, true))) {
 					changed = true;
 				}
 			}
@@ -167,7 +167,7 @@ export class AiContributionFeature extends Disposable {
 			if (this._contributions.size === 0) {
 				this._storageService.remove(STORAGE_KEY, StorageScope.WORKSPACE);
 			} else {
-				const obj: Record<string, AiContributionLevel> = {};
+				const obj: Record<string, AiContributionLevel> = Object.create(null);
 				for (const [uri, level] of this._contributions) {
 					obj[uri.toString()] = level;
 				}
