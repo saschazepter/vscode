@@ -189,7 +189,7 @@
 	gets a multi-color gradient ring at rest using the same palette as the
 	working-state border, fills with a slowly cycling color on hover/focus,
 	and emits a quick colorful pulse on click. Gated behind the experimental
-	`chat.sendButton.gradient.enabled` setting via the
+	`sessions.experimental.sendButtonGradient` setting via the
 	`.chat-send-button-gradient-enabled` class on the workbench root. */
 @property --chat-send-button-anim-angle {
 	syntax: '<angle>';
@@ -264,20 +264,14 @@
 	transition: background-color 250ms ease, color 250ms ease;
 }
 
-/* Suppress the default focus outline only when the gradient feature is on,
-	so the colorful ring isn't covered by the focus rectangle. With the
-	feature off, the standard focus border remains. */
-.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:focus,
-.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:focus-visible,
-.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:active {
-	outline: none !important;
-	box-shadow: none !important;
-	text-decoration: none !important;
-	border: none !important;
-}
-
 .sessions-chat-send-button .monaco-button.disabled {
 	cursor: default;
+}
+
+/* Default hover feedback when the gradient experiment is off. The gradient-on
+	rules below override this with the cycling color treatment. */
+.sessions-chat-send-button .monaco-button:not(.disabled):hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 /* Focus indicator drawn on the wrapper so it sits cleanly around the
@@ -312,7 +306,7 @@
 
 /* Gradient ring at rest, drawn on the wrapper so the button's own
 	::before (codicon glyph) is not overridden. Gated behind the experimental
-	`chat.sendButton.gradient.enabled` setting via the
+	`sessions.experimental.sendButtonGradient` setting via the
 	`.chat-send-button-gradient-enabled` class on the workbench root. */
 .monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button::before {
 	content: '';
@@ -377,21 +371,6 @@
 	z-index: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button::before {
-		animation: none;
-	}
-
-	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button,
-	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) .monaco-button {
-		animation: none;
-	}
-
-	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):active)::after {
-		animation: none;
-	}
-}
-
 /* ----------------------------------------------------------------------------
 	Gradient styling for the standard chat-input send button (the one rendered
 	inside session views by the shared ChatInputPart). Mirrors the wrapper
@@ -450,8 +429,7 @@
 }
 
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item.disabled:has(> .action-label.codicon-arrow-up)::before {
-	opacity: 0;
-	animation: none;
+	display: none;
 }
 
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover,
@@ -467,7 +445,7 @@
 
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:hover) .codicon-arrow-up,
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:focus-visible) .codicon-arrow-up {
-	color: var(--vscode-button-foreground) !important;
+	color: var(--vscode-button-foreground);
 }
 
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:active)::after {
@@ -487,15 +465,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-arrow-up)::before {
-		animation: none;
-	}
-
+	/* New-session send button */
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button::before,
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button,
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) .monaco-button,
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):active)::after,
+	/* Existing-chat toolbar send button */
+	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-arrow-up)::before,
 	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover,
-	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:focus-visible {
-		animation: none;
-	}
-
+	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:focus-visible,
 	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:active)::after {
 		animation: none;
 	}
