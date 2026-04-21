@@ -320,11 +320,14 @@ export class ChatStatusDashboard extends DomWidget {
 			// Global quota callout (shown once at the bottom)
 			const globalCalloutUpdater = this.createGlobalQuotaCallout(container, this._store);
 
-			if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && (Number(chatQuota?.percentRemaining) <= 25 || Number(completionsQuota?.percentRemaining) <= 25)) {
-				const buttonContainer = container.appendChild($('div.button-right'));
-				const upgradeProButton = this._store.add(new Button(buttonContainer, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: this.canUseChat() /* use secondary color when chat can still be used */ }));
-				upgradeProButton.label = localize('upgradeToCopilotPro', "Upgrade to GitHub Copilot Pro");
-				this._store.add(upgradeProButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
+			if (this.chatEntitlementService.entitlement !== ChatEntitlement.ProPlus &&
+				this.chatEntitlementService.entitlement !== ChatEntitlement.Business &&
+				this.chatEntitlementService.entitlement !== ChatEntitlement.Enterprise) {
+				const upgradeContainer = container.appendChild($('div.upgrade-row'));
+				upgradeContainer.appendChild($('span.upgrade-description', undefined, localize('upgradeDescription', "Upgrade for higher limits and overage budgets")));
+				const upgradeButton = this._store.add(new Button(upgradeContainer, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
+				upgradeButton.label = localize('upgrade', "Upgrade");
+				this._store.add(upgradeButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
 			}
 
 			(async () => {
