@@ -4,11 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RunOnceScheduler } from '../../../../base/common/async.js';
-import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
 import { autorun, mapObservableArrayCached, runOnChange } from '../../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
-import { StringReplacement } from '../../../../editor/common/core/edits/stringEdit.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { EditSourceBase } from './helpers/documentWithAnnotatedEdits.js';
@@ -20,32 +19,21 @@ const STORAGE_KEY = 'aiEdits.contributions';
 const SAVE_DEBOUNCE_MS = 250;
 
 /**
- * Tracks which URIs contain *surviving* AI-generated content for git
- * co-author trailer attribution.
+ * Tracks which URIs have received AI-generated edits, so the git extension
+ * can add a `Co-authored-by: Copilot` trailer to commits that touch them.
  *
- * Recorded AI ranges are shrunk, split, or removed as later edits overwrite
- * them, so reverting an AI suggestion before committing does not produce a
- * misleading `Co-authored-by: Copilot` trailer.
- *
- * State is persisted per workspace, keyed by URI plus document length at
- * snapshot time. On reload, an entry is restored only if the current
- * document length still matches; otherwise it is dropped (offline edits
- * cannot be rebased).
+ * Attribution is recorded per URI: once an AI edit lands in a file, the
+ * file is considered AI-contributed until explicitly cleared. State is
+ * persisted per workspace so the trailer is still applied after a window
+ * reload, after the file is closed, or for files that the agent edited
+ * without the user ever opening them in an editor.
  */
 export class AiContributionFeature extends Disposable {
 
-	/** In-memory tracker for currently-loaded documents. */
-	private readonly _live = new ResourceMap<AiSurvivingRanges>();
-
-	/**
-	 * Latest snapshot per URI. Used to answer queries for closed files and
-	 * to seed live trackers on document load.
-	 */
-	private readonly _persisted = new ResourceMap<IPersistedRangesEntry>();
+	private readonly _contributions = new ResourceMap<AiContributionLevel>();
 
 	private readonly _saveScheduler: RunOnceScheduler;
 	private _dirty = false;
-	private _disposing = false;
 
 	constructor(
 		workspace: ObservableWorkspace,
@@ -66,41 +54,15 @@ export class AiContributionFeature extends Disposable {
 		// Track every loaded document, regardless of editor visibility: the
 		// trailer must apply to agent-only edits and survive closing the file.
 		const trackedDocs = mapObservableArrayCached(this, workspace.documents, (doc, store) => {
-			const initialLength = doc.value.get().value.length;
-			const persisted = this._persisted.get(doc.uri);
-			let ranges: AiSurvivingRanges;
-			if (persisted && persisted.contentLength === initialLength) {
-				ranges = AiSurvivingRanges.fromSerialized(persisted.ranges);
-			} else {
-				if (persisted) {
-					// Length mismatch: cannot rebase ranges across an offline edit.
-					this._persisted.delete(doc.uri);
-					this._markDirty();
-				}
-				ranges = new AiSurvivingRanges();
-			}
-			this._live.set(doc.uri, ranges);
-
 			store.add(runOnChange(doc.value, (_val, _prev, edits) => {
-				let changed = false;
 				for (const e of edits) {
 					const source = EditSourceBase.create(e.reason);
-					const level: AiContributionLevel | undefined = source.category === 'ai'
-						? (source.feature === 'chat' ? 'chatAndAgent' : 'all')
-						: undefined;
-					if (ranges.apply(e.replacements, level)) {
-						changed = true;
+					if (source.category !== 'ai') {
+						continue;
 					}
+					const level: AiContributionLevel = source.feature === 'chat' ? 'chatAndAgent' : 'all';
+					this._record(doc.uri, level);
 				}
-				if (changed) {
-					this._snapshot(doc.uri, ranges, doc.value.get().value.length);
-				}
-			}));
-
-			store.add(toDisposable(() => {
-				// Final snapshot so closed files keep their attribution.
-				this._snapshot(doc.uri, ranges, doc.value.get().value.length);
-				this._live.delete(doc.uri);
 			}));
 		});
 
@@ -116,11 +78,6 @@ export class AiContributionFeature extends Disposable {
 	}
 
 	public override dispose(): void {
-		// Order matters: `super.dispose()` runs the per-document `toDisposable`
-		// callbacks, each of which takes a final snapshot into `_persisted`.
-		// `_disposing` suppresses re-scheduling from `_markDirty` while that
-		// happens, then we flush once at the end.
-		this._disposing = true;
 		this._saveScheduler.cancel();
 		super.dispose();
 		if (this._dirty) {
@@ -128,36 +85,28 @@ export class AiContributionFeature extends Disposable {
 		}
 	}
 
-	private _snapshot(uri: URI, ranges: AiSurvivingRanges, contentLength: number): void {
-		if (ranges.isEmpty()) {
-			if (this._persisted.delete(uri)) {
-				this._markDirty();
-			}
+	private _record(uri: URI, level: AiContributionLevel): void {
+		const existing = this._contributions.get(uri);
+		// `chatAndAgent` is the stronger attribution; never downgrade to `all`.
+		if (existing === 'chatAndAgent' || existing === level) {
 			return;
 		}
-		this._persisted.set(uri, { contentLength, ranges: ranges.serialize() });
+		this._contributions.set(uri, level);
 		this._markDirty();
 	}
 
 	private _markDirty(): void {
 		this._dirty = true;
-		if (!this._disposing) {
-			this._saveScheduler.schedule();
-		}
+		this._saveScheduler.schedule();
 	}
 
 	private _hasAiContributions(resources: UriComponents[], level: AiContributionLevel): boolean {
 		for (const r of resources) {
-			const uri = URI.revive(r);
-			const live = this._live.get(uri);
-			if (live) {
-				if (live.hasLevel(level)) {
-					return true;
-				}
+			const recorded = this._contributions.get(URI.revive(r));
+			if (recorded === undefined) {
 				continue;
 			}
-			const persisted = this._persisted.get(uri);
-			if (persisted && hasLevel(persisted.ranges, level)) {
+			if (level === 'all' || recorded === 'chatAndAgent') {
 				return true;
 			}
 		}
@@ -167,25 +116,13 @@ export class AiContributionFeature extends Disposable {
 	private _clearAiContributions(resources?: UriComponents[]): void {
 		let changed = false;
 		if (!resources) {
-			if (this._persisted.size > 0) {
-				this._persisted.clear();
+			if (this._contributions.size > 0) {
+				this._contributions.clear();
 				changed = true;
-			}
-			for (const ranges of this._live.values()) {
-				if (!ranges.isEmpty()) {
-					ranges.clear();
-					changed = true;
-				}
 			}
 		} else {
 			for (const r of resources) {
-				const uri = URI.revive(r);
-				if (this._persisted.delete(uri)) {
-					changed = true;
-				}
-				const live = this._live.get(uri);
-				if (live && !live.isEmpty()) {
-					live.clear();
+				if (this._contributions.delete(URI.revive(r))) {
 					changed = true;
 				}
 			}
@@ -210,8 +147,7 @@ export class AiContributionFeature extends Disposable {
 			return;
 		}
 		for (const [uriString, value] of Object.entries(parsed as Record<string, unknown>)) {
-			const entry = parsePersistedEntry(value);
-			if (!entry) {
+			if (value !== 'chatAndAgent' && value !== 'all') {
 				continue;
 			}
 			let uri: URI;
@@ -220,7 +156,7 @@ export class AiContributionFeature extends Disposable {
 			} catch {
 				continue;
 			}
-			this._persisted.set(uri, entry);
+			this._contributions.set(uri, value);
 		}
 	}
 
@@ -228,15 +164,15 @@ export class AiContributionFeature extends Disposable {
 		// Only clear `_dirty` after a successful write so retries can flush
 		// pending state on the next save attempt.
 		try {
-			if (this._persisted.size === 0) {
+			if (this._contributions.size === 0) {
 				this._storageService.remove(STORAGE_KEY, StorageScope.WORKSPACE);
 			} else {
-				const obj: Record<string, IPersistedRangesEntry> = {};
-				for (const [uri, entry] of this._persisted) {
-					obj[uri.toString()] = entry;
+				const obj: Record<string, AiContributionLevel> = {};
+				for (const [uri, level] of this._contributions) {
+					obj[uri.toString()] = level;
 				}
-				// MACHINE: ranges are tied to on-disk content, which differs per
-				// machine — syncing would produce stale attributions.
+				// MACHINE: attribution is tied to on-disk content of this
+				// workspace, which differs per machine.
 				this._storageService.store(STORAGE_KEY, JSON.stringify(obj), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 			}
 			this._dirty = false;
@@ -244,195 +180,4 @@ export class AiContributionFeature extends Disposable {
 			// Keep `_dirty` so the next save can retry.
 		}
 	}
-}
-
-interface ISerializedRange {
-	readonly start: number;
-	readonly length: number;
-	readonly level: AiContributionLevel;
-}
-
-interface IPersistedRangesEntry {
-	readonly contentLength: number;
-	readonly ranges: readonly ISerializedRange[];
-}
-
-function hasLevel(ranges: readonly ISerializedRange[], level: AiContributionLevel): boolean {
-	if (ranges.length === 0) {
-		return false;
-	}
-	if (level === 'all') {
-		return true;
-	}
-	for (const r of ranges) {
-		if (r.level === 'chatAndAgent') {
-			return true;
-		}
-	}
-	return false;
-}
-
-function parsePersistedEntry(value: unknown): IPersistedRangesEntry | undefined {
-	if (!value || typeof value !== 'object') {
-		return undefined;
-	}
-	const v = value as { contentLength?: unknown; ranges?: unknown };
-	if (typeof v.contentLength !== 'number' || !Number.isFinite(v.contentLength) || v.contentLength < 0) {
-		return undefined;
-	}
-	if (!Array.isArray(v.ranges)) {
-		return undefined;
-	}
-	const ranges: ISerializedRange[] = [];
-	for (const r of v.ranges) {
-		if (!r || typeof r !== 'object') {
-			continue;
-		}
-		const { start, length, level } = r as { start?: unknown; length?: unknown; level?: unknown };
-		if (typeof start !== 'number' || typeof length !== 'number' || length <= 0 || start < 0) {
-			continue;
-		}
-		if (level !== 'all' && level !== 'chatAndAgent') {
-			continue;
-		}
-		if (start + length > v.contentLength) {
-			continue;
-		}
-		ranges.push({ start, length, level });
-	}
-	if (ranges.length === 0) {
-		return undefined;
-	}
-	ranges.sort((a, b) => a.start - b.start);
-	return { contentLength: v.contentLength, ranges: mergeTouching(ranges) };
-}
-
-/**
- * Maintains a sorted, non-overlapping list of AI-authored offset ranges and
- * keeps them in sync with arbitrary text edits.
- */
-class AiSurvivingRanges {
-
-	public static fromSerialized(ranges: readonly ISerializedRange[]): AiSurvivingRanges {
-		const copy = ranges.map(r => ({ start: r.start, length: r.length, level: r.level }));
-		copy.sort((a, b) => a.start - b.start);
-		return new AiSurvivingRanges(mergeTouching(copy));
-	}
-
-	private _ranges: ISerializedRange[];
-
-	constructor(ranges: ISerializedRange[] = []) {
-		this._ranges = ranges;
-	}
-
-	public isEmpty(): boolean {
-		return this._ranges.length === 0;
-	}
-
-	public hasLevel(level: AiContributionLevel): boolean {
-		return hasLevel(this._ranges, level);
-	}
-
-	public clear(): void {
-		this._ranges = [];
-	}
-
-	public serialize(): ISerializedRange[] {
-		return this._ranges.map(r => ({ start: r.start, length: r.length, level: r.level }));
-	}
-
-	/**
-	 * Apply a batch of replacements (in pre-batch coordinates). Returns
-	 * `true` iff the surviving ranges changed.
-	 *
-	 * @param level if defined, the inserted text is recorded at the given
-	 *              level; otherwise the edit is non-AI (and may still trim
-	 *              or split existing AI ranges).
-	 */
-	public apply(replacements: readonly StringReplacement[], level: AiContributionLevel | undefined): boolean {
-		if (replacements.length === 0) {
-			return false;
-		}
-		// Reverse order keeps each replacement's pre-batch coordinates valid
-		// against the still-unmodified lower part of the document.
-		let changed = false;
-		for (let i = replacements.length - 1; i >= 0; i--) {
-			const r = replacements[i];
-			if (this._applyOne(r.replaceRange.start, r.replaceRange.endExclusive, r.newText.length, level)) {
-				changed = true;
-			}
-		}
-		return changed;
-	}
-
-	private _applyOne(start: number, endExclusive: number, newLen: number, level: AiContributionLevel | undefined): boolean {
-		const delta = newLen - (endExclusive - start);
-		const out: ISerializedRange[] = [];
-		let touched = false;
-
-		for (const r of this._ranges) {
-			const rEnd = r.start + r.length;
-			if (rEnd <= start) {
-				// Before the edit.
-				out.push(r);
-			} else if (r.start >= endExclusive) {
-				// After the edit - shift by delta.
-				if (delta !== 0) {
-					out.push({ start: r.start + delta, length: r.length, level: r.level });
-					touched = true;
-				} else {
-					out.push(r);
-				}
-			} else {
-				// Overlaps - keep the parts outside the deleted span.
-				touched = true;
-				if (r.start < start) {
-					out.push({ start: r.start, length: start - r.start, level: r.level });
-				}
-				if (rEnd > endExclusive) {
-					out.push({ start: endExclusive + delta, length: rEnd - endExclusive, level: r.level });
-				}
-			}
-		}
-
-		if (level !== undefined && newLen > 0) {
-			insertSorted(out, { start, length: newLen, level });
-			touched = true;
-		}
-
-		if (!touched) {
-			return false;
-		}
-		this._ranges = mergeTouching(out);
-		return true;
-	}
-}
-
-function insertSorted(list: ISerializedRange[], r: ISerializedRange): void {
-	let i = 0;
-	while (i < list.length && list[i].start < r.start) {
-		i++;
-	}
-	list.splice(i, 0, r);
-}
-
-function mergeTouching(ranges: ISerializedRange[]): ISerializedRange[] {
-	if (ranges.length <= 1) {
-		return ranges;
-	}
-	const out: ISerializedRange[] = [];
-	let cur: ISerializedRange = ranges[0];
-	for (let i = 1; i < ranges.length; i++) {
-		const next = ranges[i];
-		const curEnd = cur.start + cur.length;
-		if (next.start <= curEnd && next.level === cur.level) {
-			const end = Math.max(curEnd, next.start + next.length);
-			cur = { start: cur.start, length: end - cur.start, level: cur.level };
-		} else {
-			out.push(cur);
-			cur = next;
-		}
-	}
-	out.push(cur);
-	return out;
 }

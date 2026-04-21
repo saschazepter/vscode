@@ -216,60 +216,6 @@ suite('AiContributionFeature', () => {
 		disposables.dispose();
 	}));
 
-	test('user edit that overwrites the AI range removes the contribution', () => runWithFakedTimers({}, async () => {
-		setup();
-		const d = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'hello' }, undefined));
-		await timeout(1500);
-
-		d.applyEdit(StringEditWithReason.replace(d.findRange('hello'), 'world', chatEdit));
-		await timeout(1500);
-		assert.strictEqual(hasAiContributions([d.uri], 'all'), true);
-
-		// User selects and replaces the AI-authored text - no AI content remains.
-		d.applyEdit(StringEditWithReason.replace(d.findRange('world'), 'manual', userEdit));
-		await timeout(1500);
-
-		assert.strictEqual(hasAiContributions([d.uri], 'all'), false);
-		assert.strictEqual(hasAiContributions([d.uri], 'chatAndAgent'), false);
-		disposables.dispose();
-	}));
-
-	test('removing chat range while inline AI range survives downgrades level', () => runWithFakedTimers({}, async () => {
-		setup();
-		const d = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'aaa bbb' }, undefined));
-		await timeout(1500);
-
-		d.applyEdit(StringEditWithReason.replace(d.findRange('aaa'), 'CHAT', chatEdit));
-		d.applyEdit(StringEditWithReason.replace(d.findRange('bbb'), 'INLINE', inlineCompletionEdit));
-		await timeout(1500);
-		assert.strictEqual(hasAiContributions([d.uri], 'chatAndAgent'), true);
-		assert.strictEqual(hasAiContributions([d.uri], 'all'), true);
-
-		// User overwrites the chat-authored region only.
-		d.applyEdit(StringEditWithReason.replace(d.findRange('CHAT'), 'user', userEdit));
-		await timeout(1500);
-
-		assert.strictEqual(hasAiContributions([d.uri], 'chatAndAgent'), false);
-		assert.strictEqual(hasAiContributions([d.uri], 'all'), true);
-		disposables.dispose();
-	}));
-
-	test('user edit inside the AI range only shrinks attribution', () => runWithFakedTimers({}, async () => {
-		setup();
-		const d = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'xx' }, undefined));
-		await timeout(1500);
-
-		d.applyEdit(StringEditWithReason.replace(d.findRange('xx'), 'aibody', chatEdit));
-		await timeout(1500);
-
-		// Delete one character in the middle of the AI text - some AI content still remains.
-		d.applyEdit(StringEditWithReason.replace(d.findRange('b'), '', userEdit));
-		await timeout(1500);
-
-		assert.strictEqual(hasAiContributions([d.uri], 'chatAndAgent'), true);
-		disposables.dispose();
-	}));
-
 	test('persisted AI ranges survive a workspace reload', () => runWithFakedTimers({}, async () => {
 		const reloadStore = new DisposableStore();
 		const sharedStorage = reloadStore.add(new TestStorageService());
@@ -290,38 +236,6 @@ suite('AiContributionFeature', () => {
 
 		assert.strictEqual(hasAiContributions([fileA], 'all'), true);
 		assert.strictEqual(hasAiContributions([fileA], 'chatAndAgent'), true);
-		disposables.dispose();
-		reloadStore.dispose();
-	}));
-
-	test('persisted entry is dropped when document length changed offline', () => runWithFakedTimers({}, async () => {
-		const reloadStore = new DisposableStore();
-		const sharedStorage = reloadStore.add(new TestStorageService());
-
-		setup(sharedStorage);
-		const d = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'hello' }, undefined));
-		await timeout(1500);
-
-		d.applyEdit(StringEditWithReason.replace(d.findRange('hello'), 'world', chatEdit));
-		await timeout(1500);
-		disposables.dispose();
-
-		// Reopen the document with a different length than what was persisted - we
-		// cannot rebase ranges across an offline change, so the entry must be dropped.
-		setup(sharedStorage);
-		const d2 = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'changed externally' }, undefined));
-		await timeout(1500);
-
-		assert.strictEqual(hasAiContributions([d2.uri], 'all'), false);
-		assert.strictEqual(hasAiContributions([d2.uri], 'chatAndAgent'), false);
-
-		// After the stale entry is dropped, closing the document must not resurrect
-		// it: subsequent queries (against the now-closed URI) must still be false.
-		d2.dispose();
-		await timeout(1500);
-		assert.strictEqual(hasAiContributions([fileA], 'all'), false);
-		assert.strictEqual(hasAiContributions([fileA], 'chatAndAgent'), false);
-
 		disposables.dispose();
 		reloadStore.dispose();
 	}));
@@ -369,27 +283,4 @@ suite('AiContributionFeature', () => {
 		reloadStore.dispose();
 	}));
 
-	test('dispose snapshots live documents that had no pending save', () => runWithFakedTimers({}, async () => {
-		const reloadStore = new DisposableStore();
-		const sharedStorage = reloadStore.add(new TestStorageService());
-
-		setup(sharedStorage);
-		const d = disposables.add(workspace.createDocument({ uri: fileA, initialValue: 'hello' }, undefined));
-		await timeout(1500);
-
-		d.applyEdit(StringEditWithReason.replace(d.findRange('hello'), 'world', chatEdit));
-		await timeout(1500); // let the debounce flush normally
-
-		// Now tear down with no new dirty state: the per-document `toDisposable`
-		// callbacks will re-snapshot, which must not be lost to the already-
-		// cancelled scheduler.
-		disposables.dispose();
-
-		setup(sharedStorage);
-		await timeout(1500);
-
-		assert.strictEqual(hasAiContributions([fileA], 'all'), true);
-		disposables.dispose();
-		reloadStore.dispose();
-	}));
 });
