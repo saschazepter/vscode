@@ -11,7 +11,7 @@ import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHost
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { AgentHostFilterService } from '../../browser/agentHostFilterService.js';
-import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER } from '../../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus } from '../../common/agentHostFilter.js';
 
 class StubRemoteAgentHostService implements Partial<IRemoteAgentHostService> {
 	declare readonly _serviceBrand: undefined;
@@ -55,11 +55,20 @@ suite('AgentHostFilterService', () => {
 		return store.add(instantiationService.createInstance(AgentHostFilterService));
 	}
 
-	test('defaults to ALL when no selection persisted and no hosts', () => {
+	test('defaults to undefined when no selection persisted and no hosts', () => {
 		const stub = new StubRemoteAgentHostService();
 		const service = createService(stub);
-		assert.strictEqual(service.selectedProviderId, ALL_HOSTS_FILTER);
+		assert.strictEqual(service.selectedProviderId, undefined);
 		assert.deepStrictEqual([...service.hosts], []);
+	});
+
+	test('defaults to first host when none persisted', () => {
+		const stub = new StubRemoteAgentHostService();
+		stub.connections = [connection('localhost:9999', 'Host B')];
+		stub.configuredEntries = [entry('localhost:4321', 'Host A')];
+		const service = createService(stub);
+		// Hosts are sorted alphabetically by label, so "Host A" comes first.
+		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
 	});
 
 	test('merges connections and configured entries, preferring live info', () => {
@@ -80,40 +89,52 @@ suite('AgentHostFilterService', () => {
 
 	test('setSelectedProviderId persists and fires change', () => {
 		const stub = new StubRemoteAgentHostService();
-		stub.connections = [connection('localhost:4321', 'Host A')];
+		stub.connections = [
+			connection('localhost:4321', 'Host A'),
+			connection('localhost:9999', 'Host B'),
+		];
 		const storage = new InMemoryStorageService();
 		const service = createService(stub, storage);
 
 		let events = 0;
 		store.add(service.onDidChange(() => events++));
 
-		service.setSelectedProviderId(pid('localhost:4321'));
-		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
+		service.setSelectedProviderId(pid('localhost:9999'));
+		assert.strictEqual(service.selectedProviderId, pid('localhost:9999'));
 		assert.strictEqual(events, 1);
 
 		// Recreate service with same storage — selection should persist
 		const service2 = store.add(new AgentHostFilterService(stub as unknown as IRemoteAgentHostService, storage));
-		assert.strictEqual(service2.selectedProviderId, pid('localhost:4321'));
+		assert.strictEqual(service2.selectedProviderId, pid('localhost:9999'));
 	});
 
-	test('falls back to ALL when selected host disappears', () => {
+	test('falls back to first remaining host when selected host disappears', () => {
 		const stub = new StubRemoteAgentHostService();
-		stub.connections = [connection('localhost:4321', 'Host A')];
+		stub.connections = [
+			connection('localhost:4321', 'Host A'),
+			connection('localhost:9999', 'Host B'),
+		];
 		const service = createService(stub);
 
-		service.setSelectedProviderId(pid('localhost:4321'));
+		service.setSelectedProviderId(pid('localhost:9999'));
+		assert.strictEqual(service.selectedProviderId, pid('localhost:9999'));
+
+		// Remove Host B — selection should fall back to Host A (first remaining).
+		stub.update([connection('localhost:4321', 'Host A')], []);
 		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
 
-		// Disconnect + remove configured entry
+		// Remove all hosts — selection should become undefined.
 		stub.update([], []);
-		assert.strictEqual(service.selectedProviderId, ALL_HOSTS_FILTER);
+		assert.strictEqual(service.selectedProviderId, undefined);
 	});
 
 	test('setSelectedProviderId ignores unknown hosts', () => {
 		const stub = new StubRemoteAgentHostService();
 		stub.connections = [connection('localhost:4321', 'Host A')];
 		const service = createService(stub);
+		// Default selection is the first (only) host.
+		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
 		service.setSelectedProviderId('agenthost-nonexistent');
-		assert.strictEqual(service.selectedProviderId, ALL_HOSTS_FILTER);
+		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
 	});
 });

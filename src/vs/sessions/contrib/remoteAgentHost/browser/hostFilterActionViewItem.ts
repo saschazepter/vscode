@@ -10,14 +10,14 @@ import { BaseActionViewItem } from '../../../../base/browser/ui/actionbar/action
 import { getDefaultHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
-import { Action, IAction, Separator } from '../../../../base/common/actions.js';
+import { Action, IAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 /**
  * Compound titlebar widget shown next to the toggle sidebar button in the
@@ -25,17 +25,19 @@ import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntr
  * matches the sidebar width) and renders two controls side-by-side:
  *
  *  - Left: a dropdown pill indicating the currently selected host; clicking
- *    opens a context menu to pick a different host or "All Hosts".
+ *    opens a context menu to pick a different host. When only a single
+ *    host is available the pill renders as a static label (no chevron,
+ *    no click target).
  *  - Right: a connection-status button for the selected host:
  *      • Connected    → green `debug-connected` (non-interactive)
  *      • Connecting   → `debug-connected` pulsing, non-interactive
  *      • Disconnected → clickable `debug-disconnect`; click triggers reconnect
- *    The connection button is hidden when "All Hosts" is selected.
  */
 export class HostFilterActionViewItem extends BaseActionViewItem {
 
 	private _dropdownElement: HTMLElement | undefined;
 	private _labelElement: HTMLElement | undefined;
+	private _chevronElement: HTMLElement | undefined;
 	private _connectElement: HTMLElement | undefined;
 
 	private readonly _dropdownHover = this._register(new MutableDisposable());
@@ -63,24 +65,27 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 
 		// --- Dropdown pill (left) -----------------------------------------------
 		this._dropdownElement = dom.append(this.element, dom.$('div.agent-host-filter-dropdown'));
-		this._dropdownElement.tabIndex = 0;
-		this._dropdownElement.role = 'button';
-		this._dropdownElement.setAttribute('aria-haspopup', 'menu');
 
 		const iconEl = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-icon'));
 		iconEl.append(...renderLabelWithIcons(`$(${Codicon.remote.id})`));
 
 		this._labelElement = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-label'));
 
-		const chevronEl = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-chevron'));
-		chevronEl.append(...renderLabelWithIcons(`$(${Codicon.chevronDown.id})`));
+		this._chevronElement = dom.append(this._dropdownElement, dom.$('span.agent-host-filter-chevron'));
+		this._chevronElement.append(...renderLabelWithIcons(`$(${Codicon.chevronDown.id})`));
 
 		this._register(dom.addDisposableListener(this._dropdownElement, dom.EventType.CLICK, e => {
+			if (!this._isInteractive()) {
+				return;
+			}
 			e.preventDefault();
 			e.stopPropagation();
 			this._showMenu(e);
 		}));
 		this._register(dom.addDisposableListener(this._dropdownElement, dom.EventType.KEY_DOWN, e => {
+			if (!this._isInteractive()) {
+				return;
+			}
 			const event = new StandardKeyboardEvent(e);
 			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
 				e.preventDefault();
@@ -109,32 +114,50 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		this._update();
 	}
 
+	private _isInteractive(): boolean {
+		return this._filterService.hosts.length > 1;
+	}
+
 	private _update(): void {
-		if (!this.element || !this._dropdownElement || !this._labelElement || !this._connectElement) {
+		if (!this.element || !this._dropdownElement || !this._labelElement || !this._chevronElement || !this._connectElement) {
 			return;
 		}
 
+		const hosts = this._filterService.hosts;
 		const selectedId = this._filterService.selectedProviderId;
-		const selected = selectedId === ALL_HOSTS_FILTER
+		const selected = selectedId === undefined
 			? undefined
-			: this._filterService.hosts.find(h => h.providerId === selectedId);
+			: hosts.find(h => h.providerId === selectedId);
+
+		const interactive = hosts.length > 1;
 
 		// Dropdown label + aria
-		const text = selected ? selected.label : localize('agentHostFilter.all', "All Hosts");
+		const text = selected ? selected.label : localize('agentHostFilter.none', "No Host");
 		this._labelElement.textContent = text;
 
-		this._dropdownElement.setAttribute('aria-label', selected
-			? localize('agentHostFilter.aria.selected', "Sessions scoped to host {0}", selected.label)
-			: localize('agentHostFilter.aria.all', "Sessions from all hosts"));
+		this.element.classList.toggle('single-host', !interactive);
 
-		this.element.classList.toggle('all-hosts', !selected);
-
-		const dropdownHoverDelegate = getDefaultHoverDelegate('element');
-		this._dropdownHover.value = this._hoverService.setupManagedHover(
-			dropdownHoverDelegate,
-			this._dropdownElement,
-			() => localize('agentHostFilter.hover', "Change the host the sessions list is scoped to"),
-		);
+		if (interactive) {
+			this._dropdownElement.tabIndex = 0;
+			this._dropdownElement.role = 'button';
+			this._dropdownElement.setAttribute('aria-haspopup', 'menu');
+			this._dropdownElement.setAttribute('aria-label', selected
+				? localize('agentHostFilter.aria.selected', "Sessions scoped to host {0}. Click to change host.", selected.label)
+				: localize('agentHostFilter.aria.none', "No agent host selected."));
+			this._dropdownHover.value = this._hoverService.setupManagedHover(
+				getDefaultHoverDelegate('element'),
+				this._dropdownElement,
+				() => localize('agentHostFilter.hover', "Change the host the sessions list is scoped to"),
+			);
+		} else {
+			this._dropdownElement.removeAttribute('tabindex');
+			this._dropdownElement.removeAttribute('role');
+			this._dropdownElement.removeAttribute('aria-haspopup');
+			this._dropdownElement.setAttribute('aria-label', selected
+				? localize('agentHostFilter.aria.singleSelected', "Sessions scoped to host {0}", selected.label)
+				: localize('agentHostFilter.aria.none', "No agent host selected."));
+			this._dropdownHover.clear();
+		}
 
 		this._updateConnectButton(selected);
 	}
@@ -193,7 +216,7 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 
 	private _onConnectClick(): void {
 		const selectedId = this._filterService.selectedProviderId;
-		if (selectedId === ALL_HOSTS_FILTER) {
+		if (selectedId === undefined) {
 			return;
 		}
 		const host = this._filterService.hosts.find(h => h.providerId === selectedId);
@@ -209,34 +232,25 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		}
 
 		const hosts = this._filterService.hosts;
+		if (hosts.length <= 1) {
+			return;
+		}
 		const selectedId = this._filterService.selectedProviderId;
 
 		const actions: IAction[] = [];
-
-		actions.push(new Action(
-			'agentHostFilter.all',
-			localize('agentHostFilter.all', "All Hosts"),
-			selectedId === ALL_HOSTS_FILTER ? 'codicon codicon-check' : undefined,
-			true,
-			async () => this._filterService.setSelectedProviderId(ALL_HOSTS_FILTER),
-		));
-
-		if (hosts.length > 0) {
-			actions.push(new Separator());
-			for (const host of hosts) {
-				const label = host.status === AgentHostFilterConnectionStatus.Connected
-					? host.label
-					: host.status === AgentHostFilterConnectionStatus.Connecting
-						? localize('agentHostFilter.hostConnecting', "{0} (connecting…)", host.label)
-						: localize('agentHostFilter.hostDisconnected', "{0} (disconnected)", host.label);
-				actions.push(new Action(
-					`agentHostFilter.host.${host.providerId}`,
-					label,
-					selectedId === host.providerId ? 'codicon codicon-check' : undefined,
-					true,
-					async () => this._filterService.setSelectedProviderId(host.providerId),
-				));
-			}
+		for (const host of hosts) {
+			const label = host.status === AgentHostFilterConnectionStatus.Connected
+				? host.label
+				: host.status === AgentHostFilterConnectionStatus.Connecting
+					? localize('agentHostFilter.hostConnecting', "{0} (connecting…)", host.label)
+					: localize('agentHostFilter.hostDisconnected', "{0} (disconnected)", host.label);
+			actions.push(new Action(
+				`agentHostFilter.host.${host.providerId}`,
+				label,
+				selectedId === host.providerId ? 'codicon codicon-check' : undefined,
+				true,
+				async () => this._filterService.setSelectedProviderId(host.providerId),
+			));
 		}
 
 		const anchor = dom.isMouseEvent(e)

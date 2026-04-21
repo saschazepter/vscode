@@ -74,8 +74,18 @@ flex: 1 1 auto;
 min-width: 0;
 }
 
-.agent-host-filter-combo.all-hosts .agent-host-filter-label {
-opacity: 0.85;
+/* --- Single-host mode: static label, no dropdown affordance ------------- */
+
+.agent-host-filter-combo.single-host .agent-host-filter-dropdown {
+cursor: default;
+}
+
+.agent-host-filter-combo.single-host .agent-host-filter-dropdown:hover {
+background-color: transparent;
+}
+
+.agent-host-filter-combo.single-host .agent-host-filter-chevron {
+display: none;
 }
 
 /* --- Connection button (right edge) ------------------------------------- */
@@ -103,7 +113,7 @@ font-size: 14px;
 }
 
 .agent-host-filter-combo .agent-host-filter-connect.connected .codicon {
-color: var(--vscode-testing-iconPassed, var(--vscode-debugIcon-startForeground, #388a34));
+color: var(--vscode-testing-iconPassed, var(--vscode-debugIcon-startForeground, #388a34)) !important;
 }
 
 .agent-host-filter-combo .agent-host-filter-connect.connecting .codicon {

@@ -9,7 +9,7 @@ import { agentHostAuthority } from '../../../../platform/agentHost/common/agentH
 import { getEntryAddress, IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { AgentHostFilterConnectionStatus, ALL_HOSTS_FILTER, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
+import { AgentHostFilterConnectionStatus, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 const STORAGE_KEY = 'sessions.agentHostFilter.selectedProviderId';
 
@@ -36,7 +36,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
-	private _selectedProviderId: string;
+	private _selectedProviderId: string | undefined;
 	private _hosts: readonly IAgentHostFilterEntry[] = [];
 
 	constructor(
@@ -45,13 +45,13 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	) {
 		super();
 
-		this._selectedProviderId = this._storageService.get(STORAGE_KEY, StorageScope.PROFILE, ALL_HOSTS_FILTER);
+		this._selectedProviderId = this._storageService.get(STORAGE_KEY, StorageScope.PROFILE, undefined);
 		this._recomputeHosts();
 
 		this._register(this._remoteAgentHostService.onDidChangeConnections(() => this._recomputeHosts()));
 	}
 
-	get selectedProviderId(): string {
+	get selectedProviderId(): string | undefined {
 		return this._selectedProviderId;
 	}
 
@@ -60,11 +60,13 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	}
 
 	setSelectedProviderId(providerId: string): void {
-		const next = this._validate(providerId);
-		if (next === this._selectedProviderId) {
+		if (!this._hosts.some(h => h.providerId === providerId)) {
 			return;
 		}
-		this._selectedProviderId = next;
+		if (providerId === this._selectedProviderId) {
+			return;
+		}
+		this._selectedProviderId = providerId;
 		this._persist();
 		this._onDidChange.fire();
 	}
@@ -80,11 +82,11 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 		this._remoteAgentHostService.reconnect(host.address);
 	}
 
-	private _validate(providerId: string): string {
-		if (providerId === ALL_HOSTS_FILTER) {
-			return ALL_HOSTS_FILTER;
+	private _validate(providerId: string | undefined): string | undefined {
+		if (providerId !== undefined && this._hosts.some(h => h.providerId === providerId)) {
+			return providerId;
 		}
-		return this._hosts.some(h => h.providerId === providerId) ? providerId : ALL_HOSTS_FILTER;
+		return this._hosts.length > 0 ? this._hosts[0].providerId : undefined;
 	}
 
 	private _recomputeHosts(): void {
@@ -143,7 +145,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	}
 
 	private _persist(): void {
-		if (this._selectedProviderId === ALL_HOSTS_FILTER) {
+		if (this._selectedProviderId === undefined) {
 			this._storageService.remove(STORAGE_KEY, StorageScope.PROFILE);
 		} else {
 			this._storageService.store(STORAGE_KEY, this._selectedProviderId, StorageScope.PROFILE, StorageTarget.USER);

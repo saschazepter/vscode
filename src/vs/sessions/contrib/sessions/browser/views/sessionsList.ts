@@ -42,7 +42,7 @@ import { HoverStyle } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsListModelService } from './sessionsListModelService.js';
-import { ALL_HOSTS_FILTER, IAgentHostFilterService } from '../../../remoteAgentHost/common/agentHostFilter.js';
+import { IAgentHostFilterService } from '../../../remoteAgentHost/common/agentHostFilter.js';
 
 const $ = DOM.$;
 
@@ -863,7 +863,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		// Filter by session type and status
 		let filtered = this.sessions;
 		const hostFilter = this._agentHostFilterService.selectedProviderId;
-		if (hostFilter !== ALL_HOSTS_FILTER) {
+		if (hostFilter !== undefined) {
 			filtered = filtered.filter(s => s.providerId === hostFilter);
 		}
 		if (this.excludedSessionTypes.size > 0) {

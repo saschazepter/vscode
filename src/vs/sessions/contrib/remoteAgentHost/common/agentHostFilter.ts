@@ -7,11 +7,6 @@ import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
 /**
- * Sentinel value meaning "no filter — show sessions from all hosts".
- */
-export const ALL_HOSTS_FILTER = '__all__';
-
-/**
  * Connection status of a host surfaced in the host filter.
  */
 export const enum AgentHostFilterConnectionStatus {
@@ -38,9 +33,9 @@ export const IAgentHostFilterService = createDecorator<IAgentHostFilterService>(
 
 /**
  * Tracks the currently selected agent host used to scope the sessions list
- * and other workbench surfaces. A selection of {@link ALL_HOSTS_FILTER}
- * means "all hosts"; any other value is the {@link ISession.providerId}
- * of the selected remote agent host.
+ * and other workbench surfaces. The selection is always a valid
+ * {@link ISession.providerId} of a known host, or `undefined` when no
+ * hosts are known.
  */
 export interface IAgentHostFilterService {
 	readonly _serviceBrand: undefined;
@@ -48,16 +43,15 @@ export interface IAgentHostFilterService {
 	/** Fires when {@link selectedProviderId} or {@link hosts} changes. */
 	readonly onDidChange: Event<void>;
 
-	/** The currently selected providerId, or {@link ALL_HOSTS_FILTER}. */
-	readonly selectedProviderId: string;
+	/** The currently selected providerId, or `undefined` when no hosts are known. */
+	readonly selectedProviderId: string | undefined;
 
 	/** All known hosts the user can switch between. */
 	readonly hosts: readonly IAgentHostFilterEntry[];
 
 	/**
-	 * Update the selection. If `providerId` is not {@link ALL_HOSTS_FILTER}
-	 * and no matching host exists, the selection is cleared to
-	 * {@link ALL_HOSTS_FILTER}.
+	 * Update the selection. Ignored if `providerId` does not match a
+	 * known host.
 	 */
 	setSelectedProviderId(providerId: string): void;
 
