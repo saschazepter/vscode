@@ -120,7 +120,7 @@ class MockSdkSession {
 
 	async compactHistory() { return { success: true }; }
 
-	public chatMessages: unknown[] = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }];
+	public chatMessages: Awaited<ReturnType<Session['getChatMessages']>> = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }];
 	async getChatMessages() { return this.chatMessages; }
 
 	async abort() { }
