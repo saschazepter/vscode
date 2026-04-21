@@ -430,6 +430,8 @@ export class CodeBlockPart extends Disposable {
 					this._ensureToolbar();
 				}
 			}
+		} else if (hideToolbar) {
+			dom.hide(this._toolbarElement);
 		} else {
 			this._toolbarElement.style.display = '';
 		}
