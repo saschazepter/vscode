@@ -1208,6 +1208,9 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	/** Cache of ISession wrappers, keyed by session group ID. */
 	private readonly _sessionGroupCache = new Map<string, ISession>();
 
+	/** Cache of chats keyed by raw session ID (resource path without leading slash). */
+	private _chatByRawSessionIdCache: Map<string, ICopilotChatSession> | undefined;
+
 	/**
 	 * Emitter fired when the set of chats in a group changes,
 	 * used to update the chats observable in `_chatToSession`.
@@ -1291,7 +1294,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			return Array.from(this._sessionCache.values()).map(chat => this._chatToSession(chat));
 		}
 
-		const allChats = Array.from(this._sessionCache.values());
+		const allChats = Array.from(this._sessionCache.values()).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
 		// Group chats using sessionParentId from metadata
 		const seen = new Set<string>();
@@ -1482,11 +1485,12 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 			await this._deleteAgentSessions([agentSession]);
 		} else {
-			// Untitled chat (not yet committed) — clean up directly
-			const chat = this._sessionCache.get(this._localIdFromchatId(chatId));
+			// Untitled chat (not yet committed) - clean up directly
+			const chat = this._findChatSession(chatId);
 			if (chat) {
 				const key = chat.resource.toString();
 				this._sessionCache.delete(key);
+				this._invalidateGroupingCaches();
 				if (this._currentNewSession?.id === chatId) {
 					this._currentNewSession.dispose();
 					this._currentNewSession = undefined;
@@ -1546,6 +1550,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		newChatSession.setTitle(localize('new chat', "New Chat"));
 		const key = newChatSession.resource.toString();
 		this._sessionCache.set(key, newChatSession);
+		this._invalidateGroupingCaches();
 
 		// Invalidate the session group cache so it rebuilds with the new chat
 		this._sessionGroupCache.delete(sessionId);
@@ -1662,6 +1667,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		session.setStatus(SessionStatus.InProgress);
 		const key = session.resource.toString();
 		this._sessionCache.set(key, session);
+		this._invalidateGroupingCaches();
 		const newSession = this._chatToSession(session);
 		this._onDidChangeSessions.fire({ added: [newSession], removed: [], changed: [] });
 
@@ -1699,6 +1705,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 			// Unexpected error — clean up the temp session entirely
 			this._sessionCache.delete(key);
+			this._invalidateGroupingCaches();
 			this._sessionGroupCache.delete(session.id);
 			this._onDidChangeSessions.fire({ added: [], removed: [this._chatToSession(session)], changed: [] });
 			session.dispose();
@@ -1708,8 +1715,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 	/**
 	 * Sends a subsequent chat for an existing session that already has chats.
-	 * Creates a new {@link CopilotCLISession} from the existing workspace,
-	 * tracks its parent via temp mapping, and fires a `changed` event (not `added`).
+	 * Creates a new {@link CopilotCLISession} from the existing workspace and
+	 * fires a `changed` event on the grouped session rather than an `added` event.
 	 */
 	private async _sendSubsequentChat(sessionId: string, options: ISendRequestOptions): Promise<ISession> {
 		// Reuse a chat that was pre-created by addChat(), otherwise create one
@@ -1721,6 +1728,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			newChatSession.setTitle(localize('new chat', "New Chat"));
 			const key = newChatSession.resource.toString();
 			this._sessionCache.set(key, newChatSession);
+			this._invalidateGroupingCaches();
 			this._sessionGroupCache.delete(sessionId);
 			this._onDidGroupMembershipChange.fire({ sessionId });
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(newChatSession)] });
@@ -1766,6 +1774,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const chatWidget = await this.chatWidgetService.openSession(newChatSession.resource, ChatViewPaneTarget);
 		if (!chatWidget) {
 			this._sessionCache.delete(key);
+			this._invalidateGroupingCaches();
 			throw new Error('[DefaultCopilotProvider] Failed to open chat widget for subsequent chat');
 		}
 
@@ -1792,6 +1801,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const result = await this.chatService.sendRequest(newChatSession.resource, query, sendOptions);
 		if (result.kind === 'rejected') {
 			this._sessionCache.delete(key);
+			this._invalidateGroupingCaches();
 			throw new Error(`[DefaultCopilotProvider] sendRequest rejected: ${result.reason}`);
 		}
 
@@ -1811,6 +1821,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 			// Clean up temp
 			this._sessionCache.delete(key);
+			this._invalidateGroupingCaches();
 			this._currentNewSession = undefined;
 			newChatSession.dispose();
 
@@ -1836,6 +1847,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 			// Unexpected error — clean up on error, fire changed on the parent session group
 			this._sessionCache.delete(key);
+			this._invalidateGroupingCaches();
 			this._sessionGroupCache.delete(sessionId);
 			newChatSession.dispose();
 			// Find the parent session's primary chat to fire a valid changed event
@@ -2067,6 +2079,10 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		this._refreshSessionCache();
 	}
 
+	private _invalidateGroupingCaches(): void {
+		this._chatByRawSessionIdCache = undefined;
+	}
+
 	/**
 	 * Cleans up a temp session (one that hasn't been committed) from the cache.
 	 * Used when delete/archive is invoked on a session that is still pending
@@ -2080,6 +2096,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 		const key = chatSession.resource.toString();
 		this._sessionCache.delete(key);
+		this._invalidateGroupingCaches();
 		this._sessionGroupCache.delete(chatSession.id);
 		if (this._currentNewSession?.id === chatSession.id) {
 			this._currentNewSession = undefined;
@@ -2096,6 +2113,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const currentKeys = new Set<string>();
 		const addedData: ICopilotChatSession[] = [];
 		const changedData: ICopilotChatSession[] = [];
+		let cacheChanged = false;
 
 		for (const session of this.agentSessionsService.model.sessions) {
 			if (session.providerType !== AgentSessionProviders.Background
@@ -2119,6 +2137,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 				const adapter = new AgentSessionAdapter(session, this.id, this.gitHubService);
 				this._sessionCache.set(key, adapter);
 				addedData.push(adapter);
+				cacheChanged = true;
 			}
 		}
 
@@ -2127,7 +2146,12 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			if (!currentKeys.has(key) && adapter instanceof AgentSessionAdapter) {
 				this._sessionCache.delete(key);
 				removedData.push(adapter);
+				cacheChanged = true;
 			}
+		}
+
+		if (cacheChanged) {
+			this._invalidateGroupingCaches();
 		}
 
 		if (addedData.length > 0 || removedData.length > 0 || changedData.length > 0) {
@@ -2186,7 +2210,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const newSessions: ICopilotChatSession[] = [];
 		for (const added of addedData) {
 			const groupId = this._getGroupIdForChat(added);
-			if (groupId !== added.id) {
+			const groupChatIds = this._getChatIdsInGroup(groupId);
+			if (groupChatIds.length > 1) {
 				// This chat belongs to an existing session group — treat as changed
 				this._sessionGroupCache.delete(groupId);
 				this._onDidGroupMembershipChange.fire({ sessionId: groupId });
@@ -2222,7 +2247,14 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	private _findChatSession(chatId: string): ICopilotChatSession | undefined {
-		return this._sessionCache.get(this._localIdFromchatId(chatId));
+		const directMatch = this._sessionCache.get(this._localIdFromchatId(chatId));
+		if (directMatch) {
+			return directMatch;
+		}
+
+		const groupChatIds = this._getChatIdsInGroup(chatId);
+		const firstChatId = groupChatIds[0];
+		return firstChatId ? this._sessionCache.get(this._localIdFromchatId(firstChatId)) : undefined;
 	}
 
 	private _findAgentSession(chatId: string): IAgentSession | undefined {
@@ -2234,33 +2266,34 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	/**
-	 * Returns the group ID (chat ID of the root session) for a given chat.
+	 * Returns the group ID for a given chat.
 	 * Grouping is derived from `sessionParentId` in metadata (for committed sessions)
 	 * or from `PARENT_SESSION_OPTION_ID` in selected options (for uncommitted sessions).
+	 * If the root chat is not loaded, a synthetic provider-scoped group ID is used.
 	 */
 	private _getGroupIdForChat(chat: ICopilotChatSession): string {
-		// Check metadata on the underlying agent session (committed sessions)
-		const agentSession = this.agentSessionsService.getSession(chat.resource);
-		const sessionParentId = agentSession?.metadata?.sessionParentId;
-		if (typeof sessionParentId === 'string') {
-			const parentChat = this._findChatByRawSessionId(sessionParentId);
-			if (parentChat) {
-				return parentChat.id;
+		let current: ICopilotChatSession = chat;
+		const seen = new Set<string>();
+
+		for (let depth = 0; depth < 100; depth++) {
+			if (seen.has(current.id)) {
+				return current.id;
 			}
+			seen.add(current.id);
+
+			const parentRawSessionId = this._getDirectParentRawSessionId(current);
+			if (!parentRawSessionId) {
+				return current.id;
+			}
+
+			const parentChat = this._findChatByRawSessionId(parentRawSessionId);
+			if (!parentChat) {
+				return this._getSyntheticGroupId(parentRawSessionId);
+			}
+
+			current = parentChat;
 		}
 
-		// Check selected options on temp (uncommitted) sessions
-		if (isNewSession(chat)) {
-			const parentOption = chat.selectedOptions.get(PARENT_SESSION_OPTION_ID);
-			if (parentOption) {
-				const parentChat = this._findChatByRawSessionId(parentOption.id);
-				if (parentChat) {
-					return this._getGroupIdForChat(parentChat);
-				}
-			}
-		}
-
-		// No parent — this chat is its own group root
 		return chat.id;
 	}
 
@@ -2279,16 +2312,38 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		return chats.map(c => c.id);
 	}
 
+	private _getDirectParentRawSessionId(chat: ICopilotChatSession): string | undefined {
+		const agentSession = this.agentSessionsService.getSession(chat.resource);
+		const sessionParentId = agentSession?.metadata?.sessionParentId;
+		if (typeof sessionParentId === 'string' && sessionParentId.length > 0) {
+			return sessionParentId;
+		}
+
+		if (isNewSession(chat)) {
+			const parentOption = chat.selectedOptions.get(PARENT_SESSION_OPTION_ID);
+			if (parentOption?.id) {
+				return parentOption.id;
+			}
+		}
+
+		return undefined;
+	}
+
+	private _getSyntheticGroupId(rawSessionId: string): string {
+		return `${this.id}:group:${rawSessionId}`;
+	}
+
 	/**
 	 * Finds a chat in the session cache by its raw session ID (the resource path without leading `/`).
 	 */
 	private _findChatByRawSessionId(rawId: string): ICopilotChatSession | undefined {
-		for (const chat of this._sessionCache.values()) {
-			if (chat.resource.path === `/${rawId}`) {
-				return chat;
+		if (!this._chatByRawSessionIdCache) {
+			this._chatByRawSessionIdCache = new Map<string, ICopilotChatSession>();
+			for (const chat of this._sessionCache.values()) {
+				this._chatByRawSessionIdCache.set(chat.resource.path.slice(1), chat);
 			}
 		}
-		return undefined;
+		return this._chatByRawSessionIdCache.get(rawId);
 	}
 
 	private _findSession(sessionId: string): ISession | undefined {

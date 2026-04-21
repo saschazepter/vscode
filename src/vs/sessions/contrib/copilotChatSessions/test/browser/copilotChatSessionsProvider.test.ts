@@ -585,7 +585,7 @@ suite('CopilotChatSessionsProvider', () => {
 		);
 	});
 
-	test('surfaces child sessions when the parent/root session is missing', () => {
+	test('groups child sessions even when the parent/root session is missing', () => {
 		const orphan1Resource = URI.from({ scheme: AgentSessionProviders.Background, path: '/orphan-child-1' });
 		const orphan2Resource = URI.from({ scheme: AgentSessionProviders.Background, path: '/orphan-child-2' });
 		const provider = createProvider(disposables, model);
@@ -608,10 +608,14 @@ suite('CopilotChatSessionsProvider', () => {
 
 		const sessions = provider.getSessions();
 
-		assert.strictEqual(sessions.length, 2);
+		assert.strictEqual(sessions.length, 1);
+		assert.deepStrictEqual(
+			sessions[0].chats.get().map(chat => chat.resource.toString()),
+			[orphan1Resource.toString(), orphan2Resource.toString()]
+		);
 		assert.deepStrictEqual(changes.map(e => ({ added: e.added.length, changed: e.changed.length })), [
 			{ added: 1, changed: 0 },
-			{ added: 1, changed: 0 },
+			{ added: 0, changed: 1 },
 		]);
 	});
 
