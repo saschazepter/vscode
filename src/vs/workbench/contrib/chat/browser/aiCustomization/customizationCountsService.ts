@@ -87,6 +87,8 @@ export class CustomizationCountsService extends Disposable implements ICustomiza
 
 	declare readonly _serviceBrand: undefined;
 
+	private static readonly ZERO_COUNT: IObservable<number> = derived(_ => 0);
+
 	private readonly itemNormalizer: AICustomizationItemNormalizer;
 	readonly defaultItemProvider: PromptsServiceCustomizationItemProvider;
 	private cachedItemSource: { descriptorId: string; source: IAICustomizationItemSource } | undefined;
@@ -134,15 +136,20 @@ export class CustomizationCountsService extends Disposable implements ICustomiza
 		this.mcpCount = derived(reader => this.mcpService.servers.read(reader).length);
 		this.pluginCount = derived(reader => this.agentPluginService.plugins.read(reader).length);
 
-		// Re-establish item-source subscription whenever the active harness
-		// or the set of registered harnesses changes; refresh counts on any
-		// item-source change, workspace folder change, or active project
-		// root change.
+		// Re-establish item-source subscription whenever the active descriptor
+		// changes, and refresh counts on any item-source change, workspace
+		// folder change, or active project root change. We deliberately only
+		// invalidate the cached source when the descriptor id actually changes
+		// so the list widget and the count surfaces share a single instance
+		// even when the harness service fires spurious events.
 		this._register(autorun(reader => {
 			this.harnessService.activeHarness.read(reader);
 			this.harnessService.availableHarnesses.read(reader);
-			this.cachedItemSource = undefined;
-			const source = this.getItemSource(this.harnessService.getActiveDescriptor());
+			const descriptor = this.harnessService.getActiveDescriptor();
+			if (this.cachedItemSource && this.cachedItemSource.descriptorId !== descriptor.id) {
+				this.cachedItemSource = undefined;
+			}
+			const source = this.getItemSource(descriptor);
 			this.itemSourceChangeDisposable.value = source.onDidChange(() => this.refreshAll());
 			this.refreshAll();
 		}));
@@ -166,7 +173,7 @@ export class CustomizationCountsService extends Disposable implements ICustomiza
 			return obs;
 		}
 		// Unknown section (e.g. Models) always 0.
-		return derived(_ => 0);
+		return CustomizationCountsService.ZERO_COUNT;
 	}
 
 	observeTotalCount(sections?: readonly AICustomizationManagementSection[]): IObservable<number> {

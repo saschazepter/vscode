@@ -21,6 +21,7 @@ import { ContributionEnablementState } from '../../../common/enablement.js';
 import { IAgentPlugin, IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IMcpServer, IMcpService } from '../../../../mcp/common/mcpTypes.js';
 
 /**
@@ -246,5 +247,99 @@ suite('CustomizationCountsService', () => {
 		const service = disposables.add(instaService.createInstance(CustomizationCountsService));
 		const count$ = service.observeCount(AICustomizationManagementSection.Models);
 		assert.strictEqual(count$.get(), 0);
+	});
+
+	test('observeCount returns the same observable instance across calls (stability)', async () => {
+		const service = disposables.add(instaService.createInstance(CustomizationCountsService));
+		// Known section
+		assert.strictEqual(
+			service.observeCount(AICustomizationManagementSection.Agents),
+			service.observeCount(AICustomizationManagementSection.Agents),
+		);
+		// Unknown section (e.g. Models) — also stable so future loop-callers
+		// do not accidentally allocate per iteration.
+		assert.strictEqual(
+			service.observeCount(AICustomizationManagementSection.Models),
+			service.observeCount(AICustomizationManagementSection.Models),
+		);
+		// MCP / Plugins
+		assert.strictEqual(
+			service.observeCount(AICustomizationManagementSection.McpServers),
+			service.observeCount(AICustomizationManagementSection.McpServers),
+		);
+	});
+
+	test('getItemSource returns the same instance when active descriptor is unchanged', async () => {
+		const service = disposables.add(instaService.createInstance(CustomizationCountsService));
+		const descriptor = availableHarnesses.get()[0];
+		const first = service.getItemSource(descriptor);
+		// Fire a spurious activeHarness change to the same id — should not invalidate.
+		activeHarness.set('test', undefined);
+		const second = service.getItemSource(descriptor);
+		assert.strictEqual(first, second, 'item source should be shared across spurious harness events');
+	});
+
+	test('workspace folder change triggers a count refresh', async () => {
+		const folderEmitter = disposables.add(new Emitter<never>());
+		instaService.stub(IWorkspaceContextService, {
+			onDidChangeWorkspaceFolders: folderEmitter.event,
+			onDidChangeWorkbenchState: Event.None,
+			onDidChangeWorkspaceName: Event.None,
+		});
+
+		providerItems = [makeItem(PromptsType.agent, 'a1')];
+		const service = disposables.add(instaService.createInstance(CustomizationCountsService));
+		await waitForValue(disposables, service.observeCount(AICustomizationManagementSection.Agents), n => n === 1);
+
+		providerItems = [makeItem(PromptsType.agent, 'a1'), makeItem(PromptsType.agent, 'a2')];
+		folderEmitter.fire(undefined as never);
+
+		assert.strictEqual(await waitForValue(disposables, service.observeCount(AICustomizationManagementSection.Agents), n => n === 2), 2);
+	});
+
+	test('stale in-flight fetch is discarded when a newer refresh lands first', async () => {
+		// Slow first fetch; fast second fetch. The fetchSeq guard must drop
+		// the stale first resolution so the observable ends at the newer value.
+		const gate = { resolve: (_v: ICustomizationItem[]) => { } };
+		const firstFetchPromise = new Promise<ICustomizationItem[]>(resolve => { gate.resolve = resolve; });
+
+		let callCount = 0;
+		const slowDescriptor: IHarnessDescriptor = {
+			id: 'slow',
+			label: 'Slow',
+			icon: Codicon.settingsGear,
+			getStorageSourceFilter: (): IStorageSourceFilter => ({ sources: [PromptsStorage.local, PromptsStorage.user] }),
+			itemProvider: {
+				onDidChange: Event.None,
+				provideChatSessionCustomizations: async (_token: CancellationToken) => {
+					callCount++;
+					if (callCount === 1) {
+						return firstFetchPromise;
+					}
+					return [makeItem(PromptsType.agent, 'fresh')];
+				},
+			},
+		};
+		availableHarnesses.set([slowDescriptor], undefined);
+		activeHarness.set('slow', undefined);
+
+		const service = disposables.add(instaService.createInstance(CustomizationCountsService));
+
+		// Trigger a second refresh while the first is still pending.
+		providerOnDidChange.fire();
+
+		// Second refresh resolves -> count becomes 1.
+		await waitForValue(disposables, service.observeCount(AICustomizationManagementSection.Agents), n => n === 1);
+
+		// Now resolve the first (stale) fetch with a lot of items. It must be dropped.
+		gate.resolve([
+			makeItem(PromptsType.agent, 'stale1'),
+			makeItem(PromptsType.agent, 'stale2'),
+			makeItem(PromptsType.agent, 'stale3'),
+		]);
+		await new Promise(r => setTimeout(r, 0));
+
+		assert.strictEqual(service.observeCount(AICustomizationManagementSection.Agents).get(), 1,
+			'stale resolution must not overwrite the newer count');
 	});
 });
