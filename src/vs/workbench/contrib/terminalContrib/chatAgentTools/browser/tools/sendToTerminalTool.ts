@@ -306,10 +306,12 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 
 	/**
 	 * Checks whether a carousel answer value matches the command text being sent.
+	 * An empty/unprovided answer matches an empty command (i.e. pressing Enter to
+	 * accept the default), since that is the expected way to skip a question.
 	 */
 	private _answerMatchesCommand(answer: IChatQuestionAnswerValue | undefined, commandText: string): boolean {
 		if (answer === undefined) {
-			return false;
+			return commandText === '';
 		}
 		if (typeof answer === 'string') {
 			return answer.trim() === commandText;
@@ -320,11 +322,17 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 			if (multi.selectedValues.some(v => v.trim() === commandText)) {
 				return true;
 			}
-			return multi.freeformValue?.trim() === commandText;
+			if (multi.freeformValue?.trim() === commandText) {
+				return true;
+			}
+			return commandText === '' && multi.selectedValues.length === 0 && !multi.freeformValue?.trim();
 		}
 		if (hasKey(answer, { selectedValue: true })) {
 			const single = answer as IChatSingleSelectAnswer;
-			return single.selectedValue?.trim() === commandText || single.freeformValue?.trim() === commandText;
+			if (single.selectedValue?.trim() === commandText || single.freeformValue?.trim() === commandText) {
+				return true;
+			}
+			return commandText === '' && !single.selectedValue?.trim() && !single.freeformValue?.trim();
 		}
 		return false;
 	}
