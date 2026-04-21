@@ -42,6 +42,8 @@ export const enum AccountPolicyGateUnsatisfiedReason {
 export interface IAccountPolicyGateInfo {
 	readonly state: AccountPolicyGateState;
 	readonly reason?: AccountPolicyGateUnsatisfiedReason;
+	/** The admin-configured approved organization logins (lower-cased). Empty when the gate is inactive. */
+	readonly approvedOrganizations?: readonly string[];
 }
 
 /**
@@ -191,31 +193,31 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 
 		const account = this.defaultAccountService.currentDefaultAccount;
 		if (!account) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.NoAccount };
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.NoAccount, approvedOrganizations: approvedOrgs };
 		}
 
 		// Sign-in: provider id must match the configured GitHub (default or enterprise) provider.
 		const configuredProvider = this.defaultAccountService.getDefaultAccountAuthenticationProvider();
 		if (account.authenticationProvider.id !== configuredProvider.id) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.WrongProvider };
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.WrongProvider, approvedOrganizations: approvedOrgs };
 		}
 
 		// Account-side policy data must have resolved (rules out the pre-fetch window).
 		if (this.defaultAccountService.policyData === null) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved };
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved, approvedOrganizations: approvedOrgs };
 		}
 
 		if (approvedOrgs.includes('*')) {
-			return { state: AccountPolicyGateState.Satisfied };
+			return { state: AccountPolicyGateState.Satisfied, approvedOrganizations: approvedOrgs };
 		}
 
 		const accountOrgs = (account.entitlementsData?.organization_login_list ?? []).map(o => o.toLowerCase());
 		const intersects = accountOrgs.some(org => approvedOrgs.includes(org));
 		if (!intersects) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved };
+			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved, approvedOrganizations: approvedOrgs };
 		}
 
-		return { state: AccountPolicyGateState.Satisfied };
+		return { state: AccountPolicyGateState.Satisfied, approvedOrganizations: approvedOrgs };
 	}
 }
 

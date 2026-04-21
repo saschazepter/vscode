@@ -115,10 +115,11 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			this.notificationHandle.clear();
 			this.dismissedReason = undefined;
 		}
-		this.maybeShowNotification(info.reason);
+		this.maybeShowNotification(info);
 	}
 
-	private maybeShowNotification(reason: AccountPolicyGateUnsatisfiedReason | undefined): void {
+	private maybeShowNotification(info: IAccountPolicyGateInfo): void {
+		const reason = info.reason;
 		if (this.notificationHandle.value) {
 			return; // already showing for this reason
 		}
@@ -130,11 +131,16 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			return; // user clicked "Don't Show Again" for this same reason on this machine
 		}
 
+		const approvedOrgs = info.approvedOrganizations ?? [];
+		const orgList = approvedOrgs.length > 0 && !approvedOrgs.includes('*')
+			? ' ' + localize('accountPolicy.notification.approvedOrgs', "Approved organizations: {0}.", approvedOrgs.join(', '))
+			: '';
+
 		const message = reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved
-			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.")
+			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.") + orgList
 			: reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved
 				? localize('accountPolicy.notification.unresolved', "Waiting for your GitHub account policy to load before AI features can be enabled\u2026")
-				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.");
+				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.") + orgList;
 
 		const handleDisposables = new DisposableStore();
 		const handle = this.notificationService.prompt(
