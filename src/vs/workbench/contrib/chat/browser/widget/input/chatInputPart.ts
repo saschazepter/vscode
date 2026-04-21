@@ -383,6 +383,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private withinEditSessionKey: IContextKey<boolean>;
 	private filePartOfEditSessionKey: IContextKey<boolean>;
 	private chatSessionHasOptions: IContextKey<boolean>;
+	private chatSessionHasPermissionPicker: IContextKey<boolean>;
 	private chatSessionOptionsValid: IContextKey<boolean>;
 	private agentSessionTypeKey: IContextKey<string>;
 	private chatSessionSupportsDelegationKey: IContextKey<boolean>;
@@ -621,6 +622,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.withinEditSessionKey = ChatContextKeys.withinEditSessionDiff.bindTo(contextKeyService);
 		this.filePartOfEditSessionKey = ChatContextKeys.filePartOfEditSession.bindTo(contextKeyService);
 		this.chatSessionHasOptions = ChatContextKeys.chatSessionHasModels.bindTo(contextKeyService);
+		this.chatSessionHasPermissionPicker = ChatContextKeys.chatSessionHasPermissionPicker.bindTo(contextKeyService);
 		this.chatSessionOptionsValid = ChatContextKeys.chatSessionOptionsValid.bindTo(contextKeyService);
 		this.agentSessionTypeKey = ChatContextKeys.agentSessionType.bindTo(contextKeyService);
 		this.chatSessionSupportsDelegationKey = ChatContextKeys.chatSessionSupportsDelegation.bindTo(contextKeyService);
@@ -1664,6 +1666,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.chatSessionHasTargetedModels.set(!!requiresCustomModels);
 
 		const visibleOptionGroups = this.getVisibleOptionGroups(sessionResource);
+		const extensionPermissionsGroup = this.getActiveExtensionPermissionGroup(sessionResource);
+		this.chatSessionHasPermissionPicker.set(!!extensionPermissionsGroup);
+		this.permissionWidget?.refresh();
 		if (!visibleOptionGroups.length) {
 			this.chatSessionHasOptions.set(false);
 			this.chatSessionOptionsValid.set(true);
@@ -1728,9 +1733,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			}
 		}
 
-		// Filter to visible groups (has items AND passes `when` clause AND session has option configured)
+		// Filter to visible groups (has items AND passes `when` clause AND session has option configured).
+		// Permissions-kind groups are not rendered as standalone pickers; their items are surfaced
+		// inside the chat permission picker instead (see `getActiveExtensionPermissionGroup`).
 		const visibleGroups = new Map<string, IChatSessionProviderOptionGroup>();
 		for (const optionGroup of allOptionGroups) {
+			if (optionGroup.kind === 'permissions') {
+				continue;
+			}
 			const hasItems = optionGroup.items.length > 0 || (optionGroup.commands || []).length > 0;
 			const passesWhenClause = this.evaluateOptionGroupVisibility(optionGroup);
 
@@ -1744,6 +1754,24 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 
 		return Array.from(visibleGroups.values());
+	}
+
+	/**
+	 * Returns the permissions-kind option group contributed by the active session provider, if any.
+	 * Items from this group are surfaced inside the chat permission picker, replacing the
+	 * built-in `ChatPermissionLevel` items. Honors the same visibility predicates as
+	 * {@link getVisibleOptionGroups} so that `when` clauses are respected.
+	 *
+	 * If the provider declares more than one permissions-kind group (which the API forbids),
+	 * the first one wins.
+	 */
+	private getActiveExtensionPermissionGroup(sessionResource: URI | undefined): IChatSessionProviderOptionGroup | undefined {
+		const allOptionGroups = this.getAllOptionsGroups(sessionResource);
+		return allOptionGroups.find(g =>
+			g.kind === 'permissions'
+			&& g.items.length > 0
+			&& this.evaluateOptionGroupVisibility(g)
+		);
 	}
 
 	/**
@@ -2469,8 +2497,40 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						setPermissionLevel: (level: ChatPermissionLevel) => {
 							this.setPermissionLevel(level);
 						},
+						getExtensionPermissions: () => {
+							const sessionResource = this.getCurrentSessionResource();
+							const group = this.getActiveExtensionPermissionGroup(sessionResource);
+							if (!group) {
+								return undefined;
+							}
+							const current = sessionResource ? this.chatSessionsService.getSessionOption(sessionResource, group.id) : undefined;
+							const defaultId = group.selected?.id ?? group.items.find(i => i.default)?.id;
+							const selectedId = current === undefined
+								? defaultId
+								: typeof current === 'string' ? current : current.id;
+							const sessionType = sessionResource
+								? getChatSessionType(sessionResource)
+								: (this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? '');
+							return { sessionType, groupId: group.id, items: group.items, selectedId };
+						},
+						setExtensionPermission: (groupId: string, item: IChatSessionProviderOptionItem) => {
+							this.updateOptionContextKey(groupId, item.id);
+							this.getOrCreateOptionEmitter(groupId).fire(item);
+							const sessionResource = this.getCurrentSessionResource();
+							if (sessionResource) {
+								this.chatSessionsService.setSessionOption(sessionResource, groupId, item);
+							}
+							this.permissionWidget?.refresh();
+						},
 					};
-					return this.permissionWidget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, pickerOptions);
+					const widget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, pickerOptions);
+					this.permissionWidget = widget;
+					widget.onDidDispose(() => {
+						if (this.permissionWidget === widget) {
+							this.permissionWidget = undefined;
+						}
+					});
+					return widget;
 				}
 				return undefined;
 			}
