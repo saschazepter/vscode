@@ -86,7 +86,7 @@ enum LayoutClasses {
 	CHATBAR_HIDDEN = 'nochatbar',
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND = 'experimental-shell-gradient-background',
-	EXPERIMENTAL_SEND_BUTTON_GRADIENT = 'chat-send-button-gradient-enabled',
+	EXPERIMENTAL_SEND_BUTTON_GRADIENT = 'sessions-experimental-send-button-gradient',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized'
 }
