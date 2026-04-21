@@ -4,21 +4,16 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
-import { agentHostAuthority } from '../../../../platform/agentHost/common/agentHostUri.js';
-import { getEntryAddress, IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { autorun } from '../../../../base/common/observable.js';
+import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { isAgentHostProvider, IAgentHostSessionsProvider } from '../../../common/agentHostSessionsProvider.js';
+import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { AgentHostFilterConnectionStatus, IAgentHostFilterEntry, IAgentHostFilterService } from '../common/agentHostFilter.js';
 
 const STORAGE_KEY = 'sessions.agentHostFilter.selectedProviderId';
-
-/**
- * Stable providerId format used by {@link RemoteAgentHostSessionsProvider}.
- */
-function providerIdForAddress(address: string): string {
-	return `agenthost-${agentHostAuthority(address)}`;
-}
 
 function mapStatus(s: RemoteAgentHostConnectionStatus): AgentHostFilterConnectionStatus {
 	switch (s) {
@@ -27,6 +22,19 @@ function mapStatus(s: RemoteAgentHostConnectionStatus): AgentHostFilterConnectio
 		case RemoteAgentHostConnectionStatus.Disconnected:
 		default: return AgentHostFilterConnectionStatus.Disconnected;
 	}
+}
+
+/**
+ * Returns `true` if the given provider is a remote agent host provider that
+ * exposes a connection status and a remote address — i.e. the providers that
+ * the host filter combo is responsible for surfacing.
+ */
+function isRemoteAgentHostProvider(provider: unknown): provider is IAgentHostSessionsProvider & { readonly remoteAddress: string } {
+	if (!provider || typeof provider !== 'object' || !('id' in provider)) {
+		return false;
+	}
+	const p = provider as IAgentHostSessionsProvider;
+	return isAgentHostProvider(p) && p.connectionStatus !== undefined && typeof p.remoteAddress === 'string';
 }
 
 export class AgentHostFilterService extends Disposable implements IAgentHostFilterService {
@@ -39,16 +47,24 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	private _selectedProviderId: string | undefined;
 	private _hosts: readonly IAgentHostFilterEntry[] = [];
 
+	/**
+	 * Subscriptions to the `connectionStatus` observable of every currently
+	 * registered remote provider. Rebuilt whenever the set of providers
+	 * changes so we always observe the live set.
+	 */
+	private readonly _providerWatchers = this._register(new DisposableStore());
+
 	constructor(
+		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
 		@IRemoteAgentHostService private readonly _remoteAgentHostService: IRemoteAgentHostService,
 		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 
 		this._selectedProviderId = this._storageService.get(STORAGE_KEY, StorageScope.PROFILE, undefined);
-		this._recomputeHosts();
 
-		this._register(this._remoteAgentHostService.onDidChangeConnections(() => this._recomputeHosts()));
+		this._rewatchProviders();
+		this._register(this._sessionsProvidersService.onDidChangeProviders(() => this._rewatchProviders()));
 	}
 
 	get selectedProviderId(): string | undefined {
@@ -72,14 +88,23 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 	}
 
 	reconnect(providerId: string): void {
+		const provider = this._sessionsProvidersService.getProvider(providerId);
+		if (provider && isAgentHostProvider(provider) && provider.connect) {
+			provider.connect().catch(() => { /* errors are surfaced by the provider */ });
+			return;
+		}
 		const host = this._hosts.find(h => h.providerId === providerId);
 		if (!host) {
 			return;
 		}
-		if (host.status !== AgentHostFilterConnectionStatus.Disconnected) {
-			return;
-		}
 		this._remoteAgentHostService.reconnect(host.address);
+	}
+
+	disconnect(providerId: string): void {
+		const provider = this._sessionsProvidersService.getProvider(providerId);
+		if (provider && isAgentHostProvider(provider) && provider.disconnect) {
+			provider.disconnect().catch(() => { /* errors are surfaced by the provider */ });
+		}
 	}
 
 	private _validate(providerId: string | undefined): string | undefined {
@@ -89,41 +114,30 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 		return this._hosts.length > 0 ? this._hosts[0].providerId : undefined;
 	}
 
-	private _recomputeHosts(): void {
-		const connections = this._remoteAgentHostService.connections;
-		const entries = this._remoteAgentHostService.configuredEntries;
+	/**
+	 * Subscribe to the current set of remote providers so that host list
+	 * updates (registration/unregistration and status changes) are surfaced
+	 * via {@link onDidChange}. One `autorun` reads every provider's
+	 * `connectionStatus` observable and recomputes the host list.
+	 */
+	private _rewatchProviders(): void {
+		this._providerWatchers.clear();
 
-		const byProviderId = new Map<string, IAgentHostFilterEntry>();
+		const providers = this._sessionsProvidersService.getProviders().filter(isRemoteAgentHostProvider);
 
-		// Prefer live connection info (authoritative name + connection status).
-		for (const conn of connections) {
-			const providerId = providerIdForAddress(conn.address);
-			byProviderId.set(providerId, {
-				providerId,
-				label: conn.name || conn.address,
-				address: conn.address,
-				status: mapStatus(conn.status),
-			});
-		}
+		this._providerWatchers.add(autorun(reader => {
+			const hosts: IAgentHostFilterEntry[] = providers.map(provider => ({
+				providerId: provider.id,
+				label: provider.label,
+				address: provider.remoteAddress,
+				status: mapStatus(provider.connectionStatus!.read(reader)),
+			})).sort((a, b) => a.label.localeCompare(b.label));
 
-		// Fill in configured entries that are not currently tracked as a
-		// live connection.
-		for (const entry of entries) {
-			const address = getEntryAddress(entry);
-			const providerId = providerIdForAddress(address);
-			if (byProviderId.has(providerId)) {
-				continue;
-			}
-			byProviderId.set(providerId, {
-				providerId,
-				label: entry.name || address,
-				address,
-				status: AgentHostFilterConnectionStatus.Disconnected,
-			});
-		}
+			this._applyHosts(hosts);
+		}));
+	}
 
-		const hosts = [...byProviderId.values()].sort((a, b) => a.label.localeCompare(b.label));
-
+	private _applyHosts(hosts: readonly IAgentHostFilterEntry[]): void {
 		const changed = hosts.length !== this._hosts.length
 			|| hosts.some((h, i) => h.providerId !== this._hosts[i].providerId
 				|| h.label !== this._hosts[i].label
@@ -131,7 +145,6 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 
 		this._hosts = hosts;
 
-		// Ensure selection is still valid.
 		const validated = this._validate(this._selectedProviderId);
 		const selectionChanged = validated !== this._selectedProviderId;
 		if (selectionChanged) {

@@ -177,7 +177,7 @@ This structure places the sidebar at the root level spanning the full window hei
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
 
-The sessions sidebar can be resized down to a minimum width of 170px.
+The sessions sidebar can be resized down to a minimum width of 170px (desktop) or 270px (web, sized to fit the titlebar's left toolbar which includes the host filter combo).
 
 ### 4.3 Editor Modal
 

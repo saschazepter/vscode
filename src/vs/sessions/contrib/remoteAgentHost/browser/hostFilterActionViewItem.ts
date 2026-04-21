@@ -31,7 +31,7 @@ import { AgentHostFilterConnectionStatus, IAgentHostFilterEntry, IAgentHostFilte
  *  - Right: a connection-status button for the selected host:
  *      • Connected    → green `debug-connected` (non-interactive)
  *      • Connecting   → `debug-connected` pulsing, non-interactive
- *      • Disconnected → clickable `debug-disconnect`; click triggers reconnect
+ *      • Connected   → clickable `debug-disconnect`; click tears down the connection\n *      • Connecting  → pulsing `debug-disconnect`; click cancels the attempt\n *      • Disconnected → clickable `debug-connected`; click triggers a fresh connect
  */
 export class HostFilterActionViewItem extends BaseActionViewItem {
 
@@ -168,16 +168,21 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		}
 
 		dom.clearNode(this._connectElement);
-		this._connectElement.classList.remove('connected', 'connecting', 'disconnected', 'clickable', 'hidden');
-		this._connectElement.removeAttribute('aria-disabled');
-		this._connectElement.removeAttribute('role');
-		this._connectElement.removeAttribute('tabindex');
+		this._connectElement.classList.remove('connected', 'connecting', 'disconnected', 'hidden');
 		this._connectHover.clear();
 
 		if (!selected) {
 			this._connectElement.classList.add('hidden');
+			this._connectElement.removeAttribute('role');
+			this._connectElement.removeAttribute('tabindex');
 			return;
 		}
+
+		// Always render as a button; clicking forces a fresh connect attempt
+		// regardless of current state (the platform service tears down any
+		// existing connection before reconnecting).
+		this._connectElement.setAttribute('role', 'button');
+		this._connectElement.tabIndex = 0;
 
 		let iconId: string;
 		let hoverText: string;
@@ -185,21 +190,17 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			case AgentHostFilterConnectionStatus.Connected:
 				iconId = Codicon.debugConnected.id;
 				this._connectElement.classList.add('connected');
-				this._connectElement.setAttribute('aria-disabled', 'true');
-				hoverText = localize('agentHostFilter.status.connected', "Connected to {0}", selected.label);
+				hoverText = localize('agentHostFilter.status.connected', "Connected to {0}. Click to disconnect.", selected.label);
 				break;
 			case AgentHostFilterConnectionStatus.Connecting:
 				iconId = Codicon.debugConnected.id;
 				this._connectElement.classList.add('connecting');
-				this._connectElement.setAttribute('aria-disabled', 'true');
-				hoverText = localize('agentHostFilter.status.connecting', "Connecting to {0}…", selected.label);
+				hoverText = localize('agentHostFilter.status.connecting', "Connecting to {0}… Click to cancel.", selected.label);
 				break;
 			case AgentHostFilterConnectionStatus.Disconnected:
 			default:
 				iconId = Codicon.debugDisconnect.id;
-				this._connectElement.classList.add('disconnected', 'clickable');
-				this._connectElement.setAttribute('role', 'button');
-				this._connectElement.tabIndex = 0;
+				this._connectElement.classList.add('disconnected');
 				hoverText = localize('agentHostFilter.status.disconnected', "Disconnected from {0}. Click to connect.", selected.label);
 				break;
 		}
@@ -219,11 +220,17 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		if (selectedId === undefined) {
 			return;
 		}
-		const host = this._filterService.hosts.find(h => h.providerId === selectedId);
-		if (!host || host.status !== AgentHostFilterConnectionStatus.Disconnected) {
+		const selected = this._filterService.hosts.find(h => h.providerId === selectedId);
+		if (!selected) {
 			return;
 		}
-		this._filterService.reconnect(selectedId);
+		if (selected.status === AgentHostFilterConnectionStatus.Disconnected) {
+			this._filterService.reconnect(selectedId);
+		} else {
+			// Connected or Connecting — clicking tears down the current
+			// connection / cancels the in-flight attempt.
+			this._filterService.disconnect(selectedId);
+		}
 	}
 
 	private _showMenu(e: MouseEvent | KeyboardEvent): void {

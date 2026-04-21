@@ -3,16 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* Compound widget (dropdown pill + connect button). Stretches to fill the left toolbar width so the connect button aligns with the sidebar's right edge. */
-.monaco-workbench .part.titlebar .left-toolbar-container .monaco-action-bar .action-item.agent-host-filter-combo,
-.monaco-workbench .part.titlebar .left-toolbar-container .monaco-action-bar .action-item:has(> .agent-host-filter-combo) {
-	flex: 1 1 auto;
-	min-width: 0;
-}
-
+/* Compound widget (dropdown pill + connect button). Expands to fill the
+ * space available in the titlebar's left toolbar after the sidebar toggle,
+ * so the pill + connect button appear centered in the remaining width. */
 .agent-host-filter-combo {
 display: flex;
 align-items: center;
+justify-content: center;
 flex: 1 1 auto;
 min-width: 0;
 gap: 4px;
@@ -36,7 +33,7 @@ font-size: 12px;
 user-select: none;
 -webkit-user-select: none;
 touch-action: manipulation;
-flex: 1 1 auto;
+flex: 0 1 auto;
 min-width: 0;
 max-width: 260px;
 }
@@ -99,6 +96,7 @@ margin-left: auto;
 width: 22px;
 height: 22px;
 border-radius: 4px;
+cursor: pointer;
 touch-action: manipulation;
 -webkit-user-select: none;
 user-select: none;
@@ -125,19 +123,15 @@ animation: agent-host-filter-pulse 1.2s ease-in-out infinite;
 color: var(--vscode-descriptionForeground);
 }
 
-.agent-host-filter-combo .agent-host-filter-connect.clickable {
-cursor: pointer;
-}
-
-.agent-host-filter-combo .agent-host-filter-connect.clickable:hover {
+.agent-host-filter-combo .agent-host-filter-connect:hover {
 background-color: var(--vscode-toolbar-hoverBackground);
 }
 
-.agent-host-filter-combo .agent-host-filter-connect.clickable:hover .codicon {
+.agent-host-filter-combo .agent-host-filter-connect:hover .codicon {
 color: var(--vscode-foreground);
 }
 
-.agent-host-filter-combo .agent-host-filter-connect.clickable:focus-visible {
+.agent-host-filter-combo .agent-host-filter-connect:focus-visible {
 outline: 1px solid var(--vscode-focusBorder);
 outline-offset: -1px;
 }

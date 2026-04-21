@@ -56,9 +56,14 @@ export interface IAgentHostFilterService {
 	setSelectedProviderId(providerId: string): void;
 
 	/**
-	 * Attempt to (re)connect to the given host. No-op if the host is
-	 * unknown or already {@link AgentHostFilterConnectionStatus.Connected}
-	 * or {@link AgentHostFilterConnectionStatus.Connecting}.
+	 * Tear down any existing connection for the given host and start a
+	 * fresh connect attempt. No-op if the host is unknown.
 	 */
 	reconnect(providerId: string): void;
+
+	/**
+	 * Tear down the active connection for the given host without forgetting
+	 * the entry. No-op if the host is unknown or already disconnected.
+	 */
+	disconnect(providerId: string): void;
 }
