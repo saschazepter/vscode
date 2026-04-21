@@ -282,6 +282,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private editorItemNameElement!: HTMLElement;
 	private editorItemPathElement!: HTMLElement;
 	private editorSaveIndicator!: HTMLElement;
+	private editorOpenInEditorButton!: HTMLButtonElement;
 	private readonly editorModelChangeDisposables = this._register(new DisposableStore());
 	private readonly builtinEditingSessions = new Map<string, { model: ITextModel; originalContent: string }>();
 	private currentEditingUri: URI | undefined;
@@ -1520,6 +1521,19 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.editorSaveIndicator = DOM.append(editorHeader, $('.editor-save-indicator'));
 
+		this.editorOpenInEditorButton = DOM.append(editorHeader, $('button.editor-open-in-editor-button'));
+		this.editorOpenInEditorButton.setAttribute('aria-label', localize('openInFullEditor', "Open in Editor"));
+		const openIcon = DOM.append(this.editorOpenInEditorButton, $(`.codicon.codicon-${Codicon.goToFile.id}`));
+		openIcon.setAttribute('aria-hidden', 'true');
+		DOM.append(this.editorOpenInEditorButton, $('span.editor-open-in-editor-button-label', undefined, localize('openInFullEditor', "Open in Editor")));
+		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), this.editorOpenInEditorButton, localize('openInFullEditorTooltip', "Open this file in a full editor with access to the file explorer and chat.")));
+		this.editorDisposables.add(DOM.addDisposableListener(this.editorOpenInEditorButton, 'click', () => {
+			void this.openCurrentFileInFullEditor().catch(error => {
+				console.error('Failed to open customization file in full editor:', error);
+				this.notificationService.error(localize('openInFullEditorFailed', "Failed to open the file in a full editor."));
+			});
+		}));
+
 		const embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
 		const overflowWidgetsDomNode = DOM.append(this.editorContentContainer, $('.embedded-editor-overflow-widgets.monaco-editor'));
 		this.editorDisposables.add(toDisposable(() => overflowWidgetsDomNode.remove()));
@@ -1859,6 +1873,19 @@ export class AICustomizationManagementEditor extends EditorPane {
 		return this._editorContentChanged
 			&& this.currentEditingStorage === BUILTIN_STORAGE
 			&& (this.currentEditingPromptType === PromptsType.prompt || this.currentEditingPromptType === PromptsType.skill);
+	}
+
+	private async openCurrentFileInFullEditor(): Promise<void> {
+		const uri = this.currentEditingUri;
+		if (!uri) {
+			return;
+		}
+		await this.commandService.executeCommand('aiCustomizationManagement.openFile', {
+			uri,
+			storage: this.currentEditingStorage,
+			promptType: this.currentEditingPromptType,
+			name: this.editorItemNameElement?.textContent ?? undefined,
+		});
 	}
 
 	private updateInputDirtyState(): void {

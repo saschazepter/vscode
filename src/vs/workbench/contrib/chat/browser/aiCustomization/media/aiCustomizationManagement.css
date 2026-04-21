@@ -1155,6 +1155,39 @@
 	opacity: 1;
 }
 
+.ai-customization-management-editor .editor-open-in-editor-button {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	height: 26px;
+	border-radius: 4px;
+	cursor: pointer;
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: 1px solid var(--vscode-button-border, transparent);
+	font-size: 12px;
+	transition: background-color 0.1s ease;
+}
+
+.ai-customization-management-editor .editor-open-in-editor-button:hover {
+	background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.ai-customization-management-editor .editor-open-in-editor-button:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+.ai-customization-management-editor .editor-open-in-editor-button .codicon {
+	font-size: 14px;
+}
+
+.ai-customization-management-editor .editor-open-in-editor-button-label {
+	white-space: nowrap;
+}
+
 .ai-customization-management-editor .embedded-editor-container {
 	flex: 1;
 	overflow: hidden;
