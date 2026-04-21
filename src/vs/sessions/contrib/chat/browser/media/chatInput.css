@@ -313,7 +313,7 @@
 	background), and the conic stops are asymmetric so the fill has a clear
 	head and tail rather than mirroring around the mid-point. */
 .monaco-workbench.sessions-experimental-send-button-gradient .sessions-chat-send-button .monaco-button:not(.disabled) {
-	background: conic-gradient(from var(--chat-send-button-anim-angle),
+	background: conic-gradient(from var(--chat-send-button-anim-angle) at 0% 0%,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background)) 0deg,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor2) 60%, var(--vscode-input-background)) 90deg,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor3) 60%, var(--vscode-input-background)) 200deg,
@@ -329,6 +329,7 @@
 	box-shadow:
 		0 0 4px 0 color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor2) 70%, transparent),
 		0 0 8px 1px color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor3) 55%, transparent);
+	animation-duration: 6s;
 }
 
 /* Click: outward color pulse on the wrapper. */
@@ -381,7 +382,7 @@
 	Colors darkened to match hover (60% mixed with input background), with
 	asymmetric conic stops. */
 .monaco-workbench.sessions-experimental-send-button-gradient .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up {
-	background: conic-gradient(from var(--chat-send-button-anim-angle),
+	background: conic-gradient(from var(--chat-send-button-anim-angle) at 0% 0%,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background)) 0deg,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor2) 60%, var(--vscode-input-background)) 90deg,
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor3) 60%, var(--vscode-input-background)) 200deg,
@@ -402,6 +403,7 @@
 	box-shadow:
 		0 0 4px 0 color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor2) 70%, transparent),
 		0 0 8px 1px color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor3) 55%, transparent);
+	animation-duration: 6s;
 }
 
 .monaco-workbench.sessions-experimental-send-button-gradient .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:active)::after {
