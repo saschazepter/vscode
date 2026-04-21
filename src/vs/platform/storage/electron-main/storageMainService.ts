@@ -218,7 +218,7 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 			//   migrated them to the shared DB yet.
 			//   We use ProfileStorageMain (not ApplicationStorageMain) to avoid
 			//   writing telemetry state into the host app's DB — this is read-only.
-			const hostUserDataPath = getUserDataPath(this.environmentService.args, this.productService.quality === 'stable' ? '.vscode' : this.productService.quality === 'insider' ? '.vscode-insiders' : '.vscode-exploration');
+			const hostUserDataPath = getUserDataPath(this.environmentService.args, this.productService.quality === 'stable' ? 'Code' : this.productService.quality === 'insider' ? 'Code - Insiders' : 'Code - Exploration');
 			const hostApplicationStoragePath = join(hostUserDataPath, 'User', 'globalStorage', 'state.vscdb');
 			this.logService.debug(`StorageMainService: using host app storage as fallback at '${hostApplicationStoragePath}'`);
 			fallbackStorage = this._register(new HostApplicationStorageMain(
