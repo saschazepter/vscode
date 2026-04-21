@@ -84,6 +84,11 @@
 	background: none;
 }
 
+.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.codicon-agent-secondary-sidebar-toggle-open.checked:hover,
+.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.codicon-agent-secondary-sidebar-toggle-closed.checked:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
 .monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-actions-container .monaco-action-bar .action-item:not(.disabled) .codicon {
 	color: var(--vscode-icon-foreground);
 }
