@@ -29,7 +29,7 @@ if [ "@@NAME@@" != "code-oss" ]; then
 	fi
 
 	# Register apt repository
-	eval $(apt-config shell APT_SOURCE_PARTS Dir::Etc::sourceparts/d)
+	eval $(apt-config shell APT_SOURCE_PARTS Dir::Etc::sourceparts/d APT_SOURCES_LIST Dir::Etc::sourcelist/f)
 	CODE_SOURCE_PART=${APT_SOURCE_PARTS}vscode.list
 	CODE_SOURCE_PART_DEB822=${APT_SOURCE_PARTS}vscode.sources
 
@@ -37,7 +37,7 @@ if [ "@@NAME@@" != "code-oss" ]; then
 	CODE_TRUSTED_PART_OLD="/etc/apt/trusted.gpg.d/microsoft.gpg"
 
 	has_existing_repo_source() {
-		for source_file in "${APT_SOURCE_PARTS}"*.list "${APT_SOURCE_PARTS}"*.sources; do
+		for source_file in "${APT_SOURCE_PARTS}"*.list "${APT_SOURCE_PARTS}"*.sources "$APT_SOURCES_LIST"; do
 			if [ ! -f "$source_file" ]; then
 				continue
 			fi
