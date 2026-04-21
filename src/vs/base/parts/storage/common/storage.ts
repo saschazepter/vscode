@@ -218,11 +218,11 @@ export class Storage extends Disposable implements IStorage {
 	get(key: string, fallbackValue?: string): string | undefined {
 		const value = this.cache.get(key);
 
-		if (!isUndefinedOrNull(value)) {
-			return value;
+		if (isUndefinedOrNull(value)) {
+			return fallbackValue;
 		}
 
-		return fallbackValue;
+		return value;
 	}
 
 	getBoolean(key: string, fallbackValue: boolean): boolean;

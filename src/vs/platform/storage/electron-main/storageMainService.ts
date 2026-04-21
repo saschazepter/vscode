@@ -49,10 +49,7 @@ export interface IStorageMainService {
 
 	/**
 	 * Provides access to the application shared storage that is shared
-	 * across VS Code and Sessions app.
-	 *
-	 * Note: DO NOT use this for reading/writing from the main process!
-	 *       Rather use `IApplicationStorageMainService` for that purpose.
+	 * across VS Code and Agents app.
 	 */
 	readonly applicationSharedStorage: IStorageMain;
 

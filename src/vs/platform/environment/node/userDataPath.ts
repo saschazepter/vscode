@@ -83,6 +83,8 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
  */
 export function getDefaultUserDataPath(productName: string): string {
 	let appDataPath: string | undefined;
+
+	// 4. Otherwise check per platform
 	switch (process.platform) {
 		case 'win32':
 			appDataPath = process.env['APPDATA'];
