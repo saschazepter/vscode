@@ -1000,7 +1000,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		}
 
 		const args = ('prompt' in input ? input.prompt : '')?.trim().toLowerCase();
-		const enable = args !== 'off';
+		const isCurrentlyActive = !!this._mcState;
+		const enable = args === 'off' ? false : (args === 'on' ? true : !isCurrentlyActive);
 
 		try {
 			if (!enable) {
