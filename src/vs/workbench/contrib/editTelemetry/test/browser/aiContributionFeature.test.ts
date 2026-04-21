@@ -47,12 +47,10 @@ suite('AiContributionFeature', () => {
 		correlationId: undefined,
 	});
 
-	let storage: TestStorageService;
-
 	function setup(sharedStorage?: TestStorageService): void {
 		disposables = new DisposableStore();
 		const instantiationService = disposables.add(new TestInstantiationService(new ServiceCollection(), false, undefined, true));
-		storage = sharedStorage ?? disposables.add(new TestStorageService());
+		const storage = sharedStorage ?? disposables.add(new TestStorageService());
 		instantiationService.stub(IStorageService, storage);
 
 		workspace = new MutableObservableWorkspace();
