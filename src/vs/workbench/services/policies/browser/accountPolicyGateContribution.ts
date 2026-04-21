@@ -140,35 +140,37 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		const approvedOrgs = info.approvedOrganizations ?? [];
 		const hasConcreteOrgs = approvedOrgs.length > 0 && !approvedOrgs.includes('*');
 
-		// Build the message parts
+		// Build the message — notifications render as plain inline text, so use
+		// a comma-separated org list rather than bullet points / newlines.
+		const orgList = approvedOrgs.join(', ');
 		let message: string;
 		if (reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved) {
 			if (accountName && hasConcreteOrgs) {
 				message = localize(
 					'accountPolicy.notification.orgWithAccount',
-					"The account \"{0}\" is not a member of an approved organization. Your administrator requires sign-in with a GitHub account from one of these organizations to use AI features:\n\n{1}\n\nContact your administrator for more information.",
+					"The account \"{0}\" is not a member of an approved organization ({1}). Contact your administrator for more information.",
 					accountName,
-					approvedOrgs.map(org => `\u2022 ${org}`).join('\n')
+					orgList
 				);
 			} else if (accountName) {
 				message = localize(
 					'accountPolicy.notification.orgWithAccountNoList',
-					"The account \"{0}\" is not a member of an approved organization. Your administrator requires sign-in with a GitHub account from an approved organization to use AI features. Contact your administrator for more information.",
+					"The account \"{0}\" is not a member of an approved organization. Contact your administrator for more information.",
 					accountName
 				);
 			} else {
-				message = localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features. Contact your administrator for more information.");
+				message = localize('accountPolicy.notification.org', "Sign in with a GitHub account from an approved organization to use AI features. Contact your administrator for more information.");
 			}
 		} else {
 			// noAccount / wrongProvider
 			if (hasConcreteOrgs) {
 				message = localize(
 					'accountPolicy.notification.signinWithOrgs',
-					"Your administrator requires sign-in with a GitHub account to use AI features. Approved organizations:\n\n{0}\n\nContact your administrator for more information.",
-					approvedOrgs.map(org => `\u2022 ${org}`).join('\n')
+					"Sign in with a GitHub account from an approved organization ({0}) to use AI features.",
+					orgList
 				);
 			} else {
-				message = localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features. Contact your administrator for more information.");
+				message = localize('accountPolicy.notification.signin', "Sign in with an approved GitHub account to use AI features. Contact your administrator for more information.");
 			}
 		}
 
