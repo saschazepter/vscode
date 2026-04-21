@@ -604,9 +604,8 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 
 	/**
 	 * Merges the per-install legacy bulk file (`globalStorageUri/copilotcli/…`) into
-	 * the shared `~/.copilot/` bulk file using last-modified-wins, then deletes the
-	 * legacy copy. This handles:
-	 *   - First-run: shared file missing → copy legacy content as-is.
+	 * the shared `~/.copilot/` bulk file using last-modified-wins. This handles:
+	 *   - First-run: shared file missing → copy legacy content into the shared file.
 	 *   - Late-joiner: Process A already created the shared file → merge so entries
 	 *     unique to this install are not lost.
 	 *   - No legacy file: nothing to do.
