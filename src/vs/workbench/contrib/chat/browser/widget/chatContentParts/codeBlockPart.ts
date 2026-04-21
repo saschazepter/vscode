@@ -381,6 +381,12 @@ export class CodeBlockPart extends Disposable {
 		if (this.isDisposed) {
 			return undefined;
 		}
+		// If the current render explicitly hid the toolbar, don't pay the cost
+		// of creating it (and adding listeners on the shared menu / context
+		// key services). It will be created later if a render makes it visible.
+		if (this.currentCodeBlockData?.renderOptions?.hideToolbar) {
+			return undefined;
+		}
 		if (!this.toolbar) {
 			const factory = this._toolbarFactory;
 			if (!factory) {
@@ -508,6 +514,13 @@ export class CodeBlockPart extends Disposable {
 			dom.hide(this._toolbarElement);
 		} else {
 			dom.show(this._toolbarElement);
+			// In screen reader mode the toolbar must exist in the DOM so it
+			// can be announced and Tab-navigated. If a previous render hid
+			// the toolbar, _ensureToolbar would have early-exited; create
+			// it now that it is visible.
+			if (this.accessibilityService.isScreenReaderOptimized()) {
+				this._ensureToolbar();
+			}
 		}
 
 		if (data.vulns?.length && isResponseVM(data.element)) {
