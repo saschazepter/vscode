@@ -151,9 +151,12 @@ jobs:
             require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
             const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
             const userInput = process.env.SCENARIOS_INPUT || '';
-            const allScens = userInput
-              ? userInput.split(',').map(s => s.trim()).filter(Boolean)
-              : getScenarioIds();
+            const parsed = userInput.split(',').map(s => s.trim()).filter(Boolean);
+            const allScens = parsed.length > 0 ? parsed : getScenarioIds();
+            if (allScens.length === 0) {
+              console.error('No scenarios found. Provide a non-empty scenarios input or ensure getScenarioIds() returns at least one scenario.');
+              process.exit(1);
+            }
             const maxGroups = 4;
             const needed = Math.min(allScens.length, maxGroups);
             const groups = Array.from({ length: needed }, (_, i) => i + 1);
@@ -242,9 +245,8 @@ jobs:
             require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
             const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
             const userInput = process.env.SCENARIOS_INPUT || '';
-            const allScens = userInput
-              ? userInput.split(',').map(s => s.trim()).filter(Boolean)
-              : getScenarioIds();
+            const parsed = userInput.split(',').map(s => s.trim()).filter(Boolean);
+            const allScens = parsed.length > 0 ? parsed : getScenarioIds();
             const groups = parseInt(process.env.TOTAL_GROUPS, 10);
             const group = parseInt(process.env.MATRIX_GROUP, 10);
             // Distribute scenarios round-robin across groups
