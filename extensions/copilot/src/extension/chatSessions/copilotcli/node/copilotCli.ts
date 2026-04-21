@@ -23,7 +23,6 @@ import { basename } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { IInstantiationService } from '../../../../util/vs/platform/instantiation/common/instantiation';
 import { getCopilotLogger } from './logger';
-import { ensureNodePtyShim } from './nodePtyShim';
 import { ensureRipgrepShim } from './ripgrepShim';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 
@@ -302,9 +301,9 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 	}
 
 	async resolveAgent(agentId: string): Promise<SweCustomAgent | undefined> {
-		for (const promptFile of await this.promptsService.getCustomAgents(CancellationToken.None)) {
-			if (agentId === promptFile.uri.toString()) {
-				return this.toCustomAgent(promptFile)?.agent;
+		for (const customAgent of await this.promptsService.getCustomAgents(CancellationToken.None)) {
+			if (isEnabledForCopilotCLI(customAgent) && agentId === customAgent.uri.toString()) {
+				return this.toCustomAgent(customAgent)?.agent;
 			}
 		}
 		const customAgents = await this.getAgents();
@@ -334,13 +333,16 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 				sourceUri: URI.from({ scheme: 'copilotcli', path: `/agents/${agent.name}` }),
 			});
 		}
-		for (const promptFile of await this.promptsService.getCustomAgents(CancellationToken.None)) {
-			// Skip legacy .chatmode.md files — they are a deprecated format
-			// and should not appear in the Copilot CLI agent list.
-			if (promptFile.uri.path.toLowerCase().endsWith('.chatmode.md')) {
+		for (const customAgent of await this.promptsService.getCustomAgents(CancellationToken.None)) {
+			if (!isEnabledForCopilotCLI(customAgent)) {
 				continue;
 			}
-			const info = this.toCustomAgent(promptFile);
+			// Skip legacy .chatmode.md files — they are a deprecated format
+			// and should not appear in the Copilot CLI agent list.
+			if (customAgent.uri.path.toLowerCase().endsWith('.chatmode.md')) {
+				continue;
+			}
+			const info = this.toCustomAgent(customAgent);
 			if (!info) {
 				continue;
 			}
@@ -457,7 +459,7 @@ export class CopilotCLISDK implements ICopilotCLISDK {
 
 	public async getPackage(): Promise<typeof import('@github/copilot/sdk')> {
 		try {
-			// Ensure the node-pty shim exists before importing the SDK (required for CLI sessions)
+			// Ensure the ripgrep shim exists before importing the SDK (required for CLI sessions)
 			await this._ensureShimsPromise;
 			return await import('@github/copilot/sdk');
 		} catch (error) {
@@ -494,10 +496,7 @@ export class CopilotCLISDK implements ICopilotCLISDK {
 		if (await checkFileExists(successfulPlaceholder)) {
 			return;
 		}
-		await Promise.all([
-			ensureNodePtyShim(this.extensionContext.extensionPath, this.envService.appRoot, this.logService),
-			ensureRipgrepShim(this.extensionContext.extensionPath, this.envService.appRoot, this.logService)
-		]);
+		await ensureRipgrepShim(this.extensionContext.extensionPath, this.envService.appRoot, this.logService);
 		await fs.writeFile(successfulPlaceholder, 'Shims created successfully');
 	}
 
@@ -543,3 +542,9 @@ async function checkFileExists(filePath: string): Promise<boolean> {
 		return false;
 	}
 }
+
+export function isEnabledForCopilotCLI(customization: { sessionTypes?: readonly string[] }): boolean {
+	const sessionTypes = customization.sessionTypes;
+	return sessionTypes === undefined || sessionTypes.includes('copilotcli') || false;
+}
+

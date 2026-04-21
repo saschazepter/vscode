@@ -343,7 +343,7 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 		);
 		this.sentimentObs = observableFromEvent(this.onDidChangeSentiment, () => this.sentiment);
 
-		if ((isWeb && !environmentService.remoteAuthority)) {
+		if ((isWeb && !environmentService.remoteAuthority && !environmentService.isSessionsWindow)) {
 			ChatEntitlementContextKeys.Setup.hidden.bindTo(this.contextKeyService).set(true); // hide copilot UI on web if unsupported
 			return;
 		}
@@ -857,7 +857,7 @@ export class ChatEntitlementRequests extends Disposable {
 	}
 
 	async forceResolveEntitlement(token = CancellationToken.None): Promise<IEntitlements | undefined> {
-		const defaultAccount = await this.defaultAccountService.refresh();
+		const defaultAccount = await this.defaultAccountService.refresh({ forceRefresh: true });
 		if (!defaultAccount) {
 			return undefined;
 		}

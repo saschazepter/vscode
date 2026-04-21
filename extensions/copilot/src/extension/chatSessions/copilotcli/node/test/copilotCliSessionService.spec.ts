@@ -15,9 +15,11 @@ import { NullChatDebugFileLoggerService } from '../../../../../platform/chat/com
 import { IConfigurationService } from '../../../../../platform/configuration/common/configurationService';
 import { NullNativeEnvService } from '../../../../../platform/env/common/nullEnvService';
 import { MockFileSystemService } from '../../../../../platform/filesystem/node/test/mockFileSystemService';
+import { MockGitService } from '../../../../../platform/ignore/node/test/mockGitService';
 import { ILogService } from '../../../../../platform/log/common/logService';
 import { NullMcpService } from '../../../../../platform/mcp/common/mcpService';
 import { NoopOTelService, resolveOTelConfig } from '../../../../../platform/otel/common/index';
+import { MockPromptsService } from '../../../../../platform/promptFiles/test/common/mockPromptsService';
 import { NullRequestLogger } from '../../../../../platform/requestLogger/node/nullRequestLogger';
 import { NullWorkspaceService } from '../../../../../platform/workspace/common/workspaceService';
 import { mock } from '../../../../../util/common/test/simpleMock';
@@ -41,7 +43,6 @@ import { CopilotCLISessionService, CopilotCLISessionWorkspaceTracker, ICopilotCL
 import { CopilotCLIMCPHandler } from '../mcpHandler';
 import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from '../userInputHelpers';
 import { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullICopilotCLIImageSupport } from './testHelpers';
-import { MockPromptsService } from '../../../../../platform/promptFiles/test/common/mockPromptsService';
 
 // Re-export for backward compatibility with other spec files
 export { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullICopilotCLIImageSupport } from './testHelpers';
@@ -56,7 +57,7 @@ class MockLocalSession {
 	}
 }
 
-class NullAgentSessionsWorkspace implements IAgentSessionsWorkspace {
+export class NullAgentSessionsWorkspace implements IAgentSessionsWorkspace {
 	_serviceBrand: undefined;
 	readonly isAgentSessionsWorkspace = false;
 }
@@ -107,7 +108,7 @@ describe('CopilotCLISessionService', () => {
 	beforeEach(async () => {
 		vi.useRealTimers();
 		const sdk = {
-			getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} })),
+			getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} })),
 			getRequestId: vi.fn(() => undefined),
 		} as unknown as ICopilotCLISDK;
 
@@ -147,7 +148,7 @@ describe('CopilotCLISessionService', () => {
 						}
 					}();
 				}
-				return disposables.add(new CopilotCLISession(workspaceInfo, agentName, sdkSession, [], logService, workspaceService, new MockChatSessionMetadataStore(), instantiationService, new NullRequestLogger(), new NullICopilotCLIImageSupport(), new FakeToolsService(), new FakeUserQuestionHandler(), accessor.get(IConfigurationService), new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' }))));
+				return disposables.add(new CopilotCLISession(workspaceInfo, agentName, sdkSession, [], logService, workspaceService, new MockChatSessionMetadataStore(), instantiationService, new NullRequestLogger(), new NullICopilotCLIImageSupport(), new FakeToolsService(), new FakeUserQuestionHandler(), accessor.get(IConfigurationService), new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' })), new MockGitService()));
 			}
 		} as unknown as IInstantiationService;
 		const configurationService = accessor.get(IConfigurationService);
@@ -340,7 +341,7 @@ describe('CopilotCLISessionService', () => {
 			const sessionDir = URI.file(getCopilotCLISessionDir(sessionId));
 			const fileSystem = new MockFileSystemService();
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} }))
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} }))
 			} as unknown as ICopilotCLISDK;
 			const services = createExtensionUnitTestingServices();
 			disposables.add(services);
@@ -379,7 +380,7 @@ describe('CopilotCLISessionService', () => {
 			const sessionDir = URI.file(getCopilotCLISessionDir(sessionId));
 			const fileSystem = new MockFileSystemService();
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} }))
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} }))
 			} as unknown as ICopilotCLISDK;
 			const services = createExtensionUnitTestingServices();
 			disposables.add(services);
@@ -444,7 +445,7 @@ describe('CopilotCLISessionService', () => {
 			const sessionDir = URI.file(getCopilotCLISessionDir(sessionId));
 			const fileSystem = new MockFileSystemService();
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} }))
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} }))
 			} as unknown as ICopilotCLISDK;
 			const services = createExtensionUnitTestingServices();
 			disposables.add(services);
@@ -490,7 +491,7 @@ describe('CopilotCLISessionService', () => {
 			const sessionDir = URI.file(getCopilotCLISessionDir(sessionId));
 			const fileSystem = new MockFileSystemService();
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} }))
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} }))
 			} as unknown as ICopilotCLISDK;
 			const services = createExtensionUnitTestingServices();
 			disposables.add(services);
@@ -754,7 +755,7 @@ describe('CopilotCLISessionService', () => {
 			const storeMetadataSpy = vi.spyOn(metadataStore, 'storeForkedSessionMetadata');
 
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} })),
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} })),
 				getRequestId: vi.fn(() => undefined),
 			} as unknown as ICopilotCLISDK;
 			const services = disposables.add(createExtensionUnitTestingServices());
@@ -795,7 +796,7 @@ describe('CopilotCLISessionService', () => {
 			manager.sessions.set(sourceId, sdkSession);
 
 			const sdk = {
-				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} })),
+				getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, LocalSession: MockLocalSession, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} })),
 				getRequestId: vi.fn(() => ({ vscodeRequestId: 'vsc-req-1', copilotRequestId: 'sdk-event-1' })),
 			} as unknown as ICopilotCLISDK;
 			const services = disposables.add(createExtensionUnitTestingServices());

@@ -12,10 +12,10 @@ import { TERMINAL_BACKGROUND_COLOR } from '../workbench/contrib/terminal/common/
 
 import '../workbench/api/browser/extensionHost.contribution.js';
 import '../workbench/browser/workbench.contribution.js';
-import { sessionsPanelBackground } from './common/theme.js';
+import { agentsPanelBackground } from './common/theme.js';
 
-getColorRegistry().updateDefaultColor(PANEL_BACKGROUND, sessionsPanelBackground);
-getColorRegistry().updateDefaultColor(TERMINAL_BACKGROUND_COLOR, sessionsPanelBackground);
+getColorRegistry().updateDefaultColor(PANEL_BACKGROUND, agentsPanelBackground);
+getColorRegistry().updateDefaultColor(TERMINAL_BACKGROUND_COLOR, agentsPanelBackground);
 
 //#endregion
 
@@ -264,13 +264,8 @@ import '../workbench/contrib/git/browser/git.contributions.js';
 // SCM
 import '../workbench/contrib/scm/browser/scm.contribution.js';
 
-// Debug
-import '../workbench/contrib/debug/browser/debug.contribution.js';
-import '../workbench/contrib/debug/browser/debugEditorContribution.js';
-import '../workbench/contrib/debug/browser/breakpointEditorContribution.js';
-import '../workbench/contrib/debug/browser/callStackEditorContribution.js';
-import '../workbench/contrib/debug/browser/repl.js';
-import '../workbench/contrib/debug/browser/debugViewlet.js';
+// Debug (service)
+import '../workbench/contrib/debug/browser/debug.service.contribution.js';
 
 // Markers
 import '../workbench/contrib/markers/browser/markers.contribution.js';
@@ -460,7 +455,7 @@ import './browser/layoutActions.js';
 import './contrib/accountMenu/browser/account.contribution.js';
 import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';
-import './contrib/chat/browser/agentHostSessionConfigPicker.js';
+import './contrib/chat/browser/agentHost/agentHostSessionConfigPicker.js';
 import './contrib/chat/browser/customizationsDebugLog.contribution.js';
 import './contrib/copilotChatSessions/browser/copilotChatSessions.contribution.js';
 import './contrib/sessions/browser/sessions.contribution.js';
@@ -474,6 +469,8 @@ import './contrib/github/browser/github.contribution.js';
 import './contrib/applyCommitsToParentRepo/browser/applyChangesToParentRepo.js';
 import './contrib/fileTreeView/browser/fileTreeView.contribution.js'; // view registration disabled; filesystem provider still needed
 import './contrib/configuration/browser/configuration.contribution.js';
+import './contrib/workingSet/browser/workingSet.contribution.js';
+import './contrib/editor/browser/editor.contribution.js';
 
 import './contrib/terminal/browser/sessionsTerminalContribution.js';
 import './contrib/logs/browser/logs.contribution.js';

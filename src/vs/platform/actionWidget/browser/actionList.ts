@@ -566,6 +566,9 @@ export class ActionListWidget<T> extends Disposable {
 						if (element.disabled) {
 							label = localize({ key: 'customQuickFixWidget.labels', comment: [`Action widget labels for accessibility.`] }, "{0}, Disabled Reason: {1}", label, element.disabled);
 						}
+						if (element.submenuActions?.length) {
+							label = localize('actionList.submenuHint', "{0}, use right arrow to access options", label);
+						}
 						return label;
 					}
 					return null;
@@ -1502,8 +1505,13 @@ export class ActionListWidget<T> extends Disposable {
 			}
 		} else if (element && element.hover?.content && typeof e.index === 'number') {
 			// Show hover for disabled items that have hover content (with delay)
-			this._hideSubmenu();
-			this._scheduleSubmenuShow(element, e.index);
+			if (this._currentSubmenuElement === element) {
+				this._cancelSubmenuHide();
+				this._cancelSubmenuShow();
+			} else {
+				this._hideSubmenu();
+				this._scheduleSubmenuShow(element, e.index);
+			}
 		}
 	}
 

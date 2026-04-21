@@ -327,7 +327,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 			}
 		});
 		sdk = {
-			getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, createLocalFeatureFlagService: () => ({}), noopTelemetryBinder: {} })),
+			getPackage: vi.fn(async () => ({ internal: { LocalSessionManager: MockCliSdkSessionManager, NoopTelemetryService: class { } }, createLocalFeatureFlagService: () => ({}), AutoModeSessionManager: class { }, noopTelemetryBinder: {} })),
 			getAuthInfo: vi.fn(async () => ({ type: 'token' as const, token: 'valid-token', host: 'https://github.com' })),
 		} as unknown as ICopilotCLISDK;
 		const services = disposables.add(createExtensionUnitTestingServices());
@@ -392,7 +392,7 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 						}
 					}();
 				}
-				const session = new TestCopilotCLISession(workspaceInfo, agentName, sdkSession, [], logService, workspaceService, new MockChatSessionMetadataStore(), instantiationService, new NullRequestLogger(), new NullICopilotCLIImageSupport(), new FakeToolsService(), new FakeUserQuestionHandler(), accessor.get(IConfigurationService), new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' })));
+				const session = new TestCopilotCLISession(workspaceInfo, agentName, sdkSession, [], logService, workspaceService, new MockChatSessionMetadataStore(), instantiationService, new NullRequestLogger(), new NullICopilotCLIImageSupport(), new FakeToolsService(), new FakeUserQuestionHandler(), accessor.get(IConfigurationService), new NoopOTelService(resolveOTelConfig({ env: {}, extensionVersion: '0.0.0', sessionId: 'test' })), new FakeGitService());
 				cliSessions.push(session);
 				return disposables.add(session);
 			}

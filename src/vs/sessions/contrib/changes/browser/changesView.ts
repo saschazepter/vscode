@@ -6,6 +6,7 @@
 import './media/changesView.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Schemas } from '../../../../base/common/network.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IObjectTreeElement, ITreeSorter } from '../../../../base/browser/ui/tree/tree.js';
@@ -58,7 +59,7 @@ import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/b
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
-import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, SessionStatus } from '../../../services/sessions/common/session.js';
+import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, ISessionFileChange, SessionStatus } from '../../../services/sessions/common/session.js';
 import { Orientation } from '../../../../base/browser/ui/sash/sash.js';
 import { IView, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
 import { Color } from '../../../../base/common/color.js';
@@ -72,6 +73,8 @@ import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { isIChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 
 const $ = dom.$;
 
@@ -245,6 +248,8 @@ export class ChangesViewPane extends ViewPane {
 	private readonly hasGitHubRemoteContextKey: IContextKey<boolean>;
 	private readonly hasUncommittedChangesContextKey: IContextKey<boolean>;
 
+	private readonly scopedInstantiationService: IInstantiationService;
+
 	private readonly renderDisposables = this._register(new DisposableStore());
 
 	// Track current body dimensions for list layout
@@ -264,6 +269,7 @@ export class ChangesViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
+		@ICommandService private readonly commandService: ICommandService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ISessionsManagementService private readonly sessionManagementService: ISessionsManagementService,
 		@ILabelService private readonly labelService: ILabelService,
@@ -303,6 +309,10 @@ export class ChangesViewPane extends ViewPane {
 		this._register(bindContextKey(ChatContextKeys.agentSessionType, this.scopedContextKeyService, reader => {
 			return this.viewModel.activeSessionTypeObs.read(reader) ?? '';
 		}));
+
+		const scopedServiceCollection = new ServiceCollection([IContextKeyService, this.scopedContextKeyService]);
+		this.scopedInstantiationService = this.instantiationService.createChild(scopedServiceCollection);
+		this._register(this.scopedInstantiationService);
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -331,11 +341,11 @@ export class ChangesViewPane extends ViewPane {
 		this.filesHeaderNode = dom.append(this.contentContainer, $('.changes-files-header'));
 
 		const filesHeaderToolbarContainer = dom.append(this.filesHeaderNode, $('.changes-files-header-toolbar'));
-		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, filesHeaderToolbarContainer, MenuId.ChatEditingSessionChangesFileHeaderToolbar, {
+		this._register(this.scopedInstantiationService.createInstance(MenuWorkbenchToolBar, filesHeaderToolbarContainer, MenuId.ChatEditingSessionChangesFileHeaderToolbar, {
 			menuOptions: { shouldForwardArgs: true },
 			actionViewItemProvider: (action) => {
 				if (action.id === 'chatEditing.versionsPicker' && action instanceof MenuItemAction) {
-					return this.instantiationService.createInstance(ChangesPickerActionItem, action, this.viewModel);
+					return this.scopedInstantiationService.createInstance(ChangesPickerActionItem, action, this.viewModel);
 				}
 				return undefined;
 			},
@@ -514,11 +524,7 @@ export class ChangesViewPane extends ViewPane {
 			// Bind context keys
 			this._bindContextKeys(topLevelStats);
 
-			const scopedServiceCollection = new ServiceCollection([IContextKeyService, this.scopedContextKeyService]);
-			const scopedInstantiationService = this.instantiationService.createChild(scopedServiceCollection);
-			this.renderDisposables.add(scopedInstantiationService);
-
-			this.renderDisposables.add(scopedInstantiationService.createInstance(
+			this.renderDisposables.add(this.scopedInstantiationService.createInstance(
 				ChangesButtonBarWidget, this.actionsContainer, this.viewModel));
 		}
 
@@ -540,10 +546,14 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const hasGitRepository = this.viewModel.activeSessionHasGitRepositoryObs.read(reader);
-			dom.setVisibility(hasGitRepository, this.filesHeaderNode!);
 
 			const { files } = topLevelStats.read(reader);
 			const hasEntries = files > 0;
+
+			// Show the files header whenever the session is git-backed (so users
+			// can switch version modes) or there are session-provided entries to
+			// count (for non-git sessions like the local agent host).
+			dom.setVisibility(hasGitRepository || hasEntries, this.filesHeaderNode!);
 
 			dom.setVisibility(hasEntries, this.listContainer!);
 			dom.setVisibility(!hasEntries, this.welcomeContainer!);
@@ -597,8 +607,15 @@ export class ChangesViewPane extends ViewPane {
 
 				logChangesViewFileSelect(this.telemetryService, e.element.changeType);
 
-				const items = changesObs.get();
-				this._openFileItem(e.element, items, e.sideBySide, !!e.editorOptions?.preserveFocus, !!e.editorOptions?.pinned, items.length > 1);
+				const modalEditorMode = this.configurationService.getValue<string>('workbench.editor.useModal');
+				if (modalEditorMode === 'all') {
+					const items = changesObs.get();
+					this._openFileItem(e.element, items, e.sideBySide, !!e.editorOptions?.preserveFocus, !!e.editorOptions?.pinned, items.length > 1);
+					return;
+				}
+
+				// Open multi-file diff editor
+				void this._openMultiFileDiffEditor(e.element.uri);
 			}));
 		}
 
@@ -926,14 +943,22 @@ export class ChangesViewPane extends ViewPane {
 		));
 	}
 
-	async openChanges(): Promise<void> {
+	async openChanges(resource?: URI): Promise<void> {
 		const items = this.viewModel.activeSessionChangesObs.get();
 		if (items.length === 0) {
 			return;
 		}
 
-		const changes = toIChangesFileItem(items);
-		await this._openFileItem(changes[0], changes, false, false, false, changes.length > 1);
+		const modalEditorMode = this.configurationService.getValue<string>('workbench.editor.useModal');
+		if (modalEditorMode === 'all') {
+			const changes = toIChangesFileItem(items);
+			const changeToOpen = resource ? changes.find(c => isEqual(c.uri, resource)) : undefined;
+			await this._openFileItem(changeToOpen ?? changes[0], changes, false, false, false, changes.length > 1);
+			return;
+		}
+
+		// Open multi-file diff editor
+		await this._openMultiFileDiffEditor(resource);
 	}
 
 	private async _openFileItem(item: IChangesFileItem, items: IChangesFileItem[], sideBySide: boolean, preserveFocus: boolean, pinned: boolean, includeSidebar: boolean): Promise<void> {
@@ -980,6 +1005,44 @@ export class ChangesViewPane extends ViewPane {
 			resource: modifiedFileUri,
 			options: { preserveFocus, pinned, modal: { sidebar, navigation } }
 		}, group);
+	}
+
+	private async _openMultiFileDiffEditor(reveal?: URI): Promise<void> {
+		const sessionResource = this.viewModel.activeSessionResourceObs.get();
+		const changes = this.viewModel.activeSessionChangesObs.get();
+
+		if (!sessionResource || changes.length === 0) {
+			return;
+		}
+
+		const compare = (aChange: ISessionFileChange, bChange: ISessionFileChange): number => {
+			const aPath = isIChatSessionFileChange2(aChange) ? aChange.uri.fsPath : aChange.modifiedUri.fsPath;
+			const bPath = isIChatSessionFileChange2(bChange) ? bChange.uri.fsPath : bChange.modifiedUri.fsPath;
+			return comparePaths(aPath, bPath);
+		};
+
+		// Sort the changes
+		const resources = changes.toSorted(compare).map(d => ({
+			originalUri: d.originalUri,
+			modifiedUri: d.modifiedUri
+		}));
+
+		// Ensure the reveal resource is part of the changes
+		reveal = reveal
+			? resources.some(r => isEqual(r.modifiedUri, reveal))
+				? reveal
+				: undefined
+			: undefined;
+
+		// Open multi-file diff editor
+		await this.commandService.executeCommand('_workbench.openMultiDiffEditor', {
+			multiDiffSourceUri: sessionResource.with({ scheme: sessionResource.scheme + '-session-changes' }),
+			title: localize('sessions.changes.title', 'Session Changes'),
+			resources,
+			reveal: reveal
+				? { modifiedUri: reveal }
+				: undefined
+		});
 	}
 
 	override dispose(): void {
@@ -1157,6 +1220,7 @@ class VersionsPickerAction extends Action2 {
 				id: MenuId.ChatEditingSessionChangesFileHeaderToolbar,
 				group: 'navigation',
 				order: 9,
+				when: ActiveSessionContextKeys.HasGitRepository,
 			}],
 		});
 	}
@@ -1181,7 +1245,7 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 				const branchName = state?.branchName;
 				const baseBranchName = state?.baseBranchName;
 
-				return [
+				const actions = [
 					{
 						...action,
 						id: 'chatEditing.versionsBranchChanges',
@@ -1199,7 +1263,10 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 							}
 						},
 					},
-					{
+				];
+
+				if (!isWeb) {
+					actions.push({
 						...action,
 						id: 'chatEditing.versionsUncommittedChanges',
 						label: localize('chatEditing.versionsUncommittedChanges', 'Uncommitted Changes'),
@@ -1214,8 +1281,8 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 								this.renderLabel(this.element);
 							}
 						},
-					},
-					{
+					});
+					actions.push({
 						...action,
 						id: 'chatEditing.versionsAllChanges',
 						label: localize('chatEditing.versionsAllChanges', 'All Changes'),
@@ -1232,8 +1299,8 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 								this.renderLabel(this.element);
 							}
 						},
-					},
-					{
+					});
+					actions.push({
 						...action,
 						id: 'chatEditing.versionsLastTurnChanges',
 						label: localize('chatEditing.versionsLastTurnChanges', "Last Turn's Changes"),
@@ -1250,8 +1317,10 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 								this.renderLabel(this.element);
 							}
 						},
-					},
-				];
+					});
+				}
+
+				return actions;
 			},
 		};
 

@@ -31,7 +31,7 @@ import minimist from 'minimist';
 import { compileBuildWithoutManglingTask, compileBuildWithManglingTask } from './gulpfile.compile.ts';
 import { compileNonNativeExtensionsBuildTask, compileNativeExtensionsBuildTask, compileAllExtensionsBuildTask, compileExtensionMediaBuildTask, cleanExtensionsBuildTask, compileCopilotExtensionBuildTask } from './gulpfile.extensions.ts';
 import { copyCodiconsTask } from './lib/compilation.ts';
-import { getCopilotExcludeFilter, copyCopilotNativeDeps, prepareBuiltInCopilotExtensionShims } from './lib/copilot.ts';
+import { getCopilotExcludeFilter, prepareBuiltInCopilotRipgrepShim } from './lib/copilot.ts';
 import type { EmbeddedProductInfo } from './lib/embeddedType.ts';
 import { useEsbuildTranspile } from './buildConfig.ts';
 import { promisify } from 'util';
@@ -372,6 +372,10 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 
 		const name = product.nameShort;
 		const packageJsonUpdates: Record<string, unknown> = { name, version };
+		const isInsiderOrExploration = quality === 'insider' || quality === 'exploration';
+		const embedded = isInsiderOrExploration
+			? (product as typeof product & { embedded?: EmbeddedProductInfo }).embedded
+			: undefined;
 
 		if (platform === 'linux') {
 			packageJsonUpdates.desktopName = `${product.applicationName}.desktop`;
@@ -387,17 +391,22 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 
 		let productJsonContents: string;
 		const productJsonStream = gulp.src(['product.json'], { base: '.' })
-			.pipe(jsonEditor({ commit, date: readISODate(out), checksums, version }))
+			.pipe(jsonEditor((json: Record<string, unknown>) => {
+				json.commit = commit;
+				json.date = readISODate(out);
+				json.checksums = checksums;
+				json.version = version;
+				if (embedded) {
+					json['darwinSiblingBundleIdentifier'] = embedded.darwinBundleIdentifier;
+					const embeddedObj = json['embedded'] as EmbeddedProductInfo;
+					embeddedObj['darwinSiblingBundleIdentifier'] = json['darwinBundleIdentifier'] as string;
+				}
+				return json;
+			}))
 			.pipe(es.through(function (file) {
 				productJsonContents = file.contents.toString();
 				this.emit('data', file);
 			}));
-
-
-		const isInsiderOrExploration = quality === 'insider' || quality === 'exploration';
-		const embedded = isInsiderOrExploration
-			? (product as typeof product & { embedded?: EmbeddedProductInfo }).embedded
-			: undefined;
 
 		const packageSubJsonStream = embedded
 			? gulp.src(['package.json'], { base: '.' })
@@ -691,7 +700,7 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
 	};
 }
 
-function copyCopilotNativeDepsTask(platform: string, arch: string, destinationFolderName: string) {
+function prepareCopilotRipgrepShimTask(platform: string, arch: string, destinationFolderName: string) {
 	const outputDir = path.join(path.dirname(root), destinationFolderName);
 
 	return async () => {
@@ -702,10 +711,9 @@ function copyCopilotNativeDepsTask(platform: string, arch: string, destinationFo
 			? path.join(outputDir, `${product.nameLong}.app`, 'Contents', 'Resources', 'app')
 			: path.join(outputDir, versionedResourcesFolder, 'resources', 'app');
 		const appNodeModulesDir = path.join(appBase, 'node_modules');
-		copyCopilotNativeDeps(platform, arch, appNodeModulesDir);
 
 		const builtInCopilotExtensionDir = path.join(appBase, 'extensions', 'copilot');
-		prepareBuiltInCopilotExtensionShims(platform, arch, builtInCopilotExtensionDir, appNodeModulesDir);
+		prepareBuiltInCopilotRipgrepShim(platform, arch, builtInCopilotExtensionDir, appNodeModulesDir);
 	};
 }
 
@@ -734,7 +742,7 @@ BUILD_TARGETS.forEach(buildTarget => {
 			compileNativeExtensionsBuildTask,
 			util.rimraf(path.join(buildRoot, destinationFolderName)),
 			packageTask(platform, arch, sourceFolderName, destinationFolderName, opts),
-			copyCopilotNativeDepsTask(platform, arch, destinationFolderName)
+			prepareCopilotRipgrepShimTask(platform, arch, destinationFolderName)
 		];
 
 		if (platform === 'win32') {

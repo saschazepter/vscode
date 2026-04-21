@@ -262,13 +262,11 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		}
 
 		if (!sessionTypeId) {
-			const defaultType = provider.getSessionTypes(repositoryUri)[0];
-			if (!defaultType) {
+			sessionTypeId = provider.getSessionTypes(repositoryUri)[0]?.id;
+			if (!sessionTypeId) {
 				throw new Error(`No session types available for provider '${providerId}'`);
 			}
-			sessionTypeId = defaultType.id;
 		}
-
 		const session = provider.createNewSession(repositoryUri, sessionTypeId);
 		this.setActiveSession(session);
 		return session;
@@ -374,8 +372,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this._activeSessionType.set(session?.sessionType ?? '');
 		this._isBackgroundProvider.set(session?.sessionType === COPILOT_CLI_SESSION_TYPE);
 		this._isActiveSessionArchived.set(session?.isArchived.get() ?? false);
-		const provider = session ? this.sessionsProvidersService.getProviders().find(p => p.id === session.providerId) : undefined;
-		this._supportsMultiChat.set(provider?.capabilities.multipleChatsPerSession ?? false);
+		this._supportsMultiChat.set(session?.capabilities.supportsMultipleChats ?? false);
 
 		if (session && session.status.get() !== SessionStatus.Untitled) {
 			this.lastSelectedSession = session.resource;
