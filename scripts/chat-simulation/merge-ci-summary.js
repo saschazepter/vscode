@@ -72,14 +72,23 @@ function parseArgs() {
  * @param {string} resultsDir
  */
 function mergeResults(resultsDir) {
-	const groupDirs = fs.readdirSync(resultsDir)
-		.filter(d => d.startsWith('perf-results-'))
+	let groupDirs = fs.readdirSync(resultsDir)
+		.filter(d => d.startsWith('perf-results-') || d.startsWith('perf-summary-'))
 		.map(d => path.join(resultsDir, d))
 		.filter(d => fs.statSync(d).isDirectory());
 
+	// Fallback: when download-artifact extracts a single artifact directly into
+	// resultsDir (no artifact-named subdirectory), treat resultsDir itself as the
+	// sole group directory if it contains a .chat-simulation-data folder.
 	if (groupDirs.length === 0) {
-		console.error(`No perf-results-* directories found in ${resultsDir}`);
-		return null;
+		const simDataDir = path.join(resultsDir, '.chat-simulation-data');
+		if (fs.existsSync(simDataDir) && fs.statSync(simDataDir).isDirectory()) {
+			console.log(`No named subdirectories found; using ${resultsDir} directly as single group`);
+			groupDirs = [resultsDir];
+		} else {
+			console.error(`No perf-results-* or perf-summary-* directories found in ${resultsDir}`);
+			return null;
+		}
 	}
 
 	/** @type {Record<string, any>} */

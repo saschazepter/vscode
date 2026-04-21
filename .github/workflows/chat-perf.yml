@@ -67,6 +67,7 @@ jobs:
     outputs:
       test_is_version: ${{ steps.resolve.outputs.is_version }}
       test_build_arg: ${{ steps.resolve.outputs.build_arg }}
+      perf_matrix: ${{ steps.count_scenarios.outputs.matrix }}
     steps:
       - name: Resolve test build type
         id: resolve
@@ -143,6 +144,25 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
 
+      - name: Compute perf matrix
+        id: count_scenarios
+        run: |
+          node -e "
+            require('./scripts/chat-simulation/common/perf-scenarios').registerPerfScenarios();
+            const { getScenarioIds } = require('./scripts/chat-simulation/common/mock-llm-server');
+            const userInput = process.env.SCENARIOS_INPUT || '';
+            const allScens = userInput
+              ? userInput.split(',').map(s => s.trim()).filter(Boolean)
+              : getScenarioIds();
+            const maxGroups = 4;
+            const needed = Math.min(allScens.length, maxGroups);
+            const groups = Array.from({ length: needed }, (_, i) => i + 1);
+            const fs = require('fs');
+            const matrix = JSON.stringify({ group: groups });
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + matrix + '\\n');
+            console.log('Total scenarios: ' + allScens.length + ', groups: ' + needed);
+          "
+
       - name: Upload build output
         uses: actions/upload-artifact@v7
         with:
@@ -160,8 +180,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        group: [ 1, 2, 3, 4 ]
+      matrix: ${{ fromJSON(needs.setup.outputs.perf_matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -226,7 +245,7 @@ jobs:
             const allScens = userInput
               ? userInput.split(',').map(s => s.trim()).filter(Boolean)
               : getScenarioIds();
-            const groups = 4;
+            const groups = parseInt(process.env.TOTAL_GROUPS, 10);
             const group = parseInt(process.env.MATRIX_GROUP, 10);
             // Distribute scenarios round-robin across groups
             const groupScens = allScens.filter((_, i) => (i % groups) + 1 === group);
@@ -242,6 +261,7 @@ jobs:
           "
         env:
           MATRIX_GROUP: ${{ matrix.group }}
+          TOTAL_GROUPS: ${{ strategy.job-total }}
 
       - name: Run chat perf comparison
         id: perf
@@ -297,6 +317,18 @@ jobs:
             perf-output.log
             .chat-simulation-data/
           retention-days: 30
+
+      - name: Upload perf summary data
+        if: always() && steps.scenarios.outputs.skip != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-summary-${{ matrix.group }}
+          include-hidden-files: true
+          path: |
+            .chat-simulation-data/**/results.json
+            .chat-simulation-data/**/baseline-*.json
+            .chat-simulation-data/ci-summary.md
+          retention-days: 1
 
       - name: Check for regressions
         if: always() && steps.perf.outputs.exit_code != '' &&
@@ -402,7 +434,7 @@ jobs:
   # ── Report: collect results, write summary, fail on regression ──────
   report:
     name: Report
-    needs: [ chat-perf, leak-check ]
+    needs: [ setup, chat-perf, leak-check ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -417,10 +449,10 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      - name: Download all perf results
+      - name: Download perf summary data
         uses: actions/download-artifact@v7
         with:
-          pattern: perf-results-*
+          pattern: perf-summary-*
           path: perf-results
 
       - name: Download leak results
