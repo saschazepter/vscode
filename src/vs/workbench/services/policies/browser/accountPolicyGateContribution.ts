@@ -72,7 +72,11 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		const reasonChanged = info.reason !== this.lastInfo.reason;
 		this.lastInfo = info;
 
-		const isRestricted = info.state === AccountPolicyGateState.Restricted;
+		// `policyNotResolved` is transient — the user IS in an approved org but account
+		// data hasn't loaded yet. Don't set the context key for this state so the UI
+		// stays visible (policies aren't being restricted either — see AccountPolicyService).
+		const isRestricted = info.state === AccountPolicyGateState.Restricted
+			&& info.reason !== AccountPolicyGateUnsatisfiedReason.PolicyNotResolved;
 		this.contextKey.set(isRestricted);
 
 		if (stateChanged) {
@@ -91,6 +95,13 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			this.notificationHandle.clear();
 			this.dismissedReason = undefined;
 			this.storageService.remove(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
+			return;
+		}
+
+		// `policyNotResolved` is a transient boot-time state: the user IS signed into
+		// an approved org but account-side data hasn't loaded yet. Don't show a
+		// notification for this — it will resolve on its own within seconds.
+		if (info.reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved) {
 			return;
 		}
 

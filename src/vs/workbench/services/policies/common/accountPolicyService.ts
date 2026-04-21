@@ -128,7 +128,20 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		const previousInfo = this._gateInfo;
 		this._gateInfo = this.computeGateInfo();
 		const gateInfoChanged = previousInfo.state !== this._gateInfo.state || previousInfo.reason !== this._gateInfo.reason;
-		const gateRestricted = this._gateInfo.state === AccountPolicyGateState.Restricted;
+
+		// `policyNotResolved` means the user IS signed into an approved org but
+		// account-side policy data hasn't been fetched yet. During this transient
+		// window, we intentionally do NOT force restricted values. Policies with a
+		// `value` callback naturally return `undefined` because `policyData` is null,
+		// so no account-level overrides will slip through. Forcing `restrictedValue`
+		// here would transiently lock `chat.disableAIFeatures = true`, which surfaces
+		// confusing "Unable to write" errors and hides the UI for a split second.
+		//
+		// For the other unsatisfied reasons (`noAccount`, `wrongProvider`,
+		// `orgNotApproved`) we DO force restrictions because those are stable states
+		// that require user action to change.
+		const gateRestricted = this._gateInfo.state === AccountPolicyGateState.Restricted
+			&& this._gateInfo.reason !== AccountPolicyGateUnsatisfiedReason.PolicyNotResolved;
 
 		for (const key in policyDefinitions) {
 			const policy = policyDefinitions[key];
