@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 .interactive-session .interactive-input-part > .chat-input-notification-container .chat-input-notification {
-	padding: 8px 12px;
+	padding: 12px 16px;
 	box-sizing: border-box;
 	border: 1px solid var(--vscode-input-border, transparent);
 	border-bottom: none;
@@ -17,25 +17,25 @@
 
 /* Severity variants */
 .interactive-session .interactive-input-part > .chat-input-notification-container .chat-input-notification.severity-info {
-	border-color: var(--vscode-gauge-foreground);
-	background-color: var(--vscode-gauge-background);
+	border-color: var(--vscode-focusBorder);
+	background-color: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background));
 }
 
 .interactive-session .interactive-input-part > .chat-input-notification-container .chat-input-notification.severity-warning {
-	border-color: var(--vscode-gauge-warningForeground);
-	background-color: var(--vscode-gauge-warningBackground);
+	border-color: var(--vscode-editorWarning-foreground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 6%, var(--vscode-editorWidget-background));
 }
 
 .interactive-session .interactive-input-part > .chat-input-notification-container .chat-input-notification.severity-error {
-	border-color: var(--vscode-gauge-errorForeground);
-	background-color: var(--vscode-gauge-errorBackground);
+	border-color: var(--vscode-editorError-foreground);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 6%, var(--vscode-editorWidget-background));
 }
 
 /* Header row: icon + title + dismiss */
 .chat-input-notification .chat-input-notification-header {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -47,15 +47,15 @@
 }
 
 .chat-input-notification.severity-info .chat-input-notification-icon {
-	color: var(--vscode-gauge-foreground);
+	color: var(--vscode-focusBorder);
 }
 
 .chat-input-notification.severity-warning .chat-input-notification-icon {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-editorWarning-foreground);
 }
 
 .chat-input-notification.severity-error .chat-input-notification-icon {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-editorError-foreground);
 }
 
 /* Title */
@@ -75,33 +75,33 @@
 .chat-input-notification .chat-input-notification-progress {
 	width: 100%;
 	height: 4px;
-	background-color: var(--vscode-gauge-background);
+	background-color: var(--vscode-editorWidget-border);
 	border-radius: 4px;
 	overflow: hidden;
-	margin: 2px 0;
+	margin: 4px 0;
 }
 
 .chat-input-notification .chat-input-notification-progress-bar {
 	height: 100%;
 	border-radius: 4px;
-	background-color: var(--vscode-gauge-foreground);
+	background-color: var(--vscode-focusBorder);
 	transition: width 300ms ease;
 }
 
 .chat-input-notification.severity-warning .chat-input-notification-progress {
-	background-color: var(--vscode-gauge-warningBackground);
+	background-color: var(--vscode-editorWidget-border);
 }
 
 .chat-input-notification.severity-warning .chat-input-notification-progress-bar {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .chat-input-notification.severity-error .chat-input-notification-progress {
-	background-color: var(--vscode-gauge-errorBackground);
+	background-color: var(--vscode-editorWidget-border);
 }
 
 .chat-input-notification.severity-error .chat-input-notification-progress-bar {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 /* Detail row: progress label + detail text + link actions */
@@ -121,15 +121,15 @@
 
 /* Color the "X% used" label by severity */
 .chat-input-notification.severity-info .chat-input-notification-progress-label {
-	color: var(--vscode-gauge-foreground);
+	color: var(--vscode-foreground);
 }
 
 .chat-input-notification.severity-warning .chat-input-notification-progress-label {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-foreground);
 }
 
 .chat-input-notification.severity-error .chat-input-notification-progress-label {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-foreground);
 }
 
 .chat-input-notification .chat-input-notification-detail {
@@ -165,6 +165,7 @@
 	font-size: 12px;
 	line-height: 18px;
 	color: var(--vscode-descriptionForeground);
+	margin-top: 4px;
 }
 
 /* Actions row (button style, used when no progress bar) */

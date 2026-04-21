@@ -6,15 +6,14 @@
 /* Overall */
 
 .chat-status-bar-entry-tooltip {
-	margin-top: 4px;
-	margin-bottom: 4px;
-	min-width: 340px;
-	max-width: 400px;
+	padding: 16px;
+	min-width: 380px;
+	max-width: 440px;
 }
 
 .chat-status-bar-entry-tooltip hr {
-	margin-top: 8px;
-	margin-bottom: 8px;
+	margin-top: 12px;
+	margin-bottom: 12px;
 }
 
 /* Collapsible Quick Settings */
@@ -22,17 +21,17 @@
 .chat-status-bar-entry-tooltip .collapsible-header {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: 6px;
 	width: 100%;
-	padding: 6px 0;
+	padding: 10px 0 0 0;
 	border: none;
 	border-top: 1px solid var(--vscode-editorWidget-border);
 	background: none;
 	cursor: pointer;
-	font-size: inherit;
+	font-size: 13px;
 	font-family: inherit;
 	font-weight: 600;
-	color: var(--vscode-descriptionForeground);
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .collapsible-header:hover {
@@ -78,10 +77,12 @@
 	display: flex;
 	align-items: center;
 	color: var(--vscode-foreground);
-	padding-bottom: 8px;
-	margin-bottom: 4px;
+	font-size: 13px;
+	line-height: 18px;
+	padding-bottom: 12px;
+	margin-bottom: 12px;
 	border-bottom: 1px solid var(--vscode-editorWidget-border);
-	font-weight: 600;
+	font-weight: 400;
 }
 
 .chat-status-bar-entry-tooltip div.header .monaco-action-bar {
@@ -89,11 +90,12 @@
 }
 
 .chat-status-bar-entry-tooltip div.description {
-	font-size: 11px;
+	font-size: 12px;
+	line-height: 16px;
 	color: var(--vscode-descriptionForeground);
 	display: flex;
 	align-items: center;
-	gap: 3px;
+	gap: 4px;
 }
 
 .chat-status-bar-entry-tooltip div.description.terms {
@@ -118,14 +120,16 @@
 .chat-status-bar-entry-tooltip .upgrade-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-top: 4px;
-	padding-bottom: 8px;
+	gap: 12px;
+	margin-top: 8px;
+	padding-bottom: 12px;
 }
 
 .chat-status-bar-entry-tooltip .upgrade-row .upgrade-description {
 	flex: 1;
-	opacity: 0.7;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	line-height: 16px;
 }
 
 .chat-status-bar-entry-tooltip .upgrade-row .monaco-button {
@@ -147,15 +151,22 @@
 /* Quota Indicator */
 
 .chat-status-bar-entry-tooltip .quota-indicator {
-	margin-bottom: 4px;
-	padding: 8px 0;
+	margin-bottom: 24px;
+	padding: 0;
 	border: none;
 	border-radius: 0;
 }
 
+.chat-status-bar-entry-tooltip .quota-indicator:last-of-type {
+	margin-bottom: 16px;
+}
+
 .chat-status-bar-entry-tooltip .quota-indicator .quota-title {
+	font-size: 13px;
+	line-height: 18px;
 	font-weight: 600;
-	margin-bottom: 4px;
+	color: var(--vscode-foreground);
+	margin-bottom: 6px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-details {
@@ -163,27 +174,31 @@
 	justify-content: space-between;
 	align-items: baseline;
 	gap: 12px;
-	margin-bottom: 6px;
+	margin-bottom: 8px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-percentage {
 	display: flex;
 	align-items: baseline;
-	gap: 2px;
+	gap: 4px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-value {
-	font-size: 18px;
+	font-size: 20px;
+	line-height: 24px;
 	font-weight: 700;
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-value-suffix {
 	font-size: 12px;
+	line-height: 16px;
 	color: var(--vscode-descriptionForeground);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-reset {
 	font-size: 12px;
+	line-height: 16px;
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 }
@@ -191,40 +206,40 @@
 .chat-status-bar-entry-tooltip .quota-indicator .quota-bar {
 	width: 100%;
 	height: 4px;
-	background-color: var(--vscode-gauge-background);
+	background-color: var(--vscode-editorWidget-border);
 	border-radius: 4px;
 	border: none;
-	margin: 4px 0;
+	margin: 0;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-bar .quota-bit {
 	height: 100%;
-	background-color: var(--vscode-gauge-foreground);
+	background-color: var(--vscode-focusBorder);
 	border-radius: 4px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.warning .quota-bar {
-	background-color: var(--vscode-gauge-warningBackground);
+	background-color: var(--vscode-editorWidget-border);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.warning .quota-bar .quota-bit {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.warning .quota-percentage .quota-value {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.error .quota-bar {
-	background-color: var(--vscode-gauge-errorBackground);
+	background-color: var(--vscode-editorWidget-border);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.error .quota-bar .quota-bit {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.error .quota-percentage .quota-value {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-foreground);
 }
 
 /* Dimmed state when quota limit is fully exhausted - only dims the number, the bar stays highlighted */
@@ -255,33 +270,33 @@
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.warning {
-	border-color: var(--vscode-gauge-warningForeground);
-	background-color: var(--vscode-gauge-warningBackground);
-	color: var(--vscode-descriptionForeground);
+	border-color: var(--vscode-editorWarning-foreground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 6%, var(--vscode-editorWidget-background));
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.warning .callout-icon {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-editorWarning-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.error {
-	border-color: var(--vscode-gauge-errorForeground);
-	background-color: var(--vscode-gauge-errorBackground);
+	border-color: var(--vscode-editorError-foreground);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 6%, var(--vscode-editorWidget-background));
 	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.error .callout-icon {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-editorError-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.info {
-	border-color: var(--vscode-gauge-foreground);
-	background-color: var(--vscode-gauge-background);
+	border-color: var(--vscode-focusBorder);
+	background-color: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background));
 	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.info .callout-icon {
-	color: var(--vscode-gauge-foreground);
+	color: var(--vscode-focusBorder);
 }
 
 /* Settings */
