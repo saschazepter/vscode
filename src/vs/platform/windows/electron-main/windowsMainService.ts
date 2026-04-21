@@ -1017,6 +1017,18 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 					lastSessionWindows.push(this.windowsStateHandler.state.lastActiveWindow);
 				}
 
+				// Never restore the agents window from the previous session.
+				// The agents window is only opened explicitly via `--agents`; otherwise a
+				// previously-opened agents workspace would "stick" and reopen on every launch.
+				const agentSessionsWorkspaceUri = this.environmentMainService.agentSessionsWorkspace;
+				if (agentSessionsWorkspaceUri) {
+					for (let i = lastSessionWindows.length - 1; i >= 0; i--) {
+						if (lastSessionWindows[i].workspace && isEqual(lastSessionWindows[i].workspace!.configPath, agentSessionsWorkspaceUri)) {
+							lastSessionWindows.splice(i, 1);
+						}
+					}
+				}
+
 				const pathsToOpen = await Promise.all(lastSessionWindows.map(async lastSessionWindow => {
 
 					// Workspaces
