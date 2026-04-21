@@ -78,19 +78,28 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		this._selectedAction = review.actions.find(a => a.default) ?? review.actions[0];
 
-		// Register with the plan review feedback service so the editor
-		// contribution can show inline feedback input for this plan file.
-		if (review.planUri) {
-			const planUri = URI.revive(review.planUri);
-			this._planReviewRegistration.value = this._planReviewFeedbackService.registerPlanReview(planUri, (result) => this._options.onSubmit(result));
-		}
-
 		if (review instanceof ChatPlanReviewData && typeof review.draftCollapsed === 'boolean') {
 			this._isCollapsed = review.draftCollapsed;
 		}
 
 		const isResponseComplete = isResponseVM(context.element) && context.element.isComplete;
 		this._isSubmitted = !!review.isUsed || isResponseComplete;
+
+		// Register with the plan review feedback service so the editor
+		// contribution can show inline feedback input for this plan file.
+		// Only register when feedback is allowed and the review hasn't
+		// already been submitted.
+		if (review.planUri && review.canProvideFeedback && !this._isSubmitted) {
+			const planUri = URI.revive(review.planUri);
+			this._planReviewRegistration.value = this._planReviewFeedbackService.registerPlanReview(planUri, (result) => {
+				if (this._isSubmitted) {
+					return;
+				}
+				this._isSubmitted = true;
+				this._options.onSubmit(result);
+				this.markUsed();
+			});
+		}
 
 		// Build DOM that mirrors chat-confirmation-widget2 so we inherit its
 		// styling (title bar, scrollable message, blue/grey button row).
