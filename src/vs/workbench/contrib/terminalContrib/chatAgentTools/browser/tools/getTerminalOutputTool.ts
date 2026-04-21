@@ -18,7 +18,7 @@ export const GetTerminalOutputToolData: IToolData = {
 	toolReferenceName: 'getTerminalOutput',
 	legacyToolReferenceFullNames: ['runCommands/getTerminalOutput'],
 	displayName: localize('getTerminalOutputTool.displayName', 'Get Terminal Output'),
-	modelDescription: `Get output from a persistent terminal session previously started with ${TerminalToolId.RunInTerminal} in async mode (legacy: isBackground=true). The ID must be the exact opaque value returned by ${TerminalToolId.RunInTerminal}; terminal names, labels, and integers are not valid IDs.`,
+	modelDescription: `Get output from a persistent terminal session previously started with ${TerminalToolId.RunInTerminal} in async mode (legacy: isBackground=true). The ID must be the exact opaque UUID returned by ${TerminalToolId.RunInTerminal}; terminal names, labels, and integers are not valid IDs.`,
 	icon: Codicon.terminal,
 	source: ToolDataSource.Internal,
 	inputSchema: {
