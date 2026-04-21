@@ -168,6 +168,8 @@ import { IPluginGitService } from '../common/plugins/pluginGitService.js';
 import { PluginInstallService } from './pluginInstallService.js';
 import './promptSyntax/promptCodingAgentActionContribution.js';
 import './promptSyntax/promptToolsCodeLensProvider.js';
+import './planReviewFeedback/planReviewFeedbackService.js';
+import './planReviewFeedback/planReviewFeedbackEditorContribution.js';
 import { ChatSlashCommandsContribution } from './chatSlashCommands.js';
 import { PluginUrlHandler } from './pluginUrlHandler.js';
 import { PromptUrlHandler } from './promptSyntax/promptUrlHandler.js';

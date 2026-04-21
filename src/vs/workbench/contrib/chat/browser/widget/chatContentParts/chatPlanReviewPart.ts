@@ -26,6 +26,7 @@ import { IMarkdownRendererService } from '../../../../../../platform/markdown/br
 import { defaultButtonStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
 import { IChatPlanApprovalAction, IChatPlanReview, IChatPlanReviewResult } from '../../../common/chatService/chatService.js';
+import { IPlanReviewFeedbackItem, IPlanReviewFeedbackService } from '../../planReviewFeedback/planReviewFeedbackService.js';
 import { ChatPlanReviewData } from '../../../common/model/chatProgressTypes/chatPlanReviewData.js';
 import { IChatRendererContent, isResponseVM } from '../../../common/model/chatViewModel.js';
 import { ChatTreeItem } from '../../chat.js';
@@ -60,6 +61,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private _feedbackTextarea: HTMLTextAreaElement | undefined;
 	private _feedbackSection: HTMLElement | undefined;
 	private _isFeedbackMode = false;
+	private readonly _planReviewRegistration = this._register(new MutableDisposable());
 
 	constructor(
 		public readonly review: IChatPlanReview,
@@ -70,10 +72,18 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		@IDialogService private readonly _dialogService: IDialogService,
 		@IEditorService private readonly _editorService: IEditorService,
 		@IHoverService private readonly _hoverService: IHoverService,
+		@IPlanReviewFeedbackService private readonly _planReviewFeedbackService: IPlanReviewFeedbackService,
 	) {
 		super();
 
 		this._selectedAction = review.actions.find(a => a.default) ?? review.actions[0];
+
+		// Register with the plan review feedback service so the editor
+		// contribution can show inline feedback input for this plan file.
+		if (review.planUri) {
+			const planUri = URI.revive(review.planUri);
+			this._planReviewRegistration.value = this._planReviewFeedbackService.registerPlanReview(planUri, (result) => this._options.onSubmit(result));
+		}
 
 		if (review instanceof ChatPlanReviewData && typeof review.draftCollapsed === 'boolean') {
 			this._isCollapsed = review.draftCollapsed;
@@ -424,10 +434,36 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		if (this._isSubmitted) {
 			return;
 		}
-		const feedback = this._feedbackTextarea?.value.trim();
-		if (!feedback) {
+		const textareaFeedback = this._feedbackTextarea?.value.trim();
+
+		// Collect any inline editor feedback for this plan file.
+		let editorFeedbackItems: readonly IPlanReviewFeedbackItem[] = [];
+		if (this.review.planUri) {
+			const planUri = URI.revive(this.review.planUri);
+			editorFeedbackItems = this._planReviewFeedbackService.getFeedback(planUri);
+		}
+
+		if (!textareaFeedback && editorFeedbackItems.length === 0) {
 			return;
 		}
+
+		// Merge textarea feedback with editor-collected inline feedback.
+		const feedbackParts: string[] = [];
+		if (editorFeedbackItems.length > 0) {
+			feedbackParts.push('Here\'s the feedback:');
+			for (const item of editorFeedbackItems) {
+				if (item.column > 1) {
+					feedbackParts.push(`Line ${item.line}: Column ${item.column}: ${item.text}`);
+				} else {
+					feedbackParts.push(`Line ${item.line}: ${item.text}`);
+				}
+			}
+		}
+		if (textareaFeedback) {
+			feedbackParts.push(textareaFeedback);
+		}
+
+		const feedback = feedbackParts.join('\n');
 		this._isSubmitted = true;
 		this._options.onSubmit({ rejected: false, feedback });
 		this.markUsed();
@@ -460,6 +496,9 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private markUsed(): void {
 		this.domNode.classList.add('chat-plan-review-used');
 		this._buttonStore.clear();
+		// Unregister from the feedback service so the editor contribution
+		// hides/disables immediately, even if the plan file is still open.
+		this._planReviewRegistration.clear();
 		if (this._feedbackTextarea) {
 			this._feedbackTextarea.disabled = true;
 		}
