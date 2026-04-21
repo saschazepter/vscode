@@ -1785,7 +1785,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 
 		// Add the temp session to the cache immediately so it appears in the sessions list
-		session.setTitle(localize('new session', "New Session"));
+		session.setTitle(newItem.label);
 		session.setStatus(SessionStatus.InProgress);
 		const tempKey = session.resource.toString();
 		this._sessionCache.set(tempKey, session);
@@ -1808,14 +1808,23 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			this._onDidReplaceSession.fire({ from: tempSession, to: committedSession });
 
 			return committedSession;
-		} catch {
+		} catch (error) {
 			this._currentNewSession = undefined;
 
-			// Keep the temp session visible so the user can review
-			// whatever content the agent produced before the error.
-			session.setStatus(SessionStatus.Completed);
-			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [tempSession] });
-			return tempSession;
+			if (error instanceof CancellationError) {
+				// Keep the temp session visible so the user can review
+				// whatever content the agent produced before the cancellation.
+				session.setStatus(SessionStatus.Completed);
+				this._onDidChangeSessions.fire({ added: [], removed: [], changed: [tempSession] });
+				return tempSession;
+			}
+
+			// Unexpected error — clean up the temp session entirely
+			this._sessionCache.delete(tempKey);
+			this._sessionGroupCache.delete(session.id);
+			this._onDidChangeSessions.fire({ added: [], removed: [tempSession], changed: [] });
+			session.dispose();
+			throw error;
 		}
 	}
 
