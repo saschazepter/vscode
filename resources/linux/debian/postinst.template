@@ -44,13 +44,13 @@ if [ "@@NAME@@" != "code-oss" ]; then
 
 			# Classic apt source list entry, for example:
 			# deb [arch=amd64] https://packages.microsoft.com/repos/code stable main
-			if grep -Eiq "^[[:space:]]*deb[[:space:]].*https://packages\\.microsoft\\.com/repos/code([[:space:]]|$)" "$source_file"; then
+			if grep -Eiq "^[[:space:]]*deb[[:space:]].*https://packages\\.microsoft\\.com/repos/code/?([[:space:]]|$)" "$source_file"; then
 				return 0
 			fi
 
 			# DEB822 source entry, for example:
 			# URIs: https://packages.microsoft.com/repos/code
-			if grep -Eiq "^[[:space:]]*URIs:[[:space:]]*https://packages\\.microsoft\\.com/repos/code([[:space:]]|$)" "$source_file"; then
+			if grep -Eiq "^[[:space:]]*URIs:[[:space:]]*https://packages\\.microsoft\\.com/repos/code/?([[:space:]]|$)" "$source_file"; then
 				return 0
 			fi
 		done
