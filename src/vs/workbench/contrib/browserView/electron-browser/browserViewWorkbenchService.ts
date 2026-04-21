@@ -67,20 +67,17 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		return true;
 	}
 
-	private _getRemoteProxy(): Promise<string | undefined> {
+	private async _getRemoteProxy(): Promise<string | undefined> {
+		if (!this.willUseRemoteProxy()) {
+			return undefined;
+		}
 		if (!this._remoteProxyPromise) {
-			this._remoteProxyPromise = this._startRemoteProxy();
+			this._remoteProxyPromise = this._startRemoteProxy(this.environmentService.remoteAuthority!);
 		}
 		return this._remoteProxyPromise;
 	}
 
-	private async _startRemoteProxy(): Promise<string | undefined> {
-		if (!this.willUseRemoteProxy()) {
-			return undefined;
-		}
-
-		const remoteAuthority = this.environmentService.remoteAuthority!;
-
+	private async _startRemoteProxy(remoteAuthority: string): Promise<string | undefined> {
 		try {
 			const proxyUrl = await this.tunnelProxyService.start(remoteAuthority);
 			this.logService.info(`[BrowserViewWorkbenchService] Tunnel proxy started for remote authority '${remoteAuthority}'`);
