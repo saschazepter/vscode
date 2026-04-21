@@ -8,8 +8,10 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { ChatConfiguration } from '../../../../workbench/contrib/chat/common/constants.js';
-import { SessionsPolicyBlockedOverlay } from './sessionsPolicyBlocked.js';
+import { ISessionsBlockedOverlayOptions, SessionsBlockedReason, SessionsPolicyBlockedOverlay } from './sessionsPolicyBlocked.js';
+import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, IAccountPolicyGateService } from '../../../../workbench/services/policies/common/accountPolicyService.js';
 
 export class SessionsPolicyBlockedContribution extends Disposable implements IWorkbenchContribution {
 
@@ -21,6 +23,8 @@ export class SessionsPolicyBlockedContribution extends Disposable implements IWo
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IAccountPolicyGateService private readonly gateService: IAccountPolicyGateService,
+		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 	) {
 		super();
 
@@ -31,21 +35,52 @@ export class SessionsPolicyBlockedContribution extends Disposable implements IWo
 				this.update();
 			}
 		}));
+
+		this._register(this.gateService.onDidChangeGateInfo(() => this.update()));
 	}
 
 	private update(): void {
-		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentEnabled);
+		// Priority 1: agent mode disabled by policy
+		const agentEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentEnabled);
+		if (agentEnabled === false) {
+			this.showOverlay({ reason: SessionsBlockedReason.AgentDisabled });
+			return;
+		}
 
-		if (enabled === false) {
-			if (!this.overlayRef.value) {
-				this.overlayRef.value = this.instantiationService.createInstance(
-					SessionsPolicyBlockedOverlay,
-					this.layoutService.mainContainer,
-				);
+		// Priority 2: account policy gate is restricting access
+		const gateInfo = this.gateService.gateInfo;
+		const isRestricted = gateInfo.state === AccountPolicyGateState.Restricted
+			&& gateInfo.reason !== AccountPolicyGateUnsatisfiedReason.PolicyNotResolved;
+		if (isRestricted) {
+			const accountName = this.defaultAccountService.currentDefaultAccount?.accountName;
+			this.showOverlay({
+				reason: SessionsBlockedReason.AccountPolicyGate,
+				approvedOrganizations: gateInfo.approvedOrganizations,
+				accountName,
+			});
+			return;
+		}
+
+		// Not blocked
+		this.overlayRef.clear();
+	}
+
+	private showOverlay(options: ISessionsBlockedOverlayOptions): void {
+		// If the same reason is already shown, don't recreate the overlay —
+		// except for account policy gate where the account name/orgs may have changed.
+		if (this.overlayRef.value) {
+			if (options.reason === SessionsBlockedReason.AgentDisabled) {
+				return; // already showing agent disabled
 			}
-		} else {
+			// For account policy gate, recreate to update messaging
 			this.overlayRef.clear();
 		}
+
+		this.overlayRef.value = this.instantiationService.createInstance(
+			SessionsPolicyBlockedOverlay,
+			this.layoutService.mainContainer,
+			options,
+		);
 	}
 }
 
