@@ -441,17 +441,9 @@ export const MIGRATED_KEY = '__$__migratedStorageMarker';
 export class MigratingStorage extends Storage {
 
 	private migratedKeys: Set<string> = new Set();
-
-	constructor(
-		database: IStorageDatabase,
-		options: IStorageOptions,
-		private readonly fallbackStorage: IStorage
-	) {
-		super(database, options);
-	}
+	fallbackStorage: IStorage | undefined = undefined;
 
 	override async init(): Promise<void> {
-		await this.fallbackStorage.init();
 		await super.init();
 
 		// Load the set of keys already migrated from fallback
@@ -467,7 +459,7 @@ export class MigratingStorage extends Storage {
 			// resurrecting a key that was intentionally removed
 			// after migration.
 			this.markKeyAsMigrated(key);
-			if (this.fallbackStorage.items.has(key)) {
+			if (this.fallbackStorage?.items.has(key)) {
 				this.set(key, this.fallbackStorage.items.get(key));
 			}
 		}

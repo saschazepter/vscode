@@ -261,13 +261,6 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 		return integrity;
 	}
 
-	async getDataVersion(): Promise<number> {
-		const connection = await this.whenConnected;
-		const row = await this.get(connection, 'PRAGMA data_version');
-
-		return (row as { data_version: number }).data_version;
-	}
-
 	private async connect(path: string, retryOnBusy = true): Promise<IDatabaseConnection> {
 		this.logger.trace(`[storage ${this.name}] open(${path}, retryOnBusy: ${retryOnBusy})`);
 

@@ -382,9 +382,11 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 			useWAL: true
 		}, this.crossAppIPCService, this.logService);
 		this._register(this.sharedDatabase);
-
 		await this.applicationStorage.init();
-		return new MigratingStorage(this.sharedDatabase, { hint: wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined }, this.applicationStorage.storage);
+
+		const migratingStorage = this._register(new MigratingStorage(this.sharedDatabase, { hint: wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined }));
+		migratingStorage.fallbackStorage = this.applicationStorage.storage;
+		return migratingStorage;
 	}
 
 	protected override async doInit(storage: IStorage): Promise<void> {
