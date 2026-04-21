@@ -4,11 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { DEFAULT_ACCOUNT_SIGN_IN_COMMAND } from '../../accounts/browser/defaultAccount.js';
@@ -54,6 +56,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IOpenerService private readonly openerService: IOpenerService,
 		@IStorageService private readonly storageService: IStorageService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 	) {
@@ -143,9 +146,13 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 					run: () => this.commandService.executeCommand(DEFAULT_ACCOUNT_SIGN_IN_COMMAND),
 				},
 				{
-					label: localize('accountPolicy.notification.dontShowAgain', "Don't Show Again"),
-					run: () => this.storageService.store(NOTIFICATION_DISMISSED_KEY, reason ?? '', StorageScope.APPLICATION, StorageTarget.MACHINE),
-				}
+					label: localize('accountPolicy.notification.contactAdmin', "Contact Your Administrator"),
+					run: () => { /* informational — no-op; the label itself is the guidance */ },
+				},
+				{
+					label: localize('accountPolicy.notification.learnMore', "Learn More"),
+					run: () => this.openerService.open(URI.parse('https://code.visualstudio.com/docs/enterprise/overview')),
+				},
 			],
 			{ sticky: true }
 		);
