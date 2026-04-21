@@ -49,7 +49,7 @@ function parseArgs() {
 					'Merge per-group perf results into a single CI summary.',
 					'',
 					'Options:',
-					'  --results-dir <dir>     Directory containing perf-summary-* or perf-results-* subdirs',
+					'  --results-dir <dir>     Directory containing perf-results-* or perf-summary-* subdirs',
 					'  --output <path>         Output path for ci-summary.md',
 					'  --leak-summary <path>   Path to ci-summary-leak.md (optional)',
 					'  --threshold <frac>      Regression threshold fraction (default: 0.2)',

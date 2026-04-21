@@ -327,6 +327,7 @@ jobs:
           name: perf-summary-${{ matrix.group }}
           include-hidden-files: true
           path: |
+            perf-output.log
             .chat-simulation-data/**/results.json
             .chat-simulation-data/**/baseline-*.json
             .chat-simulation-data/ci-summary.md
