@@ -1049,7 +1049,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		return {
 			type: 'response' as const,
 			parts,
-			participant: turn.participant
+			participant: turn.participant,
+			details: turn.result?.details,
 		};
 	}
 
