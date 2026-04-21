@@ -39,16 +39,15 @@ export class NativeWorkbenchStorageService extends RemoteStorageService {
 		await super.doInitialize();
 		const applicationSharedStorage = this.getStorage(StorageScope.APPLICATION_SHARED);
 		if (applicationSharedStorage instanceof MigratingStorage) {
+			// Fall back to APPLICATION storage for transparent
+			// migration of keys moved to APPLICATION_SHARED scope. On hit, values
+			// are automatically written through to the shared storage.
 			let applicationSharedFallbackStorage;
 			if (this.workbenchEnvironmentService.isSessionsWindow) {
 				const channel = this.remoteService.getChannel('storage');
 				applicationSharedFallbackStorage = this._register(new Storage(this._register(new FallbackApplicationStorageDatabaseClient(channel))));
+				await applicationSharedFallbackStorage.init();
 			} else {
-				// In VS Code windows, fall back to APPLICATION storage for transparent
-				// migration of keys moved to APPLICATION_SHARED scope. On hit, values
-				// are automatically written through to the shared storage.
-				// In sessions windows, fallback data is already merged into the IPC
-				// response by the main process, so no window-side fallback is needed.
 				applicationSharedFallbackStorage = this.getStorage(StorageScope.APPLICATION);
 			}
 			applicationSharedStorage.fallbackStorage = applicationSharedFallbackStorage;
