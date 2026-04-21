@@ -8,6 +8,7 @@ import { localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
@@ -27,7 +28,8 @@ const PICK_HOST_FILTER_ID = 'sessions.agentHostFilter.pick';
 /**
  * Action that backs the host filter dropdown in the titlebar. Selection
  * is actually handled by {@link HostFilterActionViewItem}, so the action's
- * `run` is a no-op.
+ * `run` is a no-op. Gated on `isWeb` via its menu `when` clause so the
+ * combo only shows up in the web build.
  */
 registerAction2(class PickAgentHostFilterAction extends Action2 {
 	constructor() {
@@ -40,6 +42,7 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 				group: 'navigation',
 				order: 1,
 				when: ContextKeyExpr.and(
+					IsWebContext,
 					IsAuxiliaryWindowContext.toNegated(),
 					HasAgentHostsContext,
 				),
