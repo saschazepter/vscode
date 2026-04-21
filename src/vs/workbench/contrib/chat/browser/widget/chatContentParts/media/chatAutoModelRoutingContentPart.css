@@ -3,93 +3,35 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.chat-auto-model-routing-body {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	padding: 4px 12px 10px 12px;
-	font-size: var(--vscode-chat-font-size-body-s);
-}
-
-/* Prose sentence */
-.chat-auto-model-routing-prose {
-	color: var(--vscode-descriptionForeground);
-	line-height: 1.5;
-}
-
-/* Curved connector line when expanded (matches Thinking style) */
-.chat-auto-model-routing {
-	position: relative;
-}
-
-.chat-auto-model-routing:not(.chat-used-context-collapsed)::after {
-	content: '';
-	position: absolute;
-	left: 3px;
-	top: 22px;
-	height: 16px;
-	width: 5px;
-	border-left: 1px solid var(--vscode-chat-requestBorder);
-	border-bottom: 1px solid var(--vscode-chat-requestBorder);
-	border-bottom-left-radius: 5px;
-}
-
-/* Footer / prose paragraph */
-.chat-auto-model-routing-footer {
-	color: var(--vscode-descriptionForeground);
-	font-size: var(--vscode-chat-font-size-body-s);
-	line-height: 1.5;
-}
-
-.chat-auto-model-routing-learn-more {
-	color: var(--vscode-textLink-foreground);
-	text-decoration: none;
-}
-
-.chat-auto-model-routing-learn-more:hover {
-	text-decoration: underline;
-}
-
-/* Section label */
-.chat-auto-model-routing-section-label {
-	font-size: 10px;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--vscode-descriptionForeground);
-	opacity: 0.6;
-}
-
-/* Capability score list */
-.chat-auto-model-routing-scores {
-	list-style: none;
-	margin: 0;
-	padding: 0 0 0 10px;
-	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: 2px 12px;
-	border-left: 1px solid var(--vscode-chat-requestBorder);
-}
-
-.chat-auto-model-routing-score-row {
-	display: flex;
+.chat-auto-model-routing-chip {
+	display: inline-flex;
 	align-items: center;
 	gap: 4px;
+	padding: 1px 6px;
+	margin: 0 4px;
+	border-radius: 4px;
 	color: var(--vscode-descriptionForeground);
-	padding: 1px 0;
-}
-	color: var(--vscode-descriptionForeground);
-}
-
-.chat-auto-model-routing-score-name {
-	overflow: hidden;
-	text-overflow: ellipsis;
+	font-size: var(--vscode-chat-font-size-body-s);
+	line-height: 1.4;
+	cursor: default;
+	user-select: none;
 	white-space: nowrap;
 }
 
-.chat-auto-model-routing-score-pct {
-	font-variant-numeric: tabular-nums;
-	font-size: 11px;
-	white-space: nowrap;
+.chat-auto-model-routing-chip:hover,
+.chat-auto-model-routing-chip:focus {
+	background-color: var(--vscode-toolbar-hoverBackground);
 	color: var(--vscode-foreground);
-	font-weight: 500;
+	outline: none;
+}
+
+.chat-auto-model-routing-chip .codicon {
+	font-size: 12px;
+	opacity: 0.85;
+}
+
+.chat-auto-model-routing-chip-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 }
