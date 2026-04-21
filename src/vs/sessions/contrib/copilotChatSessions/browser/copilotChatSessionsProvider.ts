@@ -1211,6 +1211,12 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	/** Cache of chats keyed by raw session ID (resource path without leading slash). */
 	private _chatByRawSessionIdCache: Map<string, ICopilotChatSession> | undefined;
 
+	/** Cache of derived group IDs keyed by chat ID. */
+	private _groupIdByChatIdCache: Map<string, string> | undefined;
+
+	/** Cache of sorted chat IDs keyed by group ID. */
+	private _chatIdsByGroupIdCache: Map<string, string[]> | undefined;
+
 	/**
 	 * Emitter fired when the set of chats in a group changes,
 	 * used to update the chats observable in `_chatToSession`.
@@ -2081,6 +2087,93 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 	private _invalidateGroupingCaches(): void {
 		this._chatByRawSessionIdCache = undefined;
+		this._groupIdByChatIdCache = undefined;
+		this._chatIdsByGroupIdCache = undefined;
+	}
+
+	private _ensureGroupingCaches(): void {
+		if (this._chatByRawSessionIdCache && this._groupIdByChatIdCache && this._chatIdsByGroupIdCache) {
+			return;
+		}
+
+		const chats = Array.from(this._sessionCache.values());
+		const chatByRawSessionId = new Map<string, ICopilotChatSession>();
+		for (const chat of chats) {
+			chatByRawSessionId.set(chat.resource.path.slice(1), chat);
+		}
+
+		const groupIdByChatId = new Map<string, string>();
+		const chatsByGroupId = new Map<string, ICopilotChatSession[]>();
+
+		const resolveGroupId = (chat: ICopilotChatSession): string => {
+			const cachedGroupId = groupIdByChatId.get(chat.id);
+			if (cachedGroupId) {
+				return cachedGroupId;
+			}
+
+			const trail: ICopilotChatSession[] = [];
+			const seen = new Set<string>();
+			let current: ICopilotChatSession = chat;
+
+			for (let depth = 0; depth < 100; depth++) {
+				const currentCachedGroupId = groupIdByChatId.get(current.id);
+				if (currentCachedGroupId) {
+					for (const trailChat of trail) {
+						groupIdByChatId.set(trailChat.id, currentCachedGroupId);
+					}
+					return currentCachedGroupId;
+				}
+
+				if (seen.has(current.id)) {
+					for (const trailChat of trail) {
+						groupIdByChatId.set(trailChat.id, current.id);
+					}
+					return current.id;
+				}
+
+				trail.push(current);
+				seen.add(current.id);
+
+				const parentRawSessionId = this._getDirectParentRawSessionId(current);
+				if (!parentRawSessionId) {
+					for (const trailChat of trail) {
+						groupIdByChatId.set(trailChat.id, current.id);
+					}
+					return current.id;
+				}
+
+				const parentChat = chatByRawSessionId.get(parentRawSessionId);
+				if (!parentChat) {
+					const syntheticGroupId = this._getSyntheticGroupId(parentRawSessionId);
+					for (const trailChat of trail) {
+						groupIdByChatId.set(trailChat.id, syntheticGroupId);
+					}
+					return syntheticGroupId;
+				}
+
+				current = parentChat;
+			}
+
+			groupIdByChatId.set(chat.id, chat.id);
+			return chat.id;
+		};
+
+		for (const chat of chats) {
+			const groupId = resolveGroupId(chat);
+			const groupChats = chatsByGroupId.get(groupId) ?? [];
+			groupChats.push(chat);
+			chatsByGroupId.set(groupId, groupChats);
+		}
+
+		const chatIdsByGroupId = new Map<string, string[]>();
+		for (const [groupId, groupChats] of chatsByGroupId) {
+			groupChats.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+			chatIdsByGroupId.set(groupId, groupChats.map(chat => chat.id));
+		}
+
+		this._chatByRawSessionIdCache = chatByRawSessionId;
+		this._groupIdByChatIdCache = groupIdByChatId;
+		this._chatIdsByGroupIdCache = chatIdsByGroupId;
 	}
 
 	/**
@@ -2272,29 +2365,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 * If the root chat is not loaded, a synthetic provider-scoped group ID is used.
 	 */
 	private _getGroupIdForChat(chat: ICopilotChatSession): string {
-		let current: ICopilotChatSession = chat;
-		const seen = new Set<string>();
-
-		for (let depth = 0; depth < 100; depth++) {
-			if (seen.has(current.id)) {
-				return current.id;
-			}
-			seen.add(current.id);
-
-			const parentRawSessionId = this._getDirectParentRawSessionId(current);
-			if (!parentRawSessionId) {
-				return current.id;
-			}
-
-			const parentChat = this._findChatByRawSessionId(parentRawSessionId);
-			if (!parentChat) {
-				return this._getSyntheticGroupId(parentRawSessionId);
-			}
-
-			current = parentChat;
-		}
-
-		return chat.id;
+		this._ensureGroupingCaches();
+		return this._groupIdByChatIdCache?.get(chat.id) ?? chat.id;
 	}
 
 	/**
@@ -2302,14 +2374,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 * ordered by creation time (root session first).
 	 */
 	private _getChatIdsInGroup(groupId: string): string[] {
-		const chats: ICopilotChatSession[] = [];
-		for (const chat of this._sessionCache.values()) {
-			if (this._getGroupIdForChat(chat) === groupId) {
-				chats.push(chat);
-			}
-		}
-		chats.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-		return chats.map(c => c.id);
+		this._ensureGroupingCaches();
+		return this._chatIdsByGroupIdCache?.get(groupId) ?? [];
 	}
 
 	private _getDirectParentRawSessionId(chat: ICopilotChatSession): string | undefined {
@@ -2331,19 +2397,6 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 	private _getSyntheticGroupId(rawSessionId: string): string {
 		return `${this.id}:group:${rawSessionId}`;
-	}
-
-	/**
-	 * Finds a chat in the session cache by its raw session ID (the resource path without leading `/`).
-	 */
-	private _findChatByRawSessionId(rawId: string): ICopilotChatSession | undefined {
-		if (!this._chatByRawSessionIdCache) {
-			this._chatByRawSessionIdCache = new Map<string, ICopilotChatSession>();
-			for (const chat of this._sessionCache.values()) {
-				this._chatByRawSessionIdCache.set(chat.resource.path.slice(1), chat);
-			}
-		}
-		return this._chatByRawSessionIdCache.get(rawId);
 	}
 
 	private _findSession(sessionId: string): ISession | undefined {

@@ -619,6 +619,31 @@ suite('CopilotChatSessionsProvider', () => {
 		]);
 	});
 
+	test('groups nested parent chains under the ultimate root', () => {
+		const middleResource = URI.from({ scheme: AgentSessionProviders.Background, path: '/middle-session' });
+		const leafResource = URI.from({ scheme: AgentSessionProviders.Background, path: '/leaf-session' });
+
+		model.addSession(createMockAgentSession(middleResource, {
+			title: 'Middle Session',
+			createdAt: 2,
+			metadata: { repositoryPath: '/test/repo', sessionParentId: 'missing-root' }
+		}));
+		model.addSession(createMockAgentSession(leafResource, {
+			title: 'Leaf Session',
+			createdAt: 3,
+			metadata: { repositoryPath: '/test/repo', sessionParentId: 'middle-session' }
+		}));
+
+		const provider = createProvider(disposables, model);
+		const sessions = provider.getSessions();
+
+		assert.strictEqual(sessions.length, 1);
+		assert.deepStrictEqual(
+			sessions[0].chats.get().map(chat => chat.resource.toString()),
+			[middleResource.toString(), leafResource.toString()]
+		);
+	});
+
 	test('session title comes from primary (first) chat', () => {
 		const resource = URI.from({ scheme: AgentSessionProviders.Background, path: '/session-1' });
 		model.addSession(createMockAgentSession(resource, { title: 'Primary Title' }));
