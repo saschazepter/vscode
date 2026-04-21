@@ -14,10 +14,10 @@ import { IDefaultAccountService } from '../../../../platform/defaultAccount/comm
 
 /**
  * Policy name (declared by `chat.approvedAccountOrganizations` in chat.contribution.ts)
- * holding the comma-separated list of GitHub organization logins that satisfy the gate.
- * Setting this policy to a non-empty value activates the "Approved Account" gate; AI
- * features are forced off until the user signs into a GitHub account from an approved
- * organization AND the account-side policy data has resolved.
+ * holding the list of GitHub organization logins that satisfy the gate. Setting this
+ * policy to a non-empty value activates the "Approved Account" gate; AI features are
+ * forced off until the user signs into a GitHub account from an approved organization
+ * AND the account-side policy data has resolved.
  *
  * The token `*` is a wildcard that accepts any signed-in GitHub/GHE account.
  */
@@ -207,11 +207,18 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 }
 
 function parseApprovedOrganizations(raw: PolicyValue | undefined): string[] {
-	if (typeof raw !== 'string' || raw.length === 0) {
+	// `PolicyValue` is `string | number | boolean`, so even array-typed policies are
+	// delivered to AbstractPolicyService as a JSON-stringified array (this mirrors
+	// how `PolicyConfiguration.parse` normalises non-string-typed policy values).
+	let value: unknown = raw;
+	if (typeof value === 'string') {
+		try { value = JSON.parse(value); } catch { /* not JSON — leave as-is */ }
+	}
+	if (!Array.isArray(value)) {
 		return [];
 	}
-	return raw
-		.split(',')
+	return value
+		.filter((v): v is string => typeof v === 'string')
 		.map(s => s.trim().toLowerCase())
 		.filter(s => s.length > 0);
 }

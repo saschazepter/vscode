@@ -1482,9 +1482,10 @@ configurationRegistry.registerConfiguration({
 			}
 		},
 		'chat.approvedAccountOrganizations': {
-			type: 'string',
-			description: nls.localize('chat.approvedAccountOrganizations', "Comma-separated list of GitHub organization logins whose members may use built-in AI features. When set to a non-empty value, all AI features are disabled until the user signs into a GitHub account in one of these organizations AND the account-side policy data has resolved. Use '*' to accept any signed-in GitHub or GHE account."),
-			default: '',
+			type: 'array',
+			items: { type: 'string' },
+			description: nls.localize('chat.approvedAccountOrganizations', "List of GitHub organization logins whose members may use built-in AI features. When set to a non-empty list, all AI features are disabled until the user signs into a GitHub account in one of these organizations AND the account-side policy data has resolved. Use '*' to accept any signed-in GitHub or GHE account."),
+			default: [],
 			included: false,
 			policy: {
 				name: 'ChatApprovedAccountOrganizations',
@@ -1493,7 +1494,7 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'chat.approvedAccountOrganizations.policy.description',
-						value: nls.localize('chat.approvedAccountOrganizations.policy.description', "Setting this policy to a non-empty value activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comma-separated list of GitHub organization logins. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced).")
+						value: nls.localize('chat.approvedAccountOrganizations.policy.description', "Setting this policy to a non-empty list activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced).")
 					}
 				}
 			}

@@ -257,13 +257,16 @@ suite('AccountPolicyService', () => {
 	}
 
 	async function setupGate(opts: {
-		approvedOrgs?: string;
+		approvedOrgs?: string[] | string;
 		account?: IDefaultAccount | null;
 		policyData?: IPolicyData | null;
 	}): Promise<{ policyService: AccountPolicyService; managed: FakeManagedPolicyService }> {
 		const managed = disposables.add(new FakeManagedPolicyService());
 		if (opts.approvedOrgs !== undefined) {
-			managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, opts.approvedOrgs);
+			// Mirror how the platform delivers array-typed policy values to AbstractPolicyService:
+			// as a JSON-stringified array. Tests can pass a raw string to exercise edge cases.
+			const value = typeof opts.approvedOrgs === 'string' ? opts.approvedOrgs : JSON.stringify(opts.approvedOrgs);
+			managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, value);
 		}
 
 		const accountService = disposables.add(new DefaultAccountService(TestProductService));
@@ -288,7 +291,7 @@ suite('AccountPolicyService', () => {
 	});
 
 	test('gate active, no account signed in: restricted', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: null });
+		const { policyService } = await setupGate({ approvedOrgs: ['ApprovedOrg'], account: null });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
 		assert.strictEqual(policyService.gateInfo.reason, AccountPolicyGateUnsatisfiedReason.NoAccount);
 		// Restricted values applied to policies that opt into the gate.
@@ -299,31 +302,38 @@ suite('AccountPolicyService', () => {
 	});
 
 	test('gate active, signed in but org not approved: restricted', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: UNAPPROVED_ORG_ACCOUNT, policyData: {} });
+		const { policyService } = await setupGate({ approvedOrgs: ['ApprovedOrg'], account: UNAPPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
 		assert.strictEqual(policyService.gateInfo.reason, AccountPolicyGateUnsatisfiedReason.OrgNotApproved);
 	});
 
 	test('gate active, account in approved org but policyData null (pre-resolution): restricted', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: 'approvedorg', account: APPROVED_ORG_ACCOUNT, policyData: null });
+		const { policyService } = await setupGate({ approvedOrgs: ['approvedorg'], account: APPROVED_ORG_ACCOUNT, policyData: null });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
 		assert.strictEqual(policyService.gateInfo.reason, AccountPolicyGateUnsatisfiedReason.PolicyNotResolved);
 	});
 
 	test('gate active, satisfied (case-insensitive org match): account policy values flow normally', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: ' approvedorg , Other ', account: APPROVED_ORG_ACCOUNT, policyData: { chat_preview_features_enabled: false } });
+		const { policyService } = await setupGate({ approvedOrgs: [' approvedorg ', ' Other '], account: APPROVED_ORG_ACCOUNT, policyData: { chat_preview_features_enabled: false } });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Satisfied);
 		assert.strictEqual(policyService.getPolicyValue('PolicySettingD'), false); // from account policy data, not restricted
 		assert.strictEqual(policyService.getPolicyValue('PolicySettingA'), undefined); // not driven by account
 	});
 
 	test('gate active, wildcard "*" satisfies any signed-in account', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: '*', account: UNAPPROVED_ORG_ACCOUNT, policyData: {} });
+		const { policyService } = await setupGate({ approvedOrgs: ['*'], account: UNAPPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Satisfied);
 	});
 
-	test('approved org list empty (or whitespace-only): gate inactive', async () => {
-		const { policyService } = await setupGate({ approvedOrgs: '   ', account: APPROVED_ORG_ACCOUNT, policyData: {} });
+	test('approved org list empty: gate inactive', async () => {
+		const { policyService } = await setupGate({ approvedOrgs: [], account: APPROVED_ORG_ACCOUNT, policyData: {} });
+		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Inactive);
+	});
+
+	test('approved orgs raw non-array string from policy service: gate inactive (fail-safe)', async () => {
+		// Defensive: if some platform delivers the policy as a non-JSON string, treat it as no-orgs
+		// rather than half-parsing CSV. The platform's array-typed policy contract makes this rare.
+		const { policyService } = await setupGate({ approvedOrgs: 'github', account: APPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Inactive);
 	});
 
@@ -340,7 +350,7 @@ suite('AccountPolicyService', () => {
 		};
 
 		const managed = disposables.add(new FakeManagedPolicyService());
-		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, 'ApprovedOrg');
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, JSON.stringify(['ApprovedOrg']));
 		const accountService = disposables.add(new DefaultAccountService(TestProductService));
 		accountService.setDefaultAccountProvider(new MismatchedProvider(NON_GITHUB_ACCOUNT, {}));
 		await accountService.refresh();
@@ -376,7 +386,7 @@ suite('AccountPolicyService', () => {
 		};
 		Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration(node);
 		try {
-			const { policyService } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: null });
+			const { policyService } = await setupGate({ approvedOrgs: ['ApprovedOrg'], account: null });
 			assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
 			assert.strictEqual(policyService.getPolicyValue('PolicySettingRV'), 'locked');
 		} finally {
@@ -385,17 +395,17 @@ suite('AccountPolicyService', () => {
 	});
 
 	test('onDidChangeGateInfo fires on state/reason transitions', async () => {
-		const { policyService, managed } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: APPROVED_ORG_ACCOUNT, policyData: {} });
+		const { policyService, managed } = await setupGate({ approvedOrgs: ['ApprovedOrg'], account: APPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Satisfied);
 
 		const events: IAccountPolicyGateInfo[] = [];
 		disposables.add(policyService.onDidChangeGateInfo(info => events.push(info)));
 
 		// Satisfied → Restricted (org no longer approved)
-		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, 'OnlyOtherOrg');
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, JSON.stringify(['OnlyOtherOrg']));
 		await new Promise(resolve => setTimeout(resolve, 0));
 		// Restricted → Inactive (gate disabled)
-		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, '');
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, JSON.stringify([]));
 		await new Promise(resolve => setTimeout(resolve, 0));
 
 		assert.deepStrictEqual(
@@ -433,7 +443,7 @@ suite('AccountPolicyService', () => {
 			}
 		}
 
-		const managed = disposables.add(new AsyncManagedPolicyService('OnlyOtherOrg'));
+		const managed = disposables.add(new AsyncManagedPolicyService(JSON.stringify(['OnlyOtherOrg'])));
 		const accountService = disposables.add(new DefaultAccountService(TestProductService));
 		accountService.setDefaultAccountProvider(new DefaultAccountProvider(APPROVED_ORG_ACCOUNT, {}));
 		await accountService.refresh();
@@ -451,7 +461,7 @@ suite('AccountPolicyService', () => {
 	});
 
 	test('managed policy change re-evaluates the gate and fires onDidChange', async () => {
-		const { policyService, managed } = await setupGate({ approvedOrgs: 'ApprovedOrg', account: APPROVED_ORG_ACCOUNT, policyData: {} });
+		const { policyService, managed } = await setupGate({ approvedOrgs: ['ApprovedOrg'], account: APPROVED_ORG_ACCOUNT, policyData: {} });
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Satisfied);
 
 		const changes: string[] = [];
@@ -459,7 +469,7 @@ suite('AccountPolicyService', () => {
 
 		// Change the approved-org list to one the account is NOT in → flip Satisfied → Restricted,
 		// which forces restricted values onto opted-in policies and emits onDidChange.
-		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, 'OnlyOtherOrg');
+		managed.setPolicy(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME, JSON.stringify(['OnlyOtherOrg']));
 		// `_updatePolicyDefinitions` is async — wait one turn for it to resolve.
 		await new Promise(resolve => setTimeout(resolve, 0));
 
