@@ -198,7 +198,8 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 					imageInput: model.supportsVision,
 					toolCalling: true
 				},
-				targetChatSessionType: 'copilotcli'
+				targetChatSessionType: 'copilotcli',
+				isDefault: !isAutoModelEnabled && index === 0 ? true : undefined,
 			};
 			const tooltip = getModelCapabilitiesDescription(modelInfo) ?? '';
 			return {
