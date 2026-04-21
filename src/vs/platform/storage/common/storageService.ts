@@ -18,7 +18,7 @@ import { IAnyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 export class RemoteStorageService extends AbstractStorageService {
 
 	private readonly applicationStorageProfile: IUserDataProfile;
-	private readonly applicationStorage: IStorage;
+	protected readonly applicationStorage: IStorage;
 
 	private readonly applicationSharedStorage: IStorage;
 
@@ -33,7 +33,7 @@ export class RemoteStorageService extends AbstractStorageService {
 	constructor(
 		initialWorkspace: IAnyWorkspaceIdentifier | undefined,
 		initialProfiles: { defaultProfile: IUserDataProfile; currentProfile: IUserDataProfile },
-		private readonly remoteService: IRemoteService,
+		protected readonly remoteService: IRemoteService,
 		private readonly environmentService: IEnvironmentService
 	) {
 		super();
@@ -58,14 +58,9 @@ export class RemoteStorageService extends AbstractStorageService {
 		return applicationStorage;
 	}
 
-	private createApplicationSharedStorage(): IStorage {
+	protected createApplicationSharedStorage(): IStorage {
 		const storageDataBaseClient = this._register(new ApplicationSharedStorageDatabaseClient(this.remoteService.getChannel('storage')));
 		const applicationSharedStorage = this._register(new Storage(storageDataBaseClient));
-
-		// Fall back to APPLICATION storage for transparent migration of
-		// keys that have been moved to APPLICATION_SHARED scope. On hit,
-		// values are automatically written through to the shared storage.
-		applicationSharedStorage.fallbackStorage = this.applicationStorage;
 
 		this._register(applicationSharedStorage.onDidChangeStorage(e => this.emitDidChangeValue(StorageScope.APPLICATION_SHARED, e)));
 

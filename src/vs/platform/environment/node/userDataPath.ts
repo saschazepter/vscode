@@ -60,7 +60,7 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
 	}
 
 	// 2. Support global VSCODE_APPDATA environment variable
-	let appDataPath = process.env['VSCODE_APPDATA'];
+	const appDataPath = process.env['VSCODE_APPDATA'];
 	if (appDataPath) {
 		return join(appDataPath, productName);
 	}
@@ -75,6 +75,11 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
 	}
 
 	// 4. Otherwise check per platform
+	return getAppDataPath(productName);
+}
+
+function getAppDataPath(productName: string): string {
+	let appDataPath: string | undefined;
 	switch (process.platform) {
 		case 'win32':
 			appDataPath = process.env['APPDATA'];

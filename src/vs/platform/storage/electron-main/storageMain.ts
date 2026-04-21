@@ -12,7 +12,7 @@ import { join } from '../../../base/common/path.js';
 import { StopWatch } from '../../../base/common/stopwatch.js';
 import { URI } from '../../../base/common/uri.js';
 import { Promises } from '../../../base/node/pfs.js';
-import { InMemoryStorageDatabase, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage, StorageHint, StorageState } from '../../../base/parts/storage/common/storage.js';
+import { InMemoryStorageDatabase, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage, StorageHint, StorageState, MigratingStorage } from '../../../base/parts/storage/common/storage.js';
 import { ISQLiteStorageDatabaseLoggingOptions, ISQLiteStorageDatabaseOptions, SQLiteStorageDatabase } from '../../../base/parts/storage/node/storage.js';
 import { IEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
@@ -366,10 +366,10 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 	constructor(
 		private readonly options: IStorageMainOptions,
 		private readonly storageFolderPath: string,
+		private readonly applicationStorage: IStorageMain,
 		logService: ILogService,
 		fileService: IFileService,
 		private readonly crossAppIPCService: ICrossAppIPCService,
-		private readonly fallbackStorage: IStorageMain | undefined
 	) {
 		super(logService, fileService);
 	}
@@ -383,15 +383,8 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		}, this.crossAppIPCService, this.logService);
 		this._register(this.sharedDatabase);
 
-		const storage = new Storage(this.sharedDatabase, { hint: this.options.useInMemoryStorage ? StorageHint.STORAGE_IN_MEMORY : wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined });
-
-		// Set up fallback to application storage for transparent
-		// migration of keys moved to APPLICATION_SHARED scope
-		if (this.fallbackStorage) {
-			storage.fallbackStorage = this.fallbackStorage.storage;
-		}
-
-		return storage;
+		await this.applicationStorage.init();
+		return new MigratingStorage(this.sharedDatabase, { hint: wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined }, this.applicationStorage.storage);
 	}
 
 	protected override async doInit(storage: IStorage): Promise<void> {
@@ -402,6 +395,10 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		// This must happen after Storage.init() completes to
 		// avoid processing stale queued messages.
 		this.sharedDatabase?.setInitialized();
+	}
+
+	get applicationStorageItems(): Map<string, string> {
+		return this.applicationStorage.items;
 	}
 
 	private async prepareStorageFolder(): Promise<{ storageFilePath: string; wasCreated: boolean }> {
@@ -420,6 +417,22 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 
 		return { storageFilePath: storageDatabasePath, wasCreated: true };
 	}
+}
+
+export class HostApplicationStorageMain extends BaseStorageMain {
+
+	constructor(
+		readonly path: string,
+		logService: ILogService,
+		fileService: IFileService
+	) {
+		super(logService, fileService);
+	}
+
+	protected async doCreate(): Promise<Storage> {
+		return new Storage(new SQLiteStorageDatabase(this.path, { logging: this.createLoggingOptions() }));
+	}
+
 }
 
 export class WorkspaceStorageMain extends BaseStorageMain {

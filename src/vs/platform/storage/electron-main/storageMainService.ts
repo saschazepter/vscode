@@ -8,19 +8,22 @@ import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { join } from '../../../base/common/path.js';
 import { IStorage } from '../../../base/parts/storage/common/storage.js';
-import { IEnvironmentService } from '../../environment/common/environment.js';
+import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, LifecycleMainPhase, ShutdownReason } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { AbstractStorageService, isProfileUsingDefaultStorage, IStorageService, StorageScope, StorageTarget } from '../common/storage.js';
-import { ApplicationStorageMain, ApplicationSharedStorageMain, ProfileStorageMain, InMemoryStorageMain, IStorageMain, IStorageMainOptions, WorkspaceStorageMain, IStorageChangeEvent } from './storageMain.js';
+import { ApplicationStorageMain, ApplicationSharedStorageMain, ProfileStorageMain, InMemoryStorageMain, IStorageMain, IStorageMainOptions, WorkspaceStorageMain, IStorageChangeEvent, HostApplicationStorageMain } from './storageMain.js';
 import { IUserDataProfile, IUserDataProfilesService } from '../../userDataProfile/common/userDataProfile.js';
 import { IUserDataProfilesMainService } from '../../userDataProfile/electron-main/userDataProfile.js';
 import { IAnyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IUriIdentityService } from '../../uriIdentity/common/uriIdentity.js';
 import { Schemas } from '../../../base/common/network.js';
 import { ICrossAppIPCService } from '../../crossAppIpc/electron-main/crossAppIpcService.js';
+import { IProductService } from '../../product/common/productService.js';
+import { INodeProcess } from '../../../base/common/platform.js';
+import { getUserDataPath } from '../../environment/node/userDataPath.js';
 
 //#region Storage Main Service (intent: make application, profile and workspace storage accessible to windows from main process)
 
@@ -94,12 +97,13 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
-		@IEnvironmentService private readonly environmentService: IEnvironmentService,
+		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@IUserDataProfilesMainService private readonly userDataProfilesService: IUserDataProfilesMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@IFileService private readonly fileService: IFileService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
-		@ICrossAppIPCService private readonly crossAppIPCService: ICrossAppIPCService
+		@ICrossAppIPCService private readonly crossAppIPCService: ICrossAppIPCService,
+		@IProductService private readonly productService: IProductService
 	) {
 		super();
 
@@ -206,7 +210,28 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 		this.logService.trace(`StorageMainService: creating application shared storage`);
 
 		const sharedStorageFolderPath = join(this.environmentService.appSharedDataHome.with({ scheme: Schemas.file }).fsPath, 'sharedStorage');
-		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, this.logService, this.fileService, this.crossAppIPCService, this.applicationStorage);
+
+		// Determine the fallback storage for transparent migration of keys
+		// from APPLICATION to APPLICATION_SHARED scope:
+		// In VS Code: reuse the own application storage (keys are local)
+		let fallbackStorage: IStorageMain = this.applicationStorage;
+		if (this.environmentService.isBuilt && (process as INodeProcess).isEmbeddedApp) {
+			// - In the Agents App: create a storage backed by the host (VS Code)
+			//   app's application DB so keys are found even if VS Code hasn't
+			//   migrated them to the shared DB yet.
+			//   We use ProfileStorageMain (not ApplicationStorageMain) to avoid
+			//   writing telemetry state into the host app's DB — this is read-only.
+			const hostUserDataPath = getUserDataPath(this.environmentService.args, this.productService.quality === 'stable' ? '.vscode' : this.productService.quality === 'insider' ? '.vscode-insiders' : '.vscode-exploration');
+			const hostApplicationStoragePath = join(hostUserDataPath, 'User', 'globalStorage', 'state.vscdb');
+			this.logService.debug(`StorageMainService: using host app storage as fallback at '${hostApplicationStoragePath}'`);
+			fallbackStorage = this._register(new HostApplicationStorageMain(
+				hostApplicationStoragePath,
+				this.logService,
+				this.fileService
+			));
+		}
+
+		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, fallbackStorage, this.logService, this.fileService, this.crossAppIPCService);
 
 		this._register(Event.once(applicationSharedStorage.onDidCloseStorage)(() => {
 			this.logService.trace(`StorageMainService: closed application shared storage`);

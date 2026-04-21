@@ -249,16 +249,7 @@ export class WorkspaceTrustManagementService extends Disposable implements IWork
 	}
 
 	private loadTrustInfo(): IWorkspaceTrustInfo {
-		let infoAsString = this.storageService.get(this.storageKey, StorageScope.APPLICATION_SHARED);
-
-		// Migrate from APPLICATION to APPLICATION_SHARED scope
-		if (!infoAsString) {
-			infoAsString = this.storageService.get(this.storageKey, StorageScope.APPLICATION);
-			if (infoAsString) {
-				this.storageService.store(this.storageKey, infoAsString, StorageScope.APPLICATION_SHARED, StorageTarget.MACHINE);
-				this.storageService.remove(this.storageKey, StorageScope.APPLICATION);
-			}
-		}
+		const infoAsString = this.storageService.get(this.storageKey, StorageScope.APPLICATION_SHARED);
 
 		let result: IWorkspaceTrustInfo | undefined;
 		try {

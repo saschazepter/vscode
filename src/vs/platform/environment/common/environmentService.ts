@@ -159,7 +159,7 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 			return URI.file(join(vscodePortable, 'shared-data'));
 		}
 
-		return joinPath(this.userHome, `${this.productService.dataFolderName}-shared`);
+		return joinPath(this.userHome, this.productService.sharedDataFolderName);
 	}
 
 	@memoize

@@ -7,7 +7,7 @@ import { ThrottledDelayer } from '../../../common/async.js';
 import { Event, PauseableEmitter } from '../../../common/event.js';
 import { Disposable, IDisposable } from '../../../common/lifecycle.js';
 import { parse, stringify } from '../../../common/marshalling.js';
-import { isObject, isUndefinedOrNull } from '../../../common/types.js';
+import { isObject, isUndefined, isUndefinedOrNull } from '../../../common/types.js';
 
 export enum StorageHint {
 
@@ -132,13 +132,6 @@ export class Storage extends Disposable implements IStorage {
 
 	private readonly whenFlushedCallbacks: Function[] = [];
 
-	/**
-	 * Optional fallback storage to read from when a key is not
-	 * found in this storage. On hit, the value is automatically
-	 * written through to this storage so it is persisted locally.
-	 */
-	fallbackStorage: IStorage | undefined;
-
 	constructor(
 		protected readonly database: IStorageDatabase,
 		private readonly options: IStorageOptions = Object.create(null)
@@ -227,15 +220,6 @@ export class Storage extends Disposable implements IStorage {
 
 		if (!isUndefinedOrNull(value)) {
 			return value;
-		}
-
-		// Check fallback storage and auto-migrate on hit
-		if (this.fallbackStorage) {
-			const fallbackStorageValue = this.fallbackStorage.get(key);
-			if (!isUndefinedOrNull(fallbackStorageValue)) {
-				this.set(key, fallbackStorageValue);
-				return fallbackStorageValue;
-			}
 		}
 
 		return fallbackValue;
@@ -450,3 +434,61 @@ export class InMemoryStorageDatabase implements IStorageDatabase {
 	async optimize(): Promise<void> { }
 	async close(): Promise<void> { }
 }
+
+
+export const MIGRATED_KEY = '__$__migratedStorageMarker';
+
+export class MigratingStorage extends Storage {
+
+	private migratedKeys: Set<string> = new Set();
+
+	constructor(
+		database: IStorageDatabase,
+		options: IStorageOptions,
+		private readonly fallbackStorage: IStorage
+	) {
+		super(database, options);
+	}
+
+	override async init(): Promise<void> {
+		await this.fallbackStorage.init();
+		await super.init();
+
+		// Load the set of keys already migrated from fallback
+		this.migratedKeys = this.loadMigratedKeys();
+	}
+
+	override get(key: string, fallbackValue: string): string;
+	override get(key: string, fallbackValue?: string): string | undefined;
+	override get(key: string, fallbackValue?: string): string | undefined {
+		if (!this.migratedKeys.has(key) && isUndefined(super.get(key))) {
+			// Check fallback storage and auto-migrate on hit.
+			// Skip keys already migrated from fallback to prevent
+			// resurrecting a key that was intentionally removed
+			// after migration.
+			this.markKeyAsMigrated(key);
+			if (this.fallbackStorage.items.has(key)) {
+				this.set(key, this.fallbackStorage.items.get(key));
+			}
+		}
+		return super.get(key, fallbackValue);
+	}
+
+	private loadMigratedKeys(): Set<string> {
+		const raw = super.get(MIGRATED_KEY);
+		if (raw) {
+			try {
+				return new Set(JSON.parse(raw));
+			} catch {
+				// Fail gracefully
+			}
+		}
+		return new Set();
+	}
+
+	private markKeyAsMigrated(key: string): void {
+		this.migratedKeys.add(key);
+		this.set(MIGRATED_KEY, JSON.stringify([...this.migratedKeys]));
+	}
+}
+
