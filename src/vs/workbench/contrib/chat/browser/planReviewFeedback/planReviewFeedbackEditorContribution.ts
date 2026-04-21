@@ -26,7 +26,7 @@ import { IContextKeyService } from '../../../../../platform/contextkey/common/co
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { IPlanReviewFeedbackService } from './planReviewFeedbackService.js';
-import { hasPlanReviewFeedback, navigationBearingFakeActionId, PlanReviewFeedbackMenuId } from './planReviewFeedbackEditorActions.js';
+import { hasPlanReviewFeedback, navigationBearingFakeActionId, PlanReviewFeedbackMenuId, submitPlanReviewFeedbackActionId } from './planReviewFeedbackEditorActions.js';
 import { ActionViewItem } from '../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { autorun, observableValue } from '../../../../../base/common/observable.js';
 
@@ -267,7 +267,7 @@ class PlanReviewFeedbackOverlayWidget implements IOverlayWidget {
 					};
 				}
 
-				const isPrimary = action.id.includes('submit');
+				const isPrimary = action.id === submitPlanReviewFeedbackActionId;
 				return new class extends ActionViewItem {
 					constructor() {
 						super(undefined, action, { ...options, icon: !isPrimary, label: isPrimary, keybindingNotRenderedWithLabel: true });
@@ -358,6 +358,7 @@ export class PlanReviewFeedbackEditorContribution extends Disposable implements 
 		this._register(this._editor.onDidFocusEditorText(() => this._onSelectionChanged()));
 		this._register(this._planReviewFeedbackService.onDidChangeRegistrations(() => this._onModelChanged()));
 		this._register(this._planReviewFeedbackService.onDidChangeFeedback(() => this._updateDecorations()));
+		this._register(this._planReviewFeedbackService.onDidChangeNavigation(() => this._updateDecorations()));
 	}
 
 	private _isWidgetTarget(target: EventTarget | Element | null): boolean {

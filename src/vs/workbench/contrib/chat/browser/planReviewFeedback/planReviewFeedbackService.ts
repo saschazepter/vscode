@@ -23,6 +23,7 @@ export interface IPlanReviewFeedbackService {
 	readonly _serviceBrand: undefined;
 
 	readonly onDidChangeFeedback: Event<URI>;
+	readonly onDidChangeNavigation: Event<URI>;
 	readonly onDidChangeRegistrations: Event<void>;
 
 	registerPlanReview(planUri: URI, onSubmit: (result: IChatPlanReviewResult) => void): IDisposable;
@@ -52,6 +53,9 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 
 	private readonly _onDidChangeFeedback = this._register(new Emitter<URI>());
 	readonly onDidChangeFeedback: Event<URI> = this._onDidChangeFeedback.event;
+
+	private readonly _onDidChangeNavigation = this._register(new Emitter<URI>());
+	readonly onDidChangeNavigation: Event<URI> = this._onDidChangeNavigation.event;
 
 	private readonly _onDidChangeRegistrations = this._register(new Emitter<void>());
 	readonly onDidChangeRegistrations: Event<void> = this._onDidChangeRegistrations.event;
@@ -152,7 +156,7 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 		}
 
 		const target = items[targetIdx];
-		registration.navigationAnchor = target.id;
+		this.setNavigationAnchor(planUri, target.id);
 		return target;
 	}
 
@@ -177,6 +181,7 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 		const registration = this._registrations.get(key);
 		if (registration) {
 			registration.navigationAnchor = itemId;
+			this._onDidChangeNavigation.fire(planUri);
 		}
 	}
 
