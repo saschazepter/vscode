@@ -90,8 +90,12 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 	}
 
 	private _fetchAndCacheModels(): void {
-		this._availableModels = this._getAvailableModels();
-		this._availableModels.then(models => {
+		const availableModels = this._availableModels = this._getAvailableModels();
+		availableModels.then(models => {
+			// Bail out if a newer fetch has superseded this one (e.g. auth changed mid-flight).
+			if (this._availableModels !== availableModels) {
+				return;
+			}
 			this._resolvedModelInfos = this._buildModelInfos(models);
 			this._onDidChange.fire();
 		}).catch((error) => {
