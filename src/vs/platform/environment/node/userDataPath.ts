@@ -82,10 +82,6 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
  * the platform-specific application data directory.
  */
 export function getDefaultUserDataPath(productName: string): string {
-	return getAppDataPath(productName);
-}
-
-function getAppDataPath(productName: string): string {
 	let appDataPath: string | undefined;
 	switch (process.platform) {
 		case 'win32':
