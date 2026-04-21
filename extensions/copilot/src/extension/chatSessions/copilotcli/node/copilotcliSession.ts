@@ -994,6 +994,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	 * control for this session by calling the Copilot API directly.
 	 */
 	private async _handleRemoteControl(input: CopilotCLISessionInput): Promise<void> {
+		if (!this.configurationService.getConfig(ConfigKey.Advanced.CLIRemoteEnabled)) {
+			this._stream?.markdown(l10n.t('The /remote command is experimental and not enabled. Set `github.copilot.chat.cli.remote.enabled` to `true` in settings to use it.'));
+			return;
+		}
+
 		const args = ('prompt' in input ? input.prompt : '')?.trim().toLowerCase();
 		const enable = args !== 'off';
 

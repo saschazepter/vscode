@@ -4625,6 +4625,14 @@
 							"advanced"
 						]
 					},
+					"github.copilot.chat.cli.remote.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.cli.remote.enabled%",
+						"tags": [
+							"experimental"
+						]
+					},
 					"github.copilot.chat.searchSubagent.enabled": {
 						"type": "boolean",
 						"default": false,
@@ -6142,7 +6150,8 @@
 					},
 					{
 						"name": "remote",
-						"description": "%github.copilot.command.cli.remote.description%"
+						"description": "%github.copilot.command.cli.remote.description%",
+						"when": "config.github.copilot.chat.cli.remote.enabled"
 					}
 				],
 				"customAgentTarget": "github-copilot",
