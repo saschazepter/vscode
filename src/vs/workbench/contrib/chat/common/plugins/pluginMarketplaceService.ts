@@ -165,6 +165,12 @@ export interface IPluginMarketplaceService {
 	readonly recommendedPlugins: IObservable<ReadonlySet<string>>;
 	/** Resets {@link hasUpdatesAvailable} to `false`. */
 	clearUpdatesAvailable(): void;
+	/**
+	 * Clears the in-memory and persisted GitHub API response cache so that
+	 * the next {@link fetchMarketplacePlugins} call fetches fresh data from
+	 * `raw.githubusercontent.com` instead of returning stale results.
+	 */
+	invalidateGitHubCache(): void;
 	fetchMarketplacePlugins(token: CancellationToken): Promise<IMarketplacePlugin[]>;
 	getMarketplacePluginMetadata(pluginUri: URI): IMarketplacePlugin | undefined;
 	addInstalledPlugin(pluginUri: URI, plugin: IMarketplacePlugin): void;
@@ -379,6 +385,12 @@ export class PluginMarketplaceService extends Disposable implements IPluginMarke
 
 	clearUpdatesAvailable(): void {
 		this._hasUpdatesAvailable.set(false, undefined);
+	}
+
+	invalidateGitHubCache(): void {
+		const cache = this._gitHubMarketplaceCache.value;
+		cache.clear();
+		this._savePersistedGitHubMarketplaceCache(cache);
 	}
 
 	async fetchMarketplacePlugins(token: CancellationToken): Promise<IMarketplacePlugin[]> {
