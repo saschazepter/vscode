@@ -1752,8 +1752,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	 *   1. Tells the model this note is NOT a signal to end the turn.
 	 *   2. Leads with `get_terminal_output` as the safe recovery action.
 	 *   3. Offers `send_to_terminal` / `vscode_askQuestions` only for real prompts.
-	 *   4. Points at `kill_terminal` for stuck/malformed commands (e.g. an
-	 *      unterminated heredoc) so the agent can retry instead of giving up.
+	 * It intentionally does NOT suggest `kill_terminal` — the tool remains
+	 * available but advertising it here leads the model to terminate valid
+	 * interactive sessions (e.g. `npm init`) instead of driving them.
 	 */
 	private _buildInputNeededSteeringText(chatSessionResource: URI, termId: string, mentionTimeout: boolean): string {
 		const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
@@ -1764,7 +1765,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			`This note is not a signal to end the turn — pick one of the actions below and continue.`,
 			`  1. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. This is the default and safest action when unsure.`,
 			`  2. Only if the output clearly ends with a real input prompt (password:, Continue? (y/n), etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), ${realInputBranch}`,
-			`  3. If the command appears stuck or malformed (e.g. an unterminated heredoc, infinite loop, or hung subprocess), call ${TerminalToolId.KillTerminal} with id="${termId}" and retry with a corrected command.`,
 		];
 		if (mentionTimeout) {
 			lines.push(`  Note: timeouts can also be extended by re-invoking ${TerminalToolId.GetTerminalOutput} with id="${termId}"; they do not indicate the command has failed.`);
