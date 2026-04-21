@@ -25,8 +25,8 @@ type AccountPolicyGateStateEvent = {
 };
 
 type AccountPolicyGateStateClassification = {
-	owner: 'copilot';
-	comment: 'Tracks the Account Policy gate state for diagnosing account-driven restriction issues. No PII (organization names are NOT logged).';
+	owner: 'joshspicer';
+	comment: 'Tracks the Account Policy gate state for diagnosing account-driven restriction issues.';
 	gateActive: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'True if an admin has activated the Approved Account gate (non-empty approved-organization list).' };
 	gateSatisfied: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'True if the gate is satisfied (signed-in approved account with resolved policy).' };
 	reasonNotSatisfied: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Bucketed reason the gate is unsatisfied: noAccount, wrongProvider, orgNotApproved, policyNotResolved.' };
@@ -46,6 +46,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	static readonly ID = 'workbench.contrib.accountPolicyGate';
 
 	private readonly contextKey: IContextKey<boolean>;
+	private readonly chatHiddenKey: IContextKey<boolean>;
 	private lastInfo: IAccountPolicyGateInfo;
 
 	private readonly notificationHandle = this._register(new MutableDisposable());
@@ -62,6 +63,11 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	) {
 		super();
 		this.contextKey = ChatAccountPolicyGateActiveContext.bindTo(contextKeyService);
+		// Directly toggle the chat-hidden context key so the entire chat UI disappears
+		// when the gate is restricted. This is the same key that `chat.disableAIFeatures`
+		// drives via `ChatEntitlementContextKeys.Setup.hidden` — using it directly avoids
+		// a round-trip through the policy→configuration→entitlement pipeline.
+		this.chatHiddenKey = contextKeyService.createKey('chatSetupHidden', false);
 		this.lastInfo = this.gateService.gateInfo;
 
 		// Seed any consumer that initialised before us (e.g. context-key when-clauses).
@@ -81,6 +87,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		const isRestricted = info.state === AccountPolicyGateState.Restricted
 			&& info.reason !== AccountPolicyGateUnsatisfiedReason.PolicyNotResolved;
 		this.contextKey.set(isRestricted);
+		this.chatHiddenKey.set(isRestricted);
 
 		if (stateChanged) {
 			this.telemetryService.publicLog2<AccountPolicyGateStateEvent, AccountPolicyGateStateClassification>('accountPolicy.gateState', {
