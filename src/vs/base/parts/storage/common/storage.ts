@@ -467,7 +467,7 @@ export class MigratingStorage extends Storage {
 			const value = this.fallbackStorage?.items.get(key);
 			if (!isUndefined(value)) {
 				this.set(key, value);
-				if (this.isFallbackStorageReadonly) {
+				if (!this.isFallbackStorageReadonly) {
 					this.fallbackStorage?.delete(key);
 				}
 			}
