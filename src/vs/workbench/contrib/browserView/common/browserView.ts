@@ -346,9 +346,8 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 			!this.workspaceTrustManagementService.isWorkspaceTrusted();
 
 		if (isWorkspaceUntrusted) {
-			// Always use ephemeral sessions and no proxy for untrusted workspaces
+			// Always use ephemeral sessions for untrusted workspaces
 			dataStorage = BrowserViewStorageScope.Ephemeral;
-			proxyUrl = undefined;
 		} else if (dataStorage === 'default') {
 			// When proxying, default to workspace-scoped sessions
 			// to avoid polluting the global session with remote site data.

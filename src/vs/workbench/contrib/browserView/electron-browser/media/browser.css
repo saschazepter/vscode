@@ -69,7 +69,6 @@
 	}
 
 	.browser-pre-url-widgets {
-		height: 100%;
 		display: flex;
 		flex-shrink: 0;
 	}
@@ -78,15 +77,20 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		padding: 2px 8px;
+		padding: 2px 6px;
 		font-size: 12px;
 		white-space: nowrap;
-		background-color: var(--vscode-statusBarItem-remoteBackground);
-		color: var(--vscode-statusBarItem-remoteForeground);
+		background-color: var(--vscode-editorWidget-background);
+		color: var(--vscode-disabledForeground);
 		border-radius: var(--vscode-cornerRadius-small) 0 0 var(--vscode-cornerRadius-small);
 
-		.codicon {
+		&.connected {
+			background-color: var(--vscode-statusBarItem-remoteBackground);
 			color: var(--vscode-statusBarItem-remoteForeground);
+		}
+
+		.codicon {
+			color: inherit;
 		}
 	}
 

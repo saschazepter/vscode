@@ -8,40 +8,38 @@ import { $ } from '../../../../../base/browser/dom.js';
 import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { RawContextKey, IContextKeyService, IContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { BrowserEditor, BrowserEditorContribution, IBrowserEditorWidgetContribution } from '../browserEditor.js';
 import { IBrowserViewModel } from '../../common/browserView.js';
-import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-
-export const CONTEXT_BROWSER_IS_REMOTE_SESSION = new RawContextKey<boolean>(
-	'browserIsRemoteSession',
-	false,
-	localize('browser.isRemoteSession', "Whether the current browser view is using a remote network session")
-);
+import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
 
 class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 	private readonly _container: HTMLElement;
-	private readonly _isRemoteSessionContext: IContextKey<boolean>;
+
+	private _isRemoteConnected = false;
 
 	constructor(
 		editor: BrowserEditor,
-		@IContextKeyService contextKeyService: IContextKeyService,
 		@IHoverService hoverService: IHoverService,
+		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
 		super(editor);
-		this._isRemoteSessionContext = CONTEXT_BROWSER_IS_REMOTE_SESSION.bindTo(contextKeyService);
 
 		this._container = $('.browser-remote-indicator');
-		this._container.style.display = 'none';
+
+		// Always display the icon in remote workspaces -- just update the state based on whether we're actually serving via remote.
+		this._container.style.display = environmentService.remoteAuthority ? '' : 'none';
 
 		const icon = renderIcon(Codicon.remote);
 		this._container.appendChild(icon);
 
-		this._register(hoverService.setupManagedHover(
-			getDefaultHoverDelegate('mouse'),
+		this._register(hoverService.setupDelayedHover(
 			this._container,
-			localize('browser.remoteSession', "Connected via remote")
+			() => ({
+				content: this._isRemoteConnected
+					? localize('browser.remoteSession', "Connected via remote")
+					: localize('browser.remoteSessionDisconnected', "Connected locally"),
+			})
 		));
 	}
 
@@ -50,14 +48,21 @@ class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 	}
 
 	protected override subscribeToModel(model: IBrowserViewModel, _store: DisposableStore): void {
-		const isRemote = model.isRemoteSession;
-		this._isRemoteSessionContext.set(isRemote);
-		this._container.style.display = isRemote ? '' : 'none';
+		this.setRemoteConnected(model.isRemoteSession && !model.url.startsWith('file://'));
+		if (model.isRemoteSession) {
+			this._register(model.onDidNavigate((event) => {
+				this.setRemoteConnected(!event.url.startsWith('file://'));
+			}));
+		}
 	}
 
 	override clear(): void {
-		this._isRemoteSessionContext.reset();
-		this._container.style.display = 'none';
+		this.setRemoteConnected(false);
+	}
+
+	private setRemoteConnected(isConnected: boolean): void {
+		this._isRemoteConnected = isConnected;
+		this._container.classList.toggle('connected', isConnected);
 	}
 }
 
