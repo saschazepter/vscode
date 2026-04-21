@@ -45,7 +45,7 @@ import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from '../userInputHe
 import { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullICopilotCLIImageSupport } from './testHelpers';
 
 // Re-export for backward compatibility with other spec files
-export { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullICopilotCLIImageSupport } from './testHelpers';
+export { MockCliSdkSession, MockCliSdkSessionManager, MockSkillLocations, NullCopilotCLIAgents, NullCopilotCLIModels, NullICopilotCLIImageSupport } from './testHelpers';
 
 class MockLocalSession {
 	static async fromEvents(events: readonly { type: string }[]): Promise<{}> {

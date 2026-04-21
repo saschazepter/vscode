@@ -188,7 +188,7 @@ class FakeChatSessionWorktreeCheckpointService extends mock<IChatSessionWorktree
 }
 
 
-class FakeModels {
+class FakeModels implements ICopilotCLIModels {
 	_serviceBrand: undefined;
 	resolveModel = vi.fn(async (modelId: string) => modelId);
 	getDefaultModel = vi.fn(async () => 'base');
