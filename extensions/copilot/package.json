@@ -130,6 +130,7 @@
 		"languageModelCapabilities",
 		"inlineCompletionsAdditions",
 		"chatStatusItem",
+		"chatInputNotification",
 		"taskProblemMatcherStatus",
 		"contribLanguageModelToolSets",
 		"textDocumentChangeReason",
