@@ -32,7 +32,7 @@
 	font-size: inherit;
 	font-family: inherit;
 	font-weight: 600;
-	color: var(--vscode-foreground);
+	color: var(--vscode-descriptionForeground);
 }
 
 .chat-status-bar-entry-tooltip .collapsible-header:hover {
@@ -77,7 +77,7 @@
 .chat-status-bar-entry-tooltip div.header {
 	display: flex;
 	align-items: center;
-	color: var(--vscode-descriptionForeground);
+	color: var(--vscode-foreground);
 	padding-bottom: 8px;
 	margin-bottom: 4px;
 	border-bottom: 1px solid var(--vscode-editorWidget-border);
