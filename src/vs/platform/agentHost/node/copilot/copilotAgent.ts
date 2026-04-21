@@ -129,7 +129,7 @@ function prependAnnouncementToFirstAssistantMessage(
  * Agent provider backed by the Copilot SDK {@link CopilotClient}.
  */
 export class CopilotAgent extends Disposable implements IAgent {
-	readonly id = 'copilot' as const;
+	readonly id = 'copilotcli' as const;
 	private static readonly _BRANCH_COMPLETION_LIMIT = 25;
 
 	private readonly _onDidSessionProgress = this._register(new Emitter<IAgentProgressEvent>());
@@ -178,7 +178,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	getDescriptor(): IAgentDescriptor {
 		return {
-			provider: 'copilot',
+			provider: 'copilotcli',
 			displayName: 'Copilot CLI',
 			description: 'Copilot SDK agent running in a dedicated process',
 		};

@@ -29,7 +29,6 @@ import { IChatSessionsService } from '../../../../../workbench/contrib/chat/comm
 import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus, COPILOT_CLI_SESSION_TYPE } from '../../../../services/sessions/common/session.js';
-import { remoteAgentHostSessionTypeId } from '../../common/remoteAgentHostSessionType.js';
 import { RemoteAgentHostSessionsProvider, type IRemoteAgentHostSessionsProviderConfig } from '../../browser/remoteAgentHostSessionsProvider.js';
 
 // ---- Mock connection --------------------------------------------------------
@@ -43,7 +42,7 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 	override readonly onDidNotification = this._onDidNotification.event;
 
 	private readonly _onDidRootStateChange = new Emitter<IRootState>();
-	private _rootStateValue: IRootState = { agents: [{ provider: 'copilot', displayName: 'Copilot', description: '', models: [] } as IAgentInfo] };
+	private _rootStateValue: IRootState = { agents: [{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [] } as IAgentInfo] };
 	override readonly rootState: IAgentSubscription<IRootState>;
 
 	override readonly clientId = 'test-client-1';
@@ -167,7 +166,7 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 
 function createSession(id: string, opts?: { provider?: string; summary?: string; model?: string; project?: { uri: URI; displayName: string }; workingDirectory?: URI; startTime?: number; modifiedTime?: number }): IAgentSessionMetadata {
 	return {
-		session: AgentSession.uri(opts?.provider ?? 'copilot', id),
+		session: AgentSession.uri(opts?.provider ?? 'copilotcli', id),
 		startTime: opts?.startTime ?? 1000,
 		modifiedTime: opts?.modifiedTime ?? 2000,
 		summary: opts?.summary,
@@ -226,7 +225,7 @@ async function waitForSessionConfig(provider: RemoteAgentHostSessionsProvider, s
 }
 
 function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?: { provider?: string; title?: string; model?: string; modelConfig?: Record<string, string>; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {
-	const provider = opts?.provider ?? 'copilot';
+	const provider = opts?.provider ?? 'copilotcli';
 	const sessionUri = AgentSession.uri(provider, rawId);
 	connection.fireNotification({
 		type: NotificationType.SessionAdded,
@@ -244,7 +243,7 @@ function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?:
 	});
 }
 
-function fireSessionRemoved(connection: MockAgentConnection, rawId: string, provider = 'copilot'): void {
+function fireSessionRemoved(connection: MockAgentConnection, rawId: string, provider = 'copilotcli'): void {
 	const sessionUri = AgentSession.uri(provider, rawId);
 	connection.fireNotification({
 		type: NotificationType.SessionRemoved,
@@ -289,14 +288,14 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		disposables.add(provider.onDidChangeSessionTypes!(() => changes++));
 
 		connection.setAgents([
-			{ provider: 'copilot', displayName: 'Copilot', description: '', models: [] } as IAgentInfo,
+			{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [] } as IAgentInfo,
 			{ provider: 'openai', displayName: 'OpenAI', description: '', models: [] } as IAgentInfo,
 		]);
 
 		assert.strictEqual(changes, 1);
 		assert.deepStrictEqual(provider.sessionTypes.map(t => ({ id: t.id, label: t.label })), [
 			{ id: COPILOT_CLI_SESSION_TYPE, label: 'Copilot [My Host]' },
-			{ id: remoteAgentHostSessionTypeId('10.0.0.1__8080', 'openai'), label: 'OpenAI [My Host]' },
+			{ id: 'openai', label: 'OpenAI [My Host]' },
 		]);
 	});
 
@@ -345,12 +344,12 @@ suite('RemoteAgentHostSessionsProvider', () => {
 
 	test('session added notifications ingest any advertised agent provider', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		connection.setAgents([
-			{ provider: 'copilot', displayName: 'Copilot', description: '', models: [] } as IAgentInfo,
+			{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [] } as IAgentInfo,
 			{ provider: 'openai', displayName: 'OpenAI', description: '', models: [] } as IAgentInfo,
 		]);
 		const provider = createProvider(disposables, connection);
 
-		fireSessionAdded(connection, 'cop-1', { provider: 'copilot', title: 'Copilot Session' });
+		fireSessionAdded(connection, 'cop-1', { provider: 'copilotcli', title: 'Copilot Session' });
 		fireSessionAdded(connection, 'oai-1', { provider: 'openai', title: 'OpenAI Session' });
 
 		const sessions = provider.getSessions();
@@ -358,7 +357,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			sessions.map(s => ({ title: s.title.get(), sessionType: s.sessionType })).sort((a, b) => a.title.localeCompare(b.title)),
 			[
 				{ title: 'Copilot Session', sessionType: COPILOT_CLI_SESSION_TYPE },
-				{ title: 'OpenAI Session', sessionType: remoteAgentHostSessionTypeId('localhost__4321', 'openai') },
+				{ title: 'OpenAI Session', sessionType: 'openai' },
 			],
 		);
 	}));
@@ -470,7 +469,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		await timeout(0);
 
 		const session = provider.getSessions().find(s => s.title.get() === 'Model Session');
-		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilot:claude-sonnet-4.5');
+		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilotcli:claude-sonnet-4.5');
 	}));
 
 	test('uses model metadata from session added notification', () => {
@@ -478,7 +477,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		fireSessionAdded(connection, 'notif-model', { title: 'Notif Model Session', model: 'gpt-5' });
 
 		const session = provider.getSessions().find(s => s.title.get() === 'Notif Model Session');
-		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilot:gpt-5');
+		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilotcli:gpt-5');
 	});
 
 	test('setModel updates existing session model and dispatches raw model', () => {
@@ -488,12 +487,12 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		const session = provider.getSessions().find(s => s.title.get() === 'Set Model Session');
 		assert.ok(session);
 
-		provider.setModel(session!.sessionId, 'remote-localhost__4321-copilot:new-model');
+		provider.setModel(session!.sessionId, 'remote-localhost__4321-copilotcli:new-model');
 
-		assert.strictEqual(session!.modelId.get(), 'remote-localhost__4321-copilot:new-model');
+		assert.strictEqual(session!.modelId.get(), 'remote-localhost__4321-copilotcli:new-model');
 		assert.deepStrictEqual(connection.dispatchedActions.at(-1)?.action, {
 			type: ActionType.SessionModelChanged,
-			session: AgentSession.uri('copilot', 'set-model').toString(),
+			session: AgentSession.uri('copilotcli', 'set-model').toString(),
 			model: { id: 'new-model' },
 		});
 	});
@@ -505,11 +504,11 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		const session = provider.getSessions().find(s => s.title.get() === 'Set Model Config Session');
 		assert.ok(session);
 
-		provider.setModel(session!.sessionId, 'remote-localhost__4321-copilot:configured-model');
+		provider.setModel(session!.sessionId, 'remote-localhost__4321-copilotcli:configured-model');
 
 		assert.deepStrictEqual(connection.dispatchedActions.at(-1)?.action, {
 			type: ActionType.SessionModelChanged,
-			session: AgentSession.uri('copilot', 'set-model-config').toString(),
+			session: AgentSession.uri('copilotcli', 'set-model-config').toString(),
 			model: { id: 'configured-model', config: { thinkingLevel: 'high' } },
 		});
 	});
@@ -578,7 +577,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		// The disposed URI must be a backend agent session URI (copilot://del-sess),
 		// not the UI resource (remote-localhost_4321-copilot:///del-sess)
 		const disposedUri = connection.disposedSessions[0];
-		assert.strictEqual(AgentSession.provider(disposedUri), 'copilot');
+		assert.strictEqual(AgentSession.provider(disposedUri), 'copilotcli');
 		assert.strictEqual(AgentSession.id(disposedUri), 'del-sess');
 		// Session should no longer appear in getSessions
 		const remaining = provider.getSessions();
@@ -603,7 +602,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual((dispatched.action as { title: string }).title, 'New Title');
 		// The session URI in the action must be the backend agent session URI
 		const actionSession = (dispatched.action as { session: string }).session;
-		assert.strictEqual(AgentSession.provider(actionSession), 'copilot');
+		assert.strictEqual(AgentSession.provider(actionSession), 'copilotcli');
 		assert.strictEqual(AgentSession.id(actionSession), 'rename-sess');
 		assert.strictEqual(dispatched.clientId, 'test-client-1');
 	});
@@ -661,7 +660,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		connection.fireAction({
 			action: {
 				type: ActionType.SessionTitleChanged,
-				session: AgentSession.uri('copilot', 'echo-sess').toString(),
+				session: AgentSession.uri('copilotcli', 'echo-sess').toString(),
 				title: 'Server Title',
 			},
 			serverSeq: 1,
@@ -686,14 +685,14 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		connection.fireAction({
 			action: {
 				type: ActionType.SessionModelChanged,
-				session: AgentSession.uri('copilot', 'model-change').toString(),
+				session: AgentSession.uri('copilotcli', 'model-change').toString(),
 				model: { id: 'new-model' } satisfies IModelSelection,
 			},
 			serverSeq: 1,
 			origin: undefined,
 		} as IActionEnvelope);
 
-		assert.strictEqual(target!.modelId.get(), 'remote-localhost__4321-copilot:new-model');
+		assert.strictEqual(target!.modelId.get(), 'remote-localhost__4321-copilotcli:new-model');
 		assert.strictEqual(changes.length, 1);
 		assert.strictEqual(changes[0].changed.length, 1);
 	});
@@ -718,7 +717,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		connection.fireAction({
 			action: {
 				type: 'session/turnComplete',
-				session: AgentSession.uri('copilot', 'persist-sess').toString(),
+				session: AgentSession.uri('copilotcli', 'persist-sess').toString(),
 			},
 			serverSeq: 1,
 			origin: undefined,
@@ -909,7 +908,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		connection.fireAction({
 			action: {
 				type: 'session/turnComplete',
-				session: AgentSession.uri('copilot', 'turn-sess').toString(),
+				session: AgentSession.uri('copilotcli', 'turn-sess').toString(),
 			},
 			serverSeq: 1,
 			origin: undefined,
@@ -945,12 +944,12 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			values: { autoApprove: 'default', isolation: 'worktree' },
 		};
 		const fakeState: ISessionState = {
-			summary: { resource: AgentSession.uri('copilot', 'seed-1').toString(), provider: 'copilot', title: 'Seeded Session', status: ProtocolSessionStatus.Idle, createdAt: 0, modifiedAt: 0 },
+			summary: { resource: AgentSession.uri('copilotcli', 'seed-1').toString(), provider: 'copilotcli', title: 'Seeded Session', status: ProtocolSessionStatus.Idle, createdAt: 0, modifiedAt: 0 },
 			lifecycle: SessionLifecycle.Ready,
 			turns: [],
 			config,
 		};
-		connection.setSessionState('seed-1', 'copilot', fakeState);
+		connection.setSessionState('seed-1', 'copilotcli', fakeState);
 
 		await waitForSessionConfig(provider, session!.sessionId, c => c?.values.autoApprove === 'default');
 
@@ -973,7 +972,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.ok(session);
 
 		provider.getSessionConfig(session!.sessionId);
-		const sessionUriStr = AgentSession.uri('copilot', 'seed-2').toString();
+		const sessionUriStr = AgentSession.uri('copilotcli', 'seed-2').toString();
 		assert.strictEqual(connection.sessionSubscribeCounts.get(sessionUriStr), 1);
 		assert.strictEqual(connection.sessionUnsubscribeCounts.get(sessionUriStr) ?? 0, 0);
 
@@ -991,7 +990,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.ok(session);
 
 		provider.getSessionConfig(session!.sessionId);
-		const sessionUriStr = AgentSession.uri('copilot', 'seed-3').toString();
+		const sessionUriStr = AgentSession.uri('copilotcli', 'seed-3').toString();
 		assert.strictEqual(connection.sessionSubscribeCounts.get(sessionUriStr), 1);
 		assert.strictEqual(connection.sessionUnsubscribeCounts.get(sessionUriStr) ?? 0, 0);
 

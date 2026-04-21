@@ -642,4 +642,4 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 
 // Side-effect registrations for the remote agent host feature
 import './remoteAgentHostActions.js';
-import '../../chat/browser/agentHostModelPicker.js';
+import '../../chat/browser/agentHost/agentHostModelPicker.js';
