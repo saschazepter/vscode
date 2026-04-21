@@ -414,11 +414,22 @@ export class CodeBlockPart extends Disposable {
 	}
 
 	private _configureForScreenReader(): void {
+		const hideToolbar = !!this.currentCodeBlockData?.renderOptions?.hideToolbar;
 		if (this.accessibilityService.isScreenReaderOptimized()) {
-			this._toolbarElement.style.display = 'block';
-			// Screen readers need the toolbar DOM to exist so it can be announced
-			// and navigated; create it eagerly in screen reader mode.
-			this._ensureToolbar();
+			if (hideToolbar) {
+				// hideToolbar is authoritative; don't reveal the wrapper just
+				// because SR mode is on.
+				dom.hide(this._toolbarElement);
+			} else {
+				this._toolbarElement.style.display = 'block';
+				// Screen readers need the toolbar DOM to exist so it can be
+				// announced and navigated, but only create it once render data
+				// is available so pooled or reset instances don't eagerly
+				// attach toolbar listeners.
+				if (this.currentCodeBlockData) {
+					this._ensureToolbar();
+				}
+			}
 		} else {
 			this._toolbarElement.style.display = '';
 		}
