@@ -120,6 +120,9 @@ class MockSdkSession {
 
 	async compactHistory() { return { success: true }; }
 
+	public chatMessages: unknown[] = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }];
+	async getChatMessages() { return this.chatMessages; }
+
 	async abort() { }
 
 	isAbortable(): boolean { return true; }
@@ -722,6 +725,21 @@ describe('CopilotCLISession', () => {
 
 			expect(sdkSession.currentMode).toBe('interactive');
 			expect(stream.output.join('\n')).toContain('Compacted conversation.');
+		});
+
+		it('reports already-compacted when no new messages since last compaction (issue #311422)', async () => {
+			const session = await createSession();
+			const stream = new MockChatResponseStream();
+			session.attachStream(stream);
+			// Simulate post-compaction state: only the single summary message remains.
+			sdkSession.chatMessages = [{ role: 'system', content: 'summary' }];
+			let compactCalled = false;
+			sdkSession.compactHistory = async () => { compactCalled = true; return { success: true }; };
+
+			await session.handleRequest({ id: '', toolInvocationToken: undefined as never }, { command: 'compact', prompt: '' }, [], undefined, authInfo, CancellationToken.None);
+
+			expect(compactCalled).toBe(false);
+			expect(stream.output.join('\n')).toContain('Conversation already compacted.');
 		});
 	});
 
