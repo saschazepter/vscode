@@ -71,6 +71,7 @@ class InstallFromSourceAction extends Action2 {
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const quickInputService = accessor.get(IQuickInputService);
 		const pluginInstallService = accessor.get(IPluginInstallService);
+		const extensionsWorkbenchService = accessor.get(IExtensionsWorkbenchService);
 
 		const store = new DisposableStore();
 		const inputBox = store.add(quickInputService.createInputBox());
@@ -121,7 +122,7 @@ class InstallFromSourceAction extends Action2 {
 				} else {
 					const ref = parseMarketplaceReference(source);
 					if (ref) {
-						accessor.get(IExtensionsWorkbenchService).openSearch(`@agentPlugins ${ref.displayLabel}`);
+						extensionsWorkbenchService.openSearch(`@agentPlugins ${ref.displayLabel}`);
 					}
 					store.dispose();
 				}
