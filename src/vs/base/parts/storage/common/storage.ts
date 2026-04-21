@@ -458,10 +458,11 @@ export class MigratingStorage extends Storage {
 			// Skip keys already migrated from fallback to prevent
 			// resurrecting a key that was intentionally removed
 			// after migration.
-			this.markKeyAsMigrated(key);
-			if (this.fallbackStorage?.items.has(key)) {
-				this.set(key, this.fallbackStorage.items.get(key));
+			const value = this.fallbackStorage?.items.get(key);
+			if (!isUndefined(value)) {
+				this.set(key, value);
 			}
+			this.markKeyAsMigrated(key);
 		}
 		return super.get(key, fallbackValue);
 	}
