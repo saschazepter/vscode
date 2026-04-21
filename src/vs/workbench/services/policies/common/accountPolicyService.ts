@@ -102,6 +102,14 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 				}
 			}));
 		}
+
+		// The initial account load (DefaultAccountService.setDefaultAccountProvider →
+		// provider.refresh()) sets `currentDefaultAccount` but does NOT fire
+		// `onDidChangeDefaultAccount`. Re-evaluate once the account has resolved
+		// so the gate doesn't stay stuck on `noAccount`.
+		this.defaultAccountService.getDefaultAccount().then(() => {
+			this._updatePolicyDefinitions(this.policyDefinitions);
+		});
 	}
 
 	protected async _updatePolicyDefinitions(policyDefinitions: IStringDictionary<PolicyDefinition>): Promise<void> {
