@@ -476,6 +476,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			return [];
 		}
 
+		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
 		const providerItems: ICustomizationItem[] = files
 			.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user)
 			.map(file => ({
@@ -483,7 +484,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				type: promptType,
 				name: getFriendlyName(basename(file.uri)),
 				groupKey: 'sync-local',
-				enabled: true,
+				enabled: !disabledUris.has(file.uri),
 			}));
 
 		return this.itemNormalizer.normalizeItems(providerItems, promptType)

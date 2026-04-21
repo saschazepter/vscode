@@ -126,6 +126,7 @@ interface IAICustomizationItemTemplateData {
 	readonly typeIcon: HTMLElement;
 	readonly nameLabel: HighlightedLabel;
 	readonly badge: HTMLElement;
+	readonly disabledBadge: HTMLElement;
 	readonly statusIcon: HTMLElement;
 	readonly description: HighlightedLabel;
 	readonly disposables: DisposableStore;
@@ -258,6 +259,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		const nameRow = DOM.append(textContainer, $('.item-name-row'));
 		const nameLabel = disposables.add(new HighlightedLabel(DOM.append(nameRow, $('.item-name'))));
 		const badge = DOM.append(nameRow, $('.inline-badge.item-badge'));
+		const disabledBadge = DOM.append(nameRow, $('.inline-badge.item-badge.disabled-badge'));
 		const statusIcon = DOM.append(nameRow, $('.item-status-icon'));
 		const description = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-description'))));
 
@@ -275,6 +277,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			typeIcon,
 			nameLabel,
 			badge,
+			disabledBadge,
 			statusIcon,
 			description,
 			disposables,
@@ -358,6 +361,15 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		} else {
 			templateData.badge.textContent = '';
 			templateData.badge.style.display = 'none';
+		}
+
+		// Disabled badge — shown alongside the original badge
+		if (element.disabled) {
+			templateData.disabledBadge.textContent = localize('disabledBadge', "Disabled");
+			templateData.disabledBadge.style.display = 'inline';
+		} else {
+			templateData.disabledBadge.textContent = '';
+			templateData.disabledBadge.style.display = 'none';
 		}
 
 		// Status icon for external items with sync/loading status

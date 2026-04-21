@@ -433,8 +433,14 @@
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.ai-customization-list-item.disabled {
+.ai-customization-list-item.disabled .item-name,
+.ai-customization-list-item.disabled .item-description,
+.ai-customization-list-item.disabled .item-type-icon {
 	opacity: 0.5;
+}
+
+.ai-customization-list-item.disabled .item-badge:not(.disabled-badge) {
+	opacity: 0.6;
 }
 
 .ai-customization-list-item .item-left {
@@ -489,6 +495,12 @@
 	background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 	white-space: nowrap;
 	line-height: 16px;
+}
+
+.inline-badge.disabled-badge {
+	display: none;
+	color: var(--vscode-errorForeground);
+	background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
 }
 
 /* Status icon for remote customization items (loading/loaded/degraded/error) */
@@ -987,12 +999,17 @@
 }
 
 .mcp-server-item.disabled {
-	opacity: 0.5;
+	opacity: 1;
+}
+
+.mcp-server-item.disabled .mcp-server-name,
+.mcp-server-item.disabled .mcp-server-description {
+	opacity: 0.6;
 }
 
 .mcp-server-item .mcp-server-status.disabled {
-	background-color: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
+	color: var(--vscode-errorForeground);
+	background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
 }
 
 /* Button group for Add Server + Browse Marketplace */

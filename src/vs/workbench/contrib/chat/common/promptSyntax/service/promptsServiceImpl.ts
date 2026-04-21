@@ -626,8 +626,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		const skills = useAgentSkills ? await this.listPromptFiles(PromptsType.skill, token) : [];
 		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
+		const disabledPrompts = this.getDisabledPromptFiles(PromptsType.prompt);
 		const slashCommandFiles = [
-			...promptFiles,
+			...promptFiles.filter(p => !disabledPrompts.has(p.uri)),
 			...skills.filter(s => !disabledSkills.has(s.uri)),
 		];
 
@@ -782,7 +783,15 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const uri = promptPath.uri;
 
 			if (disabledAgents.has(uri)) {
-				return { status: 'skipped', skipReason: 'disabled', promptPath };
+				// Still parse the header so we have name/description for the UI
+				try {
+					const ast = await this.parseNew(uri, token);
+					const name = ast.header?.name;
+					const description = ast.header?.description;
+					return { status: 'skipped', skipReason: 'disabled', promptPath: this.withPromptPathMetadata(promptPath, name ?? promptPath.name, description ?? promptPath.description) };
+				} catch {
+					return { status: 'skipped', skipReason: 'disabled', promptPath };
+				}
 			}
 
 			try {
@@ -1074,12 +1083,19 @@ export class PromptsService extends Disposable implements IPromptsService {
 	// --- Enabled Prompt Files -----------------------------------------------------------
 
 	private readonly disabledPromptsStorageKeyPrefix = 'chat.disabledPromptFiles.';
+	private readonly disabledPromptsWorkspaceStorageKeyPrefix = 'chat.disabledPromptFiles.workspace.';
 
 	public getDisabledPromptFiles(type: PromptsType): ResourceSet {
-		// Migration: if disabled key absent but legacy enabled key present, convert once.
-		const disabledKey = this.disabledPromptsStorageKeyPrefix + type;
-		const value = this.storageService.get(disabledKey, StorageScope.PROFILE, '[]');
 		const result = new ResourceSet();
+		// Read profile-level disabled URIs
+		this._readDisabledFromStorage(this.disabledPromptsStorageKeyPrefix + type, StorageScope.PROFILE, result);
+		// Read workspace-level disabled URIs
+		this._readDisabledFromStorage(this.disabledPromptsWorkspaceStorageKeyPrefix + type, StorageScope.WORKSPACE, result);
+		return result;
+	}
+
+	private _readDisabledFromStorage(key: string, scope: StorageScope, result: ResourceSet): void {
+		const value = this.storageService.get(key, scope, '[]');
 		try {
 			const arr = JSON.parse(value);
 			if (Array.isArray(arr)) {
@@ -1094,17 +1110,41 @@ export class PromptsService extends Disposable implements IPromptsService {
 		} catch {
 			// ignore invalid storage values
 		}
+	}
+
+	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope: StorageScope = StorageScope.PROFILE): void {
+		const disabled = Array.from(uris).map(uri => uri.toJSON());
+		const key = scope === StorageScope.WORKSPACE
+			? this.disabledPromptsWorkspaceStorageKeyPrefix + type
+			: this.disabledPromptsStorageKeyPrefix + type;
+		this.storageService.store(key, JSON.stringify(disabled), scope, StorageTarget.USER);
+		this._refreshCachesForType(type);
+	}
+
+	/**
+	 * Returns the profile-level disabled URIs for a given type (excludes workspace overrides).
+	 */
+	public getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope): ResourceSet {
+		const result = new ResourceSet();
+		const key = scope === StorageScope.WORKSPACE
+			? this.disabledPromptsWorkspaceStorageKeyPrefix + type
+			: this.disabledPromptsStorageKeyPrefix + type;
+		this._readDisabledFromStorage(key, scope, result);
 		return result;
 	}
 
-	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet): void {
-		const disabled = Array.from(uris).map(uri => uri.toJSON());
-		this.storageService.store(this.disabledPromptsStorageKeyPrefix + type, JSON.stringify(disabled), StorageScope.PROFILE, StorageTarget.USER);
+	private _refreshCachesForType(type: PromptsType): void {
 		if (type === PromptsType.agent) {
 			this.cachedCustomAgents.refresh();
 		} else if (type === PromptsType.skill) {
 			this.cachedSkills.refresh();
 			this.cachedSlashCommands.refresh();
+		} else if (type === PromptsType.instructions) {
+			this.cachedInstructions.refresh();
+		} else if (type === PromptsType.prompt) {
+			this.cachedSlashCommands.refresh();
+		} else if (type === PromptsType.hook) {
+			this.cachedHooks.refresh();
 		}
 	}
 
@@ -1192,17 +1232,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		const discoveryInfo = await this.cachedSkills.get(token);
-		const result = this.skillsFromDiscoveryInfo(discoveryInfo);
+		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
+		const result = this.skillsFromDiscoveryInfo(discoveryInfo, disabledSkills);
 		return result;
 	}
 
 	/**
 	 * Derives IAgentSkill[] from cached discovery info.
 	 */
-	private skillsFromDiscoveryInfo(discoveryInfo: IPromptDiscoveryInfo): IAgentSkill[] {
+	private skillsFromDiscoveryInfo(discoveryInfo: IPromptDiscoveryInfo, disabledSkills?: ResourceSet): IAgentSkill[] {
 		const result: IAgentSkill[] = [];
 		for (const file of discoveryInfo.files) {
-			if (file.status === 'loaded' && file.promptPath.name) {
+			if (file.status === 'loaded' && file.promptPath.name && !disabledSkills?.has(file.promptPath.uri)) {
 				const sanitizedDescription = this.truncateAgentSkillDescription(file.promptPath.description, file.promptPath.uri);
 				const when = isExtensionPromptPath(file.promptPath) && file.promptPath.when
 					? ContextKeyExpr.deserialize(file.promptPath.when) ?? undefined
@@ -1404,7 +1445,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
-		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
+		const allHookFiles = await this.listPromptFiles(PromptsType.hook, token);
+		const disabledHooks = this.getDisabledPromptFiles(PromptsType.hook);
+		const hookFiles = disabledHooks.size > 0
+			? allHookFiles.filter(h => !disabledHooks.has(h.uri))
+			: allHookFiles;
 
 		this.logger.trace(`[PromptsService] Found ${hookFiles.length} hook file(s).`);
 

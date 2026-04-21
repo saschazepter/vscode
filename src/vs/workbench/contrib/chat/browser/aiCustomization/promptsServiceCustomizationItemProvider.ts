@@ -67,7 +67,9 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					extensionInfoByUri.set(file.uri, { id: file.extension.identifier, displayName: file.extension.displayName });
 				}
 			}
+			const seenUris = new ResourceSet();
 			for (const agent of agents) {
+				seenUris.add(agent.uri);
 				items.push({
 					uri: agent.uri,
 					type: promptType,
@@ -78,6 +80,23 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				});
 				if (agent.source.storage === PromptsStorage.extension && !extensionInfoByUri.has(agent.uri)) {
 					extensionInfoByUri.set(agent.uri, { id: agent.source.extensionId });
+				}
+			}
+			// Re-add disabled agent files so they appear in the UI as disabled.
+			// Use discovery info to get properly parsed names/descriptions.
+			if (disabledUris.size > 0) {
+				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.agent, token);
+				for (const file of discoveryInfo.files) {
+					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
+						items.push({
+							uri: file.promptPath.uri,
+							type: promptType,
+							name: file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)),
+							description: file.promptPath.description,
+							storage: file.promptPath.storage,
+							enabled: false,
+						});
+					}
 				}
 			}
 		} else if (promptType === PromptsType.skill) {
@@ -107,17 +126,18 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				});
 			}
 			if (disabledUris.size > 0) {
-				for (const file of allSkillFiles) {
-					if (!seenUris.has(file.uri) && disabledUris.has(file.uri)) {
-						const disabledName = file.name || basename(dirname(file.uri)) || basename(file.uri);
-						const disabledFolderName = basename(dirname(file.uri));
+				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.skill, token);
+				for (const file of discoveryInfo.files) {
+					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
+						const disabledName = file.promptPath.name || basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri);
+						const disabledFolderName = basename(dirname(file.promptPath.uri));
 						const uiTooltip = uiIntegrations.get(disabledFolderName);
 						items.push({
-							uri: file.uri,
+							uri: file.promptPath.uri,
 							type: promptType,
 							name: disabledName,
-							description: file.description,
-							storage: file.storage,
+							description: file.promptPath.description,
+							storage: file.promptPath.storage,
 							enabled: false,
 							badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
 							badgeTooltip: uiTooltip,
@@ -127,10 +147,12 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			}
 		} else if (promptType === PromptsType.prompt) {
 			const commands = await this.promptsService.getPromptSlashCommands(token);
+			const seenUris = new ResourceSet();
 			for (const command of commands) {
 				if (command.type === PromptsType.skill) {
 					continue;
 				}
+				seenUris.add(command.uri);
 				items.push({
 					uri: command.uri,
 					type: promptType,
@@ -141,6 +163,23 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				});
 				if (command.extension) {
 					extensionInfoByUri.set(command.uri, { id: command.extension.identifier, displayName: command.extension.displayName });
+				}
+			}
+			// Re-add disabled prompt files so they appear in the UI as disabled.
+			// Use discovery info to get properly parsed names/descriptions.
+			if (disabledUris.size > 0) {
+				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.prompt, token);
+				for (const file of discoveryInfo.files) {
+					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
+						items.push({
+							uri: file.promptPath.uri,
+							type: promptType,
+							name: file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)),
+							description: file.promptPath.description,
+							storage: file.promptPath.storage,
+							enabled: false,
+						});
+					}
 				}
 			}
 		} else if (promptType === PromptsType.hook) {
