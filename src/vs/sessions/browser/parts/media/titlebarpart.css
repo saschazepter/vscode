@@ -79,8 +79,8 @@
 }
 
 /* Secondary sidebar toggle uses icon variants for toggle state — no background needed */
-.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.checked:has(.codicon-layout-sidebar-right),
-.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.checked:has(.codicon-layout-sidebar-right-off) {
+.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.codicon-agent-secondary-sidebar-toggle-open.checked,
+.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right > .titlebar-session-actions-container .action-label.codicon-agent-secondary-sidebar-toggle-closed.checked {
 	background: none;
 }
 
