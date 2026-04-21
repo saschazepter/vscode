@@ -78,6 +78,10 @@ pub const QUALITY: &str = match VSCODE_CLI_QUALITY {
 /// Web URL the editor is hosted at. For VS Code, this is vscode.dev.
 pub const EDITOR_WEB_URL: Option<&'static str> = option_env!("VSCODE_CLI_TUNNEL_EDITOR_WEB_URL");
 
+/// Web URL the Agents experience is hosted at. Only set for qualities that
+/// ship the Agents web surface (e.g. Insiders).
+pub const AGENTS_WEB_URL: Option<&'static str> = option_env!("VSCODE_CLI_TUNNEL_AGENTS_WEB_URL");
+
 /// Name shown in places where we need to tell a user what a process is, e.g. in sleep inhibition.
 pub const TUNNEL_ACTIVITY_NAME: &str = concatcp!(PRODUCT_NAME_LONG, " Tunnel");
 

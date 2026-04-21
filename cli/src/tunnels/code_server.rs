@@ -5,7 +5,8 @@
 use super::paths::{InstalledServer, ServerPaths};
 use crate::async_pipe::get_socket_name;
 use crate::constants::{
-	APPLICATION_NAME, EDITOR_WEB_URL, QUALITYLESS_PRODUCT_NAME, QUALITYLESS_SERVER_NAME,
+	AGENTS_WEB_URL, APPLICATION_NAME, EDITOR_WEB_URL, QUALITYLESS_PRODUCT_NAME,
+	QUALITYLESS_SERVER_NAME,
 };
 use crate::download_cache::DownloadCache;
 use crate::options::{Quality, TelemetryLevel};
@@ -835,8 +836,13 @@ pub fn print_listening(log: &log::Logger, tunnel_name: &str) {
 		}
 	}
 
-	let message = &format!("\nOpen this link in your browser {addr}\n");
-	log.result(message);
+	log.result(&format!("\nOpen VS Code in your browser {addr}"));
+
+	if let Some(agents_url) = AGENTS_WEB_URL {
+		log.result(&format!("Open Agents in your browser {agents_url}"));
+	}
+
+	log.result("");
 }
 
 pub async fn download_cli_into_cache(
