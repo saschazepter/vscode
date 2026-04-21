@@ -1758,8 +1758,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	private _buildInputNeededSteeringText(chatSessionResource: URI, termId: string, mentionTimeout: boolean): string {
 		const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 		const realInputBranch = isAutoApproved
-			? `determine the answer and call ${TerminalToolId.SendToTerminal} (which returns the next few lines of output); if you need more output or the next prompt is slow to appear, call ${TerminalToolId.GetTerminalOutput}. Repeat one prompt at a time.`
-			: `call the vscode_askQuestions tool to ask the user, then send each answer using ${TerminalToolId.SendToTerminal} (which returns the next few lines of output). Use ${TerminalToolId.GetTerminalOutput} only if you need more output or the next prompt is slow to appear.`;
+			? `determine the answer and call ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output); if you need more output or the next prompt is slow to appear, call ${TerminalToolId.GetTerminalOutput} with id="${termId}". Repeat one prompt at a time.`
+			: `call the vscode_askQuestions tool to ask the user, then send each answer using ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Use ${TerminalToolId.GetTerminalOutput} with id="${termId}" only if you need more output or the next prompt is slow to appear.`;
 		const lines = [
 			`This note is a mid-execution status, not a turn-terminating signal. Do NOT stop and wait — pick one of the actions below and continue.`,
 			`  1. If the command is still producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. This is the default and safest action when unsure.`,
@@ -1767,7 +1767,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			`  3. If the command appears stuck or malformed (e.g. an unterminated heredoc, infinite loop, or hung subprocess), call ${TerminalToolId.KillTerminal} with id="${termId}" and retry with a corrected command.`,
 		];
 		if (mentionTimeout) {
-			lines.push(`  Note: timeouts can also be extended by re-invoking ${TerminalToolId.GetTerminalOutput}; they do not indicate the command has failed.`);
+			lines.push(`  Note: timeouts can also be extended by re-invoking ${TerminalToolId.GetTerminalOutput} with id="${termId}"; they do not indicate the command has failed.`);
 		}
 		return lines.join('\n');
 	}
