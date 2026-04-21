@@ -24,7 +24,7 @@ import { WorktreeSessionIndex } from './worktreeSessionIndex';
 // const WORKTREE_MEMENTO_KEY = 'github.copilot.cli.sessionWorktrees';
 const LEGACY_BULK_METADATA_FILENAME = 'copilotcli.session.metadata.json';
 const LEGACY_BULK_MIGRATED_KEY = 'github.copilot.cli.legacyBulkMigrated';
-const JSONL_SCAN_DONE_KEY = 'github.copilot.cli.events.jsonl.scan.doned';
+const JSONL_SCAN_DONE_KEY = 'github.copilot.cli.events.jsonl.scaned';
 const REQUEST_MAPPING_FILENAME = 'vscode.requests.metadata.json';
 const SESSION_SCAN_BATCH_SIZE = 20;
 
