@@ -38,6 +38,7 @@ export interface IChatSessionProviderOptionItem {
 	readonly locked?: boolean;
 	readonly icon?: ThemeIcon;
 	readonly default?: boolean;
+	readonly slashCommand?: string;
 	// [key: string]: any;
 }
 

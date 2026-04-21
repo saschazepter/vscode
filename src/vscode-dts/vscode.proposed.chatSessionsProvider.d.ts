@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 4
+// version: 3
 
 declare module 'vscode' {
 	/**
@@ -621,6 +621,16 @@ declare module 'vscode' {
 		 * Only one item per option group should be marked as default.
 		 */
 		readonly default?: boolean;
+
+		/**
+		 * Optional slash-command alias (without leading `/`) that selects this option
+		 * when the user submits `/<slashCommand>`. Does not send a chat request; only
+		 * updates the selection so the next prompt runs with this option active.
+		 *
+		 * Scoped to chat sessions owned by the contributing provider. Names must be
+		 * unique across the provider's groups; on conflict, the first declared wins.
+		 */
+		readonly slashCommand?: string;
 	}
 
 	/**

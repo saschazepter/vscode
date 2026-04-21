@@ -322,8 +322,6 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 		element.classList.toggle('warning', !ext && level === ChatPermissionLevel.Autopilot);
 		element.classList.toggle('info', !ext && level === ChatPermissionLevel.AutoApprove);
 
-		// Announce the current selection to screen readers — the underlying action
-		// title ("Open Permission Picker") doesn't convey which mode is active.
 		element.setAttribute('aria-label', localize('permissions.ariaLabel', "Permission picker, {0}", label));
 		return null;
 	}

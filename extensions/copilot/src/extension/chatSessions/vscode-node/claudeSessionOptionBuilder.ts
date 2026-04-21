@@ -166,13 +166,13 @@ export class ClaudeSessionOptionBuilder {
  */
 export function buildPermissionModeItems(bypassEnabled: boolean): vscode.ChatSessionProviderOptionGroup {
 	const items: vscode.ChatSessionProviderOptionItem[] = [
-		{ id: 'default', name: l10n.t('Ask before edits') },
-		{ id: 'acceptEdits', name: l10n.t('Edit automatically') },
-		{ id: 'plan', name: l10n.t('Plan mode') },
+		{ id: 'default', name: l10n.t('Ask before edits'), slashCommand: 'ask' },
+		{ id: 'acceptEdits', name: l10n.t('Edit automatically'), default: true, slashCommand: 'edit' },
+		{ id: 'plan', name: l10n.t('Plan mode'), slashCommand: 'plan' },
 	];
 
 	if (bypassEnabled) {
-		items.push({ id: 'bypassPermissions', name: l10n.t('Bypass all permissions') });
+		items.push({ id: 'bypassPermissions', name: l10n.t('Bypass all permissions'), slashCommand: 'yolo' });
 	}
 
 	return {
