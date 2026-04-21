@@ -309,6 +309,16 @@ jobs:
             2>&1 | tee perf-output.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Clean up temporary build artifacts
+        if: always() && steps.scenarios.outputs.skip != 'true'
+        run: |
+          # Clean up tmp dirs used by VS Code instances
+          rm -rf /tmp/vscode-chat-simulation 2>/dev/null || true
+          # Remove the production build to free space for artifact upload
+          rm -rf ../VSCode-* 2>/dev/null || true
+          echo "Disk usage after cleanup:"
+          df -h . | tail -1
+
       - name: Upload perf results
         if: always() && steps.scenarios.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
@@ -414,6 +424,11 @@ jobs:
             $LEAK_ARGS \
             2>&1 | tee leak-output.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Clean up temporary files
+        if: always()
+        run: |
+          rm -rf /tmp/vscode-chat-simulation 2>/dev/null || true
 
       - name: Upload leak results
         if: always()

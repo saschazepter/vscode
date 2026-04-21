@@ -68,6 +68,7 @@ function parseArgs() {
 		testSettingsOverrides: {},
 		/** @type {Record<string, any>} */
 		baselineSettingsOverrides: {},
+		cleanupDiagnostics: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -99,7 +100,8 @@ function parseArgs() {
 			case '--no-cache': opts.noCache = true; break;
 			case '--force': opts.force = true; break;
 			case '--heap-snapshots': opts.heapSnapshots = true; break;
-			case '--ci': opts.ci = true; opts.noCache = true; opts.heapSnapshots = true; break;
+			case '--ci': opts.ci = true; opts.noCache = true; opts.heapSnapshots = true; opts.cleanupDiagnostics = true; break;
+			case '--cleanup-diagnostics': opts.cleanupDiagnostics = true; break;
 			case '--help': case '-h':
 				console.log([
 					'Chat performance benchmark',
@@ -126,7 +128,8 @@ function parseArgs() {
 					'  --no-cache          Ignore cached baseline data, always run fresh',
 					'  --force             Skip build mode mismatch confirmation',
 					'  --heap-snapshots    Take heap snapshots (slow; auto-enabled in --ci mode)',
-					'  --ci                CI mode: write Markdown summary to ci-summary.md (implies --no-cache, --heap-snapshots)',
+					'  --ci                CI mode: write Markdown summary to ci-summary.md (implies --no-cache, --heap-snapshots, --cleanup-diagnostics)',
+					'  --cleanup-diagnostics  Remove heap snapshots, CPU profiles, and traces after each run to save disk space',
 					'  --verbose           Print per-run details',
 					'',
 					'Scenarios: ' + getScenarioIds().join(', '),
@@ -1286,6 +1289,49 @@ function installSignalHandlers() {
 	process.on('SIGTERM', cleanup);
 }
 
+// -- Diagnostic cleanup ------------------------------------------------------
+
+/**
+ * Remove large diagnostic files (heap snapshots, CPU profiles, traces) from
+ * a run's metrics to free disk space.  Keeps the JSON results data intact.
+ * @param {RunMetrics} metrics
+ */
+function cleanupRunDiagnostics(metrics) {
+	const filesToDelete = [
+		metrics.profilePath,
+		metrics.tracePath,
+		metrics.snapshotPath,
+		metrics.extHostProfilePath,
+		metrics.extHostSnapshotPath,
+	];
+	for (const filePath of filesToDelete) {
+		if (filePath && fs.existsSync(filePath)) {
+			try {
+				fs.rmSync(filePath, { force: true });
+			} catch {
+				// Ignore cleanup errors
+			}
+		}
+	}
+}
+
+/**
+ * Clean up diagnostics for all scenarios that did NOT regress.
+ * Keeps diagnostics for regressed scenarios so they can be investigated.
+ * @param {Record<string, RunMetrics[]>} allResults - test results by scenario
+ * @param {Set<string>} regressedScenarios - scenarios that regressed
+ */
+function cleanupNonRegressedDiagnostics(allResults, regressedScenarios) {
+	for (const [scenario, runs] of Object.entries(allResults)) {
+		if (regressedScenarios.has(scenario)) {
+			continue;
+		}
+		for (const metrics of runs) {
+			cleanupRunDiagnostics(metrics);
+		}
+	}
+}
+
 // -- Main --------------------------------------------------------------------
 
 async function main() {
@@ -1348,6 +1394,8 @@ async function main() {
 				console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 				try {
 					const m = await runOnce(testElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'test', { ...opts.settingsOverrides, ...opts.testSettingsOverrides }, { heapSnapshots: opts.heapSnapshots });
+					// Clean up previous run's diagnostics to bound disk usage; keep the latest
+					if (opts.cleanupDiagnostics && prevTestRuns.length > 0) { cleanupRunDiagnostics(prevTestRuns[prevTestRuns.length - 1]); }
 					prevTestRuns.push(m);
 					if (opts.verbose) {
 						const src = m.hasInternalMarks ? 'internal' : 'client-side';
@@ -1364,6 +1412,8 @@ async function main() {
 					console.log(`[chat-simulation]     Run ${i + 1}/${runsToAdd}...`);
 					try {
 						const m = await runOnce(baselineElectron, scenario, mockServer, opts.verbose, runIdx, prevDir, 'baseline', { ...opts.settingsOverrides, ...opts.baselineSettingsOverrides }, { heapSnapshots: opts.heapSnapshots });
+						// Clean up previous run's diagnostics to bound disk usage; keep the latest
+						if (opts.cleanupDiagnostics && prevBaseRuns.length > 0) { cleanupRunDiagnostics(prevBaseRuns[prevBaseRuns.length - 1]); }
 						prevBaseRuns.push(m);
 					} catch (err) { console.error(`      Run ${i + 1} failed: ${err}`); }
 				}
@@ -1506,7 +1556,12 @@ async function main() {
 					/** @type {RunMetrics[]} */
 					const newResults = [];
 					for (let i = 0; i < runsNeeded; i++) {
-						try { newResults.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${existingRuns.length + i}`, runDir, 'baseline', baselineSettings, { heapSnapshots: opts.heapSnapshots })); }
+						try {
+							const m = await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${existingRuns.length + i}`, runDir, 'baseline', baselineSettings, { heapSnapshots: opts.heapSnapshots });
+							// Clean up previous run's diagnostics to bound disk usage; keep the latest
+							if (opts.cleanupDiagnostics && newResults.length > 0) { cleanupRunDiagnostics(newResults[newResults.length - 1]); }
+							newResults.push(m);
+						}
 						catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 					}
 					const allRuns = [...existingRuns, ...newResults];
@@ -1532,7 +1587,12 @@ async function main() {
 				/** @type {RunMetrics[]} */
 				const results = [];
 				for (let i = 0; i < opts.runs; i++) {
-					try { results.push(await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline', baselineSettings, { heapSnapshots: opts.heapSnapshots })); }
+					try {
+						const m = await runOnce(baselineExePath, scenario, mockServer, opts.verbose, `baseline-${scenario}-${i}`, runDir, 'baseline', baselineSettings, { heapSnapshots: opts.heapSnapshots });
+						// Clean up previous run's diagnostics to bound disk usage; keep the latest
+						if (opts.cleanupDiagnostics && results.length > 0) { cleanupRunDiagnostics(results[results.length - 1]); }
+						results.push(m);
+					}
 					catch (err) { console.error(`[chat-simulation]   Baseline run ${i + 1} failed: ${err}`); }
 				}
 				if (results.length > 0) { baselineResults[scenario] = results; }
@@ -1612,6 +1672,8 @@ async function main() {
 			console.log(`[chat-simulation]   Run ${i + 1}/${opts.runs}...`);
 			try {
 				const metrics = await runOnce(electronPath, scenario, mockServer, opts.verbose, `${scenario}-${i}`, runDir, 'test', testSettings, { heapSnapshots: opts.heapSnapshots });
+				// Clean up previous run's diagnostics to bound disk usage; keep the latest
+				if (opts.cleanupDiagnostics && results.length > 0) { cleanupRunDiagnostics(results[results.length - 1]); }
 				results.push(metrics);
 				if (opts.verbose) {
 					const src = metrics.hasInternalMarks ? 'internal' : 'client-side';
@@ -1689,7 +1751,12 @@ async function main() {
 	}
 
 	// -- Baseline comparison ---------------------------------------------
-	await printComparison(jsonReport, opts);
+	const regressedScenarios = await printComparison(jsonReport, opts);
+
+	// Clean up diagnostics for scenarios that did not regress
+	if (opts.cleanupDiagnostics) {
+		cleanupNonRegressedDiagnostics(allResults, regressedScenarios);
+	}
 
 	if (anyFailed) { process.exit(1); }
 	await mockServer.close();
@@ -1697,12 +1764,16 @@ async function main() {
 
 /**
  * Print baseline comparison and exit with code 1 if regressions found.
+ * Returns the set of scenario IDs that regressed.
  * @param {Record<string, any>} jsonReport
- * @param {{ baseline?: string, threshold: number, ci?: boolean, runs?: number, baselineBuild?: string, build?: string, resume?: string, metricThresholds?: Record<string, number | string> }} opts
+ * @param {{ threshold: number, metricThresholds?: Record<string, number | string>, baseline?: string, ci?: boolean, resume?: string, build?: string, baselineBuild?: string, runs: number, cleanupDiagnostics?: boolean }} opts
+ * @returns {Promise<Set<string>>}
  */
 async function printComparison(jsonReport, opts) {
 	let regressionFound = false;
 	let inconclusiveFound = false;
+	/** @type {Set<string>} */
+	const regressedScenarios = new Set();
 	if (opts.baseline && fs.existsSync(opts.baseline)) {
 		const baseline = JSON.parse(fs.readFileSync(opts.baseline, 'utf-8'));
 		console.log('');
@@ -1782,6 +1853,7 @@ async function printComparison(jsonReport, opts) {
 				diffs.push(`    ${metric}: ${bas.median}${unit} → ${cur.median}${unit} (${pct}) [info]`);
 			}
 			console.log(`  ${scenario}: ${scenarioRegression ? 'FAIL' : 'OK'}`);
+			if (scenarioRegression) { regressedScenarios.add(scenario); }
 			diffs.forEach(d => console.log(d));
 		}
 
@@ -1857,6 +1929,7 @@ async function printComparison(jsonReport, opts) {
 	}
 
 	if (regressionFound) { process.exit(1); }
+	return regressedScenarios;
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
