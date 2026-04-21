@@ -5,7 +5,6 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../base/browser/dom.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
@@ -19,17 +18,11 @@ import { IContextKeyService } from '../../../../platform/contextkey/common/conte
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { ResourceSet } from '../../../../base/common/map.js';
-import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
-import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { AICustomizationManagementSection, AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 import { agentIcon, instructionsIcon, mcpServerIcon, pluginIcon, skillIcon } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IAICustomizationWorkspaceService } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
+import { ICustomizationCountsService } from '../../../../workbench/contrib/chat/browser/aiCustomization/customizationCountsService.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
-import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
 
 const $ = DOM.$;
 
@@ -43,7 +36,6 @@ interface ISectionSummary {
 	readonly id: AICustomizationManagementSection;
 	readonly label: string;
 	readonly icon: ThemeIcon;
-	count: number;
 }
 
 /**
@@ -55,8 +47,13 @@ export class AICustomizationOverviewView extends ViewPane {
 	private bodyElement!: HTMLElement;
 	private container!: HTMLElement;
 	private sectionsContainer!: HTMLElement;
-	private readonly sections: ISectionSummary[] = [];
-	private readonly countElements = new Map<AICustomizationManagementSection, HTMLElement>();
+	private readonly sections: readonly ISectionSummary[] = [
+		{ id: AICustomizationManagementSection.Agents, label: localize('agents', "Agents"), icon: agentIcon },
+		{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
+		{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon },
+		{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: mcpServerIcon },
+		{ id: AICustomizationManagementSection.Plugins, label: localize('plugins', "Plugins"), icon: pluginIcon },
+	];
 
 	constructor(
 		options: IViewPaneOptions,
@@ -70,34 +67,9 @@ export class AICustomizationOverviewView extends ViewPane {
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@IEditorService private readonly editorService: IEditorService,
-		@IPromptsService private readonly promptsService: IPromptsService,
-		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IAICustomizationWorkspaceService private readonly workspaceService: IAICustomizationWorkspaceService,
-		@IMcpService private readonly mcpService: IMcpService,
-		@IAgentPluginService private readonly agentPluginService: IAgentPluginService,
+		@ICustomizationCountsService private readonly countsService: ICustomizationCountsService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
-
-		// Initialize sections
-		this.sections.push(
-			{ id: AICustomizationManagementSection.Agents, label: localize('agents', "Agents"), icon: agentIcon, count: 0 },
-			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon, count: 0 },
-			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon, count: 0 },
-			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: mcpServerIcon, count: 0 },
-			{ id: AICustomizationManagementSection.Plugins, label: localize('plugins', "Plugins"), icon: pluginIcon, count: 0 },
-		);
-
-		// Listen to changes
-		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadCounts()));
-		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadCounts()));
-
-		// Listen to workspace folder changes to update counts
-		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadCounts()));
-		this._register(autorun(reader => {
-			this.workspaceService.activeProjectRoot.read(reader);
-			this.loadCounts();
-		}));
-
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -108,7 +80,6 @@ export class AICustomizationOverviewView extends ViewPane {
 		this.sectionsContainer = DOM.append(this.container, $('.overview-sections'));
 
 		this.renderSections();
-		void this.loadCounts();
 
 		// Force initial layout
 		this.layoutBody(this.bodyElement.offsetHeight, this.bodyElement.offsetWidth);
@@ -116,13 +87,11 @@ export class AICustomizationOverviewView extends ViewPane {
 
 	private renderSections(): void {
 		DOM.clearNode(this.sectionsContainer);
-		this.countElements.clear();
 
 		for (const section of this.sections) {
 			const sectionElement = DOM.append(this.sectionsContainer, $('.overview-section'));
 			sectionElement.tabIndex = 0;
 			sectionElement.setAttribute('role', 'button');
-			sectionElement.setAttribute('aria-label', `${section.label}: ${section.count} items`);
 
 			const iconElement = DOM.append(sectionElement, $('.section-icon'));
 			iconElement.classList.add(...ThemeIcon.asClassNameArray(section.icon));
@@ -132,8 +101,14 @@ export class AICustomizationOverviewView extends ViewPane {
 			labelElement.textContent = section.label;
 
 			const countElement = DOM.append(sectionElement, $('.section-count'));
-			countElement.textContent = `${section.count}`;
-			this.countElements.set(section.id, countElement);
+
+			// Drive count + aria-label off the shared counts service.
+			const count$ = this.countsService.observeCount(section.id);
+			this._register(autorun(reader => {
+				const count = count$.read(reader);
+				countElement.textContent = `${count}`;
+				sectionElement.setAttribute('aria-label', `${section.label}: ${count} items`);
+			}));
 
 			// Click handler to open the management editor overview
 			this._register(DOM.addDisposableListener(sectionElement, 'click', () => {
@@ -153,74 +128,6 @@ export class AICustomizationOverviewView extends ViewPane {
 				content: localize('openOverview', "Open Chat Customizations editor"),
 				appearance: { compact: true, skipFadeInAnimation: true }
 			})));
-		}
-	}
-
-	private async loadCounts(): Promise<void> {
-		const sectionPromptTypes: Array<{ section: AICustomizationManagementSection; type: PromptsType }> = [
-			{ section: AICustomizationManagementSection.Agents, type: PromptsType.agent },
-			{ section: AICustomizationManagementSection.Skills, type: PromptsType.skill },
-			{ section: AICustomizationManagementSection.Instructions, type: PromptsType.instructions },
-		];
-
-		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
-			let count = 0;
-			if (type === PromptsType.skill) {
-				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-				if (skills) {
-					count = skills.length;
-				}
-			} else {
-				const allItems = await this.promptsService.listPromptFiles(type, CancellationToken.None);
-				count = allItems.length;
-
-				// For instructions, also count agent instructions (AGENTS.md, copilot-instructions.md, CLAUDE.md, etc.)
-				if (type === PromptsType.instructions) {
-					const existingUris = new ResourceSet(allItems.map(item => item.uri));
-					const agentInstructions = await this.promptsService.listAgentInstructions(CancellationToken.None);
-					for (const file of agentInstructions) {
-						if (!existingUris.has(file.uri)) {
-							count++;
-						}
-					}
-				}
-			}
-
-			const sectionData = this.sections.find(s => s.id === section);
-			if (sectionData) {
-				sectionData.count = count;
-			}
-		}));
-
-		// Update MCP server count reactively
-		const mcpSection = this.sections.find(s => s.id === AICustomizationManagementSection.McpServers);
-		if (mcpSection) {
-			this._register(autorun(reader => {
-				const servers = this.mcpService.servers.read(reader);
-				mcpSection.count = servers.length;
-				this.updateCountElements();
-			}));
-		}
-
-		// Update plugin count reactively
-		const pluginSection = this.sections.find(s => s.id === AICustomizationManagementSection.Plugins);
-		if (pluginSection) {
-			this._register(autorun(reader => {
-				const plugins = this.agentPluginService.plugins.read(reader);
-				pluginSection.count = plugins.length;
-				this.updateCountElements();
-			}));
-		}
-
-		this.updateCountElements();
-	}
-
-	private updateCountElements(): void {
-		for (const section of this.sections) {
-			const countElement = this.countElements.get(section.id);
-			if (countElement) {
-				countElement.textContent = `${section.count}`;
-			}
 		}
 	}
 

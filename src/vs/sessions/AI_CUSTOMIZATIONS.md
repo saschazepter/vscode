@@ -55,7 +55,6 @@ src/vs/sessions/contrib/chat/browser/
 └── promptsService.ts                           # AgenticPromptsService (CLI user roots)
 src/vs/sessions/contrib/sessions/browser/
 ├── aiCustomizationShortcutsWidget.ts           # Shortcuts widget
-├── customizationCounts.ts                      # Source count utilities (type-aware)
 └── customizationsToolbar.contribution.ts       # Sidebar customization links
 ```
 
@@ -220,7 +219,7 @@ Skills that are directly invoked by UI elements (toolbar buttons, menu items) ar
 
 ### Count Consistency
 
-`customizationCounts.ts` uses the **same data sources** as the list widget. Both go through the active harness's `ICustomizationItemProvider` (or the `PromptsServiceCustomizationItemProvider` fallback), ensuring counts match what the list displays.
+The sidebar badges, overview tiles and shortcuts header all read from `ICustomizationCountsService` (`vs/workbench/contrib/chat/browser/aiCustomization/customizationCountsService.ts`). The service owns a single `ProviderCustomizationItemSource` per active harness — the very same pipeline the management editor's list widget consumes — and exposes `observeCount(section)` / `observeTotalCount()` as observables. Because every count surface reads from the same source, harness filters, hook expansion, builtin merging and instruction reclassification automatically apply, and counts cannot drift out of sync with the list.
 
 ### Item Badges
 

@@ -13,33 +13,23 @@ import { IActionViewItemService } from '../../../../platform/actions/browser/act
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
-import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
-import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
-import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
-import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
+import { AICustomizationManagementSection } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
 import { Menus } from '../../../browser/menus.js';
 import { agentIcon, instructionsIcon, mcpServerIcon, pluginIcon, skillIcon, hookIcon } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
 import { ActionViewItem, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { $, append } from '../../../../base/browser/dom.js';
 import { autorun } from '../../../../base/common/observable.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
-import { getSourceCounts, getSourceCountsTotal } from './customizationCounts.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { IAICustomizationWorkspaceService } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
-import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
-import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
+import { ICustomizationCountsService } from '../../../../workbench/contrib/chat/browser/aiCustomization/customizationCountsService.js';
 
 export interface ICustomizationItemConfig {
 	readonly id: string;
 	readonly label: string;
 	readonly icon: ThemeIcon;
-	readonly promptType?: PromptsType;
-	readonly isMcp?: boolean;
-	readonly isPlugins?: boolean;
+	readonly section: AICustomizationManagementSection;
 }
 
 export const CUSTOMIZATION_ITEMS: ICustomizationItemConfig[] = [
@@ -47,62 +37,54 @@ export const CUSTOMIZATION_ITEMS: ICustomizationItemConfig[] = [
 		id: 'sessions.customization.agents',
 		label: localize('agents', "Agents"),
 		icon: agentIcon,
-		promptType: PromptsType.agent,
+		section: AICustomizationManagementSection.Agents,
 	},
 	{
 		id: 'sessions.customization.skills',
 		label: localize('skills', "Skills"),
 		icon: skillIcon,
-		promptType: PromptsType.skill,
+		section: AICustomizationManagementSection.Skills,
 	},
 	{
 		id: 'sessions.customization.instructions',
 		label: localize('instructions', "Instructions"),
 		icon: instructionsIcon,
-		promptType: PromptsType.instructions,
+		section: AICustomizationManagementSection.Instructions,
 	},
 	{
 		id: 'sessions.customization.hooks',
 		label: localize('hooks', "Hooks"),
 		icon: hookIcon,
-		promptType: PromptsType.hook,
+		section: AICustomizationManagementSection.Hooks,
 	},
 	{
 		id: 'sessions.customization.mcpServers',
 		label: localize('mcpServers', "MCP Servers"),
 		icon: mcpServerIcon,
-		isMcp: true,
+		section: AICustomizationManagementSection.McpServers,
 	},
 	{
 		id: 'sessions.customization.plugins',
 		label: localize('plugins', "Plugins"),
 		icon: pluginIcon,
-		isPlugins: true,
+		section: AICustomizationManagementSection.Plugins,
 	},
 ];
 
 /**
  * Custom ActionViewItem for each customization link in the toolbar.
- * Renders icon + label + source count badges, matching the sidebar footer style.
+ * Renders icon + label + count badge driven by {@link ICustomizationCountsService}.
  */
 export class CustomizationLinkViewItem extends ActionViewItem {
 
 	private readonly _viewItemDisposables: DisposableStore;
 	private _button: Button | undefined;
-	private _countContainer: HTMLElement | undefined;
 
 	constructor(
 		action: IAction,
 		options: IBaseActionViewItemOptions,
 		private readonly _config: ICustomizationItemConfig,
-		@IPromptsService private readonly _promptsService: IPromptsService,
-		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
-		@IMcpService private readonly _mcpService: IMcpService,
-		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
-		@ISessionsManagementService private readonly _activeSessionService: ISessionsManagementService,
-		@IAICustomizationWorkspaceService private readonly _workspaceService: IAICustomizationWorkspaceService,
-		@IFileService private readonly _fileService: IFileService,
-		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
+		@ICustomizationCountsService private readonly _countsService: ICustomizationCountsService,
 	) {
 		super(undefined, action, { ...options, icon: false, label: false });
 		this._viewItemDisposables = this._register(new DisposableStore());
@@ -136,55 +118,12 @@ export class CustomizationLinkViewItem extends ActionViewItem {
 		}));
 
 		// Count container (inside button, floating right)
-		this._countContainer = append(this._button.element, $('span.customization-link-counts'));
+		const countContainer = append(this._button.element, $('span.customization-link-counts'));
 
-		// Subscribe to changes
-		this._viewItemDisposables.add(this._promptsService.onDidChangeCustomAgents(() => this._updateCounts()));
-		this._viewItemDisposables.add(this._promptsService.onDidChangeSlashCommands(() => this._updateCounts()));
-		this._viewItemDisposables.add(this._languageModelsService.onDidChangeLanguageModels(() => this._updateCounts()));
+		const count$ = this._countsService.observeCount(this._config.section);
 		this._viewItemDisposables.add(autorun(reader => {
-			this._mcpService.servers.read(reader);
-			this._updateCounts();
+			this._renderTotalCount(countContainer, count$.read(reader));
 		}));
-		this._viewItemDisposables.add(autorun(reader => {
-			this._agentPluginService.plugins.read(reader);
-			this._updateCounts();
-		}));
-		this._viewItemDisposables.add(this._workspaceContextService.onDidChangeWorkspaceFolders(() => this._updateCounts()));
-		this._viewItemDisposables.add(autorun(reader => {
-			this._activeSessionService.activeSession.read(reader);
-			this._updateCounts();
-		}));
-
-		// Initial count
-		this._updateCounts();
-	}
-
-	private _updateCountsRequestId = 0;
-
-	private async _updateCounts(): Promise<void> {
-		if (!this._countContainer) {
-			return;
-		}
-
-		const requestId = ++this._updateCountsRequestId;
-
-		if (this._config.promptType) {
-			const type = this._config.promptType;
-			const filter = this._workspaceService.getStorageSourceFilter(type);
-			const counts = await getSourceCounts(this._promptsService, type, filter, this._workspaceContextService, this._workspaceService, this._fileService);
-			if (requestId !== this._updateCountsRequestId) {
-				return;
-			}
-			const total = getSourceCountsTotal(counts, filter);
-			this._renderTotalCount(this._countContainer, total);
-		} else if (this._config.isMcp) {
-			const total = this._mcpService.servers.get().length;
-			this._renderTotalCount(this._countContainer, total);
-		} else if (this._config.isPlugins) {
-			const total = this._agentPluginService.plugins.get().length;
-			this._renderTotalCount(this._countContainer, total);
-		}
 	}
 
 	private _renderTotalCount(container: HTMLElement, count: number): void {

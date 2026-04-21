@@ -42,15 +42,14 @@ import { IClipboardService } from '../../../../../platform/clipboard/common/clip
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
-import { IPathService } from '../../../../services/path/common/pathService.js';
 import { generateCustomizationDebugReport } from './aiCustomizationDebugPanel.js';
 import { getCustomizationSecondaryText } from './aiCustomizationListWidgetUtils.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { AICustomizationItemNormalizer, IAICustomizationItemSource, IAICustomizationListItem, ProviderCustomizationItemSource } from './aiCustomizationItemSource.js';
-import { PromptsServiceCustomizationItemProvider } from './promptsServiceCustomizationItemProvider.js';
+import { IAICustomizationListItem } from './aiCustomizationItemSource.js';
+import { ICustomizationCountsService } from './customizationCountsService.js';
+import { sectionToPromptType } from './sectionToPromptType.js';
 
 export { truncateToFirstLine } from './aiCustomizationListWidgetUtils.js';
 
@@ -448,22 +447,9 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 
 /**
  * Maps section ID to prompt type.
+ * @deprecated Import from `./sectionToPromptType.js` directly.
  */
-export function sectionToPromptType(section: AICustomizationManagementSection): PromptsType {
-	switch (section) {
-		case AICustomizationManagementSection.Agents:
-			return PromptsType.agent;
-		case AICustomizationManagementSection.Skills:
-			return PromptsType.skill;
-		case AICustomizationManagementSection.Instructions:
-			return PromptsType.instructions;
-		case AICustomizationManagementSection.Hooks:
-			return PromptsType.hook;
-		case AICustomizationManagementSection.Prompts:
-		default:
-			return PromptsType.prompt;
-	}
-}
+export { sectionToPromptType } from './sectionToPromptType.js';
 
 /**
  * An ordered create action for the add button.
@@ -507,9 +493,6 @@ export class AICustomizationListWidget extends Disposable {
 	private _loadItemsSeq = 0;
 
 	private readonly delayedFilter = new Delayer<void>(200);
-	private readonly itemNormalizer: AICustomizationItemNormalizer;
-	private readonly promptsServiceItemProvider: PromptsServiceCustomizationItemProvider;
-	private cachedItemSource: { descriptorId: string; source: IAICustomizationItemSource } | undefined;
 
 	private readonly _onDidSelectItem = this._register(new Emitter<IAICustomizationListItem>());
 	readonly onDidSelectItem: Event<IAICustomizationListItem> = this._onDidSelectItem.event;
@@ -537,27 +520,12 @@ export class AICustomizationListWidget extends Disposable {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IHoverService private readonly hoverService: IHoverService,
 		@IFileService private readonly fileService: IFileService,
-		@IPathService private readonly pathService: IPathService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
-		@IAgentPluginService private readonly agentPluginService: IAgentPluginService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IProductService private readonly productService: IProductService,
+		@ICustomizationCountsService private readonly countsService: ICustomizationCountsService,
 	) {
 		super();
-		this.itemNormalizer = new AICustomizationItemNormalizer(
-			this.workspaceContextService,
-			this.workspaceService,
-			this.labelService,
-			this.agentPluginService,
-			this.productService,
-		);
-		this.promptsServiceItemProvider = new PromptsServiceCustomizationItemProvider(
-			() => this.harnessService.getActiveDescriptor(),
-			this.promptsService,
-			this.workspaceService,
-			this.productService,
-		);
 		this.element = $('.ai-customization-list-widget');
 		this.create();
 
@@ -590,9 +558,8 @@ export class AICustomizationListWidget extends Disposable {
 		this._register(autorun(reader => {
 			this.harnessService.activeHarness.read(reader);
 			this.harnessService.availableHarnesses.read(reader);
-			this.cachedItemSource = undefined;
 			const activeDescriptor = this.harnessService.getActiveDescriptor();
-			itemSourceChangeDisposable.value = this.getItemSource(activeDescriptor).onDidChange(() => this.refresh());
+			itemSourceChangeDisposable.value = this.countsService.getItemSource(activeDescriptor).onDidChange(() => this.refresh());
 		}));
 
 	}
@@ -1135,33 +1102,11 @@ export class AICustomizationListWidget extends Disposable {
 
 	/**
 	 * Fetches and filters items for a given section.
-	 * Delegates to the item source selected by the active harness.
+	 * Delegates to the shared item source owned by the counts service.
 	 */
 	private async fetchItemsForSection(section: AICustomizationManagementSection): Promise<IAICustomizationListItem[]> {
 		const promptType = sectionToPromptType(section);
-		return this.getItemSource(this.harnessService.getActiveDescriptor()).fetchItems(promptType);
-	}
-
-	/**
-	 * Returns the rich, browser-internal item source for a harness descriptor.
-	 * The source is cached per descriptor id and reused across fetch and
-	 * subscription calls to avoid redundant event composition.
-	 */
-	private getItemSource(descriptor: ReturnType<ICustomizationHarnessService['getActiveDescriptor']>): IAICustomizationItemSource {
-		if (this.cachedItemSource && this.cachedItemSource.descriptorId === descriptor.id) {
-			return this.cachedItemSource.source;
-		}
-		const itemProvider = descriptor.itemProvider ?? this.promptsServiceItemProvider;
-		const source = new ProviderCustomizationItemSource(
-			itemProvider,
-			this.promptsService,
-			this.workspaceService,
-			this.fileService,
-			this.pathService,
-			this.itemNormalizer,
-		);
-		this.cachedItemSource = { descriptorId: descriptor.id, source };
-		return source;
+		return this.countsService.getItemSource(this.harnessService.getActiveDescriptor()).fetchItems(promptType);
 	}
 
 	/**
@@ -1478,7 +1423,7 @@ export class AICustomizationListWidget extends Disposable {
 			this.workspaceService,
 			{ allItems: this.allItems, displayEntries: this.displayEntries },
 			activeDescriptor,
-			this.promptsServiceItemProvider,
+			this.countsService.defaultItemProvider,
 		);
 	}
 }
