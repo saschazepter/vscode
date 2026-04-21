@@ -66,7 +66,10 @@ export const ICopilotCLIModels = createServiceIdentifier<ICopilotCLIModels>('ICo
 export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 	declare _serviceBrand: undefined;
 	private _availableModels?: Promise<CopilotCLIModelInfo[]>;
+	/** Synchronously available model infos (includes `auto`). Set once the eager fetch completes. */
+	private _resolvedModelInfos?: vscode.LanguageModelChatInformation[];
 	private readonly _onDidChange = this._register(new Emitter<void>());
+
 	constructor(
 		@ICopilotCLISDK private readonly copilotCLISDK: ICopilotCLISDK,
 		@IVSCodeExtensionContext private readonly extensionContext: IVSCodeExtensionContext,
@@ -75,20 +78,29 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
-		this._availableModels = this._getAvailableModels();
-		// Eagerly fetch available models so that they're ready when needed.
-		this._availableModels
-			.then(() => this._onDidChange.fire())
-			.catch((error) => {
-				this.logService.error('[CopilotCLIModels] Failed to fetch available models', error);
-			});
+		this._fetchAndCacheModels();
 		this._register(this._authenticationService.onDidAuthenticationChange(() => {
-			// Auth changed which means models could've changed. Fire the event
+			// Auth changed which means models could've changed. Clear caches and re-fetch.
 			this._availableModels = undefined;
+			this._resolvedModelInfos = undefined;
 			this._onDidChange.fire();
+			this._fetchAndCacheModels();
 		}));
 	}
+
+	private _fetchAndCacheModels(): void {
+		this._availableModels = this._getAvailableModels();
+		this._availableModels.then(models => {
+			this._resolvedModelInfos = this._buildModelInfos(models);
+			this._onDidChange.fire();
+		}).catch((error) => {
+			this.logService.error('[CopilotCLIModels] Failed to fetch available models', error);
+		});
+	}
 	async resolveModel(modelId: string): Promise<string | undefined> {
+		if (modelId.toLowerCase() === 'auto' && this.configurationService.getConfig(ConfigKey.Advanced.CLIAutoModelEnabled)) {
+			return modelId;
+		}
 		const models = await this.getModels();
 		modelId = modelId.trim().toLowerCase();
 		return models.find(m => m.id.toLowerCase() === modelId || m.name.toLowerCase() === modelId)?.id;
@@ -147,7 +159,11 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 		const provider: vscode.LanguageModelChatProvider = {
 			onDidChangeLanguageModelChatInformation: this._onDidChange.event,
 			provideLanguageModelChatInformation: async (_options, _token) => {
-				return this._provideLanguageModelChatInfo();
+				const autoModelEnabled = this.configurationService.getConfig(ConfigKey.Advanced.CLIAutoModelEnabled);
+				if (!this._authenticationService.anyGitHubSession || !this._resolvedModelInfos) {
+					return autoModelEnabled ? [buildAutoModel()] : [];
+				}
+				return this._resolvedModelInfos;
 			},
 			provideLanguageModelChatResponse: async (_model, _messages, _options, _progress, _token) => {
 				// Implemented via chat participants.
@@ -158,12 +174,13 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 			}
 		};
 		this._register(lm.registerLanguageModelChatProvider('copilotcli', provider));
+		this._onDidChange.fire();
 	}
 
-	private async _provideLanguageModelChatInfo(): Promise<vscode.LanguageModelChatInformation[]> {
-		const models = await this.getModels();
+	private _buildModelInfos(models: CopilotCLIModelInfo[]): vscode.LanguageModelChatInformation[] {
 		const isReasoningEffortEnabled = this.configurationService.getConfig(ConfigKey.Advanced.CLIThinkingEffortEnabled);
-		const modelsInfo = models.map((model, index) => {
+		const isAutoModelEnabled = this.configurationService.getConfig(ConfigKey.Advanced.CLIAutoModelEnabled);
+		const modelsInfo: vscode.LanguageModelChatInformation[] = models.map((model, index) => {
 			const multiplier = model.multiplier === undefined ? undefined : `${model.multiplier}x`;
 			return {
 				id: model.id,
@@ -180,12 +197,35 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 					imageInput: model.supportsVision,
 					toolCalling: true
 				},
-				targetChatSessionType: 'copilotcli',
-				isDefault: index === 0 // SDK guarantees the first item is the default model
+				targetChatSessionType: 'copilotcli'
 			};
 		});
+		if (isAutoModelEnabled) {
+			modelsInfo.unshift(buildAutoModel(models[0]));
+		}
 		return modelsInfo;
 	}
+}
+
+function buildAutoModel(defaultModel?: CopilotCLIModelInfo): vscode.LanguageModelChatInformation {
+	const multiplier = defaultModel?.multiplier === undefined ? undefined : `${defaultModel.multiplier}x`;
+	return {
+		id: 'auto',
+		name: 'auto',
+		family: defaultModel?.id ?? '',
+		version: '',
+		maxInputTokens: defaultModel?.maxInputTokens ?? defaultModel?.maxContextWindowTokens ?? 0,
+		maxOutputTokens: defaultModel?.maxOutputTokens ?? 0,
+		multiplier,
+		multiplierNumeric: defaultModel?.multiplier,
+		isUserSelectable: true,
+		capabilities: {
+			imageInput: defaultModel?.supportsVision,
+			toolCalling: true,
+		},
+		targetChatSessionType: 'copilotcli',
+		isDefault: true,
+	};
 }
 
 function buildConfigurationSchema(modelInfo: CopilotCLIModelInfo): vscode.LanguageModelConfigurationSchema | undefined {
