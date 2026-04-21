@@ -23,6 +23,7 @@ import { EditorPane } from '../../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../../common/editor.js';
 import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ServiceCollection } from '../../../../../platform/instantiation/common/serviceCollection.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
 import { IListVirtualDelegate, IListRenderer } from '../../../../../base/browser/ui/list/list.js';
@@ -38,9 +39,13 @@ import { AICustomizationListWidget } from './aiCustomizationListWidget.js';
 import { McpListWidget } from './mcpListWidget.js';
 import { PluginListWidget } from './pluginListWidget.js';
 import {
+	AI_CUSTOMIZATION_ITEM_STORAGE_KEY,
+	AI_CUSTOMIZATION_ITEM_TYPE_KEY,
+	AI_CUSTOMIZATION_ITEM_URI_KEY,
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID,
 	AI_CUSTOMIZATION_MANAGEMENT_SIDEBAR_WIDTH_KEY,
 	AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY,
+	AICustomizationManagementEmbeddedEditorTitleMenuId,
 	AICustomizationManagementSection,
 	AICustomizationPromptsStorage,
 	BUILTIN_STORAGE,
@@ -71,6 +76,7 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { getSimpleEditorOptions } from '../../../codeEditor/browser/simpleEditorOptions.js';
 import { IWorkingCopyService } from '../../../../services/workingCopy/common/workingCopyService.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
@@ -282,7 +288,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private editorItemNameElement!: HTMLElement;
 	private editorItemPathElement!: HTMLElement;
 	private editorSaveIndicator!: HTMLElement;
-	private editorOpenInEditorButton!: HTMLButtonElement;
+	private editorHeaderToolbar: MenuWorkbenchToolBar | undefined;
+	private editorHeaderToolbarKeys: { uri: IContextKey<string>; storage: IContextKey<string>; type: IContextKey<string> } | undefined;
 	private readonly editorModelChangeDisposables = this._register(new DisposableStore());
 	private readonly builtinEditingSessions = new Map<string, { model: ITextModel; originalContent: string }>();
 	private currentEditingUri: URI | undefined;
@@ -336,7 +343,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IThemeService themeService: IThemeService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IAICustomizationWorkspaceService private readonly workspaceService: IAICustomizationWorkspaceService,
@@ -1521,18 +1528,28 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.editorSaveIndicator = DOM.append(editorHeader, $('.editor-save-indicator'));
 
-		this.editorOpenInEditorButton = DOM.append(editorHeader, $('button.editor-open-in-editor-button'));
-		this.editorOpenInEditorButton.setAttribute('aria-label', localize('openInFullEditor', "Open in Editor"));
-		const openIcon = DOM.append(this.editorOpenInEditorButton, $(`.codicon.codicon-${Codicon.goToFile.id}`));
-		openIcon.setAttribute('aria-hidden', 'true');
-		DOM.append(this.editorOpenInEditorButton, $('span.editor-open-in-editor-button-label', undefined, localize('openInFullEditor', "Open in Editor")));
-		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), this.editorOpenInEditorButton, localize('openInFullEditorTooltip', "Open this file in a full editor with access to the file explorer and chat.")));
-		this.editorDisposables.add(DOM.addDisposableListener(this.editorOpenInEditorButton, 'click', () => {
-			void this.openCurrentFileInFullEditor().catch(error => {
-				console.error('Failed to open customization file in full editor:', error);
-				this.notificationService.error(localize('openInFullEditorFailed', "Failed to open the file in a full editor."));
-			});
-		}));
+		const toolbarContainer = DOM.append(editorHeader, $('.editor-header-toolbar'));
+		const uriKey = AI_CUSTOMIZATION_ITEM_URI_KEY;
+		const storageKey = AI_CUSTOMIZATION_ITEM_STORAGE_KEY;
+		const typeKey = AI_CUSTOMIZATION_ITEM_TYPE_KEY;
+		const scopedContextKeyService = this.editorDisposables.add(this.contextKeyService.createScoped(toolbarContainer));
+		this.editorHeaderToolbarKeys = {
+			uri: scopedContextKeyService.createKey<string>(uriKey, ''),
+			storage: scopedContextKeyService.createKey<string>(storageKey, ''),
+			type: scopedContextKeyService.createKey<string>(typeKey, ''),
+		};
+		const scopedInstantiationService = this.editorDisposables.add(this.instantiationService.createChild(
+			new ServiceCollection([IContextKeyService, scopedContextKeyService])
+		));
+		this.editorHeaderToolbar = this.editorDisposables.add(scopedInstantiationService.createInstance(
+			MenuWorkbenchToolBar,
+			toolbarContainer,
+			AICustomizationManagementEmbeddedEditorTitleMenuId,
+			{
+				menuOptions: { shouldForwardArgs: true },
+				hiddenItemStrategy: HiddenItemStrategy.Ignore,
+			}
+		));
 
 		const embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
 		const overflowWidgetsDomNode = DOM.append(this.editorContentContainer, $('.embedded-editor-overflow-widgets.monaco-editor'));
@@ -1570,6 +1587,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.editorItemNameElement.textContent = displayName;
 		this.editorItemPathElement.textContent = basename(uri);
+		this.updateEditorHeaderToolbarContext(uri, storage, promptType, displayName);
 		this._editorContentChanged = false;
 		this.resetEditorSaveIndicator();
 		this.updateEditorActionButton();
@@ -1657,6 +1675,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.currentEditingProjectRoot = undefined;
 		this.currentEditingStorage = undefined;
 		this.currentEditingPromptType = undefined;
+		this.updateEditorHeaderToolbarContext(undefined, undefined, undefined, undefined);
 		this._editorContentChanged = false;
 		this.editorModelChangeDisposables.clear();
 		this.resetEditorSaveIndicator();
@@ -1875,17 +1894,16 @@ export class AICustomizationManagementEditor extends EditorPane {
 			&& (this.currentEditingPromptType === PromptsType.prompt || this.currentEditingPromptType === PromptsType.skill);
 	}
 
-	private async openCurrentFileInFullEditor(): Promise<void> {
-		const uri = this.currentEditingUri;
-		if (!uri) {
+	private updateEditorHeaderToolbarContext(uri: URI | undefined, storage: AICustomizationPromptsStorage | undefined, promptType: PromptsType | undefined, name: string | undefined): void {
+		if (!this.editorHeaderToolbar || !this.editorHeaderToolbarKeys) {
 			return;
 		}
-		await this.commandService.executeCommand('aiCustomizationManagement.openFile', {
-			uri,
-			storage: this.currentEditingStorage,
-			promptType: this.currentEditingPromptType,
-			name: this.editorItemNameElement?.textContent ?? undefined,
-		});
+		this.editorHeaderToolbarKeys.uri.set(uri ? uri.toString() : '');
+		this.editorHeaderToolbarKeys.storage.set(storage ? String(storage) : '');
+		this.editorHeaderToolbarKeys.type.set(promptType ?? '');
+		this.editorHeaderToolbar.context = uri
+			? { uri, storage, promptType, name }
+			: undefined;
 	}
 
 	private updateInputDirtyState(): void {
