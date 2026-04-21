@@ -35,7 +35,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ToggleTitleBarConfigAction } from '../../../../browser/parts/titlebar/titlebarActions.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { match } from '../../../../../base/common/glob.js';
-import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
+import { IBrowserViewWorkbenchService } from '../../common/browserView.js';
 
 const CONTEXT_BROWSER_EDITOR_OPEN = new RawContextKey<boolean>('browserEditorOpen', false, localize('browser.editorOpen', "Whether any browser editor is currently open"));
 
@@ -513,7 +513,7 @@ class LocalhostLinkOpenerContribution extends Disposable implements IWorkbenchCo
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
-		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IBrowserViewWorkbenchService private readonly browserViewWorkbenchService: IBrowserViewWorkbenchService,
 	) {
 		super();
 
@@ -526,7 +526,7 @@ class LocalhostLinkOpenerContribution extends Disposable implements IWorkbenchCo
 		}
 
 		// If we are in a remote session, always use the original source URI (and not the href which may be the forwarded address)
-		if (this.environmentService.remoteAuthority && ctx.sourceUri) {
+		if (this.browserViewWorkbenchService.willUseRemoteProxy() && ctx.sourceUri) {
 			href = ctx.sourceUri.toString();
 		}
 

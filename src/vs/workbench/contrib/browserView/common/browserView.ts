@@ -97,6 +97,9 @@ export const IBrowserViewWorkbenchService = createDecorator<IBrowserViewWorkbenc
 export interface IBrowserViewWorkbenchService {
 	readonly _serviceBrand: undefined;
 
+	/** Returns true if the remote proxy is enabled; i.e. we are in a remote workspace. */
+	willUseRemoteProxy(): boolean;
+
 	/**
 	 * Get or create a browser view model for the given ID
 	 * @param id The browser view identifier

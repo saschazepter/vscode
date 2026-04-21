@@ -16,6 +16,7 @@ import { IWorkbenchEnvironmentService } from '../../../services/environment/comm
 import { ISharedProcessTunnelProxyService } from '../../../../platform/tunnel/common/sharedProcessTunnelProxyService.js';
 import { IRemoteAuthorityResolverService } from '../../../../platform/remote/common/remoteAuthorityResolver.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -40,6 +41,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		@ISharedProcessTunnelProxyService private readonly tunnelProxyService: ISharedProcessTunnelProxyService,
 		@IRemoteAuthorityResolverService private readonly remoteAuthorityResolverService: IRemoteAuthorityResolverService,
 		@ILogService private readonly logService: ILogService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
@@ -55,6 +57,16 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		}));
 	}
 
+	willUseRemoteProxy(): boolean {
+		if (!this.environmentService.remoteAuthority) {
+			return false;
+		}
+		if (!this.configurationService.getValue<boolean>('workbench.browser.enableRemoteProxy')) {
+			return false;
+		}
+		return true;
+	}
+
 	private _getRemoteProxy(): Promise<string | undefined> {
 		if (!this._remoteProxyPromise) {
 			this._remoteProxyPromise = this._startRemoteProxy();
@@ -63,10 +75,11 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	}
 
 	private async _startRemoteProxy(): Promise<string | undefined> {
-		const remoteAuthority = this.environmentService.remoteAuthority;
-		if (!remoteAuthority) {
+		if (!this.willUseRemoteProxy()) {
 			return undefined;
 		}
+
+		const remoteAuthority = this.environmentService.remoteAuthority!;
 
 		try {
 			const proxyUrl = await this.tunnelProxyService.start(remoteAuthority);

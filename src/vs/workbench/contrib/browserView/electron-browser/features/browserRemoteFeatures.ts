@@ -9,9 +9,11 @@ import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { BrowserEditor, BrowserEditorContribution, IBrowserEditorWidgetContribution } from '../browserEditor.js';
-import { IBrowserViewModel } from '../../common/browserView.js';
+import { IBrowserViewModel, IBrowserViewWorkbenchService } from '../../common/browserView.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
+import { Registry } from '../../../../../platform/registry/common/platform.js';
+import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope } from '../../../../../platform/configuration/common/configurationRegistry.js';
+import { workbenchConfigurationNodeBase } from '../../../../common/configuration.js';
 
 class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 	private readonly _container: HTMLElement;
@@ -21,14 +23,11 @@ class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 	constructor(
 		editor: BrowserEditor,
 		@IHoverService hoverService: IHoverService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+		@IBrowserViewWorkbenchService private readonly browserViewWorkbenchService: IBrowserViewWorkbenchService,
 	) {
 		super(editor);
 
 		this._container = $('.browser-remote-indicator');
-
-		// Always display the icon in remote workspaces -- just update the state based on whether we're actually serving via remote.
-		this._container.style.display = environmentService.remoteAuthority ? '' : 'none';
 
 		const icon = renderIcon(Codicon.remote);
 		this._container.appendChild(icon);
@@ -41,6 +40,8 @@ class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 					: localize('browser.remoteSessionDisconnected', "Connected locally"),
 			})
 		));
+
+		this.setRemoteConnected(false);
 	}
 
 	override get preUrlWidgets(): readonly IBrowserEditorWidgetContribution[] {
@@ -63,7 +64,24 @@ class BrowserRemoteIndicatorContribution extends BrowserEditorContribution {
 	private setRemoteConnected(isConnected: boolean): void {
 		this._isRemoteConnected = isConnected;
 		this._container.classList.toggle('connected', isConnected);
+
+		// Always display the icon in remote workspaces -- just update the state based on whether we're actually serving via remote.
+		this._container.style.display = isConnected || this.browserViewWorkbenchService.willUseRemoteProxy() ? '' : 'none';
 	}
 }
 
 BrowserEditor.registerContribution(BrowserRemoteIndicatorContribution);
+
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
+	...workbenchConfigurationNodeBase,
+	properties: {
+		'workbench.browser.enableRemoteProxy': {
+			type: 'boolean',
+			default: false,
+			tags: ['advanced', 'experimental'],
+			scope: ConfigurationScope.WINDOW,
+			markdownDescription: localize('browser.enableRemoteProxy', "When enabled, browser requests in remote workspaces are proxied through the remote connection. This allows web pages to access resources available on the remote host."),
+		}
+	}
+});
+

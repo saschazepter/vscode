@@ -11,6 +11,10 @@ import { CDPEvent, CDPRequest, CDPResponse } from '../../../../platform/browserV
 class WebBrowserViewWorkbenchService implements IBrowserViewWorkbenchService {
 	declare readonly _serviceBrand: undefined;
 
+	willUseRemoteProxy(): boolean {
+		return false;
+	}
+
 	async getOrCreateBrowserViewModel(_id: string): Promise<IBrowserViewModel> {
 		throw new Error('Integrated Browser is not available in web.');
 	}
