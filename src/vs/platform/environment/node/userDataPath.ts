@@ -74,6 +74,16 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
 		return cliPath;
 	}
 
+	return getDefaultUserDataPath(productName);
+}
+
+/**
+ * Returns the default user data path for a given product name using
+ * the platform-specific application data directory.
+ */
+export function getDefaultUserDataPath(productName: string): string {
+	let appDataPath: string | undefined;
+
 	// 4. Otherwise check per platform
 	return getAppDataPath(productName);
 }
