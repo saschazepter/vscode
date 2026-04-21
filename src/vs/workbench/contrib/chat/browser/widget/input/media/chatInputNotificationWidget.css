@@ -71,6 +71,95 @@
 	white-space: nowrap;
 }
 
+/* Progress bar */
+.chat-input-notification .chat-input-notification-progress {
+	width: 100%;
+	height: 4px;
+	background-color: var(--vscode-gauge-background);
+	border-radius: 4px;
+	overflow: hidden;
+	margin: 2px 0;
+}
+
+.chat-input-notification .chat-input-notification-progress-bar {
+	height: 100%;
+	border-radius: 4px;
+	background-color: var(--vscode-gauge-foreground);
+	transition: width 300ms ease;
+}
+
+.chat-input-notification.severity-warning .chat-input-notification-progress {
+	background-color: var(--vscode-gauge-warningBackground);
+}
+
+.chat-input-notification.severity-warning .chat-input-notification-progress-bar {
+	background-color: var(--vscode-gauge-warningForeground);
+}
+
+.chat-input-notification.severity-error .chat-input-notification-progress {
+	background-color: var(--vscode-gauge-errorBackground);
+}
+
+.chat-input-notification.severity-error .chat-input-notification-progress-bar {
+	background-color: var(--vscode-gauge-errorForeground);
+}
+
+/* Detail row: progress label + detail text + link actions */
+.chat-input-notification .chat-input-notification-detail-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	font-size: 12px;
+	line-height: 18px;
+	flex-wrap: wrap;
+}
+
+.chat-input-notification .chat-input-notification-progress-label {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+/* Color the "X% used" label by severity */
+.chat-input-notification.severity-info .chat-input-notification-progress-label {
+	color: var(--vscode-gauge-foreground);
+}
+
+.chat-input-notification.severity-warning .chat-input-notification-progress-label {
+	color: var(--vscode-gauge-warningForeground);
+}
+
+.chat-input-notification.severity-error .chat-input-notification-progress-label {
+	color: var(--vscode-gauge-errorForeground);
+}
+
+.chat-input-notification .chat-input-notification-detail {
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+}
+
+.chat-input-notification .chat-input-notification-detail-spacer {
+	flex: 1;
+}
+
+/* Action links (in detail row) */
+.chat-input-notification .chat-input-notification-action-link {
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	text-decoration: none;
+	white-space: nowrap;
+	font-size: 12px;
+}
+
+.chat-input-notification .chat-input-notification-action-link:hover {
+	text-decoration: underline;
+	color: var(--vscode-textLink-activeForeground);
+}
+
+.chat-input-notification .chat-input-notification-action-link:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
 /* Description */
 .chat-input-notification .chat-input-notification-description {
 	font-size: 12px;
@@ -78,7 +167,7 @@
 	color: var(--vscode-descriptionForeground);
 }
 
-/* Actions row */
+/* Actions row (button style, used when no progress bar) */
 .chat-input-notification .chat-input-notification-actions {
 	display: flex;
 	align-items: center;

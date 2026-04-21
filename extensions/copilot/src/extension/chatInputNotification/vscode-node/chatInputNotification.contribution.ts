@@ -34,13 +34,14 @@ export class ChatInputNotificationContribution extends Disposable {
 		{
 			const test = this._ensureNotification();
 			test.severity = vscode.ChatInputNotificationSeverity.Warning;
-			test.message = `You've reached your Monthly Limit.`;
-			test.description = 'Copilot is paused until your limit resets May 1 at 10:00 AM.';
+			test.message = 'Monthly Budget';
+			test.progress = 75;
+			test.detail = 'Resets May 1 at 10:00 AM';
+			test.description = 'Copilot will pause when the monthly budget is reached.';
 			test.dismissible = true;
 			test.autoDismissOnMessage = true;
 			test.actions = [
 				{ label: 'View Usage', commandId: 'workbench.action.chat.openQuotaDashboard' },
-				{ label: 'Upgrade Plan', commandId: 'workbench.action.chat.upgradePlan' },
 			];
 			test.show();
 		}

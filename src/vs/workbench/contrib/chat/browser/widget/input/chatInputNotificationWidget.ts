@@ -103,14 +103,58 @@ export class ChatInputNotificationWidget extends Disposable {
 			}));
 		}
 
-		// Description (optional, below header)
+		// Progress bar (optional, below header)
+		if (notification.progress !== undefined) {
+			const progressContainer = dom.append(container, $('.chat-input-notification-progress'));
+			const progressBar = dom.append(progressContainer, $('.chat-input-notification-progress-bar'));
+			progressBar.style.width = `${Math.max(0, Math.min(100, notification.progress))}%`;
+		}
+
+		// Detail row: "X% used" + detail text + link-style actions (when progress is set)
+		const hasDetailRow = notification.progress !== undefined || notification.detail || notification.actions.length > 0;
+		if (hasDetailRow && notification.progress !== undefined) {
+			const detailRow = dom.append(container, $('.chat-input-notification-detail-row'));
+
+			// Progress label "X% used"
+			const progressLabel = dom.append(detailRow, $('.chat-input-notification-progress-label'));
+			progressLabel.textContent = `${Math.round(notification.progress)}% used`;
+
+			// Detail text
+			if (notification.detail) {
+				const detailText = dom.append(detailRow, $('.chat-input-notification-detail'));
+				detailText.textContent = notification.detail;
+			}
+
+			// Spacer
+			dom.append(detailRow, $('.chat-input-notification-detail-spacer'));
+
+			// Actions as links
+			for (const action of notification.actions) {
+				const link = dom.append(detailRow, $('a.chat-input-notification-action-link'));
+				link.textContent = action.label;
+				link.tabIndex = 0;
+				link.role = 'button';
+				link.ariaLabel = `${notification.message} ${action.label}`;
+
+				this._contentDisposables.add(dom.addDisposableListener(link, dom.EventType.CLICK, async (e) => {
+					e.preventDefault();
+					this._telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', {
+						id: action.commandId,
+						from: 'chatInputNotification',
+					});
+					await this._commandService.executeCommand(action.commandId, ...(action.commandArgs ?? []));
+				}));
+			}
+		}
+
+		// Description (optional, below detail row)
 		if (notification.description) {
 			const descriptionElement = dom.append(container, $('.chat-input-notification-description'));
 			descriptionElement.textContent = notification.description;
 		}
 
-		// Actions row (below description)
-		if (notification.actions.length > 0) {
+		// Actions as buttons (only when no progress bar — fallback layout)
+		if (notification.progress === undefined && notification.actions.length > 0) {
 			const actionsContainer = dom.append(container, $('.chat-input-notification-actions'));
 
 			for (const action of notification.actions) {
