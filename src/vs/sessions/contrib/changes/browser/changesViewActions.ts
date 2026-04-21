@@ -211,7 +211,7 @@ class OpenFileAction extends Action2 {
 			icon: Codicon.goToFile,
 			f1: false,
 			menu: {
-				id: MenuId.ChatEditingSessionChangesToolbar,
+				id: MenuId.ChatEditingSessionChangeToolbar,
 				group: 'navigation',
 				order: 1,
 				when: IsSessionsWindowContext,
@@ -249,21 +249,16 @@ class OpenChangesAction extends Action2 {
 		const editorService = accessor.get(IEditorService);
 
 		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
-		const changes = view?.viewModel.activeSessionChangesObs.get();
+		const sessionChanges = view?.viewModel.activeSessionChangesObs.get();
 
-		for (const resource of resources) {
-			const change = changes?.find(change =>
-				isEqual(change.modifiedUri ?? change.originalUri, resource));
+		const changes = sessionChanges?.filter(change =>
+			resources.some(resource => isEqual(change.modifiedUri ?? change.originalUri, resource))
+		) ?? [];
 
-			if (!change) {
-				continue;
-			}
-
-			await editorService.openEditor({
-				original: { resource: change.originalUri },
-				modified: { resource: change.modifiedUri },
-			});
-		}
+		await Promise.all(changes.map(change => editorService.openEditor({
+			original: { resource: change.originalUri },
+			modified: { resource: change.modifiedUri }
+		})));
 	}
 }
 

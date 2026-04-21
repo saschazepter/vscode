@@ -1041,7 +1041,6 @@
 		"--animation-angle",
 		"--animation-opacity",
 		"--chat-input-anim-angle",
-		"--chat-input-working-fill",
 		"--chat-send-button-anim-angle",
 		"--chat-setup-dialog-glow-angle",
 		"--vscode-chat-font-family",
