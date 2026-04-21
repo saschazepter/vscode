@@ -2265,21 +2265,18 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	/**
-	 * Returns all chat IDs that belong to the given group.
-	 * The root session is always first.
+	 * Returns all chat IDs that belong to the given group,
+	 * ordered by creation time (root session first).
 	 */
 	private _getChatIdsInGroup(groupId: string): string[] {
-		const result: string[] = [];
+		const chats: ICopilotChatSession[] = [];
 		for (const chat of this._sessionCache.values()) {
 			if (this._getGroupIdForChat(chat) === groupId) {
-				if (chat.id === groupId) {
-					result.unshift(chat.id);
-				} else {
-					result.push(chat.id);
-				}
+				chats.push(chat);
 			}
 		}
-		return result;
+		chats.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+		return chats.map(c => c.id);
 	}
 
 	/**
