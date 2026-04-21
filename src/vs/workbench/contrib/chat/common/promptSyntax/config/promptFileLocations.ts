@@ -337,9 +337,9 @@ export function getCleanPromptName(fileUri: URI): string {
 		return basename(fileUri, '.md');
 	}
 
-	// For SKILL.md files (case insensitive), return 'SKILL'
+	// For SKILL.md files (case insensitive), return the parent folder name
 	if (fileName.toLowerCase() === SKILL_FILENAME.toLowerCase()) {
-		return basename(fileUri, '.md');
+		return getSkillFolderName(fileUri);
 	}
 
 	// For .md files in .github/agents/ folder, treat them as agent files

@@ -66,26 +66,7 @@ export class PromptValidator {
 		}
 
 		const nameAttribute = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.name);
-		if (!nameAttribute) {
-			report(toMarker(
-				localize('promptValidator.skillNameMissing', "Skill must provide a name."),
-				new Range(1, 1, 1, 4),
-				MarkerSeverity.Error
-			));
-			return;
-		}
-
-		const descriptionAttribute = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.description);
-		if (!descriptionAttribute) {
-			report(toMarker(
-				localize('promptValidator.skillDescriptionMissing', "Skill must provide a description."),
-				new Range(1, 1, 1, 4),
-				MarkerSeverity.Error
-			));
-			return;
-		}
-
-		if (nameAttribute.value.type === 'scalar') {
+		if (nameAttribute?.value.type === 'scalar') {
 			const skillName = nameAttribute.value.value.trim();
 			if (skillName.length > 0) {
 				if (!VALID_SKILL_NAME_REGEX.test(skillName)) {
@@ -109,6 +90,31 @@ export class PromptValidator {
 						));
 					}
 				}
+			}
+		}
+
+		const descriptionAttribute = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.description);
+		if (!descriptionAttribute) {
+			// Without a description, user-invocable: false is invalid because the skill
+			// would be model-only but has no description for the model to decide when to use it.
+			const userInvocableAttr = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.userInvocable);
+			if (userInvocableAttr?.value.type === 'scalar' && userInvocableAttr.value.value === 'false') {
+				report(toMarker(
+					localize('promptValidator.skillUserInvocableRequiresDescription', "A description is required when user-invocable is false, because the model needs a description to decide when to load the skill."),
+					userInvocableAttr.value.range,
+					MarkerSeverity.Error
+				));
+			}
+
+			// Without a description, disable-model-invocation: false (model invocation enabled)
+			// is the default but if explicitly set, warn that a description is needed.
+			const disableModelInvocationAttr = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.disableModelInvocation);
+			if (disableModelInvocationAttr?.value.type === 'scalar' && disableModelInvocationAttr.value.value === 'false') {
+				report(toMarker(
+					localize('promptValidator.skillModelInvocationRequiresDescription', "A description is required when model invocation is enabled, because the model needs a description to decide when to load the skill."),
+					disableModelInvocationAttr.value.range,
+					MarkerSeverity.Error
+				));
 			}
 		}
 	}

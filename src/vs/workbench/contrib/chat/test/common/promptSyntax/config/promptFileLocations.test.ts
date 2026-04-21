@@ -190,19 +190,19 @@ suite('promptFileLocations', function () {
 			assert.strictEqual(getCleanPromptName(uri), 'test.txt');
 		});
 
-		test('removes .md extension for SKILL.md (uppercase)', () => {
+		test('returns folder name for SKILL.md (uppercase)', () => {
 			const uri = URI.file('/workspace/.github/skills/test/SKILL.md');
-			assert.strictEqual(getCleanPromptName(uri), 'SKILL');
+			assert.strictEqual(getCleanPromptName(uri), 'test');
 		});
 
-		test('removes .md extension for skill.md (lowercase)', () => {
-			const uri = URI.file('/workspace/.github/skills/test/skill.md');
-			assert.strictEqual(getCleanPromptName(uri), 'skill');
+		test('returns folder name for skill.md (lowercase)', () => {
+			const uri = URI.file('/workspace/.github/skills/my-skill/skill.md');
+			assert.strictEqual(getCleanPromptName(uri), 'my-skill');
 		});
 
-		test('removes .md extension for Skill.md (mixed case)', () => {
-			const uri = URI.file('/workspace/.github/skills/test/Skill.md');
-			assert.strictEqual(getCleanPromptName(uri), 'Skill');
+		test('returns folder name for Skill.md (mixed case)', () => {
+			const uri = URI.file('/workspace/.github/skills/another-skill/Skill.md');
+			assert.strictEqual(getCleanPromptName(uri), 'another-skill');
 		});
 	});
 
