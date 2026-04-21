@@ -20,6 +20,7 @@ import { CHANGES_VIEW_ID } from '../../changes/common/changes.js';
 import { ChangesViewPane } from '../../changes/browser/changesView.js';
 import { prepareMoveCopyEditors } from '../../../../workbench/browser/parts/editor/editor.js';
 import { Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID } from '../../../../workbench/browser/parts/editor/editorCommands.js';
 
 class MaximizeMainEditorPartAction extends Action2 {
 	static readonly ID = 'workbench.action.agentSessions.maximizeMainEditorPart';
@@ -176,6 +177,7 @@ class OpenModalEditorInEditorAction extends Action2 {
 
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const viewsService = accessor.get(IViewsService);
+		const commandService = accessor.get(ICommandService);
 		const configurationService = accessor.get(IConfigurationService);
 		const editorGroupsService = accessor.get(IEditorGroupsService);
 		const layoutService = accessor.get(IAgentWorkbenchLayoutService);
@@ -209,9 +211,7 @@ class OpenModalEditorInEditorAction extends Action2 {
 		}
 
 		// Move all remaining editors to the main editor part
-		const mainActiveGroup = editorGroupsService.mainPart.activeGroup;
-		const editorsToMove = prepareMoveCopyEditors(activeGroup, activeGroup.editors.slice(), true);
-		activeGroup.moveEditors(editorsToMove, mainActiveGroup);
+		await commandService.executeCommand(MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID);
 	}
 }
 
