@@ -458,6 +458,9 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		// Merge textarea feedback with editor-collected inline feedback.
 		const feedbackParts: string[] = [];
+		if (textareaFeedback) {
+			feedbackParts.push(textareaFeedback);
+		}
 		if (editorFeedbackItems.length > 0) {
 			const filePath = this.review.planUri?.path ? `(${this.review.planUri.path})` : '';
 			feedbackParts.push(`Here's the feedback for contents of the plan file ${filePath}:`);
@@ -468,9 +471,6 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 					feedbackParts.push(`Line ${item.line}: ${item.text}`);
 				}
 			}
-		}
-		if (textareaFeedback) {
-			feedbackParts.push(textareaFeedback);
 		}
 
 		const feedback = feedbackParts.join('\n');
