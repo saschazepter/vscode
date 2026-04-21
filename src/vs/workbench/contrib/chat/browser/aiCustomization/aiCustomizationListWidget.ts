@@ -446,12 +446,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 }
 
 /**
- * Maps section ID to prompt type.
- * @deprecated Import from `./sectionToPromptType.js` directly.
- */
-export { sectionToPromptType } from './sectionToPromptType.js';
-
-/**
  * An ordered create action for the add button.
  */
 interface ICreateAction {
@@ -496,9 +490,6 @@ export class AICustomizationListWidget extends Disposable {
 
 	private readonly _onDidSelectItem = this._register(new Emitter<IAICustomizationListItem>());
 	readonly onDidSelectItem: Event<IAICustomizationListItem> = this._onDidSelectItem.event;
-
-	private readonly _onDidChangeItemCount = this._register(new Emitter<number>());
-	readonly onDidChangeItemCount: Event<number> = this._onDidChangeItemCount.event;
 
 	private readonly _onDidRequestCreate = this._register(new Emitter<PromptsType>());
 	readonly onDidRequestCreate: Event<PromptsType> = this._onDidRequestCreate.event;
@@ -1088,16 +1079,6 @@ export class AICustomizationListWidget extends Disposable {
 
 		this.allItems = items;
 		this.filterItems();
-		this._onDidChangeItemCount.fire(items.length);
-	}
-
-	/**
-	 * Computes the item count for a given section without updating the display.
-	 * Uses the same loading and filtering logic as `loadItems` for consistency.
-	 */
-	async computeItemCountForSection(section: AICustomizationManagementSection): Promise<number> {
-		const items = await this.fetchItemsForSection(section);
-		return items.length;
 	}
 
 	/**

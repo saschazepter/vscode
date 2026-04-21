@@ -19,6 +19,8 @@ src/vs/workbench/contrib/chat/browser/aiCustomization/
 ├── promptsServiceCustomizationItemProvider.ts  # Adapts IPromptsService → ICustomizationItemProvider
 ├── aiCustomizationListWidgetUtils.ts           # List item helpers (truncation, etc.)
 ├── aiCustomizationDebugPanel.ts                # Debug diagnostics panel
+├── customizationCountsService.ts               # Shared counts service: observeCount/observeTotalCount
+├── sectionToPromptType.ts                      # Section ↔ PromptsType mapping (shared by editor + counts service)
 ├── aiCustomizationWorkspaceService.ts          # Core VS Code workspace service impl
 ├── customizationHarnessService.ts              # Core harness service impl (agent-gated)
 ├── customizationCreatorService.ts              # AI-guided creation flow

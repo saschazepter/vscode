@@ -192,10 +192,9 @@ export class CustomizationCountsService extends Disposable implements ICustomiza
 		if (this.cachedItemSource && this.cachedItemSource.descriptorId === descriptor.id) {
 			return this.cachedItemSource.source;
 		}
-		const itemProvider = descriptor.itemProvider ?? (descriptor.syncProvider ? undefined : this.defaultItemProvider);
+		const itemProvider = descriptor.itemProvider ?? this.defaultItemProvider;
 		const source = new ProviderCustomizationItemSource(
 			itemProvider,
-			descriptor.syncProvider,
 			this.promptsService,
 			this.workspaceService,
 			this.fileService,

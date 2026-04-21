@@ -11,26 +11,7 @@ import { IAICustomizationWorkspaceService, applyStorageSourceFilter, IStorageSou
 import { AICustomizationManagementSection, REMOTE_GROUP_KEY } from './aiCustomizationManagement.js';
 import { ICustomizationDisableProvider, ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
 import { enumerateLocalCustomizationsForHarness, SYNCABLE_PROMPT_TYPES } from '../agentSessions/agentHost/agentHostLocalCustomizations.js';
-
-/**
- * Maps section ID to prompt type. Duplicated from aiCustomizationListWidget
- * to avoid a circular dependency.
- */
-function sectionToPromptType(section: AICustomizationManagementSection): PromptsType {
-	switch (section) {
-		case AICustomizationManagementSection.Agents:
-			return PromptsType.agent;
-		case AICustomizationManagementSection.Skills:
-			return PromptsType.skill;
-		case AICustomizationManagementSection.Instructions:
-			return PromptsType.instructions;
-		case AICustomizationManagementSection.Hooks:
-			return PromptsType.hook;
-		case AICustomizationManagementSection.Prompts:
-		default:
-			return PromptsType.prompt;
-	}
-}
+import { sectionToPromptType } from './sectionToPromptType.js';
 
 /**
  * Snapshot of the list widget's internal state, passed in to avoid coupling.

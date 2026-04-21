@@ -5,7 +5,6 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { onUnexpectedError } from '../../../../../base/common/errors.js';
@@ -61,6 +60,7 @@ import { INewPromptOptions, NEW_PROMPT_COMMAND_ID, NEW_INSTRUCTIONS_COMMAND_ID, 
 import { showConfigureHooksQuickPick } from '../promptSyntax/hookActions.js';
 import { resolveWorkspaceTargetDirectory, resolveUserTargetDirectory } from './customizationCreatorService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { ICustomizationCountsService } from './customizationCountsService.js';
 import { IAICustomizationWorkspaceService } from '../../common/aiCustomizationWorkspaceService.js';
 import { CodeEditorWidget } from '../../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { ITextModel } from '../../../../../editor/common/model.js';
@@ -312,7 +312,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private welcomePage: AICustomizationWelcomePage | undefined;
 
 	private readonly editorDisposables = this._register(new DisposableStore());
-	private readonly promptsSectionCountScheduler = this._register(new RunOnceScheduler(() => this._doRefreshAllPromptsSectionCounts(), 100));
 	private _editorContentChanged = false;
 	private _previousActiveHarnessId: string | undefined;
 
@@ -351,6 +350,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
 		@IViewsService private readonly viewsService: IViewsService,
+		@ICustomizationCountsService private readonly countsService: ICustomizationCountsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -597,7 +597,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 				}
 			}
 			this._previousActiveHarnessId = activeId;
-			this.refreshAllPromptsSectionCounts();
 		}));
 
 		// When the harness selector setting is off, lock to Local harness.
@@ -914,14 +913,20 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Set initial visibility based on selected section
 		this.updateContentVisibility();
 
-		// Wire up section count updates — active prompts section gets its count
-		// from the list widget; all prompts sections are also refreshed from
-		// the prompts service on every change event for consistency.
-		this.editorDisposables.add(this.listWidget.onDidChangeItemCount(count => {
-			if (this.isPromptsSection(this.selectedSection)) {
-				this.updateSectionCount(this.selectedSection, count);
+		// Wire up section count updates. Prompts-based sections subscribe to
+		// the shared counts service so the sidebar always matches what the
+		// list itself shows. MCP/Plugins/Models keep their own per-widget
+		// `onDidChangeItemCount` because those counts are post-filter and
+		// reflect what the user sees in that specific widget.
+		for (const section of this.sections) {
+			if (this.isPromptsSection(section.id)) {
+				const sectionId = section.id;
+				const count$ = this.countsService.observeCount(sectionId);
+				this.editorDisposables.add(autorun(reader => {
+					this.updateSectionCount(sectionId, count$.read(reader));
+				}));
 			}
-		}));
+		}
 		if (this.mcpListWidget) {
 			this.editorDisposables.add(this.mcpListWidget.onDidChangeItemCount(count => {
 				this.updateSectionCount(AICustomizationManagementSection.McpServers, count);
@@ -940,15 +945,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}));
 			this.modelsWidget.fireItemCount();
 		}
-
-		// Any prompts data change → refresh ALL prompts section counts (debounced)
-		this.editorDisposables.add(this.promptsService.onDidChangeCustomAgents(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeSkills(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeInstructions(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeSlashCommands(() => this.refreshAllPromptsSectionCounts()));
-
-		// Load initial counts for all sections
-		this.refreshAllPromptsSectionCounts();
 
 		// Load items for the initial section
 		if (this.isPromptsSection(this.selectedSection)) {
@@ -978,28 +974,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Re-splice the sections list to trigger re-render
 		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
 		this.ensureSectionsListReflectsActiveSection();
-	}
-
-	/**
-	 * Schedules a debounced refresh of all prompts-based section counts.
-	 */
-	private refreshAllPromptsSectionCounts(): void {
-		this.promptsSectionCountScheduler.schedule();
-	}
-
-	/**
-	 * Performs the actual refresh of all prompts-based section counts.
-	 * Uses the list widget's shared item-loading logic so sidebar counts
-	 * match the per-group counts shown inside each section.
-	 */
-	private _doRefreshAllPromptsSectionCounts(): void {
-		for (const section of this.sections) {
-			if (this.isPromptsSection(section.id)) {
-				this.listWidget.computeItemCountForSection(section.id).then(count => {
-					this.updateSectionCount(section.id, count);
-				}, onUnexpectedError);
-			}
-		}
 	}
 
 	//#endregion
