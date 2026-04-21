@@ -215,10 +215,6 @@
 	color: var(--vscode-gauge-warningForeground);
 }
 
-.chat-status-bar-entry-tooltip .quota-indicator.info .quota-percentage .quota-value {
-	color: var(--vscode-gauge-foreground);
-}
-
 .chat-status-bar-entry-tooltip .quota-indicator.error .quota-bar {
 	background-color: var(--vscode-gauge-errorBackground);
 }
@@ -279,13 +275,13 @@
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.info {
-	border-color: var(--vscode-editorWidget-border);
-	background-color: var(--vscode-editorWidget-background);
-	color: var(--vscode-descriptionForeground);
+	border-color: var(--vscode-gauge-foreground);
+	background-color: var(--vscode-gauge-background);
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.info .callout-icon {
-	color: var(--vscode-descriptionForeground);
+	color: var(--vscode-gauge-foreground);
 }
 
 /* Settings */

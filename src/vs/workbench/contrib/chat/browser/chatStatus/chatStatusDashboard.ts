@@ -173,11 +173,13 @@ export class ChatStatusDashboard extends DomWidget {
 			!!(sessionLimit && !sessionLimit.unlimited) ||
 			!!(weeklyLimit && !weeklyLimit.unlimited) ||
 			isAnonymousWithSentiment;
+		const contributedEntries = [...this.chatStatusItemService.getEntries()];
 		const hasInlineSuggestionsSection =
 			!this.options?.disableInlineSuggestionsSettings ||
 			!this.options?.disableModelSelection ||
 			!this.options?.disableProviderOptions ||
-			!this.options?.disableCompletionsSnooze;
+			!this.options?.disableCompletionsSnooze ||
+			contributedEntries.length > 0;
 
 		// Title header with plan name and manage action
 		if (hasUsageSection) {
@@ -228,18 +230,16 @@ export class ChatStatusDashboard extends DomWidget {
 			this._store.add(addDisposableListener(disclosureHeader, EventType.CLICK, () => toggle()));
 
 			this.renderInlineSuggestionsContent(collapsibleInner, token, updatePromise);
-		}
 
-		// Contributions
-		{
-			for (const item of this.chatStatusItemService.getEntries()) {
-				this.element.appendChild($('hr'));
+			// Contributions
+			for (const item of contributedEntries) {
+				collapsibleInner.appendChild($('hr'));
 
 				const itemDisposables = this._store.add(new MutableDisposable());
 
 				let rendered = this.renderContributedChatStatusItem(item);
 				itemDisposables.value = rendered.disposables;
-				this.element.appendChild(rendered.element);
+				collapsibleInner.appendChild(rendered.element);
 
 				this._store.add(this.chatStatusItemService.onDidChange(e => {
 					if (e.entry.id === item.id) {
@@ -597,7 +597,6 @@ export class ChatStatusDashboard extends DomWidget {
 			quotaIndicator.classList.remove('error');
 			quotaIndicator.classList.remove('warning');
 			quotaIndicator.classList.remove('dimmed');
-			quotaIndicator.classList.remove('info');
 
 			let usedPercentage: number;
 			if (typeof quota === 'string') {
@@ -616,14 +615,10 @@ export class ChatStatusDashboard extends DomWidget {
 
 			quotaBit.style.width = `${usedPercentage}%`;
 
-			const overageEnabled = this.chatEntitlementService.quotas.overageEnabled;
-
 			if (usedPercentage >= 100) {
 				// Keep the bar highlighted in the error color while dimming the number.
 				quotaIndicator.classList.add('error');
 				quotaIndicator.classList.add('dimmed');
-			} else if (usedPercentage >= 75 && overageEnabled) {
-				quotaIndicator.classList.add('info');
 			} else if (usedPercentage >= 75) {
 				quotaIndicator.classList.add('warning');
 			}
