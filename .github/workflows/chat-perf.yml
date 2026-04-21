@@ -482,6 +482,8 @@ jobs:
         continue-on-error: true
 
       - name: Generate unified summary
+        env:
+          TEST_COMMIT: ${{ needs.setup.outputs.test_build_arg || github.sha }}
         run: |
           LEAK_ARG=""
           if [[ -f leak-results/.chat-simulation-data/ci-summary-leak.md ]]; then
