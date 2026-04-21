@@ -13,6 +13,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
+import { CLAUDE_CODE_SESSION_TYPE, COPILOT_CLI_SESSION_TYPE } from '../../../../services/sessions/common/session.js';
 import { IActiveSession, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvider } from '../../../../services/sessions/common/sessionsProvider.js';
 import { getAvailableModels, modelPickerStorageKey, SessionModelPicker } from '../../browser/copilotChatSessionsActions.js';
@@ -78,8 +79,8 @@ suite('modelPickerStorageKey', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('produces per-session-type keys', () => {
-		assert.strictEqual(modelPickerStorageKey('copilot-cli'), 'sessions.modelPicker.copilot-cli.selectedModelId');
-		assert.strictEqual(modelPickerStorageKey('claude-code'), 'sessions.modelPicker.claude-code.selectedModelId');
+		assert.strictEqual(modelPickerStorageKey(COPILOT_CLI_SESSION_TYPE), `sessions.modelPicker.${COPILOT_CLI_SESSION_TYPE}.selectedModelId`);
+		assert.strictEqual(modelPickerStorageKey(CLAUDE_CODE_SESSION_TYPE), `sessions.modelPicker.${CLAUDE_CODE_SESSION_TYPE}.selectedModelId`);
 	});
 });
 
@@ -90,7 +91,7 @@ suite('getAvailableModels', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('returns empty when no active session', () => {
-		const models = [makeModel('model-1', 'copilot-cli')];
+		const models = [makeModel('model-1', COPILOT_CLI_SESSION_TYPE)];
 		const { instantiationService } = stubServices(disposables, { models });
 		const languageModelsService = instantiationService.get(ILanguageModelsService);
 		const sessionsManagementService = instantiationService.get(ISessionsManagementService);
@@ -100,13 +101,13 @@ suite('getAvailableModels', () => {
 
 	test('filters models by session type', () => {
 		const models = [
-			makeModel('cli-model', 'copilot-cli'),
+			makeModel('cli-model', COPILOT_CLI_SESSION_TYPE),
 			makeModel('cloud-model', 'copilot-cloud'),
-			makeModel('claude-model', 'claude-code'),
+			makeModel('claude-model', CLAUDE_CODE_SESSION_TYPE),
 		];
 		const { instantiationService } = stubServices(disposables, {
 			models,
-			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: 'claude-code' },
+			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: CLAUDE_CODE_SESSION_TYPE },
 		});
 		const languageModelsService = instantiationService.get(ILanguageModelsService);
 		const sessionsManagementService = instantiationService.get(ISessionsManagementService);
@@ -122,23 +123,23 @@ suite('SessionModelPicker', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('stores selected model under session-type-scoped key', () => {
-		const models = [makeModel('model-1', 'claude-code')];
+		const models = [makeModel('model-1', CLAUDE_CODE_SESSION_TYPE)];
 		const { instantiationService, storage } = stubServices(disposables, {
 			models,
-			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: 'claude-code' },
+			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: CLAUDE_CODE_SESSION_TYPE },
 		});
 		// Creating the picker triggers initModel which calls setModel for the first available model
 		disposables.add(instantiationService.createInstance(SessionModelPicker));
-		assert.strictEqual(storage.get('sessions.modelPicker.claude-code.selectedModelId'), 'model-1');
-		assert.strictEqual(storage.has('sessions.modelPicker.copilot-cli.selectedModelId'), false);
+		assert.strictEqual(storage.get(modelPickerStorageKey(CLAUDE_CODE_SESSION_TYPE)), 'model-1');
+		assert.strictEqual(storage.has(modelPickerStorageKey(COPILOT_CLI_SESSION_TYPE)), false);
 	});
 
 	test('calls provider.setModel on init', () => {
 		const calls: { sessionId: string; modelId: string }[] = [];
-		const models = [makeModel('model-1', 'claude-code')];
+		const models = [makeModel('model-1', CLAUDE_CODE_SESSION_TYPE)];
 		const { instantiationService } = stubServices(disposables, {
 			models,
-			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: 'claude-code' },
+			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: CLAUDE_CODE_SESSION_TYPE },
 			setModelSpy: (sessionId, modelId) => calls.push({ sessionId, modelId }),
 		});
 		disposables.add(instantiationService.createInstance(SessionModelPicker));
@@ -146,12 +147,12 @@ suite('SessionModelPicker', () => {
 	});
 
 	test('remembers model per session type from storage', () => {
-		const models = [makeModel('model-a', 'claude-code'), makeModel('model-b', 'claude-code')];
-		const storedEntries = new Map([['sessions.modelPicker.claude-code.selectedModelId', 'model-b']]);
+		const models = [makeModel('model-a', CLAUDE_CODE_SESSION_TYPE), makeModel('model-b', CLAUDE_CODE_SESSION_TYPE)];
+		const storedEntries = new Map([[modelPickerStorageKey(CLAUDE_CODE_SESSION_TYPE), 'model-b']]);
 		const calls: { sessionId: string; modelId: string }[] = [];
 		const { instantiationService } = stubServices(disposables, {
 			models,
-			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: 'claude-code' },
+			activeSession: { providerId: 'default-copilot', sessionId: 'sess-1', sessionType: CLAUDE_CODE_SESSION_TYPE },
 			storedEntries,
 			setModelSpy: (sessionId, modelId) => calls.push({ sessionId, modelId }),
 		});
@@ -166,22 +167,22 @@ suite('SessionModelPicker', () => {
 	});
 
 	test('different session types use independent storage keys', () => {
-		const cliModels = [makeModel('cli-m', 'copilot-cli')];
-		const claudeModels = [makeModel('claude-m', 'claude-code')];
+		const cliModels = [makeModel('cli-m', COPILOT_CLI_SESSION_TYPE)];
+		const claudeModels = [makeModel('claude-m', CLAUDE_CODE_SESSION_TYPE)];
 		const allModels = [...cliModels, ...claudeModels];
 
 		const { instantiationService, storage, activeSession } = stubServices(disposables, {
 			models: allModels,
-			activeSession: { providerId: 'default-copilot', sessionId: 's1', sessionType: 'copilot-cli' },
+			activeSession: { providerId: 'default-copilot', sessionId: 's1', sessionType: COPILOT_CLI_SESSION_TYPE },
 		});
 		disposables.add(instantiationService.createInstance(SessionModelPicker));
-		assert.strictEqual(storage.get('sessions.modelPicker.copilot-cli.selectedModelId'), 'cli-m');
+		assert.strictEqual(storage.get(modelPickerStorageKey(COPILOT_CLI_SESSION_TYPE)), 'cli-m');
 
 		// Switch session type
-		activeSession.set({ providerId: 'default-copilot', sessionId: 's2', sessionType: 'claude-code' } as IActiveSession, undefined);
+		activeSession.set({ providerId: 'default-copilot', sessionId: 's2', sessionType: CLAUDE_CODE_SESSION_TYPE } as IActiveSession, undefined);
 
-		assert.strictEqual(storage.get('sessions.modelPicker.claude-code.selectedModelId'), 'claude-m');
+		assert.strictEqual(storage.get(modelPickerStorageKey(CLAUDE_CODE_SESSION_TYPE)), 'claude-m');
 		// CLI key should still be intact
-		assert.strictEqual(storage.get('sessions.modelPicker.copilot-cli.selectedModelId'), 'cli-m');
+		assert.strictEqual(storage.get(modelPickerStorageKey(COPILOT_CLI_SESSION_TYPE)), 'cli-m');
 	});
 });

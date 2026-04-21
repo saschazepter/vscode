@@ -314,16 +314,13 @@ export class SessionModelPicker extends Disposable {
 		this._initModel();
 		this._register(this._languageModelsService.onDidChangeLanguageModels(() => this._initModel()));
 
-		// When the active session changes, re-init (may switch session type) and push model
+		// When the active session changes, re-init (may switch session type).
+		// _initModel() calls _delegate.setModel() which already forwards to
+		// the provider, so no additional provider.setModel() call is needed.
 		this._register(autorun(reader => {
 			const session = this._sessionsManagementService.activeSession.read(reader);
 			if (session) {
 				this._initModel();
-				const model = this._currentModel.read(reader);
-				if (model) {
-					const provider = this._sessionsProvidersService.getProviders().find(p => p.id === session.providerId);
-					provider?.setModel(session.sessionId, model.identifier);
-				}
 			}
 		}));
 	}
