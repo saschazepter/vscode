@@ -150,6 +150,7 @@ class OpenEditorInModalEditorAction extends Action2 {
 		const modalPart = await editorGroupsService.createModalEditorPart();
 		const editorsToMove = prepareMoveCopyEditors(activeGroup, activeGroup.editors.slice(), true);
 		activeGroup.moveEditors(editorsToMove, modalPart.activeGroup);
+		modalPart.activeGroup.focus();
 	}
 }
 
