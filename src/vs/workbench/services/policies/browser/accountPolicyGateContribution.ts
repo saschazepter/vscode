@@ -14,6 +14,7 @@ import { IStorageService, StorageScope } from '../../../../platform/storage/comm
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { DEFAULT_ACCOUNT_SIGN_IN_COMMAND } from '../../accounts/browser/defaultAccount.js';
+import { IChatEntitlementService } from '../../chat/common/chatEntitlementService.js';
 import { AccountPolicyGateState, AccountPolicyGateUnsatisfiedReason, ChatAccountPolicyGateActiveContext, IAccountPolicyGateInfo, IAccountPolicyGateService } from '../common/accountPolicyService.js';
 
 const NOTIFICATION_DISMISSED_KEY = 'accountPolicy.gateNotificationDismissed';
@@ -46,7 +47,6 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	static readonly ID = 'workbench.contrib.accountPolicyGate';
 
 	private readonly contextKey: IContextKey<boolean>;
-	private readonly chatHiddenKey: IContextKey<boolean>;
 	private lastInfo: IAccountPolicyGateInfo;
 
 	private readonly notificationHandle = this._register(new MutableDisposable());
@@ -55,6 +55,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	constructor(
 		@IAccountPolicyGateService private readonly gateService: IAccountPolicyGateService,
 		@IContextKeyService contextKeyService: IContextKeyService,
+		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService private readonly openerService: IOpenerService,
@@ -63,11 +64,6 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	) {
 		super();
 		this.contextKey = ChatAccountPolicyGateActiveContext.bindTo(contextKeyService);
-		// Directly toggle the chat-hidden context key so the entire chat UI disappears
-		// when the gate is restricted. This is the same key that `chat.disableAIFeatures`
-		// drives via `ChatEntitlementContextKeys.Setup.hidden` — using it directly avoids
-		// a round-trip through the policy→configuration→entitlement pipeline.
-		this.chatHiddenKey = contextKeyService.createKey('chatSetupHidden', false);
 		this.lastInfo = this.gateService.gateInfo;
 
 		// Seed any consumer that initialised before us (e.g. context-key when-clauses).
@@ -87,7 +83,7 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		const isRestricted = info.state === AccountPolicyGateState.Restricted
 			&& info.reason !== AccountPolicyGateUnsatisfiedReason.PolicyNotResolved;
 		this.contextKey.set(isRestricted);
-		this.chatHiddenKey.set(isRestricted);
+		this.chatEntitlementService.setForceHidden(isRestricted);
 
 		if (stateChanged) {
 			this.telemetryService.publicLog2<AccountPolicyGateStateEvent, AccountPolicyGateStateClassification>('accountPolicy.gateState', {
