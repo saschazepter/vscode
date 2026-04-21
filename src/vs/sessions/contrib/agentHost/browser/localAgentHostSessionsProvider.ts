@@ -114,7 +114,12 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 	}
 
 	protected _formatSessionTypeLabel(agentLabel: string): string {
-		return localize('localAgentHostSessionType', "{0} [{1}]", agentLabel, this._localLabel);
+		// Use the unadorned agent label (e.g. "Copilot") rather than tagging it
+		// with `[Local]`. The session type id is shared with the extension-host
+		// Copilot CLI provider, so the filter menu / new-session picker entry
+		// covers both sets of sessions; the `[Local]` tag belongs on the
+		// per-session workspace label, not the type label.
+		return agentLabel;
 	}
 
 	// -- Workspaces ----------------------------------------------------------
