@@ -535,6 +535,11 @@ export class SessionDatabase implements ISessionDatabase {
 		}
 	}
 
+	async vacuumInto(targetPath: string) {
+		const db = await this._ensureDb();
+		await dbRun(db, 'VACUUM INTO ?', [targetPath]);
+	}
+
 	/**
 	 * Wrap a mutating operation's promise so {@link whenIdle} can await it.
 	 * Invoke at the **outermost** layer of every public mutating method so

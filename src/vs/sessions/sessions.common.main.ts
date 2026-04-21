@@ -264,13 +264,8 @@ import '../workbench/contrib/git/browser/git.contributions.js';
 // SCM
 import '../workbench/contrib/scm/browser/scm.contribution.js';
 
-// Debug
-import '../workbench/contrib/debug/browser/debug.contribution.js';
-import '../workbench/contrib/debug/browser/debugEditorContribution.js';
-import '../workbench/contrib/debug/browser/breakpointEditorContribution.js';
-import '../workbench/contrib/debug/browser/callStackEditorContribution.js';
-import '../workbench/contrib/debug/browser/repl.js';
-import '../workbench/contrib/debug/browser/debugViewlet.js';
+// Debug (service)
+import '../workbench/contrib/debug/browser/debug.service.contribution.js';
 
 // Markers
 import '../workbench/contrib/markers/browser/markers.contribution.js';
@@ -460,7 +455,7 @@ import './browser/layoutActions.js';
 import './contrib/accountMenu/browser/account.contribution.js';
 import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';
-import './contrib/chat/browser/agentHostSessionConfigPicker.js';
+import './contrib/chat/browser/agentHost/agentHostSessionConfigPicker.js';
 import './contrib/chat/browser/customizationsDebugLog.contribution.js';
 import './contrib/copilotChatSessions/browser/copilotChatSessions.contribution.js';
 import './contrib/sessions/browser/sessions.contribution.js';
