@@ -50,7 +50,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		this._register(toDisposable(() => {
 			const authority = this.environmentService.remoteAuthority;
 			if (this._remoteProxyPromise && authority) {
-				this.tunnelProxyService.stop(authority);
+				void this.tunnelProxyService.stop(authority).catch(err => this.logService.error('[BrowserViewWorkbenchService] Failed to stop tunnel proxy:', err));
 			}
 		}));
 	}
@@ -85,10 +85,10 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			this._register(this.remoteAuthorityResolverService.onDidChangeConnectionData(() => {
 				const data = this.remoteAuthorityResolverService.getConnectionData(remoteAuthority);
 				if (data) {
-					this.tunnelProxyService.setAddress(remoteAuthority, {
+					void this.tunnelProxyService.setAddress(remoteAuthority, {
 						connectTo: data.connectTo,
 						connectionToken: data.connectionToken
-					});
+					}).catch(err => this.logService.error('[BrowserViewWorkbenchService] Failed to update tunnel proxy address:', err));
 				}
 			}));
 

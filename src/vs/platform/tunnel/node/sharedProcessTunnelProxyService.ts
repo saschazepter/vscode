@@ -39,6 +39,7 @@ class AddressProvider implements IAddressProvider {
 class ProxyEntry {
 	readonly addressProvider = new AddressProvider();
 	proxy: TunnelProxy | undefined;
+	startPromise: Promise<string> | undefined;
 	refCount = 0;
 }
 
@@ -73,10 +74,24 @@ export class SharedProcessTunnelProxyService extends Disposable implements IShar
 
 		entry.refCount++;
 
-		if (entry.proxy) {
-			return entry.proxy.proxyUrl;
+		if (entry.startPromise) {
+			return entry.startPromise;
 		}
 
+		entry.startPromise = this._doStart(entry);
+		try {
+			return await entry.startPromise;
+		} catch (err) {
+			// Roll back on failure so the next caller can retry
+			entry.refCount--;
+			if (entry.refCount === 0) {
+				this._entries.delete(authority);
+			}
+			throw err;
+		}
+	}
+
+	private async _doStart(entry: ProxyEntry): Promise<string> {
 		const options: IConnectionOptions = {
 			commit: this._productService.commit,
 			quality: this._productService.quality,
