@@ -5,7 +5,7 @@
 
 import './media/planReviewFeedback.css';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { ICodeEditor, IOverlayWidget, IOverlayWidgetPosition } from '../../../../../editor/browser/editorBrowser.js';
+import { ICodeEditor, IOverlayWidget, IOverlayWidgetPosition, OverlayWidgetPositionPreference } from '../../../../../editor/browser/editorBrowser.js';
 import { IEditorContribution, IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
 import { EditorContributionInstantiation, registerEditorContribution } from '../../../../../editor/browser/editorExtensions.js';
 import { EditorOption } from '../../../../../editor/common/config/editorOptions.js';
@@ -22,7 +22,13 @@ import { Action } from '../../../../../base/common/actions.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { IPlanReviewFeedbackService } from './planReviewFeedbackService.js';
+import { hasPlanReviewFeedback, navigationBearingFakeActionId, PlanReviewFeedbackMenuId } from './planReviewFeedbackEditorActions.js';
+import { ActionViewItem } from '../../../../../base/browser/ui/actionbar/actionViewItems.js';
+import { autorun, observableValue } from '../../../../../base/common/observable.js';
 
 class PlanReviewFeedbackInputWidget implements IOverlayWidget {
 
@@ -186,25 +192,133 @@ class PlanReviewFeedbackInputWidget implements IOverlayWidget {
 	}
 }
 
+class PlanReviewFeedbackOverlayWidget implements IOverlayWidget {
+
+	private static readonly _ID = 'planReviewFeedback.overlayWidget';
+
+	private readonly _domNode: HTMLElement;
+	private readonly _toolbarNode: HTMLElement;
+	private readonly _showStore = new DisposableStore();
+	private readonly _navigationBearings = observableValue<{ activeIdx: number; totalCount: number }>('planReviewFeedbackBearings', { activeIdx: -1, totalCount: 0 });
+
+	constructor(
+		_codeEditor: ICodeEditor,
+		private readonly _instaService: IInstantiationService,
+	) {
+		this._domNode = document.createElement('div');
+		this._domNode.classList.add('plan-review-feedback-overlay-widget');
+		this._domNode.style.display = 'none';
+
+		this._toolbarNode = document.createElement('div');
+		this._toolbarNode.classList.add('plan-review-feedback-overlay-toolbar');
+		this._domNode.appendChild(this._toolbarNode);
+	}
+
+	getId(): string {
+		return PlanReviewFeedbackOverlayWidget._ID;
+	}
+
+	getDomNode(): HTMLElement {
+		return this._domNode;
+	}
+
+	getPosition(): IOverlayWidgetPosition | null {
+		return { preference: OverlayWidgetPositionPreference.BOTTOM_RIGHT_CORNER };
+	}
+
+	show(navigationBearings: { activeIdx: number; totalCount: number }): void {
+		this._showStore.clear();
+		this._navigationBearings.set(navigationBearings, undefined);
+		this._domNode.style.display = '';
+
+		this._showStore.add(this._instaService.createInstance(MenuWorkbenchToolBar, this._toolbarNode, PlanReviewFeedbackMenuId, {
+			telemetrySource: 'planReviewFeedback.overlayToolbar',
+			hiddenItemStrategy: HiddenItemStrategy.Ignore,
+			toolbarOptions: {
+				primaryGroup: () => true,
+				useSeparatorsInPrimaryActions: true,
+			},
+			menuOptions: { renderShortTitle: true },
+			actionViewItemProvider: (action, options) => {
+				if (action.id === navigationBearingFakeActionId) {
+					const that = this;
+					return new class extends ActionViewItem {
+						constructor() {
+							super(undefined, action, { ...options, icon: false, label: true, keybindingNotRenderedWithLabel: true });
+						}
+
+						override render(container: HTMLElement): void {
+							super.render(container);
+							container.classList.add('label-item');
+
+							this._store.add(autorun(r => {
+								if (!this.label) {
+									return;
+								}
+								const { activeIdx, totalCount } = that._navigationBearings.read(r);
+								if (totalCount > 0) {
+									const current = activeIdx === -1 ? 1 : activeIdx + 1;
+									this.label.innerText = localize('nOfM', '{0}/{1}', current, totalCount);
+								} else {
+									this.label.innerText = localize('zero', '0/0');
+								}
+							}));
+						}
+					};
+				}
+
+				const isPrimary = action.id.includes('submit');
+				return new class extends ActionViewItem {
+					constructor() {
+						super(undefined, action, { ...options, icon: !isPrimary, label: isPrimary, keybindingNotRenderedWithLabel: true });
+					}
+
+					override render(container: HTMLElement): void {
+						super.render(container);
+						if (isPrimary) {
+							this.element?.classList.add('primary');
+						}
+					}
+				};
+			},
+		}));
+	}
+
+	hide(): void {
+		this._showStore.clear();
+		this._domNode.style.display = 'none';
+		this._navigationBearings.set({ activeIdx: -1, totalCount: 0 }, undefined);
+	}
+
+	dispose(): void {
+		this._showStore.dispose();
+	}
+}
+
 export class PlanReviewFeedbackEditorContribution extends Disposable implements IEditorContribution {
 
 	static readonly ID = 'planReviewFeedback.editorContribution';
 
 	private _widget: PlanReviewFeedbackInputWidget | undefined;
+	private _overlayWidget: PlanReviewFeedbackOverlayWidget | undefined;
 	private _visible = false;
 	private _mouseDown = false;
 	private _suppressSelectionChangeOnce = false;
 	private _isActivePlan = false;
 	private readonly _widgetListeners = this._register(new DisposableStore());
 	private readonly _decorations: IEditorDecorationsCollection;
+	private readonly _hasFeedbackContextKey;
 
 	constructor(
 		private readonly _editor: ICodeEditor,
 		@IPlanReviewFeedbackService private readonly _planReviewFeedbackService: IPlanReviewFeedbackService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		this._decorations = this._editor.createDecorationsCollection();
+		this._hasFeedbackContextKey = hasPlanReviewFeedback.bindTo(contextKeyService);
 
 		this._register(this._editor.onDidChangeCursorSelection(() => this._onSelectionChanged()));
 		this._register(this._editor.onDidChangeModel(() => this._onModelChanged()));
@@ -539,10 +653,21 @@ export class PlanReviewFeedbackEditorContribution extends Disposable implements 
 		const model = this._editor.getModel();
 		if (!model || !this._isActivePlan) {
 			this._decorations.clear();
+			this._hasFeedbackContextKey.set(false);
+			this._hideOverlayToolbar();
 			return;
 		}
 
 		const items = this._planReviewFeedbackService.getFeedback(model.uri);
+		this._hasFeedbackContextKey.set(items.length > 0);
+
+		if (items.length > 0) {
+			const bearings = this._planReviewFeedbackService.getNavigationBearing(model.uri);
+			this._showOverlayToolbar(bearings);
+		} else {
+			this._hideOverlayToolbar();
+		}
+
 		this._decorations.set(
 			items.map(item => ({
 				range: new Range(item.line, item.column, item.line, item.column),
@@ -560,11 +685,35 @@ export class PlanReviewFeedbackEditorContribution extends Disposable implements 
 		);
 	}
 
+	private _ensureOverlayWidget(): PlanReviewFeedbackOverlayWidget {
+		if (!this._overlayWidget) {
+			this._overlayWidget = new PlanReviewFeedbackOverlayWidget(this._editor, this._instantiationService);
+			this._editor.addOverlayWidget(this._overlayWidget);
+		}
+		return this._overlayWidget;
+	}
+
+	private _showOverlayToolbar(bearings: { activeIdx: number; totalCount: number }): void {
+		const widget = this._ensureOverlayWidget();
+		widget.show(bearings);
+	}
+
+	private _hideOverlayToolbar(): void {
+		if (this._overlayWidget) {
+			this._overlayWidget.hide();
+		}
+	}
+
 	override dispose(): void {
 		if (this._widget) {
 			this._editor.removeOverlayWidget(this._widget);
 			this._widget.dispose();
 			this._widget = undefined;
+		}
+		if (this._overlayWidget) {
+			this._editor.removeOverlayWidget(this._overlayWidget);
+			this._overlayWidget.dispose();
+			this._overlayWidget = undefined;
 		}
 		super.dispose();
 	}

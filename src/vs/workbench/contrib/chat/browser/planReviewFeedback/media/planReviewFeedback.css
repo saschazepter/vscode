@@ -84,3 +84,77 @@
 	width: 16px;
 	height: 16px;
 }
+
+/* Overlay toolbar (submit / navigate / clear actions) */
+.plan-review-feedback-overlay-widget {
+	padding: 2px 4px;
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-editorWidget-background);
+	border-radius: 6px;
+	border: 1px solid var(--vscode-editorHoverWidget-border);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	z-index: 10;
+	box-shadow: var(--vscode-shadow-lg);
+	overflow: hidden;
+}
+
+.plan-review-feedback-overlay-widget .action-item > .action-label {
+	padding: 4px 6px;
+	font-size: 11px;
+	line-height: 14px;
+	border-radius: 4px;
+}
+
+.plan-review-feedback-overlay-widget .monaco-action-bar .actions-container {
+	gap: 4px;
+}
+
+.plan-review-feedback-overlay-widget .action-item.primary > .action-label {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.monaco-workbench .plan-review-feedback-overlay-widget .monaco-action-bar .action-item.primary > .action-label:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}
+
+.plan-review-feedback-overlay-widget .action-item > .action-label.codicon:not(.separator) {
+	color: var(--vscode-foreground);
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	font-size: 16px;
+	line-height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.plan-review-feedback-overlay-widget .monaco-action-bar .action-item.disabled {
+
+	> .action-label.codicon::before,
+	> .action-label.codicon,
+	> .action-label,
+	> .action-label:hover {
+		color: var(--vscode-button-separator);
+		opacity: 1;
+	}
+}
+
+.plan-review-feedback-overlay-widget .action-item.label-item {
+	font-variant-numeric: tabular-nums;
+}
+
+.plan-review-feedback-overlay-widget .monaco-action-bar .action-item.label-item > .action-label,
+.plan-review-feedback-overlay-widget .monaco-action-bar .action-item.label-item > .action-label:hover {
+	color: var(--vscode-foreground);
+	opacity: 1;
+}
+
+/* Gutter decoration for feedback lines */
+.plan-review-feedback-line-number {
+	color: var(--vscode-editorInfo-foreground);
+}

@@ -8,7 +8,6 @@ import { Disposable, IDisposable, toDisposable } from '../../../../../base/commo
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
-import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import { IChatPlanReviewResult } from '../../common/chatService/chatService.js';
 
 export interface IPlanReviewFeedbackItem {
@@ -30,13 +29,19 @@ export interface IPlanReviewFeedbackService {
 	isActivePlanReview(uri: URI): boolean;
 	addFeedback(planUri: URI, line: number, column: number, text: string): string;
 	removeFeedback(planUri: URI, feedbackId: string): void;
+	updateFeedback(planUri: URI, feedbackId: string, newText: string): void;
 	getFeedback(planUri: URI): readonly IPlanReviewFeedbackItem[];
+	clearFeedback(planUri: URI): void;
+	getNextFeedback(planUri: URI, next: boolean): IPlanReviewFeedbackItem | undefined;
+	getNavigationBearing(planUri: URI): { activeIdx: number; totalCount: number };
+	setNavigationAnchor(planUri: URI, itemId: string | undefined): void;
 	submitAllFeedback(planUri: URI): void;
 }
 
 interface IPlanReviewRegistration {
 	readonly onSubmit: (result: IChatPlanReviewResult) => void;
 	readonly items: IPlanReviewFeedbackItem[];
+	navigationAnchor: string | undefined;
 }
 
 export class PlanReviewFeedbackService extends Disposable implements IPlanReviewFeedbackService {
@@ -53,7 +58,7 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 
 	registerPlanReview(planUri: URI, onSubmit: (result: IChatPlanReviewResult) => void): IDisposable {
 		const key = planUri.toString();
-		this._registrations.set(key, { onSubmit, items: [] });
+		this._registrations.set(key, { onSubmit, items: [], navigationAnchor: undefined });
 		this._onDidChangeRegistrations.fire();
 		return toDisposable(() => {
 			this._registrations.delete(key);
@@ -94,9 +99,85 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 		}
 	}
 
+	updateFeedback(planUri: URI, feedbackId: string, newText: string): void {
+		const key = planUri.toString();
+		const registration = this._registrations.get(key);
+		if (!registration) {
+			return;
+		}
+
+		const idx = registration.items.findIndex(item => item.id === feedbackId);
+		if (idx >= 0) {
+			const old = registration.items[idx];
+			registration.items[idx] = { id: old.id, line: old.line, column: old.column, text: newText };
+			this._onDidChangeFeedback.fire(planUri);
+		}
+	}
+
 	getFeedback(planUri: URI): readonly IPlanReviewFeedbackItem[] {
 		const key = planUri.toString();
 		return this._registrations.get(key)?.items ?? [];
+	}
+
+	clearFeedback(planUri: URI): void {
+		const key = planUri.toString();
+		const registration = this._registrations.get(key);
+		if (!registration || registration.items.length === 0) {
+			return;
+		}
+		registration.items.length = 0;
+		registration.navigationAnchor = undefined;
+		this._onDidChangeFeedback.fire(planUri);
+	}
+
+	getNextFeedback(planUri: URI, next: boolean): IPlanReviewFeedbackItem | undefined {
+		const key = planUri.toString();
+		const registration = this._registrations.get(key);
+		if (!registration || registration.items.length === 0) {
+			return undefined;
+		}
+
+		const items = registration.items;
+		const anchorIdx = registration.navigationAnchor
+			? items.findIndex(item => item.id === registration.navigationAnchor)
+			: -1;
+
+		let targetIdx: number;
+		if (anchorIdx === -1) {
+			targetIdx = next ? 0 : items.length - 1;
+		} else {
+			targetIdx = next
+				? (anchorIdx + 1) % items.length
+				: (anchorIdx - 1 + items.length) % items.length;
+		}
+
+		const target = items[targetIdx];
+		registration.navigationAnchor = target.id;
+		return target;
+	}
+
+	getNavigationBearing(planUri: URI): { activeIdx: number; totalCount: number } {
+		const key = planUri.toString();
+		const registration = this._registrations.get(key);
+		if (!registration) {
+			return { activeIdx: -1, totalCount: 0 };
+		}
+
+		const totalCount = registration.items.length;
+		if (!registration.navigationAnchor) {
+			return { activeIdx: -1, totalCount };
+		}
+
+		const activeIdx = registration.items.findIndex(item => item.id === registration.navigationAnchor);
+		return { activeIdx, totalCount };
+	}
+
+	setNavigationAnchor(planUri: URI, itemId: string | undefined): void {
+		const key = planUri.toString();
+		const registration = this._registrations.get(key);
+		if (registration) {
+			registration.navigationAnchor = itemId;
+		}
 	}
 
 	submitAllFeedback(planUri: URI): void {
@@ -122,5 +203,3 @@ export class PlanReviewFeedbackService extends Disposable implements IPlanReview
 		return parts.join('\n');
 	}
 }
-
-registerSingleton(IPlanReviewFeedbackService, PlanReviewFeedbackService, InstantiationType.Delayed);
