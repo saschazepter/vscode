@@ -319,15 +319,34 @@ export class ChatStatusDashboard extends DomWidget {
 
 			// Global quota callout (shown once at the bottom)
 			const globalCalloutUpdater = this.createGlobalQuotaCallout(container, this._store);
+			const { calloutVisible: initialCalloutVisible, overageEnabled: initialOverageEnabled } = globalCalloutUpdater();
 
-			if (this.chatEntitlementService.entitlement !== ChatEntitlement.ProPlus &&
+			// Action row: Configure/Manage Budget + Upgrade
+			const canConfigureOverage = this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus;
+			const showUpgrade = this.chatEntitlementService.entitlement !== ChatEntitlement.ProPlus &&
 				this.chatEntitlementService.entitlement !== ChatEntitlement.Business &&
-				this.chatEntitlementService.entitlement !== ChatEntitlement.Enterprise) {
-				const upgradeContainer = container.appendChild($('div.upgrade-row'));
-				upgradeContainer.appendChild($('span.upgrade-description', undefined, localize('upgradeDescription', "Upgrade for higher limits and overage budgets")));
-				const upgradeButton = this._store.add(new Button(upgradeContainer, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
-				upgradeButton.label = localize('upgrade', "Upgrade");
-				this._store.add(upgradeButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
+				this.chatEntitlementService.entitlement !== ChatEntitlement.Enterprise;
+
+			let overageButton: Button | undefined;
+			if (canConfigureOverage || showUpgrade) {
+				const actionRow = container.appendChild($('div.upgrade-row'));
+
+				if (showUpgrade) {
+					actionRow.appendChild($('span.upgrade-description', undefined, localize('upgradeDescription', "Upgrade for higher limits")));
+				}
+
+				if (canConfigureOverage) {
+					overageButton = this._store.add(new Button(actionRow, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
+					overageButton.label = initialOverageEnabled ? localize('manageBudget', "Manage Budget") : localize('configureBudget', "Configure Budget");
+					overageButton.element.style.display = initialCalloutVisible ? '' : 'none';
+					this._store.add(overageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
+				}
+
+				if (showUpgrade) {
+					const upgradeButton = this._store.add(new Button(actionRow, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
+					upgradeButton.label = localize('upgrade', "Upgrade");
+					this._store.add(upgradeButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
+				}
 			}
 
 			(async () => {
@@ -352,7 +371,11 @@ export class ChatStatusDashboard extends DomWidget {
 				if (completionsQuota) {
 					completionsQuotaIndicator?.(completionsQuota);
 				}
-				globalCalloutUpdater();
+				const { calloutVisible, overageEnabled: isOverageEnabled } = globalCalloutUpdater();
+				if (overageButton) {
+					overageButton.element.style.display = calloutVisible ? '' : 'none';
+					overageButton.label = isOverageEnabled ? localize('manageBudget', "Manage Budget") : localize('configureBudget', "Configure Budget");
+				}
 			})();
 		}
 
@@ -541,18 +564,11 @@ export class ChatStatusDashboard extends DomWidget {
 		return update;
 	}
 
-	private createGlobalQuotaCallout(container: HTMLElement, disposables: DisposableStore): () => void {
+	private createGlobalQuotaCallout(container: HTMLElement, _disposables: DisposableStore): () => { calloutVisible: boolean; overageEnabled: boolean } {
 		const calloutIcon = $('span.callout-icon');
 		const calloutText = $('span.callout-text');
 		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
 		quotaCallout.style.display = 'none';
-
-		if (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus) {
-			const buttonContainer = container.appendChild($('div.button-right'));
-			const manageOverageButton = disposables.add(new Button(buttonContainer, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
-			manageOverageButton.label = localize('manageBudget', "Manage Budget");
-			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
-		}
 
 		const update = () => {
 			const quotas = this.chatEntitlementService.quotas;
@@ -596,6 +612,8 @@ export class ChatStatusDashboard extends DomWidget {
 			} else {
 				quotaCallout.style.display = 'none';
 			}
+
+			return { calloutVisible: quotaCallout.style.display !== 'none', overageEnabled };
 		};
 
 		update();

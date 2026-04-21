@@ -120,6 +120,7 @@
 	align-items: center;
 	gap: 8px;
 	margin-top: 4px;
+	padding-bottom: 8px;
 }
 
 .chat-status-bar-entry-tooltip .upgrade-row .upgrade-description {
@@ -252,6 +253,9 @@
 
 .chat-status-bar-entry-tooltip .quota-callout .callout-icon {
 	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	height: 1.4em;
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.warning {
