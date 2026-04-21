@@ -340,7 +340,7 @@ export class SQLiteStorageDatabase implements IStorageDatabase {
 						// - validate that the DB is not corrupt (the open() call does not throw otherwise)
 						const pragmas: string[] = [
 							'PRAGMA user_version = 1;',
-							'CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)'
+							'CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);'
 						];
 						if (this.useWAL) {
 							pragmas.push('PRAGMA journal_mode=WAL;');

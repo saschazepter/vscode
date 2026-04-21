@@ -456,10 +456,12 @@ export class MigratingStorage extends Storage {
 		this.isFallbackStorageReadonly = isReadonly;
 	}
 
+	private static readonly INTERNAL_KEY_PREFIX = '__$__';
+
 	override get(key: string, fallbackValue: string): string;
 	override get(key: string, fallbackValue?: string): string | undefined;
 	override get(key: string, fallbackValue?: string): string | undefined {
-		if (!this.migratedKeys.has(key) && isUndefined(super.get(key))) {
+		if (!key.startsWith(MigratingStorage.INTERNAL_KEY_PREFIX) && !this.migratedKeys.has(key) && isUndefined(super.get(key))) {
 			// Check fallback storage and auto-migrate on hit.
 			// Mark the key as migrated immediately to prevent
 			// re-checking the fallback, and to ensure a key
