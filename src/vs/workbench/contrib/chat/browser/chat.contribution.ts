@@ -67,7 +67,6 @@ import { PromptLanguageFeaturesProvider } from './promptSyntax/promptFileContrib
 import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL, PromptsType, PromptFileSource } from '../common/promptSyntax/promptTypes.js';
 import { hookFileSchema, HOOK_SCHEMA_URI } from '../common/promptSyntax/hookSchema.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { Extensions as JSONExtensions, IJSONContributionRegistry } from '../../../../platform/jsonschemas/common/jsonContributionRegistry.js';
 import { IPromptsService } from '../common/promptSyntax/service/promptsService.js';
 import { PromptsService } from '../common/promptSyntax/service/promptsServiceImpl.js';
@@ -648,12 +647,6 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			default: false,
 			markdownDescription: nls.localize('chat.progressBorder.enabled', "Show an animated gradient border around the chat input while the agent is working or thinking. When enabled, this overrides {0} to be off.", '`#chat.persistentProgress.enabled#`'),
-		},
-		[ChatConfiguration.SendButtonGradient]: {
-			type: 'boolean',
-			default: false,
-			tags: ['experimental'],
-			description: nls.localize('chat.sendButton.gradient.enabled', "Show a colorful animated gradient on the chat send button. The button shows a slowly rotating gradient ring at rest, fills with a cycling color on hover, and emits a color pulse on click."),
 		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'string',
@@ -1764,31 +1757,6 @@ class CopilotTelemetryContribution extends Disposable implements IWorkbenchContr
 	}
 }
 
-class ChatSendButtonGradientContribution extends Disposable implements IWorkbenchContribution {
-
-	static readonly ID = 'workbench.contrib.chatSendButtonGradient';
-
-	private static readonly CLASS_NAME = 'chat-send-button-gradient-enabled';
-
-	constructor(
-		@IConfigurationService configurationService: IConfigurationService,
-		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
-	) {
-		super();
-
-		const update = () => {
-			const enabled = configurationService.getValue<boolean>(ChatConfiguration.SendButtonGradient) === true;
-			layoutService.mainContainer.classList.toggle(ChatSendButtonGradientContribution.CLASS_NAME, enabled);
-		};
-		update();
-		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.SendButtonGradient)) {
-				update();
-			}
-		}));
-	}
-}
-
 class ChatDebugResolverContribution implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.chatDebugResolver';
@@ -2132,7 +2100,6 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEdit
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(ChatDebugEditorInput.ID, ChatDebugEditorInputSerializer);
 
 registerWorkbenchContribution2(CopilotTelemetryContribution.ID, CopilotTelemetryContribution, WorkbenchPhase.BlockRestore);
-registerWorkbenchContribution2(ChatSendButtonGradientContribution.ID, ChatSendButtonGradientContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatResolverContribution.ID, ChatResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(ChatDebugResolverContribution.ID, ChatDebugResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(PromptsDebugContribution.ID, PromptsDebugContribution, WorkbenchPhase.BlockRestore);
