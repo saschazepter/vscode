@@ -54,6 +54,8 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	private readonly notificationHandle = this._register(new MutableDisposable());
 	private dismissedKey: string | undefined; // tracks reason+account combo for session-scoped dismissal
 
+	private initialised = false;
+
 	constructor(
 		@IAccountPolicyGateService private readonly gateService: IAccountPolicyGateService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -70,13 +72,29 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		this.contextKey = ChatAccountPolicyGateActiveContext.bindTo(contextKeyService);
 		this.lastInfo = this.gateService.gateInfo;
 
-		// Seed any consumer that initialised before us (e.g. context-key when-clauses).
-		this.apply(this.lastInfo, /*forceTelemetry*/ true);
+		// Seed context key + setForceHidden immediately (fail-closed) but
+		// defer the notification until the first onDidChangeGateInfo event
+		// so the default account has had time to resolve. Without this, a
+		// race on startup shows "sign in" even when the user is already
+		// signed in (just not yet loaded).
+		this.apply(this.lastInfo, /*forceTelemetry*/ true, /*showNotification*/ false);
 
-		this._register(this.gateService.onDidChangeGateInfo(info => this.apply(info, /*forceTelemetry*/ false)));
+		this._register(this.gateService.onDidChangeGateInfo(info => {
+			this.initialised = true;
+			this.apply(info, /*forceTelemetry*/ false, /*showNotification*/ true);
+		}));
+
+		// If the gate never fires a change (already stable), show the
+		// notification after a short delay to let the account service load.
+		setTimeout(() => {
+			if (!this.initialised) {
+				this.initialised = true;
+				this.apply(this.lastInfo, /*forceTelemetry*/ false, /*showNotification*/ true);
+			}
+		}, 5000);
 	}
 
-	private apply(info: IAccountPolicyGateInfo, forceTelemetry: boolean): void {
+	private apply(info: IAccountPolicyGateInfo, forceTelemetry: boolean, showNotification: boolean): void {
 		const stateChanged = forceTelemetry || info.state !== this.lastInfo.state || info.reason !== this.lastInfo.reason;
 		this.lastInfo = info;
 
@@ -101,6 +119,10 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			this.notificationHandle.clear();
 			this.dismissedKey = undefined;
 			this.storageService.remove(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
+			return;
+		}
+
+		if (!showNotification) {
 			return;
 		}
 
