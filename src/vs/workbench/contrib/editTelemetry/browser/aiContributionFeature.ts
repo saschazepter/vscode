@@ -20,20 +20,17 @@ const STORAGE_KEY = 'aiEdits.contributions';
 const SAVE_DEBOUNCE_MS = 250;
 
 /**
- * Tracks which URIs contain *surviving* AI-generated content for git co-author
- * trailer attribution.
+ * Tracks which URIs contain *surviving* AI-generated content for git
+ * co-author trailer attribution.
  *
- * Unlike a simple "AI ever touched this URI" flag, this tracker shrinks the
- * recorded AI ranges as edits replace, delete, or split them, and removes the
- * URI entirely once no AI-authored content remains. That way users who revert
- * an AI suggestion before committing do not get a misleading
- * `Co-authored-by: Copilot` trailer.
+ * Recorded AI ranges are shrunk, split, or removed as later edits overwrite
+ * them, so reverting an AI suggestion before committing does not produce a
+ * misleading `Co-authored-by: Copilot` trailer.
  *
- * State is persisted per workspace, keyed by URI, together with the document
- * length at the time of snapshot. On window reload, persisted state is only
- * restored for documents whose current length still matches; otherwise the
- * entry is dropped (we cannot meaningfully rebase ranges across an offline
- * change).
+ * State is persisted per workspace, keyed by URI plus document length at
+ * snapshot time. On reload, an entry is restored only if the current
+ * document length still matches; otherwise it is dropped (offline edits
+ * cannot be rebased).
  */
 export class AiContributionFeature extends Disposable {
 
@@ -41,10 +38,8 @@ export class AiContributionFeature extends Disposable {
 	private readonly _live = new ResourceMap<AiSurvivingRanges>();
 
 	/**
-	 * Persisted snapshots for URIs that are not currently loaded (or that
-	 * still match their loaded content). Used to answer queries for
-	 * commits made on closed files and to seed live trackers on document
-	 * load.
+	 * Latest snapshot per URI. Used to answer queries for closed files and
+	 * to seed live trackers on document load.
 	 */
 	private readonly _persisted = new ResourceMap<IPersistedRangesEntry>();
 
@@ -68,9 +63,8 @@ export class AiContributionFeature extends Disposable {
 			}
 		}));
 
-		// Subscribe to every loaded document. We deliberately do NOT gate on editor
-		// visibility, because the trailer should still be added when the agent edits
-		// a file that the user never opens, and it should survive closing the file.
+		// Track every loaded document, regardless of editor visibility: the
+		// trailer must apply to agent-only edits and survive closing the file.
 		const trackedDocs = mapObservableArrayCached(this, workspace.documents, (doc, store) => {
 			const initialLength = doc.value.get().value.length;
 			const persisted = this._persisted.get(doc.uri);
@@ -79,8 +73,7 @@ export class AiContributionFeature extends Disposable {
 				ranges = AiSurvivingRanges.fromSerialized(persisted.ranges);
 			} else {
 				if (persisted) {
-					// Document content changed between sessions; we cannot rebase
-					// AI ranges across an offline edit, so drop the stale entry.
+					// Length mismatch: cannot rebase ranges across an offline edit.
 					this._persisted.delete(doc.uri);
 					this._markDirty();
 				}
@@ -105,14 +98,13 @@ export class AiContributionFeature extends Disposable {
 			}));
 
 			store.add(toDisposable(() => {
-				// Snapshot one last time when the document leaves the workspace
-				// so closed files keep their attribution across reloads.
+				// Final snapshot so closed files keep their attribution.
 				this._snapshot(doc.uri, ranges, doc.value.get().value.length);
 				this._live.delete(doc.uri);
 			}));
 		});
 
-		// Force the cached array to be evaluated so the per-document subscriptions are wired up.
+		// Force the cached array so per-document subscriptions get wired up.
 		this._register(autorun(reader => { trackedDocs.read(reader); }));
 
 		this._register(CommandsRegistry.registerCommand('_aiEdits.hasAiContributions',
@@ -124,12 +116,10 @@ export class AiContributionFeature extends Disposable {
 	}
 
 	public override dispose(): void {
-		// Cancel the debounced save first, then run super.dispose() which, via the
-		// per-document `toDisposable` callbacks, takes one final snapshot of every
-		// live document. Only after those snapshots have updated `_persisted` do
-		// we flush to storage. Flushing before super.dispose() would lose the
-		// final snapshots, because the scheduler they try to schedule has just
-		// been disposed along with the rest of this feature.
+		// Order matters: `super.dispose()` runs the per-document `toDisposable`
+		// callbacks, each of which takes a final snapshot into `_persisted`.
+		// `_disposing` suppresses re-scheduling from `_markDirty` while that
+		// happens, then we flush once at the end.
 		this._disposing = true;
 		this._saveScheduler.cancel();
 		super.dispose();
@@ -235,9 +225,8 @@ export class AiContributionFeature extends Disposable {
 	}
 
 	private _saveToStorage(): void {
-		// Only clear the dirty flag after a successful write, so that if the
-		// storage call throws the onWillSaveState / dispose paths still see
-		// pending state and can retry.
+		// Only clear `_dirty` after a successful write so retries can flush
+		// pending state on the next save attempt.
 		try {
 			if (this._persisted.size === 0) {
 				this._storageService.remove(STORAGE_KEY, StorageScope.WORKSPACE);
@@ -246,14 +235,13 @@ export class AiContributionFeature extends Disposable {
 				for (const [uri, entry] of this._persisted) {
 					obj[uri.toString()] = entry;
 				}
-				// StorageTarget.MACHINE: do not sync via Settings Sync. AI range
-				// offsets are tied to on-disk document content, which differs
-				// per machine, so syncing would produce stale attributions.
+				// MACHINE: ranges are tied to on-disk content, which differs per
+				// machine — syncing would produce stale attributions.
 				this._storageService.store(STORAGE_KEY, JSON.stringify(obj), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 			}
 			this._dirty = false;
 		} catch {
-			// Keep _dirty true so a later save attempt can retry.
+			// Keep `_dirty` so the next save can retry.
 		}
 	}
 }
@@ -354,19 +342,19 @@ class AiSurvivingRanges {
 	}
 
 	/**
-	 * Apply a batch of replacements (in coordinates of the document state
-	 * before the batch). Returns `true` iff the surviving ranges changed.
+	 * Apply a batch of replacements (in pre-batch coordinates). Returns
+	 * `true` iff the surviving ranges changed.
 	 *
-	 * @param level if defined, the inserted text is recorded as AI-authored
-	 *              at the given level; otherwise the edit is treated as
-	 *              non-AI (it can still trim or split existing AI ranges).
+	 * @param level if defined, the inserted text is recorded at the given
+	 *              level; otherwise the edit is non-AI (and may still trim
+	 *              or split existing AI ranges).
 	 */
 	public apply(replacements: readonly StringReplacement[], level: AiContributionLevel | undefined): boolean {
 		if (replacements.length === 0) {
 			return false;
 		}
-		// Process in reverse order so that each replacement's "before" coordinates
-		// remain valid against the (still-unmodified) lower part of the document.
+		// Reverse order keeps each replacement's pre-batch coordinates valid
+		// against the still-unmodified lower part of the document.
 		let changed = false;
 		for (let i = replacements.length - 1; i >= 0; i--) {
 			const r = replacements[i];
@@ -385,10 +373,10 @@ class AiSurvivingRanges {
 		for (const r of this._ranges) {
 			const rEnd = r.start + r.length;
 			if (rEnd <= start) {
-				// Entirely before the edit - unaffected.
+				// Before the edit.
 				out.push(r);
 			} else if (r.start >= endExclusive) {
-				// Entirely after the edit - shifted by delta.
+				// After the edit - shift by delta.
 				if (delta !== 0) {
 					out.push({ start: r.start + delta, length: r.length, level: r.level });
 					touched = true;
@@ -396,7 +384,7 @@ class AiSurvivingRanges {
 					out.push(r);
 				}
 			} else {
-				// Overlaps the deleted range. Keep the parts outside it.
+				// Overlaps - keep the parts outside the deleted span.
 				touched = true;
 				if (r.start < start) {
 					out.push({ start: r.start, length: start - r.start, level: r.level });
