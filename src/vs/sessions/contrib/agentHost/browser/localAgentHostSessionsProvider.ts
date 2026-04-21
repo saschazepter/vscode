@@ -109,7 +109,7 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 		return {
 			description: this._localDescription,
 			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined) =>
-				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory),
+				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, this._localLabel),
 		};
 	}
 
@@ -119,14 +119,14 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 
 	// -- Workspaces ----------------------------------------------------------
 
-	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined): ISessionWorkspace | undefined {
-		return buildAgentHostSessionWorkspace(project, workingDirectory, { fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true });
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true });
 	}
 
 	resolveWorkspace(repositoryUri: URI): ISessionWorkspace {
 		const folderName = basename(repositoryUri) || repositoryUri.path;
 		return {
-			label: folderName,
+			label: `${folderName} [${this._localLabel}]`,
 			icon: Codicon.folder,
 			repositories: [{ uri: repositoryUri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
 			requiresWorkspaceTrust: true,
