@@ -50,7 +50,9 @@ export class NativeWorkbenchStorageService extends RemoteStorageService {
 			} else {
 				applicationSharedFallbackStorage = this.getStorage(StorageScope.APPLICATION);
 			}
-			applicationSharedStorage.fallbackStorage = applicationSharedFallbackStorage;
+			if (applicationSharedFallbackStorage) {
+				applicationSharedStorage.setFallbackStorage(applicationSharedFallbackStorage, this.workbenchEnvironmentService.isSessionsWindow);
+			}
 		}
 	}
 

@@ -441,13 +441,19 @@ export const MIGRATED_KEY = '__$__migratedStorageMarker';
 export class MigratingStorage extends Storage {
 
 	private migratedKeys: Set<string> = new Set();
-	fallbackStorage: IStorage | undefined = undefined;
+	private fallbackStorage: IStorage | undefined = undefined;
+	private isFallbackStorageReadonly: boolean = false;
 
 	override async init(): Promise<void> {
 		await super.init();
 
 		// Load the set of keys already migrated from fallback
 		this.migratedKeys = this.loadMigratedKeys();
+	}
+
+	public setFallbackStorage(storage: IStorage, isReadonly: boolean): void {
+		this.fallbackStorage = storage;
+		this.isFallbackStorageReadonly = isReadonly;
 	}
 
 	override get(key: string, fallbackValue: string): string;
@@ -461,6 +467,9 @@ export class MigratingStorage extends Storage {
 			const value = this.fallbackStorage?.items.get(key);
 			if (!isUndefined(value)) {
 				this.set(key, value);
+				if (this.isFallbackStorageReadonly) {
+					this.fallbackStorage?.delete(key);
+				}
 			}
 			this.markKeyAsMigrated(key);
 		}

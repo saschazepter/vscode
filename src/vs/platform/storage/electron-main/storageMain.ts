@@ -385,7 +385,7 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 		await this.applicationStorage.init();
 
 		const migratingStorage = this._register(new MigratingStorage(this.sharedDatabase, { hint: wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined }));
-		migratingStorage.fallbackStorage = this.applicationStorage.storage;
+		migratingStorage.setFallbackStorage(this.applicationStorage.storage, this.applicationStorage instanceof HostApplicationStorageMain);
 		return migratingStorage;
 	}
 
