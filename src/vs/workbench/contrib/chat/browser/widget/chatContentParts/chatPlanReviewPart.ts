@@ -451,7 +451,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		const feedbackParts: string[] = [];
 		if (editorFeedbackItems.length > 0) {
 			const filePath = this.review.planUri?.path ? `(${this.review.planUri.path})` : '';
-			feedbackParts.push(`Here's the feedback for the plan file ${filePath}:`);
+			feedbackParts.push(`Here's the feedback for contents of the plan file ${filePath}:`);
 			for (const item of editorFeedbackItems) {
 				if (item.column > 1) {
 					feedbackParts.push(`Line ${item.line}: Column ${item.column}: ${item.text}`);
