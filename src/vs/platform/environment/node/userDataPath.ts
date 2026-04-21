@@ -82,9 +82,6 @@ function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): stri
  * the platform-specific application data directory.
  */
 export function getDefaultUserDataPath(productName: string): string {
-	let appDataPath: string | undefined;
-
-	// 4. Otherwise check per platform
 	return getAppDataPath(productName);
 }
 
