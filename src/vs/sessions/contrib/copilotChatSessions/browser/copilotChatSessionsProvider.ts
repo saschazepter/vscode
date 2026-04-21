@@ -1611,6 +1611,12 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			attachedContext,
 		};
 
+		// Claude sessions use the ChatSessionItemController API which creates
+		// real session URIs upfront, bypassing the untitled→commit→swap flow.
+		if (session instanceof ClaudeCodeNewSession) {
+			return this._sendFirstChatViaController(session, query, sendOptions);
+		}
+
 		// Open chat widget and set permission level
 		await this.chatSessionsService.getOrCreateChatSession(session.resource, CancellationToken.None);
 		const chatWidget = await this.chatWidgetService.openSession(session.resource, ChatViewPaneTarget);
@@ -1707,6 +1713,109 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			this._onDidChangeSessions.fire({ added: [], removed: [this._chatToSession(session)], changed: [] });
 			session.dispose();
 			throw error;
+		}
+	}
+
+	/**
+	 * Sends the first chat for a Claude session using the controller API.
+	 *
+	 * Unlike the legacy untitled→commit→swap flow, this creates the real
+	 * session URI upfront via {@link IChatSessionsService.createNewChatSessionItem},
+	 * then sends the request directly to that URI. This avoids the commit
+	 * event race and ensures the session appears under the correct workspace
+	 * immediately.
+	 */
+	private async _sendFirstChatViaController(
+		session: ClaudeCodeNewSession,
+		query: string,
+		sendOptions: IChatSendRequestOptions,
+	): Promise<ISession> {
+		// Create the real session item via the controller's newChatSessionItemHandler.
+		// This returns a session with a real (non-untitled) URI.
+		const newItem = await this.chatSessionsService.createNewChatSessionItem(
+			session.target,
+			{ prompt: query, initialSessionOptions: session.selectedOptions.size > 0 ? session.selectedOptions : undefined },
+			CancellationToken.None,
+		);
+		if (!newItem) {
+			throw new Error('[CopilotChatSessionsProvider] Failed to create Claude session item');
+		}
+
+		const realResource = newItem.resource;
+
+		// Open chat session and widget with the real URI
+		await this.chatSessionsService.getOrCreateChatSession(realResource, CancellationToken.None);
+		const chatWidget = await this.chatWidgetService.openSession(realResource, ChatViewPaneTarget);
+		if (!chatWidget) {
+			throw new Error('[CopilotChatSessionsProvider] Failed to open chat widget');
+		}
+
+		const permissionLevel = sendOptions.modeInfo?.permissionLevel;
+		if (permissionLevel) {
+			chatWidget.input.setPermissionLevel(permissionLevel);
+		}
+
+		// Load session model and apply selected options
+		const modelRef = await this.chatService.acquireOrLoadSession(realResource, ChatAgentLocation.Chat, CancellationToken.None);
+		if (modelRef) {
+			const model = modelRef.object;
+			if (session.selectedModelId) {
+				const languageModel = this.languageModelsService.lookupLanguageModel(session.selectedModelId);
+				if (languageModel) {
+					model.inputModel.setState({ selectedModel: { identifier: session.selectedModelId, metadata: languageModel } });
+				}
+			}
+			if (session.chatMode) {
+				model.inputModel.setState({ mode: { id: session.chatMode.id, kind: session.chatMode.kind } });
+			}
+			if (session.selectedOptions.size > 0) {
+				this.chatSessionsService.updateSessionOptions(realResource, session.selectedOptions);
+			}
+			modelRef.dispose();
+		}
+
+		// Send request to the real URI — sendRequest skips the
+		// createNewChatSessionItem block since the URI is not untitled.
+		this.logService.debug(`[CopilotChatSessionsProvider] Sending first Claude chat to ${realResource.toString()} with options:`, {
+			userSelectedModelId: sendOptions.userSelectedModelId,
+		});
+		const result = await this.chatService.sendRequest(realResource, query, sendOptions);
+		if (result.kind === 'rejected') {
+			throw new Error(`[CopilotChatSessionsProvider] sendRequest rejected: ${result.reason}`);
+		}
+
+		// Add the temp session to the cache immediately so it appears in the sessions list
+		session.setTitle(localize('new session', "New Session"));
+		session.setStatus(SessionStatus.InProgress);
+		const tempKey = session.resource.toString();
+		this._sessionCache.set(tempKey, session);
+		const tempSession = this._chatToSession(session);
+		this._onDidChangeSessions.fire({ added: [tempSession], removed: [], changed: [] });
+
+		try {
+			// Wait for the agent sessions model to pick up the real session
+			const committedChat = await this._waitForSessionInCache(realResource);
+
+			// Clean up temp session and replace with the real adapter
+			this._sessionCache.delete(tempKey);
+			this._currentNewSession = undefined;
+			session.dispose();
+
+			this._groupModel.addChat(committedChat.id, committedChat.id);
+
+			const committedSession = this._chatToSession(committedChat);
+			this._sessionGroupCache.delete(session.id);
+			this._onDidReplaceSession.fire({ from: tempSession, to: committedSession });
+
+			return committedSession;
+		} catch {
+			this._currentNewSession = undefined;
+
+			// Keep the temp session visible so the user can review
+			// whatever content the agent produced before the error.
+			session.setStatus(SessionStatus.Completed);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [tempSession] });
+			return tempSession;
 		}
 	}
 

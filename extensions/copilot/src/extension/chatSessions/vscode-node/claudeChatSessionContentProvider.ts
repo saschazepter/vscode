@@ -242,6 +242,16 @@ export class ClaudeChatSessionItemController extends Disposable {
 			);
 			item.iconPath = new vscode.ThemeIcon('claude');
 			item.timing = { created: Date.now() };
+
+			// Resolve workspace folder so the session appears under the correct
+			// workspace section instead of "Unknown" in the sessions list.
+			const selectedFolderId = context.inputState?.groups.find(group => group.id === FOLDER_OPTION_ID)?.selected?.id;
+			const selectedFolderUri = selectedFolderId ? URI.file(selectedFolderId) : undefined;
+			const folderInfo = await this.getFolderInfoForSession(newSessionId, selectedFolderUri);
+			if (folderInfo.cwd) {
+				item.metadata = { workingDirectoryPath: folderInfo.cwd };
+			}
+
 			this._inProgressItems.set(newSessionId, item);
 			return item;
 		};
@@ -280,6 +290,8 @@ export class ClaudeChatSessionItemController extends Disposable {
 			const newItem = this._controller.createChatSessionItem(ClaudeSessionUri.forSessionId(result.sessionId), title);
 			newItem.iconPath = new vscode.ThemeIcon('claude');
 			newItem.timing = { created: Date.now() };
+			// TODO: Should we copy _all_ metadata or just specific fields?
+			newItem.metadata = { ...item?.metadata };
 
 			// Copy parent session state to the forked session
 			const parentSessionId = ClaudeSessionUri.getSessionId(sessionResource);
