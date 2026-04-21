@@ -461,17 +461,19 @@ export class MigratingStorage extends Storage {
 	override get(key: string, fallbackValue?: string): string | undefined {
 		if (!this.migratedKeys.has(key) && isUndefined(super.get(key))) {
 			// Check fallback storage and auto-migrate on hit.
-			// Skip keys already migrated from fallback to prevent
-			// resurrecting a key that was intentionally removed
-			// after migration.
+			// Mark the key as migrated immediately to prevent
+			// re-checking the fallback, and to ensure a key
+			// that was intentionally removed after migration
+			// is not resurrected from the fallback.
+			this.migratedKeys.add(key);
 			const value = this.fallbackStorage?.items.get(key);
 			if (!isUndefined(value)) {
 				this.set(key, value);
 				if (!this.isFallbackStorageReadonly) {
 					this.fallbackStorage?.delete(key);
 				}
+				this.persistMigratedKeys();
 			}
-			this.markKeyAsMigrated(key);
 		}
 		return super.get(key, fallbackValue);
 	}
@@ -488,8 +490,7 @@ export class MigratingStorage extends Storage {
 		return new Set();
 	}
 
-	private markKeyAsMigrated(key: string): void {
-		this.migratedKeys.add(key);
+	private persistMigratedKeys(): void {
 		this.set(MIGRATED_KEY, JSON.stringify([...this.migratedKeys]));
 	}
 }
