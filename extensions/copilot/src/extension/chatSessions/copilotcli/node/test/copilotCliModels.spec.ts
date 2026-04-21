@@ -376,7 +376,7 @@ describe('CopilotCLIModels', () => {
 			await new Promise(r => setTimeout(r, 0));
 
 			const result = await lm.getProvider().provideLanguageModelChatInformation({}, undefined);
-			expect(result[0]).toEqual(expect.objectContaining({ id: 'auto', name: 'auto' }));
+			expect(result[0]).toEqual(expect.objectContaining({ id: 'auto', name: 'Auto' }));
 		});
 
 		it('returns only auto when not authenticated', async () => {
@@ -388,7 +388,7 @@ describe('CopilotCLIModels', () => {
 			await new Promise(r => setTimeout(r, 0));
 
 			const result = await lm.getProvider().provideLanguageModelChatInformation({}, undefined);
-			expect(result).toEqual([expect.objectContaining({ id: 'auto', name: 'auto' })]);
+			expect(result).toEqual([expect.objectContaining({ id: 'auto', name: 'Auto' })]);
 		});
 
 		it('returns only auto while models are still being fetched', async () => {
@@ -409,7 +409,7 @@ describe('CopilotCLIModels', () => {
 
 			// Models are still pending — should only get auto
 			const result = await lm.getProvider().provideLanguageModelChatInformation({}, undefined);
-			expect(result).toEqual([expect.objectContaining({ id: 'auto', name: 'auto' })]);
+			expect(result).toEqual([expect.objectContaining({ id: 'auto', name: 'Auto' })]);
 
 			// Flush microtasks so getPackage()/getAuthInfo() resolve and getAvailableModels is called,
 			// which captures resolveModels.

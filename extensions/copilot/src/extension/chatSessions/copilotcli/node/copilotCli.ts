@@ -211,7 +211,7 @@ function buildAutoModel(defaultModel?: CopilotCLIModelInfo): vscode.LanguageMode
 	const multiplier = defaultModel?.multiplier === undefined ? undefined : `${defaultModel.multiplier}x`;
 	return {
 		id: 'auto',
-		name: 'auto',
+		name: 'Auto',
 		family: defaultModel?.id ?? '',
 		version: '',
 		maxInputTokens: defaultModel?.maxInputTokens ?? defaultModel?.maxContextWindowTokens ?? 0,
