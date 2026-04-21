@@ -1755,11 +1755,11 @@ describe('ChatSessionMetadataStore', () => {
 			mockFs.mockDirectory(sessionStateDir, []);
 
 			await createStore();
-			expect(extensionContext.globalState.get('github.copilot.cli.events.jsonl.scan.done')).toBe(true);
+			expect(extensionContext.globalState.get('github.copilot.cli.events.jsonl.scaned')).toBe(true);
 		});
 
 		it('skips scan when memento flag is already set', async () => {
-			extensionContext.globalState.seed('github.copilot.cli.events.jsonl.scan.done', true);
+			extensionContext.globalState.seed('github.copilot.cli.events.jsonl.scaned', true);
 			mockFs.mockFile(BULK_METADATA_FILE, JSON.stringify({}));
 			// Even with a discoverable session, scan should be skipped.
 			await mockFs.createDirectory(Uri.joinPath(sessionStateDir, 'should-skip'));
