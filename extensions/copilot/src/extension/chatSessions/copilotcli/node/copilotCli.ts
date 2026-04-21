@@ -25,6 +25,7 @@ import { IInstantiationService } from '../../../../util/vs/platform/instantiatio
 import { getCopilotLogger } from './logger';
 import { ensureRipgrepShim } from './ripgrepShim';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
+import { getModelCapabilitiesDescription } from '../../../conversation/common/languageModelAccess';
 
 export const COPILOT_CLI_REASONING_EFFORT_PROPERTY = 'reasoningEffort';
 const COPILOT_CLI_MODEL_MEMENTO_KEY = 'github.copilot.cli.sessionModel';
@@ -182,7 +183,7 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 		const isAutoModelEnabled = this.configurationService.getConfig(ConfigKey.Advanced.CLIAutoModelEnabled);
 		const modelsInfo: vscode.LanguageModelChatInformation[] = models.map((model, index) => {
 			const multiplier = model.multiplier === undefined ? undefined : `${model.multiplier}x`;
-			return {
+			const modelInfo: vscode.LanguageModelChatInformation = {
 				id: model.id,
 				name: model.name,
 				family: model.id,
@@ -199,6 +200,11 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 				},
 				targetChatSessionType: 'copilotcli'
 			};
+			const tooltip = getModelCapabilitiesDescription(modelInfo) ?? '';
+			return {
+				...modelInfo,
+				tooltip
+			};
 		});
 		if (isAutoModelEnabled) {
 			modelsInfo.unshift(buildAutoModel(models[0]));
@@ -208,16 +214,17 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 }
 
 function buildAutoModel(defaultModel?: CopilotCLIModelInfo): vscode.LanguageModelChatInformation {
-	const multiplier = defaultModel?.multiplier === undefined ? undefined : `${defaultModel.multiplier}x`;
+	// const multiplier = defaultModel?.multiplier === undefined ? undefined : `${defaultModel.multiplier}x`;
 	return {
 		id: 'auto',
 		name: 'Auto',
+		tooltip: l10n.t('Auto selects the best model for your request based on capacity and performance.'),
 		family: defaultModel?.id ?? '',
 		version: '',
 		maxInputTokens: defaultModel?.maxInputTokens ?? defaultModel?.maxContextWindowTokens ?? 0,
 		maxOutputTokens: defaultModel?.maxOutputTokens ?? 0,
-		multiplier,
-		multiplierNumeric: defaultModel?.multiplier,
+		// multiplier,
+		// multiplierNumeric: defaultModel?.multiplier,
 		isUserSelectable: true,
 		capabilities: {
 			imageInput: defaultModel?.supportsVision,
