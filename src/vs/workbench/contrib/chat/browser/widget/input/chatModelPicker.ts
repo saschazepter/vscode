@@ -250,7 +250,7 @@ export function buildModelPickerItems(
 
 			const resolveModel = (id: string) => allModelsMap.get(id) ?? modelsByMetadataId.get(id);
 
-			const getUnavailableReason = (entry: IModelControlEntry): 'upgrade' | 'update' | 'admin' | undefined => {
+			const getUnavailableReason = (entry: IModelControlEntry): 'update' | 'admin' | undefined => {
 				const entitlement = chatEntitlementService.entitlement;
 				// Business/Enterprise users may need an admin to enable a model, or a VS Code update.
 				if (entitlement === ChatEntitlement.Business || entitlement === ChatEntitlement.Enterprise) {
@@ -272,7 +272,7 @@ export function buildModelPickerItems(
 			// --- 2. Promoted section (selected + recently used + featured) ---
 			type PromotedItem =
 				| { kind: 'available'; model: ILanguageModelChatMetadataAndIdentifier }
-				| { kind: 'unavailable'; id: string; entry: IModelControlEntry; reason: 'upgrade' | 'update' | 'admin' };
+				| { kind: 'unavailable'; id: string; entry: IModelControlEntry; reason: 'update' | 'admin' };
 
 			const promotedItems: PromotedItem[] = [];
 
@@ -301,8 +301,8 @@ export function buildModelPickerItems(
 							promotedItems.push({ kind: 'unavailable', id, entry, reason });
 							return true;
 						}
-						// Plan has no upgrade path for this model; mark placed so the recently-used
-						// id does not retry through other code paths, but do not render it.
+						// There is no unavailable reason to show for this entitlement; mark placed so
+						// the recently-used id does not retry through other code paths, but do not render it.
 						markPlaced(id);
 						return true;
 					}
@@ -480,16 +480,14 @@ export function getModelPickerAccessibilityProvider() {
 function createUnavailableModelItem(
 	id: string,
 	entry: IModelControlEntry,
-	reason: 'upgrade' | 'update' | 'admin',
+	reason: 'update' | 'admin',
 	manageSettingsUrl: string | undefined,
 	updateStateType: StateType,
 	section?: string,
 ): IActionListItem<IActionWidgetDropdownAction> {
 	let description: string | MarkdownString | undefined;
 
-	if (reason === 'upgrade') {
-		description = new MarkdownString(localize('chat.modelPicker.upgradeLink', "[Upgrade](command:workbench.action.chat.upgradePlan \" \")"), { isTrusted: true });
-	} else if (reason === 'update') {
+	if (reason === 'update') {
 		description = localize('chat.modelPicker.updateDescription', "Update VS Code");
 	} else {
 		description = manageSettingsUrl
@@ -498,10 +496,7 @@ function createUnavailableModelItem(
 	}
 
 	let hoverContent: MarkdownString;
-	if (reason === 'upgrade') {
-		hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-		hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "[Upgrade to GitHub Copilot Pro](command:workbench.action.chat.upgradePlan \" \") to use the best models."));
-	} else if (reason === 'update') {
+	if (reason === 'update') {
 		hoverContent = getUpdateHoverContent(updateStateType);
 	} else {
 		hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
