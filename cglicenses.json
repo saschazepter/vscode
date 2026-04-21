@@ -909,7 +909,7 @@
 	},
 	{
 		"name": "gcp-metadata",
-		"fullLicenseTextUri": "https://github.com/googleapis/google-cloud-node-core/blob/76ba85a7f55c6e82943008b4eceb07a0f58b39e1/LICENSE"
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/googleapis/google-cloud-node-core/76ba85a7f55c6e82943008b4eceb07a0f58b39e1/LICENSE"
 	},
 	{
 		"name": "randombytes",
