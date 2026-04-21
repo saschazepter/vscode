@@ -241,7 +241,7 @@
 				"displayName": "%copilot.tools.loadSkill.name%",
 				"icon": "$(book)",
 				"userDescription": "%copilot.tools.loadSkill.description%",
-				"modelDescription": "Invoke a skill to handle a user's request with specialized instructions and workflows.\n\nSkills are domain-specific capabilities discovered from SKILL.md files. When a user's task matches an available skill, call this tool to load and apply it. If the user types a slash command (e.g. \"/deploy\", \"/test\"), treat it as a skill invocation.\n\nUsage:\n- Pass the skill name and optional arguments.\n- Examples: skill: \"docx\", skill: \"deploy\" args: \"--env staging\", skill: \"fix-ci-failures\" args: \"PR #42\"\n\nRules:\n- Available skills appear in system-reminder messages earlier in the conversation.\n- BLOCKING: When a matching skill exists, you MUST call this tool before producing any other output about the task.\n- Never reference a skill without calling this tool.\n- Do not call this tool for a skill that is already active in the current turn (indicated by a <command-name> tag).\n- Do not use this tool for built-in commands such as /help or /clear.",
+				"modelDescription": "Invoke a skill to handle a user's request with specialized instructions and workflows.\n\nSkills are domain-specific capabilities discovered from SKILL.md files. When a user's task matches an available skill, call this tool to load and apply it. If the user types a slash command (e.g. \"/deploy\", \"/test\"), treat it as a skill invocation.\n\nUsage:\n- Pass the skill name only (no arguments).\n- Examples: skill: \"docx\", skill: \"deploy\", skill: \"fix-ci-failures\"\n\nRules:\n- Available skills appear in system-reminder messages earlier in the conversation.\n- BLOCKING: When a matching skill exists, you MUST call this tool before producing any other output about the task.\n- Never reference a skill without calling this tool.\n- Do not call this tool for a skill that is already active in the current turn (indicated by a <command-name> tag).\n- Do not use this tool for built-in commands such as /help or /clear.",
 				"when": "config.github.copilot.chat.loadSkill.enabled",
 				"inputSchema": {
 					"type": "object",
@@ -249,10 +249,6 @@
 						"skill": {
 							"type": "string",
 							"description": "The skill name. E.g., \"commit\", \"review-pr\", or \"pdf\""
-						},
-						"args": {
-							"type": "string",
-							"description": "Optional arguments for the skill"
 						}
 					},
 					"required": [

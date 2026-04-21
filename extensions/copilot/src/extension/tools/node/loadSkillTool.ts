@@ -8,12 +8,15 @@ import type * as vscode from 'vscode';
 import { ChatFetchResponseType } from '../../../platform/chat/common/commonTypes';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
 import { TextDocumentSnapshot } from '../../../platform/editing/common/textDocumentSnapshot';
+import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
+import { FileType } from '../../../platform/filesystem/common/fileTypes';
 import { IPromptPathRepresentationService } from '../../../platform/prompts/common/promptPathRepresentationService';
 import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
 import { IRequestLogger } from '../../../platform/requestLogger/common/requestLogger';
 import { getCurrentCapturingToken } from '../../../platform/requestLogger/node/requestLogger';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { ChatResponseStreamImpl } from '../../../util/common/chatResponseStreamImpl';
+import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
 import { isString } from '../../../util/vs/base/common/types';
 import { URI } from '../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../util/vs/base/common/uuid';
@@ -30,11 +33,18 @@ import { formatUriForFileWidget } from '../common/toolUtils';
 export interface ILoadSkillParams {
 	/** The skill name. E.g., "commit", "review-pr", or "pdf" */
 	skill: string;
-	/** Optional arguments for the skill */
-	args?: string;
 }
 
 const DEFAULT_SKILL_SUBAGENT_TOOL_CALL_LIMIT = 10;
+
+/** Maximum number of related files to list in skill context */
+const MAX_RELATED_FILES = 50;
+
+/** Directories to skip when listing related files */
+const SKILL_SKIP_DIRS = new Set([
+	'.git', 'node_modules', 'dist', 'build', 'out', '.cache',
+	'coverage', '__pycache__', 'target', 'bin', 'obj', '.venv', 'venv',
+]);
 
 class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 	public static readonly toolName = ToolName.LoadSkill;
@@ -46,6 +56,7 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 		@IRequestLogger private readonly requestLogger: IRequestLogger,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@ICustomInstructionsService private readonly customInstructionsService: ICustomInstructionsService,
+		@IFileSystemService private readonly fileSystemService: IFileSystemService,
 		@IPromptPathRepresentationService _promptPathRepresentationService: IPromptPathRepresentationService,
 	) { }
 
@@ -66,13 +77,30 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 		}
 	}
 
-	private invokeInline(skillContent: string, uri: URI) {
+	private async invokeInline(skillContent: string, uri: URI) {
 		const skillInfo = this.customInstructionsService.getSkillInfo(uri);
 		const skillLabel = skillInfo?.skillName ?? 'skill';
-		const resultText = `<skill_instructions name="${skillLabel}">\n${skillContent}\n</skill_instructions>`;
+		const skillFolderUri = skillInfo?.skillFolderUri ?? extUriBiasedIgnorePathCase.dirname(uri);
+
+		// List related files in the skill directory
+		const relatedFiles = await this.listRelatedFiles(skillFolderUri);
+		const relatedFilesSection = relatedFiles.length > 0
+			? `\nRelated files (use read_file tool to read):\n${relatedFiles.map(f => `  - ${f}`).join('\n')}\n`
+			: '';
+
+		const resultText = `<skill-context name="${skillLabel}">
+Base directory: ${skillFolderUri.fsPath}
+${relatedFilesSection}
+${skillContent}
+</skill-context>`;
 
 		const result = new ExtendedLanguageModelToolResult([new LanguageModelTextPart(resultText)]);
 		result.toolResultMessage = new MarkdownString(l10n.t`Loaded skill: ${skillLabel}`);
+		result.toolMetadata = {
+			skill: skillLabel,
+			skillUri: uri.toString(),
+			agentName: 'skill'
+		};
 		return result;
 	}
 
@@ -83,7 +111,10 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 
 		const skillInfo = this.customInstructionsService.getSkillInfo(uri);
 		const skillLabel = skillInfo?.skillName ?? options.input.skill;
-		const query = options.input.args ?? `Run the ${skillLabel} skill`;
+
+		// Use the user's original message as the task for the subagent
+		const userMessage = this._inputContext.conversation?.turns[0]?.request.message;
+		const query = userMessage ?? `Run the ${skillLabel} skill`;
 
 		const request = this._inputContext.request!;
 		const parentSessionId = this._inputContext.conversation?.sessionId ?? generateUuid();
@@ -106,7 +137,7 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 
 		const parentChatSessionId = getCurrentCapturingToken()?.chatSessionId;
 		const skillSubagentToken = new CapturingToken(
-			`Skill: ${skillLabel}${options.input.args ? ` ${options.input.args.substring(0, 40)}` : ''}`,
+			`Skill: ${skillLabel}`,
 			'skill',
 			subAgentInvocationId,
 			'skill',
@@ -119,7 +150,7 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 
 		const toolMetadata = {
 			skill: options.input.skill,
-			args: options.input.args,
+			skillUri: uri.toString(),
 			subAgentInvocationId,
 			agentName: 'skill'
 		};
@@ -158,7 +189,7 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 
 		if (mode === 'fork') {
 			return {
-				invocationMessage: new MarkdownString(l10n.t`Running skill ${formatUriForFileWidget(uri, { vscodeLinkType: 'skill', linkText: skillLabel })}: ${options.input.args ?? ''}`),
+				invocationMessage: new MarkdownString(l10n.t`Running skill ${formatUriForFileWidget(uri, { vscodeLinkType: 'skill', linkText: skillLabel })}`),
 				pastTenseMessage: new MarkdownString(l10n.t`Ran skill ${formatUriForFileWidget(uri, { vscodeLinkType: 'skill', linkText: skillLabel })}`),
 			};
 		}
@@ -175,25 +206,70 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 	}
 
 	/**
-	 * Resolve a skill name to its SKILL.md URI by searching the instruction index
-	 * and known skill locations.
+	 * Resolve a skill name to its SKILL.md URI by searching the instruction index.
+	 * If not found, throws with a list of available skills.
 	 */
 	private resolveSkillUri(skillName: string): URI {
-		// Try resolving from the instruction index (available skills in the current context)
+		const availableSkills: string[] = [];
+
 		if (this._inputContext) {
 			const indexVariable = this._inputContext.chatVariables.find(isCustomizationsIndex);
 			if (indexVariable && isString(indexVariable.value)) {
 				const indexFile = this.customInstructionsService.parseInstructionIndexFile(indexVariable.value);
 				for (const skillUri of indexFile.skills) {
 					const info = this.customInstructionsService.getSkillInfo(skillUri);
-					if (info && info.skillName === skillName) {
-						return skillUri;
+					if (info) {
+						if (info.skillName === skillName) {
+							return skillUri;
+						}
+						availableSkills.push(info.skillName);
 					}
 				}
 			}
 		}
 
-		throw new Error(`Could not find skill "${skillName}". Make sure the skill exists and is available in the current context.`);
+		const skillListMessage = availableSkills.length > 0
+			? ` Available skills: ${availableSkills.join(', ')}`
+			: '';
+		throw new Error(`Skill "${skillName}" not found.${skillListMessage}`);
+	}
+
+	/**
+	 * List files in a skill directory, excluding SKILL.md and skipped directories.
+	 */
+	private async listRelatedFiles(skillFolderUri: URI): Promise<string[]> {
+		try {
+			const files: string[] = [];
+			await this.listRelatedFilesRecursive(skillFolderUri, skillFolderUri, files);
+			return files;
+		} catch {
+			return [];
+		}
+	}
+
+	private async listRelatedFilesRecursive(baseUri: URI, currentUri: URI, files: string[], depth: number = 0): Promise<void> {
+		if (files.length >= MAX_RELATED_FILES || depth > 5) {
+			return;
+		}
+
+		const entries = await this.fileSystemService.readDirectory(currentUri);
+
+		for (const [name, type] of entries) {
+			if (files.length >= MAX_RELATED_FILES) {
+				break;
+			}
+
+			if (type === FileType.Directory) {
+				if (!SKILL_SKIP_DIRS.has(name)) {
+					await this.listRelatedFilesRecursive(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name), files, depth + 1);
+				}
+			} else if (type === FileType.File && name.toUpperCase() !== 'SKILL.MD') {
+				const relativePath = extUriBiasedIgnorePathCase.relativePath(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name));
+				if (relativePath) {
+					files.push(relativePath);
+				}
+			}
+		}
 	}
 }
 

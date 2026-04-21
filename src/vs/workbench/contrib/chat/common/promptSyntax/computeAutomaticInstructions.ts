@@ -444,14 +444,44 @@ export class ComputeAutomaticInstructions {
 					entries.push('Each skill comes with a description of the topic and a file path that contains the detailed instructions.');
 					entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${readTool.variable} tool to acquire the full instructions from the file URI.`);
 				}
-				for (const skill of modelInvocableSkills) {
-					entries.push('<skill>');
-					entries.push(`<name>${skill.name}</name>`);
+				const SKILL_DESCRIPTION_CHAR_BUDGET = 15000;
+				const TRUNCATED_NAMES_CHAR_BUDGET = 5000;
+				let skillCharCount = 0;
+				let truncatedAtIndex = modelInvocableSkills.length;
+				for (let i = 0; i < modelInvocableSkills.length; i++) {
+					const skill = modelInvocableSkills[i];
+					const skillEntry = [`<skill>`, `<name>${skill.name}</name>`];
 					if (skill.description) {
-						entries.push(`<description>${skill.description}</description>`);
+						skillEntry.push(`<description>${skill.description}</description>`);
 					}
-					entries.push(`<file>${filePath(skill.uri)}</file>`);
-					entries.push('</skill>');
+					skillEntry.push(`<file>${filePath(skill.uri)}</file>`, `</skill>`);
+					const entryLength = skillEntry.join('\n').length + 1; // +1 for joining newline
+					if (skillCharCount + entryLength > SKILL_DESCRIPTION_CHAR_BUDGET) {
+						truncatedAtIndex = i;
+						break;
+					}
+					skillCharCount += entryLength;
+					entries.push(...skillEntry);
+				}
+				// When skills are truncated by the character budget, include remaining
+				// skill names so the model can still discover and invoke them.
+				if (truncatedAtIndex < modelInvocableSkills.length) {
+					const truncatedSkills = modelInvocableSkills.slice(truncatedAtIndex);
+					const names: string[] = [];
+					let nameListLength = 0;
+					for (const skill of truncatedSkills) {
+						const addition = (names.length > 0 ? 2 : 0) + skill.name.length;
+						if (nameListLength + addition > TRUNCATED_NAMES_CHAR_BUDGET) {
+							break;
+						}
+						nameListLength += addition;
+						names.push(skill.name);
+					}
+					const remaining = truncatedSkills.length - names.length;
+					const nameList = names.join(', ');
+					entries.push(remaining > 0
+						? `Additional skills available (invoke by name): ${nameList}... and ${remaining} more`
+						: `Additional skills available (invoke by name): ${nameList}`);
 				}
 				entries.push('</skills>', '', ''); // add trailing newline
 			}
