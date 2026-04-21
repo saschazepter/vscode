@@ -24,7 +24,7 @@ import { IAgentSessionsWorkspace } from '../common/agentSessionsWorkspace';
 import { IChatSessionMetadataStore } from '../common/chatSessionMetadataStore';
 import { ChatSessionWorktreeFile, ChatSessionWorktreeProperties, ChatSessionWorktreePropertiesV2, IChatSessionWorktreeService } from '../common/chatSessionWorktreeService';
 
-const CHAT_SESSION_WORKTREE_MEMENTO_KEY = 'github.copilot.cli.sessionWorktrees';
+// const CHAT_SESSION_WORKTREE_MEMENTO_KEY = 'github.copilot.cli.sessionWorktrees';
 
 export class ChatSessionWorktreeService extends Disposable implements IChatSessionWorktreeService {
 	declare _serviceBrand: undefined;
@@ -43,7 +43,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 	) {
 		super();
 		// This is not used.
-		void this.extensionContext.globalState.update(CHAT_SESSION_WORKTREE_MEMENTO_KEY, undefined);
+		// void this.extensionContext.globalState.update(CHAT_SESSION_WORKTREE_MEMENTO_KEY, undefined);
 	}
 
 	async createWorktree(repositoryPath: vscode.Uri, stream?: vscode.ChatResponseStream, baseBranch?: string, branchName?: string): Promise<ChatSessionWorktreeProperties | undefined> {

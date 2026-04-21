@@ -20,8 +20,8 @@ import { getCopilotBulkMetadataFile, getCopilotCLISessionDir, getCopilotCLISessi
 import { ICopilotCLIAgents } from '../copilotcli/node/copilotCli';
 import { WorktreeSessionIndex } from './worktreeSessionIndex';
 
-const WORKSPACE_FOLDER_MEMENTO_KEY = 'github.copilot.cli.sessionWorkspaceFolders';
-const WORKTREE_MEMENTO_KEY = 'github.copilot.cli.sessionWorktrees';
+// const WORKSPACE_FOLDER_MEMENTO_KEY = 'github.copilot.cli.sessionWorkspaceFolders';
+// const WORKTREE_MEMENTO_KEY = 'github.copilot.cli.sessionWorktrees';
 const LEGACY_BULK_METADATA_FILENAME = 'copilotcli.session.metadata.json';
 const LEGACY_BULK_MIGRATED_KEY = 'github.copilot.cli.legacyBulkMigrated';
 const JSONL_SCAN_DONE_KEY = 'github.copilot.cli.events.jsonl.scan.doned';
@@ -115,8 +115,8 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 			}
 		}
 
-		this.extensionContext.globalState.update(WORKTREE_MEMENTO_KEY, undefined);
-		this.extensionContext.globalState.update(WORKSPACE_FOLDER_MEMENTO_KEY, undefined);
+		// this.extensionContext.globalState.update(WORKTREE_MEMENTO_KEY, undefined);
+		// this.extensionContext.globalState.update(WORKSPACE_FOLDER_MEMENTO_KEY, undefined);
 
 
 		// Ensure every cached session with a worktreePath has a JSONL
