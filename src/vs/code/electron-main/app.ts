@@ -1142,21 +1142,9 @@ export class CodeApplication extends Disposable {
 		services.set(ILocalPtyService, ptyHostService);
 
 		// Agent Host
-		const startAgentHost = () => {
+		if (this.configurationService.getValue(AgentHostEnabledSettingId)) {
 			const agentHostStarter = new ElectronAgentHostStarter(this.environmentMainService, this.lifecycleMainService, this.logService);
 			this._register(new AgentHostProcessManager(agentHostStarter, this.logService, this.loggerService));
-		};
-		if (this.configurationService.getValue(AgentHostEnabledSettingId)) {
-			startAgentHost();
-		} else {
-			// Allow enabling at runtime without an app restart. Disabling still
-			// requires a restart (we don't tear the utility process back down).
-			const listener = this._register(this.configurationService.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration(AgentHostEnabledSettingId) && this.configurationService.getValue(AgentHostEnabledSettingId)) {
-					listener.dispose();
-					startAgentHost();
-				}
-			}));
 		}
 
 		// External terminal

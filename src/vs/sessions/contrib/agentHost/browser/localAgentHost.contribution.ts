@@ -28,29 +28,18 @@ class LocalAgentHostContribution extends Disposable implements IWorkbenchContrib
 
 	constructor(
 		@IConfigurationService configurationService: IConfigurationService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
-		@IAgentHostSessionWorkingDirectoryResolver private readonly workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+		@IAgentHostSessionWorkingDirectoryResolver workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
 	) {
 		super();
 
-		if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-			this._enable();
-		} else {
-			// Allow enabling at runtime without an app restart. Disable still
-			// requires a restart.
-			const listener = this._register(configurationService.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration(AgentHostEnabledSettingId) && configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-					listener.dispose();
-					this._enable();
-				}
-			}));
+		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+			return;
 		}
-	}
 
-	private _enable(): void {
-		const provider = this._register(this.instantiationService.createInstance(LocalAgentHostSessionsProvider));
-		this._register(this.sessionsProvidersService.registerProvider(provider));
+		const provider = this._register(instantiationService.createInstance(LocalAgentHostSessionsProvider));
+		this._register(sessionsProvidersService.registerProvider(provider));
 
 		const resolverRegistrations = this._register(new DisposableMap<string>());
 		const registerResolvers = () => {
@@ -65,7 +54,7 @@ class LocalAgentHostContribution extends Disposable implements IWorkbenchContrib
 				if (resolverRegistrations.has(sessionType.id)) {
 					continue;
 				}
-				resolverRegistrations.set(sessionType.id, this.workingDirectoryResolver.registerResolver(sessionType.id, sessionResource => {
+				resolverRegistrations.set(sessionType.id, workingDirectoryResolver.registerResolver(sessionType.id, sessionResource => {
 					const repository = provider.getSessionByResource(sessionResource)?.workspace.get()?.repositories[0];
 					return repository?.workingDirectory ?? repository?.uri;
 				}));
