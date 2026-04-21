@@ -202,19 +202,24 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.WrongProvider, approvedOrganizations: approvedOrgs };
 		}
 
+		// Check org membership BEFORE policy-data resolution. This ensures users
+		// who are definitively NOT in an approved org are restricted immediately,
+		// even while policy data is still loading. `policyNotResolved` is reserved
+		// for users who ARE in an approved org but whose account-side policy data
+		// hasn't been fetched yet — a transient state that resolves on its own.
+		if (!approvedOrgs.includes('*')) {
+			const accountOrgs = (account.entitlementsData?.organization_login_list ?? []).map(o => o.toLowerCase());
+			const intersects = accountOrgs.some(org => approvedOrgs.includes(org));
+			if (!intersects) {
+				return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved, approvedOrganizations: approvedOrgs };
+			}
+		}
+
 		// Account-side policy data must have resolved (rules out the pre-fetch window).
+		// At this point the user IS in an approved org (or wildcard), so skipping
+		// restrictions for this reason in _updatePolicyDefinitions is safe.
 		if (this.defaultAccountService.policyData === null) {
 			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.PolicyNotResolved, approvedOrganizations: approvedOrgs };
-		}
-
-		if (approvedOrgs.includes('*')) {
-			return { state: AccountPolicyGateState.Satisfied, approvedOrganizations: approvedOrgs };
-		}
-
-		const accountOrgs = (account.entitlementsData?.organization_login_list ?? []).map(o => o.toLowerCase());
-		const intersects = accountOrgs.some(org => approvedOrgs.includes(org));
-		if (!intersects) {
-			return { state: AccountPolicyGateState.Restricted, reason: AccountPolicyGateUnsatisfiedReason.OrgNotApproved, approvedOrganizations: approvedOrgs };
 		}
 
 		return { state: AccountPolicyGateState.Satisfied, approvedOrganizations: approvedOrgs };
