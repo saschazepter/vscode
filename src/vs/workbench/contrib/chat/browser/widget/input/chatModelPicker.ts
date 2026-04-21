@@ -617,7 +617,7 @@ export class ModelPickerWidget extends Disposable {
 		this._renderLabel();
 
 		// Open picker on click (uses pointerdown on iOS where mousedown is unreliable)
-		this._register(dom.addDisposableGenericMouseDownListener(this._domNode, (e: MouseEvent) => {
+		this._register(dom.addDisposableGenericMouseDownListener(this._domNode, e => {
 			if (e.button !== 0) {
 				return; // only left click
 			}
