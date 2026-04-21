@@ -366,8 +366,8 @@ export class ComputeAutomaticInstructions {
 				if (!matchesSessionType(instruction.sessionTypes, currentSessionType)) {
 					continue;
 				}
-				entries.push(`<file>${filePath(instruction.uri)}</file>`);
 				entries.push('<instruction>');
+				entries.push(`<file>${filePath(instruction.uri)}</file>`);
 				if (instruction.description) {
 					entries.push(`<description>${instruction.description}</description>`);
 				}
