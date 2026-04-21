@@ -832,8 +832,9 @@
 		]
 	},
 	{
+		// Reason: Commercial license. License text from LICENSE.md at https://github.com/anthropics/claude-agent-sdk-typescript/blob/b9176847269af0235e4501d2e5bdf08c18647c05/LICENSE.md
 		"name": "@anthropic-ai/claude-agent-sdk",
-		"licenseDetail": [
+		"fullLicenseText": [
 			"© Anthropic PBC. All rights reserved. Use is subject to Anthropic's Commercial Terms of Service."
 		]
 	},
@@ -844,26 +845,24 @@
 		]
 	},
 	{
+		// Reason: No npm repository URL. Package is part of microsoft/dev-tunnels; MIT license from the repo root.
 		"name": "@microsoft/dev-tunnels-connections",
-		"licenseDetail": [
-			"MIT License"
-		]
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
 	},
 	{
+		// Reason: No npm repository URL. Package is part of microsoft/dev-tunnels; MIT license from the repo root.
 		"name": "@microsoft/dev-tunnels-contracts",
-		"licenseDetail": [
-			"MIT License"
-		]
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
 	},
 	{
+		// Reason: No npm repository URL. Package is part of microsoft/dev-tunnels; MIT license from the repo root.
 		"name": "@microsoft/dev-tunnels-management",
-		"licenseDetail": [
-			"MIT License"
-		]
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/microsoft/dev-tunnels/6cc48487bcc96697afc0e86a2c06b30341b43d95/LICENSE"
 	},
 	{
+		// Reason: No standalone LICENSE file; license text is in README.md at https://github.com/indutny/brorand/blob/ddc4f9344287769d7e2c2ea987d26bbeec5456b4/README.md
 		"name": "brorand",
-		"licenseDetail": [
+		"fullLicenseText": [
 			"This software is licensed under the MIT License.",
 			"",
 			"Copyright Fedor Indutny, 2014.",
@@ -876,26 +875,32 @@
 		]
 	},
 	{
+		// Reason: No LICENSE file in repository othiym23/emitter-listener. BSD-2-Clause per package.json; copyright holder is the author listed in package.json.
 		"name": "emitter-listener",
-		"licenseDetail": [
-			"BSD-2-Clause"
+		"fullLicenseText": [
+			"BSD 2-Clause License",
+			"",
+			"Copyright (c) Forrest L Norvell",
+			"All rights reserved.",
+			"",
+			"Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:",
+			"",
+			"1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.",
+			"",
+			"2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.",
+			"",
+			"THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
 		]
 	},
 	{
+		// Reason: License file is named LICENCE.md (British spelling). Pinned to v9.3.1 tag commit in MikeMcl/bignumber.js.
 		"name": "bignumber.js",
-		"licenseDetail": [
-			"Copyright © <2026> Michael Mclaughlin",
-			"",
-			"Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:",
-			"",
-			"The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.",
-			"",
-			"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
-		]
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/MikeMcl/bignumber.js/a7bc1f175c1e40db1abe8cebd52b60fc5381f487/LICENCE.md"
 	},
 	{
+		// Reason: No standalone LICENSE file; license text is in README.md at https://github.com/indutny/miller-rabin/blob/bda17a34d3b33a84a0dbb120ff7f662adea05c01/README.md
 		"name": "miller-rabin",
-		"licenseDetail": [
+		"fullLicenseText": [
 			"This software is licensed under the MIT License.",
 			"",
 			"Copyright Fedor Indutny, 2014.",
@@ -912,29 +917,8 @@
 		"fullLicenseTextUri": "https://raw.githubusercontent.com/googleapis/google-cloud-node-core/76ba85a7f55c6e82943008b4eceb07a0f58b39e1/LICENSE"
 	},
 	{
+		// Reason: npm repository URL lists crypto-browserify/randombytes but actual repo is browserify/randombytes. MIT license from LICENSE file.
 		"name": "randombytes",
-		"licenseDetail": [
-			"MIT License",
-			"",
-			"Copyright (c) 2017 crypto-browserify",
-			"",
-			"Permission is hereby granted, free of charge, to any person obtaining a copy",
-			"of this software and associated documentation files (the \"Software\"), to deal",
-			"in the Software without restriction, including without limitation the rights",
-			"to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
-			"copies of the Software, and to permit persons to whom the Software is",
-			"furnished to do so, subject to the following conditions:",
-			"",
-			"The above copyright notice and this permission notice shall be included in all",
-			"copies or substantial portions of the Software.",
-			"",
-			"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
-			"IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
-			"FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
-			"AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
-			"LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
-			"OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
-			"SOFTWARE."
-		]
+		"fullLicenseTextUri": "https://raw.githubusercontent.com/browserify/randombytes/b4eb4126fccc503e375853ca7b3e96aaa34af9e6/LICENSE"
 	}
 ]
