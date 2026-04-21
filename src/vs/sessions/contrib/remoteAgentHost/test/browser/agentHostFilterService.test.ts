@@ -75,7 +75,7 @@ suite('AgentHostFilterService', () => {
 
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
-	function createService(providers: StubSessionsProvidersService, storage = new InMemoryStorageService()) {
+	function createService(providers: StubSessionsProvidersService, storage = store.add(new InMemoryStorageService())) {
 		const instantiationService = store.add(new TestInstantiationService());
 		instantiationService.stub(ISessionsProvidersService, providers as unknown as ISessionsProvidersService);
 		instantiationService.stub(IRemoteAgentHostService, new StubRemoteAgentHostService() as unknown as IRemoteAgentHostService);
@@ -130,7 +130,7 @@ suite('AgentHostFilterService', () => {
 		const providers = new StubSessionsProvidersService();
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:4321', 'Host A') as unknown as ISessionsProvider));
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:9999', 'Host B') as unknown as ISessionsProvider));
-		const storage = new InMemoryStorageService();
+		const storage = store.add(new InMemoryStorageService());
 		const service = createService(providers, storage);
 
 		let events = 0;

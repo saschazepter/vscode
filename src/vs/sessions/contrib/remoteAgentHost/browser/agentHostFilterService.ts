@@ -141,6 +141,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 		const changed = hosts.length !== this._hosts.length
 			|| hosts.some((h, i) => h.providerId !== this._hosts[i].providerId
 				|| h.label !== this._hosts[i].label
+				|| h.address !== this._hosts[i].address
 				|| h.status !== this._hosts[i].status);
 
 		this._hosts = hosts;
