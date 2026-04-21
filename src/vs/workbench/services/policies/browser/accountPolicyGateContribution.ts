@@ -135,12 +135,13 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		const orgList = approvedOrgs.length > 0 && !approvedOrgs.includes('*')
 			? ' ' + localize('accountPolicy.notification.approvedOrgs', "Approved organizations: {0}.", approvedOrgs.join(', '))
 			: '';
+		const contactAdmin = ' ' + localize('accountPolicy.notification.contactAdmin', "Contact your administrator for more information.");
 
 		const message = reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved
-			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.") + orgList
+			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.") + orgList + contactAdmin
 			: reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved
 				? localize('accountPolicy.notification.unresolved', "Waiting for your GitHub account policy to load before AI features can be enabled\u2026")
-				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.") + orgList;
+				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.") + orgList + contactAdmin;
 
 		const handleDisposables = new DisposableStore();
 		const handle = this.notificationService.prompt(
@@ -150,10 +151,6 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 				{
 					label: localize('accountPolicy.notification.signin.action', "Sign In"),
 					run: () => this.commandService.executeCommand(DEFAULT_ACCOUNT_SIGN_IN_COMMAND),
-				},
-				{
-					label: localize('accountPolicy.notification.contactAdmin', "Contact Your Administrator"),
-					run: () => { /* informational — no-op; the label itself is the guidance */ },
 				},
 				{
 					label: localize('accountPolicy.notification.learnMore', "Learn More"),
