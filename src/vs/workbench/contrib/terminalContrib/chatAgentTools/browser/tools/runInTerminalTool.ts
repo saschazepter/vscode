@@ -1393,7 +1393,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 						resultText += `${outputAnalyzerMessage}\n`;
 					}
 					resultText += pollingResult.output;
-					resultText += this._buildInputNeededSteeringText(chatSessionResource, termId, /*mentionTimeout*/ false);
+					resultText += `\n${this._buildInputNeededSteeringText(chatSessionResource, termId, /*mentionTimeout*/ false)}`;
 				} else if (pollingResult) {
 					resultText += `\n The command is still running, with output:\n`;
 					if (outputAnalyzerMessage) {
