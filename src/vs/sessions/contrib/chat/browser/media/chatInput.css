@@ -213,14 +213,14 @@
 	position: relative;
 	z-index: 1;
 	transition: background-color 250ms ease, color 250ms ease;
-	outline: none;
-	box-shadow: none;
-	text-decoration: none;
 }
 
-.sessions-chat-send-button .monaco-button:focus,
-.sessions-chat-send-button .monaco-button:focus-visible,
-.sessions-chat-send-button .monaco-button:active {
+/* Suppress the default focus outline only when the gradient feature is on,
+	so the colorful ring isn't covered by the focus rectangle. With the
+	feature off, the standard focus border remains. */
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:focus,
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:focus-visible,
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button .monaco-button:active {
 	outline: none !important;
 	box-shadow: none !important;
 	text-decoration: none !important;
@@ -229,6 +229,22 @@
 
 .sessions-chat-send-button .monaco-button.disabled {
 	cursor: default;
+}
+
+/* Focus indicator drawn on the wrapper so it sits cleanly around the
+	22x22 button surface (the inner Button widget doesn't draw its own
+	focus border). Works in both gradient-on and gradient-off states. */
+.sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+/* Suppress the inner button's default focus outline so it doesn't double up
+	with the wrapper outline above. */
+.sessions-chat-send-button .monaco-button:focus,
+.sessions-chat-send-button .monaco-button:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
 }
 
 .monaco-workbench .sessions-chat-send-button .monaco-button .codicon[class*='codicon-'] {
@@ -280,15 +296,18 @@
 	display: none;
 }
 
-/* Hover: fill the button with a solid color that smoothly cycles through
-	the gradient palette, rather than spinning the conic gradient. */
-.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button {
+/* Hover/focus: fill the button with a solid color that smoothly cycles through
+	the gradient palette, rather than spinning the conic gradient. Focus mirrors
+	hover so keyboard users get the same delightful treatment. */
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button,
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) .monaco-button {
 	background-color: color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background));
 	animation: chat-send-button-color-cycle 4.5s ease-in-out infinite;
 	color: var(--vscode-button-foreground);
 }
 
-.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover)::before {
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover)::before,
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible)::before {
 	opacity: 0;
 }
 
@@ -314,7 +333,8 @@
 		animation: none;
 	}
 
-	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button {
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button,
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) .monaco-button {
 		animation: none;
 	}
 

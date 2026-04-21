@@ -993,7 +993,20 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 .monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-arrow-up) > .action-label.codicon-arrow-up {
-	transition: background-color 250ms ease, color 250ms ease, transform 250ms ease;
+	transition: background-color 250ms ease, color 250ms ease;
+}
+
+/* Focus indicator drawn on the action-item wrapper so it sits cleanly around
+	the button surface with a small offset, matching the new-session button. */
+.monaco-workbench .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:focus-visible) {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+	border-radius: 5px;
+}
+
+.monaco-workbench .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-arrow-up) > .action-label.codicon-arrow-up:focus,
+.monaco-workbench .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label.codicon-arrow-up) > .action-label.codicon-arrow-up:focus-visible {
+	outline: none;
 }
 
 /* Gradient ring at rest, drawn with the standard mask trick so only the
@@ -1031,22 +1044,26 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	animation: none;
 }
 
-/* Hover: fill the button with a solid color that smoothly cycles through
+/* Hover/focus: fill the button with a solid color that smoothly cycles through
 	the gradient palette, rather than spinning the conic gradient. The
 	background lives on the .action-label since that's the visible button
-	surface inside the toolbar action item. */
-.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover {
+	surface inside the toolbar action item. Focus mirrors hover so keyboard
+	users get the same delightful treatment. */
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover,
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:focus-visible {
 	background-color: color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background));
 	animation: chat-send-button-color-cycle 4.5s ease-in-out infinite;
 }
 
-/* On hover, the gradient already covers the border area so fade the ring out
+/* On hover/focus, the gradient already covers the border area so fade the ring out
 	to avoid double-painting at the edges. */
-.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:hover)::before {
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:hover)::before,
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:focus-visible)::before {
 	opacity: 0;
 }
 
-.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:hover) .codicon-arrow-up {
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:hover) .codicon-arrow-up,
+.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:focus-visible) .codicon-arrow-up {
 	color: var(--vscode-button-foreground) !important;
 }
 
@@ -1074,7 +1091,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		animation: none;
 	}
 
-	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover {
+	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover,
+	.monaco-workbench.chat-send-button-gradient-enabled .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:focus-visible {
 		animation: none;
 	}
 
