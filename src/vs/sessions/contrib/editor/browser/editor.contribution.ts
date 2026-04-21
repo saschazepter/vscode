@@ -12,6 +12,13 @@ import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextke
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
 import { EditorMaximizedContext } from '../../../common/contextkeys.js';
+import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
+import { MultiDiffEditorInput } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffEditorInput.js';
+import { CHANGES_VIEW_ID } from '../../changes/common/changes.js';
+import { ChangesViewPane } from '../../changes/browser/changesView.js';
+import { prepareMoveCopyEditors } from '../../../../workbench/browser/parts/editor/editor.js';
 
 class MaximizeMainEditorPartAction extends Action2 {
 	static readonly ID = 'workbench.action.agentSessions.maximizeMainEditorPart';
@@ -25,7 +32,7 @@ class MaximizeMainEditorPartAction extends Action2 {
 			menu: {
 				id: MenuId.EditorTitleLayout,
 				group: 'navigation',
-				order: 1,
+				order: 99,
 				when: ContextKeyExpr.and(
 					IsSessionsWindowContext,
 					EditorMaximizedContext.negate())
@@ -53,7 +60,7 @@ class RestoreMainEditorPartAction extends Action2 {
 			menu: {
 				id: MenuId.EditorTitleLayout,
 				group: 'navigation',
-				order: 1,
+				order: 99,
 				when: ContextKeyExpr.and(
 					IsSessionsWindowContext,
 					EditorMaximizedContext)
@@ -94,3 +101,54 @@ class CloseMainEditorPartAction extends Action2 {
 }
 
 registerAction2(CloseMainEditorPartAction);
+
+class OpenEditorInModalEditorAction extends Action2 {
+	static readonly ID = 'workbench.action.agentSessions.openEditorInModal';
+
+	constructor() {
+		super({
+			id: OpenEditorInModalEditorAction.ID,
+			title: localize2('openEditorInModal', "Open in Modal Editor"),
+			icon: Codicon.openInWindow,
+			f1: false,
+			menu: {
+				id: MenuId.EditorTitleLayout,
+				group: 'navigation',
+				order: 1,
+				when: IsSessionsWindowContext
+			}
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const viewsService = accessor.get(IViewsService);
+		const configurationService = accessor.get(IConfigurationService);
+		const editorGroupsService = accessor.get(IEditorGroupsService);
+
+		// Set the `workbench.editor.useModal` setting to 'all'
+		await configurationService.updateValue('workbench.editor.useModal', 'all');
+
+		// Move all editors from the active group to the modal editor
+		const activeGroup = editorGroupsService.mainPart.activeGroup;
+
+		// Check for multi-file diff editor
+		const multiFileDiffEditor = activeGroup.editors
+			.find(editor => editor instanceof MultiDiffEditorInput);
+
+		if (multiFileDiffEditor) {
+			// Reopen multi-file diff editor as the first editor in the modal editor
+			const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+			await view?.openChanges();
+
+			// Close the multi-file diff editor
+			await activeGroup.closeEditor(multiFileDiffEditor);
+		}
+
+		// Move all remaining editors to the modal editor
+		const modalPart = await editorGroupsService.createModalEditorPart();
+		const editorsToMove = prepareMoveCopyEditors(activeGroup, activeGroup.editors.slice(), true);
+		activeGroup.moveEditors(editorsToMove, modalPart.activeGroup);
+	}
+}
+
+registerAction2(OpenEditorInModalEditorAction);
