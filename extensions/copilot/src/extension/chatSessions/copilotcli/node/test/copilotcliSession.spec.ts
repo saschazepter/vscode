@@ -741,6 +741,21 @@ describe('CopilotCLISession', () => {
 			expect(compactCalled).toBe(false);
 			expect(stream.output.join('\n')).toContain('Conversation already compacted.');
 		});
+
+		it('reports nothing-to-compact on an empty session', async () => {
+			const session = await createSession();
+			const stream = new MockChatResponseStream();
+			session.attachStream(stream);
+			// Simulate a brand-new session with no conversation yet.
+			sdkSession.chatMessages = [];
+			let compactCalled = false;
+			sdkSession.compactHistory = async () => { compactCalled = true; return { success: true }; };
+
+			await session.handleRequest({ id: '', toolInvocationToken: undefined as never }, { command: 'compact', prompt: '' }, [], undefined, authInfo, CancellationToken.None);
+
+			expect(compactCalled).toBe(false);
+			expect(stream.output.join('\n')).toContain('Nothing to compact.');
+		});
 	});
 
 	describe('steering (sending messages to a busy session)', () => {

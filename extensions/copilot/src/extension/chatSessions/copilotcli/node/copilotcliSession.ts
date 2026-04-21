@@ -879,8 +879,13 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					await this._sdkSession.initializeAndValidateTools();
 					this._sdkSession.currentMode = 'interactive';
 					// Mirror the Copilot CLI SDK's own `messages.length < 2` guard to
-					// avoid its "Nothing to compact." throw after a prior compaction.
+					// avoid its "Nothing to compact." throw, while distinguishing
+					// empty sessions from already-compacted sessions in the UI.
 					const messages = await this._sdkSession.getChatMessages();
+					if (messages.length === 0) {
+						this._stream?.markdown(l10n.t('Nothing to compact.'));
+						break;
+					}
 					if (messages.length < 2) {
 						this._stream?.markdown(l10n.t('Conversation already compacted.'));
 						break;
