@@ -67,5 +67,5 @@
 /* Modal Editor Part */
 
 .agent-sessions-workbench .part.editor.modal-editor-part .modal-editor-action-container .action-label.codicon.codicon-open-in-window {
-	rotate: 180deg;
+	transform: rotate(180deg);
 }
