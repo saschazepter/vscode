@@ -8,6 +8,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -51,12 +52,13 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 	private lastInfo: IAccountPolicyGateInfo;
 
 	private readonly notificationHandle = this._register(new MutableDisposable());
-	private dismissedReason: AccountPolicyGateUnsatisfiedReason | undefined;
+	private dismissedKey: string | undefined; // tracks reason+account combo for session-scoped dismissal
 
 	constructor(
 		@IAccountPolicyGateService private readonly gateService: IAccountPolicyGateService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
+		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@ILogService private readonly logService: ILogService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -76,7 +78,6 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 
 	private apply(info: IAccountPolicyGateInfo, forceTelemetry: boolean): void {
 		const stateChanged = forceTelemetry || info.state !== this.lastInfo.state || info.reason !== this.lastInfo.reason;
-		const reasonChanged = info.reason !== this.lastInfo.reason;
 		this.lastInfo = info;
 
 		// `policyNotResolved` is transient — the user IS in an approved org but account
@@ -97,57 +98,79 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 		}
 
 		if (info.state !== AccountPolicyGateState.Restricted) {
-			// Gate is no longer restricting anything → close any open notification AND reset
-			// the "Don't Show Again" preference so a later flip back to Restricted is visible
-			// again. Also reset the in-memory dismissed-reason so reason transitions get a
-			// fresh notification.
 			this.notificationHandle.clear();
-			this.dismissedReason = undefined;
+			this.dismissedKey = undefined;
 			this.storageService.remove(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
 			return;
 		}
 
-		// `policyNotResolved` is a transient boot-time state: the user IS signed into
-		// an approved org but account-side data hasn't loaded yet. Don't show a
-		// notification for this — it will resolve on its own within seconds.
+		// `policyNotResolved` is transient — don't show a notification for it.
 		if (info.reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved) {
 			return;
 		}
 
-		// Restricted. Show or refresh the notification if the reason has changed since the
-		// last shown/dismissed message. This covers cases like NoAccount → OrgNotApproved
-		// where the user needs to see updated guidance.
-		if (reasonChanged) {
+		// Build a composite key from the reason + current account name so that
+		// swapping to a different account (while still blocked) re-shows the notification.
+		const accountName = this.defaultAccountService.currentDefaultAccount?.accountName;
+		const notificationKey = `${info.reason ?? ''}:${accountName ?? ''}`;
+
+		// If the key changed (different reason or different account), close the old
+		// notification and reset the session-scoped dismissal.
+		if (this.dismissedKey !== undefined && this.dismissedKey !== notificationKey) {
 			this.notificationHandle.clear();
-			this.dismissedReason = undefined;
+			this.dismissedKey = undefined;
 		}
-		this.maybeShowNotification(info);
+		this.maybeShowNotification(info, notificationKey);
 	}
 
-	private maybeShowNotification(info: IAccountPolicyGateInfo): void {
-		const reason = info.reason;
+	private maybeShowNotification(info: IAccountPolicyGateInfo, notificationKey: string): void {
 		if (this.notificationHandle.value) {
-			return; // already showing for this reason
+			return; // already showing for this reason+account
 		}
-		if (this.dismissedReason === reason) {
-			return; // user dismissed for this reason this session
+		if (this.dismissedKey === notificationKey) {
+			return; // user dismissed for this reason+account this session
 		}
 		const persistedDismissed = this.storageService.get(NOTIFICATION_DISMISSED_KEY, StorageScope.APPLICATION);
-		if (persistedDismissed === (reason ?? '')) {
-			return; // user clicked "Don't Show Again" for this same reason on this machine
+		if (persistedDismissed === notificationKey) {
+			return; // user clicked "Don't Show Again" for this same combo on this machine
 		}
 
+		const reason = info.reason;
+		const accountName = this.defaultAccountService.currentDefaultAccount?.accountName;
 		const approvedOrgs = info.approvedOrganizations ?? [];
-		const orgList = approvedOrgs.length > 0 && !approvedOrgs.includes('*')
-			? ' ' + localize('accountPolicy.notification.approvedOrgs', "Approved organizations: {0}.", approvedOrgs.join(', '))
-			: '';
-		const contactAdmin = ' ' + localize('accountPolicy.notification.contactAdmin', "Contact your administrator for more information.");
+		const hasConcreteOrgs = approvedOrgs.length > 0 && !approvedOrgs.includes('*');
 
-		const message = reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved
-			? localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features.") + orgList + contactAdmin
-			: reason === AccountPolicyGateUnsatisfiedReason.PolicyNotResolved
-				? localize('accountPolicy.notification.unresolved', "Waiting for your GitHub account policy to load before AI features can be enabled\u2026")
-				: localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features.") + orgList + contactAdmin;
+		// Build the message parts
+		let message: string;
+		if (reason === AccountPolicyGateUnsatisfiedReason.OrgNotApproved) {
+			if (accountName && hasConcreteOrgs) {
+				message = localize(
+					'accountPolicy.notification.orgWithAccount',
+					"The account \"{0}\" is not a member of an approved organization. Your administrator requires sign-in with a GitHub account from one of these organizations to use AI features:\n\n{1}\n\nContact your administrator for more information.",
+					accountName,
+					approvedOrgs.map(org => `\u2022 ${org}`).join('\n')
+				);
+			} else if (accountName) {
+				message = localize(
+					'accountPolicy.notification.orgWithAccountNoList',
+					"The account \"{0}\" is not a member of an approved organization. Your administrator requires sign-in with a GitHub account from an approved organization to use AI features. Contact your administrator for more information.",
+					accountName
+				);
+			} else {
+				message = localize('accountPolicy.notification.org', "Your administrator requires sign-in with a GitHub account from an approved organization to use AI features. Contact your administrator for more information.");
+			}
+		} else {
+			// noAccount / wrongProvider
+			if (hasConcreteOrgs) {
+				message = localize(
+					'accountPolicy.notification.signinWithOrgs',
+					"Your administrator requires sign-in with a GitHub account to use AI features. Approved organizations:\n\n{0}\n\nContact your administrator for more information.",
+					approvedOrgs.map(org => `\u2022 ${org}`).join('\n')
+				);
+			} else {
+				message = localize('accountPolicy.notification.signin', "Your administrator requires sign-in with an approved GitHub account to use AI features. Contact your administrator for more information.");
+			}
+		}
 
 		const handleDisposables = new DisposableStore();
 		const handle = this.notificationService.prompt(
@@ -166,12 +189,8 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			{ sticky: true }
 		);
 
-		// Capture which reason the toast is showing for so a manual close treats it as a
-		// session-scoped dismissal — but only for THIS reason. A subsequent reason change
-		// will reset `dismissedReason` and re-show.
-		const reasonAtShow = reason;
 		handleDisposables.add(handle.onDidClose(() => {
-			this.dismissedReason = reasonAtShow;
+			this.dismissedKey = notificationKey;
 			this.notificationHandle.clear();
 		}));
 		handleDisposables.add({ dispose: () => handle.close() });
