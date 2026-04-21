@@ -189,7 +189,12 @@
 .sessions-chat-send-button {
 	display: flex;
 	align-items: center;
+	justify-content: center;
 	flex-shrink: 0;
+	position: relative;
+	width: 22px;
+	height: 22px;
+	border-radius: 4px;
 }
 
 .sessions-chat-send-button .monaco-button {
@@ -202,21 +207,120 @@
 	padding: 0;
 	border-radius: 4px;
 	color: var(--vscode-icon-foreground);
-	background: transparent !important;
-	border: none !important;
+	background: transparent;
+	border: none;
 	cursor: pointer;
+	position: relative;
+	z-index: 1;
+	transition: background-color 250ms ease, color 250ms ease;
+	outline: none;
+	box-shadow: none;
+	text-decoration: none;
+}
+
+.sessions-chat-send-button .monaco-button:focus,
+.sessions-chat-send-button .monaco-button:focus-visible,
+.sessions-chat-send-button .monaco-button:active {
+	outline: none !important;
+	box-shadow: none !important;
+	text-decoration: none !important;
+	border: none !important;
 }
 
 .sessions-chat-send-button .monaco-button.disabled {
 	cursor: default;
 }
 
-.sessions-chat-send-button .monaco-button:not(.disabled):hover {
-	background-color: var(--vscode-toolbar-hoverBackground) !important;
-}
-
 .monaco-workbench .sessions-chat-send-button .monaco-button .codicon[class*='codicon-'] {
 	font-size: 14px;
+}
+
+/* Ensure no underline / link decoration ever shows under the codicon glyph
+	(the button is rendered as an <a> tag). */
+.monaco-workbench .sessions-chat-send-button a.monaco-button,
+.monaco-workbench .sessions-chat-send-button a.monaco-button:hover,
+.monaco-workbench .sessions-chat-send-button a.monaco-button:focus,
+.monaco-workbench .sessions-chat-send-button a.monaco-button:active,
+.monaco-workbench .sessions-chat-send-button a.monaco-button.disabled {
+	text-decoration: none !important;
+}
+
+/* Gradient ring at rest, drawn on the wrapper so the button's own
+	::before (codicon glyph) is not overridden. Gated behind the experimental
+	`chat.sendButton.gradient.enabled` setting via the
+	`.chat-send-button-gradient-enabled` class on the workbench root. */
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: 4px;
+	padding: 1px;
+	background: conic-gradient(from var(--chat-send-button-anim-angle, 135deg),
+		var(--vscode-chat-inputWorkingBorderColor1),
+		var(--vscode-chat-inputWorkingBorderColor2),
+		var(--vscode-chat-inputWorkingBorderColor3),
+		var(--vscode-chat-inputWorkingBorderColor2),
+		var(--vscode-chat-inputWorkingBorderColor1));
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	mask-composite: exclude;
+	pointer-events: none;
+	transition: opacity 250ms ease;
+	z-index: 2;
+	/* Idle: very slowly rotate the gradient ring. */
+	animation: chat-send-button-spin 18s linear infinite;
+}
+
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button.disabled)::before {
+	display: none;
+}
+
+/* Hover: fill the button with a solid color that smoothly cycles through
+	the gradient palette, rather than spinning the conic gradient. */
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button {
+	background-color: color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background));
+	animation: chat-send-button-color-cycle 4.5s ease-in-out infinite;
+	color: var(--vscode-button-foreground);
+}
+
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover)::before {
+	opacity: 0;
+}
+
+/* Click: outward color pulse on the wrapper. */
+.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):active)::after {
+	content: '';
+	position: absolute;
+	inset: -2px;
+	border-radius: 6px;
+	background: conic-gradient(from 135deg,
+		var(--vscode-chat-inputWorkingBorderColor1),
+		var(--vscode-chat-inputWorkingBorderColor2),
+		var(--vscode-chat-inputWorkingBorderColor3),
+		var(--vscode-chat-inputWorkingBorderColor2),
+		var(--vscode-chat-inputWorkingBorderColor1));
+	pointer-events: none;
+	animation: chat-send-button-pulse 400ms ease-out forwards;
+	z-index: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button::before {
+		animation: none;
+	}
+
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button {
+		animation: none;
+	}
+
+	.monaco-workbench.chat-send-button-gradient-enabled .sessions-chat-send-button:has(.monaco-button:not(.disabled):active)::after {
+		animation: none;
+	}
 }
 
 /* Loading spinner in toolbar */
