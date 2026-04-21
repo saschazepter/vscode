@@ -563,7 +563,13 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 	}
 
 	setForceHidden(hidden: boolean): void {
-		this.context?.value.setForceHidden(hidden);
+		if (this.context) {
+			this.context.value.setForceHidden(hidden);
+		} else {
+			// No ChatEntitlementContext (e.g. no defaultChatAgent in product.json).
+			// Set the context key directly as a fallback.
+			ChatEntitlementContextKeys.Setup.hidden.bindTo(this.contextKeyService).set(hidden);
+		}
 	}
 
 	async update(token: CancellationToken): Promise<void> {
