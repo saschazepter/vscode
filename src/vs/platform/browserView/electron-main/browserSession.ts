@@ -7,7 +7,7 @@ import { session } from 'electron';
 import { joinPath } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
-import { BrowserViewStorageScope } from '../common/browserView.js';
+import { BrowserViewStorageScope, IBrowserSessionOptions } from '../common/browserView.js';
 import { BrowserSessionTrust, IBrowserSessionTrust } from './browserSessionTrust.js';
 import { FileAccess } from '../../../base/common/network.js';
 
@@ -122,17 +122,17 @@ export class BrowserSession {
 	/**
 	 * Get or create a workspace-scope session for the given workspace.
 	 */
-	static getOrCreateWorkspace(workspaceId: string, workspaceStorageHome: URI): BrowserSession {
+	static getOrCreateWorkspace(workspaceId: string, workspaceStorageHome: URI, proxyUrl?: string): BrowserSession {
 		const storage = joinPath(workspaceStorageHome, workspaceId, 'browserStorage');
 		const electronSession = session.fromPath(storage.fsPath);
 		return BrowserSession._bySession.get(electronSession)
-			?? new BrowserSession(`workspace:${workspaceId}`, electronSession, BrowserViewStorageScope.Workspace);
+			?? new BrowserSession(`workspace:${workspaceId}`, electronSession, BrowserViewStorageScope.Workspace, proxyUrl);
 	}
 
 	/**
 	 * Get or create an ephemeral session for the given view / target id.
 	 */
-	static getOrCreateEphemeral(viewId: string, type?: string): BrowserSession {
+	static getOrCreateEphemeral(viewId: string, type?: string, proxyUrl?: string): BrowserSession {
 		if (type === 'workspace' || type === 'ephemeral') {
 			throw new Error(`Cannot create session with reserved type '${type}'`);
 		}
@@ -140,7 +140,7 @@ export class BrowserSession {
 		const sessionId = `${type ?? 'ephemeral'}:${viewId}`;
 		const electronSession = session.fromPartition(`vscode-browser-${type}${viewId}`);
 		return BrowserSession._bySession.get(electronSession)
-			?? new BrowserSession(sessionId, electronSession, BrowserViewStorageScope.Ephemeral);
+			?? new BrowserSession(sessionId, electronSession, BrowserViewStorageScope.Ephemeral, proxyUrl);
 	}
 
 	/**
@@ -151,7 +151,10 @@ export class BrowserSession {
 	 *
 	 * @param viewId   Used only for ephemeral sessions where every view
 	 *                 needs its own Electron session.
-	 * @param scope    Desired storage scope.
+	 * @param sessionOptions  Determines the storage scope and proxy configuration
+	 *                        for the session.  The `scope` determines how the
+	 *                        session `id` is derived and thus which views share
+	 *                        the session.
 	 * @param workspaceStorageHome  Root folder under which per-workspace
 	 *                              browser storage is created
 	 *                              (`IEnvironmentMainService.workspaceStorageHome`).
@@ -159,21 +162,20 @@ export class BrowserSession {
 	 */
 	static getOrCreate(
 		viewId: string,
-		scope: BrowserViewStorageScope,
+		sessionOptions: IBrowserSessionOptions,
 		workspaceStorageHome: URI,
-		workspaceId?: string,
 	): BrowserSession {
-		switch (scope) {
+		switch (sessionOptions.scope) {
 			case BrowserViewStorageScope.Global:
 				return BrowserSession.getOrCreateGlobal();
 			case BrowserViewStorageScope.Workspace:
-				if (workspaceId) {
-					return BrowserSession.getOrCreateWorkspace(workspaceId, workspaceStorageHome);
+				if (sessionOptions.workspaceId) {
+					return BrowserSession.getOrCreateWorkspace(sessionOptions.workspaceId, workspaceStorageHome, sessionOptions.proxyUrl);
 				}
 			// fallthrough -- no workspace context -> ephemeral
 			case BrowserViewStorageScope.Ephemeral:
 			default:
-				return BrowserSession.getOrCreateEphemeral(viewId);
+				return BrowserSession.getOrCreateEphemeral(viewId, undefined, sessionOptions.proxyUrl);
 		}
 	}
 
@@ -182,6 +184,9 @@ export class BrowserSession {
 	// #region Instance
 
 	private readonly _trust: BrowserSessionTrust;
+
+	/** Whether this session routes traffic through a remote proxy. */
+	readonly isRemoteSession: boolean;
 
 	private constructor(
 		/**
@@ -194,9 +199,12 @@ export class BrowserSession {
 		readonly electronSession: Electron.Session,
 		/** Resolved storage scope. */
 		readonly storageScope: BrowserViewStorageScope,
+		/** Proxy URL, if remote. */
+		proxyUrl?: string,
 	) {
+		this.isRemoteSession = !!proxyUrl;
 		this._trust = new BrowserSessionTrust(this);
-		this.configure();
+		this.configure(proxyUrl);
 		BrowserSession.knownSessions.add(electronSession);
 		BrowserSession._bySession.set(electronSession, this);
 		BrowserSession._byId.set(id, new WeakRef(this));
@@ -221,7 +229,7 @@ export class BrowserSession {
 	/**
 	 * Apply the permission policy and preload scripts to the session.
 	 */
-	private configure(): void {
+	private configure(proxyUrl?: string): void {
 		this.electronSession.setPermissionRequestHandler((_webContents, permission, callback) => {
 			return callback(allowedPermissions.has(permission));
 		});
@@ -232,6 +240,12 @@ export class BrowserSession {
 			type: 'frame',
 			filePath: FileAccess.asFileUri('vs/platform/browserView/electron-browser/preload-browserView.js').fsPath
 		});
+		if (proxyUrl) {
+			this.electronSession.setProxy({
+				proxyRules: proxyUrl,
+				proxyBypassRules: '<-loopback>'
+			});
+		}
 	}
 
 	/**

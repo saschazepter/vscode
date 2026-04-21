@@ -7,7 +7,7 @@ import { Event } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
-import { IBrowserViewBounds, IBrowserViewState, IBrowserViewService, BrowserViewStorageScope, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, BrowserViewCommandId, IElementData } from '../common/browserView.js';
+import { IBrowserViewBounds, IBrowserViewState, IBrowserViewService, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, BrowserViewCommandId, IElementData, IBrowserSessionOptions } from '../common/browserView.js';
 import { clipboard, Menu, MenuItem } from 'electron';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
@@ -61,9 +61,9 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		super();
 	}
 
-	async getOrCreateBrowserView(id: string, scope: BrowserViewStorageScope, workspaceId?: string): Promise<IBrowserViewState> {
+	async getOrCreateBrowserView(id: string, sessionOptions: IBrowserSessionOptions): Promise<IBrowserViewState> {
 		if (this.browserViews.has(id)) {
-			// Note: scope will be ignored if the view already exists.
+			// Note: session options will be ignored if the view already exists.
 			// Browser views cannot be moved between sessions after creation.
 			const view = this.browserViews.get(id)!;
 			return view.getState();
@@ -71,9 +71,8 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 		const browserSession = BrowserSession.getOrCreate(
 			id,
-			scope,
+			sessionOptions,
 			this.environmentMainService.workspaceStorageHome,
-			workspaceId
 		);
 
 		const view = this.createBrowserView(id, browserSession);

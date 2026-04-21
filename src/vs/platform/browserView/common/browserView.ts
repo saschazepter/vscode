@@ -96,6 +96,7 @@ export interface IBrowserViewState {
 	certificateError: IBrowserViewCertificateError | undefined;
 	storageScope: BrowserViewStorageScope;
 	browserZoomIndex: number;
+	isRemoteSession: boolean;
 }
 
 export interface IBrowserViewNavigationEvent {
@@ -193,6 +194,15 @@ export enum BrowserViewStorageScope {
 	Ephemeral = 'ephemeral'
 }
 
+export interface IBrowserSessionOptions {
+	/** Storage / data-isolation scope for the session. */
+	scope: BrowserViewStorageScope;
+	/** Workspace identifier — required when `scope` is `'workspace'`. */
+	workspaceId?: string;
+	/** Tunnel proxy URL for the session (only used for workspace and ephemeral scopes). */
+	proxyUrl?: string;
+}
+
 export const ipcBrowserViewChannelName = 'browserView';
 
 /**
@@ -232,10 +242,9 @@ export interface IBrowserViewService {
 	/**
 	 * Get or create a browser view instance
 	 * @param id The browser view identifier
-	 * @param scope The storage scope for the browser view. Ignored if the view already exists.
-	 * @param workspaceId Workspace identifier for session isolation. Only used if scope is 'workspace'.
+	 * @param sessionOptions Options for creating and configuring the session. Ignored if the view already exists.
 	 */
-	getOrCreateBrowserView(id: string, scope: BrowserViewStorageScope, workspaceId?: string): Promise<IBrowserViewState>;
+	getOrCreateBrowserView(id: string, sessionOptions: IBrowserSessionOptions): Promise<IBrowserViewState>;
 
 	/**
 	 * Destroy a browser view instance

@@ -11,7 +11,11 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { Event } from '../../../../base/common/event.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
+import { ISharedProcessTunnelProxyService } from '../../../../platform/tunnel/common/sharedProcessTunnelProxyService.js';
+import { IRemoteAuthorityResolverService } from '../../../../platform/remote/common/remoteAuthorityResolver.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -25,12 +29,17 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 	private readonly _browserViewService: IBrowserViewService;
 	private readonly _models = new Map<string, IBrowserViewModel>();
+	private _remoteProxyPromise: Promise<string | undefined> | undefined;
 
 	constructor(
 		@IMainProcessService mainProcessService: IMainProcessService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IKeybindingService private readonly keybindingService: IKeybindingService
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@ISharedProcessTunnelProxyService private readonly tunnelProxyService: ISharedProcessTunnelProxyService,
+		@IRemoteAuthorityResolverService private readonly remoteAuthorityResolverService: IRemoteAuthorityResolverService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
@@ -38,6 +47,56 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 		this.sendKeybindings();
 		this._register(this.keybindingService.onDidUpdateKeybindings(() => this.sendKeybindings()));
+		this._register(toDisposable(() => {
+			const authority = this.environmentService.remoteAuthority;
+			if (this._remoteProxyPromise && authority) {
+				this.tunnelProxyService.stop(authority);
+			}
+		}));
+	}
+
+	private _getRemoteProxy(): Promise<string | undefined> {
+		if (!this._remoteProxyPromise) {
+			this._remoteProxyPromise = this._startRemoteProxy();
+		}
+		return this._remoteProxyPromise;
+	}
+
+	private async _startRemoteProxy(): Promise<string | undefined> {
+		const remoteAuthority = this.environmentService.remoteAuthority;
+		if (!remoteAuthority) {
+			return undefined;
+		}
+
+		try {
+			const proxyUrl = await this.tunnelProxyService.start(remoteAuthority);
+			this.logService.info(`[BrowserViewWorkbenchService] Tunnel proxy started for remote authority '${remoteAuthority}'`);
+
+			// Push the resolved address to the proxy
+			const connectionData = this.remoteAuthorityResolverService.getConnectionData(remoteAuthority);
+			if (connectionData) {
+				await this.tunnelProxyService.setAddress(remoteAuthority, {
+					connectTo: connectionData.connectTo,
+					connectionToken: connectionData.connectionToken
+				});
+			}
+
+			// Keep address up to date on reconnections
+			this._register(this.remoteAuthorityResolverService.onDidChangeConnectionData(() => {
+				const data = this.remoteAuthorityResolverService.getConnectionData(remoteAuthority);
+				if (data) {
+					this.tunnelProxyService.setAddress(remoteAuthority, {
+						connectTo: data.connectTo,
+						connectionToken: data.connectionToken
+					});
+				}
+			}));
+
+			return proxyUrl;
+		} catch (err) {
+			this.logService.error('[BrowserViewWorkbenchService] Failed to start tunnel proxy:', err);
+			return undefined;
+		}
 	}
 
 	async getOrCreateBrowserViewModel(id: string): Promise<IBrowserViewModel> {
@@ -68,7 +127,8 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 		// Initialize the model with current state
 		try {
-			await model.initialize(create);
+			const proxyUrl = create ? await this._getRemoteProxy() : undefined;
+			await model.initialize(create, proxyUrl);
 		} catch (e) {
 			this._models.delete(id);
 			throw e;

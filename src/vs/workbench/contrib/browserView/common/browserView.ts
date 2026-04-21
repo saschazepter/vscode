@@ -33,6 +33,7 @@ import {
 	IBrowserViewVisibilityEvent,
 	IBrowserViewCertificateError,
 	IElementData,
+	IBrowserSessionOptions,
 	browserZoomDefaultIndex,
 	browserZoomFactors
 } from '../../../../platform/browserView/common/browserView.js';
@@ -173,6 +174,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly certificateError: IBrowserViewCertificateError | undefined;
 	readonly storageScope: BrowserViewStorageScope;
 	readonly sharedWithAgent: boolean;
+	readonly isRemoteSession: boolean;
 	readonly zoomFactor: number;
 	readonly canZoomIn: boolean;
 	readonly canZoomOut: boolean;
@@ -192,7 +194,7 @@ export interface IBrowserViewModel extends IDisposable {
 	readonly onDidClose: Event<void>;
 	readonly onWillDispose: Event<void>;
 
-	initialize(create: boolean): Promise<void>;
+	initialize(create: boolean, proxyUrl?: string): Promise<void>;
 	setInitialURL(url: string, title?: string, favicon?: string): void;
 
 	layout(bounds: IBrowserViewBounds): Promise<void>;
@@ -233,6 +235,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	private _error: IBrowserViewLoadError | undefined = undefined;
 	private _certificateError: IBrowserViewCertificateError | undefined = undefined;
 	private _storageScope: BrowserViewStorageScope = BrowserViewStorageScope.Ephemeral;
+	private _isRemoteSession: boolean = false;
 	private _isEphemeral: boolean = false;
 	private _zoomHost: string | undefined = undefined;
 	private _sharedWithAgent: boolean = false;
@@ -276,6 +279,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	get error(): IBrowserViewLoadError | undefined { return this._error; }
 	get certificateError(): IBrowserViewCertificateError | undefined { return this._certificateError; }
 	get storageScope(): BrowserViewStorageScope { return this._storageScope; }
+	get isRemoteSession(): boolean { return this._isRemoteSession; }
 	get sharedWithAgent(): boolean { return this._sharedWithAgent; }
 	get zoomFactor(): number { return browserZoomFactors[this._browserZoomIndex]; }
 	get canZoomIn(): boolean { return this._browserZoomIndex < browserZoomFactors.length - 1; }
@@ -330,10 +334,10 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 	 * @param create Whether to create the browser view if it doesn't already exist.
 	 * @throws If the browser view doesn't exist and `create` is false, or if initialization fails
 	 */
-	async initialize(create: boolean): Promise<void> {
-		const dataStorageSetting = this.configurationService.getValue<BrowserViewStorageScope>(
+	async initialize(create: boolean, proxyUrl?: string): Promise<void> {
+		let dataStorage = this.configurationService.getValue<BrowserViewStorageScope | 'default'>(
 			'workbench.browser.dataStorage'
-		) ?? BrowserViewStorageScope.Global;
+		) ?? 'default';
 
 		// Wait for trust initialization before determining storage scope
 		await this.workspaceTrustManagementService.workspaceTrustInitialized;
@@ -341,12 +345,26 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 			this.workspaceContextService.getWorkbenchState() !== WorkbenchState.EMPTY &&
 			!this.workspaceTrustManagementService.isWorkspaceTrusted();
 
-		// Always use ephemeral sessions for untrusted workspaces
-		const dataStorage = isWorkspaceUntrusted ? BrowserViewStorageScope.Ephemeral : dataStorageSetting;
+		if (isWorkspaceUntrusted) {
+			// Always use ephemeral sessions and no proxy for untrusted workspaces
+			dataStorage = BrowserViewStorageScope.Ephemeral;
+			proxyUrl = undefined;
+		} else if (dataStorage === 'default') {
+			// When proxying, default to workspace-scoped sessions
+			// to avoid polluting the global session with remote site data.
+			dataStorage = proxyUrl
+				? BrowserViewStorageScope.Workspace
+				: BrowserViewStorageScope.Global;
+		}
 
-		const workspaceId = this.workspaceContextService.getWorkspace().id;
+		const sessionOptions: IBrowserSessionOptions = {
+			scope: dataStorage,
+			workspaceId: this.workspaceContextService.getWorkspace().id,
+			proxyUrl,
+		};
+
 		const state = create
-			? await this.browserViewService.getOrCreateBrowserView(this.id, dataStorage, workspaceId)
+			? await this.browserViewService.getOrCreateBrowserView(this.id, sessionOptions)
 			: await this.browserViewService.getState(this.id);
 
 		this._url = state.url;
@@ -362,6 +380,7 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		this._error = state.lastError;
 		this._certificateError = state.certificateError;
 		this._storageScope = state.storageScope;
+		this._isRemoteSession = state.isRemoteSession;
 		this._sharedWithAgent = await this.playwrightService.isPageTracked(this.id);
 		this._browserZoomIndex = state.browserZoomIndex;
 

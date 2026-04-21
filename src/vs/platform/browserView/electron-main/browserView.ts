@@ -427,7 +427,8 @@ export class BrowserView extends Disposable {
 			lastError: this._lastError,
 			certificateError: this.session.trust.getCertificateError(url),
 			storageScope: this.session.storageScope,
-			browserZoomIndex: this._browserZoomIndex
+			browserZoomIndex: this._browserZoomIndex,
+			isRemoteSession: this.session.isRemoteSession
 		};
 	}
 
