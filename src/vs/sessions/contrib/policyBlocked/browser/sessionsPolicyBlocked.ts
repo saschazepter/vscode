@@ -113,7 +113,7 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		const description = append(card, $('p'));
 		if (options.accountName) {
 			append(description, document.createTextNode(
-				localize('accountGate.descriptionWithAccount', "The account \"{0}\" is not a member of an approved organization.", options.accountName)
+				localize('accountGate.descriptionWithAccount', "The account \"{0}\" is not a member of an approved organization. Sign into an approved GitHub account to use Agents.", options.accountName)
 			));
 		} else {
 			append(description, document.createTextNode(

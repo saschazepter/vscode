@@ -170,14 +170,14 @@ export class AccountPolicyGateContribution extends Disposable implements IWorkbe
 			if (accountName && hasConcreteOrgs) {
 				message = localize(
 					'accountPolicy.notification.orgWithAccount',
-					"The account \"{0}\" is not a member of an approved organization ({1}). Contact your administrator for more information.",
+					"The account \"{0}\" is not a member of an approved organization ({1}). Sign into an approved GitHub account to use AI features. Contact your administrator for more information.",
 					accountName,
 					orgList
 				);
 			} else if (accountName) {
 				message = localize(
 					'accountPolicy.notification.orgWithAccountNoList',
-					"The account \"{0}\" is not a member of an approved organization. Contact your administrator for more information.",
+					"The account \"{0}\" is not a member of an approved organization. Sign into an approved GitHub account to use AI features. Contact your administrator for more information.",
 					accountName
 				);
 			} else {
