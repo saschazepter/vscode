@@ -16,15 +16,23 @@ class TerminalResizeDimensionsOverlayContribution extends Disposable implements 
 	static readonly ID = 'terminal.resizeDimensionsOverlay';
 
 	private readonly _overlay: MutableDisposable<IDisposable> = this._register(new MutableDisposable());
+	private _xterm: (IXtermTerminal & { raw: RawXtermTerminal }) | undefined;
+	private _ptyReady = false;
 
 	constructor(
 		private readonly _ctx: ITerminalContributionContext,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 	) {
 		super();
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(TerminalResizeDimensionsOverlaySettingId.Enabled)) {
+				this._updateOverlay();
+			}
+		}));
 	}
 
 	xtermOpen(xterm: IXtermTerminal & { raw: RawXtermTerminal }): void {
+		this._xterm = xterm;
 		// Initialize resize dimensions overlay
 		this._ctx.processManager.ptyProcessReady.then(() => {
 			// Wait a second to avoid resize events during startup like when opening a terminal or
@@ -33,12 +41,24 @@ class TerminalResizeDimensionsOverlayContribution extends Disposable implements 
 				if (this._store.isDisposed) {
 					return;
 				}
-				if (this._configurationService.getValue<boolean>(TerminalResizeDimensionsOverlaySettingId.Enabled) === false) {
-					return;
-				}
-				this._overlay.value = new TerminalResizeDimensionsOverlay(this._ctx.instance.domElement, xterm);
+				this._ptyReady = true;
+				this._updateOverlay();
 			});
 		});
+	}
+
+	private _updateOverlay(): void {
+		if (!this._ptyReady || !this._xterm) {
+			return;
+		}
+		const enabled = this._configurationService.getValue<boolean>(TerminalResizeDimensionsOverlaySettingId.Enabled) !== false;
+		if (enabled) {
+			if (!this._overlay.value) {
+				this._overlay.value = new TerminalResizeDimensionsOverlay(this._ctx.instance.domElement, this._xterm);
+			}
+		} else {
+			this._overlay.clear();
+		}
 	}
 }
 registerTerminalContribution(TerminalResizeDimensionsOverlayContribution.ID, TerminalResizeDimensionsOverlayContribution);
