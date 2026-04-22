@@ -195,7 +195,16 @@ if [[ -n "$GREP_PATTERN" ]]; then
 	GREP_ARGS=(--grep "$GREP_PATTERN")
 fi
 
-API_TESTS_EXTRA_ARGS="--disable-telemetry --disable-experiments --skip-welcome --skip-release-notes --crash-reporter-directory=$VSCODECRASHDIR --logsPath=$VSCODELOGSDIR --no-cached-data --disable-updates --use-inmemory-secretstorage --disable-extensions --disable-workspace-trust --user-data-dir=$VSCODEUSERDATADIR"
+# Auto-enable --background when invoked by an agent (e.g. Copilot CLI) so
+# that test runs don't steal focus from the developer. Humans running these
+# scripts directly still get the foreground window. Set
+# VSCODE_TEST_NO_BACKGROUND=1 to opt out.
+BACKGROUND_ARG=""
+if [[ -z "$VSCODE_TEST_NO_BACKGROUND" && -n "$COPILOT_CLI" ]]; then
+	BACKGROUND_ARG="--background"
+fi
+
+API_TESTS_EXTRA_ARGS="$BACKGROUND_ARG --disable-telemetry --disable-experiments --skip-welcome --skip-release-notes --crash-reporter-directory=$VSCODECRASHDIR --logsPath=$VSCODELOGSDIR --no-cached-data --disable-updates --use-inmemory-secretstorage --disable-extensions --disable-workspace-trust --user-data-dir=$VSCODEUSERDATADIR"
 
 if [ -z "$INTEGRATION_TEST_APP_NAME" ]; then
 	kill_app() { true; }

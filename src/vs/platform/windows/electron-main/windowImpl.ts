@@ -52,6 +52,14 @@ export interface IWindowCreationOptions {
 	readonly state: IWindowState;
 	readonly extensionDevelopmentPath?: string[];
 	readonly isExtensionTestHost?: boolean;
+	/**
+	 * When true, the window is created hidden and then shown via
+	 * `showInactive()` so it does not steal focus from the user.
+	 * Renderer background throttling is also disabled so the window
+	 * remains responsive while unfocused (important for tests/agents
+	 * driving an unfocused window).
+	 */
+	readonly background?: boolean;
 }
 
 interface ITouchBarSegment extends electron.SegmentedControlSegment {
@@ -136,6 +144,13 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 	//#endregion
 
 	abstract readonly id: number;
+
+	/**
+	 * Set by subclasses when the window was launched with `--background`.
+	 * Used by `applyState`, `focus()` and other code paths to suppress
+	 * activation and focus stealing.
+	 */
+	protected background = false;
 
 	protected _lastFocusTime = Date.now(); // window is shown on creation so take current time
 	get lastFocusTime(): number { return this._lastFocusTime; }
@@ -301,7 +316,16 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 
 			// to reduce flicker from the default window size
 			// to maximize or fullscreen, we only show after
-			this._win?.show();
+			if (this.background) {
+				this._win?.showInactive();
+			} else {
+				this._win?.show();
+			}
+		} else if (this.background) {
+			// Non-maximized background launches: the BrowserWindow was created
+			// with `show: false` so it does not activate. Show it now without
+			// activating.
+			this._win?.showInactive();
 		}
 	}
 
@@ -693,6 +717,8 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 	) {
 		super(configurationService, stateService, environmentMainService, logService);
 
+		this.background = !!config.background;
+
 		//#region create browser window
 		{
 			this.configObjectUrl = this._register(protocolMainService.createIPCObjectUrl<INativeWindowConfiguration>());
@@ -710,8 +736,14 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 			if ((process as INodeProcess).isEmbeddedApp) {
 				webPreferences.backgroundThrottling = false; // disable for sub-app
 			}
+			if (this.background) {
+				// Keep the renderer running at full speed even though the window
+				// will be unfocused; otherwise tests/agents driving an unfocused
+				// background window get noticeably throttled.
+				webPreferences.backgroundThrottling = false;
+			}
 
-			const options = instantiationService.invokeFunction(defaultBrowserWindowOptions, this.windowState, undefined, webPreferences);
+			const options = instantiationService.invokeFunction(defaultBrowserWindowOptions, this.windowState, { background: this.background }, webPreferences);
 
 			// Create the browser window
 			mark('code/willCreateCodeBrowserWindow');
@@ -724,7 +756,9 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 			// Apply some state after window creation
 			this.applyState(this.windowState, hasMultipleDisplays);
 
-			this._lastFocusTime = Date.now(); // since we show directly, we need to set the last focus time too
+			if (!this.background) {
+				this._lastFocusTime = Date.now(); // since we show directly, we need to set the last focus time too
+			}
 		}
 		//#endregion
 
@@ -1225,8 +1259,15 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 		if (!this.environmentMainService.isBuilt && !this.environmentMainService.extensionTestsLocationURI) {
 			this._register(new RunOnceScheduler(() => {
 				if (this._win && !this._win.isVisible() && !this._win.isMinimized()) {
-					this._win.show();
-					this.focus({ mode: FocusMode.Force });
+					if (this.background) {
+						// Honor --background even on the dev "did not open in N seconds"
+						// fallback: still surface the window (with devtools) so the
+						// developer can diagnose, but don't steal focus.
+						this._win.showInactive();
+					} else {
+						this._win.show();
+						this.focus({ mode: FocusMode.Force });
+					}
 					this._win.webContents.openDevTools();
 				}
 			}, 10000)).schedule();

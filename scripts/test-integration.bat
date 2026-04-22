@@ -147,7 +147,14 @@ if not defined SUITE_FILTER if defined HAS_FILTER (
 :: Forward grep pattern to extension test runners
 if defined GREP_PATTERN set "MOCHA_GREP=%GREP_PATTERN%"
 
-set API_TESTS_EXTRA_ARGS=--disable-telemetry --disable-experiments --skip-welcome --skip-release-notes --crash-reporter-directory=%VSCODECRASHDIR% --logsPath=%VSCODELOGSDIR% --no-cached-data --disable-updates --use-inmemory-secretstorage --disable-extensions --disable-workspace-trust --user-data-dir=%VSCODEUSERDATADIR%
+REM Auto-enable --background when invoked by an agent (e.g. Copilot CLI) so
+REM that test runs don't steal focus from the developer. Humans running these
+REM scripts directly still get the foreground window. Set
+REM VSCODE_TEST_NO_BACKGROUND=1 to opt out.
+set BACKGROUND_ARG=
+if not defined VSCODE_TEST_NO_BACKGROUND if defined COPILOT_CLI set BACKGROUND_ARG=--background
+
+set API_TESTS_EXTRA_ARGS=%BACKGROUND_ARG% --disable-telemetry --disable-experiments --skip-welcome --skip-release-notes --crash-reporter-directory=%VSCODECRASHDIR% --logsPath=%VSCODELOGSDIR% --no-cached-data --disable-updates --use-inmemory-secretstorage --disable-extensions --disable-workspace-trust --user-data-dir=%VSCODEUSERDATADIR%
 
 call :should_run_suite api-folder || goto skip_api_folder
 echo.

@@ -79,7 +79,9 @@ export class LaunchMainService implements ILaunchMainService {
 		// is not in the foreground and since we got instructed
 		// to open a new window from another instance, we ensure
 		// that the app has focus.
-		if (isMacintosh) {
+		// Skipped when the second instance was launched with
+		// `--background` so it does not steal focus.
+		if (isMacintosh && !args.background) {
 			app.focus({ steal: true });
 		}
 
