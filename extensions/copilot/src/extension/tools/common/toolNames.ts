@@ -163,8 +163,17 @@ export function getContributedToolName(name: string | ToolName): string | Contri
 	return toolNameToContributedToolNames.get(name as ToolName) ?? name;
 }
 
+/**
+ * Maps alternative tool names (e.g. from alternativeDefinition) back to their canonical ToolName.
+ * When a tool is presented to the LLM under a different name, the LLM will call back with that
+ * alternative name, and we need to resolve it back to the registered ToolName.
+ */
+const toolNameAliases = new Map<string, ToolName>([
+	['explore_subagent', ToolName.SearchSubagent],
+]);
+
 export function getToolName(name: string | ContributedToolName): string | ToolName {
-	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? name;
+	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? toolNameAliases.get(name) ?? name;
 }
 
 export function mapContributedToolNamesInString(str: string): string {
