@@ -894,8 +894,14 @@ export class ModelPickerWidget extends Disposable {
 			domChildren.push(ctx);
 		}
 		if (bulbsFilled > 0) {
-			// Collapsed picker label only shows the *filled* bulbs (no empty placeholders).
-			domChildren.push(createBulbsElement(bulbsFilled, bulbsFilled));
+			// Collapsed picker label shows the thinking-effort level as text (Low/Medium/High)
+			// rather than bulb icons; the bulb scale is reserved for the dropdown rows.
+			const effortText = bulbsFilled >= 3 ? localize('chat.modelPicker.effortHigh', "High")
+				: bulbsFilled === 2 ? localize('chat.modelPicker.effortMedium', "Medium")
+					: localize('chat.modelPicker.effortLow', "Low");
+			const effort = dom.$('span.chat-model-effort-label');
+			effort.textContent = effortText;
+			domChildren.push(effort);
 		}
 
 		// Badge icon between label and chevron
