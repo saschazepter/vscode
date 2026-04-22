@@ -86,6 +86,7 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			// Use discovery info to get properly parsed names/descriptions.
 			if (disabledUris.size > 0) {
 				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.agent, token);
+				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
 				for (const file of discoveryInfo.files) {
 					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
 						items.push({
@@ -94,6 +95,19 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 							name: file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)),
 							description: file.promptPath.description,
 							storage: file.promptPath.storage,
+							enabled: false,
+						});
+					}
+				}
+				// Fallback: add disabled agents not found in discovery info
+				for (const file of allAgentFiles) {
+					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
+						items.push({
+							uri: file.uri,
+							type: promptType,
+							name: file.name || getFriendlyName(basename(file.uri)),
+							description: file.description,
+							storage: file.storage,
 							enabled: false,
 						});
 					}
@@ -120,13 +134,14 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					name: skillName,
 					description: skill.description,
 					storage: skill.storage,
-					enabled: true,
+					enabled: !disabledUris.has(skill.uri),
 					badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
 					badgeTooltip: uiTooltip,
 				});
 			}
 			if (disabledUris.size > 0) {
 				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.skill, token);
+				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
 				for (const file of discoveryInfo.files) {
 					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
 						const disabledName = file.promptPath.name || basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri);
@@ -141,6 +156,19 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 							enabled: false,
 							badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
 							badgeTooltip: uiTooltip,
+						});
+					}
+				}
+				// Fallback: add disabled skills not found in discovery info
+				for (const file of allSkillFiles) {
+					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
+						items.push({
+							uri: file.uri,
+							type: promptType,
+							name: file.name || basename(dirname(file.uri)) || basename(file.uri),
+							description: file.description,
+							storage: file.storage,
+							enabled: false,
 						});
 					}
 				}
@@ -169,6 +197,7 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			// Use discovery info to get properly parsed names/descriptions.
 			if (disabledUris.size > 0) {
 				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.prompt, token);
+				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
 				for (const file of discoveryInfo.files) {
 					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
 						items.push({
@@ -181,6 +210,20 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 						});
 					}
 				}
+				// Fallback: add disabled prompts not found in discovery info
+				const allPromptFiles = await this.promptsService.listPromptFiles(PromptsType.prompt, token);
+				for (const file of allPromptFiles) {
+					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
+						items.push({
+							uri: file.uri,
+							type: promptType,
+							name: file.name || getFriendlyName(basename(file.uri)),
+							description: file.description,
+							storage: file.storage,
+							enabled: false,
+						});
+					}
+				}
 			}
 		} else if (promptType === PromptsType.hook) {
 			await this.fetchPromptServiceHooks(items, disabledUris, promptType);
@@ -188,7 +231,30 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			await this.fetchPromptServiceInstructions(items, extensionInfoByUri, disabledUris, promptType);
 		}
 
-		return this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType);
+		// Safety net: ensure every disabled URI appears in the items list.
+		// Some disabled files may not be found in discovery info or listPromptFiles
+		// (e.g. when the file's source folder is no longer in the configured locations).
+		if (disabledUris.size > 0) {
+			const itemUris = new ResourceSet(items.map(i => i.uri));
+			for (const uri of disabledUris) {
+				const alreadyInItems = itemUris.has(uri);
+				const existingItem = alreadyInItems ? items.find(i => i.uri.toString() === uri.toString()) : undefined;
+				if (!alreadyInItems) {
+					items.push({
+						uri,
+						type: promptType,
+						name: getFriendlyName(basename(uri)),
+						enabled: false,
+					});
+				} else if (existingItem && existingItem.enabled !== false) {
+					// Item exists but is marked as enabled despite being in disabled list — fix it
+					(existingItem as { enabled?: boolean }).enabled = false;
+				}
+			}
+		}
+
+		const filtered = this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType);
+		return filtered;
 	}
 
 	private async fetchPromptServiceHooks(items: ICustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {

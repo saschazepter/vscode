@@ -121,7 +121,6 @@ interface IMcpServerItemTemplateData {
 	readonly description: HTMLElement;
 	readonly status: HTMLElement;
 	readonly bridgedBadge: HTMLElement;
-	readonly disabledBadge: HTMLElement;
 	readonly disposables: DisposableStore;
 }
 
@@ -152,14 +151,11 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpB
 		const bridgedBadge = DOM.append(nameRow, $('.inline-badge.mcp-bridged-badge'));
 		bridgedBadge.textContent = localize('bridged', "Bridged");
 
-		const disabledBadge = DOM.append(nameRow, $('.inline-badge.disabled-badge'));
-		disabledBadge.textContent = localize('disabled', "Disabled");
-
 		const description = DOM.append(details, $('.mcp-server-description'));
 
 		const status = DOM.append(container, $('.mcp-server-status'));
 
-		return { container, typeIcon, name, description, status, bridgedBadge, disabledBadge, disposables: new DisposableStore() };
+		return { container, typeIcon, name, description, status, bridgedBadge, disposables: new DisposableStore() };
 	}
 
 	renderElement(element: IMcpServerItemEntry | IMcpBuiltinItemEntry, index: number, templateData: IMcpServerItemTemplateData): void {
@@ -220,11 +216,13 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpB
 			const connectionState = server?.connectionState.read(reader);
 			templateData.container.classList.toggle('disabled', disabled);
 
-			// Show inline disabled badge, hide right-side status when disabled
-			templateData.disabledBadge.style.display = disabled ? 'inline' : 'none';
+			// Swap icon to eye-closed when disabled
+			templateData.typeIcon.className = 'mcp-server-icon';
 			if (disabled) {
+				templateData.typeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.eyeClosed));
 				templateData.status.style.display = 'none';
 			} else {
+				templateData.typeIcon.classList.add(...ThemeIcon.asClassNameArray(mcpServerIcon));
 				this.updateStatus(templateData.status, connectionState?.state);
 			}
 		}));

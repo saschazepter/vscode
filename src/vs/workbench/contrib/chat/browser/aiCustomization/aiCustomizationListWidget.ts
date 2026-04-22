@@ -126,7 +126,6 @@ interface IAICustomizationItemTemplateData {
 	readonly typeIcon: HTMLElement;
 	readonly nameLabel: HighlightedLabel;
 	readonly badge: HTMLElement;
-	readonly disabledBadge: HTMLElement;
 	readonly statusIcon: HTMLElement;
 	readonly description: HighlightedLabel;
 	readonly disposables: DisposableStore;
@@ -259,7 +258,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		const nameRow = DOM.append(textContainer, $('.item-name-row'));
 		const nameLabel = disposables.add(new HighlightedLabel(DOM.append(nameRow, $('.item-name'))));
 		const badge = DOM.append(nameRow, $('.inline-badge.item-badge'));
-		const disabledBadge = DOM.append(nameRow, $('.inline-badge.item-badge.disabled-badge'));
 		const statusIcon = DOM.append(nameRow, $('.item-status-icon'));
 		const description = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-description'))));
 
@@ -277,7 +275,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			typeIcon,
 			nameLabel,
 			badge,
-			disabledBadge,
 			statusIcon,
 			description,
 			disposables,
@@ -308,9 +305,13 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			templateData.syncCheckboxContainer.replaceChildren();
 		}
 
-		// Type icon: use per-item override or fall back to prompt type
+		// Type icon: use eye-closed for disabled items, per-item override, or fall back to prompt type
 		templateData.typeIcon.className = 'item-type-icon';
-		templateData.typeIcon.classList.add(...ThemeIcon.asClassNameArray(element.typeIcon ?? promptTypeToIcon(element.promptType)));
+		if (element.disabled) {
+			templateData.typeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.eyeClosed));
+		} else {
+			templateData.typeIcon.classList.add(...ThemeIcon.asClassNameArray(element.typeIcon ?? promptTypeToIcon(element.promptType)));
+		}
 
 		// Hover tooltip: name + source + badge context + plugin source
 		templateData.elementDisposables.add(this.hoverService.setupDelayedHover(templateData.container, () => {
@@ -348,7 +349,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		templateData.nameLabel.set(displayName, element.nameMatches);
 
 		// Optional inline badge (e.g. "always added", "*.ts")
-		if (element.badge) {
+		if (element.badge && !element.disabled) {
 			templateData.badge.textContent = element.badge;
 			templateData.badge.style.display = '';
 			if (element.badgeTooltip) {
@@ -361,15 +362,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		} else {
 			templateData.badge.textContent = '';
 			templateData.badge.style.display = 'none';
-		}
-
-		// Disabled badge — shown alongside the original badge
-		if (element.disabled) {
-			templateData.disabledBadge.textContent = localize('disabledBadge', "Disabled");
-			templateData.disabledBadge.style.display = 'inline';
-		} else {
-			templateData.disabledBadge.textContent = '';
-			templateData.disabledBadge.style.display = 'none';
 		}
 
 		// Status icon for external items with sync/loading status

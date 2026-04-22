@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
 import { IMatch } from '../../../../../base/common/filters.js';
 import { parse as parseJSONC } from '../../../../../base/common/json.js';
-import { ResourceMap } from '../../../../../base/common/map.js';
+import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { OS } from '../../../../../base/common/platform.js';
 import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
@@ -320,20 +320,18 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		private readonly pathService: IPathService,
 		private readonly itemNormalizer: AICustomizationItemNormalizer,
 	) {
-		const onDidChangeSyncableCustomizations = this.syncProvider
-			? Event.any(
-				this.promptsService.onDidChangeCustomAgents,
-				this.promptsService.onDidChangeSlashCommands,
-				this.promptsService.onDidChangeSkills,
-				this.promptsService.onDidChangeHooks,
-				this.promptsService.onDidChangeInstructions,
-			)
-			: Event.None;
+		const promptServiceEvents = Event.any(
+			this.promptsService.onDidChangeCustomAgents,
+			this.promptsService.onDidChangeSlashCommands,
+			this.promptsService.onDidChangeSkills,
+			this.promptsService.onDidChangeHooks,
+			this.promptsService.onDidChangeInstructions,
+		);
 
 		this.onDidChange = Event.any(
 			this.itemProvider?.onDidChange ?? Event.None,
 			this.syncProvider?.onDidChange ?? Event.None,
-			onDidChangeSyncableCustomizations,
+			promptServiceEvents,
 		);
 	}
 
@@ -373,10 +371,78 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		}
 
 		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
+
+		// Overlay disabled state from storage for providers that don't track
+		// disablement themselves (e.g. extension-contributed harness providers).
+		// Also add back disabled items that the provider didn't include at all.
+		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
+		if (disabledUris.size > 0) {
+			const existingUris = new ResourceSet(normalized.map(i => i.uri));
+			for (let i = 0; i < normalized.length; i++) {
+				if (!normalized[i].disabled && disabledUris.has(normalized[i].uri)) {
+					normalized[i] = { ...normalized[i], disabled: true };
+				}
+			}
+			const missing = await this.resolveMissingDisabledItems(promptType, disabledUris, existingUris);
+			normalized.push(...missing);
+		}
+
 		if (promptType === PromptsType.skill) {
 			return this.mergeBuiltinSkills(normalized, promptType);
 		}
 		return normalized;
+	}
+
+	/**
+	 * Resolves disabled items that are missing from the provider's results.
+	 * External providers (e.g. extension-contributed harness providers) may
+	 * not include disabled items at all. This method queries discovery info
+	 * and file listings to reconstruct them so they appear in the UI.
+	 */
+	private async resolveMissingDisabledItems(
+		promptType: PromptsType,
+		disabledUris: ResourceSet,
+		existingUris: ResourceSet,
+	): Promise<IAICustomizationListItem[]> {
+		const missingItems: ICustomizationItem[] = [];
+		const resolvedUris = new ResourceSet();
+
+		try {
+			const discovery = await this.promptsService.getDiscoveryInfo(promptType, CancellationToken.None);
+			for (const file of discovery.files) {
+				if (disabledUris.has(file.promptPath.uri) && !existingUris.has(file.promptPath.uri)) {
+					resolvedUris.add(file.promptPath.uri);
+					const name = promptType === PromptsType.skill
+						? (file.promptPath.name || basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri))
+						: (file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)));
+					missingItems.push({
+						uri: file.promptPath.uri,
+						type: promptType,
+						name,
+						description: file.promptPath.description,
+						storage: file.promptPath.storage,
+						enabled: false,
+					});
+				}
+			}
+		} catch { /* discovery info not available */ }
+
+		// Fallback for disabled URIs not found in discovery info
+		for (const uri of disabledUris) {
+			if (!existingUris.has(uri) && !resolvedUris.has(uri)) {
+				const name = promptType === PromptsType.skill
+					? (basename(dirname(uri)) || basename(uri))
+					: getFriendlyName(basename(uri));
+				missingItems.push({
+					uri,
+					type: promptType,
+					name,
+					enabled: false,
+				});
+			}
+		}
+
+		return this.itemNormalizer.normalizeItems(missingItems, promptType);
 	}
 
 	/**

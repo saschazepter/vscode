@@ -1134,18 +1134,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private _refreshCachesForType(type: PromptsType): void {
-		if (type === PromptsType.agent) {
-			this.cachedCustomAgents.refresh();
-		} else if (type === PromptsType.skill) {
-			this.cachedSkills.refresh();
-			this.cachedSlashCommands.refresh();
-		} else if (type === PromptsType.instructions) {
-			this.cachedInstructions.refresh();
-		} else if (type === PromptsType.prompt) {
-			this.cachedSlashCommands.refresh();
-		} else if (type === PromptsType.hook) {
-			this.cachedHooks.refresh();
-		}
+		// Refresh all caches to ensure the disabled state is picked up
+		// everywhere — the disabled set is a cross-cutting concern that
+		// affects discovery, slash commands, skills, and hooks.
+		this.cachedCustomAgents.refresh();
+		this.cachedSlashCommands.refresh();
+		this.cachedSkills.refresh();
+		this.cachedInstructions.refresh();
+		this.cachedHooks.refresh();
 	}
 
 	// Agent skills
