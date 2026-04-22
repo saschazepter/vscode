@@ -243,9 +243,15 @@ function getRateLimitMessage(fetchResult: ChatFetchError, copilotPlan: string | 
 		if (fetchResult.retryAfter) {
 			const resetDate = new Date(Date.now() + fetchResult.retryAfter * 1000);
 			const resetDateString = resetDate.toLocaleString(undefined, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+<<<<<<< HEAD
 			if (copilotPlan === 'free' || copilotPlan === 'individual' || copilotPlan === 'individual_pro') {
 				return l10n.t({
 					message: 'You\'ve reached your weekly rate limit. Please upgrade your plan or wait for your limit to reset on {0}. [Learn More]({1})',
+=======
+			if (fetchResult.isAuto) {
+				return l10n.t({
+					message: 'You\'ve reached your weekly rate limit. Please wait for your limit to reset on {0}. [Learn More]({1})',
+>>>>>>> 67f69ba4 (Merge pull request #312005 from microsoft/integrated-sailfish)
 					args: [resetDateString, 'https://aka.ms/github-copilot-rate-limit-error'],
 					comment: [`{Locked=']({'}`]
 				});
