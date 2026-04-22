@@ -353,7 +353,7 @@ function rawMessagesToResponseAPI(modelId: string, messages: readonly Raw.ChatMe
 				}
 				if (message.toolCalls) {
 					for (const toolCall of message.toolCalls) {
-						if (toolsMap && toolCall.function.name === CUSTOM_TOOL_SEARCH_NAME) {
+						if (toolCall.function.name === CUSTOM_TOOL_SEARCH_NAME) {
 							// Client-executed tool search: emit as tool_search_call instead of function_call
 							toolSearchCallIds.add(toolCall.id);
 							let parsedArgs: Record<string, unknown> = {};
@@ -375,13 +375,13 @@ function rawMessagesToResponseAPI(modelId: string, messages: readonly Raw.ChatMe
 				break;
 			case Raw.ChatRole.Tool:
 				if (message.toolCallId) {
-					if (toolsMap && toolSearchCallIds.has(message.toolCallId)) {
+					if (toolSearchCallIds.has(message.toolCallId)) {
 						// Client-executed tool search result: convert tool names to tool_search_output with full definitions
 						const resultText = message.content
 							.filter(c => c.type === Raw.ChatCompletionContentPartKind.Text)
 							.map(c => c.text)
 							.join('');
-						const loadedTools = buildToolSearchOutputTools(resultText, toolsMap);
+						const loadedTools = toolsMap ? buildToolSearchOutputTools(resultText, toolsMap) : [];
 						for (const t of loadedTools) {
 							toolSearchLoadedTools.add(t.name);
 						}

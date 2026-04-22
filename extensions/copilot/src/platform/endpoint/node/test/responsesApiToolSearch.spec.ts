@@ -216,6 +216,42 @@ describe('createResponsesRequestBody tools', () => {
 		const badFunctionCall = input.find(i => i.type === 'function_call' && i.name === 'tool_search');
 		expect(badFunctionCall).toBeUndefined();
 	});
+
+	it('converts tool_search history when current request has no tools', () => {
+		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const messages: Raw.ChatMessage[] = [
+			{ role: Raw.ChatRole.User, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'Hello' }] },
+			{
+				role: Raw.ChatRole.Assistant,
+				content: [],
+				toolCalls: [{ id: 'call_ts_no_tools', type: 'function', function: { name: 'tool_search', arguments: '{"query":"file tools"}' } }],
+			},
+			{
+				role: Raw.ChatRole.Tool,
+				toolCallId: 'call_ts_no_tools',
+				content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: '["read_file"]' }],
+			},
+		];
+
+		const options = createMockOptions({ messages, requestOptions: undefined });
+		const body = accessor.get(IInstantiationService).invokeFunction(
+			createResponsesRequestBody, options, endpoint.model, endpoint
+		);
+
+		const input = body.input as Array<{ type?: string; name?: string; execution?: string; call_id?: string; tools?: unknown[] }>;
+		expect(input.find(i => i.type === 'tool_search_call')).toMatchObject({
+			type: 'tool_search_call',
+			execution: 'client',
+			call_id: 'call_ts_no_tools',
+		});
+		expect(input.find(i => i.type === 'tool_search_output')).toMatchObject({
+			type: 'tool_search_output',
+			execution: 'client',
+			call_id: 'call_ts_no_tools',
+			tools: [],
+		});
+		expect(input.find(i => i.type === 'function_call' && i.name === 'tool_search')).toBeUndefined();
+	});
 });
 
 describe('OpenAIResponsesProcessor tool search events', () => {
