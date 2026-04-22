@@ -225,6 +225,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		}
 		this._register(this.sessionService.onDidDeleteSession(async (e) => {
 			controller.items.delete(SessionIdForCLI.getResource(e));
+			this.previouslyCachedChanges.delete(e);
 		}));
 		this._register(this.sessionService.onDidChangeSession(async (e) => {
 			const item = await this.toChatSessionItem(e);
@@ -314,6 +315,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		if (refreshOptions.reason === 'delete') {
 			const uri = SessionIdForCLI.getResource(refreshOptions.sessionId);
 			this.controller.items.delete(uri);
+			this.previouslyCachedChanges.delete(refreshOptions.sessionId);
 		} else if (refreshOptions.reason === 'update' && hasKey(refreshOptions, { 'sessionIds': true })) {
 			await Promise.allSettled(refreshOptions.sessionIds.map(async sessionId => {
 				const item = await this.sessionService.getSessionItem(sessionId, CancellationToken.None);
