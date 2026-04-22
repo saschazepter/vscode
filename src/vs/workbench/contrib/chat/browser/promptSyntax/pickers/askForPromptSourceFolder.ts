@@ -13,6 +13,7 @@ import { IOpenerService } from '../../../../../../platform/opener/common/opener.
 import { PROMPT_DOCUMENTATION_URL, PromptsType, getSourceDescription } from '../../../common/promptSyntax/promptTypes.js';
 import { IPickOptions, IQuickInputService, IQuickPickItem } from '../../../../../../platform/quickinput/common/quickInput.js';
 import { IPromptPath, IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 
 interface IFolderQuickPickItem extends IQuickPickItem {
@@ -32,6 +33,7 @@ export async function askForPromptSourceFolder(
 	const quickInputService = accessor.get(IQuickInputService);
 	const promptsService = accessor.get(IPromptsService);
 	const labelService = accessor.get(ILabelService);
+	const workspaceService = accessor.get(IWorkspaceContextService);
 
 	// get resolved source folders with full metadata (source, isDefault, displayPath)
 	const resolvedFolders = await promptsService.getResolvedSourceFolders(type);
@@ -53,6 +55,9 @@ export async function askForPromptSourceFolder(
 	// The first folder in the resolved list is the default for new files
 	const defaultFolder = !existingFolder ? resolvedFolders[0] : undefined;
 
+	const { folders: workspaceFolders } = workspaceService.getWorkspace();
+	const isMultiRoot = workspaceFolders.length > 1;
+
 	// create list of source folder locations
 	const foldersList = resolvedFolders.map<IFolderQuickPickItem>(resolved => {
 		const folderUri = resolved.parent;
@@ -60,9 +65,11 @@ export async function askForPromptSourceFolder(
 		const sourceDescription = getSourceDescription(resolved.source);
 		const detail = (existingFolder && isEqual(folderUri, existingFolder)) ? localize('current.folder', "Current Location") : undefined;
 
-		// Use the original display path (e.g. '.agents/skills', '~/.copilot/skills')
-		// as the label, falling back to workspace-relative or absolute path
-		const basePath = resolved.displayPath ?? labelService.getUriLabel(folderUri, { relative: resolved.storage === PromptsStorage.local });
+		// In multi-root workspaces, use workspace-relative labels (which include
+		// the workspace folder name prefix). Otherwise use displayPath.
+		const basePath = (isMultiRoot && resolved.storage === PromptsStorage.local)
+			? labelService.getUriLabel(folderUri, { relative: true })
+			: resolved.displayPath ?? labelService.getUriLabel(folderUri, { relative: resolved.storage === PromptsStorage.local });
 		const label = isDefault ? localize('pathWithDefault', "{0} (default)", basePath) : basePath;
 
 		const folder: IPromptPath = { uri: folderUri, storage: resolved.storage, type };
@@ -77,6 +84,24 @@ export async function askForPromptSourceFolder(
 			folder,
 		};
 	});
+
+	// In multi-root workspaces, sort so items from the same workspace folder
+	// are grouped together instead of being interleaved by source type.
+	if (isMultiRoot) {
+		const getWorkspaceFolderIndex = (uri: URI, storage: PromptsStorage): number => {
+			if (storage !== PromptsStorage.local) {
+				return workspaceFolders.length; // global items go last
+			}
+			const wsFolder = workspaceService.getWorkspaceFolder(uri);
+			return wsFolder?.index ?? workspaceFolders.length;
+		};
+
+		foldersList.sort((a, b) => {
+			const aIndex = getWorkspaceFolderIndex(a.folder.uri, a.folder.storage);
+			const bIndex = getWorkspaceFolderIndex(b.folder.uri, b.folder.storage);
+			return aIndex - bIndex;
+		});
+	}
 
 	const answer = await quickInputService.pick(foldersList, pickOptions);
 	if (!answer) {

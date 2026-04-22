@@ -660,7 +660,7 @@ export async function showConfigureHooksQuickPick(
 					selectedFolder = allFolders[0];
 					if (allFolders.length > 1) {
 						const folderItems = allFolders.map((folder, index) => {
-							const basePath = labelService.getUriLabel(folder.uri, { relative: true });
+							const basePath = labelService.getUriLabel(folder.uri, { relative: folder.storage === PromptsStorage.local });
 							const label = index === 0 ? localize('commands.hook.defaultFolder', "{0} (default)", basePath) : basePath;
 							return {
 								label,
