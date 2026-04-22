@@ -321,6 +321,15 @@
 		color-mix(in srgb, var(--vscode-chat-inputWorkingBorderColor1) 60%, var(--vscode-input-background)) 360deg);
 	color: var(--vscode-button-foreground);
 	animation: chat-send-button-spin 18s linear infinite;
+	transition: box-shadow 120ms ease;
+}
+
+/* Hover/focus: subtle dark overlay to match standard toolbar button hover
+	feedback. Uses an inset box-shadow so the rotating gradient background is
+	preserved underneath. */
+.monaco-workbench.sessions-experimental-send-button-gradient .sessions-chat-send-button:has(.monaco-button:not(.disabled):hover) .monaco-button,
+.monaco-workbench.sessions-experimental-send-button-gradient .sessions-chat-send-button:has(.monaco-button:not(.disabled):focus-visible) .monaco-button {
+	box-shadow: inset 0 0 0 100px rgba(0, 0, 0, 0.12);
 }
 
 /* Click: outward color pulse on the wrapper. */
@@ -381,10 +390,19 @@
 	color: var(--vscode-button-foreground) !important;
 	border-radius: 5px;
 	animation: chat-send-button-spin 18s linear infinite;
+	transition: box-shadow 120ms ease;
 	/* Lift the label above the click pulse `::after` on the action-item parent
 		so the pulse appears to expand from behind the button, not on top of it. */
 	position: relative;
 	z-index: 1;
+}
+
+/* Hover/focus: subtle dark overlay to match standard toolbar button hover
+	feedback. Uses an inset box-shadow so the rotating gradient background is
+	preserved underneath. */
+.monaco-workbench.sessions-experimental-send-button-gradient .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:hover,
+.monaco-workbench.sessions-experimental-send-button-gradient .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled) > .action-label.codicon-arrow-up:focus-visible {
+	box-shadow: inset 0 0 0 100px rgba(0, 0, 0, 0.12);
 }
 
 .monaco-workbench.sessions-experimental-send-button-gradient .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:not(.disabled):has(> .action-label.codicon-arrow-up:active)::after {
