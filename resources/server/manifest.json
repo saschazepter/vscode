@@ -5,9 +5,6 @@
 	"lang": "en-US",
 	"display": "standalone",
 	"display_override": ["window-controls-overlay"],
-	"background_color": "#1e1e1e",
-	"theme_color": "#1e1e1e",
-	"orientation": "any",
 	"icons": [
 		{
 			"src": "code-192.png",
