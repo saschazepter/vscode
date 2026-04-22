@@ -3640,9 +3640,9 @@ suite('PromptsService', () => {
 
 			const slashCommands = await service.getPromptSlashCommands(CancellationToken.None);
 
-			// Should include skill with fallback name from filename (SKILL without extension)
-			const fallbackNameCommand = slashCommands.find(cmd => cmd.name === 'SKILL');
-			assert.ok(fallbackNameCommand, 'Should find skill with fallback name from filename');
+			// Should include skill with fallback name from folder name
+			const fallbackNameCommand = slashCommands.find(cmd => cmd.name === 'no-name');
+			assert.ok(fallbackNameCommand, 'Should find skill with fallback name from folder name');
 			assert.strictEqual(fallbackNameCommand.description, 'Skill without name');
 
 			// Should include valid skill

@@ -79,7 +79,7 @@ export class PromptValidator {
 
 				// Extract folder name from path (e.g., .github/skills/my-skill/SKILL.md -> my-skill)
 				const pathParts = promptAST.uri.path.split('/');
-				const skillIndex = pathParts.findIndex(part => part === 'SKILL.md');
+				const skillIndex = pathParts.findIndex(part => part.toLowerCase() === 'skill.md');
 				if (skillIndex > 0) {
 					const folderName = pathParts[skillIndex - 1];
 					if (folderName && skillName !== folderName) {
@@ -107,7 +107,7 @@ export class PromptValidator {
 			}
 
 			// Without a description, disable-model-invocation: false (model invocation enabled)
-			// is the default but if explicitly set, warn that a description is needed.
+			// is the default but if explicitly set, report an error that a description is needed.
 			const disableModelInvocationAttr = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.disableModelInvocation);
 			if (disableModelInvocationAttr?.value.type === 'scalar' && disableModelInvocationAttr.value.value === 'false') {
 				report(toMarker(
