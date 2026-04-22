@@ -20,6 +20,7 @@ import { ILanguageModelsService } from '../../../../workbench/contrib/chat/commo
 import { BaseAgentHostSessionsProvider } from './baseAgentHostSessionsProvider.js';
 import { buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
 import { ISessionWorkspace, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
+import { toAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 
 const LOCAL_PROVIDER_ID = 'local-agent-host';
 const LOCAL_RESOURCE_SCHEME_PREFIX = 'agent-host-';
@@ -121,6 +122,10 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 		// covers both sets of sessions; the `[Local]` tag belongs on the
 		// per-session workspace label, not the type label.
 		return agentLabel;
+	}
+
+	protected override _diffUriMapper(): (uri: URI) => URI {
+		return uri => toAgentHostUri(uri, 'local');
 	}
 
 	// -- Workspaces ----------------------------------------------------------
