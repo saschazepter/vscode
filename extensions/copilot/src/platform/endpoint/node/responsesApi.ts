@@ -57,9 +57,9 @@ export function createResponsesRequestBody(accessor: ServicesAccessor, options: 
 	// back to the HTTP marker lookup in that case.
 	const ignoreStatefulMarker = !!options.ignoreStatefulMarker || !!options.useWebSocket;
 
-	// Tool search: when enabled, split tools into non-deferred (always loaded) and deferred (defer_loading: true).
-	// Uses OpenAI's client-executed tool search protocol: we add { type: 'tool_search', execution: 'client' }
-	// and mark deferred tools with defer_loading. The model emits tool_search_call which we handle via
+	// Tool search: when enabled, split tools into non-deferred (included in the request) and deferred
+	// (excluded from the request entirely). Uses OpenAI's client-executed tool search protocol: we add
+	// { type: 'tool_search', execution: 'client' }. The model emits tool_search_call, which we handle via
 	// our ToolSearchTool embeddings search, then round-trip as tool_search_output in the next request.
 	const toolSearchEnabled = isResponsesApiToolSearchEnabled(endpoint, configService, expService);
 	const isAllowedConversationAgent = options.location === ChatLocation.Agent || options.location === ChatLocation.MessagesProxy;
