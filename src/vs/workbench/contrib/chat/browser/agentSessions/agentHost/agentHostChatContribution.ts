@@ -152,6 +152,9 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			supportsDelegation: !this._isSessionsWindow,
 			capabilities: {
 				supportsCheckpoints: true,
+				// Required for the chat input to surface `/` slash commands
+				// (including bundled built-in skills) when an agent is locked.
+				supportsPromptAttachments: true,
 			},
 		}));
 
