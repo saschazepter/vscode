@@ -68,11 +68,9 @@ import { IChatSlashCommandService } from '../../common/participants/chatSlashCom
 import { IChatTodoListService } from '../../common/tools/chatTodoListService.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isWorkspaceVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry, toPromptTextVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { ChatViewModel, IChatRequestViewModel, IChatResponseViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
-import { CodeBlockModelCollection } from '../../common/widget/codeBlockModelCollection.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, ThinkingDisplayMode } from '../../common/constants.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { ILanguageModelsService } from '../../common/languageModels.js';
-import { ComputeAutomaticInstructions } from '../../common/promptSyntax/computeAutomaticInstructions.js';
 import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
 import { assessPlanningReadiness } from '../../common/planning/chatPlanningReadiness.js';
 import { shouldRegeneratePlanningQuestions } from '../../common/planning/chatPlanningQuestionHeuristics.js';
@@ -3635,7 +3633,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				codeBlockStartIndex: 0,
 				treeStartIndex: 0,
 				diffEditorPool: undefined as never,
-				codeBlockModelCollection: this._codeBlockModelCollection,
 				currentWidth: constObservable(this.container.clientWidth),
 				onDidChangeVisibility: Event.None,
 				inlineTextModels: undefined as never,
