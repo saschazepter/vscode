@@ -9,6 +9,7 @@ import { ServicesAccessor } from '../../../util/vs/platform/instantiation/common
 import { ConfigKey, IConfigurationService } from '../../configuration/common/configurationService';
 import type { IChatEndpoint } from '../../networking/common/networking';
 import { IExperimentationService } from '../../telemetry/common/nullExperimentationService';
+import { isResponsesApiToolSearchEnabled } from '../../networking/common/openai';
 
 const HIDDEN_MODEL_A_HASHES = [
 	'a99dd17dfee04155d863268596b7f6dd36d0a6531cd326348dbe7416142a21a3',
@@ -384,12 +385,18 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
 
 /**
  * Returns true if the model supports the tool search tool.
- * Matches any Claude Sonnet or Opus model with version >= 4.5. The minor
- * version is bounded to 1–2 digits so date suffixes like `-20250514`
+ * Matches OpenAI gpt-5.4 models only when the Responses API tool search setting
+ * is enabled, and any Claude Sonnet or Opus model with version >= 4.5. The
+ * minor version is bounded to 1-2 digits so date suffixes like `-20250514`
  * cannot be misread as a minor version.
  */
-export function modelSupportsToolSearch(modelId: string): boolean {
-	const normalized = modelId.toLowerCase().replace(/\./g, '-');
+export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
+	const lower = modelId.toLowerCase();
+	if (isGpt54(lower)) {
+		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
+	}
+
+	const normalized = lower.replace(/\./g, '-');
 	const match = normalized.match(/^claude-(?:sonnet|opus)-(\d+)(?:-(\d{1,2}))?(?:-|$)/);
 	if (!match) {
 		return false;
