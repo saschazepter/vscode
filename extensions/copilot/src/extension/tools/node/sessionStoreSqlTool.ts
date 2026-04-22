@@ -181,9 +181,9 @@ function formatSqlResult(rows: Record<string, unknown>[], truncated: boolean, so
 
 	const columns = Object.keys(rows[0]);
 
-	// Adaptive per-cell limit: distribute budget across all cells with a floor of 100
+	// Adaptive per-cell limit: distribute budget evenly across all cells
 	const cellCount = rows.length * columns.length;
-	const perCellLimit = Math.max(100, Math.floor(TOTAL_FORMAT_BUDGET / cellCount));
+	const perCellLimit = Math.floor(TOTAL_FORMAT_BUDGET / cellCount);
 
 	const lines: string[] = [];
 	lines.push(`Results: ${rows.length} rows (source: ${source})${truncated ? ' [TRUNCATED]' : ''}`);
@@ -207,7 +207,14 @@ function formatSqlResult(rows: Record<string, unknown>[], truncated: boolean, so
 		lines.push('⚠️ Results were truncated. Add a LIMIT clause or narrow your query.');
 	}
 
-	return lines.join('\n');
+	let result = lines.join('\n');
+
+	// Hard budget enforcement — truncate the entire output if it still exceeds the budget
+	if (result.length > TOTAL_FORMAT_BUDGET) {
+		result = result.slice(0, TOTAL_FORMAT_BUDGET) + '\n\n⚠️ Output truncated to stay within context budget.';
+	}
+
+	return result;
 }
 
 ToolRegistry.registerTool(SessionStoreSqlTool);

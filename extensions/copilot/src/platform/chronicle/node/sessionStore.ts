@@ -118,6 +118,8 @@ export class SessionStore implements ISessionStore {
 				host_type TEXT,
 				branch TEXT,
 				summary TEXT,
+				agent_name TEXT,
+				agent_description TEXT,
 				created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 				updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 			);
