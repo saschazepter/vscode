@@ -10,21 +10,6 @@ import { rawPartAsThinkingData } from '../../endpoint/common/thinkingDataContain
 import { TelemetryData } from '../../telemetry/common/telemetryData';
 import { ThinkingData, ThinkingDataInMessage } from '../../thinking/common/thinking';
 import { ICopilotReference, RequestId } from './fetch';
-import { ConfigKey, IConfigurationService } from '../../configuration/common/configurationService';
-import { IExperimentationService } from '../../telemetry/common/nullExperimentationService';
-import { IChatEndpoint } from './networking';
-import { isGpt54 } from '../../endpoint/common/chatModelCapabilities';
-
-// ── Responses API tool search ─────────────────────────────────────────
-
-export function isResponsesApiToolSearchEnabled(
-	endpoint: IChatEndpoint | string,
-	configurationService: IConfigurationService,
-	experimentationService: IExperimentationService,
-): boolean {
-	const effectiveModelId = typeof endpoint === 'string' ? endpoint : endpoint.model;
-	return isGpt54(effectiveModelId) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
-}
 
 /**
  * How the logprobs field looks in the OpenAI API chunks.

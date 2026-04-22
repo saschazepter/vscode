@@ -9,7 +9,6 @@ import { ServicesAccessor } from '../../../util/vs/platform/instantiation/common
 import { ConfigKey, IConfigurationService } from '../../configuration/common/configurationService';
 import type { IChatEndpoint } from '../../networking/common/networking';
 import { IExperimentationService } from '../../telemetry/common/nullExperimentationService';
-import { isResponsesApiToolSearchEnabled } from '../../networking/common/openai';
 
 const HIDDEN_MODEL_A_HASHES = [
 	'a99dd17dfee04155d863268596b7f6dd36d0a6531cd326348dbe7416142a21a3',
@@ -404,6 +403,14 @@ export function modelSupportsToolSearch(modelId: string, configurationService?: 
 	const major = parseInt(match[1], 10);
 	const minor = match[2] !== undefined ? parseInt(match[2], 10) : 0;
 	return major > 4 || (major === 4 && minor >= 5);
+}
+
+export function isResponsesApiToolSearchEnabled(
+	endpoint: IChatEndpoint | string,
+	configurationService: IConfigurationService,
+	experimentationService: IExperimentationService,
+): boolean {
+	return isGpt54(endpoint) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
 }
 
 /**
