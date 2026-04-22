@@ -20,6 +20,11 @@ export class MobileAuxiliaryBarPart extends AuxiliaryBarPart {
 		// Run base theme wiring (skips AuxiliaryBarPart's card-specific inline styles)
 		AbstractPaneCompositePart.prototype.updateStyles.call(this);
 
+		// The parent AuxiliaryBarPart.updateStyles() sets inline styles for
+		// card-like appearance (--part-background, --part-border-color, backgroundColor).
+		// On mobile the auxiliary bar fills the full grid cell without card margins,
+		// so we clear any residual inline styles. This must be done in JS because
+		// inline styles have the highest CSS specificity.
 		const container = this.getContainer();
 		if (container) {
 			container.style.backgroundColor = '';

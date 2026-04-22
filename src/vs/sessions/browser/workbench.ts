@@ -241,6 +241,10 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		if (this.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
 			top = this.getPart(Parts.TITLEBAR_PART).maximumHeight;
 			quickPickTop = top;
+		} else if (this.mobileTopBarElement) {
+			// On phone layout the MobileTopBar replaces the titlebar
+			top = this.mobileTopBarElement.offsetHeight;
+			quickPickTop = top;
 		}
 
 		return { top, quickPickTop };
@@ -1442,7 +1446,8 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	isVisible(part: Parts, targetWindow?: Window): boolean {
 		switch (part) {
 			case Parts.TITLEBAR_PART:
-				return true; // Always visible
+				// On phone layout the grid titlebar is hidden (replaced by MobileTopBar)
+				return this.layoutPolicy.viewportClass.get() !== 'phone';
 			case Parts.SIDEBAR_PART:
 				return this.partVisibility.sidebar;
 			case Parts.AUXILIARYBAR_PART:

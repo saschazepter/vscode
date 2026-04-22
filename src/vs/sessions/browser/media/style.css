@@ -651,6 +651,16 @@
 /* Phone-layout rules for parts, sashes, max-width constraints, and grid
 	background live in mobileChatShell.css — do not duplicate them here. */
 
+/*
+ * Mobile CSS class hierarchy:
+ *   .mobile-layout  — applied to phone AND tablet viewports (< 1024px).
+ *                      Use for touch-specific styles: overscroll containment,
+ *                      44px touch targets, input zoom prevention, momentum scroll.
+ *   .phone-layout   — applied to phone viewports only (< 640px).
+ *                      Use for phone-specific layout overrides: bottom-sheet
+ *                      quick picks, overlay panels, full-width context menus.
+ */
+
 /* ---- Mobile Layout: Overscroll Containment ---- */
 
 /* Prevent body rubber-band on iOS and Chrome pull-to-refresh on Android */
