@@ -605,8 +605,10 @@ export async function processResponseFromChatEndpoint(instantiationService: IIns
 		const parser = new SSEParser((ev) => {
 			try {
 				logService.trace(`SSE: ${ev.data}`);
-				dumper.logEvent(new Date(), ev.type, ev.data);
-				const completion = processor.push({ type: ev.type, ...JSON.parse(ev.data) }, finishCallback);
+				const parsedData = JSON.parse(ev.data);
+				const responseStreamEvent: OpenAI.Responses.ResponseStreamEvent = { type: ev.type, ...parsedData };
+				dumper.logEvent(responseStreamEvent);
+				const completion = processor.push(responseStreamEvent, finishCallback);
 				if (completion) {
 					sendCompletionOutputTelemetry(telemetryService, logService, completion, telemetryData);
 					feed.emitOne(completion);

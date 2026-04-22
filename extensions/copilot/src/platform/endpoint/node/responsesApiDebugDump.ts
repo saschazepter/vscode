@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
+import OpenAI from 'openai';
 import * as path from 'path';
 import { ILogService } from '../../log/common/logService';
 
@@ -20,7 +21,7 @@ const ENABLE_RESPONSES_STREAM_DUMP = false
 
 export interface IResponsesStreamDumper {
 	/** Append a single SSE event to the dump file. */
-	logEvent(timestamp: Date, eventType: string, rawData: string): void;
+	logEvent(responseStreamEvent: OpenAI.Responses.ResponseStreamEvent): void;
 }
 
 const noopDumper: IResponsesStreamDumper = {
@@ -30,11 +31,11 @@ const noopDumper: IResponsesStreamDumper = {
 class ResponsesStreamDumper implements IResponsesStreamDumper {
 	constructor(private readonly filePath: string) { }
 
-	logEvent(timestamp: Date, eventType: string, rawData: string): void {
+	logEvent(responseStreamEvent: OpenAI.Responses.ResponseStreamEvent): void {
+		const timestamp = new Date();
 		try {
-			let prettyData: string;
-			try { prettyData = JSON.stringify(JSON.parse(rawData), null, 2); } catch { prettyData = rawData; }
-			fs.appendFileSync(this.filePath, `${timestamp.toISOString()} ${eventType}\n${prettyData}\n\n`);
+			const prettyData = JSON.stringify({ ...responseStreamEvent, type: undefined }, null, 2);
+			fs.appendFileSync(this.filePath, `${timestamp.toISOString()} ${responseStreamEvent.type}\n${prettyData}\n\n`);
 		} catch {
 			// Swallow write errors so debugging never breaks real functionality.
 		}
