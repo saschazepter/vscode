@@ -8,6 +8,7 @@ import Ajv from 'ajv';
 import { ArrayJsonSchema, JsonSchema, ObjectJsonSchema } from '../../../platform/configuration/common/jsonSchema';
 import { jsonSchemaDraft7 } from '../../../platform/configuration/common/jsonSchemaDraft7';
 import { OpenAiFunctionDef, OpenAiFunctionTool } from '../../../platform/networking/common/fetch';
+import { isGeminiFamily } from '../../../platform/endpoint/common/chatModelCapabilities';
 import { Iterable } from '../../../util/vs/base/common/iterator';
 import { Lazy } from '../../../util/vs/base/common/lazy';
 import { deepClone } from '../../../util/vs/base/common/objects';
@@ -237,8 +238,6 @@ function forEachSchemaNode<T>(input: JsonSchema, fn: (node: JsonSchema) => undef
 const isGpt4ish = (family: string) => family.startsWith('gpt-4');
 // Whether the model is a model known to follow JSON Schema Draft 2020-12, (versus Draft 7).
 const isDraft2020_12Schema = (family: string) => family.startsWith('gpt-4') || family.startsWith('claude-') || family.startsWith('o4');
-// Whether the model is a Gemini family model.
-const isGeminiFamily = (family: string) => family.toLowerCase().includes('gemini');
 
 const gpt4oMaxStringLength = 1024;
 
