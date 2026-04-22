@@ -86,6 +86,10 @@
 	font-weight: 400;
 }
 
+.chat-status-bar-entry-tooltip div.header .header-label {
+	flex-grow: 1;
+}
+
 .chat-status-bar-entry-tooltip div.header .monaco-action-bar {
 	flex-shrink: 0;
 }
@@ -95,10 +99,6 @@
 	padding: 4px 12px;
 	flex-shrink: 0;
 	margin: 0;
-}
-
-.chat-status-bar-entry-tooltip div.header .header-cta-button:first-of-type {
-	margin-left: auto;
 }
 
 .chat-status-bar-entry-tooltip div.description {

@@ -490,7 +490,8 @@ export class ChatStatusDashboard extends DomWidget {
 	}
 
 	private renderHeader(container: HTMLElement, disposables: DisposableStore, label: string, action?: IAction): HTMLElement {
-		const header = container.appendChild($('div.header', undefined, label ?? ''));
+		const header = container.appendChild($('div.header'));
+		header.appendChild($('span.header-label', undefined, label ?? ''));
 
 		if (action) {
 			const toolbar = disposables.add(new ActionBar(header, { hoverDelegate: nativeHoverDelegate }));
