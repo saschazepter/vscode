@@ -17,17 +17,35 @@ export interface IUpdateInfoButton {
 }
 
 export interface IUpdateInfoFeature {
+	/**
+	 * Optional Codicon icon identifier (e.g. `$(sparkle)` or `$(lightbulb)`) displayed
+	 * alongside the feature title.
+	 */
 	readonly icon?: string;
+	/** Short title for the feature highlight. */
 	readonly title: string;
+	/** One-line description of the feature. */
 	readonly description: string;
 }
 
 export interface IParsedUpdateInfoInput {
+	/** Markdown body rendered in the update-info widget. */
 	readonly markdown: string;
+	/** Optional action buttons shown below the markdown content. */
 	readonly buttons?: IUpdateInfoButton[];
+	/**
+	 * Optional URL for a banner/hero image shown at the top of the widget.
+	 * Must be an `https://` URL; non-HTTPS URLs are ignored.
+	 */
 	readonly bannerImageUrl?: string;
+	/** Optional short badge label (e.g. `"New"`) displayed on the widget. */
 	readonly badge?: string;
+	/** Optional heading title rendered above the markdown body. */
 	readonly title?: string;
+	/**
+	 * Optional list of feature highlights. At most {@link MAX_FEATURES} entries
+	 * (currently 5) are displayed; any additional entries are silently dropped.
+	 */
 	readonly features?: IUpdateInfoFeature[];
 }
 
@@ -36,13 +54,19 @@ export interface IParsedUpdateInfoInput {
  *
  * Supported formats:
  *
- * **JSON envelope** - a single JSON object with `markdown` and optional `buttons`:
+ * **JSON envelope** - a single JSON object with `markdown` and optional fields:
  * ```json
  * {
  *   "markdown": "$(info) **Feature**<br>Description...",
+ *   "title": "What's New",
+ *   "badge": "New",
+ *   "bannerImageUrl": "https://example.com/banner.png",
  *   "buttons": [
  *     { "label": "Release Notes", "commandId": "update.showCurrentReleaseNotes", "style": "secondary" },
  *     { "label": "Open Sessions", "commandId": "workbench.action.chat.open", "style": "primary" }
+ *   ],
+ *   "features": [
+ *     { "icon": "$(sparkle)", "title": "Feature", "description": "Short description" }
  *   ]
  * }
  * ```
@@ -50,7 +74,7 @@ export interface IParsedUpdateInfoInput {
  * **Block frontmatter** - YAML-style `---` delimiters wrapping a JSON metadata block:
  * ```
  * ---
- * { "buttons": [...] }
+ * { "buttons": [...], "features": [...] }
  * ---
  * $(info) **Feature**<br>Description...
  * ```
@@ -60,6 +84,8 @@ export interface IParsedUpdateInfoInput {
  * --- { "buttons": [...] } ---
  * $(info) **Feature**<br>Description...
  * ```
+ *
+ * At most 5 feature entries are retained; any additional ones are silently dropped.
  */
 export function parseUpdateInfoInput(text: string): IParsedUpdateInfoInput {
 	const normalized = text.replace(/^\uFEFF/, '');
@@ -148,6 +174,12 @@ function parseUpdateInfoButtons(buttons: unknown): IUpdateInfoButton[] | undefin
 	return parsedButtons.length ? parsedButtons : undefined;
 }
 
+/**
+ * Parses an array of feature-highlight objects from raw update-info metadata.
+ * Only the first {@link MAX_FEATURES} valid entries are returned; the rest are
+ * discarded. Each entry must have at minimum a `title` and `description` string.
+ * The optional `icon` field accepts a Codicon identifier (e.g. `$(sparkle)`).
+ */
 function parseUpdateInfoFeatures(features: unknown): IUpdateInfoFeature[] | undefined {
 	if (!Array.isArray(features)) {
 		return undefined;
