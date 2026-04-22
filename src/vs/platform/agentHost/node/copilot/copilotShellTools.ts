@@ -11,7 +11,7 @@ import * as platform from '../../../../base/common/platform.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILogService } from '../../../log/common/log.js';
-import { TerminalClaimKind, type ITerminalSessionClaim } from '../../common/state/protocol/state.js';
+import { TerminalClaimKind, type TerminalSessionClaim } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 
 /**
@@ -95,7 +95,7 @@ export class ShellManager {
 		const id = generateUuid();
 		const terminalUri = `agenthost-terminal://shell/${id}`;
 
-		const claim: ITerminalSessionClaim = {
+		const claim: TerminalSessionClaim = {
 			kind: TerminalClaimKind.Session,
 			session: this._sessionUri.toString(),
 			turnId,
@@ -109,7 +109,7 @@ export class ShellManager {
 			claim,
 			name: shellDisplayName,
 			cwd: cwd ?? this._workingDirectory?.fsPath,
-		}, { shell: getShellExecutable(shellType), preventShellHistory: true });
+		}, { shell: getShellExecutable(shellType), preventShellHistory: true, nonInteractive: true });
 
 		const shell: IManagedShell = { id, terminalUri, shellType };
 		this._shells.set(id, shell);
