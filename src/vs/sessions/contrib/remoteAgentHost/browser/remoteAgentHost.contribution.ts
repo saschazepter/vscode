@@ -12,8 +12,8 @@ import { agentHostAuthority } from '../../../../platform/agentHost/common/agentH
 import { type AgentProvider, type IAgentConnection } from '../../../../platform/agentHost/common/agentService.js';
 import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHostService, RemoteAgentHostAutoConnectSettingId, RemoteAgentHostConnectionStatus, RemoteAgentHostEntryType, RemoteAgentHostsEnabledSettingId, RemoteAgentHostsSettingId, getEntryAddress } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { TunnelAgentHostsSettingId } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
-import { type IProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../platform/agentHost/common/state/protocol/state.js';
-import { type IAgentInfo, type ICustomizationRef, type IRootState } from '../../../../platform/agentHost/common/state/sessionState.js';
+import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -307,7 +307,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		}
 	}
 
-	private _handleRootStateChange(address: string, loggedConnection: LoggingAgentConnection, rootState: IRootState): void {
+	private _handleRootStateChange(address: string, loggedConnection: LoggingAgentConnection, rootState: RootState): void {
 		const connState = this._connections.get(address);
 		if (!connState) {
 			return;
@@ -338,7 +338,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		}
 	}
 
-	private _registerAgent(address: string, loggedConnection: LoggingAgentConnection, agent: IAgentInfo, configuredName: string | undefined): void {
+	private _registerAgent(address: string, loggedConnection: LoggingAgentConnection, agent: AgentInfo, configuredName: string | undefined): void {
 		const connState = this._connections.get(address);
 		if (!connState) {
 			return;
@@ -408,7 +408,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		const bundler = agentStore.add(this._instantiationService.createInstance(SyncedCustomizationBundler, sessionType));
 
 		// Agent-level customizations observable
-		const customizations = observableValue<ICustomizationRef[]>('agentCustomizations', []);
+		const customizations = observableValue<CustomizationRef[]>('agentCustomizations', []);
 		const updateCustomizations = async () => {
 			const refs = await this._resolveCustomizations(syncProvider, bundler);
 			customizations.set(refs, undefined);
@@ -460,14 +460,14 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	private async _resolveCustomizations(
 		syncProvider: AgentCustomizationSyncProvider,
 		bundler: SyncedCustomizationBundler,
-	): Promise<ICustomizationRef[]> {
+	): Promise<CustomizationRef[]> {
 		const entries = syncProvider.getSelectedEntries();
 		if (entries.length === 0) {
 			return [];
 		}
 
 		const plugins = this._agentPluginService.plugins.get();
-		const refs: ICustomizationRef[] = [];
+		const refs: CustomizationRef[] = [];
 		const individualFiles: { uri: URI; type: PromptsType }[] = [];
 
 		for (const entry of entries) {
@@ -508,7 +508,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	 * Marks the matching provider's `authenticationPending` observable while
 	 * the auth pass is in flight so that sessions surface as still loading.
 	 */
-	private async _authenticateWithConnection(address: string, loggedConnection: LoggingAgentConnection, agents: readonly IAgentInfo[]): Promise<void> {
+	private async _authenticateWithConnection(address: string, loggedConnection: LoggingAgentConnection, agents: readonly AgentInfo[]): Promise<void> {
 		const providerId = `agenthost-${agentHostAuthority(address)}`;
 		const provider = this._sessionsProvidersService.getProvider<RemoteAgentHostSessionsProvider>(providerId);
 		provider?.setAuthenticationPending(true);
@@ -545,7 +545,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	 * Interactively prompt the user to authenticate when the server requires it.
 	 * Returns true if authentication succeeded.
 	 */
-	private async _resolveAuthenticationInteractively(loggedConnection: LoggingAgentConnection, protectedResources: readonly IProtectedResourceMetadata[]): Promise<boolean> {
+	private async _resolveAuthenticationInteractively(loggedConnection: LoggingAgentConnection, protectedResources: readonly ProtectedResourceMetadata[]): Promise<boolean> {
 		try {
 			for (const resource of protectedResources) {
 				for (const server of resource.authorization_servers ?? []) {
@@ -642,4 +642,4 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 
 // Side-effect registrations for the remote agent host feature
 import './remoteAgentHostActions.js';
-import '../../chat/browser/agentHostModelPicker.js';
+import '../../chat/browser/agentHost/agentHostModelPicker.js';
