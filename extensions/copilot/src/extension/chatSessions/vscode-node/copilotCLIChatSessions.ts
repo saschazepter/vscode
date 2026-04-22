@@ -346,7 +346,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		}
 		item.timing = session.timing;
 		item.status = session.status ?? vscode.ChatSessionStatus.Completed;
-		// This way, when user refreshs everything, they get the cached changes immediately.
+		// This way, when user refreshes everything, they get the cached changes immediately.
 		item.changes = this.previouslyCachedChanges.get(session.id);
 
 		// `buildChanges` runs `git diff` and is the slow leg of populating an item. Skip it on the
