@@ -7,6 +7,7 @@ import { Codicon } from '../../base/common/codicons.js';
 import { extUri, basename } from '../../base/common/resources.js';
 import { ThemeIcon } from '../../base/common/themables.js';
 import { URI } from '../../base/common/uri.js';
+import { ISessionGitState } from '../../platform/agentHost/common/state/sessionState.js';
 import { ISessionWorkspace } from '../services/sessions/common/session.js';
 
 export interface IAgentHostSessionProjectSummary {
@@ -22,16 +23,18 @@ export interface IAgentHostSessionWorkspaceOptions {
 
 export function agentHostSessionWorkspaceKey(workspace: ISessionWorkspace | undefined): string | undefined {
 	const repository = workspace?.repositories[0];
-	return workspace && repository ? `${workspace.label}\n${extUri.getComparisonKey(repository.uri)}\n${repository.workingDirectory ? extUri.getComparisonKey(repository.workingDirectory) : ''}` : undefined;
+	return workspace && repository ? `${workspace.label}\n${extUri.getComparisonKey(repository.uri)}\n${repository.workingDirectory ? extUri.getComparisonKey(repository.workingDirectory) : ''}\n${repository.baseBranchName ?? ''}\n${repository.baseBranchProtected ?? ''}` : undefined;
 }
 
-export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProjectSummary | undefined, workingDirectory: URI | undefined, options: IAgentHostSessionWorkspaceOptions): ISessionWorkspace | undefined {
+export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProjectSummary | undefined, workingDirectory: URI | undefined, options: IAgentHostSessionWorkspaceOptions, gitState?: ISessionGitState): ISessionWorkspace | undefined {
+	const baseBranchName = gitState?.baseBranchName;
+	const baseBranchProtected = gitState?.baseBranchProtected;
 	if (project) {
 		const repositoryWorkingDirectory = extUri.isEqual(workingDirectory, project.uri) ? undefined : workingDirectory;
 		return {
 			label: options.providerLabel ? `${project.displayName} [${options.providerLabel}]` : project.displayName,
 			icon: Codicon.repo,
-			repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
+			repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: undefined, baseBranchName, baseBranchProtected }],
 			requiresWorkspaceTrust: options.requiresWorkspaceTrust,
 		};
 	}
@@ -44,7 +47,7 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 	return {
 		label: options.providerLabel ? `${folderName} [${options.providerLabel}]` : folderName,
 		icon: options.fallbackIcon,
-		repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
+		repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: undefined, baseBranchName, baseBranchProtected }],
 		requiresWorkspaceTrust: options.requiresWorkspaceTrust,
 	};
 }

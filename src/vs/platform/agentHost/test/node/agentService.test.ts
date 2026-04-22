@@ -55,9 +55,10 @@ suite('AgentService (node dispatcher)', () => {
 	let service: AgentService;
 	let copilotAgent: MockAgent;
 	let fileService: FileService;
+	let nullSessionDataService: ISessionDataService;
 
 	setup(async () => {
-		const nullSessionDataService: ISessionDataService = {
+		nullSessionDataService = {
 			_serviceBrand: undefined,
 			getSessionDataDir: () => URI.parse('inmemory:/session-data'),
 			getSessionDataDirById: () => URI.parse('inmemory:/session-data'),
@@ -240,6 +241,70 @@ suite('AgentService (node dispatcher)', () => {
 			const sessions = await service.listSessions();
 			assert.strictEqual(sessions.length, 1);
 			assert.strictEqual(sessions[0].summary, 'User first message');
+		});
+
+		test('listSessions overlays git state into _meta when a working directory is present', async () => {
+			const workingDirectory = URI.file('/workspace/repo');
+			const gitState = {
+				hasGitHubRemote: true,
+				branchName: 'feature/x',
+				baseBranchName: 'main',
+				upstreamBranchName: 'origin/feature/x',
+				incomingChanges: 1,
+				outgoingChanges: 2,
+				uncommittedChanges: 3,
+			};
+			const calls: string[] = [];
+			const gitService = {
+				_serviceBrand: undefined,
+				isInsideWorkTree: async () => true,
+				getCurrentBranch: async () => undefined,
+				getDefaultBranch: async () => undefined,
+				getBranches: async () => [],
+				getRepositoryRoot: async () => undefined,
+				getWorktreeRoots: async () => [],
+				addWorktree: async () => { },
+				removeWorktree: async () => { },
+				getSessionGitState: async (uri: URI) => { calls.push(uri.fsPath); return gitState; },
+			};
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			agent.resolvedWorkingDirectory = workingDirectory;
+			localService.registerProvider(agent);
+
+			await localService.createSession({ provider: 'copilot' });
+			const sessions = await localService.listSessions();
+
+			assert.strictEqual(sessions.length, 1);
+			assert.deepStrictEqual(sessions[0]._meta, { git: gitState });
+			assert.deepStrictEqual(calls, [workingDirectory.fsPath]);
+		});
+
+		test('listSessions skips git overlay when no working directory or no git state', async () => {
+			const gitService = {
+				_serviceBrand: undefined,
+				isInsideWorkTree: async () => false,
+				getCurrentBranch: async () => undefined,
+				getDefaultBranch: async () => undefined,
+				getBranches: async () => [],
+				getRepositoryRoot: async () => undefined,
+				getWorktreeRoots: async () => [],
+				addWorktree: async () => { },
+				removeWorktree: async () => { },
+				getSessionGitState: async () => undefined,
+			};
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			// No resolvedWorkingDirectory set on the mock.
+			localService.registerProvider(agent);
+
+			await localService.createSession({ provider: 'copilot' });
+			const sessions = await localService.listSessions();
+
+			assert.strictEqual(sessions.length, 1);
+			assert.strictEqual(sessions[0]._meta, undefined);
 		});
 
 		test('createSession stores live session config', async () => {

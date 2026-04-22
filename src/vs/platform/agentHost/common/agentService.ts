@@ -12,7 +12,7 @@ import { createDecorator } from '../../instantiation/common/instantiation.js';
 import type { ISyncedCustomization } from './agentPluginManager.js';
 import type { IAgentSubscription } from './state/agentSubscription.js';
 import type { ICreateTerminalParams, IResolveSessionConfigResult, ISessionConfigCompletionsResult } from './state/protocol/commands.js';
-import { IProtectedResourceMetadata, type IConfigSchema, type IFileEdit, type IModelSelection, type ISessionActiveClient, type IToolDefinition } from './state/protocol/state.js';
+import { IProtectedResourceMetadata, type IConfigSchema, type IFileEdit, type IModelSelection, type ISessionActiveClient, type ISessionMeta, type IToolDefinition } from './state/protocol/state.js';
 import type { IActionEnvelope, INotification, ISessionAction, ITerminalAction } from './state/sessionActions.js';
 import type { IResourceCopyParams, IResourceCopyResult, IResourceDeleteParams, IResourceDeleteResult, IResourceListResult, IResourceMoveParams, IResourceMoveResult, IResourceReadResult, IResourceWriteParams, IResourceWriteResult, IStateSnapshot } from './state/sessionProtocol.js';
 import { AttachmentType, ComponentToState, SessionInputResponseKind, SessionStatus, StateComponents, type ICustomizationRef, type IPendingMessage, type IRootState, type ISessionInputAnswer, type ISessionInputRequest, type IToolCallResult, type IToolResultContent, type PolicyState, type StringOrMarkdown } from './state/sessionState.js';
@@ -71,6 +71,13 @@ export interface IAgentSessionMetadata {
 	readonly isRead?: boolean;
 	readonly isDone?: boolean;
 	readonly diffs?: readonly IFileEdit[];
+	/**
+	 * Side-channel metadata mirroring {@link ISessionSummary._meta}.
+	 * Producers SHOULD use namespaced keys; consumers MUST ignore unknown
+	 * keys. Use the typed accessors in `sessionState.ts` (e.g.
+	 * `readSessionGitState`) for well-known slots.
+	 */
+	readonly _meta?: ISessionMeta;
 }
 
 export interface IAgentSessionProjectInfo {

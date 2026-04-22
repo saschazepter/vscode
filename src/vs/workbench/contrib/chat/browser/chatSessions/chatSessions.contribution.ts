@@ -1401,7 +1401,7 @@ function normalizeSessionOptions(options: ReadonlyChatSessionOptionsMap | Readon
 /**
  * Returns the variable entry for a slash command if the prompt starts with a slash command that can be resolved to a prompt file, otherwise returns undefined.
  */
-async function resolvePromptSlashCommand(prompt: string, promptsService: IPromptsService, toolsService: ILanguageModelToolsService): Promise<IChatRequestVariableEntry | undefined> {
+export async function resolvePromptSlashCommand(prompt: string, promptsService: IPromptsService, toolsService: ILanguageModelToolsService): Promise<IChatRequestVariableEntry | undefined> {
 	const slashMatch = prompt.match(slashReg);
 	// starts with a slash command, add the corresponding prompt file to the context if it exists
 	if (slashMatch) {

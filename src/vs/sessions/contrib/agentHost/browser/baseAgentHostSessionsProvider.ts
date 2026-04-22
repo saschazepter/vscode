@@ -18,7 +18,7 @@ import { IResolveSessionConfigResult } from '../../../../platform/agentHost/comm
 import { NotificationType } from '../../../../platform/agentHost/common/state/protocol/notifications.js';
 import type { IFileEdit, IModelSelection, IRootState, ISessionConfigPropertySchema, ISessionState, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
-import { StateComponents } from '../../../../platform/agentHost/common/state/sessionState.js';
+import { readSessionGitState, StateComponents, type ISessionGitState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatSendRequestOptions, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
@@ -47,7 +47,7 @@ export interface IAgentHostAdapterOptions {
 	/** Loading observable wired to the provider's authentication-pending state. */
 	readonly loading: IObservable<boolean>;
 	/** Builds the session workspace from session metadata; provider-specific (icon, providerLabel, requiresWorkspaceTrust). */
-	readonly buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined) => ISessionWorkspace | undefined;
+	readonly buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined) => ISessionWorkspace | undefined;
 	/** Optional URI mapping for diff entries (remote uses `toAgentHostUri`; local uses identity). */
 	readonly mapDiffUri?: (uri: URI) => URI;
 }
@@ -112,7 +112,7 @@ export class AgentHostSessionAdapter implements ISession {
 		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${resourceScheme}:${metadata.model.id}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', _options.description);
-		this.workspace = observableValue('workspace', _options.buildWorkspace(metadata.project, metadata.workingDirectory));
+		this.workspace = observableValue('workspace', _options.buildWorkspace(metadata.project, metadata.workingDirectory, readSessionGitState(metadata._meta)));
 		this.loading = _options.loading;
 
 		if (metadata.isRead === false) {
@@ -176,7 +176,7 @@ export class AgentHostSessionAdapter implements ISession {
 			didChange = true;
 		}
 
-		const workspace = this._options.buildWorkspace(metadata.project, metadata.workingDirectory);
+		const workspace = this._options.buildWorkspace(metadata.project, metadata.workingDirectory, readSessionGitState(metadata._meta));
 		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
 			didChange = true;

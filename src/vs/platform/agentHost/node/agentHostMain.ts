@@ -88,7 +88,8 @@ function startAgentHost(): void {
 	// Create the real service implementation that lives in this process
 	let agentService: AgentService;
 	try {
-		agentService = new AgentService(logService, fileService, sessionDataService, productService);
+		const gitService = new AgentHostGitService();
+		agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService);
 		const pluginManager = new AgentPluginManager(URI.file(environmentService.userDataPath), fileService, logService);
 		const diServices = new ServiceCollection();
 		diServices.set(INativeEnvironmentService, environmentService);
@@ -100,8 +101,8 @@ function startAgentHost(): void {
 		diServices.set(IDiffComputeService, diffComputeService);
 
 		diServices.set(IAgentHostTerminalManager, agentService.terminalManager);
+		diServices.set(IAgentHostGitService, gitService);
 		const instantiationService = new InstantiationService(diServices);
-		diServices.set(IAgentHostGitService, instantiationService.createInstance(AgentHostGitService));
 		agentService.registerProvider(instantiationService.createInstance(CopilotAgent));
 	} catch (err) {
 		logService.error('Failed to create AgentService', err);

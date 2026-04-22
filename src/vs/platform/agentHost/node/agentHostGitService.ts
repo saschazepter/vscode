@@ -6,6 +6,7 @@
 import * as cp from 'child_process';
 import { URI } from '../../../base/common/uri.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
+import type { ISessionGitState } from '../common/state/sessionState.js';
 
 export const IAgentHostGitService = createDecorator<IAgentHostGitService>('agentHostGitService');
 
@@ -19,6 +20,13 @@ export interface IAgentHostGitService {
 	getWorktreeRoots(workingDirectory: URI): Promise<URI[]>;
 	addWorktree(repositoryRoot: URI, worktree: URI, branchName: string, startPoint: string): Promise<void>;
 	removeWorktree(repositoryRoot: URI, worktree: URI): Promise<void>;
+	/**
+	 * Computes the {@link ISessionGitState} for the working directory by
+	 * shelling out to `git`. Returns undefined if the directory is not a
+	 * git work tree. Results are cached briefly per working directory to
+	 * absorb back-to-back `listSessions` calls.
+	 */
+	getSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined>;
 }
 
 function getCommonBranchPriority(branch: string): number {
@@ -106,6 +114,72 @@ export class AgentHostGitService implements IAgentHostGitService {
 		await this._runGit(repositoryRoot, ['worktree', 'remove', '--force', worktree.fsPath], { timeout: 30_000, throwOnError: true });
 	}
 
+	/**
+	 * Cached results of {@link getSessionGitState}, keyed by working
+	 * directory fsPath. Each entry carries the timestamp when it was
+	 * computed; entries older than {@link AgentHostGitService._GIT_STATE_TTL_MS}
+	 * are recomputed on the next access. The cache also coalesces concurrent
+	 * callers onto the same in-flight promise.
+	 */
+	private readonly _gitStateCache = new Map<string, { computedAt: number; promise: Promise<ISessionGitState | undefined> }>();
+	private static readonly _GIT_STATE_TTL_MS = 5_000;
+
+	async getSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
+		const key = workingDirectory.fsPath;
+		const cached = this._gitStateCache.get(key);
+		const now = Date.now();
+		if (cached && (now - cached.computedAt) < AgentHostGitService._GIT_STATE_TTL_MS) {
+			return cached.promise;
+		}
+		const entry = { computedAt: now, promise: this._computeSessionGitState(workingDirectory) };
+		this._gitStateCache.set(key, entry);
+		// On rejection, evict so the next call retries. (Computation never throws,
+		// but be defensive.)
+		entry.promise.catch(() => {
+			if (this._gitStateCache.get(key) === entry) {
+				this._gitStateCache.delete(key);
+			}
+		});
+		return entry.promise;
+	}
+
+	private async _computeSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
+		// Bail fast if not inside a git work tree.
+		const inside = await this._runGit(workingDirectory, ['rev-parse', '--is-inside-work-tree']);
+		if (inside?.trim() !== 'true') {
+			return undefined;
+		}
+
+		// Run all probes in parallel. Each handles its own errors and returns
+		// undefined on failure so we can populate fields independently.
+		const [
+			statusOutput,
+			remotesOutput,
+			defaultBranchRef,
+		] = await Promise.all([
+			this._runGit(workingDirectory, ['status', '-b', '--porcelain=v2']),
+			this._runGit(workingDirectory, ['remote', '-v']),
+			this._runGit(workingDirectory, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']),
+		]);
+
+		const status = parseGitStatusV2(statusOutput);
+		const hasGitHubRemote = parseHasGitHubRemote(remotesOutput);
+		const baseBranchName = parseDefaultBranchRef(defaultBranchRef);
+
+		const result: ISessionGitState = {
+			hasGitHubRemote,
+			branchName: status.branchName,
+			baseBranchName,
+			upstreamBranchName: status.upstreamBranchName,
+			incomingChanges: status.incomingChanges,
+			outgoingChanges: status.outgoingChanges,
+			uncommittedChanges: status.uncommittedChanges,
+		};
+		// Strip undefined fields so the resulting object is the same regardless
+		// of which probes succeeded — easier to compare in tests.
+		return stripUndefined(result);
+	}
+
 	private _runGit(workingDirectory: URI, args: readonly string[], options?: { readonly timeout?: number; readonly throwOnError?: boolean }): Promise<string | undefined> {
 		return new Promise((resolve, reject) => {
 			cp.execFile('git', [...args], { cwd: workingDirectory.fsPath, timeout: options?.timeout ?? 5000 }, (error, stdout, stderr) => {
@@ -121,4 +195,80 @@ export class AgentHostGitService implements IAgentHostGitService {
 			});
 		});
 	}
+}
+
+/**
+ * Parses output of `git status -b --porcelain=v2`. The format is documented
+ * at https://git-scm.com/docs/git-status. We care about a few header lines:
+ *
+ *   # branch.head <name>
+ *   # branch.upstream <name>
+ *   # branch.ab +<ahead> -<behind>
+ *
+ * and the count of non-header lines (one per changed entry).
+ *
+ * Exported for tests.
+ */
+export function parseGitStatusV2(output: string | undefined): {
+	branchName?: string;
+	upstreamBranchName?: string;
+	outgoingChanges?: number;
+	incomingChanges?: number;
+	uncommittedChanges?: number;
+} {
+	if (!output) {
+		return {};
+	}
+	let branchName: string | undefined;
+	let upstreamBranchName: string | undefined;
+	let outgoingChanges: number | undefined;
+	let incomingChanges: number | undefined;
+	let uncommittedChanges = 0;
+	for (const rawLine of output.split(/\r?\n/g)) {
+		const line = rawLine.trimEnd();
+		if (!line) { continue; }
+		if (line.startsWith('# branch.head ')) {
+			const head = line.substring('# branch.head '.length).trim();
+			// `(detached)` is what git emits for a detached HEAD. Treat as no branch.
+			branchName = head === '(detached)' ? undefined : head;
+		} else if (line.startsWith('# branch.upstream ')) {
+			upstreamBranchName = line.substring('# branch.upstream '.length).trim();
+		} else if (line.startsWith('# branch.ab ')) {
+			const m = /^# branch\.ab \+(\d+) -(\d+)$/.exec(line);
+			if (m) {
+				outgoingChanges = Number(m[1]);
+				incomingChanges = Number(m[2]);
+			}
+		} else if (!line.startsWith('#')) {
+			uncommittedChanges++;
+		}
+	}
+	return { branchName, upstreamBranchName, outgoingChanges, incomingChanges, uncommittedChanges };
+}
+
+/** Exported for tests. */
+export function parseHasGitHubRemote(remotesOutput: string | undefined): boolean | undefined {
+	if (remotesOutput === undefined) {
+		return undefined;
+	}
+	if (!remotesOutput.trim()) {
+		return false;
+	}
+	return /github\.com[:\/]/i.test(remotesOutput);
+}
+
+/** Exported for tests. */
+export function parseDefaultBranchRef(symbolicRefOutput: string | undefined): string | undefined {
+	const ref = symbolicRefOutput?.trim();
+	if (!ref) { return undefined; }
+	const prefix = 'refs/remotes/origin/';
+	return ref.startsWith(prefix) ? ref.substring(prefix.length) : ref;
+}
+
+function stripUndefined<T extends object>(obj: T): T {
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(obj)) {
+		if (v !== undefined) { out[k] = v; }
+	}
+	return out as T;
 }

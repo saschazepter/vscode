@@ -17,6 +17,7 @@ import {
 	IToolResultFileEditContent,
 	type IActiveTurn,
 	type IRootState,
+	type ISessionMeta,
 	type ISessionState,
 	type ISessionSummary,
 	type IToolCallCancelledState,
@@ -47,6 +48,7 @@ export {
 	type ISessionActiveClient,
 	type ISessionConfigState,
 	type IFileEdit as ISessionFileDiff,
+	type ISessionMeta,
 	type IModelSelection,
 	type ISessionModelInfo,
 	type ISessionState,
@@ -267,3 +269,71 @@ export type ComponentToState = {
 	[StateComponents.Session]: ISessionState;
 	[StateComponents.Terminal]: ITerminalState;
 };
+
+// ---- ISessionMeta accessors -------------------------------------------------
+
+/**
+ * Reserved key under {@link ISessionMeta} for the well-known git-state
+ * payload. Value at this key, when present, MUST be shaped like
+ * {@link ISessionGitState}. This is a VS Code-specific convention layered
+ * on top of the protocol's generic `_meta` bag — the protocol itself does
+ * not know about git state.
+ */
+export const SESSION_META_GIT_KEY = 'git';
+
+/**
+ * Git state of a session's working directory, carried under
+ * {@link ISessionMeta} at {@link SESSION_META_GIT_KEY}. Used by clients to
+ * drive source-control affordances (e.g. PR/merge buttons in the Agents
+ * app).
+ *
+ * All fields are optional — agents that do not track a particular field
+ * should omit it rather than send a placeholder, so clients can distinguish
+ * "unknown" from "known to be zero".
+ */
+export interface ISessionGitState {
+	/** Whether the working directory has a `github.com` git remote. */
+	readonly hasGitHubRemote?: boolean;
+	/** Current branch name. */
+	readonly branchName?: string;
+	/** Base branch the work targets (e.g. `main`). */
+	readonly baseBranchName?: string;
+	/** Whether the base branch is protected (drives PR vs direct-merge workflow). */
+	readonly baseBranchProtected?: boolean;
+	/** Upstream tracking branch (e.g. `origin/feature`). */
+	readonly upstreamBranchName?: string;
+	/** Number of commits the upstream branch has ahead of the local branch. */
+	readonly incomingChanges?: number;
+	/** Number of commits the local branch has ahead of the upstream branch. */
+	readonly outgoingChanges?: number;
+	/** Number of files with uncommitted changes. */
+	readonly uncommittedChanges?: number;
+}
+
+/**
+ * Reads the well-known git-state payload from {@link ISessionMeta}, if
+ * present. Returns `undefined` when the meta bag is absent or the value at
+ * the git key is the wrong shape.
+ */
+export function readSessionGitState(meta: ISessionMeta | undefined): ISessionGitState | undefined {
+	const value = meta?.[SESSION_META_GIT_KEY];
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+	return value as ISessionGitState;
+}
+
+/**
+ * Returns a new {@link ISessionMeta} with the git-state payload set to
+ * `gitState`, or with the git slot removed if `gitState` is `undefined`.
+ * Returns `undefined` if the result would be empty.
+ */
+export function withSessionGitState(meta: ISessionMeta | undefined, gitState: ISessionGitState | undefined): ISessionMeta | undefined {
+	const next: { [key: string]: unknown } = { ...meta };
+	if (gitState !== undefined) {
+		next[SESSION_META_GIT_KEY] = gitState;
+	} else {
+		delete next[SESSION_META_GIT_KEY];
+	}
+	return Object.keys(next).length > 0 ? next : undefined;
+}

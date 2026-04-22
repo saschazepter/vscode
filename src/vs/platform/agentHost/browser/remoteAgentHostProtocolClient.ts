@@ -271,6 +271,7 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 			isRead: s.isRead,
 			isDone: s.isDone,
 			diffs: s.diffs,
+			_meta: s._meta,
 		}));
 	}
 

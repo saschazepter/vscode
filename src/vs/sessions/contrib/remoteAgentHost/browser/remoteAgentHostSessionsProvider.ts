@@ -16,6 +16,7 @@ import { localize } from '../../../../nls.js';
 import { agentHostUri } from '../../../../platform/agentHost/common/agentHostFileSystemProvider.js';
 import { AGENT_HOST_SCHEME, agentHostAuthority, toAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentSession, type IAgentConnection, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
+import type { ISessionGitState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
@@ -237,8 +238,8 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 	protected _adapterOptions() {
 		return {
 			description: new MarkdownString().appendText(this.label),
-			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined) =>
-				RemoteAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, this.label),
+			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined) =>
+				RemoteAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, this.label, gitState),
 		};
 	}
 
@@ -450,8 +451,8 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 
 	// -- Workspaces ----------------------------------------------------------
 
-	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string): ISessionWorkspace | undefined {
-		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false });
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string, gitState: ISessionGitState | undefined): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false }, gitState);
 	}
 
 	private _buildWorkspaceFromUri(uri: URI): ISessionWorkspace {

@@ -68,6 +68,7 @@ import { EditorResourceAccessor, SideBySideEditor } from '../../../../workbench/
 import { logChangesViewFileSelect, logChangesViewVersionModeChange, logChangesViewViewModeChange } from '../../../common/sessionsTelemetry.js';
 import { ChecksViewModel } from './checksViewModel.js';
 import { ActiveSessionContextKeys, CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesContextKeys, ChangesVersionMode, ChangesViewMode, IsolationMode } from '../common/changes.js';
+import { AGENT_HOST_SKILL_BUTTON_UPDATE_PR_ID, isAgentHostSkillButtonId } from '../../agentHost/browser/agentHostSkillButtons.js';
 import { buildTreeChildren, ChangesTreeElement, ChangesTreeRenderer, IChangesFileItem, IChangesTreeRootInfo, isChangesFileItem, toIChangesFileItem } from './changesViewRenderer.js';
 import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
@@ -165,7 +166,8 @@ class ChangesButtonBarWidget extends Disposable {
 	private _getButtonConfiguration(action: IAction, outgoingChanges: number, reviewState: { isLoading: boolean; commentCount: number | undefined }): { showIcon: boolean; showLabel: boolean; isSecondary?: boolean; customLabel?: string; customClass?: string } | undefined {
 		if (
 			action.id === 'github.copilot.sessions.sync' ||
-			action.id === 'github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR'
+			action.id === 'github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR' ||
+			action.id === AGENT_HOST_SKILL_BUTTON_UPDATE_PR_ID
 		) {
 			const customLabel = outgoingChanges > 0
 				? `${action.label} ${outgoingChanges}↑`
@@ -197,7 +199,8 @@ class ChangesButtonBarWidget extends Disposable {
 			action.id === 'pr.checkoutFromChat' ||
 			action.id === 'github.copilot.sessions.initializeRepository' ||
 			action.id === 'github.copilot.sessions.commit' ||
-			action.id === 'agentSession.markAsDone'
+			action.id === 'agentSession.markAsDone' ||
+			isAgentHostSkillButtonId(action.id)
 		) {
 			return { showIcon: true, showLabel: true, isSecondary: false };
 		}

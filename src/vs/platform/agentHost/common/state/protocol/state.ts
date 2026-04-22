@@ -355,6 +355,18 @@ export interface IProjectInfo {
 }
 
 /**
+ * Well-known property bag attached to several session-level types. Allows
+ * extensions and clients to carry side-channel data without growing the core
+ * protocol on every addition. Keys SHOULD be namespaced (e.g. `git`,
+ * `vscode.foo`) to avoid collisions; all values MUST be JSON-serializable.
+ *
+ * @category Session State
+ */
+export interface ISessionMeta {
+	readonly [key: string]: unknown;
+}
+
+/**
  * @category Session State
  */
 export interface ISessionSummary {
@@ -382,6 +394,11 @@ export interface ISessionSummary {
 	isDone?: boolean;
 	/** Files changed during this session with diff statistics */
 	diffs?: IFileEdit[];
+	/**
+	 * Side-channel metadata. Keys are well-known or producer-defined;
+	 * consumers MUST ignore unknown keys.
+	 */
+	_meta?: ISessionMeta;
 }
 
 // ─── Config Schema Types ─────────────────────────────────────────────────────

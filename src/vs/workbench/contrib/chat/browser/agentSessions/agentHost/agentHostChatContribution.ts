@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../../base/common/observable.js';
@@ -24,9 +25,10 @@ import { IWorkbenchEnvironmentService } from '../../../../../services/environmen
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { ICustomizationHarnessService } from '../../../common/customizationHarnessService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
-import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
+import { IAgentPlugin, IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
-import { PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
+import { BUILTIN_STORAGE } from '../../../common/aiCustomizationWorkspaceService.js';
 import { AgentCustomizationSyncProvider } from './agentCustomizationSyncProvider.js';
 import { resolveTokenForResource } from './agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from './agentHostLanguageModelProvider.js';
@@ -70,6 +72,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
+		@IPromptsService private readonly _promptsService: IPromptsService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
 		super();
@@ -217,43 +220,48 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	/**
 	 * Resolves the customizations to include in the active client set.
 	 *
-	 * Classifies sync provider entries as plugins (matched against
-	 * installed plugins) or individual files (bundled into a synthetic
-	 * Open Plugin).
+	 * Combines user-selected sync entries with always-on built-in skills
+	 * (skills bundled with the Agents app under `vs/sessions/skills/`) and
+	 * classifies the result as plugins (matched against installed plugins)
+	 * or individual files (bundled into a synthetic Open Plugin).
+	 *
+	 * Built-ins are queried from `IPromptsService.findAgentSkills()`. In the
+	 * Agents-app window the prompts service surfaces a `BUILTIN_STORAGE`
+	 * entry per bundled skill; in the regular workbench window the call
+	 * returns no built-ins and this is a no-op for them.
 	 */
 	private async _resolveCustomizations(
 		syncProvider: AgentCustomizationSyncProvider,
 		bundler: SyncedCustomizationBundler,
 	): Promise<ICustomizationRef[]> {
 		const entries = syncProvider.getSelectedEntries();
-		if (entries.length === 0) {
+		const builtinSkillFiles = await this._collectBuiltinSkillFiles();
+
+		if (entries.length === 0 && builtinSkillFiles.length === 0) {
 			return [];
 		}
 
 		const plugins = this._agentPluginService.plugins.get();
-		const refs: ICustomizationRef[] = [];
-		const individualFiles: { uri: URI; type: PromptsType }[] = [];
+		return resolveCustomizationRefs(entries, builtinSkillFiles, plugins, bundler);
+	}
 
-		for (const entry of entries) {
-			const plugin = plugins.find(p => isEqualOrParent(entry.uri, p.uri));
-			if (plugin) {
-				refs.push({
-					uri: plugin.uri.toString() as ProtocolURI,
-					displayName: plugin.label,
-				});
-			} else if (entry.type) {
-				individualFiles.push({ uri: entry.uri, type: entry.type });
+	/**
+	 * Returns the always-on built-in skill files to include in the bundle.
+	 * Filters {@link IPromptsService.findAgentSkills} to entries whose storage
+	 * is `BUILTIN_STORAGE`, mapped to the shape the bundler expects.
+	 */
+	private async _collectBuiltinSkillFiles(): Promise<readonly { uri: URI; type: PromptsType }[]> {
+		const skills = await this._promptsService.findAgentSkills(CancellationToken.None);
+		if (!skills) {
+			return [];
+		}
+		const result: { uri: URI; type: PromptsType }[] = [];
+		for (const skill of skills) {
+			if ((skill.storage as PromptsStorage | typeof BUILTIN_STORAGE) === BUILTIN_STORAGE) {
+				result.push({ uri: skill.uri, type: PromptsType.skill });
 			}
 		}
-
-		if (individualFiles.length > 0) {
-			const result = await bundler.bundle(individualFiles);
-			if (result) {
-				refs.push(result.ref);
-			}
-		}
-
-		return refs;
+		return result;
 	}
 
 	private _getRootAgents(): readonly IAgentInfo[] {
@@ -343,4 +351,49 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		}
 		return false;
 	}
+}
+
+/**
+ * Pure helper that turns a list of user-selected sync entries plus a list
+ * of always-on built-in skill files into a final set of {@link ICustomizationRef}.
+ *
+ * Entries whose URI lives inside an installed plugin become a plugin ref
+ * (the plugin's root URI). Everything else is bundled into the agent host's
+ * synthetic Open Plugin via the supplied `bundler`.
+ *
+ * Exported for unit testing.
+ */
+export async function resolveCustomizationRefs(
+	entries: readonly { uri: URI; type?: PromptsType }[],
+	builtinSkillFiles: readonly { uri: URI; type: PromptsType }[],
+	plugins: readonly IAgentPlugin[],
+	bundler: { bundle(files: readonly { uri: URI; type: PromptsType }[]): Promise<{ ref: ICustomizationRef } | undefined> },
+): Promise<ICustomizationRef[]> {
+	const refs: ICustomizationRef[] = [];
+	const individualFiles: { uri: URI; type: PromptsType }[] = [];
+
+	for (const entry of entries) {
+		const plugin = plugins.find(p => isEqualOrParent(entry.uri, p.uri));
+		if (plugin) {
+			refs.push({
+				uri: plugin.uri.toString() as ProtocolURI,
+				displayName: plugin.label,
+			});
+		} else if (entry.type) {
+			individualFiles.push({ uri: entry.uri, type: entry.type });
+		}
+	}
+
+	for (const file of builtinSkillFiles) {
+		individualFiles.push({ uri: file.uri, type: file.type });
+	}
+
+	if (individualFiles.length > 0) {
+		const result = await bundler.bundle(individualFiles);
+		if (result) {
+			refs.push(result.ref);
+		}
+	}
+
+	return refs;
 }

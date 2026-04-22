@@ -12,6 +12,10 @@ import { IAgentHostSessionWorkingDirectoryResolver } from '../../../../workbench
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { LocalAgentHostSessionsProvider } from './localAgentHostSessionsProvider.js';
 
+// Register the agent-host-specific buttons in the Sessions Changes view that
+// drive the built-in skills (commit / merge / create-pr / etc.).
+import './agentHostSkillButtons.js';
+
 /**
  * Registers the {@link LocalAgentHostSessionsProvider} as a sessions provider
  * when `chat.agentHost.enabled` is true.

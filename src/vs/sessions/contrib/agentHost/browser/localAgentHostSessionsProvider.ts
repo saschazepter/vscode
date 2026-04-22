@@ -11,6 +11,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IAgentConnection, IAgentHostService, type IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
+import type { ISessionGitState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
@@ -108,8 +109,8 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 	protected _adapterOptions() {
 		return {
 			description: this._localDescription,
-			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined) =>
-				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory),
+			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined) =>
+				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, gitState),
 		};
 	}
 
@@ -119,8 +120,8 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 
 	// -- Workspaces ----------------------------------------------------------
 
-	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined): ISessionWorkspace | undefined {
-		return buildAgentHostSessionWorkspace(project, workingDirectory, { fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true });
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true }, gitState);
 	}
 
 	resolveWorkspace(repositoryUri: URI): ISessionWorkspace {

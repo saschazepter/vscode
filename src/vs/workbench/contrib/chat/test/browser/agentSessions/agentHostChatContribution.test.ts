@@ -44,6 +44,7 @@ import { IAgentHostFileSystemService } from '../../../../../services/agentHost/c
 import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { ICustomizationHarnessService } from '../../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
+import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
 import { IStorageService, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
@@ -341,6 +342,9 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	});
 	instantiationService.stub(IAgentPluginService, {
 		plugins: observableValue('plugins', []),
+	});
+	instantiationService.stub(IPromptsService, {
+		findAgentSkills: async () => [],
 	});
 	instantiationService.stub(ITerminalChatService, {
 		onDidContinueInBackground: Event.None,
@@ -1914,6 +1918,48 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(controller.items.length, 1);
 			assert.strictEqual(controller.items[0].description, undefined);
+		});
+
+		test('list controller propagates gitState into item metadata', async () => {
+			const { instantiationService, agentHostService } = createTestServices(disposables);
+
+			const controller = disposables.add(instantiationService.createInstance(
+				AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined, 'local'));
+
+			const workingDirectory = URI.file('/repo/work');
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'sess-git'),
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'With git',
+				workingDirectory,
+				_meta: {
+					git: {
+						hasGitHubRemote: true,
+						branchName: 'feature/foo',
+						baseBranchName: 'main',
+						baseBranchProtected: true,
+						upstreamBranchName: 'origin/feature/foo',
+						incomingChanges: 0,
+						outgoingChanges: 2,
+						uncommittedChanges: 1,
+					},
+				},
+			});
+			await controller.refresh(CancellationToken.None);
+
+			assert.strictEqual(controller.items.length, 1);
+			assert.deepStrictEqual(controller.items[0].metadata, {
+				workingDirectoryPath: workingDirectory.fsPath,
+				repositoryPath: workingDirectory.fsPath,
+				hasGitHubRemote: true,
+				branchName: 'feature/foo',
+				baseBranchName: 'main',
+				upstreamBranchName: 'origin/feature/foo',
+				incomingChanges: 0,
+				outgoingChanges: 2,
+				uncommittedChanges: 1,
+			});
 		});
 
 		test('handler works with any IAgentConnection, not just IAgentHostService', () => runWithFakedTimers({ useFakeTimers: true }, async () => {

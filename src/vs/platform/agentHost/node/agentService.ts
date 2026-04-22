@@ -17,12 +17,13 @@ import { ISessionDataService } from '../common/sessionDataService.js';
 import { ActionType, IActionEnvelope, INotification, ISessionAction, ITerminalAction, isSessionAction } from '../common/state/sessionActions.js';
 import type { ICreateTerminalParams, IResolveSessionConfigResult, ISessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, type IDirectoryEntry, type IResourceCopyParams, type IResourceCopyResult, type IResourceDeleteParams, type IResourceDeleteResult, type IResourceListResult, type IResourceMoveParams, type IResourceMoveResult, type IResourceReadResult, type IResourceWriteParams, type IResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, type IResponsePart, type ISessionConfigState, type ISessionFileDiff, type ISessionSummary, type IToolCallCompletedState, type IToolResultSubagentContent, type ITurn } from '../common/state/sessionState.js';
+import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, withSessionGitState, type IResponsePart, type ISessionConfigState, type ISessionFileDiff, type ISessionSummary, type IToolCallCompletedState, type IToolResultSubagentContent, type ITurn } from '../common/state/sessionState.js';
 import { IProductService } from '../../product/common/productService.js';
 import { AgentSideEffects } from './agentSideEffects.js';
 import { AgentHostTerminalManager, type IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './copilot/fileEditTracker.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
+import { IAgentHostGitService } from './agentHostGitService.js';
 
 /**
  * The agent service implementation that runs inside the agent-host utility
@@ -85,6 +86,7 @@ export class AgentService extends Disposable implements IAgentService {
 		private readonly _fileService: IFileService,
 		private readonly _sessionDataService: ISessionDataService,
 		private readonly _productService: IProductService,
+		private readonly _gitService?: IAgentHostGitService,
 	) {
 		super();
 		this._logService.info('AgentService initialized');
@@ -193,8 +195,29 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		});
 
-		this._logService.trace(`[AgentService] listSessions returned ${withStatus.length} sessions`);
-		return withStatus;
+		// Overlay git state under `_meta.git` for sessions that have a
+		// working directory backed by a git work tree. Each computation is
+		// cached briefly inside the git service, so back-to-back list calls
+		// do not re-shell-out for the same directory. Failures are logged and
+		// the session is returned without git state.
+		const withGitState = await Promise.all(withStatus.map(async s => {
+			if (!this._gitService || !s.workingDirectory) {
+				return s;
+			}
+			try {
+				const gitState = await this._gitService.getSessionGitState(s.workingDirectory);
+				if (!gitState) {
+					return s;
+				}
+				return { ...s, _meta: withSessionGitState(s._meta, gitState) };
+			} catch (e) {
+				this._logService.warn(`[AgentService] Failed to compute git state for ${s.session}`, e);
+				return s;
+			}
+		}));
+
+		this._logService.trace(`[AgentService] listSessions returned ${withGitState.length} sessions`);
+		return withGitState;
 	}
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
@@ -527,6 +550,7 @@ export class AgentService extends Disposable implements IAgentService {
 			isRead,
 			isDone,
 			diffs,
+			_meta: meta._meta,
 		};
 
 		this._stateManager.restoreSession(summary, turns);
