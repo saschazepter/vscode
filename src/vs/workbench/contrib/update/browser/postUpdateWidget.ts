@@ -107,6 +107,7 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 			additionalClasses: ['post-update-widget-hover'],
 			persistence: { sticky: true },
 			appearance: { showPointer: false, compact: true, maxHeightRatio: 1 },
+			trapFocus: true,
 		}, true);
 	}
 
