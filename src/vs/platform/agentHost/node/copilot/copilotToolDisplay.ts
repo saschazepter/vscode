@@ -463,7 +463,7 @@ export function getPermissionDisplay(request: ITypedPermissionRequest, workingDi
 			stripRedundantCdPrefix(CopilotToolName.Bash, shellParams, workingDirectory);
 			const cleanedCommand = typeof shellParams?.command === 'string' ? shellParams.command : fullCommandText;
 			return {
-				confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal"),
+				confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal?"),
 				invocationMessage: intention ?? getInvocationMessage(CopilotToolName.Bash, getToolDisplayName(CopilotToolName.Bash), cleanedCommand ? { command: cleanedCommand } : undefined),
 				toolInput: cleanedCommand,
 				permissionKind: 'shell',
@@ -479,7 +479,7 @@ export function getPermissionDisplay(request: ITypedPermissionRequest, workingDi
 				stripRedundantCdPrefix(sdkToolName, args, workingDirectory);
 				const command = args.command as string;
 				return {
-					confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal"),
+					confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal?"),
 					invocationMessage: getInvocationMessage(sdkToolName, getToolDisplayName(sdkToolName), { command }),
 					toolInput: command,
 					permissionKind: 'shell',
