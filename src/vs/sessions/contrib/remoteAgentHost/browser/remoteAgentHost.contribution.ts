@@ -180,8 +180,22 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	private _createProvider(entry: IRemoteAgentHostEntry): void {
 		const address = getEntryAddress(entry);
 		const store = new DisposableStore();
+		// For SSH entries, wire disconnectOnDemand so that "Remove Remote"
+		// fully tears down the main-process SSH tunnel and WebSocket relay
+		// before removing the configured entry. Without this the tunnel
+		// survives the remove and the next connect either (a) silently
+		// reuses stale renderer state or (b) reuses the surviving tunnel
+		// instead of starting a fresh one. The disconnect fires
+		// `onDidCloseConnection`, which clears the renderer-side connection
+		// handle.
+		const disconnectOnDemand = entry.connection.type === RemoteAgentHostEntryType.SSH
+			? async () => {
+				await this._sshService.disconnect(address);
+				await this._remoteAgentHostService.removeRemoteAgentHost(address);
+			}
+			: undefined;
 		const provider = this._instantiationService.createInstance(
-			RemoteAgentHostSessionsProvider, { address, name: entry.name });
+			RemoteAgentHostSessionsProvider, { address, name: entry.name, disconnectOnDemand });
 		store.add(provider);
 		store.add(this._sessionsProvidersService.registerProvider(provider));
 		this._providerInstances.set(address, provider);

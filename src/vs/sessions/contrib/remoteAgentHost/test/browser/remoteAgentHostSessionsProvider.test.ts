@@ -30,6 +30,7 @@ import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/co
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus, COPILOT_CLI_SESSION_TYPE } from '../../../../services/sessions/common/session.js';
 import { RemoteAgentHostSessionsProvider, type IRemoteAgentHostSessionsProviderConfig } from '../../browser/remoteAgentHostSessionsProvider.js';
+import { IRemoteAgentHostService } from '../../../../../platform/agentHost/common/remoteAgentHostService.js';
 
 // ---- Mock connection --------------------------------------------------------
 
@@ -176,7 +177,7 @@ function createSession(id: string, opts?: { provider?: string; summary?: string;
 	};
 }
 
-function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined; sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; openSession?: boolean; storageService?: IStorageService; noConnection?: boolean }): RemoteAgentHostSessionsProvider {
+function createProvider(disposables: DisposableStore, connection: MockAgentConnection, overrides?: { address?: string; connectionName?: string | undefined; sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; openSession?: boolean; storageService?: IStorageService; noConnection?: boolean; disconnectOnDemand?: () => Promise<void>; removeRemoteAgentHost?: (address: string) => Promise<void> }): RemoteAgentHostSessionsProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
 	instantiationService.stub(IFileDialogService, {});
@@ -196,10 +197,14 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 		lookupLanguageModel: () => undefined,
 	});
 	instantiationService.stub(IStorageService, overrides?.storageService ?? disposables.add(new InMemoryStorageService()));
+	instantiationService.stub(IRemoteAgentHostService, new class extends mock<IRemoteAgentHostService>() {
+		override removeRemoteAgentHost = overrides?.removeRemoteAgentHost ?? (async () => { });
+	}());
 
 	const config: IRemoteAgentHostSessionsProviderConfig = {
 		address: overrides?.address ?? 'localhost:4321',
 		name: overrides !== undefined && Object.prototype.hasOwnProperty.call(overrides, 'connectionName') ? overrides.connectionName ?? '' : 'Test Host',
+		disconnectOnDemand: overrides?.disconnectOnDemand,
 	};
 
 	const provider = disposables.add(instantiationService.createInstance(RemoteAgentHostSessionsProvider, config));
@@ -1000,5 +1005,37 @@ suite('RemoteAgentHostSessionsProvider', () => {
 
 		assert.strictEqual(connection.sessionUnsubscribeCounts.get(sessionUriStr), 1);
 	}));
+
+	test('disconnect() falls back to removeRemoteAgentHost when disconnectOnDemand is not set', async () => {
+		let removed: string | undefined;
+		const provider = createProvider(disposables, connection, {
+			address: 'ssh:test-host',
+			removeRemoteAgentHost: async (address) => { removed = address; },
+		});
+
+		await provider.disconnect();
+
+		assert.strictEqual(removed, 'ssh:test-host');
+	});
+
+	test('disconnect() invokes disconnectOnDemand and skips removeRemoteAgentHost when provided', async () => {
+		// Regression: SSH "Remove Remote" used to skip the SSH tunnel teardown
+		// because no disconnectOnDemand was wired. The provider should hand
+		// full responsibility to disconnectOnDemand when it is provided so the
+		// SSH path can tear down the main-process tunnel before removing the
+		// settings entry itself.
+		let onDemandCalled = 0;
+		let removed: string | undefined;
+		const provider = createProvider(disposables, connection, {
+			address: 'ssh:test-host',
+			disconnectOnDemand: async () => { onDemandCalled++; },
+			removeRemoteAgentHost: async (address) => { removed = address; },
+		});
+
+		await provider.disconnect();
+
+		assert.strictEqual(onDemandCalled, 1);
+		assert.strictEqual(removed, undefined, 'removeRemoteAgentHost must not be called when disconnectOnDemand is provided');
+	});
 
 });
