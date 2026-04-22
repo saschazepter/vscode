@@ -365,9 +365,9 @@ suite('WorkspacePicker - Connection Status', () => {
 	test('restore picks the stored workspace when its provider registers after another provider', () => {
 		// Regression: previously the picker filtered restore through `activeProviderId`,
 		// which auto-locked to whichever provider registered first. If the stored
-		// workspace belonged to a provider that registered later (e.g. local-agent-host
-		// is contributed at AfterRestored, while default-copilot is synchronous), the
-		// stored entry was filtered out and never restored.
+		// workspace belonged to a provider that registered later than another available
+		// provider (for example, local-agent-host registering after default-copilot),
+		// the stored entry was filtered out and never restored.
 		const copilotProvider = createMockProvider('default-copilot');
 
 		const storage = disposables.add(new TestStorageService());

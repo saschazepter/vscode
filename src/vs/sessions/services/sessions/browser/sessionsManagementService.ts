@@ -73,7 +73,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		// Save on shutdown
 		this._register(this.storageService.onWillSaveState(() => this.saveLastSelectedSession()));
 
-		// Restore or auto-select active provider
+		// Subscribe to provider changes for session type updates
 		this._register(this.sessionsProvidersService.onDidChangeProviders(e => {
 			this._onProvidersChanged(e);
 			this._updateSessionTypes();
