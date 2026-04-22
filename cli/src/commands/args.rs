@@ -445,7 +445,7 @@ pub struct EditorOptions {
 	/// Open without bringing the window to the foreground or stealing
 	/// focus. Useful for scripts, agents and integration tests. Behavior
 	/// depends on the OS window manager.
-	#[clap(long)]
+	#[clap(long, hide = true)]
 	pub background: bool,
 
 	/// The locale to use (e.g. en-US or zh-TW).
