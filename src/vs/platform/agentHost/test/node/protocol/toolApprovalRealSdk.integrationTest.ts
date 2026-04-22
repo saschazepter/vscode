@@ -746,18 +746,20 @@ function terminalText(state: ITerminalState): string {
 		assert.ok(agent.models.length > 0, 'Expected at least one model from listModels');
 
 		// Assert every model has the shape CopilotAgent._listModels produces.
-		// If the SDK changes and any required field becomes undefined (as
-		// happened with max_context_window_tokens in @github/copilot@1.0.34),
-		// this loop surfaces the exact offending model instead of letting
-		// _refreshModels silently swallow the TypeError and set models=[].
+		// maxContextWindow is optional because synthetic SDK entries (e.g. the
+		// `auto` router) ship with `capabilities: {}` and no fixed window.
 		for (const model of agent.models) {
 			assert.strictEqual(typeof model.id, 'string', `model.id should be a string: ${JSON.stringify(model)}`);
 			assert.ok(model.id.length > 0, `model.id should be non-empty: ${JSON.stringify(model)}`);
 			assert.strictEqual(typeof model.name, 'string', `model.name should be a string: ${JSON.stringify(model)}`);
 			assert.strictEqual(model.provider, 'copilotcli', `model.provider should be copilotcli: ${JSON.stringify(model)}`);
-			assert.strictEqual(typeof model.maxContextWindow, 'number', `model.maxContextWindow should be a number: ${JSON.stringify(model)}`);
-			assert.ok(model.maxContextWindow && model.maxContextWindow > 0, `model.maxContextWindow should be positive: ${JSON.stringify(model)}`);
+			assert.ok(model.maxContextWindow === undefined || (typeof model.maxContextWindow === 'number' && model.maxContextWindow > 0),
+				`model.maxContextWindow should be undefined or a positive number: ${JSON.stringify(model)}`);
 			assert.ok(model.supportsVision === undefined || typeof model.supportsVision === 'boolean', `model.supportsVision should be boolean or undefined: ${JSON.stringify(model)}`);
 		}
+
+		// The `auto` synthetic router model should be present even though it
+		// has no fixed context window.
+		assert.ok(agent.models.some(m => m.id === 'auto'), `Expected 'auto' model in list, got: ${agent.models.map(m => m.id).join(', ')}`);
 	});
 });
