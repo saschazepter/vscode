@@ -29,6 +29,7 @@ import { rawPartAsCompactionData } from '../common/compactionDataContainer';
 import { rawPartAsPhaseData } from '../common/phaseDataContainer';
 import { getIndexOfStatefulMarker, getStatefulMarkerAndIndex } from '../common/statefulMarkerContainer';
 import { rawPartAsThinkingData } from '../common/thinkingDataContainer';
+import { createResponsesStreamDumper } from './responsesApiDebugDump';
 
 export function getResponsesApiCompactionThreshold(configService: IConfigurationService, expService: IExperimentationService, endpoint: IChatEndpoint): number | undefined {
 	const contextManagementEnabled = configService.getExperimentBasedConfig(ConfigKey.ResponsesApiContextManagementEnabled, expService) && !modelsWithoutResponsesContextManagement.has(endpoint.family);
@@ -600,9 +601,11 @@ export async function processResponseFromChatEndpoint(instantiationService: IIns
 		const ghRequestId = response.headers.get('x-github-request-id') ?? '';
 		const { serverExperiments } = getRequestId(response.headers);
 		const processor = instantiationService.createInstance(OpenAIResponsesProcessor, telemetryData, telemetryService, requestId, ghRequestId, serverExperiments, compactionThreshold);
+		const dumper = createResponsesStreamDumper(requestId, logService);
 		const parser = new SSEParser((ev) => {
 			try {
 				logService.trace(`SSE: ${ev.data}`);
+				dumper.logEvent(new Date(), ev.type, ev.data);
 				const completion = processor.push({ type: ev.type, ...JSON.parse(ev.data) }, finishCallback);
 				if (completion) {
 					sendCompletionOutputTelemetry(telemetryService, logService, completion, telemetryData);
