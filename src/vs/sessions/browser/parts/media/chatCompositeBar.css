@@ -26,7 +26,7 @@
 	display: none;
 }
 
-/* Base tab: preserve chat title casing + pill padding — mirrors auxiliarybar action-label */
+/* Base tab: preserve chat title casing while keeping the same pill treatment */
 .chat-composite-bar-tab {
 	display: flex;
 	align-items: center;
