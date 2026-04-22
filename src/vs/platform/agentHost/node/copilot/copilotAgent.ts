@@ -60,11 +60,32 @@ export interface ICopilotClient {
 	start(): Promise<void>;
 	stop: CopilotClient['stop'];
 	listSessions: CopilotClient['listSessions'];
-	listModels: CopilotClient['listModels'];
+	listModels: () => Promise<ICopilotModelInfo[]>;
 	createSession: CopilotClient['createSession'];
 	resumeSession: CopilotClient['resumeSession'];
 	getSessionMetadata: CopilotClient['getSessionMetadata'];
 	readonly rpc: { readonly sessions: { readonly fork: CopilotClient['rpc']['sessions']['fork'] } };
+}
+
+/**
+ * Corrected shape of {@link CopilotClient.listModels} entries.
+ *
+ * The SDK's `ModelInfo` type declares `capabilities`, `capabilities.limits`,
+ * and `capabilities.limits.max_context_window_tokens` as required, but at
+ * runtime synthetic entries (e.g. the `auto` router) ship with an empty
+ * `capabilities: {}` object. We mirror the SDK fields we consume but mark the
+ * unreliable parts as optional so callers must defensively handle them.
+ */
+export interface ICopilotModelInfo {
+	readonly id: string;
+	readonly name: string;
+	readonly capabilities?: {
+		readonly supports?: { readonly vision?: boolean };
+		readonly limits?: { readonly max_context_window_tokens?: number };
+	};
+	readonly policy?: { readonly state?: string };
+	readonly supportedReasoningEfforts?: readonly string[];
+	readonly defaultReasoningEffort?: string;
 }
 
 function isReasoningEffort(value: string | undefined): value is ReasoningEffort {
@@ -421,15 +442,24 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._logService.info('[Copilot] Listing models...');
 		const client = await this._ensureClient();
 		const models = await client.listModels();
-		const result = models.map(m => ({
-			provider: this.id,
-			id: m.id,
-			name: m.name,
-			maxContextWindow: m.capabilities.limits.max_context_window_tokens,
-			supportsVision: m.capabilities.supports.vision,
-			configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
-			policyState: m.policy?.state as PolicyState | undefined,
-		}));
+		const result = models.flatMap((m): IAgentModelInfo[] => {
+			const maxContextWindow = m.capabilities?.limits?.max_context_window_tokens;
+			if (typeof maxContextWindow !== 'number') {
+				// Synthetic SDK entries like `auto` ship with `capabilities: {}` and
+				// no fixed context window, so we can't surface them as concrete models.
+				this._logService.warn(`[Copilot] Skipping model ${m.id} — missing capabilities.limits.max_context_window_tokens`);
+				return [];
+			}
+			return [{
+				provider: this.id,
+				id: m.id,
+				name: m.name,
+				maxContextWindow,
+				supportsVision: !!m.capabilities?.supports?.vision,
+				configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
+				policyState: m.policy?.state as PolicyState | undefined,
+			}];
+		});
 		this._logService.info(`[Copilot] Found ${result.length} models`);
 		return result;
 	}
