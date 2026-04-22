@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
@@ -93,6 +94,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/** User's session indexing preference (resolved once per repo). */
 	private readonly _indexingPreference: SessionIndexingPreference;
 
+	/** Status bar item showing cloud sync state. */
+	private readonly _statusBarItem: vscode.StatusBarItem;
+
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
@@ -115,19 +119,30 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			maxResetTimeoutMs: 30_000,
 		});
 
+		// Create status bar item for cloud sync status
+		this._statusBarItem = vscode.window.createStatusBarItem('copilot.cloudSync', vscode.StatusBarAlignment.Right, -999);
+		this._statusBarItem.name = 'Copilot Cloud Sync';
+
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
 
 		// Only set up span listener when both local index and cloud sync are enabled.
 		// Uses autorun to react if settings change at runtime.
+		// Both new and old settings taken into account for backward compatibility
 		const localEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
-		const cloudEnabled = this._configService.getConfigObservable(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled);
+		const cloudEnabledInternal = this._configService.getConfigObservable(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled);
+		const cloudEnabledPublic = this._configService.getConfigObservable(ConfigKey.Advanced.SessionSearchCloudSync);
 		const spanListenerStore = this._register(new DisposableStore());
 		this._register(autorun(reader => {
 			spanListenerStore.clear();
-			if (!localEnabled.read(reader) || !cloudEnabled.read(reader)) {
+			const publicValue = cloudEnabledPublic.read(reader);
+			const cloudEnabled = this._configService.isConfigured(ConfigKey.Advanced.SessionSearchCloudSync) ? publicValue : cloudEnabledInternal.read(reader);
+			if (!localEnabled.read(reader) || !cloudEnabled) {
+				this._updateStatusBar('disabled');
 				return;
 			}
+
+			this._updateStatusBar('idle');
 
 			// Listen to completed OTel spans — deferred off the callback
 			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
@@ -158,6 +173,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		this._translationStates.clear();
 		this._disabledSessions.clear();
 		this._initializingSessions.clear();
+		this._statusBarItem.dispose();
 
 		super.dispose();
 	}
@@ -243,6 +259,40 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				addSecretValues(token.token);
 			}
 		}).catch(() => { /* non-fatal */ });
+	}
+
+	// ── Status bar ───────────────────────────────────────────────────────────────
+
+	private _updateStatusBar(state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'error'): void {
+		switch (state) {
+			case 'disabled':
+				this._statusBarItem.text = '$(cloud)';
+				this._statusBarItem.tooltip = 'Cloud Session Sync: Off — click to open settings to enable';
+				this._statusBarItem.command = {
+					command: 'workbench.action.openSettings',
+					title: 'Open Cloud Sync Settings',
+					arguments: ['github.copilot.chat.sessionSearch.cloudSync'],
+				};
+				break;
+			case 'idle':
+				this._statusBarItem.text = '$(cloud-upload)';
+				this._statusBarItem.tooltip = 'Cloud Session Sync: Enabled';
+				this._statusBarItem.command = undefined;
+				break;
+			case 'syncing':
+				this._statusBarItem.text = '$(cloud-upload) $(sync~spin)';
+				this._statusBarItem.tooltip = 'Cloud Session Sync: Uploading...';
+				break;
+			case 'synced':
+				this._statusBarItem.text = '$(cloud-upload)';
+				this._statusBarItem.tooltip = 'Cloud Session Sync: Up to date';
+				break;
+			case 'error':
+				this._statusBarItem.text = '$(cloud-upload)$(warning)';
+				this._statusBarItem.tooltip = 'Cloud Session Sync: Error — retrying';
+				break;
+		}
+		this._statusBarItem.show();
 	}
 
 	// ── Lazy session initialization ──────────────────────────────────────────────
@@ -501,6 +551,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		this._isFlushing = true;
+		this._updateStatusBar('syncing');
+		let flushStatus: 'synced' | 'error' | undefined;
 		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
 
 		try {
@@ -543,6 +595,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
+				flushStatus = 'synced';
 
 				if (!this._firstCloudWriteLogged) {
 					this._firstCloudWriteLogged = true;
@@ -554,11 +607,13 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				}
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
+				flushStatus = 'error';
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
 			this._eventBuffer.unshift(...batch);
 			this._circuitBreaker.recordFailure();
+			flushStatus = 'error';
 
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'flushBatch',
@@ -567,6 +622,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			}, { droppedEvents: batch.length });
 		} finally {
 			this._isFlushing = false;
+			this._updateStatusBar(flushStatus ?? 'idle');
 		}
 
 		if (this._eventBuffer.length > SOFT_BUFFER_CAP && this._flushTimer !== undefined) {

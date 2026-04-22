@@ -246,6 +246,9 @@ registerAction2(StopReadAloud);
 registerChatDeveloperActions();
 registerChatExportZipAction();
 
+// Register cloud sync consent dialog command (used by copilot extension)
+import '../browser/actions/chatCloudSyncConsent.js';
+
 registerWorkbenchContribution2(KeywordActivationContribution.ID, KeywordActivationContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(NativeBuiltinToolsContribution.ID, NativeBuiltinToolsContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatCommandLineHandler.ID, ChatCommandLineHandler, WorkbenchPhase.BlockRestore);

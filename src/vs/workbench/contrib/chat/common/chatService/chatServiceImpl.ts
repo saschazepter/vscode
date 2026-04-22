@@ -1304,6 +1304,30 @@ export class ChatService extends Disposable implements IChatService {
 						progressCallback([{ kind: 'disabledClaudeHooks' }]);
 					}
 
+					// Cloud sync consent: show once per workspace when cloud sync is enabled but not yet confirmed.
+					const cloudSyncEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.sessionSearch.cloudSync.enabled')
+						|| this.configurationService.getValue<boolean>('github.copilot.chat.advanced.sessionSearch.cloudSync.enabled');
+					const cloudSyncConsentKey = 'chat.cloudSync.consentShown';
+					if (cloudSyncEnabled && !this.storageService.getBoolean(cloudSyncConsentKey, StorageScope.WORKSPACE)) {
+						this.storageService.store(cloudSyncConsentKey, true, StorageScope.WORKSPACE, StorageTarget.USER);
+						progressCallback([{ kind: 'cloudSyncConsent' }]);
+
+						// Block until user clicks Continue or Disable (which changes the setting)
+						await new Promise<void>(resolve => {
+							const disposable = this.configurationService.onDidChangeConfiguration(e => {
+								if (e.affectsConfiguration('github.copilot.chat.sessionSearch.cloudSync.enabled')) {
+									disposable.dispose();
+									resolve();
+								}
+							});
+							// Also resolve if the request is cancelled
+							token.onCancellationRequested(() => {
+								disposable.dispose();
+								resolve();
+							});
+						});
+					}
+
 					// MCP autostart: only run for native VS Code sessions (sidebar, new editors) but not for extension contributed sessions that have inputType set.
 					if (model.canUseTools) {
 						const autostartResult = new ChatMcpServersStarting(this.mcpService.autostart(token));

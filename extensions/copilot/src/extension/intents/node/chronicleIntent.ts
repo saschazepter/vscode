@@ -22,6 +22,7 @@ import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexin
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
+import { IRunCommandExecutionService } from '../../../platform/commands/common/runCommandExecutionService';
 import { IToolsService } from '../../tools/common/toolsService';
 import { ToolName } from '../../tools/common/toolNames';
 import { Conversation } from '../../prompt/common/conversation';
@@ -67,6 +68,7 @@ export class ChronicleIntent implements IIntent {
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
 		@IFetcherService private readonly _fetcherService: IFetcherService,
+		@IRunCommandExecutionService private readonly _commandService: IRunCommandExecutionService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
 	}
@@ -75,6 +77,28 @@ export class ChronicleIntent implements IIntent {
 
 	/** Stashed system prompt for tool-calling subcommands (tips, free-form). */
 	private _pendingSystemPrompt: string | undefined;
+
+	/** Whether the cloud sync suggestion has already been shown this session. */
+	private _cloudSyncSuggestionShown = false;
+
+	/**
+	 * Show a non-modal notification suggesting cloud sync when the user
+	 * runs a chronicle command with localIndex enabled but cloudSync disabled.
+	 * The notification is shown once per workspace (persisted in core storage).
+	 */
+	private _suggestCloudSync(): void {
+		if (this._cloudSyncSuggestionShown) {
+			return;
+		}
+		if (this._indexingPreference.hasCloudConsent()) {
+			return; // Already enabled
+		}
+		this._cloudSyncSuggestionShown = true;
+
+		this._commandService.executeCommand('github.copilot.chat.suggestCloudSync').catch(() => {
+			// Command not available (e.g., older VS Code) — ignore
+		});
+	}
 
 	async handleRequest(
 		conversation: Conversation,
@@ -90,6 +114,9 @@ export class ChronicleIntent implements IIntent {
 			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
+
+		// Suggest cloud sync if local-only (non-blocking notification)
+		this._suggestCloudSync();
 
 		// Route by command name (e.g. 'chronicle:standup') or fall back to parsing the prompt
 		const { subcommand, rest } = this._resolveSubcommand(request);

@@ -51,7 +51,7 @@ import { IChatAgentMetadata } from '../../common/participants/chatAgents.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatProgressResponseContent, IChatTextEditGroup } from '../../common/model/chatModel.js';
 import { chatSubcommandLeader } from '../../common/requestParser/chatParserTypes.js';
-import { ChatAgentVoteDirection, ChatErrorLevel, ChatRequestQueueKind, IChatConfirmation, IChatContentReference, IChatDisabledClaudeHooksPart, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatPlanReview, IChatPlanReviewResult, IChatPullRequestContent, IChatQuestionAnswerValue, IChatQuestionAnswers, IChatQuestionCarousel, IChatService, IChatTask, IChatTaskSerialized, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, isChatFollowup } from '../../common/chatService/chatService.js';
+import { ChatAgentVoteDirection, ChatErrorLevel, ChatRequestQueueKind, IChatCloudSyncConsentPart, IChatConfirmation, IChatContentReference, IChatDisabledClaudeHooksPart, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatPlanReview, IChatPlanReviewResult, IChatPullRequestContent, IChatQuestionAnswerValue, IChatQuestionAnswers, IChatQuestionCarousel, IChatService, IChatTask, IChatTaskSerialized, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, isChatFollowup } from '../../common/chatService/chatService.js';
 import { ChatPlanReviewData } from '../../common/model/chatProgressTypes/chatPlanReviewData.js';
 import { ChatQuestionCarouselData } from '../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { localChatSessionType } from '../../common/chatSessionsService.js';
@@ -83,6 +83,7 @@ import { ChatExtensionsContentPart } from './chatContentParts/chatExtensionsCont
 import { ChatMarkdownContentPart, codeblockHasClosingBackticks } from './chatContentParts/chatMarkdownContentPart.js';
 import { ChatMcpServersInteractionContentPart } from './chatContentParts/chatMcpServersInteractionContentPart.js';
 import { ChatDisabledClaudeHooksContentPart } from './chatContentParts/chatDisabledClaudeHooksContentPart.js';
+import { ChatCloudSyncConsentContentPart } from './chatContentParts/chatCloudSyncConsentContentPart.js';
 import { ChatMultiDiffContentPart } from './chatContentParts/chatMultiDiffContentPart.js';
 import { ChatProgressContentPart, ChatProgressSubPart, ChatWorkingProgressContentPart } from './chatContentParts/chatProgressContentPart.js';
 import { ChatPullRequestContentPart } from './chatContentParts/chatPullRequestContentPart.js';
@@ -1174,6 +1175,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			(lastPart.kind === 'progressTask' && lastPart.deferred.isSettled) ||
 			lastPart.kind === 'mcpServersStarting' ||
 			lastPart.kind === 'disabledClaudeHooks' ||
+			lastPart.kind === 'cloudSyncConsent' ||
 			lastPart.kind === 'hook'
 		) {
 			return { kind: 'working' };
@@ -2228,6 +2230,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				return this.renderMcpServersInteractionRequired(content, context, templateData);
 			} else if (content.kind === 'disabledClaudeHooks') {
 				return this.renderDisabledClaudeHooks(content, context);
+			} else if (content.kind === 'cloudSyncConsent') {
+				return this.renderCloudSyncConsent(content, context);
 			} else if (content.kind === 'thinking') {
 				return this.renderThinkingPart(content, context, templateData);
 			} else if (content.kind === 'workspaceEdit') {
@@ -3189,6 +3193,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 	private renderDisabledClaudeHooks(content: IChatDisabledClaudeHooksPart, context: IChatContentPartRenderContext): IChatContentPart {
 		return this.instantiationService.createInstance(ChatDisabledClaudeHooksContentPart, context);
+	}
+
+	private renderCloudSyncConsent(content: IChatCloudSyncConsentPart, context: IChatContentPartRenderContext): IChatContentPart {
+		return this.instantiationService.createInstance(ChatCloudSyncConsentContentPart, content, context);
 	}
 
 	disposeTemplate(templateData: IChatListItemTemplate): void {

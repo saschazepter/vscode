@@ -1018,6 +1018,10 @@ export interface IChatDisabledClaudeHooksPart {
 	readonly kind: 'disabledClaudeHooks';
 }
 
+export interface IChatCloudSyncConsentPart {
+	readonly kind: 'cloudSyncConsent';
+}
+
 /** A single approval option shown in the plan review dropdown button. */
 export interface IChatPlanApprovalAction {
 	label: string;
@@ -1127,7 +1131,8 @@ export type IChatProgress =
 	| IChatMcpServersStartingSerialized
 	| IChatHookPart
 	| IChatExternalToolInvocationUpdate
-	| IChatDisabledClaudeHooksPart;
+	| IChatDisabledClaudeHooksPart
+	| IChatCloudSyncConsentPart;
 
 export interface IChatFollowup {
 	kind: 'reply';
