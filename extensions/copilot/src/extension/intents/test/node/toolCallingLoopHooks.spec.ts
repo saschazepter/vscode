@@ -198,9 +198,8 @@ describe('ToolCallingLoop SessionStart hook', () => {
 		it('should execute SessionStart hook on the first turn of regular sessions', async () => {
 			const conversation = createTestConversation(1); // First turn
 			const request = createMockChatRequest({
-				model: { id: 'test-model-id' },
-				participant: 'test-agent',
-			} as Partial<ChatRequest>);
+				model: { id: 'test-model-id' } as ChatRequest['model'],
+			});
 
 			const loop = instantiationService.createInstance(
 				TestToolCallingLoop,
