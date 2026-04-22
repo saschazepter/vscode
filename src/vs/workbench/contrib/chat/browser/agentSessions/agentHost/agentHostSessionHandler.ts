@@ -604,6 +604,15 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			locations: [ChatAgentLocation.Chat],
 			modes: [ChatModeKind.Agent],
 			disambiguation: [],
+			// Required for ChatRequestParser to recognize bundled prompt-file
+			// slash commands (e.g. /merge, /create-pr) when this locked agent
+			// is forced via `agentIdSilent`. Without this, the parser sees a
+			// `usedAgent` with no matching subcommand and bails before
+			// producing a ChatRequestSlashPromptPart, so the request renders
+			// as plain text instead of a styled slash-command chip.
+			capabilities: {
+				supportsPromptAttachments: true,
+			},
 		};
 
 		const agentImpl: IChatAgentImplementation = {
