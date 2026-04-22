@@ -5,7 +5,6 @@
 
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { mock } from '../../../../../base/test/common/mock.js';
@@ -101,9 +100,7 @@ class FakeSessionsProvidersService extends mock<ISessionsProvidersService>() {
 
 suite('agentHostSkillButtons - IsAgentHostSession context key', () => {
 
-	ensureNoDisposablesAreLeakedInTestSuite();
-	const store = new DisposableStore();
-	teardown(() => store.clear());
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	function setup() {
 		const contextKeyService = store.add(new MockContextKeyService());
