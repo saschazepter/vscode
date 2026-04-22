@@ -19,7 +19,7 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
-import { PromptsType, Target } from '../../common/promptSyntax/promptTypes.js';
+import { PromptsType, Target, getSourceDescription } from '../../common/promptSyntax/promptTypes.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IQuickInputButton, IQuickInputService, IQuickPick, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -28,7 +28,6 @@ import { formatHookCommandLabel, getEffectiveCommandFieldKey } from '../../commo
 import { getCopilotCliHookTypeName, resolveCopilotCliHookType } from '../../common/promptSyntax/hookCopilotCliCompat.js';
 import { getHookSourceFormat, HookSourceFormat, buildNewHookEntry } from '../../common/promptSyntax/hookCompatibility.js';
 import { getClaudeHookTypeName, resolveClaudeHookType } from '../../common/promptSyntax/hookClaudeCompat.js';
-import { getSourceDescription } from './pickers/askForPromptSourceFolder.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
@@ -648,22 +647,23 @@ export async function showConfigureHooksQuickPick(
 				}
 
 				case Step.SelectFolder: {
-					// Get resolved source folders with metadata for hooks
-					const resolvedFolders = await promptsService.getResolvedSourceFolders(PromptsType.hook);
-					const localResolvedFolders = resolvedFolders.filter(f => f.storage === PromptsStorage.local);
+					// Get source folders for hooks (uses getSourceFolders which
+					// excludes Claude paths and normalizes to directories)
+					const allFolders = await promptsService.getSourceFolders(PromptsType.hook);
+					const localFolders = allFolders.filter(f => f.storage === PromptsStorage.local);
 
-					if (localResolvedFolders.length === 0) {
+					if (localFolders.length === 0) {
 						notificationService.error(localize('commands.hook.noLocalFolders', "Please open a workspace folder to configure hooks."));
 						return;
 					}
 
 					// Auto-select if only one folder, otherwise show picker
-					selectedFolder = { uri: localResolvedFolders[0].uri };
-					if (localResolvedFolders.length > 1) {
-						const folderItems = localResolvedFolders.map(resolved => ({
-							label: resolved.displayPath ?? labelService.getUriLabel(resolved.uri, { relative: true }),
-							description: getSourceDescription(resolved.source),
-							folder: { uri: resolved.uri }
+					selectedFolder = localFolders[0];
+					if (localFolders.length > 1) {
+						const folderItems = localFolders.map(folder => ({
+							label: labelService.getUriLabel(folder.uri, { relative: true }),
+							description: folder.source ? getSourceDescription(folder.source) : undefined,
+							folder
 						}));
 
 						picker.items = folderItems;

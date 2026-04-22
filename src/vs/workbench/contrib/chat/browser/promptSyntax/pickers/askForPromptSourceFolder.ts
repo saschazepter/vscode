@@ -10,7 +10,7 @@ import { localize } from '../../../../../../nls.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
-import { PROMPT_DOCUMENTATION_URL, PromptFileSource, PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+import { PROMPT_DOCUMENTATION_URL, PromptsType, getSourceDescription } from '../../../common/promptSyntax/promptTypes.js';
 import { IPickOptions, IQuickInputService, IQuickPickItem } from '../../../../../../platform/quickinput/common/quickInput.js';
 import { IPromptPath, IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 
@@ -55,24 +55,24 @@ export async function askForPromptSourceFolder(
 
 	// create list of source folder locations
 	const foldersList = resolvedFolders.map<IFolderQuickPickItem>(resolved => {
-		const uri = resolved.uri;
-		const isDefault = defaultFolder && isEqual(uri, defaultFolder.uri);
+		const folderUri = resolved.parent;
+		const isDefault = defaultFolder && isEqual(folderUri, defaultFolder.parent);
 		const sourceDescription = getSourceDescription(resolved.source);
-		const detail = (existingFolder && isEqual(uri, existingFolder)) ? localize('current.folder', "Current Location") : undefined;
+		const detail = (existingFolder && isEqual(folderUri, existingFolder)) ? localize('current.folder', "Current Location") : undefined;
 
 		// Use the original display path (e.g. '.agents/skills', '~/.copilot/skills')
 		// as the label, falling back to workspace-relative or absolute path
-		const basePath = resolved.displayPath ?? labelService.getUriLabel(uri, { relative: resolved.storage === PromptsStorage.local });
+		const basePath = resolved.displayPath ?? labelService.getUriLabel(folderUri, { relative: resolved.storage === PromptsStorage.local });
 		const label = isDefault ? localize('pathWithDefault', "{0} (default)", basePath) : basePath;
 
-		const folder: IPromptPath = { uri, storage: resolved.storage, type };
+		const folder: IPromptPath = { uri: folderUri, storage: resolved.storage, type };
 
 		return {
 			type: 'item' as const,
 			label,
 			description: sourceDescription,
 			detail,
-			tooltip: labelService.getUriLabel(uri),
+			tooltip: labelService.getUriLabel(folderUri),
 			picked: isDefault,
 			folder,
 		};
@@ -84,31 +84,6 @@ export async function askForPromptSourceFolder(
 	}
 
 	return answer.folder;
-}
-
-/**
- * Returns a human-readable description for a prompt file source.
- */
-export function getSourceDescription(source: PromptFileSource): string | undefined {
-	switch (source) {
-		case PromptFileSource.AgentsWorkspace:
-			return localize('source.agentsWorkspace', "Applies to workspace and is discovered by all agents");
-		case PromptFileSource.AgentsPersonal:
-			return localize('source.agentsPersonal', "Applies globally and is discovered by all agents");
-		case PromptFileSource.GitHubWorkspace:
-			return localize('source.copilotWorkspace', "Applies to workspace and is discovered by Copilot agents");
-		case PromptFileSource.CopilotPersonal:
-			return localize('source.copilotPersonal', "Applies globally and is discovered by Copilot agents");
-		case PromptFileSource.ClaudeWorkspace:
-		case PromptFileSource.ClaudeWorkspaceLocal:
-			return localize('source.claudeWorkspace', "Applies to workspace and is discovered by Claude agents");
-		case PromptFileSource.ClaudePersonal:
-			return localize('source.claudePersonal', "Applies globally and is discovered by Claude agents");
-		case PromptFileSource.UserData:
-			return localize('source.userData', "Applies globally and roams with Settings Sync");
-		default:
-			return undefined;
-	}
 }
 
 function getPlaceholderStringforNew(type: PromptsType): string {

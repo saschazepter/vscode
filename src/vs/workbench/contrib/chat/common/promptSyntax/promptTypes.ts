@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { LanguageSelector } from '../../../../../editor/common/languageSelector.js';
+import { localize } from '../../../../../nls.js';
 
 /**
  * Documentation link for the reusable prompts feature.
@@ -141,4 +142,29 @@ export enum PromptFileSource {
 	ExtensionContribution = 'extension-contribution',
 	ExtensionAPI = 'extension-api',
 	Plugin = 'plugin',
+}
+
+/**
+ * Returns a human-readable description for a prompt file source.
+ */
+export function getSourceDescription(source: PromptFileSource): string | undefined {
+	switch (source) {
+		case PromptFileSource.AgentsWorkspace:
+			return localize('source.agentsWorkspace', "Applies to this workspace and is discovered by all agents");
+		case PromptFileSource.AgentsPersonal:
+			return localize('source.agentsPersonal', "Applies globally and is discovered by all agents");
+		case PromptFileSource.GitHubWorkspace:
+			return localize('source.githubWorkspace', "Applies to this workspace and is discovered by Copilot agents");
+		case PromptFileSource.CopilotPersonal:
+			return localize('source.copilotPersonal', "Applies globally and is discovered by Copilot agents");
+		case PromptFileSource.ClaudeWorkspace:
+		case PromptFileSource.ClaudeWorkspaceLocal:
+			return localize('source.claudeWorkspace', "Applies to this workspace and is discovered by Claude agents");
+		case PromptFileSource.ClaudePersonal:
+			return localize('source.claudePersonal', "Applies globally and is discovered by Claude agents");
+		case PromptFileSource.UserData:
+			return localize('source.userData', "Applies globally and roams with Settings Sync");
+		default:
+			return undefined;
+	}
 }
