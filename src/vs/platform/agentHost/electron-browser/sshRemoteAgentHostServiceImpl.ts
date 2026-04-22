@@ -16,6 +16,7 @@ import { RemoteAgentHostProtocolClient } from '../browser/remoteAgentHostProtoco
 import {
 	ISSHRemoteAgentHostService,
 	SSH_REMOTE_AGENT_HOST_CHANNEL,
+	getSSHConnectionKey,
 	type ISSHAgentHostConfig,
 	type ISSHAgentHostConnection,
 	type ISSHRemoteAgentHostMainService,
@@ -31,7 +32,7 @@ import {
 export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteAgentHostService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _mainService: ISSHRemoteAgentHostMainService;
+	protected readonly _mainService: ISSHRemoteAgentHostMainService;
 
 	private readonly _onDidChangeConnections = this._register(new Emitter<void>());
 	readonly onDidChangeConnections: Event<void> = this._onDidChangeConnections.event;
@@ -67,6 +68,14 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 				this._onDidChangeConnections.fire();
 			}
 		}));
+
+		// Dispose any remaining handles when the service itself is disposed.
+		this._register(toDisposable(() => {
+			for (const handle of this._connections.values()) {
+				handle.dispose();
+			}
+			this._connections.clear();
+		}));
 	}
 
 	get connections(): readonly ISSHAgentHostConnection[] {
@@ -76,14 +85,25 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 	async connect(config: ISSHAgentHostConfig): Promise<ISSHAgentHostConnection> {
 		this._logService.info('[SSHRemoteAgentHost] Connecting to ' + config.host);
 		const augmentedConfig = this._augmentConfig(config);
-		const result = await this._mainService.connect(augmentedConfig);
-		this._logService.trace('[SSHRemoteAgentHost] SSH tunnel established, connectionId=' + result.connectionId);
 
-		const existing = this._connections.get(result.connectionId);
-		if (existing) {
+		// Short-circuit if we already track a live handle locally. The
+		// main process keys connections by the same value, so this also
+		// avoids a redundant IPC round-trip for repeated connect clicks.
+		const expectedKey = getSSHConnectionKey(augmentedConfig);
+		const existingLocal = this._connections.get(expectedKey);
+		if (existingLocal) {
 			this._logService.trace('[SSHRemoteAgentHost] Returning existing connection handle');
-			return existing;
+			return existingLocal;
 		}
+
+		// We do not have a live protocol client. The main process may still
+		// be holding a tunnel from a previous window (window reload does not
+		// tear down main-process state), so ask it to replace the WebSocket
+		// relay. That gives the server a fresh per-transport state for our
+		// new protocol client's `initialize` handshake. If no tunnel exists
+		// yet, `replaceRelay` is a no-op and a brand new tunnel is created.
+		const result = await this._mainService.connect(augmentedConfig, /* replaceRelay */ true);
+		this._logService.trace('[SSHRemoteAgentHost] SSH tunnel established, connectionId=' + result.connectionId);
 
 		// Create relay transport + protocol client, then register with RemoteAgentHostService
 		try {
@@ -172,7 +192,7 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		return handle;
 	}
 
-	private _createRelayClient(result: { connectionId: string; address: string }): RemoteAgentHostProtocolClient {
+	protected _createRelayClient(result: { connectionId: string; address: string }): RemoteAgentHostProtocolClient {
 		const transport = new SSHRelayTransport(result.connectionId, this._mainService);
 		return this._instantiationService.createInstance(
 			RemoteAgentHostProtocolClient, result.address, transport,

@@ -115,6 +115,20 @@ export interface ISSHRemoteAgentHostService {
 	reconnect(sshConfigHost: string, name: string): Promise<ISSHAgentHostConnection>;
 }
 /**
+ * Stable identifier for an SSH connection derived from its config.
+ *
+ * The key intentionally collapses to the SSH config host alias when one is
+ * provided; otherwise it is `<user>@<host>:<port>`. The renderer uses this
+ * to detect whether it already has a live handle for a connection that the
+ * main process may have kept alive across a window reload.
+ */
+export function getSSHConnectionKey(config: ISSHAgentHostConfig): string {
+	return config.sshConfigHost
+		? `ssh:${config.sshConfigHost}`
+		: `${config.username}@${config.host}:${config.port ?? 22}`;
+}
+
+/**
  * Serializable result from a successful SSH connect operation.
  * Returned over IPC from the main process.
  */
@@ -184,8 +198,17 @@ export interface ISSHRemoteAgentHostMainService {
 	/**
 	 * Bootstrap a remote agent host over SSH. Returns serializable
 	 * connection info for the renderer to register.
+	 *
+	 * If a tunnel for this config already exists in the main process and
+	 * `replaceRelay` is true, the existing WebSocket relay is torn down and
+	 * a fresh one is created over the same SSH client. The renderer must
+	 * pass `replaceRelay: true` whenever it does not already hold a live
+	 * protocol client for the connection (e.g. after a window reload), so
+	 * that its newly created protocol client talks to a fresh server-side
+	 * transport rather than one whose `initialize` handshake has already
+	 * completed for a now-defunct renderer.
 	 */
-	connect(config: ISSHAgentHostConfig): Promise<ISSHConnectResult>;
+	connect(config: ISSHAgentHostConfig, replaceRelay?: boolean): Promise<ISSHConnectResult>;
 
 	/**
 	 * Send a message to a remote agent host through the SSH relay.

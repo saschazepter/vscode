@@ -6,7 +6,7 @@
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IRemoteAgentHostService, parseRemoteAgentHostInput, RemoteAgentHostEntryType, RemoteAgentHostInputValidationError, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { ISSHRemoteAgentHostService, SSHAuthMethod, type ISSHAgentHostConfig, type ISSHAgentHostConnection, type ISSHResolvedConfig } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
+import { ISSHRemoteAgentHostService, SSHAuthMethod, getSSHConnectionKey, type ISSHAgentHostConfig, type ISSHAgentHostConnection, type ISSHResolvedConfig } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
 import { ITunnelAgentHostService, TUNNEL_ADDRESS_PREFIX, type ITunnelInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -327,9 +327,7 @@ async function connectWithProgress(
 
 	// Build the expected connection key to filter progress events.
 	// Must match the key logic in the shared process service.
-	const expectedKey = config.sshConfigHost
-		? `ssh:${config.sshConfigHost}`
-		: `${config.username}@${config.host}:${config.port ?? 22}`;
+	const expectedKey = getSSHConnectionKey(config);
 
 	const progressListener = sshService.onDidReportConnectProgress?.(progress => {
 		if (progress.connectionKey === expectedKey) {

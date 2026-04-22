@@ -16,6 +16,7 @@ import { IProductService } from '../../product/common/productService.js';
 import {
 	ISSHRemoteAgentHostMainService,
 	SSHAuthMethod,
+	getSSHConnectionKey,
 	type ISSHAgentHostConfig,
 	type ISSHAgentHostConfigSanitized,
 	type ISSHConnectProgress,
@@ -372,9 +373,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 	}
 
 	async connect(config: ISSHAgentHostConfig, replaceRelay?: boolean): Promise<ISSHConnectResult> {
-		const connectionKey = config.sshConfigHost
-			? `ssh:${config.sshConfigHost}`
-			: `${config.username}@${config.host}:${config.port ?? 22}`;
+		const connectionKey = getSSHConnectionKey(config);
 
 		const existing = this._connections.get(connectionKey);
 		if (existing) {

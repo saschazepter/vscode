@@ -337,6 +337,34 @@ suite('SSHRemoteAgentHostMainService - connect flow', () => {
 		assert.strictEqual(service.relayCalled, 2); // fresh relay
 	});
 
+	test('connect with replaceRelay creates fresh relay on existing tunnel without restarting agent', async () => {
+		// Regression test for the SSH window-reload reconnect bug:
+		// after a window reload the renderer has no live protocol client,
+		// but the main process still holds the SSH tunnel and the server
+		// still has a `client` for the old WebSocket transport. The renderer
+		// passes `replaceRelay: true` so the server gets a fresh transport
+		// for its `initialize` handshake.
+		service.execResponses = [
+			{ stdout: 'Linux\n', code: 0 },      // uname -s
+			{ stdout: 'x86_64\n', code: 0 },      // uname -m
+			{ stdout: '1.0.0\n', code: 0 },       // CLI --version (already installed)
+			{ stdout: '', code: 1 },               // cat state file (not found)
+			{ stdout: '', code: 0 },               // echo state file (write)
+		];
+
+		const config = makeConfig({ sshConfigHost: 'myalias' });
+		const result1 = await service.connect(config);
+		assert.strictEqual(service.startCalled, 1);
+		assert.strictEqual(service.relayCalled, 1);
+
+		// Second connect with replaceRelay: true — fresh relay, no agent restart
+		const result2 = await service.connect(config, /* replaceRelay */ true);
+		assert.strictEqual(result2.connectionId, result1.connectionId);
+		assert.strictEqual(result2.connectionToken, result1.connectionToken);
+		assert.strictEqual(service.startCalled, 1); // no restart
+		assert.strictEqual(service.relayCalled, 2); // fresh relay
+	});
+
 	test('reconnect does not fire onDidRelayClose for superseded relay', async () => {
 		service.execResponses = [
 			{ stdout: 'Linux\n', code: 0 },
