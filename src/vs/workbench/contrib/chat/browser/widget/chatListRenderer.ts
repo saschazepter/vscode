@@ -1150,13 +1150,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				return undefined;
 			}
 
-			// special case for CLI where `created 0 todos` is sent
-			if (lastPart.presentation === 'hidden' && lastPart.toolId === 'manage_todo_list') {
-				return { kind: 'working' };
-			}
-
+			const isEffectivelyHiddenToolInvocation = IChatToolInvocation.isEffectivelyHidden(lastPart);
 			const collapsedToolsMode = this.configService.getValue<CollapsedToolsDisplayMode>('chat.agent.thinking.collapsedTools');
-			if (collapsedToolsMode !== CollapsedToolsDisplayMode.Off && this.shouldPinPart(lastPart, isResponseVM(element) ? element : undefined)) {
+			if (!isEffectivelyHiddenToolInvocation && collapsedToolsMode !== CollapsedToolsDisplayMode.Off && this.shouldPinPart(lastPart, isResponseVM(element) ? element : undefined)) {
 				return undefined;
 			}
 		}
