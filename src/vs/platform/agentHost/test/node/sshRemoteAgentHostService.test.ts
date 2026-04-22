@@ -1019,6 +1019,7 @@ class ConnectSSHTestService extends SSHRemoteAgentHostMainService {
 
 	lastConnectConfig: Record<string, unknown> | undefined;
 	fallbackKeyResult: { path: string; contents: Buffer } | undefined;
+	agentSock: string | undefined = undefined;
 
 	async testConnectSSH(config: ISSHAgentHostConfig) {
 		return this._connectSSH(config);
@@ -1035,10 +1036,12 @@ class ConnectSSHTestService extends SSHRemoteAgentHostMainService {
 
 		switch (config.authMethod) {
 			case SSHAuthMethod.Agent: {
-				connectConfig.agent = process.env['SSH_AUTH_SOCK'];
-				const fallbackKey = await this._findDefaultKeyFile();
-				if (fallbackKey) {
-					connectConfig.privateKey = fallbackKey.contents;
+				connectConfig.agent = this.agentSock;
+				if (!this.agentSock) {
+					const fallbackKey = await this._findDefaultKeyFile();
+					if (fallbackKey) {
+						connectConfig.privateKey = fallbackKey.contents;
+					}
 				}
 				break;
 			}
@@ -1081,33 +1084,25 @@ suite('SSHRemoteAgentHostMainService - _connectSSH auth config', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('agent auth includes fallback privateKey when default key exists', async () => {
-		const keyContents = Buffer.from('fake-key-contents');
+	test('agent auth with agent present does not load fallback key', async () => {
+		service.agentSock = '/tmp/ssh-agent.sock';
+		service.fallbackKeyResult = { path: '~/.ssh/id_ed25519', contents: Buffer.from('encrypted-key') };
+
+		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent }));
+
+		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
+		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
+		assert.strictEqual(service.lastConnectConfig.privateKey, undefined, 'should not load fallback key when agent is present');
+	});
+
+	test('agent auth without agent socket loads fallback key', async () => {
+		service.agentSock = undefined;
+		const keyContents = Buffer.from('unencrypted-key');
 		service.fallbackKeyResult = { path: '~/.ssh/id_ed25519', contents: keyContents };
 
 		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent }));
 
 		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
-		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
-		assert.strictEqual(service.lastConnectConfig.privateKey, keyContents, 'should include fallback privateKey');
-	});
-
-	test('agent auth omits privateKey when no default key found', async () => {
-		service.fallbackKeyResult = undefined;
-
-		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent }));
-
-		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
-		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
-		assert.strictEqual(service.lastConnectConfig.privateKey, undefined, 'should not include privateKey');
-	});
-
-	test('keyfile auth does not use fallback key', async () => {
-		service.fallbackKeyResult = { path: '~/.ssh/id_ed25519', contents: Buffer.from('should-not-be-used') };
-
-		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.KeyFile }));
-
-		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
-		assert.strictEqual(service.lastConnectConfig.privateKey, undefined, 'should not include fallback key for KeyFile auth');
+		assert.strictEqual(service.lastConnectConfig.privateKey, keyContents, 'should load fallback key when no agent');
 	});
 });

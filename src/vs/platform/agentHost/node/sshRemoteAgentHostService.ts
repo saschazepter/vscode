@@ -609,6 +609,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 			authMethod = SSHAuthMethod.KeyFile;
 			privateKeyPath = resolved.identityFile[0];
 		}
+		this._logService.info(`${LOG_PREFIX} reconnect: hasAgent=${hasAgent}, identityFiles=${JSON.stringify(resolved.identityFile)}, chose authMethod=${authMethod}`);
 
 		return this.connect({
 			host: resolved.hostname,
@@ -737,16 +738,21 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 				const agentSock = process.env['SSH_AUTH_SOCK'];
 				this._logService.info(`${LOG_PREFIX} Using SSH agent: ${agentSock ?? '(not set)'}`);
 				connectConfig.agent = agentSock;
-				// Also provide a default key file as fallback so ssh2 can try
-				// publickey auth if the agent doesn't have the key loaded.
-				const fallbackKey = await this._findDefaultKeyFile();
-				if (fallbackKey) {
-					this._logService.info(`${LOG_PREFIX} Also using fallback key: ${fallbackKey.path}`);
-					connectConfig.privateKey = fallbackKey.contents;
+				// Only load a fallback key file if no SSH agent is available.
+				// If an agent is present, skip this — ssh2 parses the private key
+				// eagerly and will fail immediately if the key is passphrase-encrypted,
+				// before ever trying the agent.
+				if (!agentSock) {
+					const fallbackKey = await this._findDefaultKeyFile();
+					if (fallbackKey) {
+						this._logService.info(`${LOG_PREFIX} No SSH agent; using fallback key: ${fallbackKey.path}`);
+						connectConfig.privateKey = fallbackKey.contents;
+					}
 				}
 				break;
 			}
 			case SSHAuthMethod.KeyFile:
+				this._logService.info(`${LOG_PREFIX} Using key file: ${config.privateKeyPath ?? '(none)'}`);
 				if (config.privateKeyPath) {
 					const keyPath = config.privateKeyPath.replace(/^~/, os.homedir());
 					connectConfig.privateKey = await fsp.readFile(keyPath);

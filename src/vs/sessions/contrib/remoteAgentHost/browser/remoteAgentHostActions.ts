@@ -151,12 +151,17 @@ async function promptToConnectViaSSH(
 			port = resolvedConfig.port !== 22 ? resolvedConfig.port : undefined;
 			suggestedName = picked.hostAlias;
 
-			// Determine auth method from resolved config
+			// Pre-fill the auth method picker based on the resolved SSH config.
+			// We never auto-select KeyFile because ssh2 eagerly parses the
+			// key file, which fails for passphrase-encrypted keys. The SSH
+			// agent (if running) already has the key loaded and handles this
+			// transparently. We only record the identity file path so the
+			// KeyFile picker can pre-fill it if the user manually selects
+			// that option.
 			if (resolvedConfig.identityFile.length > 0) {
 				const firstKey = resolvedConfig.identityFile[0];
 				const defaultKeys = ['~/.ssh/id_rsa', '~/.ssh/id_ecdsa', '~/.ssh/id_ed25519', '~/.ssh/id_dsa', '~/.ssh/id_xmss'];
 				if (!defaultKeys.includes(firstKey)) {
-					defaultAuthMethod = SSHAuthMethod.KeyFile;
 					defaultKeyPath = firstKey;
 				}
 			}
