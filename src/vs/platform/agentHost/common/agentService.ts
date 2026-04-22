@@ -180,7 +180,7 @@ export interface IAgentModelInfo {
 	readonly provider: AgentProvider;
 	readonly id: string;
 	readonly name: string;
-	readonly maxContextWindow: number;
+	readonly maxContextWindow?: number;
 	readonly supportsVision: boolean;
 	readonly configSchema?: IConfigSchema;
 	readonly policyState?: PolicyState;

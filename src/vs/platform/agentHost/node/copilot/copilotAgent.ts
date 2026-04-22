@@ -442,24 +442,17 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._logService.info('[Copilot] Listing models...');
 		const client = await this._ensureClient();
 		const models = await client.listModels();
-		const result = models.flatMap((m): IAgentModelInfo[] => {
-			const maxContextWindow = m.capabilities?.limits?.max_context_window_tokens;
-			if (typeof maxContextWindow !== 'number') {
-				// Synthetic SDK entries like `auto` ship with `capabilities: {}` and
-				// no fixed context window, so we can't surface them as concrete models.
-				this._logService.warn(`[Copilot] Skipping model ${m.id} — missing capabilities.limits.max_context_window_tokens`);
-				return [];
-			}
-			return [{
-				provider: this.id,
-				id: m.id,
-				name: m.name,
-				maxContextWindow,
-				supportsVision: !!m.capabilities?.supports?.vision,
-				configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
-				policyState: m.policy?.state as PolicyState | undefined,
-			}];
-		});
+		const result = models.map((m): IAgentModelInfo => ({
+			provider: this.id,
+			id: m.id,
+			name: m.name,
+			// Synthetic SDK entries like `auto` ship with `capabilities: {}` and
+			// no fixed context window — surface them with maxContextWindow undefined.
+			maxContextWindow: m.capabilities?.limits?.max_context_window_tokens,
+			supportsVision: !!m.capabilities?.supports?.vision,
+			configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
+			policyState: m.policy?.state as PolicyState | undefined,
+		}));
 		this._logService.info(`[Copilot] Found ${result.length} models`);
 		return result;
 	}
