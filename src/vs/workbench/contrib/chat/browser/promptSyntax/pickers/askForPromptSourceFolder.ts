@@ -50,35 +50,11 @@ export async function askForPromptSourceFolder(
 		matchOnDescription: true,
 	};
 
-	// Determine which folder is the "default" for new files:
-	// prefer .agents (universal) workspace, then .agents user, then first folder
-	const defaultFolder = !existingFolder
-		? resolvedFolders.find(f => f.source === PromptFileSource.AgentsWorkspace)
-		?? resolvedFolders.find(f => f.source === PromptFileSource.AgentsPersonal)
-		?? resolvedFolders[0]
-		: undefined;
-
-	// Sort folders: default first among workspace folders, .agents first among user folders
-	const sortedFolders = [...resolvedFolders];
-	if (defaultFolder) {
-		const defaultIdx = sortedFolders.findIndex(f => isEqual(f.uri, defaultFolder.uri));
-		if (defaultIdx > 0) {
-			const [item] = sortedFolders.splice(defaultIdx, 1);
-			sortedFolders.unshift(item);
-		}
-	}
-	// Move ~/.agents above other ~/. user folders
-	const userAgentsIdx = sortedFolders.findIndex(f => f.source === PromptFileSource.AgentsPersonal);
-	if (userAgentsIdx > 0) {
-		const firstUserIdx = sortedFolders.findIndex(f => f.storage === PromptsStorage.user);
-		if (firstUserIdx >= 0 && userAgentsIdx > firstUserIdx) {
-			const [item] = sortedFolders.splice(userAgentsIdx, 1);
-			sortedFolders.splice(firstUserIdx, 0, item);
-		}
-	}
+	// The first folder in the resolved list is the default for new files
+	const defaultFolder = !existingFolder ? resolvedFolders[0] : undefined;
 
 	// create list of source folder locations
-	const foldersList = sortedFolders.map<IFolderQuickPickItem>(resolved => {
+	const foldersList = resolvedFolders.map<IFolderQuickPickItem>(resolved => {
 		const uri = resolved.uri;
 		const isDefault = defaultFolder && isEqual(uri, defaultFolder.uri);
 		const sourceDescription = getSourceDescription(resolved.source);

@@ -750,11 +750,7 @@ export class PromptFilesLocator {
 			}
 			const results = await this.findAgentSkillsInFolder(uri, token);
 			for (const skillUri of results) {
-				if (storage === PromptsStorage.local) {
-					allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
-				} else {
-					allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
-				}
+				allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
 			}
 		}
 
