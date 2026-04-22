@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { ISharedProcessService } from '../../ipc/electron-browser/services.js';
@@ -86,23 +86,11 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		}
 
 		// Create relay transport + protocol client, then register with RemoteAgentHostService
+		let protocolClient: RemoteAgentHostProtocolClient;
 		try {
-			const protocolClient = this._createRelayClient(result);
+			protocolClient = this._createRelayClient(result);
 			await protocolClient.connect();
 			this._logService.trace('[SSHRemoteAgentHost] Protocol handshake completed');
-
-			await this._remoteAgentHostService.addSSHConnection({
-				name: result.name,
-				connectionToken: result.connectionToken,
-				connection: {
-					type: RemoteAgentHostEntryType.SSH,
-					address: result.address,
-					sshConfigHost: result.sshConfigHost,
-					hostName: result.config.host,
-					user: result.config.username || undefined,
-					port: result.config.port,
-				},
-			}, protocolClient);
 		} catch (err) {
 			this._logService.error('[SSHRemoteAgentHost] Connection setup failed', err);
 			this._mainService.disconnect(result.connectionId).catch(() => { /* best effort */ });
@@ -118,6 +106,19 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 
 		this._connections.set(result.connectionId, handle);
 		this._onDidChangeConnections.fire();
+
+		await this._remoteAgentHostService.addManagedConnection({
+			name: result.name,
+			connectionToken: result.connectionToken,
+			connection: {
+				type: RemoteAgentHostEntryType.SSH,
+				address: result.address,
+				sshConfigHost: result.sshConfigHost,
+				hostName: result.config.host,
+				user: result.config.username || undefined,
+				port: result.config.port,
+			},
+		}, protocolClient, this._createTransportDisposable(result.connectionId, handle));
 
 		return handle;
 	}
@@ -146,19 +147,6 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		const protocolClient = this._createRelayClient(result);
 		await protocolClient.connect();
 
-		await this._remoteAgentHostService.addSSHConnection({
-			name: result.name,
-			connectionToken: result.connectionToken,
-			connection: {
-				type: RemoteAgentHostEntryType.SSH,
-				address: result.address,
-				sshConfigHost: result.sshConfigHost,
-				hostName: result.config.host,
-				user: result.config.username || undefined,
-				port: result.config.port,
-			},
-		}, protocolClient);
-
 		const handle = new SSHAgentHostConnectionHandle(
 			result.config,
 			result.address,
@@ -169,7 +157,46 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		this._connections.set(result.connectionId, handle);
 		this._onDidChangeConnections.fire();
 
+		await this._remoteAgentHostService.addManagedConnection({
+			name: result.name,
+			connectionToken: result.connectionToken,
+			connection: {
+				type: RemoteAgentHostEntryType.SSH,
+				address: result.address,
+				sshConfigHost: result.sshConfigHost,
+				hostName: result.config.host,
+				user: result.config.username || undefined,
+				port: result.config.port,
+			},
+		}, protocolClient, this._createTransportDisposable(result.connectionId, handle));
+
 		return handle;
+	}
+
+	/**
+	 * Build a disposable that the {@link IRemoteAgentHostService} will own
+	 * for the lifetime of this entry. When the entry is removed (either by
+	 * the user via "Remove Remote" or by config reconciliation), this runs
+	 * and tears down the renderer-side handle and the shared-process SSH
+	 * tunnel together. Without this hookup, the SSH tunnel would leak and
+	 * the next `connect()` would silently reuse it.
+	 */
+	private _createTransportDisposable(connectionId: string, handle: SSHAgentHostConnectionHandle): IDisposable {
+		return toDisposable(() => {
+			// Drop the renderer-side handle map entry first so a concurrent
+			// `connect()` for the same key doesn't latch onto a being-torn-down
+			// connection.
+			if (this._connections.get(connectionId) === handle) {
+				this._connections.delete(connectionId);
+				this._onDidChangeConnections.fire();
+			}
+			// Mark the handle as already closed-from-main so disposing it
+			// doesn't kick off a redundant second disconnect IPC. The actual
+			// disconnect is initiated below.
+			handle.fireClose();
+			handle.dispose();
+			this._mainService.disconnect(connectionId).catch(() => { /* best effort */ });
+		});
 	}
 
 	private _createRelayClient(result: { connectionId: string; address: string }): RemoteAgentHostProtocolClient {
