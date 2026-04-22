@@ -60,17 +60,17 @@ export abstract class AbstractToolConfirmationSubPart extends BaseChatToolInvoca
 		const { keybindingService, languageModelToolsService, toolInvocation } = this;
 
 		const state = toolInvocation.state.get();
-		const customButtons = state.type === IChatToolInvocation.StateKind.WaitingForConfirmation
-			? state.confirmationMessages?.customButtons
+		const customOptions = state.type === IChatToolInvocation.StateKind.WaitingForConfirmation
+			? state.confirmationMessages?.customOptions
 			: undefined;
 
 		let buttons: IChatConfirmationButton<(() => void)>[];
 
-		if (customButtons && customButtons.length > 0) {
-			buttons = customButtons.map((label, index) => ({
-				label,
+		if (customOptions && customOptions.length > 0) {
+			buttons = customOptions.map((option, index) => ({
+				label: option.label,
 				data: () => {
-					this.confirmWith(toolInvocation, { type: ToolConfirmKind.UserAction, selectedButton: label });
+					this.confirmWith(toolInvocation, { type: ToolConfirmKind.UserAction, selectedButton: option.id });
 				},
 				isSecondary: index > 0,
 			}));

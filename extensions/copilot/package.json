@@ -4579,6 +4579,14 @@
 							"advanced"
 						]
 					},
+					"github.copilot.chat.cli.autoModel.enabled": {
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%github.copilot.config.cli.autoModel.enabled%",
+						"tags": [
+							"advanced"
+						]
+					},
 					"github.copilot.chat.cli.planCommand.enabled": {
 						"type": "boolean",
 						"default": true,
@@ -4657,6 +4665,7 @@
 						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.remote.enabled%",
 						"tags": [
+							"advanced",
 							"experimental"
 						]
 					},
