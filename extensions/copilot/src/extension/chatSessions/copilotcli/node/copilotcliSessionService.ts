@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { internal, LocalSessionMetadata, Session, SessionContext, SessionEvent, SessionOptions, SweCustomAgent } from '@github/copilot/sdk';
+import type { internal, LocalSession, LocalSessionMetadata, Session, SessionContext, SessionEvent, SessionOptions, SweCustomAgent } from '@github/copilot/sdk';
 import * as l10n from '@vscode/l10n';
 import { createReadStream } from 'node:fs';
 import { devNull } from 'node:os';
@@ -98,6 +98,7 @@ export interface ICopilotCLISessionService {
 
 	// Session rename
 	renameSession(sessionId: string, title: string): Promise<void>;
+	updateSessionSummary(sessionId: string, title: string): Promise<void>;
 
 	// Session wrapper tracking
 	getSession(options: IGetSessionOptions, token: CancellationToken): Promise<IReference<ICopilotCLISession> | undefined>;
@@ -110,6 +111,7 @@ export interface ICopilotCLISessionService {
 export const ICopilotCLISessionService = createServiceIdentifier<ICopilotCLISessionService>('ICopilotCLISessionService');
 
 const SESSION_SHUTDOWN_TIMEOUT_MS = 300 * 1000;
+type LocalSessionWithTitleUpdates = Session & Pick<LocalSession, 'renameSession' | 'updateSessionSummary'>;
 
 export class CopilotCLISessionService extends Disposable implements ICopilotCLISessionService {
 	declare _serviceBrand: undefined;
@@ -362,7 +364,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	}
 
 	public async getSessionTitle(sessionId: string, token: CancellationToken): Promise<string> {
-		return this.getSessionTitleImpl(sessionId, undefined, token);
+		const sessionManager = await raceCancellation(this.getSessionManager(), token);
+		const metadata = sessionManager ? await raceCancellationError(sessionManager.getSessionMetadata({ sessionId }), token) : undefined;
+		return this.getSessionTitleImpl(sessionId, metadata, token);
 	}
 
 	/**
@@ -371,10 +375,14 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	 * If we have the metadata then use that over extracting label ourselves or using any cache.
 	 */
 	private async getSessionTitleImpl(sessionId: string, metadata: LocalSessionMetadata | undefined, token: CancellationToken): Promise<string> {
-		// Always give preference to label defined by user, then title from CLI and finally label from prompt summary. This is to ensure that if user has renamed the session, we do not override that with title from CLI or label from prompt.
-		const accurateTitle = await this.customSessionTitleService.getCustomSessionTitle(sessionId) ??
-			labelFromPrompt(this._sessionWrappers.get(sessionId)?.object.pendingPrompt ?? '') ??
-			this._sessionWrappers.get(sessionId)?.object.title;
+		// Prefer SDK-backed data first. Local title storage remains only as a fallback for
+		// legacy sessions and for newly-created VS Code sessions that have not yet been
+		// materialized in the SDK.
+		const accurateTitle =
+			this._sessionWrappers.get(sessionId)?.object.title ??
+			metadata?.name ??
+			await this.customSessionTitleService.getCustomSessionTitle(sessionId) ??
+			labelFromPrompt(this._sessionWrappers.get(sessionId)?.object.pendingPrompt ?? '');
 
 		if (accurateTitle) {
 			return accurateTitle;
@@ -426,7 +434,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 					const id = metadata.sessionId;
 					const startTime = metadata.startTime.getTime();
 					const endTime = metadata.modifiedTime.getTime();
-					const label = await this.customSessionTitleService.getCustomSessionTitle(metadata.sessionId) ?? this._sessionWrappers.get(metadata.sessionId)?.object.title ?? this._sessionLabels.get(metadata.sessionId) ?? (metadata.summary ? labelFromPrompt(metadata.summary) : undefined);
+					const label = await this.getSessionTitleImpl(metadata.sessionId, metadata, token);
 					// CLI adds `<current_datetime>` tags to user prompt, this needs to be removed.
 					// However in summary CLI can end up truncating the prompt and adding `... <current_dateti...` at the end.
 					// So if we see a `<` in the label, we need to load the session to get the first user message.
@@ -465,7 +473,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 				.filter(session => !diskSessionIds.has(session.object.sessionId))
 				.filter(session => session.object.status === ChatSessionStatus.InProgress)
 				.map(async (session): Promise<ICopilotCLISessionItem | undefined> => {
-					const label = await this.customSessionTitleService.getCustomSessionTitle(session.object.sessionId) ?? labelFromPrompt(session.object.pendingPrompt ?? '');
+					const label = session.object.title ?? await this.customSessionTitleService.getCustomSessionTitle(session.object.sessionId) ?? labelFromPrompt(session.object.pendingPrompt ?? '');
 					if (!label) {
 						return;
 					}
@@ -548,12 +556,19 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			const sessionOptions = await this.createSessionsOptions({ ...options, mcpServers });
 			const sessionManager = await raceCancellationError(this.getSessionManager(), token);
 			const sdkSession = await sessionManager.createSession({ ...sessionOptions, sessionId: options.sessionId });
-			this._newSessionIds.delete(sdkSession.sessionId);
+			const wasNewSession = this._newSessionIds.delete(sdkSession.sessionId);
 			// After the first session creation, the SDK's OTel TracerProvider is
 			// initialized. Install the bridge processor so SDK-native spans flow
 			// to the debug panel.
 			this._installBridgeIfNeeded();
 
+
+			if (wasNewSession) {
+				const stagedTitle = await this.customSessionTitleService.getCustomSessionTitle(sdkSession.sessionId);
+				if (stagedTitle) {
+					await sdkSession.updateSessionSummary(stagedTitle);
+				}
+			}
 			if (sessionOptions.copilotUrl) {
 				sdkSession.setAuthInfo({
 					type: 'hmac',
@@ -1110,9 +1125,39 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 	}
 
+	private async withWritableSession<T>(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<T>): Promise<T> {
+		let sessionManager: internal.LocalSessionManager | undefined;
+		let shouldCloseSession = false;
+		const sdkSession = (this._sessionWrappers.get(sessionId)?.object.sdkSession as LocalSessionWithTitleUpdates | undefined) ?? await (async () => {
+			sessionManager = await this.getSessionManager();
+			const session = await sessionManager.getSession({ sessionId }, true) as LocalSessionWithTitleUpdates | undefined;
+			shouldCloseSession = !!session;
+			return session;
+		})();
+
+		if (!sdkSession) {
+			throw new Error(`Failed to update missing Copilot CLI session ${sessionId}.`);
+		}
+
+		try {
+			return await operation(sdkSession);
+		} finally {
+			if (shouldCloseSession && sessionManager) {
+				await sessionManager.closeSession(sessionId).catch(error => {
+					this.logService.error(`[CopilotCLISession] Failed to close session ${sessionId} after updating title metadata: ${error}`);
+				});
+			}
+		}
+	}
+
 	public async renameSession(sessionId: string, title: string): Promise<void> {
-		await this.customSessionTitleService.setCustomSessionTitle(sessionId, title);
-		this._sessionLabels.set(sessionId, title);
+		await this.withWritableSession(sessionId, sdkSession => sdkSession.renameSession(title));
+		this._sessionLabels.delete(sessionId);
+		this._onDidChangeSessions.fire();
+	}
+
+	public async updateSessionSummary(sessionId: string, title: string): Promise<void> {
+		await this.withWritableSession(sessionId, sdkSession => sdkSession.updateSessionSummary(title));
 		this._onDidChangeSessions.fire();
 	}
 }

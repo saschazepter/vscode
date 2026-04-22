@@ -185,7 +185,10 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			const resource = SessionIdForCLI.getResource(sessionId);
 			const session = controller.createChatSessionItem(resource, context.request.prompt ?? context.request.command ?? '');
 			this.customSessionTitleService.generateSessionTitle(sessionId, context.request, CancellationToken.None)
-				.then(() => {
+				.then(async title => {
+					if (title) {
+						await this.customSessionTitleService.setCustomSessionTitle(sessionId, title);
+					}
 					// Given we're done generating a title, refresh the contents of this session so that the new title is picked up.
 					if (this.controller.items.get(resource)) {
 						this.refreshSession({ reason: 'update', sessionId }).catch(() => { /* expected if session was deleted */ });
