@@ -2554,8 +2554,18 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private isInPlanningMode(): boolean {
+		if (!this.configurationService.getValue<boolean>(ChatConfiguration.PlanningMiddlewareEnabled)) {
+			return false;
+		}
 		const mode = this.input.currentModeObs.get();
 		return isPlanningModeName(mode.id) || isPlanningModeName(mode.name.get());
+	}
+
+	private isPlanningModeInfo(modeInfo: { readonly modeInstructions?: { readonly name?: string }; readonly modeId?: string } | undefined): boolean {
+		if (!this.configurationService.getValue<boolean>(ChatConfiguration.PlanningMiddlewareEnabled)) {
+			return false;
+		}
+		return isPlanningModeName(modeInfo?.modeInstructions?.name) || isPlanningModeName(modeInfo?.modeId);
 	}
 
 	private getLastPlanningQuestionSourceInput(): string | undefined {
@@ -2575,10 +2585,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			.reverse()
 			.find((item): item is IChatRequestViewModel => isRequestVM(item) && item.id === lastPlanningRequestId)
 			?.messageText;
-	}
-
-	private isPlanningModeInfo(modeInfo: { readonly modeInstructions?: { readonly name?: string }; readonly modeId?: string } | undefined): boolean {
-		return isPlanningModeName(modeInfo?.modeInstructions?.name) || isPlanningModeName(modeInfo?.modeId);
 	}
 
 	private async getPlanningQuestionGenerationContext(
