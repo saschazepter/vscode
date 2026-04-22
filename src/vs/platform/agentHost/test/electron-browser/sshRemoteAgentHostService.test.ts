@@ -169,6 +169,7 @@ suite('SSHRemoteAgentHostService (renderer)', () => {
 	let mainService: MockSSHMainService;
 	let remoteAgentHostService: MockRemoteAgentHostService;
 	let createdClients: MockProtocolClient[];
+	let waitForClient: (index: number) => Promise<MockProtocolClient>;
 	let service: SSHRemoteAgentHostService;
 
 	setup(() => {
@@ -187,6 +188,14 @@ suite('SSHRemoteAgentHostService (renderer)', () => {
 		instantiationService.stub(ISharedProcessService, sharedProcessService as ISharedProcessService);
 		instantiationService.stub(IRemoteAgentHostService, remoteAgentHostService as Partial<IRemoteAgentHostService>);
 
+		const clientWaiters: DeferredPromise<MockProtocolClient>[] = [];
+		waitForClient = (index: number): Promise<MockProtocolClient> => {
+			if (createdClients[index]) {
+				return Promise.resolve(createdClients[index]);
+			}
+			return (clientWaiters[index] ??= new DeferredPromise<MockProtocolClient>()).p;
+		};
+
 		const inner: Partial<IInstantiationService> = {
 			createInstance: (_ctor: unknown, ...args: unknown[]) => {
 				const c = new MockProtocolClient();
@@ -197,7 +206,9 @@ suite('SSHRemoteAgentHostService (renderer)', () => {
 					c.registerOwned(transport);
 				}
 				disposables.add(c);
+				const index = createdClients.length;
 				createdClients.push(c);
+				clientWaiters[index]?.complete(c);
 				return c;
 			},
 		};
@@ -219,11 +230,8 @@ suite('SSHRemoteAgentHostService (renderer)', () => {
 
 	/** Wait until the renderer has created its protocol client, then resolve its handshake. */
 	async function awaitClientThenResolve(index: number): Promise<void> {
-		for (let i = 0; i < 50 && createdClients.length <= index; i++) {
-			await new Promise<void>(r => setTimeout(r, 0));
-		}
-		assert.ok(createdClients[index], `protocol client #${index} created`);
-		createdClients[index].connectDeferred.complete();
+		const client = await waitForClient(index);
+		client.connectDeferred.complete();
 	}
 
 	test('connect registers a managed connection with a transport disposable', async () => {
