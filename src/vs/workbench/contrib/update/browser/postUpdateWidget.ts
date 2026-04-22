@@ -27,8 +27,6 @@ import { IParsedUpdateInfoInput, parseUpdateInfoInput } from '../common/updateIn
 import { getUpdateInfoUrl, isMajorMinorVersionChange } from '../common/updateUtils.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { KeyCode } from '../../../../base/common/keyCodes.js';
-import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { URI } from '../../../../base/common/uri.js';
 import './media/postUpdateWidget.css';
 
@@ -146,15 +144,8 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 		const titleId = `post-update-widget-title-${PostUpdateWidgetContribution.idCounter++}`;
 		container.setAttribute('role', 'dialog');
 		container.setAttribute('aria-labelledby', titleId);
-
-		// Dismiss on Escape
-		disposables.add(dom.addDisposableListener(container, 'keydown', (e: KeyboardEvent) => {
-			const event = new StandardKeyboardEvent(e);
-			if (event.keyCode === KeyCode.Escape) {
-				event.stopPropagation();
-				this.hoverService.hideHover(true);
-			}
-		}));
+		// Escape-to-dismiss is handled by the hover widget itself (HoverWidget listens for Escape
+		// on its container and disposes the hover).
 
 		// Banner (decorative). Default is a CSS gradient; an image from the markdown frontmatter overrides it.
 		const banner = dom.append(container, dom.$('.banner'));
@@ -181,7 +172,6 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 		if (badge) {
 			const badgeEl = dom.append(body, dom.$('.badge'));
 			badgeEl.textContent = badge;
-			badgeEl.setAttribute('aria-label', localize('postUpdate.badgeLabel', "{0} badge", badge));
 		}
 
 		// Title
@@ -205,7 +195,19 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 				const featureTitle = dom.append(text, dom.$('.feature-title'));
 				featureTitle.textContent = feature.title;
 				const featureDescription = dom.append(text, dom.$('.feature-description'));
-				featureDescription.textContent = feature.description;
+				// Render description as markdown so it can include inline links and emphasis.
+				const rendered = disposables.add(this.markdownRendererService.render(
+					new MarkdownString(feature.description, {
+						isTrusted: true,
+						supportThemeIcons: true,
+					}),
+					{
+						actionHandler: (link, mdStr) => {
+							openLinkFromMarkdown(this.openerService, link, mdStr.isTrusted);
+							this.hoverService.hideHover(true);
+						},
+					}));
+				featureDescription.appendChild(rendered.element);
 			}
 		} else if (markdown) {
 			const markdownContainer = dom.append(body, dom.$('.update-markdown'));

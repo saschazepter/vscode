@@ -3,16 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* Allow the hover container to size to its content (no scrollbar). */
-.monaco-hover.workbench-hover.post-update-widget-hover {
-	max-height: none !important;
-	overflow: visible !important;
-}
-
+/*
+ * The widget supplies its own padding and border-radius via `.post-update-widget`,
+ * so we strip the compact hover's contents padding. The selector below is at least as
+ * specific as `.monaco-hover.workbench-hover.compact .hover-contents` and loads after it,
+ * so it wins without `!important`.
+ */
 .monaco-hover.workbench-hover.post-update-widget-hover .hover-contents {
-	max-height: none !important;
-	overflow: visible !important;
-	padding: 0 !important;
+	padding: 0;
 }
 
 .post-update-widget {

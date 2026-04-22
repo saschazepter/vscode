@@ -82,7 +82,7 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
-			description: localize('showPostInstallInfo', "Show update information tooltip in the title bar after a new version is installed. When enabled, the Release Notes editor will not be shown automatically."),
+			description: localize('showPostInstallInfo', "Show a post-install update tooltip in the title bar instead of opening the release notes editor."),
 		}
 	}
 });
