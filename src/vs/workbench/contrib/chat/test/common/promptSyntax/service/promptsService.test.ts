@@ -4227,12 +4227,15 @@ suite('PromptsService', () => {
 
 			const slashCommands = await service.getPromptSlashCommands(CancellationToken.None);
 
-			// Even when SKILL.md has name: "run-ci", it must be prefixed with the plugin name
-			const skillCommand = slashCommands.find(cmd => cmd.name === 'devtools:run-ci');
-			assert.ok(skillCommand, 'Plugin skill frontmatter name should be qualified with plugin prefix');
+			// Skill name is derived from folder name (ci), not frontmatter name (run-ci),
+			// and prefixed with the plugin name
+			const skillCommand = slashCommands.find(cmd => cmd.name === 'devtools:ci');
+			assert.ok(skillCommand, 'Plugin skill folder name should be qualified with plugin prefix');
 			assert.strictEqual(skillCommand.description, 'Run CI pipeline');
 
-			// The unprefixed name should not appear
+			// The frontmatter name should not appear
+			assert.strictEqual(slashCommands.find(cmd => cmd.name === 'devtools:run-ci'), undefined,
+				'Frontmatter skill name should not appear as slash command');
 			assert.strictEqual(slashCommands.find(cmd => cmd.name === 'run-ci'), undefined,
 				'Unprefixed skill name should not appear as slash command');
 
