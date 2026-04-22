@@ -117,7 +117,7 @@ Update the plan with your findings.`;
 		} else if (searchSubagentEnabled) {
 			discoverySection = `## 1. Discovery
 
-Use the *explore_subagent* tool to gather context, analogous existing features to use as implementation templates, and potential blockers or ambiguities. When the task spans multiple independent areas (e.g., frontend + backend, different features, separate repos), launch **2-3 *explore_subagent* tools in parallel** — one per area — to speed up discovery.
+Use the *search_subagent* tool to gather context, analogous existing features to use as implementation templates, and potential blockers or ambiguities. When the task spans multiple independent areas (e.g., frontend + backend, different features, separate repos), launch **2-3 *explore_subagent* tools in parallel** — one per area — to speed up discovery.
 
 Update the plan with your findings.`;
 		} else {

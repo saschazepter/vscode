@@ -65,18 +65,13 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 	) { }
 
 	alternativeDefinition(tool: vscode.LanguageModelToolInformation): vscode.LanguageModelToolInformation {
-		const exploreAgentEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.ExploreAgentEnabled, this.experimentationService);
 		const thoroughnessEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentThoroughnessEnabled, this.experimentationService);
 
-		if (exploreAgentEnabled && !thoroughnessEnabled) {
+		if (!thoroughnessEnabled) {
 			return tool;
 		}
 
 		const updatedTool = { ...tool };
-
-		if (!exploreAgentEnabled) {
-			updatedTool.name = 'explore_subagent';
-		}
 
 		if (thoroughnessEnabled) {
 			updatedTool.description = tool.description

@@ -98,7 +98,7 @@ export class PseudoStopStartResponseProcessor implements IResponseProcessor {
 
 		if (delta.beginToolCalls?.length) {
 			for (const beginCall of delta.beginToolCalls) {
-				progress.beginToolInvocation(beginCall.id ?? '', getContributedToolName(getToolName(beginCall.name)), { subagentInvocationId: this.options?.subagentInvocationId });
+				progress.beginToolInvocation(beginCall.id ?? '', getContributedToolName(beginCall.name), { subagentInvocationId: this.options?.subagentInvocationId });
 			}
 		}
 
