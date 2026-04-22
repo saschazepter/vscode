@@ -603,7 +603,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const parseResults = await Promise.all(slashCommandFiles.map(async promptPath => {
 			try {
 				const parsedPromptFile = await this.parseNew(promptPath.uri, token);
-				const rawName = parsedPromptFile?.header?.name ?? promptPath.name ?? getCleanPromptName(promptPath.uri);
+				let rawName: string;
+				if (promptPath.type === PromptsType.skill) {
+					// For skills, always use the folder name as the canonical name
+					// (consistent with computeSkillDiscoveryInfo)
+					rawName = getSkillFolderName(promptPath.uri);
+				} else {
+					rawName = parsedPromptFile?.header?.name ?? promptPath.name ?? getCleanPromptName(promptPath.uri);
+				}
 				// For plugin resources, ensure the canonical plugin prefix is always preserved even when the
 				// file's frontmatter overrides the name.
 				const name = promptPath.source === PromptFileSource.Plugin && promptPath.pluginUri

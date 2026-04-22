@@ -3756,6 +3756,39 @@ suite('PromptsService', () => {
 			assert.ok(validSkillCommand, 'Should find valid skill');
 		});
 
+		test('should use folder name as slash command name when frontmatter name differs', async () => {
+			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
+
+			const rootFolderName = 'slash-commands-folder-name-override';
+			const rootFolder = `/${rootFolderName}`;
+			const rootFolderUri = URI.file(rootFolder);
+
+			workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+			await mockFiles(fileService, [
+				{
+					path: `${rootFolder}/.github/skills/test/SKILL.md`,
+					contents: [
+						'---',
+						'name: "foo"',
+						'description: "A skill with mismatched frontmatter name"',
+						'---',
+						'say hiya!',
+					],
+				},
+			]);
+
+			const slashCommands = await service.getPromptSlashCommands(CancellationToken.None);
+
+			const folderNameCommand = slashCommands.find(cmd => cmd.name === 'test');
+			assert.ok(folderNameCommand, 'Should find skill using folder name as slash command name');
+			assert.strictEqual(folderNameCommand.description, 'A skill with mismatched frontmatter name');
+
+			const frontmatterNameCommand = slashCommands.find(cmd => cmd.name === 'foo');
+			assert.strictEqual(frontmatterNameCommand, undefined, 'Should not find skill using frontmatter name');
+		});
+
 		test('should not duplicate slash commands with same name from different types', async () => {
 			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
 			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
