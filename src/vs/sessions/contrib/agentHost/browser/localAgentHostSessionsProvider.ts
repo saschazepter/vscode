@@ -110,24 +110,29 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 		return {
 			description: this._localDescription,
 			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined) =>
-				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, gitState),
+				LocalAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, this._localLabel, gitState),
 		};
 	}
 
 	protected _formatSessionTypeLabel(agentLabel: string): string {
-		return localize('localAgentHostSessionType', "{0} [{1}]", agentLabel, this._localLabel);
+		// Use the unadorned agent label (e.g. "Copilot") rather than tagging it
+		// with `[Local]`. The session type id is shared with the extension-host
+		// Copilot CLI provider, so the filter menu / new-session picker entry
+		// covers both sets of sessions; the `[Local]` tag belongs on the
+		// per-session workspace label, not the type label.
+		return agentLabel;
 	}
 
 	// -- Workspaces ----------------------------------------------------------
 
-	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined): ISessionWorkspace | undefined {
-		return buildAgentHostSessionWorkspace(project, workingDirectory, { fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true }, gitState);
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string, gitState: ISessionGitState | undefined): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true }, gitState);
 	}
 
 	resolveWorkspace(repositoryUri: URI): ISessionWorkspace {
 		const folderName = basename(repositoryUri) || repositoryUri.path;
 		return {
-			label: folderName,
+			label: `${folderName} [${this._localLabel}]`,
 			icon: Codicon.folder,
 			repositories: [{ uri: repositoryUri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
 			requiresWorkspaceTrust: true,
