@@ -81,12 +81,23 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 	private readonly _onDidChangeGateInfo = this._register(new Emitter<IAccountPolicyGateInfo>());
 	readonly onDidChangeGateInfo = this._onDidChangeGateInfo.event;
 
+	/**
+	 * Read-only reference to the MDM/managed policy service. Used only for
+	 * reading `ChatApprovedAccountOrganizations` and listening for changes.
+	 * The `MultiplexPolicyService` is responsible for calling
+	 * `updatePolicyDefinitions` on the managed service — we must NOT do it
+	 * here to avoid duplicate IPC round-trips.
+	 */
+	private readonly managedPolicyReader?: IPolicyService;
+
 	constructor(
 		@ILogService private readonly logService: ILogService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
-		private readonly managedPolicyService?: IPolicyService,
+		managedPolicyService?: IPolicyService,
 	) {
 		super();
+
+		this.managedPolicyReader = managedPolicyService;
 
 		this._updatePolicyDefinitions(this.policyDefinitions);
 		this._register(this.defaultAccountService.onDidChangePolicyData(() => {
@@ -95,8 +106,8 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 		this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => {
 			this._updatePolicyDefinitions(this.policyDefinitions);
 		}));
-		if (this.managedPolicyService) {
-			this._register(this.managedPolicyService.onDidChange(names => {
+		if (this.managedPolicyReader) {
+			this._register(this.managedPolicyReader.onDidChange(names => {
 				if (names.includes(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME)) {
 					this._updatePolicyDefinitions(this.policyDefinitions);
 				}
@@ -115,22 +126,12 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 	protected async _updatePolicyDefinitions(policyDefinitions: IStringDictionary<PolicyDefinition>): Promise<void> {
 		this.logService.trace(`AccountPolicyService#_updatePolicyDefinitions: Got ${Object.keys(policyDefinitions).length} policy definitions`);
 
-		// Fail-closed boot ordering: the gate decision depends on the managed policy
-		// service knowing about `ChatApprovedAccountOrganizations`. If we computed the
-		// gate before the managed service had fetched its values (which is async on
-		// desktop because it crosses an IPC boundary to the main process), the gate
-		// would be evaluated as Inactive even when the admin has actually configured
-		// it — leaving AI features briefly unrestricted at startup. Pushing the
-		// definitions through the managed service first guarantees its values are
-		// loaded before we decide. (The call is a no-op when no new definitions need
-		// to be registered — see AbstractPolicyService.updatePolicyDefinitions.)
-		if (this.managedPolicyService) {
-			try {
-				await this.managedPolicyService.updatePolicyDefinitions(policyDefinitions);
-			} catch (err) {
-				this.logService.error('AccountPolicyService#_updatePolicyDefinitions: managed policy service update failed; proceeding fail-closed.', err);
-			}
-		}
+		// NOTE: We do NOT call `this.managedPolicyReader.updatePolicyDefinitions()`
+		// here. When running under MultiplexPolicyService, the multiplex already
+		// pushes definitions to all child services (including the managed policy
+		// channel). Calling it again would cause duplicate IPC round-trips.
+		// The managed policy reader is used only for getPolicyValue() and
+		// onDidChange — see constructor.
 
 		const updated: string[] = [];
 		const policyData = this.defaultAccountService.policyData;
@@ -188,12 +189,12 @@ export class AccountPolicyService extends AbstractPolicyService implements IPoli
 	}
 
 	private computeGateInfo(): IAccountPolicyGateInfo {
-		if (!this.managedPolicyService) {
+		if (!this.managedPolicyReader) {
 			return { state: AccountPolicyGateState.Inactive };
 		}
 
 		// Gate is active iff the admin has set a non-empty approved-organizations list.
-		const approvedRaw = this.managedPolicyService.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
+		const approvedRaw = this.managedPolicyReader.getPolicyValue(APPROVED_ACCOUNT_ORGANIZATIONS_POLICY_NAME);
 		const approvedOrgs = parseApprovedOrganizations(approvedRaw);
 		if (approvedOrgs.length === 0) {
 			return { state: AccountPolicyGateState.Inactive };

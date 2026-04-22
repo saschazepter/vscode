@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { IDefaultAccount, IDefaultAccountAuthenticationProvider, IPolicyData } from '../../../../../base/common/defaultAccount.js';
-import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Event } from '../../../../../base/common/event.js';
 import { PolicyCategory } from '../../../../../base/common/policy.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { Extensions, IConfigurationNode, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
@@ -476,7 +476,4 @@ suite('AccountPolicyService', () => {
 		assert.strictEqual(policyService.gateInfo.state, AccountPolicyGateState.Restricted);
 		assert.ok(changes.length > 0, 'expected onDidChange to fire when gate flips');
 	});
-
-	// Ensure unused import does not warn
-	void Emitter;
 });
