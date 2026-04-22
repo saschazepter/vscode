@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
@@ -114,8 +114,8 @@ class TestableSSHRemoteAgentHostService extends SSHRemoteAgentHostService {
 		// Re-wire the close listener that the parent ctor registered against the no-op channel.
 		this._register(mainServiceMock.onDidCloseConnection(connectionId => {
 			const conns = self._connections;
-			const handle = conns.get(connectionId);
-			if (handle) { conns.delete(connectionId); handle.fireClose(); handle.dispose(); }
+			const handle = conns.deleteAndLeak(connectionId);
+			if (handle) { handle.fireClose(); handle.dispose(); }
 		}));
 	}
 
@@ -130,7 +130,7 @@ class TestableSSHRemoteAgentHostService extends SSHRemoteAgentHostService {
 interface IMutableRendererService {
 	_mainService: ISSHRemoteAgentHostMainService;
 	onDidReportConnectProgress: Event<{ connectionKey: string; message: string }>;
-	readonly _connections: Map<string, { fireClose(): void; dispose(): void }>;
+	readonly _connections: DisposableMap<string, { fireClose(): void; dispose(): void }>;
 }
 
 function makeConfig(overrides: Partial<ISSHAgentHostConfig> = {}): ISSHAgentHostConfig {

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, toDisposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { ISharedProcessService } from '../../ipc/electron-browser/services.js';
@@ -39,7 +39,7 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 
 	readonly onDidReportConnectProgress: Event<ISSHConnectProgress>;
 
-	private readonly _connections = new Map<string, SSHAgentHostConnectionHandle>();
+	private readonly _connections = this._register(new DisposableMap<string, SSHAgentHostConnectionHandle>());
 
 	constructor(
 		@ISharedProcessService sharedProcessService: ISharedProcessService,
@@ -60,21 +60,12 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		// Do NOT remove the configured entry — it stays in settings so startup reconnect
 		// can re-establish the SSH tunnel on next launch.
 		this._register(this._mainService.onDidCloseConnection(connectionId => {
-			const handle = this._connections.get(connectionId);
+			const handle = this._connections.deleteAndLeak(connectionId);
 			if (handle) {
-				this._connections.delete(connectionId);
 				handle.fireClose();
 				handle.dispose();
 				this._onDidChangeConnections.fire();
 			}
-		}));
-
-		// Dispose any remaining handles when the service itself is disposed.
-		this._register(toDisposable(() => {
-			for (const handle of this._connections.values()) {
-				handle.dispose();
-			}
-			this._connections.clear();
 		}));
 	}
 
@@ -86,9 +77,10 @@ export class SSHRemoteAgentHostService extends Disposable implements ISSHRemoteA
 		this._logService.info('[SSHRemoteAgentHost] Connecting to ' + config.host);
 		const augmentedConfig = this._augmentConfig(config);
 
-		// Short-circuit if we already track a live handle locally. The
-		// main process keys connections by the same value, so this also
-		// avoids a redundant IPC round-trip for repeated connect clicks.
+		// Repeated user-initiated connects to the same host (e.g. clicking
+		// "Connect" again before disconnecting) would otherwise tear down
+		// the live relay below via `replaceRelay: true` and then orphan
+		// our existing protocol client. Short-circuit instead.
 		const expectedKey = getSSHConnectionKey(augmentedConfig);
 		const existingLocal = this._connections.get(expectedKey);
 		if (existingLocal) {
