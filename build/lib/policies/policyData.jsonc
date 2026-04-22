@@ -76,11 +76,11 @@
             "localization": {
                 "description": {
                     "key": "chat.approvedAccountOrganizations.policy.description",
-                    "value": "Setting this policy to a non-empty value activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comma-separated list of GitHub organization logins. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced)."
+                    "value": "Setting this policy to a non-empty list activates the Approved Account gate: all AI features are disabled until the user signs into a GitHub account whose organizations intersect this list AND the account-side policy data has resolved. Comparison is case-insensitive. Use '*' as a wildcard to accept any signed-in GitHub or GHE account (use this for GHE deployments where the organization list is not surfaced)."
                 }
             },
-            "type": "string",
-            "default": "",
+            "type": "array",
+            "default": [],
             "included": false
         },
         {
