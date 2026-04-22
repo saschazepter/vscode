@@ -557,13 +557,17 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			// to the debug panel.
 			this._installBridgeIfNeeded();
 
-
+			const promises: Promise<unknown>[] = [];
 			if (wasNewSession) {
-				const stagedTitle = await this.customSessionTitleService.getCustomSessionTitle(sdkSession.sessionId);
-				if (stagedTitle) {
-					await sdkSession.updateSessionSummary(stagedTitle);
-				}
+				promises.push(this.customSessionTitleService.getCustomSessionTitle(sdkSession.sessionId).then(stagedTitle => {
+					if (stagedTitle) {
+						sdkSession.updateSessionSummary(stagedTitle);
+					}
+				}));
 			}
+			promises.push(sessionManager.loadDeferredRepoHooks(sdkSession));
+			await Promise.all(promises);
+
 			if (sessionOptions.copilotUrl) {
 				sdkSession.setAuthInfo({
 					type: 'hmac',
@@ -769,7 +773,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 					this.logService.error(`[CopilotCLISession] CopilotCLI failed to get session ${options.sessionId}.`);
 					return undefined;
 				}
-
+				await sessionManager.loadDeferredRepoHooks(sdkSession);
 				const session = this.createCopilotSession(sdkSession, options.workspace, options.agent?.name, sessionManager);
 				session.object.add(mcpGateway);
 				return session;
