@@ -204,7 +204,7 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 	readonly applicationSharedStorage: IStorageMain;
 
 	private createApplicationSharedStorage(): IStorageMain {
-		this.logService.trace(`StorageMainService: creating application shared storage`);
+		this.logService.info(`StorageMainService: creating application shared storage`);
 
 		const sharedStorageFolderPath = join(this.environmentService.appSharedDataHome.with({ scheme: Schemas.file }).fsPath, 'sharedStorage');
 
@@ -220,12 +220,14 @@ export class StorageMainService extends Disposable implements IStorageMainServic
 			//   writing telemetry state into the host app's DB — this is read-only.
 			const hostUserDataPath = getUserDataPath(this.environmentService.args, this.productService.quality === 'stable' ? 'Code' : this.productService.quality === 'insider' ? 'Code - Insiders' : 'Code - Exploration');
 			const hostApplicationStoragePath = join(hostUserDataPath, 'User', 'globalStorage', 'state.vscdb');
-			this.logService.debug(`StorageMainService: using host app storage as fallback at '${hostApplicationStoragePath}'`);
+			this.logService.info(`StorageMainService: creating application shared storage with host app fallback at '${hostApplicationStoragePath}'`);
 			fallbackStorage = this._register(new HostApplicationStorageMain(
 				hostApplicationStoragePath,
 				this.logService,
 				this.fileService
 			));
+		} else {
+			this.logService.info(`StorageMainService: creating application shared storage with local application storage fallback`);
 		}
 
 		const applicationSharedStorage = new ApplicationSharedStorageMain(this.getStorageOptions(), sharedStorageFolderPath, fallbackStorage, this.logService, this.fileService, this.crossAppIPCService);

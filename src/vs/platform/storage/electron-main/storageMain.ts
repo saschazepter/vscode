@@ -377,13 +377,18 @@ export class ApplicationSharedStorageMain extends BaseStorageMain {
 	protected async doCreate(): Promise<Storage> {
 		const { storageFilePath, wasCreated } = await this.prepareStorageFolder();
 
+		this.logService.info(`[shared storage] Creating shared storage database at '${storageFilePath}' (wasCreated: ${wasCreated})`);
+
 		this.sharedDatabase = new SharedSQLiteStorageDatabase(storageFilePath, {
 			logging: this.createLoggingOptions(),
 			useWAL: true,
 			busyTimeout: 2000
 		}, this.crossAppIPCService, this.logService);
 		this._register(this.sharedDatabase);
+
+		this.logService.info(`[shared storage] Initializing fallback application storage (type: ${this.applicationStorage instanceof HostApplicationStorageMain ? 'host' : 'local'}, path: ${this.applicationStorage.path ?? 'in-memory'})`);
 		await this.applicationStorage.init();
+		this.logService.info(`[shared storage] Fallback application storage initialized with ${this.applicationStorage.items.size} items`);
 
 		const migratingStorage = this._register(new MigratingStorage(this.sharedDatabase, { hint: wasCreated ? StorageHint.STORAGE_DOES_NOT_EXIST : undefined }));
 		migratingStorage.setFallbackStorage(this.applicationStorage.storage, this.applicationStorage instanceof HostApplicationStorageMain);
@@ -433,7 +438,14 @@ export class HostApplicationStorageMain extends BaseStorageMain {
 	}
 
 	protected async doCreate(): Promise<Storage> {
-		return new Storage(new SQLiteStorageDatabase(this.path, { logging: this.createLoggingOptions() }));
+		this.logService.info(`[shared storage] Opening host application storage at '${this.path}'`);
+		try {
+			const storage = new Storage(new SQLiteStorageDatabase(this.path, { logging: this.createLoggingOptions() }));
+			return storage;
+		} catch (error) {
+			this.logService.error(`[shared storage] Failed to open host application storage at '${this.path}': ${error}`);
+			throw error;
+		}
 	}
 
 }
