@@ -10,8 +10,8 @@ import { isEqualOrParent } from '../../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { AgentHostEnabledSettingId, IAgentHostService, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
-import { type IProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
-import { type IAgentInfo, type ICustomizationRef, type IRootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -101,7 +101,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		}
 	}
 
-	private _handleRootStateChange(rootState: IRootState): void {
+	private _handleRootStateChange(rootState: RootState): void {
 		const incoming = new Set(rootState.agents.map(a => a.provider));
 
 		// Remove agents that are no longer present
@@ -128,7 +128,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		}
 	}
 
-	private _registerAgent(agent: IAgentInfo): void {
+	private _registerAgent(agent: AgentInfo): void {
 		const store = new DisposableStore();
 		this._agentRegistrations.set(agent.provider, store);
 		const sessionType = `agent-host-${agent.provider}`;
@@ -169,7 +169,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			syncProvider,
 		}));
 
-		const customizations = observableValue<ICustomizationRef[]>('agentCustomizations', []);
+		const customizations = observableValue<CustomizationRef[]>('agentCustomizations', []);
 		const updateCustomizations = async () => {
 			const refs = await this._resolveCustomizations(syncProvider, bundler);
 			customizations.set(refs, undefined);
@@ -224,14 +224,14 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	private async _resolveCustomizations(
 		syncProvider: AgentCustomizationSyncProvider,
 		bundler: SyncedCustomizationBundler,
-	): Promise<ICustomizationRef[]> {
+	): Promise<CustomizationRef[]> {
 		const entries = syncProvider.getSelectedEntries();
 		if (entries.length === 0) {
 			return [];
 		}
 
 		const plugins = this._agentPluginService.plugins.get();
-		const refs: ICustomizationRef[] = [];
+		const refs: CustomizationRef[] = [];
 		const individualFiles: { uri: URI; type: PromptsType }[] = [];
 
 		for (const entry of entries) {
@@ -256,7 +256,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		return refs;
 	}
 
-	private _getRootAgents(): readonly IAgentInfo[] {
+	private _getRootAgents(): readonly AgentInfo[] {
 		const rootState = this._agentHostService.rootState.value;
 		return (rootState && !(rootState instanceof Error)) ? rootState.agents : [];
 	}
@@ -265,7 +265,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	 * Authenticate using protectedResources from agent info in root state.
 	 * Resolves tokens via the standard VS Code authentication service.
 	 */
-	private async _authenticateWithServer(agents: readonly IAgentInfo[]): Promise<void> {
+	private async _authenticateWithServer(agents: readonly AgentInfo[]): Promise<void> {
 		this._agentHostService.setAuthenticationPending(true);
 		try {
 			for (const agent of agents) {
@@ -302,7 +302,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	 * creates a session (which triggers the login UI), and pushes the token
 	 * to the server. Returns true if authentication succeeded.
 	 */
-	private async _resolveAuthenticationInteractively(protectedResources: IProtectedResourceMetadata[]): Promise<boolean> {
+	private async _resolveAuthenticationInteractively(protectedResources: ProtectedResourceMetadata[]): Promise<boolean> {
 		try {
 			for (const resource of protectedResources) {
 				const resourceUri = URI.parse(resource.resource);
