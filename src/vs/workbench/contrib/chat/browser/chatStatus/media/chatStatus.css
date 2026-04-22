@@ -7,13 +7,13 @@
 
 .chat-status-bar-entry-tooltip {
 	padding: 14px;
-	min-width: 380px;
-	max-width: 440px;
+	min-width: 320px;
+	max-width: 360px;
 }
 
 .chat-status-bar-entry-tooltip hr {
-	margin-top: 12px;
-	margin-bottom: 12px;
+	margin-top: 14px;
+	margin-bottom: 14px;
 }
 
 /* Collapsible Quick Settings */
@@ -23,7 +23,7 @@
 	align-items: center;
 	gap: 6px;
 	width: 100%;
-	padding: 10px 0 8px 0;
+	padding: 14px 0 0 0;
 	border: none;
 	border-top: 1px solid var(--vscode-editorWidget-border);
 	background: none;
@@ -65,6 +65,14 @@
 
 .chat-status-bar-entry-tooltip .collapsible-content > .collapsible-inner {
 	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 10px;
+}
+
+.chat-status-bar-entry-tooltip .collapsible-content > .collapsible-inner > hr {
+	margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -163,14 +171,14 @@
 /* Quota Indicator */
 
 .chat-status-bar-entry-tooltip .quota-indicator {
-	margin-bottom: 20px;
+	margin-bottom: 14px;
 	padding: 0;
 	border: none;
 	border-radius: 0;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator:last-of-type {
-	margin-bottom: 12px;
+	margin-bottom: 14px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator.included {
@@ -180,9 +188,9 @@
 .chat-status-bar-entry-tooltip .quota-indicator .quota-title {
 	font-size: 13px;
 	line-height: 18px;
-	font-weight: 600;
-	color: var(--vscode-foreground);
-	margin-bottom: 6px;
+	font-weight: 400;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 4px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-details {
@@ -190,7 +198,7 @@
 	justify-content: space-between;
 	align-items: baseline;
 	gap: 12px;
-	margin-bottom: 8px;
+	margin-bottom: 6px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-percentage {
@@ -232,16 +240,6 @@
 	height: 100%;
 	background-color: var(--vscode-focusBorder);
 	border-radius: 4px;
-}
-
-/* Dimmed state when quota limit is fully exhausted */
-
-.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-percentage .quota-value {
-	color: var(--vscode-disabledForeground);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-bar .quota-bit {
-	opacity: 0.5;
 }
 
 /* Quota Callout */
@@ -300,12 +298,13 @@
 .chat-status-bar-entry-tooltip .settings {
 	display: flex;
 	flex-direction: column;
-	gap: 5px;
+	gap: 6px;
 }
 
 .chat-status-bar-entry-tooltip .settings .setting {
 	display: flex;
 	align-items: center;
+	min-height: 20px;
 }
 
 .chat-status-bar-entry-tooltip .settings .setting .monaco-checkbox {
@@ -328,7 +327,8 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 6px 0 0 0;
+	min-height: 20px;
+	padding: 0;
 }
 
 .chat-status-bar-entry-tooltip .model-selection .model-text {
@@ -349,7 +349,8 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 6px 0 0 0;
+	min-height: 20px;
+	padding: 0;
 }
 
 .chat-status-bar-entry-tooltip .suggest-option-selection .suggest-option-text {
@@ -374,12 +375,13 @@
 /* Snoozing */
 
 .chat-status-bar-entry-tooltip .snooze-completions {
-	margin-top: 1px;
+	margin-top: 0;
 	display: flex;
 	flex-direction: row;
 	flex-wrap: nowrap;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
+	min-height: 20px;
 }
 
 .chat-status-bar-entry-tooltip .snooze-completions .monaco-button {
