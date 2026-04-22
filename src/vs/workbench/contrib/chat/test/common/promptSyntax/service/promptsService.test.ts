@@ -3286,6 +3286,112 @@ suite('PromptsService', () => {
 			assert.strictEqual(resultAfterDispose?.length, 1, 'Should find 1 skill after disposal');
 			assert.strictEqual(resultAfterDispose?.[0].name, 'Local Skill');
 		});
+
+		test('should use folder name for contributed skill with missing name', async () => {
+			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
+
+			const rootFolderName = 'contributed-no-name-test';
+			const rootFolder = `/${rootFolderName}`;
+			workspaceContextService.setWorkspace(testWorkspace(URI.file(rootFolder)));
+
+			const contributedSkillUri = URI.parse('file://extensions/my-extension/my-skill/SKILL.md');
+			const extension = { identifier: { value: 'test.my-extension' } } as unknown as IExtensionDescription;
+
+			await mockFiles(fileService, [
+				{
+					path: contributedSkillUri.path,
+					contents: [
+						'---',
+						'description: "A skill without a name"',
+						'---',
+						'Skill content',
+					],
+				},
+			]);
+
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+
+			const result = await service.findAgentSkills(CancellationToken.None);
+			assert.ok(result, 'Should return results');
+
+			const skill = result.find(s => s.name === 'my-skill');
+			assert.ok(skill, 'Should find skill using folder name as fallback');
+			assert.strictEqual(skill.description, 'A skill without a name');
+
+			registered.dispose();
+		});
+
+		test('should accept contributed skill with missing description', async () => {
+			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
+
+			const rootFolderName = 'contributed-no-desc-test';
+			const rootFolder = `/${rootFolderName}`;
+			workspaceContextService.setWorkspace(testWorkspace(URI.file(rootFolder)));
+
+			const contributedSkillUri = URI.parse('file://extensions/my-extension/no-desc-skill/SKILL.md');
+			const extension = { identifier: { value: 'test.my-extension' } } as unknown as IExtensionDescription;
+
+			await mockFiles(fileService, [
+				{
+					path: contributedSkillUri.path,
+					contents: [
+						'---',
+						'name: "no-desc-skill"',
+						'---',
+						'Skill content without description',
+					],
+				},
+			]);
+
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+
+			const result = await service.findAgentSkills(CancellationToken.None);
+			assert.ok(result, 'Should return results');
+
+			const skill = result.find(s => s.name === 'no-desc-skill');
+			assert.ok(skill, 'Should find skill even without description');
+			assert.strictEqual(skill.description, undefined);
+
+			registered.dispose();
+		});
+
+		test('should override contributed skill name with folder name on mismatch', async () => {
+			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
+
+			const rootFolderName = 'contributed-mismatch-test';
+			const rootFolder = `/${rootFolderName}`;
+			workspaceContextService.setWorkspace(testWorkspace(URI.file(rootFolder)));
+
+			const contributedSkillUri = URI.parse('file://extensions/my-extension/actual-folder/SKILL.md');
+			const extension = { identifier: { value: 'test.my-extension' } } as unknown as IExtensionDescription;
+
+			await mockFiles(fileService, [
+				{
+					path: contributedSkillUri.path,
+					contents: [
+						'---',
+						'name: "wrong-name"',
+						'description: "A skill with mismatched name"',
+						'---',
+						'Skill content',
+					],
+				},
+			]);
+
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+
+			const result = await service.findAgentSkills(CancellationToken.None);
+			assert.ok(result, 'Should return results');
+
+			const skill = result.find(s => s.name === 'actual-folder');
+			assert.ok(skill, 'Should find skill using folder name instead of mismatched name');
+			assert.strictEqual(skill.description, 'A skill with mismatched name');
+
+			registered.dispose();
+		});
 	});
 
 	suite('getPromptSlashCommands - skills', () => {
