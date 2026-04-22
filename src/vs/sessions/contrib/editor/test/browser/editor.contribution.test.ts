@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
@@ -18,10 +19,20 @@ import '../../browser/editor.contribution.js';
 
 suite('Sessions - Editor Contribution', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
+	let store: DisposableStore;
+
+	setup(() => {
+		store = new DisposableStore();
+	});
+
+	teardown(() => {
+		store.dispose();
+	});
 
 	test('maximize editor hides the terminal panel before maximizing', async () => {
-		const instantiationService = new TestInstantiationService();
+		const instantiationService = store.add(new TestInstantiationService());
 		const layoutService = new class extends mock<IAgentWorkbenchLayoutService>() {
+			readonly calls: string[] = [];
 			readonly hiddenParts: Parts[] = [];
 			editorMaximized = false;
 			panelVisible = true;
@@ -36,11 +47,13 @@ suite('Sessions - Editor Contribution', () => {
 				}
 
 				if (hidden && part === Parts.PANEL_PART) {
+					this.calls.push('hidePanel');
 					this.hiddenParts.push(part);
 				}
 			}
 
 			override setEditorMaximized(maximized: boolean): void {
+				this.calls.push(maximized ? 'maximizeEditor' : 'restoreEditor');
 				this.editorMaximized = maximized;
 			}
 		};
@@ -56,12 +69,13 @@ suite('Sessions - Editor Contribution', () => {
 
 		await handler(instantiationService);
 
+		assert.deepStrictEqual(layoutService.calls, ['hidePanel', 'maximizeEditor']);
 		assert.deepStrictEqual(layoutService.hiddenParts, [Parts.PANEL_PART]);
 		assert.strictEqual(layoutService.editorMaximized, true);
 	});
 
 	test('maximize editor keeps non-terminal panels visible', async () => {
-		const instantiationService = new TestInstantiationService();
+		const instantiationService = store.add(new TestInstantiationService());
 		const layoutService = new class extends mock<IAgentWorkbenchLayoutService>() {
 			readonly hiddenParts: Parts[] = [];
 			editorMaximized = false;
@@ -102,7 +116,7 @@ suite('Sessions - Editor Contribution', () => {
 	});
 
 	test('restore editor reopens the terminal panel when maximize hid it', async () => {
-		const instantiationService = new TestInstantiationService();
+		const instantiationService = store.add(new TestInstantiationService());
 		const layoutService = new class extends mock<IAgentWorkbenchLayoutService>() {
 			readonly hiddenParts: Parts[] = [];
 			readonly shownParts: Parts[] = [];
@@ -150,7 +164,7 @@ suite('Sessions - Editor Contribution', () => {
 	});
 
 	test('restore editor does not reopen the panel when maximize left it visible', async () => {
-		const instantiationService = new TestInstantiationService();
+		const instantiationService = store.add(new TestInstantiationService());
 		const layoutService = new class extends mock<IAgentWorkbenchLayoutService>() {
 			readonly shownParts: Parts[] = [];
 			readonly maximizedStates: boolean[] = [];
