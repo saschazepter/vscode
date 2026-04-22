@@ -170,7 +170,7 @@ const jsonSchemaRules: ((family: string, node: JsonSchema, didFix: (message: str
 	},
 	(family, schema, onFix) => {
 		// Gemini models require nullable types to use OpenAPI 3.0 nullable keyword instead of JSON Schema union types
-		if (!isGeminiFamily(family)) {
+		if (!isGeminiFamily(family) && !family.toLowerCase().includes('gemini')) {
 			return;
 		}
 		forEachSchemaNode(schema, n => {
