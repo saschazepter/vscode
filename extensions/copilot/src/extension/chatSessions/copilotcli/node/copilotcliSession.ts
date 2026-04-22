@@ -11,6 +11,7 @@ import type * as vscode from 'vscode';
 import type { ChatParticipantToolToken } from 'vscode';
 import { IAuthenticationService } from '../../../../platform/authentication/common/authentication';
 import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
+import { INTEGRATION_ID as MC_INTEGRATION_ID } from '../../../../platform/endpoint/common/licenseAgreement';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { GenAiMetrics } from '../../../../platform/otel/common/genAiMetrics';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName, IOTelService, ISpanHandle, SpanKind, SpanStatusCode, truncateForOTel, resolveWorkspaceOTelMetadata, workspaceMetadataToOTelAttributes } from '../../../../platform/otel/common/index';
@@ -52,9 +53,6 @@ export type CopilotCLICommand = 'compact' | 'plan' | 'fleet' | 'remote';
  * distinguish a slash-command from a regular prompt at runtime.
  */
 export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'plan', 'fleet', 'remote'] as const;
-
-/** Integration ID used for Mission Control API calls, including the Copilot-Integration-Id header and the session.start event producer. */
-const MC_INTEGRATION_ID = 'vscode-chat';
 
 /** Event structure sent to the Mission Control API. */
 interface McEvent {
@@ -1837,4 +1835,3 @@ function buildPromptTokenDetails(usageInfo: UsageInfoData | undefined): { catego
 	}
 	return details.length > 0 ? details : undefined;
 }
-
