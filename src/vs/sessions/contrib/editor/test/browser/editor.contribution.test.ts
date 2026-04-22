@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
@@ -18,16 +17,7 @@ import { IAgentWorkbenchLayoutService } from '../../../../browser/workbench.js';
 import '../../browser/editor.contribution.js';
 
 suite('Sessions - Editor Contribution', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
-	let store: DisposableStore;
-
-	setup(() => {
-		store = new DisposableStore();
-	});
-
-	teardown(() => {
-		store.dispose();
-	});
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('maximize editor hides the terminal panel before maximizing', async () => {
 		const instantiationService = store.add(new TestInstantiationService());
