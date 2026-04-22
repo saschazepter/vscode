@@ -1053,6 +1053,10 @@ class ConnectSSHTestService extends SSHRemoteAgentHostMainService {
 				break;
 		}
 
+		if (config.agentForward && connectConfig.agent) {
+			connectConfig.agentForward = true;
+		}
+
 		this.lastConnectConfig = connectConfig;
 		return new MockSSHClient() as never;
 	}
@@ -1104,5 +1108,21 @@ suite('SSHRemoteAgentHostMainService - _connectSSH auth config', () => {
 
 		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
 		assert.strictEqual(service.lastConnectConfig.privateKey, keyContents, 'should load fallback key when no agent');
+	});
+
+	test('agent auth with agentForward sets agentForward', async () => {
+		service.agentSock = '/tmp/ssh-agent.sock';
+		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent, agentForward: true }));
+
+		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
+		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
+		assert.strictEqual(service.lastConnectConfig.agentForward, true, 'should set agentForward');
+	});
+
+	test('agentForward without agent auth is ignored', async () => {
+		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Password, password: 'pw', agentForward: true }));
+
+		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
+		assert.strictEqual(service.lastConnectConfig.agentForward, undefined, 'should not set agentForward without agent');
 	});
 });

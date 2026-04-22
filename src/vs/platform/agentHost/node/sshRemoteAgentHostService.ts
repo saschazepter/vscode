@@ -445,7 +445,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 			};
 		}
 
-		this._logService.info(`${LOG_PREFIX} Connecting to ${connectionKey}...`);
+		this._logService.info(`${LOG_PREFIX} ${replaceRelay ? 'Reconnecting' : 'Connecting'} to ${connectionKey}`);
 		let sshClient: SSHClient | undefined;
 
 		try {
@@ -599,13 +599,17 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 		}
 	}
 
-	async reconnect(sshConfigHost: string, name: string, remoteAgentHostCommand?: string): Promise<ISSHConnectResult> {
+	async reconnect(sshConfigHost: string, name: string, remoteAgentHostCommand?: string, agentForward?: boolean): Promise<ISSHConnectResult> {
 		this._logService.info(`${LOG_PREFIX} Reconnecting via SSH config host: ${sshConfigHost}`);
 		const resolved = await this.resolveSSHConfig(sshConfigHost);
 
 		let authMethod: SSHAuthMethod = SSHAuthMethod.Agent;
 		let privateKeyPath: string | undefined;
-		if (resolved.identityFile.length > 0 && !SSHRemoteAgentHostMainService._defaultKeyPaths.includes(resolved.identityFile[0])) {
+		// Only fall back to KeyFile auth if there's no SSH agent available.
+		// When an agent is present the key should be loaded in it, and reading
+		// the key file directly will fail if it's passphrase-encrypted.
+		const hasAgent = !!process.env['SSH_AUTH_SOCK'];
+		if (!hasAgent && resolved.identityFile.length > 0 && !SSHRemoteAgentHostMainService._defaultKeyPaths.includes(resolved.identityFile[0])) {
 			authMethod = SSHAuthMethod.KeyFile;
 			privateKeyPath = resolved.identityFile[0];
 		}
@@ -620,6 +624,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 			name,
 			sshConfigHost,
 			remoteAgentHostCommand,
+			agentForward: agentForward && resolved.forwardAgent ? true : undefined,
 		}, /* replaceRelay */ true);
 	}
 
@@ -775,6 +780,11 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 				this._logService.error(`${LOG_PREFIX} SSH connection error: ${err.message}`);
 				reject(err);
 			});
+
+			if (config.agentForward && connectConfig.agent) {
+				connectConfig.agentForward = true;
+				this._logService.info(`${LOG_PREFIX} SSH agent forwarding enabled`);
+			}
 
 			client.connect(connectConfig);
 		});
