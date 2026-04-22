@@ -13,7 +13,7 @@ import { isEncryptedThinkingDelta } from '../../../platform/thinking/common/thin
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { URI } from '../../../util/vs/base/common/uri';
 import { ChatResponseClearToPreviousToolInvocationReason } from '../../../vscodeTypes';
-import { getContributedToolName, getToolName } from '../../tools/common/toolNames';
+import { getContributedToolName } from '../../tools/common/toolNames';
 import { IResponseProcessor, IResponseProcessorContext } from './intents';
 
 disableErrorLogging();
