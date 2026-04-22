@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { ResolveSessionConfigResult } from '../../platform/agentHost/common/state/protocol/commands.js';
+import { registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { DebugExtensionHostInDevToolsAction } from './debugExtensionHostAction.js';
 
-export function isSessionConfigComplete(config: ResolveSessionConfigResult): boolean {
-	return (config.schema.required ?? []).every(property => config.values[property] !== undefined);
-}
+registerAction2(DebugExtensionHostInDevToolsAction);

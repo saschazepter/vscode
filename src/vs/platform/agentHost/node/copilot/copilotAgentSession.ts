@@ -20,8 +20,8 @@ import { ILogService } from '../../../log/common/log.js';
 import { IAgentAttachment, IAgentMessageEvent, IAgentProgressEvent, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
-import type { IFileEdit, IToolDefinition } from '../../common/state/protocol/state.js';
-import { SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, ToolResultContentType, type IPendingMessage, type ISessionInputAnswer, type ISessionInputRequest, type IToolCallResult, type IToolResultContent } from '../../common/state/sessionState.js';
+import type { FileEdit, ToolDefinition } from '../../common/state/protocol/state.js';
+import { SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, ToolResultContentType, type PendingMessage, type SessionInputAnswer, type SessionInputRequest, type ToolCallResult, type ToolResultContent } from '../../common/state/sessionState.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 import type { ShellManager } from './copilotShellTools.js';
 import { getEditFilePath, getInvocationMessage, getPastTenseMessage, getPermissionDisplay, getShellLanguage, getSubagentMetadata, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool, isShellTool, tryStringify, type ITypedPermissionRequest } from './copilotToolDisplay.js';
@@ -43,7 +43,7 @@ function getCopilotCLISessionStateDir(userHome: string): string {
  */
 export interface IActiveClientSnapshot {
 	readonly clientId: string;
-	readonly tools: readonly IToolDefinition[];
+	readonly tools: readonly ToolDefinition[];
 	readonly plugins: readonly IParsedPlugin[];
 }
 
@@ -107,11 +107,11 @@ export class CopilotAgentSession extends Disposable {
 	readonly sessionUri: URI;
 
 	/** Tracks active tool invocations so we can produce past-tense messages on completion. */
-	private readonly _activeToolCalls = new Map<string, { toolName: string; displayName: string; parameters: Record<string, unknown> | undefined; content: IToolResultContent[] }>();
+	private readonly _activeToolCalls = new Map<string, { toolName: string; displayName: string; parameters: Record<string, unknown> | undefined; content: ToolResultContent[] }>();
 	/** Pending permission requests awaiting a renderer-side decision. */
 	private readonly _pendingPermissions = new Map<string, DeferredPromise<boolean>>();
 	/** Pending user input requests awaiting a renderer-side answer. */
-	private readonly _pendingUserInputs = new Map<string, { deferred: DeferredPromise<{ response: SessionInputResponseKind; answers?: Record<string, ISessionInputAnswer> }>; questionId: string }>();
+	private readonly _pendingUserInputs = new Map<string, { deferred: DeferredPromise<{ response: SessionInputResponseKind; answers?: Record<string, SessionInputAnswer> }>; questionId: string }>();
 	/** File edit tracker for this session. */
 	private readonly _editTracker: FileEditTracker;
 	/** Session database reference. */
@@ -237,7 +237,7 @@ export class CopilotAgentSession extends Disposable {
 	 * Resolves a pending client tool call. Returns `true` if the
 	 * toolCallId was found and handled.
 	 */
-	handleClientToolCallComplete(toolCallId: string, result: IToolCallResult) {
+	handleClientToolCallComplete(toolCallId: string, result: ToolCallResult) {
 		let deferred = this._pendingClientToolCalls.get(toolCallId);
 		if (!deferred) {
 			deferred = new DeferredPromise<ToolResultObject>();
@@ -313,7 +313,7 @@ export class CopilotAgentSession extends Disposable {
 		this._logService.info(`[Copilot:${this.sessionId}] session.send() returned`);
 	}
 
-	async sendSteering(steeringMessage: IPendingMessage): Promise<void> {
+	async sendSteering(steeringMessage: PendingMessage): Promise<void> {
 		this._logService.info(`[Copilot:${this.sessionId}] Sending steering message: "${steeringMessage.userMessage.text.substring(0, 100)}"`);
 		try {
 			await this._wrapper.session.send({
@@ -396,7 +396,7 @@ export class CopilotAgentSession extends Disposable {
 			// Derive display information from the permission request kind
 			const { confirmationTitle, invocationMessage, toolInput, permissionKind, permissionPath } = getPermissionDisplay(request, this._workingDirectory);
 
-			// For write permission requests, build an IFileEdit preview so the
+			// For write permission requests, build an FileEdit preview so the
 			// client can show a diff before the user approves or denies. This
 			// awaits async filesystem operations; the SDK already calls
 			// `handlePermissionRequest` from an arbitrary async context, so the
@@ -456,7 +456,7 @@ export class CopilotAgentSession extends Disposable {
 	}
 
 	/**
-	 * Builds an {@link IFileEdit} preview for a write permission request.
+	 * Builds an {@link FileEdit} preview for a write permission request.
 	 *
 	 * The `before` side references the existing file on disk directly (if it
 	 * exists); the `after` side is written to the `pending-edit-content:`
@@ -468,7 +468,7 @@ export class CopilotAgentSession extends Disposable {
 	 * the in-memory write completes (e.g. the session was aborted), the
 	 * just-written entry is deleted so it cannot leak.
 	 */
-	private async _buildEditsForPermission(request: ITypedPermissionRequest, toolCallId: string): Promise<{ items: IFileEdit[] } | undefined> {
+	private async _buildEditsForPermission(request: ITypedPermissionRequest, toolCallId: string): Promise<{ items: FileEdit[] } | undefined> {
 		if (request.kind !== 'write') {
 			return undefined;
 		}
@@ -509,7 +509,7 @@ export class CopilotAgentSession extends Disposable {
 
 		const diffCounts = typeof request.diff === 'string' ? countUnifiedDiffLines(request.diff) : undefined;
 
-		const edit: IFileEdit = {
+		const edit: FileEdit = {
 			...(beforeExists ? { before: { uri: fileUriStr, content: { uri: fileUriStr } } } : {}),
 			after: { uri: fileUriStr, content: { uri: afterUri.toString() } },
 			...(diffCounts ? { diff: diffCounts } : {}),
@@ -545,11 +545,11 @@ export class CopilotAgentSession extends Disposable {
 			const questionId = generateUuid();
 			this._logService.info(`[Copilot:${this.sessionId}] User input request: requestId=${requestId}, question="${questionPreview}"`);
 
-			const deferred = new DeferredPromise<{ response: SessionInputResponseKind; answers?: Record<string, ISessionInputAnswer> }>();
+			const deferred = new DeferredPromise<{ response: SessionInputResponseKind; answers?: Record<string, SessionInputAnswer> }>();
 			this._pendingUserInputs.set(requestId, { deferred, questionId });
 
-			// Build the protocol ISessionInputRequest from the SDK's simple format
-			const inputRequest: ISessionInputRequest = {
+			// Build the protocol SessionInputRequest from the SDK's simple format
+			const inputRequest: SessionInputRequest = {
 				id: requestId,
 				message: request.question,
 				questions: [request.choices && request.choices.length > 0
@@ -604,7 +604,7 @@ export class CopilotAgentSession extends Disposable {
 		}
 	}
 
-	respondToUserInputRequest(requestId: string, response: SessionInputResponseKind, answers?: Record<string, ISessionInputAnswer>): boolean {
+	respondToUserInputRequest(requestId: string, response: SessionInputResponseKind, answers?: Record<string, SessionInputAnswer>): boolean {
 		const pending = this._pendingUserInputs.get(requestId);
 		if (pending) {
 			this._pendingUserInputs.delete(requestId);
@@ -742,7 +742,7 @@ export class CopilotAgentSession extends Disposable {
 			const displayName = tracked.displayName;
 			const toolOutput = e.data.error?.message ?? e.data.result?.content;
 
-			const content: IToolResultContent[] = [...tracked.content];
+			const content: ToolResultContent[] = [...tracked.content];
 			if (toolOutput !== undefined) {
 				content.push({ type: ToolResultContentType.Text, text: toolOutput });
 			}

@@ -7,7 +7,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { IAgentMessageEvent, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
 import { IFileEditRecord, ISessionDatabase } from '../../common/sessionDataService.js';
-import { ToolResultContentType, type IToolResultContent } from '../../common/state/sessionState.js';
+import { ToolResultContentType, type ToolResultContent } from '../../common/state/sessionState.js';
 import { getInvocationMessage, getPastTenseMessage, getShellLanguage, getSubagentMetadata, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool } from './copilotToolDisplay.js';
 import { buildSessionDbUri } from './fileEditTracker.js';
 
@@ -197,7 +197,7 @@ export async function mapSessionEvents(
 			toolInfoByCallId.delete(d.toolCallId);
 			const displayName = getToolDisplayName(info.toolName);
 			const toolOutput = d.error?.message ?? d.result?.content;
-			const content: IToolResultContent[] = [];
+			const content: ToolResultContent[] = [];
 			if (toolOutput !== undefined) {
 				content.push({ type: ToolResultContentType.Text, text: toolOutput });
 			}
