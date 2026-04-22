@@ -27,6 +27,9 @@ import { IParsedUpdateInfoInput, parseUpdateInfoInput } from '../common/updateIn
 import { getUpdateInfoUrl, isMajorMinorVersionChange } from '../common/updateUtils.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
+import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { URI } from '../../../../base/common/uri.js';
 import './media/postUpdateWidget.css';
 
 const LAST_KNOWN_VERSION_KEY = 'postUpdateWidget/lastKnownVersion';
@@ -144,16 +147,27 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 		container.setAttribute('role', 'dialog');
 		container.setAttribute('aria-labelledby', titleId);
 
-		// Banner (decorative)
+		// Dismiss on Escape
+		disposables.add(dom.addDisposableListener(container, 'keydown', (e: KeyboardEvent) => {
+			const event = new StandardKeyboardEvent(e);
+			if (event.keyCode === KeyCode.Escape) {
+				event.stopPropagation();
+				this.hoverService.hideHover(true);
+			}
+		}));
+
+		// Banner (decorative). Default is a CSS gradient; an image from the markdown frontmatter overrides it.
 		const banner = dom.append(container, dom.$('.banner'));
 		banner.setAttribute('aria-hidden', 'true');
-		if (bannerImageUrl) {
-			banner.style.backgroundImage = `url("${CSS.escape(bannerImageUrl)}")`;
+		const safeBannerUrl = sanitizeBannerImageUrl(bannerImageUrl);
+		if (safeBannerUrl) {
+			// Use setProperty + JSON.stringify to safely quote the URL inside CSS without breaking out.
+			banner.style.setProperty('background-image', `url(${JSON.stringify(safeBannerUrl)})`);
 		}
 
-		const closeButton = dom.append(banner, dom.$('button.banner-close')) as HTMLButtonElement;
+		// Close button is a sibling of the banner so it isn't a focusable descendant of an aria-hidden region.
+		const closeButton = dom.append(container, dom.$('button.banner-close')) as HTMLButtonElement;
 		closeButton.setAttribute('aria-label', localize('postUpdate.close', "Close"));
-		closeButton.removeAttribute('aria-hidden');
 		const closeIcon = dom.append(closeButton, dom.$(ThemeIcon.asCSSSelector(Codicon.close)));
 		closeIcon.setAttribute('aria-hidden', 'true');
 		disposables.add(dom.addDisposableListener(closeButton, 'click', () => {
@@ -273,4 +287,26 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 
 		return false;
 	}
+}
+
+/**
+ * Validates a banner image URL from update info. Only `https:` and `data:image/*` schemes are
+ * allowed to prevent CSS-injection or unexpected protocol handlers being invoked from the markdown payload.
+ */
+function sanitizeBannerImageUrl(value: string | undefined): string | undefined {
+	if (!value) {
+		return undefined;
+	}
+	try {
+		const uri = URI.parse(value, true);
+		if (uri.scheme === 'https') {
+			return uri.toString(true);
+		}
+		if (uri.scheme === 'data' && /^image\//i.test(uri.path)) {
+			return uri.toString(true);
+		}
+	} catch {
+		// fall through
+	}
+	return undefined;
 }

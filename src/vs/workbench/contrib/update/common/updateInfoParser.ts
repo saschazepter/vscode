@@ -5,6 +5,8 @@
 
 import { hasKey, Mutable } from '../../../../base/common/types.js';
 
+const MAX_FEATURES = 5;
+
 export type UpdateInfoButtonStyle = 'primary' | 'secondary';
 
 export interface IUpdateInfoButton {
@@ -156,11 +158,15 @@ function parseUpdateInfoFeatures(features: unknown): IUpdateInfoFeature[] | unde
 		if (typeof feature !== 'object' || feature === null) {
 			continue;
 		}
-		if (!hasKey(feature, { title: true, description: true }) || typeof feature.title !== 'string' || typeof feature.description !== 'string') {
+		const candidate = feature as { title?: unknown; description?: unknown; icon?: unknown };
+		if (typeof candidate.title !== 'string' || typeof candidate.description !== 'string') {
 			continue;
 		}
-		const icon = hasKey(feature, { icon: true }) && typeof feature.icon === 'string' ? feature.icon : undefined;
-		parsed.push({ icon, title: feature.title, description: feature.description });
+		const icon = typeof candidate.icon === 'string' ? candidate.icon : undefined;
+		parsed.push({ icon, title: candidate.title, description: candidate.description });
+		if (parsed.length >= MAX_FEATURES) {
+			break;
+		}
 	}
 
 	return parsed.length ? parsed : undefined;
