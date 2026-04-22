@@ -53,6 +53,9 @@ export type CopilotCLICommand = 'compact' | 'plan' | 'fleet' | 'remote';
  */
 export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'plan', 'fleet', 'remote'] as const;
 
+/** Integration ID sent in the Copilot-Integration-Id header for Mission Control API calls. */
+const MC_INTEGRATION_ID = 'vscode-chat';
+
 /** Event structure sent to the Mission Control API. */
 interface McEvent {
 	id: string;
@@ -1060,7 +1063,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				headers: {
 					'Authorization': `Bearer ${githubToken}`,
 					'Content-Type': 'application/json',
-					'Copilot-Integration-Id': 'copilot-developer-cli',
+					'Copilot-Integration-Id': MC_INTEGRATION_ID,
 				},
 				body: JSON.stringify({
 					owner_id: repoData.owner.id,
@@ -1102,7 +1105,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const sessionStartEvent = this._createMcEvent('session.start', {
 				sessionId: sharedState.mcSessionId,
 				version: 1,
-				producer: 'copilot-developer-cli',
+				producer: MC_INTEGRATION_ID,
 				copilotVersion: '1.0.0',
 				startTime: new Date().toISOString(),
 				remoteSteerable: true,
@@ -1257,7 +1260,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					method: 'DELETE',
 					headers: {
 						'Authorization': `Bearer ${session.accessToken}`,
-						'Copilot-Integration-Id': 'copilot-developer-cli',
+						'Copilot-Integration-Id': MC_INTEGRATION_ID,
 					},
 				});
 			}
@@ -1430,7 +1433,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				headers: {
 					'Authorization': `Bearer ${state.mcGithubToken}`,
 					'Content-Type': 'application/json',
-					'Copilot-Integration-Id': 'copilot-developer-cli',
+					'Copilot-Integration-Id': MC_INTEGRATION_ID,
 				},
 				body,
 			});
@@ -1497,7 +1500,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const response = await fetch(`${state.mcApiUrl}/agents/sessions/${state.mcSessionId}/commands`, {
 				headers: {
 					'Authorization': `Bearer ${state.mcGithubToken}`,
-					'Copilot-Integration-Id': 'copilot-developer-cli',
+					'Copilot-Integration-Id': MC_INTEGRATION_ID,
 				},
 			});
 
