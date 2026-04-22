@@ -39,6 +39,7 @@ suite('TerminalSandboxService - network domains', () => {
 	let workspaceContextService: MockWorkspaceContextService;
 	let productService: IProductService;
 	let sandboxHelperService: MockSandboxHelperService;
+	let remoteAgentService: MockRemoteAgentService;
 	let createdFiles: Map<string, string>;
 	let createdFolders: string[];
 	let deletedFolders: string[];
@@ -62,37 +63,39 @@ suite('TerminalSandboxService - network domains', () => {
 	}
 
 	class MockRemoteAgentService {
+		remoteEnvironment: IRemoteAgentEnvironment | null = {
+			os: OperatingSystem.Linux,
+			tmpDir: URI.file('/tmp'),
+			appRoot: URI.file('/app'),
+			execPath: '/app/node',
+			pid: 1234,
+			connectionToken: 'test-token',
+			settingsPath: URI.file('/settings'),
+			mcpResource: URI.file('/mcp'),
+			logsPath: URI.file('/logs'),
+			extensionHostLogsPath: URI.file('/ext-logs'),
+			globalStorageHome: URI.file('/global'),
+			workspaceStorageHome: URI.file('/workspace'),
+			localHistoryHome: URI.file('/history'),
+			userHome: URI.file('/home/user'),
+			arch: 'x64',
+			marks: [],
+			useHostProxy: false,
+			profiles: {
+				all: [],
+				home: URI.file('/profiles')
+			},
+			isUnsupportedGlibc: false
+		};
+
 		getConnection() {
 			return null;
 		}
 
-		async getEnvironment(): Promise<IRemoteAgentEnvironment> {
+		async getEnvironment(): Promise<IRemoteAgentEnvironment | null> {
 			// Return a Linux environment to ensure tests pass on Windows
 			// (sandbox is not supported on Windows)
-			return {
-				os: OperatingSystem.Linux,
-				tmpDir: URI.file('/tmp'),
-				appRoot: URI.file('/app'),
-				execPath: '/app/node',
-				pid: 1234,
-				connectionToken: 'test-token',
-				settingsPath: URI.file('/settings'),
-				mcpResource: URI.file('/mcp'),
-				logsPath: URI.file('/logs'),
-				extensionHostLogsPath: URI.file('/ext-logs'),
-				globalStorageHome: URI.file('/global'),
-				workspaceStorageHome: URI.file('/workspace'),
-				localHistoryHome: URI.file('/history'),
-				userHome: URI.file('/home/user'),
-				arch: 'x64',
-				marks: [],
-				useHostProxy: false,
-				profiles: {
-					all: [],
-					home: URI.file('/profiles')
-				},
-				isUnsupportedGlibc: false
-			};
+			return this.remoteEnvironment;
 		}
 	}
 
@@ -168,6 +171,7 @@ suite('TerminalSandboxService - network domains', () => {
 		lifecycleService = store.add(new TestLifecycleService());
 		workspaceContextService = new MockWorkspaceContextService();
 		sandboxHelperService = new MockSandboxHelperService();
+		remoteAgentService = new MockRemoteAgentService();
 		productService = {
 			...TestProductService,
 			dataFolderName: '.test-data',
@@ -182,15 +186,17 @@ suite('TerminalSandboxService - network domains', () => {
 
 		instantiationService.stub(IConfigurationService, configurationService);
 		instantiationService.stub(IFileService, fileService);
-		instantiationService.stub(IEnvironmentService, <IEnvironmentService & { tmpDir?: URI; execPath?: string; window?: { id: number } }>{
+		instantiationService.stub(IEnvironmentService, <IEnvironmentService & { tmpDir?: URI; execPath?: string; window?: { id: number }; userHome?: URI; userDataPath?: string }>{
 			_serviceBrand: undefined,
 			tmpDir: URI.file('/tmp'),
 			execPath: '/usr/bin/node',
+			userHome: URI.file('/home/local-user'),
+			userDataPath: '/custom/local-user-data',
 			window: { id: windowId }
 		});
 		instantiationService.stub(ILogService, new NullLogService());
 		instantiationService.stub(IProductService, productService);
-		instantiationService.stub(IRemoteAgentService, new MockRemoteAgentService());
+		instantiationService.stub(IRemoteAgentService, remoteAgentService);
 		instantiationService.stub(IWorkspaceContextService, workspaceContextService);
 		instantiationService.stub(ILifecycleService, lifecycleService);
 		instantiationService.stub(ISandboxHelperService, sandboxHelperService);
@@ -336,6 +342,7 @@ suite('TerminalSandboxService - network domains', () => {
 		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, {
 			allowWrite: ['/configured/path'],
 			denyRead: [],
+			allowRead: ['/configured/readable/path'],
 			denyWrite: []
 		});
 		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxAdvancedRuntime, {
@@ -345,6 +352,7 @@ suite('TerminalSandboxService - network domains', () => {
 			},
 			filesystem: {
 				allowWrite: ['/should-not-win'],
+				allowRead: ['/should-not-win-readable'],
 				unixSockets: {
 					enabled: true,
 				}
@@ -367,10 +375,78 @@ suite('TerminalSandboxService - network domains', () => {
 		});
 		ok(config.filesystem.allowWrite.includes('/configured/path'), 'Configured filesystem values should be preserved');
 		ok(!config.filesystem.allowWrite.includes('/should-not-win'), 'Runtime filesystem values should not override schema-defined filesystem config');
+		ok(config.filesystem.allowRead.includes('/configured/readable/path'), 'Configured allowRead values should be preserved');
+		ok(config.filesystem.allowRead.includes('/workspace-one'), 'Generated allowRead should include workspace folders');
+		ok(config.filesystem.allowRead.includes('/configured/path'), 'Generated allowRead should include configured allowWrite paths');
+		ok(!config.filesystem.allowRead.includes('/should-not-win-readable'), 'Runtime filesystem allowRead should not override schema-defined filesystem config');
 		deepStrictEqual(config.filesystem.unixSockets, {
 			enabled: true,
 		}, 'Additional nested runtime filesystem properties should be merged in');
 		strictEqual(config.allowUnixSockets, true, 'Non-conflicting runtime properties should still be added');
+	});
+
+	test('should deny home reads while reallowing writable paths for reads', async () => {
+		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, {
+			allowWrite: ['/configured/path'],
+			denyRead: ['/secret/path'],
+			allowRead: ['/configured/readable/path'],
+			denyWrite: []
+		});
+
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		const configContent = createdFiles.get(configPath);
+		ok(configContent, 'Config file should be created');
+
+		const config = JSON.parse(configContent);
+		ok(config.filesystem.denyRead.includes('/home/user'), 'Sandbox config should deny arbitrary reads from the user home');
+		ok(config.filesystem.denyRead.includes('/secret/path'), 'Sandbox config should preserve configured denyRead paths');
+		ok(config.filesystem.allowRead.includes('/workspace-one'), 'Sandbox config should re-allow reads from workspace folders');
+		ok(config.filesystem.allowRead.includes('/configured/path'), 'Sandbox config should re-allow reads from configured allowWrite paths');
+		ok(config.filesystem.allowRead.includes('/configured/readable/path'), 'Sandbox config should preserve configured allowRead paths');
+		ok(config.filesystem.allowRead.includes('/home/user/.npm'), 'Sandbox config should re-allow reads from default write paths');
+		ok(config.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Sandbox config should include git read allow-list paths');
+		ok(config.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Sandbox config should include node read allow-list paths');
+		ok(config.filesystem.allowRead.includes('/home/user/.cache/pip'), 'Sandbox config should include common dev read allow-list paths');
+		ok(config.filesystem.allowRead.includes('/home/user/vscode-server-insiders'), 'Sandbox config should include the VS Code server insiders folder');
+		ok(config.filesystem.allowRead.includes('/home/user/.test-data'), 'Sandbox config should include the VS Code data folder');
+		ok(config.filesystem.allowRead.includes('/home/user/.test-server-data'), 'Sandbox config should include the VS Code server data folder');
+		ok(config.filesystem.allowRead.includes('/app'), 'Sandbox config should include the VS Code app root');
+		ok(!config.filesystem.allowRead.includes('/app/node'), 'Sandbox config should not redundantly include app root child paths');
+		ok(!config.filesystem.allowRead.includes('/app/node_modules'), 'Sandbox config should not redundantly include app root child paths');
+		ok(!config.filesystem.allowRead.includes('/app/node_modules/@vscode/ripgrep'), 'Sandbox config should not redundantly include app root child paths');
+	});
+
+	test('should expand home paths in linux filesystem sandbox config paths', async () => {
+		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, {
+			allowWrite: ['~/.custom-write', '/glob/**/*.ts'],
+			denyRead: ['~/.secret', '/secret/*'],
+			allowRead: ['~/.custom-readable', '/readable/{a,b}'],
+			denyWrite: ['~/.custom-write/file.txt', '/configured/path/file?.txt']
+		});
+
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		const configContent = createdFiles.get(configPath);
+		ok(configContent, 'Config file should be created');
+
+		const config = JSON.parse(configContent);
+		ok(config.filesystem.allowWrite.includes('/home/user/.custom-write'), 'allowWrite should expand home paths on Linux');
+		ok(config.filesystem.allowWrite.includes('/glob/**/*.ts'), 'Non-home allowWrite paths should be preserved');
+		ok(!config.filesystem.allowWrite.includes('~/.custom-write'), 'allowWrite should not include unexpanded home paths on Linux');
+		ok(config.filesystem.denyRead.includes('/home/user/.secret'), 'denyRead should expand home paths on Linux');
+		ok(config.filesystem.denyRead.includes('/secret/*'), 'Non-home denyRead paths should be preserved');
+		ok(!config.filesystem.denyRead.includes('~/.secret'), 'denyRead should not include unexpanded home paths on Linux');
+		ok(config.filesystem.allowRead.includes('/home/user/.custom-readable'), 'allowRead should expand home paths on Linux');
+		ok(config.filesystem.allowRead.includes('/readable/{a,b}'), 'Non-home allowRead paths should be preserved');
+		ok(!config.filesystem.allowRead.includes('~/.custom-readable'), 'allowRead should not include unexpanded home paths on Linux');
+		ok(config.filesystem.denyWrite.includes('/home/user/.custom-write/file.txt'), 'denyWrite should expand home paths on Linux');
+		ok(config.filesystem.denyWrite.includes('/configured/path/file?.txt'), 'Non-home denyWrite paths should be preserved');
+		ok(!config.filesystem.denyWrite.includes('~/.custom-write/file.txt'), 'denyWrite should not include unexpanded home paths on Linux');
 	});
 
 	test('should refresh allowWrite paths when workspace folders change', async () => {
@@ -390,6 +466,9 @@ suite('TerminalSandboxService - network domains', () => {
 		const initialConfig = JSON.parse(initialConfigContent);
 		ok(initialConfig.filesystem.allowWrite.includes('/workspace-one'), 'Initial config should include the original workspace folder');
 		ok(initialConfig.filesystem.allowWrite.includes('/configured/path'), 'Initial config should include configured allowWrite paths');
+		ok(initialConfig.filesystem.denyRead.includes('/home/user'), 'Initial config should deny arbitrary reads from home');
+		ok(initialConfig.filesystem.allowRead.includes('/workspace-one'), 'Initial config should re-allow reading the original workspace folder');
+		ok(initialConfig.filesystem.allowRead.includes('/configured/path'), 'Initial config should re-allow reading configured allowWrite paths');
 
 		workspaceContextService.setWorkspaceFolders([URI.file('/workspace-two')]);
 
@@ -403,6 +482,10 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(refreshedConfig.filesystem.allowWrite.includes('/workspace-two'), 'Refreshed config should include the updated workspace folder');
 		ok(!refreshedConfig.filesystem.allowWrite.includes('/workspace-one'), 'Refreshed config should remove the old workspace folder');
 		ok(refreshedConfig.filesystem.allowWrite.includes('/configured/path'), 'Refreshed config should preserve configured allowWrite paths');
+		ok(refreshedConfig.filesystem.denyRead.includes('/home/user'), 'Refreshed config should continue to deny arbitrary reads from home');
+		ok(refreshedConfig.filesystem.allowRead.includes('/workspace-two'), 'Refreshed config should re-allow reading the updated workspace folder');
+		ok(!refreshedConfig.filesystem.allowRead.includes('/workspace-one'), 'Refreshed config should remove the old workspace folder from allowRead');
+		ok(refreshedConfig.filesystem.allowRead.includes('/configured/path'), 'Refreshed config should preserve configured allowWrite paths in allowRead');
 	});
 
 	test('should create sandbox temp dir under the server data folder', async () => {

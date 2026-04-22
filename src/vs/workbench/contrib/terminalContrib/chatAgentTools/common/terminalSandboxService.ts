@@ -35,6 +35,7 @@ import { ElicitationState, IChatService } from '../../../chat/common/chatService
 import { SANDBOX_HELPER_CHANNEL_NAME, SandboxHelperChannelClient } from '../../../../../platform/sandbox/common/sandboxHelperIpc.js';
 import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ISandboxDependencyInstallOptions, type ISandboxDependencyInstallResult, type ITerminalSandboxPrerequisiteCheckResult, type ITerminalSandboxResolvedNetworkDomains, type ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
+import { getTerminalSandboxReadAllowList } from './terminalSandboxReadAllowList.js';
 
 export { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 export type { ISandboxDependencyInstallOptions, ISandboxDependencyInstallResult, ISandboxDependencyInstallTerminal, ITerminalSandboxPrerequisiteCheckResult, ITerminalSandboxResolvedNetworkDomains, ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
@@ -47,6 +48,13 @@ interface ISandboxDependencyInstallTerminalContext {
 	onDidInputData: Event<string>;
 	onDisposed: Event<unknown>;
 	didSendInstallCommand(): boolean;
+}
+
+interface ITerminalSandboxFileSystemSetting {
+	denyRead?: string[];
+	allowRead?: string[];
+	allowWrite?: string[];
+	denyWrite?: string[];
 }
 
 export class TerminalSandboxService extends Disposable implements ITerminalSandboxService {
@@ -173,7 +181,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
 		// Quote shell arguments so the wrapped command cannot break out of the outer shell.
-		const wrappedCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(command)}`;
+		const wrappedCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" SRT_DEBUG=1 "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(command)}`;
 		if (this._remoteEnvDetails) {
 			return {
 				command: wrappedCommand,
@@ -496,15 +504,20 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			const allowedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains) ?? [];
 			const deniedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains) ?? [];
 			const linuxFileSystemSetting = this._os === OperatingSystem.Linux
-				? this._getSettingValue<{ denyRead?: string[]; allowWrite?: string[]; denyWrite?: string[] }>(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxLinuxFileSystem) ?? {}
+				? this._getSettingValue<ITerminalSandboxFileSystemSetting>(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxLinuxFileSystem) ?? {}
 				: {};
 			const macFileSystemSetting = this._os === OperatingSystem.Macintosh
-				? this._getSettingValue<{ denyRead?: string[]; allowWrite?: string[]; denyWrite?: string[] }>(TerminalChatAgentToolsSettingId.AgentSandboxMacFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxMacFileSystem) ?? {}
+				? this._getSettingValue<ITerminalSandboxFileSystemSetting>(TerminalChatAgentToolsSettingId.AgentSandboxMacFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxMacFileSystem) ?? {}
 				: {};
 			const runtimeSetting = this._getSettingValue<Record<string, unknown>>(TerminalChatAgentToolsSettingId.AgentSandboxAdvancedRuntime) ?? {};
 			const configFileUri = URI.joinPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
-			const linuxAllowWrite = this._updateAllowWritePathsWithWorkspaceFolders(linuxFileSystemSetting.allowWrite);
+			const linuxAllowWrite = this._resolveLinuxFileSystemPaths(this._updateAllowWritePathsWithWorkspaceFolders(linuxFileSystemSetting.allowWrite));
 			const macAllowWrite = this._updateAllowWritePathsWithWorkspaceFolders(macFileSystemSetting.allowWrite);
+			const linuxDenyRead = this._resolveLinuxFileSystemPaths(this._updateDenyReadPathsWithHome(linuxFileSystemSetting.denyRead));
+			const macDenyRead = this._updateDenyReadPathsWithHome(macFileSystemSetting.denyRead);
+			const linuxAllowRead = this._resolveLinuxFileSystemPaths(this._updateAllowReadPathsWithAllowWrite(linuxFileSystemSetting.allowRead, linuxAllowWrite));
+			const macAllowRead = this._updateAllowReadPathsWithAllowWrite(macFileSystemSetting.allowRead, macAllowWrite);
+			const linuxDenyWrite = this._resolveLinuxFileSystemPaths(linuxFileSystemSetting.denyWrite);
 
 			const sandboxSettings = {
 				network: {
@@ -512,9 +525,10 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 					deniedDomains: deniedDomainsSetting
 				},
 				filesystem: {
-					denyRead: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyRead : linuxFileSystemSetting.denyRead,
+					denyRead: this._os === OperatingSystem.Macintosh ? macDenyRead : linuxDenyRead,
+					allowRead: this._os === OperatingSystem.Macintosh ? macAllowRead : linuxAllowRead,
 					allowWrite: this._os === OperatingSystem.Macintosh ? macAllowWrite : linuxAllowWrite,
-					denyWrite: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxFileSystemSetting.denyWrite,
+					denyWrite: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxDenyWrite,
 				},
 			};
 			this._mergeAdditionalSandboxConfigProperties(sandboxSettings as Record<string, unknown>, runtimeSetting);
@@ -609,6 +623,67 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private _updateAllowWritePathsWithWorkspaceFolders(configuredAllowWrite: string[] | undefined): string[] {
 		const workspaceFolderPaths = this._workspaceContextService.getWorkspace().folders.map(folder => folder.uri.path);
 		return [...new Set([...workspaceFolderPaths, ...this._defaultWritePaths, ...(configuredAllowWrite ?? [])])];
+	}
+
+	private _updateDenyReadPathsWithHome(configuredDenyRead: string[] | undefined): string[] {
+		const userHome = this._getUserHomePath();
+		return [...new Set([...(configuredDenyRead ?? []), ...(userHome ? [userHome] : [])])];
+	}
+
+	private _updateAllowReadPathsWithAllowWrite(configuredAllowRead: string[] | undefined, allowWrite: string[]): string[] {
+		return [...new Set([...(configuredAllowRead ?? []), ...getTerminalSandboxReadAllowList(this._os), ...this._getVSCodeDataReadPaths(), ...this._getSandboxRuntimeReadPaths(), ...allowWrite])];
+	}
+
+	private _resolveLinuxFileSystemPaths(paths: string[] | undefined): string[] {
+		return (paths ?? []).map(path => this._expandHomePath(path));
+	}
+
+	private _expandHomePath(path: string): string {
+		const userHome = this._getUserHomePath();
+		if (!userHome) {
+			return path;
+		}
+		if (path === '~') {
+			return userHome;
+		}
+		if (path.startsWith('~/')) {
+			return this._pathJoin(userHome, path.slice(2));
+		}
+		return path;
+	}
+
+	private _getVSCodeDataReadPaths(): string[] {
+		const paths = ['~/vscode-server-insiders', '~/.vscode-server-insiders'];
+		const userHome = this._getUserHomePath();
+		if (userHome) {
+			paths.push(this._pathJoin(userHome, this._productService.dataFolderName));
+			if (this._productService.serverDataFolderName) {
+				paths.push(this._pathJoin(userHome, this._productService.serverDataFolderName));
+			}
+		}
+		return paths;
+	}
+
+
+	private _getSandboxRuntimeReadPaths(): string[] {
+		const paths: string[] = [this._appRoot];
+		if (this._execPath) {
+			for (const path of [this._execPath, dirname(this._execPath)]) {
+				if (!this._isPathUnderAppRoot(path)) {
+					paths.push(path);
+				}
+			}
+		}
+		return paths;
+	}
+
+	private _isPathUnderAppRoot(path: string): boolean {
+		return path === this._appRoot || path.startsWith(`${this._appRoot}${this._os === OperatingSystem.Windows ? win32.sep : posix.sep}`);
+	}
+
+	private _getUserHomePath(): string | undefined {
+		const nativeEnv = this._environmentService as IEnvironmentService & { userHome?: URI };
+		return this._remoteEnvDetails?.userHome?.path ?? nativeEnv.userHome?.path;
 	}
 
 	private async _resolveSandboxDependencyStatus(forceRefresh = false): Promise<ISandboxDependencyStatus | undefined> {
