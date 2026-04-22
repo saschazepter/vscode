@@ -27,12 +27,6 @@ export interface IDefaultAccountService {
 	readonly onDidChangeDefaultAccount: Event<IDefaultAccount | null>;
 	readonly onDidChangePolicyData: Event<IPolicyData | null>;
 	readonly policyData: IPolicyData | null;
-	/**
-	 * Synchronously returns the current default account, or `null` if no provider has been
-	 * registered yet or no account is signed in. Prefer `getDefaultAccount()` when callers
-	 * can wait for the init barrier; this synchronous getter exists for consumers that must
-	 * react immediately (e.g. policy gating) and accept that the initial value may be `null`.
-	 */
 	readonly currentDefaultAccount: IDefaultAccount | null;
 	readonly copilotTokenInfo: ICopilotTokenInfo | null;
 	readonly onDidChangeCopilotTokenInfo: Event<ICopilotTokenInfo | null>;
