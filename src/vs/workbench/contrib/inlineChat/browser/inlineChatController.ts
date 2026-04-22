@@ -504,6 +504,7 @@ export class InlineChatController implements IEditorContribution {
 
 			} else {
 				this.#zone.rawValue?.widget.domNode.classList.toggle('request-in-progress', true);
+				this.#zone.rawValue?.status.set('', undefined);
 				let placeholder = response.request?.message.text;
 				const lastProgress = lastResponseProgressObs.read(r);
 				if (lastProgress) {
