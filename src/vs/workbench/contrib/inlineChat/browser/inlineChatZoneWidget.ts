@@ -42,7 +42,7 @@ import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 // without knowing/modifying its dom-structure
 class StatusPlaceholder extends Action2 {
 
-	static readonly Id = 'inlineChatWidget.fake';
+	static readonly Id = 'inlineChatWidget.statusPlaceholder';
 	static readonly CtxHasStatus = new RawContextKey<boolean>('inlineChatHasStatus', false);
 
 	constructor() {
