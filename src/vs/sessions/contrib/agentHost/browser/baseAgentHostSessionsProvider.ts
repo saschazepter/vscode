@@ -359,7 +359,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		this._onDidChangeSessionTypes.fire();
 	}
 
-	abstract resolveWorkspace(repositoryUri: URI): ISessionWorkspace;
+	abstract resolveWorkspace(repositoryUri: URI): ISessionWorkspace | undefined;
 
 	/** Optional event fired when the underlying connection is lost; used to short-circuit `_waitForNewSession`. */
 	protected get onConnectionLost(): Event<void> { return Event.None; }
@@ -428,6 +428,9 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		this._validateBeforeCreate(sessionType);
 
 		const workspace = this.resolveWorkspace(workspaceUri);
+		if (!workspace) {
+			throw new Error(`Cannot resolve workspace for URI: ${workspaceUri.toString()}`);
+		}
 		return this._createNewSessionForType(workspace, sessionType);
 	}
 

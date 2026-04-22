@@ -354,7 +354,12 @@ function terminalText(state: ITerminalState): string {
 		await client.waitForNotification(n => isActionNotification(n, 'session/turnComplete'), 90_000);
 	});
 
-	test('planning-mode session-state writes are auto-approved in default mode', async function () {
+	test.skip('planning-mode session-state writes are auto-approved in default mode', async function () {
+		// TODO: re-enable once exit_plan_mode is fully supported in @github/copilot-sdk.
+		// The public SDK currently lacks agentMode: 'plan' on MessageOptions and
+		// respondToExitPlanMode() on the session, so the model never calls exit_plan_mode
+		// and sawInputRequest never becomes true.
+
 		this.timeout(180_000);
 
 		const tempDir = mkdtempSync(`${tmpdir()}/ahp-plan-test-`);
@@ -621,25 +626,41 @@ function terminalText(state: ITerminalState): string {
 
 		// Auto-approve every tool that needs confirmation while the turn runs.
 		// Multiple inner tool calls may need approval; doing this in a background
-		// loop keeps the turn unblocked.
+		// loop keeps the turn unblocked. Track processed serverSeqs so we don't
+		// busy-spin on already-handled notifications (waitForNotification returns
+		// matching notifications from the queue without consuming them). Using
+		// serverSeq rather than toolCallId allows the same tool to be legitimately
+		// re-confirmed in a later notification.
 		let approvalsActive = true;
 		let approvalSeq = 1000;
+		const processedSeqs = new Set<number>();
 		const approvalLoop = (async () => {
 			while (approvalsActive) {
 				try {
-					const ready = await client.waitForNotification(n => isActionNotification(n, 'session/toolCallReady'), 2_000);
-					const action = getActionEnvelope(ready).action as { session: string; turnId: string; toolCallId: string; confirmed?: string };
-					if (!action.confirmed) {
-						client.notify('dispatchAction', {
-							clientSeq: ++approvalSeq,
-							action: {
-								type: 'session/toolCallConfirmed',
-								session: action.session,
-								turnId: action.turnId,
-								toolCallId: action.toolCallId,
-								approved: true,
-							},
-						});
+					const ready = await client.waitForNotification(n => {
+						if (!isActionNotification(n, 'session/toolCallReady')) {
+							return false;
+						}
+						const envelope = getActionEnvelope(n);
+						const a = envelope.action as { confirmed?: string };
+						return !a.confirmed && !processedSeqs.has(envelope.serverSeq);
+					}, 2_000);
+					const envelope = getActionEnvelope(ready);
+					if (!processedSeqs.has(envelope.serverSeq)) {
+						processedSeqs.add(envelope.serverSeq);
+						const action = envelope.action as { session: string; turnId: string; toolCallId: string; confirmed?: string };
+						if (!action.confirmed) {
+							client.notify('dispatchAction', {
+								clientSeq: ++approvalSeq,
+								action: {
+									type: 'session/toolCallConfirmed',
+									session: action.session,
+									turnId: action.turnId,
+									toolCallId: action.toolCallId,
+									approved: true,
+								},
+							});
+						}
 					}
 				} catch {
 					// Timeout — re-poll. Loop exits when approvalsActive flips.
