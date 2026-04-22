@@ -212,8 +212,10 @@ import './contrib/speech/browser/speech.contribution.js';
 
 // Chat
 import './contrib/chat/browser/chat.contribution.js';
+import './contrib/chat/browser/chat.view.contribution.js';
 import './contrib/inlineChat/browser/inlineChat.contribution.js';
 import './contrib/mcp/browser/mcp.contribution.js';
+import './contrib/mcp/browser/mcp.view.contribution.js';
 import './contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import './contrib/chat/browser/contextContrib/chatContext.contribution.js';
 import './contrib/imageCarousel/browser/imageCarousel.contribution.js';
@@ -408,6 +410,7 @@ import './contrib/codeActions/browser/codeActions.contribution.js';
 
 // Timeline
 import './contrib/timeline/browser/timeline.contribution.js';
+import './contrib/timeline/browser/timeline.service.contribution.js';
 
 // Local History
 import './contrib/localHistory/browser/localHistory.contribution.js';

@@ -163,6 +163,7 @@ export type IChatSessionHistoryItem = {
 	type: 'response';
 	parts: IChatProgress[];
 	participant: string;
+	details?: string;
 };
 
 export type IChatSessionRequestHistoryItem = Extract<IChatSessionHistoryItem, { type: 'request' }>;
