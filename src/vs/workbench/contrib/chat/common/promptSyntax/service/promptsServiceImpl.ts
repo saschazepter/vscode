@@ -9,6 +9,7 @@ import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { parse as parseJSONC } from '../../../../../../base/common/json.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../../base/common/stopwatch.js';
+import { stripUTF8BOM } from '../../../../../../base/common/strings.js';
 import { autorun, IReader } from '../../../../../../base/common/observable.js';
 import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
 import { basename, dirname, isEqual } from '../../../../../../base/common/resources.js';
@@ -863,7 +864,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (token.isCancellationRequested) {
 			throw new CancellationError();
 		}
-		return new PromptFileParser().parse(uri, fileContent.value.toString());
+		return new PromptFileParser().parse(uri, stripUTF8BOM(fileContent.value.toString()));
 	}
 
 	public registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name?: string, description?: string, when?: string, sessionTypes?: readonly string[]) {

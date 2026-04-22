@@ -18,7 +18,7 @@ import { ISequenceValue, IHeaderAttribute, IScalarValue, parseCommaSeparatedList
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
-import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, isInClaudeRulesFolder, LEGACY_MODE_FILE_EXTENSION, VALID_SKILL_NAME_REGEX } from '../config/promptFileLocations.js';
+import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, isInClaudeRulesFolder, isSkillFilename, LEGACY_MODE_FILE_EXTENSION, VALID_SKILL_NAME_REGEX } from '../config/promptFileLocations.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { dirname } from '../../../../../../base/common/resources.js';
@@ -61,12 +61,18 @@ export class PromptValidator {
 	}
 
 	private async validateSkillAttributes(promptAST: ParsedPromptFile, promptType: PromptsType, report: (markers: IMarkerData) => void): Promise<void> {
-		if (promptType !== PromptsType.skill) {
+		if (promptType !== PromptsType.skill || !promptAST.header) {
 			return;
 		}
 
-		const nameAttribute = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.name);
-		if (nameAttribute?.value.type === 'scalar') {
+		const nameAttribute = promptAST.header.attributes.find(attr => attr.key === PromptHeaderAttributes.name);
+		if (!nameAttribute) {
+			report(toMarker(
+				localize('promptValidator.skillNameMissing', "Skill should provide a name."),
+				new Range(1, 1, 1, 4),
+				MarkerSeverity.Warning
+			));
+		} else if (nameAttribute.value.type === 'scalar') {
 			const skillName = nameAttribute.value.value.trim();
 			if (skillName.length > 0) {
 				if (!VALID_SKILL_NAME_REGEX.test(skillName)) {
@@ -79,7 +85,7 @@ export class PromptValidator {
 
 				// Extract folder name from path (e.g., .github/skills/my-skill/SKILL.md -> my-skill)
 				const pathParts = promptAST.uri.path.split('/');
-				const skillIndex = pathParts.findIndex(part => part.toLowerCase() === 'skill.md');
+				const skillIndex = pathParts.findIndex(part => isSkillFilename(part));
 				if (skillIndex > 0) {
 					const folderName = pathParts[skillIndex - 1];
 					if (folderName && skillName !== folderName) {
@@ -93,28 +99,38 @@ export class PromptValidator {
 			}
 		}
 
-		const descriptionAttribute = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.description);
+		const descriptionAttribute = promptAST.header.attributes.find(attr => attr.key === PromptHeaderAttributes.description);
 		if (!descriptionAttribute) {
+			report(toMarker(
+				localize('promptValidator.skillDescriptionMissing', "Skill should provide a description."),
+				new Range(1, 1, 1, 4),
+				MarkerSeverity.Warning
+			));
+
 			// Without a description, user-invocable: false is invalid because the skill
 			// would be model-only but has no description for the model to decide when to use it.
-			const userInvocableAttr = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.userInvocable);
-			if (userInvocableAttr?.value.type === 'scalar' && userInvocableAttr.value.value === 'false') {
-				report(toMarker(
-					localize('promptValidator.skillUserInvocableRequiresDescription', "A description is required when user-invocable is false, because the model needs a description to decide when to load the skill."),
-					userInvocableAttr.value.range,
-					MarkerSeverity.Error
-				));
+			if (promptAST.header.userInvocable === false) {
+				const userInvocableAttr = promptAST.header.getAttribute(PromptHeaderAttributes.userInvocable);
+				if (userInvocableAttr) {
+					report(toMarker(
+						localize('promptValidator.skillUserInvocableRequiresDescription', "A description is required when user-invocable is false, because the model needs a description to decide when to load the skill."),
+						userInvocableAttr.value.range,
+						MarkerSeverity.Error
+					));
+				}
 			}
 
 			// Without a description, disable-model-invocation: false (model invocation enabled)
 			// is the default but if explicitly set, report an error that a description is needed.
-			const disableModelInvocationAttr = promptAST.header?.attributes.find(attr => attr.key === PromptHeaderAttributes.disableModelInvocation);
-			if (disableModelInvocationAttr?.value.type === 'scalar' && disableModelInvocationAttr.value.value === 'false') {
-				report(toMarker(
-					localize('promptValidator.skillModelInvocationRequiresDescription', "A description is required when model invocation is enabled, because the model needs a description to decide when to load the skill."),
-					disableModelInvocationAttr.value.range,
-					MarkerSeverity.Error
-				));
+			if (promptAST.header.disableModelInvocation === false) {
+				const disableModelInvocationAttr = promptAST.header.getAttribute(PromptHeaderAttributes.disableModelInvocation);
+				if (disableModelInvocationAttr) {
+					report(toMarker(
+						localize('promptValidator.skillModelInvocationRequiresDescription', "A description is required when model invocation is enabled, because the model needs a description to decide when to load the skill."),
+						disableModelInvocationAttr.value.range,
+						MarkerSeverity.Error
+					));
+				}
 			}
 		}
 	}

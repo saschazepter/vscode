@@ -34,6 +34,13 @@ export const AGENT_FILE_EXTENSION = '.agent.md';
 export const SKILL_FILENAME = 'SKILL.md';
 
 /**
+ * Check if a filename is a skill file (case insensitive).
+ */
+export function isSkillFilename(filename: string): boolean {
+	return filename.toLowerCase() === SKILL_FILENAME.toLowerCase();
+}
+
+/**
  * Regex for valid skill names: lowercase alphanumeric and hyphens only.
  */
 export const VALID_SKILL_NAME_REGEX = /^[a-z0-9-]+$/;
@@ -244,7 +251,7 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
-	if (filename.toLowerCase() === SKILL_FILENAME.toLowerCase()) {
+	if (isSkillFilename(filename)) {
 		return PromptsType.skill;
 	}
 
@@ -338,7 +345,7 @@ export function getCleanPromptName(fileUri: URI): string {
 	}
 
 	// For SKILL.md files (case insensitive), return the parent folder name
-	if (fileName.toLowerCase() === SKILL_FILENAME.toLowerCase()) {
+	if (isSkillFilename(fileName)) {
 		return getSkillFolderName(fileUri);
 	}
 
