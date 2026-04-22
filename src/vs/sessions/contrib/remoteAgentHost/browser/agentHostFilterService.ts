@@ -6,6 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -146,7 +147,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 
 		this._hosts = hosts;
 
-		const validated = this._validate(this._selectedProviderId);
+		const validated = isWeb ? this._validate(this._selectedProviderId) : undefined;
 		const selectionChanged = validated !== this._selectedProviderId;
 		if (selectionChanged) {
 			this._selectedProviderId = validated;

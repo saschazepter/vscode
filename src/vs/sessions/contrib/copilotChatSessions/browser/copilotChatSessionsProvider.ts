@@ -22,7 +22,7 @@ import { AgentSessionProviders, AgentSessionTarget } from '../../../../workbench
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatResponseModel } from '../../../../workbench/contrib/chat/common/model/chatModel.js';
 import { ChatSessionStatus, IChatSessionsService, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { ISession, IChat, ISessionRepository, ISessionWorkspace, SessionStatus, GITHUB_REMOTE_FILE_SCHEME, IGitHubInfo, CopilotCLISessionType, CopilotCloudSessionType, ClaudeCodeSessionType, ISessionType, ISessionWorkspaceBrowseAction, ISessionFileChange } from '../../../services/sessions/common/session.js';
+import { ISession, IChat, ISessionRepository, ISessionWorkspace, SessionStatus, GITHUB_REMOTE_FILE_SCHEME, IGitHubInfo, CopilotCLISessionType, CopilotCloudSessionType, ClaudeCodeSessionType, ISessionType, ISessionWorkspaceBrowseAction, ISessionFileChange, toSessionId } from '../../../services/sessions/common/session.js';
 import { ChatAgentLocation, ChatModeKind, ChatPermissionLevel } from '../../../../workbench/contrib/chat/common/constants.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
 import { ISendRequestOptions, ISessionChangeEvent, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
@@ -232,7 +232,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 		@IGitService private readonly gitService: IGitService,
 	) {
 		super();
-		this.id = `${providerId}:${resource.toString()}`;
+		this.id = toSessionId(providerId, resource);
 		this.providerId = providerId;
 		this.sessionType = AgentSessionProviders.Background;
 		this.icon = CopilotCLISessionType.icon;
@@ -516,7 +516,7 @@ export class RemoteNewSession extends Disposable implements ICopilotChatSession 
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
-		this.id = `${providerId}:${resource.toString()}`;
+		this.id = toSessionId(providerId, resource);
 		this.providerId = providerId;
 		this.sessionType = target;
 		this.icon = CopilotCloudSessionType.icon;
@@ -743,7 +743,7 @@ class ClaudeCodeNewSession extends Disposable implements ICopilotChatSession {
 		providerId: string,
 	) {
 		super();
-		this.id = `${providerId}:${resource.toString()}`;
+		this.id = toSessionId(providerId, resource);
 		this.providerId = providerId;
 		this.sessionType = AgentSessionProviders.Claude;
 		this.icon = ClaudeCodeSessionType.icon;
@@ -874,7 +874,7 @@ class AgentSessionAdapter implements ICopilotChatSession {
 		providerId: string,
 		private readonly _gitHubService: IGitHubService | undefined,
 	) {
-		this.id = `${providerId}:${session.resource.toString()}`;
+		this.id = toSessionId(providerId, session.resource);
 		this.resource = session.resource;
 		this.providerId = providerId;
 		this.sessionType = session.providerType;
