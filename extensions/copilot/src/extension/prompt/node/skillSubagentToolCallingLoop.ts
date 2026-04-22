@@ -34,6 +34,7 @@ export interface ISkillSubagentToolCallingLoopOptions extends IToolCallingLoopOp
 	promptText: string;
 	skillInstructions: string;
 	subAgentInvocationId?: string;
+	parentToolCallId?: string;
 }
 
 export class SkillSubagentToolCallingLoop extends ToolCallingLoop<ISkillSubagentToolCallingLoopOptions> {
@@ -120,10 +121,12 @@ export class SkillSubagentToolCallingLoop extends ToolCallingLoop<ISkillSubagent
 			},
 			userInitiatedRequest: false,
 			telemetryProperties: {
+				requestId: this.options.subAgentInvocationId,
 				messageId: randomUUID(),
 				messageSource: 'chat.editAgent',
 				subType: 'subagent/skill',
-				conversationId: this.options.conversation.sessionId
+				conversationId: this.options.conversation.sessionId,
+				parentToolCallId: this.options.parentToolCallId,
 			},
 		}, token);
 	}

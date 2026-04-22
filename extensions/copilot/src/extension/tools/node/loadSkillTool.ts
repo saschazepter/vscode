@@ -10,7 +10,6 @@ import { ICustomInstructionsService } from '../../../platform/customInstructions
 import { TextDocumentSnapshot } from '../../../platform/editing/common/textDocumentSnapshot';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
 import { FileType } from '../../../platform/filesystem/common/fileTypes';
-import { IPromptPathRepresentationService } from '../../../platform/prompts/common/promptPathRepresentationService';
 import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
 import { IRequestLogger } from '../../../platform/requestLogger/common/requestLogger';
 import { getCurrentCapturingToken } from '../../../platform/requestLogger/node/requestLogger';
@@ -57,7 +56,6 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@ICustomInstructionsService private readonly customInstructionsService: ICustomInstructionsService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
-		@IPromptPathRepresentationService _promptPathRepresentationService: IPromptPathRepresentationService,
 	) { }
 
 	async invoke(options: vscode.LanguageModelToolInvocationOptions<ILoadSkillParams>, token: vscode.CancellationToken) {
@@ -128,6 +126,7 @@ ${skillContent}
 			promptText: query,
 			skillInstructions: skillContent,
 			subAgentInvocationId,
+			parentToolCallId: options.chatStreamToolCallId,
 		});
 
 		const stream = this._inputContext?.stream && ChatResponseStreamImpl.filter(
