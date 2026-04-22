@@ -1126,7 +1126,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 	}
 
-	private async withWritableSession<T>(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<T>): Promise<T> {
+	private async withWritableSession(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<void>): Promise<void> {
 		let sessionManager: internal.LocalSessionManager | undefined;
 		let shouldCloseSession = false;
 		const sdkSession = (this._sessionWrappers.get(sessionId)?.object.sdkSession as LocalSessionWithTitleUpdates | undefined) ?? await (async () => {
@@ -1141,7 +1141,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 
 		try {
-			return await operation(sdkSession);
+			await operation(sdkSession);
 		} finally {
 			if (shouldCloseSession && sessionManager) {
 				await sessionManager.closeSession(sessionId).catch(error => {
