@@ -97,10 +97,10 @@ export const chatInputWorkingBorderColor1 = registerColor(
 
 export const chatInputWorkingBorderColor2 = registerColor(
 	'chat.inputWorkingBorderColor2',
-	{ dark: darken(buttonBackground, 0.4), light: darken(buttonBackground, 0.3), hcDark: '#A0A0A0', hcLight: '#555555' },
+	{ dark: darken(buttonBackground, 0.5), light: darken(buttonBackground, 0.3), hcDark: '#A0A0A0', hcLight: '#555555' },
 	localize('chat.inputWorkingBorderColor2', 'Secondary accent color used by other animated chat input affordances. Not used by the in-flight chat input border.'), true);
 
 export const chatInputWorkingBorderColor3 = registerColor(
 	'chat.inputWorkingBorderColor3',
-	{ dark: lighten(buttonBackground, 0.4), light: lighten(buttonBackground, 0.3), hcDark: '#000000', hcLight: '#000000' },
+	{ dark: lighten(buttonBackground, 0.5), light: lighten(buttonBackground, 0.3), hcDark: '#000000', hcLight: '#000000' },
 	localize('chat.inputWorkingBorderColor3', 'Tertiary accent color used by other animated chat input affordances. Not used by the in-flight chat input border.'), true);
