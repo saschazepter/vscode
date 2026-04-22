@@ -281,13 +281,13 @@ export class PromptFilesLocator {
 		// Convert to absolute locations with metadata
 		const absoluteLocations = await this.toAbsoluteLocations(PromptsType.hook, allowedHookFolders);
 
-		// Deduplicate by parent URI, keeping the first occurrence
+		// Deduplicate by search root, keeping the first occurrence
 		const seen = new ResourceSet();
 		const result: IResolvedPromptSourceFolder[] = [];
 		for (const location of absoluteLocations) {
 			// For hook configs, entries are directories unless the path ends with .json (specific file)
 			// Default entries have filePattern, user entries don't but are still directories
-			// location.parent points to the directory in both cases, so we can just use that
+			// searchRoot already points to the correct directory or specific file to use in both cases
 			if (!seen.has(location.searchRoot)) {
 				seen.add(location.searchRoot);
 				result.push({ ...location, uri: location.searchRoot, filePattern: undefined });
@@ -858,17 +858,18 @@ interface ISearchLocationResult {
 }
 
 /**
- * Finds the first parent of the provided location that does not contain a `glob pattern`.
+ * Resolves the search root and optional file pattern for the provided location.
+ * For paths with glob patterns, finds the deepest non-glob ancestor directory.
  *
- * Asumes that the location that is provided has a valid path (is abstract)
+ * Assumes that the location that is provided has a valid path (is abstract)
  *
  * ## Examples
  *
  * ```typescript
  * assert.strictDeepEqual(
- *     getParentFolder(PromptsType.prompt, URI.file('/home/user/{folder1,folder2}/file.md')),
- *     { parent: URI.file('/home/user'), filePattern: '{folder1,folder2}/file.md' },
- *     'Must find correct non-glob parent dirname.',
+ *     resolveSearchLocation(PromptsType.prompt, URI.file('/home/user/{folder1,folder2}/file.md')),
+ *     { searchRoot: URI.file('/home/user'), filePattern: '{folder1,folder2}/file.md' },
+ *     'Must find correct non-glob search root.',
  * );
  * ```
  */
