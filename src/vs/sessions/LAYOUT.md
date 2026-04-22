@@ -104,6 +104,7 @@ The Agent Sessions titlebar includes a custom left toolbar that appears after th
 | Action | ID | Location | Behavior |
 |--------|-----|----------|----------|
 | Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar (`TitleBarLeft`) | Toggles primary sidebar visibility |
+| Agent Host Filter | `sessions.agentHostFilter.pick` | Left toolbar (`TitleBarLeft`) | Dropdown indicator of the host the workbench is scoped to; lets the user switch hosts or pick "All Hosts". Visible when at least one remote agent host is known (`sessions.hasAgentHosts`). Renders via a custom `HostFilterActionViewItem`. |
 | Run Script | `workbench.action.agentSessions.runScript` | Right toolbar (`TitleBarRight`) | Split button: runs configured script or shows configure dialog |
 | Open... | (submenu) | Right toolbar (`TitleBarRight`) | Split button submenu: Open Terminal, Open in VS Code |
 | Toggle Secondary Sidebar | `workbench.action.agentToggleSecondarySidebarVisibility` | Right toolbar (`TitleBarRight`) | Toggles auxiliary bar visibility |
@@ -140,6 +141,7 @@ The account widget is rendered in the **right side of the titlebar** as a custom
 - Registered in `contrib/accountMenu/browser/account.contribution.ts`
 - Uses the `Menus.TitleBarRightLayout` menu
 - Shows the signed-in GitHub profile image when available, and falls back to the existing account codicon when it is not
+- Gives the GitHub profile image a subtle 1px circular border using the titlebar command center border tokens so the avatar stays legible against nearby chrome in both active and inactive window states
 - Opens a combined account and Copilot status hover panel with sign-in/sign-out, settings, and update actions
 
 ---
@@ -175,7 +177,7 @@ This structure places the sidebar at the root level spanning the full window hei
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
 
-The sessions sidebar can be resized down to a minimum width of 170px.
+The sessions sidebar can be resized down to a minimum width of 170px (desktop) or 270px (web, sized to fit the titlebar's left toolbar which includes the host filter combo).
 
 ### 4.3 Editor Modal
 
@@ -657,6 +659,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-17 | Added a subtle 1px titlebar-token border around the sessions account widget's GitHub profile image, including the inactive-window variant, and documented the avatar chrome in the layout spec. |
 | 2026-04-16 | Softened the experimental sessions shell gradient by reducing the accent tint mix strength across the shared default, light-theme, and dark-theme variants so the primary color reads more subtly behind the workbench chrome. |
 | 2026-04-16 | Updated the layout visual representation to show the editor part in the top-right row and mark it as hidden by default. |
 | 2026-04-16 | Fixed the sessions workbench so modal editor opens no longer hide an already visible main editor part, and documented that the main editor stays hidden by default but can be revealed by explicit non-modal editor flows. |

@@ -22,7 +22,7 @@ import { IEditorService } from '../../workbench/services/editor/common/editorSer
 import { IPaneCompositePartService } from '../../workbench/services/panecomposite/browser/panecomposite.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../workbench/common/views.js';
 import { ILogService } from '../../platform/log/common/log.js';
-import { IInstantiationService, ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, refineServiceDecorator, ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
 import { ITitleService } from '../../workbench/services/title/browser/titleService.js';
 import { mainWindow, CodeWindow } from '../../base/browser/window.js';
 import { coalesce } from '../../base/common/arrays.js';
@@ -61,7 +61,9 @@ import { IMarkdownRendererService } from '../../platform/markdown/browser/markdo
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
-import { SessionsExperimentalShellGradientBackgroundSettingId } from '../common/configuration.js';
+import { SessionsExperimentalSendButtonGradientSettingId, SessionsExperimentalShellGradientBackgroundSettingId } from '../common/configuration.js';
+import { IContextKeyService } from '../../platform/contextkey/common/contextkey.js';
+import { EditorMaximizedContext } from '../common/contextkeys.js';
 
 //#region Workbench Options
 
@@ -84,6 +86,7 @@ enum LayoutClasses {
 	CHATBAR_HIDDEN = 'nochatbar',
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	EXPERIMENTAL_SHELL_GRADIENT_BACKGROUND = 'experimental-shell-gradient-background',
+	EXPERIMENTAL_SEND_BUTTON_GRADIENT = 'sessions-experimental-send-button-gradient',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized'
 }
@@ -102,7 +105,16 @@ interface IPartVisibilityState {
 
 //#endregion
 
-export class Workbench extends Disposable implements IWorkbenchLayoutService {
+export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService {
+	isEditorMaximized(): boolean;
+	setEditorMaximized(maximized: boolean): void;
+
+	readonly onDidChangeEditorMaximized: Event<void>;
+}
+
+export const IAgentWorkbenchLayoutService = refineServiceDecorator<IWorkbenchLayoutService, IAgentWorkbenchLayoutService>(IWorkbenchLayoutService);
+
+export class Workbench extends Disposable implements IAgentWorkbenchLayoutService {
 
 	declare readonly _serviceBrand: undefined;
 
@@ -141,6 +153,9 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	private readonly _onDidChangeAuxiliaryBarMaximized = this._register(new Emitter<void>());
 	readonly onDidChangeAuxiliaryBarMaximized = this._onDidChangeAuxiliaryBarMaximized.event;
+
+	private readonly _onDidChangeEditorMaximized = this._register(new Emitter<void>());
+	readonly onDidChangeEditorMaximized = this._onDidChangeEditorMaximized.event;
 
 	private readonly _onDidLayoutMainContainer = this._register(new Emitter<IDimension>());
 	readonly onDidLayoutMainContainer = this._onDidLayoutMainContainer.event;
@@ -236,7 +251,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
-		auxiliaryBar: false,
+		auxiliaryBar: true,
 		editor: false,
 		panel: false,
 		chatBar: true
@@ -244,6 +259,9 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	private mainWindowFullscreen = false;
 	private readonly maximized = new Set<number>();
+
+	private _editorMaximized = false;
+	private _editorLastNonMaximizedVisibility: IPartVisibilityState | undefined;
 
 	private readonly restoredPromise = new DeferredPromise<void>();
 	readonly whenRestored = this.restoredPromise.p;
@@ -363,6 +381,12 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 				// Context Keys
 				this._register(instantiationService.createInstance(WorkbenchContextKeysHandler));
 
+				// Editor Maximized Context Key
+				const editorMaximizedContext = EditorMaximizedContext.bindTo(accessor.get(IContextKeyService));
+				this._register(this.onDidChangeEditorMaximized(() => {
+					editorMaximizedContext.set(this.isEditorMaximized());
+				}));
+
 				// Register Listeners
 				this.registerListeners(lifecycleService, storageService, configurationService, hostService, dialogService);
 
@@ -392,7 +416,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	private initServices(serviceCollection: ServiceCollection): IInstantiationService {
 		// Layout Service
-		serviceCollection.set(IWorkbenchLayoutService, this);
+		serviceCollection.set(IAgentWorkbenchLayoutService, this);
 
 		// Title Service - agent sessions titlebar with dedicated part overrides
 		serviceCollection.set(ITitleService, new SyncDescriptor(TitleService, []));
@@ -418,6 +442,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Configuration changes
 		this._register(configurationService.onDidChangeConfiguration(e => this.updateFontAliasing(e, configurationService)));
 		this._register(configurationService.onDidChangeConfiguration(e => this.updateShellGradientBackground(e, configurationService)));
+		this._register(configurationService.onDidChangeConfiguration(e => this.updateSendButtonGradient(e, configurationService)));
 
 		// Font Info
 		if (isNative) {
@@ -512,6 +537,17 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		);
 	}
 
+	private updateSendButtonGradient(e: IConfigurationChangeEvent | undefined, configurationService: IConfigurationService): void {
+		if (e && !e.affectsConfiguration(SessionsExperimentalSendButtonGradientSettingId)) {
+			return;
+		}
+
+		this.mainContainer.classList.toggle(
+			LayoutClasses.EXPERIMENTAL_SEND_BUTTON_GRADIENT,
+			configurationService.getValue<boolean>(SessionsExperimentalSendButtonGradientSettingId)
+		);
+	}
+
 	//#endregion
 
 	private renderWorkbench(instantiationService: IInstantiationService, notificationService: NotificationService, storageService: IStorageService, configurationService: IConfigurationService): void {
@@ -536,6 +572,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Apply font aliasing
 		this.updateFontAliasing(undefined, configurationService);
 		this.updateShellGradientBackground(undefined, configurationService);
+		this.updateSendButtonGradient(undefined, configurationService);
 
 		// Warm up font cache information before building up too many dom elements
 		this.restoreFontInfo(storageService, configurationService);
@@ -1190,6 +1227,11 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			return;
 		}
 
+		// If hiding the editor while maximized
+		if (hidden && this._editorMaximized) {
+			this.setEditorMaximized(false);
+		}
+
 		this.partVisibility.editor = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
 
@@ -1391,6 +1433,52 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 	isAuxiliaryBarMaximized(): boolean {
 		return false; // Maximize not supported
+	}
+
+	isEditorMaximized(): boolean {
+		return this._editorMaximized;
+	}
+
+	setEditorMaximized(maximized: boolean): void {
+		if (maximized === this._editorMaximized) {
+			return;
+		}
+
+		if (maximized) {
+			// Save current visibility state
+			this._editorLastNonMaximizedVisibility = {
+				sidebar: this.partVisibility.sidebar,
+				auxiliaryBar: this.partVisibility.auxiliaryBar,
+				editor: this.partVisibility.editor,
+				panel: this.partVisibility.panel,
+				chatBar: this.partVisibility.chatBar,
+			};
+
+			// Ensure editor is visible
+			if (!this.partVisibility.editor) {
+				this.setEditorHidden(false);
+			}
+
+			// Hide all other content parts
+			if (this.partVisibility.sidebar) {
+				this.setSideBarHidden(true);
+			}
+			if (this.partVisibility.chatBar) {
+				this.setChatBarHidden(true);
+			}
+
+			this._editorMaximized = true;
+		} else {
+			const state = this._editorLastNonMaximizedVisibility;
+
+			// Restore previous visibility state
+			this.setSideBarHidden(!state?.sidebar);
+			this.setChatBarHidden(!state?.chatBar);
+
+			this._editorMaximized = false;
+		}
+
+		this._onDidChangeEditorMaximized.fire();
 	}
 
 	toggleZenMode(): void {

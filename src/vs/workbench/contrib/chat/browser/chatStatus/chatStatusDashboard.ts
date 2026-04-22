@@ -6,6 +6,7 @@
 import { $, append, EventType, addDisposableListener, EventHelper, disposableWindowInterval, getWindow } from '../../../../../base/browser/dom.js';
 import { Gesture, EventType as TouchEventType } from '../../../../../base/browser/touch.js';
 import { ActionBar } from '../../../../../base/browser/ui/actionbar/actionbar.js';
+import { renderLabelWithIcons } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { IAction, toAction, WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification } from '../../../../../base/common/actions.js';
@@ -13,7 +14,8 @@ import { CancellationToken, cancelOnDispose } from '../../../../../base/common/c
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { safeIntl } from '../../../../../base/common/date.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { MutableDisposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { parseLinkedText } from '../../../../../base/common/linkedText.js';
 import { language } from '../../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { isObject } from '../../../../../base/common/types.js';
@@ -29,6 +31,7 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IHoverService, nativeHoverDelegate } from '../../../../../platform/hover/browser/hover.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
+import { Link } from '../../../../../platform/opener/browser/link.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { defaultButtonStyles, defaultCheckboxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
@@ -37,6 +40,7 @@ import { EditorResourceAccessor, SideBySideEditor } from '../../../../common/edi
 import { IChatEntitlementService, ChatEntitlementService, ChatEntitlement, IQuotaSnapshot, getChatPlanName } from '../../../../services/chat/common/chatEntitlementService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { isNewUser } from './chatStatus.js';
+import { IChatStatusItemService, ChatStatusEntry } from './chatStatusItemService.js';
 import product from '../../../../../platform/product/common/product.js';
 import { contrastBorder, inputValidationErrorBorder, inputValidationInfoBorder, inputValidationWarningBorder, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { Color } from '../../../../../base/common/color.js';
@@ -134,6 +138,7 @@ export class ChatStatusDashboard extends DomWidget {
 	constructor(
 		private readonly options: IChatStatusDashboardOptions | undefined,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
+		@IChatStatusItemService private readonly chatStatusItemService: IChatStatusItemService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -255,6 +260,30 @@ export class ChatStatusDashboard extends DomWidget {
 			this.renderUsageContent(this.element, token, updatePromise);
 		} else if (hasInlineSuggestionsSection) {
 			this.renderInlineSuggestionsContent(this.element, token, updatePromise);
+		}
+
+		// Contributions
+		{
+			for (const item of this.chatStatusItemService.getEntries()) {
+				this.element.appendChild($('hr'));
+
+				const itemDisposables = this._store.add(new MutableDisposable());
+
+				let rendered = this.renderContributedChatStatusItem(item);
+				itemDisposables.value = rendered.disposables;
+				this.element.appendChild(rendered.element);
+
+				this._store.add(this.chatStatusItemService.onDidChange(e => {
+					if (e.entry.id === item.id) {
+						const previousElement = rendered.element;
+
+						rendered = this.renderContributedChatStatusItem(e.entry);
+						itemDisposables.value = rendered.disposables;
+
+						previousElement.replaceWith(rendered.element);
+					}
+				}));
+			}
 		}
 
 		// New to Chat / Signed out
@@ -460,6 +489,47 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 	}
 
+	private renderContributedChatStatusItem(item: ChatStatusEntry): { element: HTMLElement; disposables: DisposableStore } {
+		const disposables = new DisposableStore();
+
+		const itemElement = $('div.contribution');
+
+		const headerLabel = typeof item.label === 'string' ? item.label : item.label.label;
+		const headerLink = typeof item.label === 'string' ? undefined : item.label.link;
+		this.renderHeader(itemElement, disposables, headerLabel, headerLink ? toAction({
+			id: 'workbench.action.openChatStatusItemLink',
+			label: localize('learnMore', "Learn More"),
+			tooltip: localize('learnMore', "Learn More"),
+			class: ThemeIcon.asClassName(Codicon.linkExternal),
+			run: () => this.runCommandAndClose(() => this.openerService.open(URI.parse(headerLink))),
+		}) : undefined);
+
+		const itemBody = itemElement.appendChild($('div.body'));
+
+		const description = itemBody.appendChild($('span.description'));
+		this.renderTextPlus(description, item.description, disposables);
+
+		if (item.detail) {
+			const separator = itemBody.appendChild($('span.separator'));
+			separator.textContent = '\u2014';
+			const detail = itemBody.appendChild($('span.detail-item'));
+			this.renderTextPlus(detail, item.detail, disposables);
+		}
+
+		return { element: itemElement, disposables };
+	}
+
+	private renderTextPlus(target: HTMLElement, text: string, store: DisposableStore): void {
+		for (const node of parseLinkedText(text).nodes) {
+			if (typeof node === 'string') {
+				const parts = renderLabelWithIcons(node);
+				target.append(...parts);
+			} else {
+				store.add(new Link(target, node, undefined, this.hoverService, this.openerService));
+			}
+		}
+	}
+
 	private runCommandAndClose(commandOrFn: string | ((...args: unknown[]) => void), ...args: unknown[]): void {
 		if (typeof commandOrFn === 'function') {
 			commandOrFn(...args);
@@ -475,7 +545,6 @@ export class ChatStatusDashboard extends DomWidget {
 		const quotaValue = $('span.quota-value');
 		const quotaValueSuffix = $('span.quota-value-suffix');
 		const quotaBit = $('div.quota-bit');
-		const overageLabel = $('span.overage-label');
 		const resetValue = $('span.quota-reset');
 
 		if (resetLabel) {
@@ -496,7 +565,11 @@ export class ChatStatusDashboard extends DomWidget {
 			)
 		));
 
-		container.appendChild($('div.description', undefined, overageLabel));
+		// Callout for quota limit states
+		const calloutIcon = $('span.callout-icon');
+		const calloutText = $('span.callout-text');
+		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
+		quotaCallout.style.display = 'none';
 
 		if (supportsOverage && (this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus)) {
 			const manageOverageButton = disposables.add(new Button(container, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
@@ -504,9 +577,13 @@ export class ChatStatusDashboard extends DomWidget {
 			disposables.add(manageOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
 		}
 
+		const isEnterpriseUser = this.chatEntitlementService.entitlement === ChatEntitlement.Enterprise || this.chatEntitlementService.entitlement === ChatEntitlement.Business;
+
 		const update = (quota: IQuotaSnapshot | string) => {
 			quotaIndicator.classList.remove('error');
 			quotaIndicator.classList.remove('warning');
+			quotaIndicator.classList.remove('dimmed');
+			quotaIndicator.classList.remove('info');
 
 			let usedPercentage: number;
 			if (typeof quota === 'string') {
@@ -529,24 +606,41 @@ export class ChatStatusDashboard extends DomWidget {
 			quotaBit.style.width = `${usedPercentage}%`;
 
 			const overageEnabled = supportsOverage && typeof quota !== 'string' && quota?.overageEnabled;
-			if (usedPercentage >= 90 && !overageEnabled) {
-				quotaIndicator.classList.add('error');
-			} else if (usedPercentage >= 75 && !overageEnabled) {
-				quotaIndicator.classList.add('warning');
-			}
 
-			if (supportsOverage) {
-				if (typeof quota !== 'string' && quota?.overageEnabled) {
-					overageLabel.replaceChildren(
-						localize('additionalUsageApprovedLine1', "Additional premium requests approved."),
-						$('br'),
-						localize('additionalUsageApprovedLine2', "You can continue after the included premium requests limit reaches 100%.")
-					);
-				} else {
-					overageLabel.textContent = localize('additionalUsageDisabled', "Additional paid premium requests disabled.");
-				}
+			if (usedPercentage >= 100 && overageEnabled) {
+				// Limit exhausted with overage: dim the indicator, show info callout
+				quotaIndicator.classList.add('dimmed');
+				quotaCallout.style.display = '';
+				quotaCallout.className = 'quota-callout info';
+				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
+				calloutText.textContent = localize('quotaOverageActive', "Using Overage Budget until limits reset.");
+			} else if (usedPercentage >= 75 && overageEnabled) {
+				// Approaching limit with overage: highlight in blue, show info callout
+				quotaIndicator.classList.add('info');
+				quotaCallout.style.display = '';
+				quotaCallout.className = 'quota-callout info';
+				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
+				calloutText.textContent = localize('quotaOverageApproaching', "Once the limit is reached, your Overage Budget will be used.");
+			} else if (usedPercentage >= 100 && !overageEnabled) {
+				// Limit reached without overage: dim the indicator and show error callout
+				quotaIndicator.classList.add('dimmed');
+				quotaCallout.style.display = '';
+				quotaCallout.className = 'quota-callout error';
+				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.error)}`;
+				calloutText.textContent = isEnterpriseUser
+					? localize('quotaPausedEnterprise', "Copilot is paused until the limit resets. Contact your administrator for more information.")
+					: localize('quotaPaused', "Copilot is paused until the limit resets.");
+			} else if (usedPercentage >= 75 && !overageEnabled) {
+				// Approaching limit without overage: warning styling and callout
+				quotaIndicator.classList.add('warning');
+				quotaCallout.style.display = '';
+				quotaCallout.className = 'quota-callout warning';
+				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.warning)}`;
+				calloutText.textContent = isEnterpriseUser
+					? localize('quotaWarningEnterprise', "Copilot will pause when the limit is reached. Contact your administrator for more information.")
+					: localize('quotaWarning', "Copilot will pause when the limit is reached.");
 			} else {
-				overageLabel.textContent = '';
+				quotaCallout.style.display = 'none';
 			}
 		};
 

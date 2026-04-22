@@ -621,6 +621,7 @@ export namespace ConfigKey {
 		export const CLIAutoCommitEnabled = defineSetting<boolean>('chat.cli.autoCommit.enabled', ConfigType.Simple, true);
 		export const CLISessionController = defineSetting<boolean>('chat.cli.sessionController.enabled', ConfigType.Simple, false);
 		export const CLIThinkingEffortEnabled = defineSetting<boolean>('chat.cli.thinkingEffort.enabled', ConfigType.Simple, true);
+		export const CLIRemoteEnabled = defineSetting<boolean>('chat.cli.remote.enabled', ConfigType.Simple, false);
 		export const CLISessionControllerForSessionsApp = defineSetting<boolean>('chat.cli.sessionControllerForSessionsApp.enabled', ConfigType.Simple, false);
 		export const CLITerminalLinks = defineSetting<boolean>('chat.cli.terminalLinks.enabled', ConfigType.Simple, true);
 		export const RequestLoggerMaxEntries = defineAndMigrateSetting<number>('chat.advanced.debug.requestLogger.maxEntries', 'chat.debug.requestLogger.maxEntries', 100);
@@ -640,6 +641,8 @@ export namespace ConfigKey {
 		export const UseAlternativeNESNotebookFormat = defineAndMigrateExpSetting<boolean>('chat.advanced.notebook.alternativeNESFormat.enabled', 'chat.notebook.alternativeNESFormat.enabled', false);
 
 		export const InlineChatSelectionRatioThreshold = defineSetting<number>('chat.inlineChat.selectionRatioThreshold', ConfigType.ExperimentBased, 0);
+		export const InlineChatReasoningEffort = defineSetting<string>('chat.inlineChat.reasoningEffort', ConfigType.ExperimentBased, 'low');
+		export const InlineChatEnableThinking = defineSetting<boolean>('chat.inlineChat.enableThinking', ConfigType.ExperimentBased, false);
 
 		export const InstantApplyShortModelName = defineAndMigrateExpSetting<string>('chat.advanced.instantApply.shortContextModelName', 'chat.instantApply.shortContextModelName', CHAT_MODEL.SHORT_INSTANT_APPLY);
 		export const InstantApplyShortContextLimit = defineAndMigrateExpSetting<number>('chat.advanced.instantApply.shortContextLimit', 'chat.instantApply.shortContextLimit', 8000);
@@ -764,7 +767,6 @@ export namespace ConfigKey {
 		export const DebugExpUseElectronFetcher = defineTeamInternalSetting<boolean | undefined>('chat.advanced.debug.useElectronFetcher', ConfigType.ExperimentBased, undefined);
 		export const InlineEditsAsyncCompletions = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.asyncCompletions', ConfigType.ExperimentBased, true);
 		export const InlineEditsEagerBackupRequest = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.eagerBackupRequest', ConfigType.ExperimentBased, false);
-		export const InlineEditsCheckEditWindowOnReuse = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.checkEditWindowOnReuse', ConfigType.ExperimentBased, true);
 		export const InlineEditsDebounceUseCoreRequestTime = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.debounceUseCoreRequestTime', ConfigType.ExperimentBased, false);
 		export const InlineEditsYieldToCopilot = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.yieldToCopilot', ConfigType.ExperimentBased, false);
 		export const InlineEditsExcludedProviders = defineTeamInternalSetting<string | undefined>('chat.advanced.inlineEdits.excludedProviders', ConfigType.ExperimentBased, undefined);
