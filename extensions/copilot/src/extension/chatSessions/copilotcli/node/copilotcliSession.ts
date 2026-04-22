@@ -53,7 +53,7 @@ export type CopilotCLICommand = 'compact' | 'plan' | 'fleet' | 'remote';
  */
 export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'plan', 'fleet', 'remote'] as const;
 
-/** Integration ID sent in the Copilot-Integration-Id header for Mission Control API calls. */
+/** Integration ID used for Mission Control API calls, including the Copilot-Integration-Id header and the session.start event producer. */
 const MC_INTEGRATION_ID = 'vscode-chat';
 
 /** Event structure sent to the Mission Control API. */
