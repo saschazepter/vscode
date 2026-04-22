@@ -15,9 +15,9 @@ import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { AgentSession, IAgentConnection, IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
-import { IResolveSessionConfigResult } from '../../../../platform/agentHost/common/state/protocol/commands.js';
+import { ResolveSessionConfigResult } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import { NotificationType } from '../../../../platform/agentHost/common/state/protocol/notifications.js';
-import type { IFileEdit, IModelSelection, IRootState, ISessionState, ISessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import type { FileEdit, ModelSelection, RootState, SessionState, SessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import { StateComponents } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
@@ -72,7 +72,7 @@ export class AgentHostSessionAdapter implements ISession {
 	readonly status: ISettableObservable<SessionStatus>;
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
 	readonly modelId: ISettableObservable<string | undefined>;
-	modelSelection: IModelSelection | undefined;
+	modelSelection: ModelSelection | undefined;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
 	readonly loading: IObservable<boolean>;
 	readonly isArchived = observableValue('isArchived', false);
@@ -267,12 +267,12 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	protected _selectedModelId: string | undefined;
 
 	protected readonly _newSessionWorkspaces = new Map<string, URI>();
-	protected readonly _newSessionConfigs = new Map<string, IResolveSessionConfigResult>();
+	protected readonly _newSessionConfigs = new Map<string, ResolveSessionConfigResult>();
 	protected readonly _newSessionAgentProviders = new Map<string, string>();
 	protected readonly _newSessionConfigRequests = new Map<string, number>();
 
 	/** Full resolved config (schema + values) for running sessions, keyed by session ID. */
-	protected readonly _runningSessionConfigs = new Map<string, IResolveSessionConfigResult>();
+	protected readonly _runningSessionConfigs = new Map<string, ResolveSessionConfigResult>();
 
 	/**
 	 * Lazy session-state subscriptions used to seed {@link _runningSessionConfigs}
@@ -344,7 +344,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	 * host's root state, firing {@link onDidChangeSessionTypes} only if the
 	 * id/label set actually changed.
 	 */
-	protected _syncSessionTypesFromRootState(rootState: IRootState): void {
+	protected _syncSessionTypesFromRootState(rootState: RootState): void {
 		const next = rootState.agents.map((agent): ISessionType => ({
 			id: agent.provider,
 			label: this._formatSessionTypeLabel(agent.displayName?.trim() || agent.provider),
@@ -505,10 +505,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 
 	// -- Dynamic session config ----------------------------------------------
 
-	getSessionConfig(sessionId: string): IResolveSessionConfigResult | undefined {
+	getSessionConfig(sessionId: string): ResolveSessionConfigResult | undefined {
 		// New-session config wins (during pre-creation flow). Otherwise lazily
 		// subscribe to the session's state so the running picker can seed its
-		// schema/values from the AHP `ISessionState.config` snapshot for sessions
+		// schema/values from the AHP `SessionState.config` snapshot for sessions
 		// that weren't created in this window.
 		const newSessionConfig = this._newSessionConfigs.get(sessionId);
 		if (newSessionConfig) {
@@ -908,7 +908,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 
 	/**
 	 * Lazily acquire a session-state subscription for `sessionId` so that
-	 * `_runningSessionConfigs` is seeded from the AHP `ISessionState.config`
+	 * `_runningSessionConfigs` is seeded from the AHP `SessionState.config`
 	 * snapshot. Safe to call repeatedly — no-op once a subscription exists.
 	 *
 	 * The subscription is reference-counted by {@link IAgentConnection.getSubscription},
@@ -945,13 +945,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	}
 
 	/**
-	 * Seed {@link _runningSessionConfigs} from the AHP `ISessionState.config`
+	 * Seed {@link _runningSessionConfigs} from the AHP `SessionState.config`
 	 * snapshot. Keeps the full schema + values (including non-mutable ones)
 	 * so consumers like the JSONC settings editor can round-trip all values
 	 * through a replace dispatch. No-op if structurally equal to avoid spurious
 	 * `onDidChangeSessionConfig` fires.
 	 */
-	private _seedRunningConfigFromState(sessionId: string, state: ISessionState): void {
+	private _seedRunningConfigFromState(sessionId: string, state: SessionState): void {
 		const stateConfig = state.config;
 		if (!stateConfig) {
 			return;
@@ -959,7 +959,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		if (Object.keys(stateConfig.schema.properties).length === 0) {
 			return;
 		}
-		const seeded: IResolveSessionConfigResult = {
+		const seeded: ResolveSessionConfigResult = {
 			schema: { type: 'object', properties: { ...stateConfig.schema.properties } },
 			values: { ...stateConfig.values },
 		};
@@ -1090,7 +1090,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}));
 	}
 
-	private _handleSessionAdded(summary: ISessionSummary): void {
+	private _handleSessionAdded(summary: SessionSummary): void {
 		const sessionUri = URI.parse(summary.resource);
 		const rawId = AgentSession.id(sessionUri);
 		if (this._sessionCache.has(rawId)) {
@@ -1136,7 +1136,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
-	private _handleModelChanged(session: string, model: IModelSelection): void {
+	private _handleModelChanged(session: string, model: ModelSelection): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
@@ -1167,7 +1167,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
-	private _handleDiffsChanged(session: string, diffs: IFileEdit[]): void {
+	private _handleDiffsChanged(session: string, diffs: FileEdit[]): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
@@ -1176,7 +1176,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
-	private _handleSessionSummaryChanged(session: string, changes: Partial<ISessionSummary>): void {
+	private _handleSessionSummaryChanged(session: string, changes: Partial<SessionSummary>): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (!cached) {
