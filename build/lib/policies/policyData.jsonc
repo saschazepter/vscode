@@ -283,21 +283,6 @@
             "included": true
         },
         {
-            "key": "chat.disableAIFeatures",
-            "name": "ChatDisableAIFeatures",
-            "category": "InteractiveSession",
-            "minimumVersion": "1.118",
-            "localization": {
-                "description": {
-                    "key": "chat.disableAIFeatures.policy.description",
-                    "value": "Force-disable built-in AI features. Set automatically when 'Approved Account Organizations' is configured and the user is not signed into an approved GitHub organization."
-                }
-            },
-            "type": "boolean",
-            "default": false,
-            "included": true
-        },
-        {
             "key": "chat.tools.terminal.enableAutoApprove",
             "name": "ChatToolsTerminalEnableAutoApprove",
             "category": "IntegratedTerminal",

@@ -1465,21 +1465,6 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.disableAIFeatures', "Disable and hide built-in AI features provided by GitHub Copilot, including chat and inline suggestions."),
 			default: false,
 			scope: ConfigurationScope.WINDOW,
-			policy: {
-				name: 'ChatDisableAIFeatures',
-				category: PolicyCategory.InteractiveSession,
-				minimumVersion: '1.118',
-				// `value` is intentionally omitted: this policy is not driven by IPolicyData. It is
-				// driven exclusively by the AccountPolicyService gate, which forces `restrictedValue`
-				// when an admin has set `ChatApprovedAccountOrganizations` and the gate is unsatisfied.
-				restrictedValue: true,
-				localization: {
-					description: {
-						key: 'chat.disableAIFeatures.policy.description',
-						value: nls.localize('chat.disableAIFeatures.policy.description', "Force-disable built-in AI features. Set automatically when 'Approved Account Organizations' is configured and the user is not signed into an approved GitHub organization.")
-					}
-				}
-			}
 		},
 		'chat.approvedAccountOrganizations': {
 			type: 'array',
