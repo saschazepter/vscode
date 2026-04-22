@@ -30,6 +30,7 @@ import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/co
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus, COPILOT_CLI_SESSION_TYPE } from '../../../../services/sessions/common/session.js';
 import { RemoteAgentHostSessionsProvider, type IRemoteAgentHostSessionsProviderConfig } from '../../browser/remoteAgentHostSessionsProvider.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
 
 // ---- Mock connection --------------------------------------------------------
 
@@ -196,6 +197,9 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 		lookupLanguageModel: () => undefined,
 	});
 	instantiationService.stub(IStorageService, overrides?.storageService ?? disposables.add(new InMemoryStorageService()));
+	instantiationService.stub(ILabelService, {
+		getUriLabel: (uri: URI) => uri.path,
+	});
 
 	const config: IRemoteAgentHostSessionsProviderConfig = {
 		address: overrides?.address ?? 'localhost:4321',
@@ -312,6 +316,7 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		const uri = URI.parse('vscode-agent-host://auth/home/user/project');
 		const ws = provider.resolveWorkspace(uri);
 
+		assert.ok(ws, 'resolveWorkspace should resolve vscode-agent-host:// URIs');
 		assert.strictEqual(ws.label, 'project [Test Host]');
 		assert.strictEqual(ws.repositories.length, 1);
 		assert.strictEqual(ws.repositories[0].uri.toString(), uri.toString());

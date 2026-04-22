@@ -29,6 +29,7 @@ import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/co
 import { ISessionChangeEvent } from '../../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus } from '../../../../services/sessions/common/session.js';
 import { LocalAgentHostSessionsProvider } from '../../browser/localAgentHostSessionsProvider.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
 
 // ---- Mock IAgentHostService -------------------------------------------------
 
@@ -210,6 +211,9 @@ function createProvider(disposables: DisposableStore, agentHostService: MockAgen
 	instantiationService.stub(ILanguageModelsService, {
 		lookupLanguageModel: () => undefined,
 	});
+	instantiationService.stub(ILabelService, {
+		getUriLabel: (uri: URI) => uri.path,
+	});
 
 	return disposables.add(instantiationService.createInstance(LocalAgentHostSessionsProvider));
 }
@@ -339,6 +343,7 @@ suite('LocalAgentHostSessionsProvider', () => {
 		const uri = URI.parse('file:///home/user/project');
 		const ws = provider.resolveWorkspace(uri);
 
+		assert.ok(ws, 'resolveWorkspace should resolve file:// URIs');
 		assert.strictEqual(ws.label, 'project [Local]');
 		assert.strictEqual(ws.repositories.length, 1);
 		assert.strictEqual(ws.repositories[0].uri.toString(), uri.toString());
