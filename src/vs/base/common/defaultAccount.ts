@@ -9,6 +9,7 @@ export interface IQuotaSnapshotData {
 	readonly percent_remaining: number;
 	readonly unlimited: boolean;
 	readonly quota_reset_at?: number;
+	readonly token_based_billing?: boolean;
 }
 
 export interface ILegacyQuotaSnapshotData {
@@ -33,13 +34,10 @@ export interface IEntitlementsData extends ILegacyQuotaSnapshotData {
 	readonly limited_user_reset_date?: string; 	// for Copilot Free
 	readonly quota_reset_date?: string; 		// for all other Copilot SKUs
 	readonly quota_reset_date_utc?: string; 	// for all other Copilot SKUs (includes time)
-	readonly token_based_billing?: boolean;
 	readonly quota_snapshots?: {
 		chat?: IQuotaSnapshotData;
 		completions?: IQuotaSnapshotData;
 		premium_interactions?: IQuotaSnapshotData;
-		immediate_usage_interval?: IQuotaSnapshotData;
-		extended_usage_interval?: IQuotaSnapshotData;
 	};
 }
 

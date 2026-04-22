@@ -481,14 +481,12 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 		const { changed: chatChanged } = this.compareQuotas(oldQuota.chat, quotas.chat);
 		const { changed: completionsChanged } = this.compareQuotas(oldQuota.completions, quotas.completions);
 		const { changed: premiumChatChanged } = this.compareQuotas(oldQuota.premiumChat, quotas.premiumChat);
-		const { changed: sessionLimitChanged } = this.compareQuotas(oldQuota.sessionLimit, quotas.sessionLimit);
-		const { changed: weeklyLimitChanged } = this.compareQuotas(oldQuota.weeklyLimit, quotas.weeklyLimit);
 
-		if (chatChanged.exceeded || completionsChanged.exceeded || premiumChatChanged.exceeded || sessionLimitChanged.exceeded || weeklyLimitChanged.exceeded) {
+		if (chatChanged.exceeded || completionsChanged.exceeded || premiumChatChanged.exceeded) {
 			this._onDidChangeQuotaExceeded.fire();
 		}
 
-		if (chatChanged.remaining || completionsChanged.remaining || premiumChatChanged.remaining || sessionLimitChanged.remaining || weeklyLimitChanged.remaining) {
+		if (chatChanged.remaining || completionsChanged.remaining || premiumChatChanged.remaining) {
 			this._onDidChangeQuotaRemaining.fire();
 		}
 	}
@@ -598,10 +596,9 @@ interface IEntitlements {
 
 export interface IQuotaSnapshot {
 	readonly percentRemaining: number;
-
 	readonly unlimited: boolean;
-
 	readonly resetAt?: number;
+	readonly tokenBasedBilling?: boolean;
 }
 
 interface IQuotas {
@@ -611,9 +608,6 @@ interface IQuotas {
 	readonly chat?: IQuotaSnapshot;
 	readonly completions?: IQuotaSnapshot;
 	readonly premiumChat?: IQuotaSnapshot;
-	readonly sessionLimit?: IQuotaSnapshot;
-	readonly weeklyLimit?: IQuotaSnapshot;
-	readonly tokenBasedBilling?: boolean;
 	readonly overageEnabled?: boolean;
 	readonly overageCount?: number;
 }
@@ -771,10 +765,7 @@ export class ChatEntitlementRequests extends Disposable {
 
 		// New Quota Snapshot
 		if (entitlementsData.quota_snapshots) {
-			const hasTokenBasedBilling = entitlementsData.token_based_billing === true;
-			quotas.tokenBasedBilling = hasTokenBasedBilling;
-
-			for (const quotaType of ['chat', 'completions', 'premium_interactions', 'immediate_usage_interval', 'extended_usage_interval'] as const) {
+			for (const quotaType of ['chat', 'completions', 'premium_interactions'] as const) {
 				const rawQuotaSnapshot = entitlementsData.quota_snapshots[quotaType];
 				if (!rawQuotaSnapshot) {
 					continue;
@@ -782,6 +773,7 @@ export class ChatEntitlementRequests extends Disposable {
 				const quotaSnapshot: IQuotaSnapshot = {
 					percentRemaining: Math.min(100, Math.max(0, rawQuotaSnapshot.percent_remaining)),
 					unlimited: rawQuotaSnapshot.unlimited,
+					tokenBasedBilling: rawQuotaSnapshot.token_based_billing,
 					resetAt: rawQuotaSnapshot.quota_reset_at || undefined,
 				};
 
@@ -795,26 +787,15 @@ export class ChatEntitlementRequests extends Disposable {
 					case 'premium_interactions':
 						quotas.premiumChat = quotaSnapshot;
 						break;
-					case 'immediate_usage_interval':
-						quotas.sessionLimit = quotaSnapshot;
-						break;
-					case 'extended_usage_interval':
-						quotas.weeklyLimit = quotaSnapshot;
-						break;
 				}
 			}
 
-			// Global overage: in TBB world read from immediate_usage_interval, otherwise from premium_interactions
-			const overageSource = hasTokenBasedBilling
-				? entitlementsData.quota_snapshots['immediate_usage_interval']
-				: entitlementsData.quota_snapshots['premium_interactions'];
+			const overageSource = entitlementsData.quota_snapshots['premium_interactions'];
 			quotas.overageEnabled = overageSource?.overage_permitted ?? false;
 			quotas.overageCount = overageSource?.overage_count ?? 0;
 		}
 
 		// DEBUG: Override quota values for testing. Uncomment and tweak as needed.
-		// quotas.sessionLimit = { percentRemaining: 0, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 3600 };
-		// quotas.weeklyLimit = { percentRemaining: 20, unlimited: false, resetAt: Math.floor(Date.now() / 1000) + 86400 * 3 };
 		// quotas.overageEnabled = false;
 
 		return quotas;
