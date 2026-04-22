@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { isWindows } from '../../../base/common/platform.js';
+import { extUriBiasedIgnorePathCase } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 
 /**
@@ -77,18 +77,45 @@ export function stripRedundantCdPrefix(
 	if (!extracted) {
 		return false;
 	}
-	if (!sameDirectory(extracted.directory, workingDirectory.fsPath)) {
+	if (!sameDirectory(extracted.directory, workingDirectory)) {
 		return false;
 	}
 	parameters.command = extracted.command;
 	return true;
 }
 
-/** Compares two filesystem paths, ignoring trailing slashes and (on Windows) case. */
-function sameDirectory(a: string, b: string): boolean {
-	const normalize = (p: string) => p.replace(/[\\/]+$/, '');
-	const na = normalize(a);
-	const nb = normalize(b);
-	return isWindows ? na.toLowerCase() === nb.toLowerCase() : na === nb;
+/**
+ * Compares an extracted `cd <dir>` argument (a raw filesystem path string,
+ * possibly using either `/` or `\` separators) to a working-directory URI.
+ * Normalizes separators by routing the extracted string through `URI.file`,
+ * which converts to the platform-native `fsPath` shape, so that e.g.
+ * `cd C:/repo` matches a working directory of `C:\repo` on Windows.
+ *
+ * Path comparison uses {@link extUriBiasedIgnorePathCase}, which is
+ * case-insensitive on Windows / macOS.
+ */
+function sameDirectory(extractedDir: string, workingDirectory: URI): boolean {
+	if (!extractedDir) {
+		return false;
+	}
+	// Strip trailing path separators (either flavor) so e.g. `/repo/project/`
+	// matches `/repo/project`. Without this, URI.file would preserve the
+	// trailing slash and the URIs would not compare equal. We do this for
+	// both sides because the working directory may also end in a separator.
+	const trim = (p: string) => p.replace(/[\\/]+$/, '');
+	const trimmedExtracted = trim(extractedDir);
+	const trimmedWd = trim(workingDirectory.fsPath);
+	if (!trimmedExtracted || !trimmedWd) {
+		return false;
+	}
+	let extractedUri: URI;
+	let wdUri: URI;
+	try {
+		extractedUri = URI.file(trimmedExtracted);
+		wdUri = URI.file(trimmedWd);
+	} catch {
+		return false;
+	}
+	return extUriBiasedIgnorePathCase.isEqual(extractedUri, wdUri);
 }
 

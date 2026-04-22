@@ -794,8 +794,16 @@ function terminalText(state: ITerminalState): string {
 		// The core assertion: regardless of whether the model emitted the cd
 		// prefix verbatim or already pre-stripped it, the toolInput surfaced to
 		// the client must NOT contain the redundant `cd <tempDir> &&` prefix.
+		// Use a regex that anchors to the start of the command and tolerates
+		// optional surrounding quotes around the directory plus either `&&`
+		// or `;` as the chain operator (so quoted variants like
+		// `cd "<wd>" && …` and pwsh-style `cd <wd>; …` are both detected).
+		const escapedWorkingDirPath = expectedWorkingDirPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const redundantWorkingDirCdPrefix = new RegExp(
+			`^\\s*cd\\s+(?:"${escapedWorkingDirPath}"|'${escapedWorkingDirPath}'|${escapedWorkingDirPath})\\s*(?:&&|;)\\s*`,
+		);
 		assert.ok(
-			!toolInput.includes(`cd ${expectedWorkingDirPath}`),
+			!redundantWorkingDirCdPrefix.test(toolInput),
 			`toolInput should not contain a redundant cd-prefix targeting the working directory; got: ${JSON.stringify(toolInput)}`,
 		);
 		assert.ok(

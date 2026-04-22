@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { isWindows } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { extractCdPrefix, stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
@@ -107,5 +108,35 @@ suite('stripRedundantCdPrefix', () => {
 		const changed = stripRedundantCdPrefix('powershell', params, wd);
 		assert.strictEqual(changed, true);
 		assert.strictEqual(params.command, 'dir');
+	});
+
+	test('matches mixed path separators (forward-slash extracted vs native fsPath wd)', () => {
+		// On Windows, the model may emit `cd C:/repo/project && …` while
+		// URI.file('C:\\repo\\project').fsPath uses backslashes. The helper
+		// must normalize separators so the prefix is still recognized.
+		// On POSIX, `C:\…` is not a meaningful path, so the cross-separator
+		// test only makes sense on Windows.
+		if (!isWindows) {
+			return;
+		}
+		const winWd = URI.file('C:\\repo\\project');
+		const params: Record<string, unknown> = { command: 'cd C:/repo/project && npm test' };
+		const changed = stripRedundantCdPrefix('bash', params, winWd);
+		assert.strictEqual(changed, true);
+		assert.strictEqual(params.command, 'npm test');
+	});
+
+	test('matches backslash extracted dir against backslash native wd on Windows', () => {
+		// Inverse direction: the model emits backslashes and the native wd is
+		// also backslashes. This is the most common Windows case and must
+		// match without relying on POSIX-shape paths.
+		if (!isWindows) {
+			return;
+		}
+		const winWd = URI.file('C:\\repo\\project');
+		const params: Record<string, unknown> = { command: 'cd C:\\repo\\project && ls' };
+		const changed = stripRedundantCdPrefix('bash', params, winWd);
+		assert.strictEqual(changed, true);
+		assert.strictEqual(params.command, 'ls');
 	});
 });
