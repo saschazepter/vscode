@@ -23,7 +23,7 @@ export interface ITerminalSandboxReadAllowListGroup {
  * and key material such as ~/.ssh, ~/.gnupg, cloud credentials, package manager
  * auth files, and git credential stores.
  */
-export const terminalSandboxReadAllowListGroups: readonly ITerminalSandboxReadAllowListGroup[] = [
+export const DefaultTerminalReadAllowList: readonly ITerminalSandboxReadAllowListGroup[] = [
 	{
 		operation: TerminalSandboxReadAllowListOperation.Git,
 		linux: [
@@ -93,13 +93,16 @@ export const terminalSandboxReadAllowListGroups: readonly ITerminalSandboxReadAl
 	{
 		operation: TerminalSandboxReadAllowListOperation.CommonDev,
 		linux: [
+			// Rust toolchains and package caches.
 			'~/.cargo/bin',
 			'~/.cargo/registry',
 			'~/.cargo/git',
 			'~/.rustup/toolchains',
+			// Go modules, binaries, and build cache.
 			'~/go/pkg/mod',
 			'~/go/bin',
 			'~/.cache/go-build',
+			// Python package caches and environment managers.
 			'~/.cache/pip',
 			'~/.cache/pypoetry',
 			'~/.cache/uv',
@@ -108,30 +111,38 @@ export const terminalSandboxReadAllowListGroups: readonly ITerminalSandboxReadAl
 			'~/.local/share/pipx',
 			'~/.pyenv/versions',
 			'~/.pyenv/shims',
+			// Java and JVM package caches.
 			'~/.m2/repository',
 			'~/.gradle/caches',
 			'~/.gradle/wrapper/dists',
 			'~/.sdkman/candidates',
+			// .NET and NuGet packages.
 			'~/.nuget/packages',
 			'~/.dotnet',
 			'~/.local/share/NuGet/v3-cache',
+			// Ruby gems and version managers.
 			'~/.gem',
 			'~/.rbenv/versions',
 			'~/.rbenv/shims',
 			'~/.rvm/rubies',
+			// Native build caches.
 			'~/.cache/ccache',
 			'~/.cache/sccache',
+			// Conan package cache.
 			'~/.conan2/p',
 			'~/.conan2/b',
 		],
 		mac: [
+			// Rust toolchains and package caches.
 			'~/.cargo/bin',
 			'~/.cargo/registry',
 			'~/.cargo/git',
 			'~/.rustup/toolchains',
+			// Go modules, binaries, and build cache.
 			'~/go/pkg/mod',
 			'~/go/bin',
 			'~/Library/Caches/go-build',
+			// Python package caches and environment managers.
 			'~/Library/Caches/pip',
 			'~/Library/Caches/pypoetry',
 			'~/Library/Caches/uv',
@@ -140,19 +151,24 @@ export const terminalSandboxReadAllowListGroups: readonly ITerminalSandboxReadAl
 			'~/.local/share/pipx',
 			'~/.pyenv/versions',
 			'~/.pyenv/shims',
+			// Java and JVM package caches.
 			'~/.m2/repository',
 			'~/.gradle/caches',
 			'~/.gradle/wrapper/dists',
 			'~/.sdkman/candidates',
+			// .NET and NuGet packages.
 			'~/.nuget/packages',
 			'~/.dotnet',
 			'~/Library/Caches/NuGet/v3-cache',
+			// Ruby gems and version managers.
 			'~/.gem',
 			'~/.rbenv/versions',
 			'~/.rbenv/shims',
 			'~/.rvm/rubies',
+			// Native build caches.
 			'~/Library/Caches/ccache',
 			'~/Library/Caches/sccache',
+			// Conan package cache.
 			'~/.conan2/p',
 			'~/.conan2/b',
 		],
@@ -160,6 +176,6 @@ export const terminalSandboxReadAllowListGroups: readonly ITerminalSandboxReadAl
 ];
 
 export function getTerminalSandboxReadAllowList(os: OperatingSystem): readonly string[] {
-	const paths = terminalSandboxReadAllowListGroups.flatMap(group => os === OperatingSystem.Macintosh ? group.mac : group.linux);
+	const paths = DefaultTerminalReadAllowList.flatMap(group => os === OperatingSystem.Macintosh ? group.mac : group.linux);
 	return [...new Set(paths)];
 }

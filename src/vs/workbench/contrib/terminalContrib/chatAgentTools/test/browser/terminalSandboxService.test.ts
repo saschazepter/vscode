@@ -410,9 +410,6 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(config.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Sandbox config should include git read allow-list paths');
 		ok(config.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Sandbox config should include node read allow-list paths');
 		ok(config.filesystem.allowRead.includes('/home/user/.cache/pip'), 'Sandbox config should include common dev read allow-list paths');
-		ok(config.filesystem.allowRead.includes('/home/user/vscode-server-insiders'), 'Sandbox config should include the VS Code server insiders folder');
-		ok(config.filesystem.allowRead.includes('/home/user/.test-data'), 'Sandbox config should include the VS Code data folder');
-		ok(config.filesystem.allowRead.includes('/home/user/.test-server-data'), 'Sandbox config should include the VS Code server data folder');
 		ok(config.filesystem.allowRead.includes('/app'), 'Sandbox config should include the VS Code app root');
 		ok(!config.filesystem.allowRead.includes('/app/node'), 'Sandbox config should not redundantly include app root child paths');
 		ok(!config.filesystem.allowRead.includes('/app/node_modules'), 'Sandbox config should not redundantly include app root child paths');

@@ -181,7 +181,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
 		// Quote shell arguments so the wrapped command cannot break out of the outer shell.
-		const wrappedCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" SRT_DEBUG=1 "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(command)}`;
+		const wrappedCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(command)}`;
 		if (this._remoteEnvDetails) {
 			return {
 				command: wrappedCommand,
@@ -631,7 +631,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private _updateAllowReadPathsWithAllowWrite(configuredAllowRead: string[] | undefined, allowWrite: string[]): string[] {
-		return [...new Set([...(configuredAllowRead ?? []), ...getTerminalSandboxReadAllowList(this._os), ...this._getVSCodeDataReadPaths(), ...this._getSandboxRuntimeReadPaths(), ...allowWrite])];
+		return [...new Set([...(configuredAllowRead ?? []), ...getTerminalSandboxReadAllowList(this._os), ...this._getSandboxRuntimeReadPaths(), ...allowWrite])];
 	}
 
 	private _resolveLinuxFileSystemPaths(paths: string[] | undefined): string[] {
@@ -651,19 +651,6 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		}
 		return path;
 	}
-
-	private _getVSCodeDataReadPaths(): string[] {
-		const paths = ['~/vscode-server-insiders', '~/.vscode-server-insiders'];
-		const userHome = this._getUserHomePath();
-		if (userHome) {
-			paths.push(this._pathJoin(userHome, this._productService.dataFolderName));
-			if (this._productService.serverDataFolderName) {
-				paths.push(this._pathJoin(userHome, this._productService.serverDataFolderName));
-			}
-		}
-		return paths;
-	}
-
 
 	private _getSandboxRuntimeReadPaths(): string[] {
 		const paths: string[] = [this._appRoot];
