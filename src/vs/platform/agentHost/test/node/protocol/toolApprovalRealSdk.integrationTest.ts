@@ -354,7 +354,12 @@ function terminalText(state: ITerminalState): string {
 		await client.waitForNotification(n => isActionNotification(n, 'session/turnComplete'), 90_000);
 	});
 
-	test('planning-mode session-state writes are auto-approved in default mode', async function () {
+	test.skip('planning-mode session-state writes are auto-approved in default mode', async function () {
+		// TODO: re-enable once exit_plan_mode is fully supported in @github/copilot-sdk.
+		// The public SDK currently lacks agentMode: 'plan' on MessageOptions and
+		// respondToExitPlanMode() on the session, so the model never calls exit_plan_mode
+		// and sawInputRequest never becomes true.
+
 		this.timeout(180_000);
 
 		const tempDir = mkdtempSync(`${tmpdir()}/ahp-plan-test-`);
@@ -621,15 +626,25 @@ function terminalText(state: ITerminalState): string {
 
 		// Auto-approve every tool that needs confirmation while the turn runs.
 		// Multiple inner tool calls may need approval; doing this in a background
-		// loop keeps the turn unblocked.
+		// loop keeps the turn unblocked. Track confirmed tool call IDs so we
+		// don't busy-spin on already-confirmed entries (waitForNotification
+		// returns matching notifications from the queue without consuming them).
 		let approvalsActive = true;
 		let approvalSeq = 1000;
+		const confirmed = new Set<string>();
 		const approvalLoop = (async () => {
 			while (approvalsActive) {
 				try {
-					const ready = await client.waitForNotification(n => isActionNotification(n, 'session/toolCallReady'), 2_000);
+					const ready = await client.waitForNotification(n => {
+						if (!isActionNotification(n, 'session/toolCallReady')) {
+							return false;
+						}
+						const a = getActionEnvelope(n).action as { toolCallId: string; confirmed?: string };
+						return !a.confirmed && !confirmed.has(a.toolCallId);
+					}, 2_000);
 					const action = getActionEnvelope(ready).action as { session: string; turnId: string; toolCallId: string; confirmed?: string };
-					if (!action.confirmed) {
+					if (!action.confirmed && !confirmed.has(action.toolCallId)) {
+						confirmed.add(action.toolCallId);
 						client.notify('dispatchAction', {
 							clientSeq: ++approvalSeq,
 							action: {
