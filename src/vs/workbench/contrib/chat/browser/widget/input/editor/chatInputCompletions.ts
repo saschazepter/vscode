@@ -56,7 +56,6 @@ import { isToolSet } from '../../../../common/tools/languageModelToolsService.js
 import { IChatSessionsService } from '../../../../common/chatSessionsService.js';
 import { ICustomizationHarnessService, getActiveHarnessSlashCommands } from '../../../../common/customizationHarnessService.js';
 import { IPromptsService, matchesSessionType } from '../../../../common/promptSyntax/service/promptsService.js';
-import { Target } from '../../../../common/promptSyntax/promptTypes.js';
 import { ChatSubmitAction, IChatExecuteActionContext } from '../../../actions/chatExecuteActions.js';
 import { IChatWidget, IChatWidgetService } from '../../../chat.js';
 import { resizeImage } from '../../../chatImageUtils.js';
@@ -99,11 +98,9 @@ class SlashCommandCompletions extends Disposable {
 					return null;
 				}
 
-
-				let customAgentTarget: Target | undefined = undefined;
+				let sessionType: string | undefined = undefined;
 				if (widget.lockedAgentId) {
-					const sessionResource = widget.viewModel.model.sessionResource;
-					customAgentTarget = (sessionResource ? chatSessionsService.getCustomAgentTargetForSessionType(getChatSessionType(sessionResource)) : undefined) ?? Target.Undefined;
+					sessionType = getChatSessionType(widget.viewModel.model.sessionResource);
 				}
 
 				const range = computeCompletionRanges(model, position, SlashCommandWord);
@@ -146,7 +143,7 @@ class SlashCommandCompletions extends Disposable {
 							if (c.modes && c.modes.length && !c.modes.includes(ChatModeKind.Agent)) {
 								return false;
 							}
-							if (c.targets && customAgentTarget && !c.targets.includes(customAgentTarget)) {
+							if (c.sessionTypes && sessionType && !c.sessionTypes.includes(sessionType)) {
 								return false;
 							}
 							return true;
