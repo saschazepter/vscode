@@ -65,7 +65,7 @@ export class PromptValidator {
 			return;
 		}
 
-		const nameAttribute = promptAST.header.attributes.find(attr => attr.key === PromptHeaderAttributes.name);
+		const nameAttribute = promptAST.header.getAttribute(PromptHeaderAttributes.name);
 		if (!nameAttribute) {
 			report(toMarker(
 				localize('promptValidator.skillNameMissing', "Skill should provide a name."),
@@ -99,7 +99,7 @@ export class PromptValidator {
 			}
 		}
 
-		const descriptionAttribute = promptAST.header.attributes.find(attr => attr.key === PromptHeaderAttributes.description);
+		const descriptionAttribute = promptAST.header.getAttribute(PromptHeaderAttributes.description);
 		if (!descriptionAttribute) {
 			report(toMarker(
 				localize('promptValidator.skillDescriptionMissing', "Skill should provide a description."),
