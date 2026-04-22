@@ -238,7 +238,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			const itemUris = new ResourceSet(items.map(i => i.uri));
 			for (const uri of disabledUris) {
 				const alreadyInItems = itemUris.has(uri);
-				const existingItem = alreadyInItems ? items.find(i => i.uri.toString() === uri.toString()) : undefined;
 				if (!alreadyInItems) {
 					items.push({
 						uri,
@@ -246,9 +245,12 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 						name: getFriendlyName(basename(uri)),
 						enabled: false,
 					});
-				} else if (existingItem && existingItem.enabled !== false) {
-					// Item exists but is marked as enabled despite being in disabled list — fix it
-					(existingItem as { enabled?: boolean }).enabled = false;
+				} else {
+					const idx = items.findIndex(i => i.uri.toString() === uri.toString());
+					if (idx !== -1 && items[idx].enabled !== false) {
+						// Item exists but is marked as enabled despite being in disabled list — fix it
+						items[idx] = { ...items[idx], enabled: false };
+					}
 				}
 			}
 		}

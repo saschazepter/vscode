@@ -689,12 +689,15 @@ registerAction2(class extends Action2 {
 	}
 });
 
-// Context menu: Disable Plugin (shown for plugin items — the items are only visible when the plugin is enabled)
+// Context menu: Disable Plugin (shown for plugin items when plugin is enabled)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_PLUGIN_AI_CUSTOMIZATION_ID, title: localize('disablePlugin', "Disable Plugin") },
 	group: '5_toggle',
 	order: 1,
-	when: WHEN_ITEM_IS_PLUGIN,
+	when: ContextKeyExpr.and(
+		WHEN_ITEM_IS_PLUGIN,
+		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
+	),
 });
 
 // Inline hover: Disable Plugin
@@ -702,7 +705,32 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_PLUGIN_AI_CUSTOMIZATION_ID, title: localize('disablePlugin', "Disable Plugin"), icon: Codicon.eyeClosed },
 	group: 'inline',
 	order: 5,
-	when: WHEN_ITEM_IS_PLUGIN,
+	when: ContextKeyExpr.and(
+		WHEN_ITEM_IS_PLUGIN,
+		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
+	),
+});
+
+// Context menu: Enable Plugin (shown for plugin items when plugin is disabled)
+MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
+	command: { id: ENABLE_PLUGIN_AI_CUSTOMIZATION_ID, title: localize('enablePlugin', "Enable Plugin") },
+	group: '5_toggle',
+	order: 1,
+	when: ContextKeyExpr.and(
+		WHEN_ITEM_IS_PLUGIN,
+		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, true),
+	),
+});
+
+// Inline hover: Enable Plugin
+MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
+	command: { id: ENABLE_PLUGIN_AI_CUSTOMIZATION_ID, title: localize('enablePlugin', "Enable Plugin"), icon: Codicon.eye },
+	group: 'inline',
+	order: 5,
+	when: ContextKeyExpr.and(
+		WHEN_ITEM_IS_PLUGIN,
+		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, true),
+	),
 });
 
 // Disable item action
@@ -773,14 +801,21 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		// Remove from both scopes to fully re-enable
+		// Remove from both scopes to fully re-enable — but only write
+		// the scopes that actually contain the URI to avoid unnecessary
+		// cache invalidation.
 		const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
-		profileDisabled.delete(uri);
-		promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
+		const wasInProfile = profileDisabled.delete(uri);
 
 		const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
-		workspaceDisabled.delete(uri);
-		promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+		const wasInWorkspace = workspaceDisabled.delete(uri);
+
+		if (wasInProfile) {
+			promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
+		}
+		if (wasInWorkspace) {
+			promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+		}
 	}
 });
 
@@ -800,7 +835,7 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	),
 });
 
-// Context menu: Disable (Workspace) (shown for user-level items only, when a workspace is open)
+// Context menu: Disable (Workspace) (shown for user-level and extension items, when a workspace is open)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_WORKSPACE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('disableForWorkspace', "Disable (Workspace)") },
 	group: '5_toggle',
@@ -808,7 +843,10 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
 		WHEN_ITEM_IS_NOT_PLUGIN,
-		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.user),
+		ContextKeyExpr.or(
+			ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.user),
+			ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.extension),
+		),
 		ContextKeyExpr.notEquals('workbenchState', 'empty'),
 	),
 });

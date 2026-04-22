@@ -625,11 +625,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const promptFiles = await this.listPromptFiles(PromptsType.prompt, token);
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		const skills = useAgentSkills ? await this.listPromptFiles(PromptsType.skill, token) : [];
-		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
-		const disabledPrompts = this.getDisabledPromptFiles(PromptsType.prompt);
 		const slashCommandFiles = [
-			...promptFiles.filter(p => !disabledPrompts.has(p.uri)),
-			...skills.filter(s => !disabledSkills.has(s.uri)),
+			...promptFiles,
+			...skills,
 		];
 
 		const parseResults = await Promise.all(slashCommandFiles.map(async promptPath => {
@@ -667,11 +665,19 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Derives IChatPromptSlashCommand[] from cached discovery info.
 	 */
 	private slashCommandsFromDiscoveryInfo(discoveryInfo: ISlashCommandDiscoveryInfo): readonly IChatPromptSlashCommand[] {
+		const disabledPrompts = this.getDisabledPromptFiles(PromptsType.prompt);
+		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
 		const result: IChatPromptSlashCommand[] = [];
 		const seen = new ResourceSet();
 
 		for (const file of discoveryInfo.files) {
 			if (file.status === 'loaded') {
+				const isDisabled = file.promptPath.type === PromptsType.prompt
+					? disabledPrompts.has(file.promptPath.uri)
+					: disabledSkills.has(file.promptPath.uri);
+				if (isDisabled) {
+					continue;
+				}
 				result.push(this.asChatPromptSlashCommand(file.argumentHint, file.userInvocable, file.promptPath));
 				seen.add(file.promptPath.uri);
 			}
@@ -1134,14 +1140,25 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private _refreshCachesForType(type: PromptsType): void {
-		// Refresh all caches to ensure the disabled state is picked up
-		// everywhere — the disabled set is a cross-cutting concern that
-		// affects discovery, slash commands, skills, and hooks.
-		this.cachedCustomAgents.refresh();
-		this.cachedSlashCommands.refresh();
-		this.cachedSkills.refresh();
-		this.cachedInstructions.refresh();
-		this.cachedHooks.refresh();
+		switch (type) {
+			case PromptsType.agent:
+				this.cachedCustomAgents.refresh();
+				break;
+			case PromptsType.skill:
+				this.cachedSkills.refresh();
+				// Skills appear in slash commands too
+				this.cachedSlashCommands.refresh();
+				break;
+			case PromptsType.prompt:
+				this.cachedSlashCommands.refresh();
+				break;
+			case PromptsType.instructions:
+				this.cachedInstructions.refresh();
+				break;
+			case PromptsType.hook:
+				this.cachedHooks.refresh();
+				break;
+		}
 	}
 
 	// Agent skills
