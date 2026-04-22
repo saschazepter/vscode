@@ -141,13 +141,6 @@ The workbench toggles CSS classes (`phone-layout`, `mobile-layout`) on `layout()
 | `src/vs/sessions/browser/parts/media/sidebarPart.css` | Sidebar drawer overlay CSS: 85% width, z-index 250, slide-in animation, backdrop. |
 | `src/vs/sessions/browser/media/style.css` | Mobile overscroll containment, 44px touch targets, quick pick bottom sheets, context menu action sheets, dialog sizing, notification positioning, hover card suppression, editor modal full-screen. |
 
-### PWA & Viewport
-
-| File | Purpose |
-|------|---------|
-| `src/vs/code/browser/workbench/workbench.html` | `viewport-fit=cover` meta tag, `theme-color` meta tag. |
-| `resources/server/manifest.json` | PWA manifest: `background_color`, `theme_color`, `orientation`. |
-
 ## Remaining Work
 
 - **Session title sync**: MobileTopBar shows hardcoded "New Session" — needs to subscribe to `sessionsManagementService.activeSession` and update title when session changes.

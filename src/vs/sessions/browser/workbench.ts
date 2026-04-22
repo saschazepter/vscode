@@ -214,8 +214,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	private _mainContainerDimension!: IDimension;
 	get mainContainerDimension(): IDimension { return this._mainContainerDimension; }
 
-	private readonly _themeColorMeta: HTMLMetaElement;
-
 	get activeContainerDimension(): IDimension {
 		return this.getContainerDimension(this.activeContainer);
 	}
@@ -307,26 +305,13 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	) {
 		super();
 
-		// Cache the theme-color meta element for dynamic updates
-		const themeColorMeta = mainWindow.document.createElement('meta');
-		themeColorMeta.name = 'theme-color';
-		themeColorMeta.content = '#1e1e1e';
-		mainWindow.document.head.appendChild(themeColorMeta);
-		this._themeColorMeta = themeColorMeta;
-
-		// Sessions-scoped mobile/PWA viewport tweaks. These are applied here
+		// Sessions-scoped mobile viewport tweaks. These are applied here
 		// (rather than in the shared workbench.html) so that the regular
 		// code-web workbench — which does not handle safe-area insets — is
 		// not affected on notched mobile devices.
 		const viewportMeta = mainWindow.document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
 		if (viewportMeta && !viewportMeta.content.includes('viewport-fit=')) {
 			viewportMeta.content = `${viewportMeta.content}, viewport-fit=cover`;
-		}
-		if (!mainWindow.document.querySelector('link[rel="apple-touch-startup-image"]')) {
-			const startupImage = mainWindow.document.createElement('link');
-			startupImage.rel = 'apple-touch-startup-image';
-			startupImage.href = `${mainWindow.document.baseURI}favicon.ico`;
-			mainWindow.document.head.appendChild(startupImage);
 		}
 
 		// Perf: measure workbench startup time
@@ -1289,16 +1274,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		// Emit as event
 		this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
-
-		// Update mobile status bar theme color to match current theme
-		this.updateThemeColor();
-	}
-
-	private updateThemeColor(): void {
-		const bgColor = mainWindow.getComputedStyle(this.mainContainer).backgroundColor;
-		if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)') {
-			this._themeColorMeta.content = bgColor;
-		}
 	}
 
 	private layoutMobileSidebar(): void {
