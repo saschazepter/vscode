@@ -9,6 +9,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import type { IAgentToolReadyEvent } from '../../common/agentService.js';
+import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
 import { StringOrMarkdown } from '../../common/state/protocol/state.js';
 import { basename } from '../../../../base/common/resources.js';
 
@@ -439,7 +440,7 @@ function str(value: unknown): string | undefined {
 /**
  * Derives display fields from a permission request for the tool confirmation UI.
  */
-export function getPermissionDisplay(request: ITypedPermissionRequest): {
+export function getPermissionDisplay(request: ITypedPermissionRequest, workingDirectory?: URI): {
 	confirmationTitle: string;
 	invocationMessage: StringOrMarkdown;
 	toolInput?: string;
@@ -455,21 +456,28 @@ export function getPermissionDisplay(request: ITypedPermissionRequest): {
 	const toolName = str(request.toolName);
 
 	switch (request.kind) {
-		case 'shell':
+		case 'shell': {
+			// Strip a redundant `cd <workingDirectory> && …` prefix so the
+			// confirmation dialog shows the simplified command.
+			const shellParams: Record<string, unknown> | undefined = fullCommandText ? { command: fullCommandText } : undefined;
+			stripRedundantCdPrefix(CopilotToolName.Bash, shellParams, workingDirectory);
+			const cleanedCommand = typeof shellParams?.command === 'string' ? shellParams.command : fullCommandText;
 			return {
 				confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal"),
-				invocationMessage: intention ?? getInvocationMessage(CopilotToolName.Bash, getToolDisplayName(CopilotToolName.Bash), fullCommandText ? { command: fullCommandText } : undefined),
-				toolInput: fullCommandText,
+				invocationMessage: intention ?? getInvocationMessage(CopilotToolName.Bash, getToolDisplayName(CopilotToolName.Bash), cleanedCommand ? { command: cleanedCommand } : undefined),
+				toolInput: cleanedCommand,
 				permissionKind: 'shell',
 				permissionPath: path,
 			};
+		}
 		case 'custom-tool': {
 			// Custom tool overrides (e.g. our shell tool). Extract the actual
 			// tool args from the SDK's wrapper envelope.
 			const args = typeof request.args === 'object' && request.args !== null ? request.args as Record<string, unknown> : undefined;
-			const command = typeof args?.command === 'string' ? args.command : undefined;
 			const sdkToolName = str(request.toolName);
-			if (command && sdkToolName && isShellTool(sdkToolName)) {
+			if (args && sdkToolName && isShellTool(sdkToolName) && typeof args.command === 'string') {
+				stripRedundantCdPrefix(sdkToolName, args, workingDirectory);
+				const command = args.command as string;
 				return {
 					confirmationTitle: localize('copilot.permission.shell.title', "Run in terminal"),
 					invocationMessage: getInvocationMessage(sdkToolName, getToolDisplayName(sdkToolName), { command }),

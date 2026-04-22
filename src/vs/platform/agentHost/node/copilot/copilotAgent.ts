@@ -531,7 +531,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		let agentSession: CopilotAgentSession;
 		try {
-			agentSession = this._createAgentSession(factory, sessionId, shellManager, snapshot);
+			agentSession = this._createAgentSession(factory, sessionId, shellManager, workingDirectory, snapshot);
 			await agentSession.initializeSession();
 		} catch (error) {
 			if (seededActiveClient) {
@@ -863,7 +863,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * and returns it. The caller must call {@link CopilotAgentSession.initializeSession}
 	 * to wire up the SDK session.
 	 */
-	private _createAgentSession(wrapperFactory: SessionWrapperFactory, sessionId: string, shellManager: ShellManager, snapshot?: IActiveClientSnapshot): CopilotAgentSession {
+	private _createAgentSession(wrapperFactory: SessionWrapperFactory, sessionId: string, shellManager: ShellManager, workingDirectory: URI | undefined, snapshot?: IActiveClientSnapshot): CopilotAgentSession {
 		const sessionUri = AgentSession.uri(this.id, sessionId);
 
 		const agentSession = this._instantiationService.createInstance(
@@ -874,6 +874,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				onDidSessionProgress: this._onDidSessionProgress,
 				wrapperFactory,
 				shellManager,
+				workingDirectory,
 				clientSnapshot: snapshot,
 			},
 		);
@@ -971,7 +972,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			}
 		};
 
-		const agentSession = this._createAgentSession(factory, sessionId, shellManager, snapshot);
+		const agentSession = this._createAgentSession(factory, sessionId, shellManager, workingDirectory, snapshot);
 		await agentSession.initializeSession();
 
 		return agentSession;
