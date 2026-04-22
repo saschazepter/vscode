@@ -365,8 +365,8 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	}
 
 	public async getSessionTitle(sessionId: string, token: CancellationToken): Promise<string> {
-		const sessionManager = await raceCancellation(this.getSessionManager(), token);
-		const metadata = sessionManager ? await raceCancellationError(sessionManager.getSessionMetadata({ sessionId }), token) : undefined;
+		const sessionManager = await this.getSessionManager();
+		const metadata = await sessionManager.getSessionMetadata({ sessionId });
 		return this.getSessionTitleImpl(sessionId, metadata, token);
 	}
 
