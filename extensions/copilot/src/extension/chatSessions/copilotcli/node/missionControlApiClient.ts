@@ -8,8 +8,8 @@ import { PermissiveAuthRequiredError } from '../../../../platform/github/common/
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IFetcherService } from '../../../../platform/networking/common/fetcherService';
 
-/** Integration id for requests originating from the Copilot CLI /remote feature. */
-const INTEGRATION_ID = 'copilot-developer-cli';
+/** Integration id for requests originating from VS Code chat. */
+const INTEGRATION_ID = 'vscode-chat';
 
 /** Base path for Mission Control (agent session) endpoints. */
 const SESSIONS_PATH = '/agents/sessions';
