@@ -31,7 +31,6 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { ISessionWorkspace, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IAgentHostSessionsProvider, isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { COPILOT_PROVIDER_ID } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
@@ -103,7 +102,6 @@ export class WorkspacePicker extends Disposable {
 		@IStorageService private readonly storageService: IStorageService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService protected readonly sessionsProvidersService: ISessionsProvidersService,
-		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IClipboardService private readonly clipboardService: IClipboardService,
@@ -308,18 +306,6 @@ export class WorkspacePicker extends Disposable {
 		} catch {
 			// browse action was cancelled or failed
 		}
-	}
-
-	private _getActiveProviders(): import('../../../services/sessions/common/sessionsProvider.js').ISessionsProvider[] {
-		const activeProviderId = this.sessionsManagementService.activeProviderId.get();
-		const allProviders = this.sessionsProvidersService.getProviders();
-		if (activeProviderId) {
-			const active = allProviders.find(p => p.id === activeProviderId);
-			if (active) {
-				return [active];
-			}
-		}
-		return allProviders;
 	}
 
 	/**
@@ -724,7 +710,7 @@ export class WorkspacePicker extends Disposable {
 
 		// Fall back to the first resolvable recent workspace from a connected provider
 		try {
-			const providers = this._getActiveProviders();
+			const providers = this.sessionsProvidersService.getProviders();
 			const providerIds = new Set(providers.map(p => p.id));
 			const storedRecents = this._getStoredRecentWorkspaces();
 
@@ -754,7 +740,7 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private _restoreCheckedWorkspace(): IWorkspaceSelection | undefined {
 		try {
-			const providers = this._getActiveProviders();
+			const providers = this.sessionsProvidersService.getProviders();
 			const providerIds = new Set(providers.map(p => p.id));
 			const storedRecents = this._getStoredRecentWorkspaces();
 

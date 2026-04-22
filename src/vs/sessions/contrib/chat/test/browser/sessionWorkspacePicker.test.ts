@@ -26,7 +26,6 @@ import { ISessionsProvider } from '../../../../services/sessions/common/sessions
 import { IAgentHostSessionsProvider } from '../../../../common/agentHostSessionsProvider.js';
 import { ISessionWorkspace } from '../../../../services/sessions/common/session.js';
 import { WorkspacePicker, IWorkspaceSelection } from '../../browser/sessionWorkspacePicker.js';
-import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { IWorkspacesService } from '../../../../../platform/workspaces/common/workspaces.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -133,9 +132,6 @@ function createTestPicker(
 	instantiationService.stub(IStorageService, storage);
 	instantiationService.stub(IUriIdentityService, { extUri });
 	instantiationService.stub(ISessionsProvidersService, providersService);
-	instantiationService.stub(ISessionsManagementService, {
-		activeProviderId: observableValue('activeProviderId', undefined),
-	});
 	instantiationService.stub(IRemoteAgentHostService, {});
 	instantiationService.stub(IQuickInputService, {});
 	instantiationService.stub(IClipboardService, {});
@@ -364,5 +360,32 @@ suite('WorkspacePicker - Connection Status', () => {
 		const picker = createTestPicker(disposables, providersService, storage);
 
 		assertSelectedProvider(picker, 'local-1', 'Local provider workspace should always be selectable');
+	});
+
+	test('restore picks the stored workspace when its provider registers after another provider', () => {
+		// Regression: previously the picker filtered restore through `activeProviderId`,
+		// which auto-locked to whichever provider registered first. If the stored
+		// workspace belonged to a provider that registered later (e.g. local-agent-host
+		// is contributed at AfterRestored, while default-copilot is synchronous), the
+		// stored entry was filtered out and never restored.
+		const copilotProvider = createMockProvider('default-copilot');
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/agent-host/project'), providerId: 'local-agent-host', checked: true },
+		]);
+
+		// Construct picker with only the early-registering provider available.
+		providersService.setProviders([copilotProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		// Nothing to restore yet — the stored entry's provider isn't registered.
+		assertSelectedProvider(picker, undefined, 'No selection while target provider is unregistered');
+
+		// Now the late provider arrives.
+		const agentHostProvider = createMockProvider('local-agent-host');
+		providersService.setProviders([copilotProvider, agentHostProvider]);
+
+		assertSelectedProvider(picker, 'local-agent-host', 'Stored workspace should be restored once its provider registers');
 	});
 });
