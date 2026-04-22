@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* ---- Changes Titlebar Indicator (in right toolbar) ---- */
+/* ---- Changes titlebar action spacing ---- */
 
 /* Separator between local-session actions (Run, VS Code) and fixed toggles (Terminal, Changes).
  * Targets the action following the VS Code icon (any Codicon.vscode variant). */
