@@ -163,7 +163,6 @@ export function getContributedToolName(name: string | ToolName): string | Contri
 	return toolNameToContributedToolNames.get(name as ToolName) ?? name;
 }
 
-
 export function getToolName(name: string | ContributedToolName): string | ToolName {
 	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? name;
 }
