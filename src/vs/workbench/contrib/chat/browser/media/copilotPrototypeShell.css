@@ -668,6 +668,13 @@
 
 /* Inline included message (compact) */
 
+.copilot-prototype-dashboard-ent-included {
+	font-size: 13px;
+	color: var(--vscode-foreground);
+	padding: 4px 0;
+	line-height: 1.5;
+}
+
 .copilot-prototype-dashboard-inline-included {
 	display: flex;
 	align-items: center;

@@ -3139,12 +3139,8 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 		const cards = append(usageContent, $('div.copilot-prototype-dashboard-cards'));
 
 		if (isUnlimitedEnt) {
-			this.createCard(cards, {
-				name: localize('tbb3CardEntAll', "Monthly Limit & Inline Suggestions"),
-				resetLabel: '',
-				percent: 0,
-				includedMessage: localize('tbb3EntIncluded', "Included with your organization's plan."),
-			});
+			append(cards, $('div.copilot-prototype-dashboard-ent-included')).textContent =
+				localize('tbb3EntIncludedLine', "Monthly usage and inline suggestions are included in your organization's plan.");
 		} else {
 			// Monthly Limit / Monthly Budget card.
 			// Pro/Pro+ (with or without overage) and Max all show "Monthly Limit" since
