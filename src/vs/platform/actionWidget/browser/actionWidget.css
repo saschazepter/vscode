@@ -217,6 +217,19 @@
 	font-size: 12px;
 }
 
+/* Submenu panel: align all descriptions into a consistent left-aligned column.
+   The title gets a min-width so descriptions begin at the same x for every row. */
+.action-list-submenu-panel .monaco-list .monaco-list-row.action .title {
+	min-width: 90px;
+	flex: 0 0 auto;
+}
+
+.action-list-submenu-panel .monaco-list .monaco-list-row .description {
+	margin-left: 16px;
+	text-align: left;
+	flex: 1 1 auto;
+}
+
 /* Description below mode — shows descriptions as subtext under the title */
 .action-widget .description-below .monaco-list .monaco-list-row.action {
 	flex-wrap: wrap;

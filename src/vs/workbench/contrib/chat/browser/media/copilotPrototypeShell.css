@@ -112,14 +112,14 @@
 }
 
 .copilot-prototype-coin-grid-cell .monaco-button.red {
-	background-color: #d9534f !important;
-	border-color: #d9534f !important;
+	background-color: var(--vscode-editorError-foreground) !important;
+	border-color: var(--vscode-editorError-foreground) !important;
 	opacity: 0.7;
 }
 
 .copilot-prototype-coin-grid-cell .monaco-button.green {
-	background-color: #3d8b57 !important;
-	border-color: #3d8b57 !important;
+	background-color: var(--vscode-charts-green, var(--vscode-testing-iconPassed)) !important;
+	border-color: var(--vscode-charts-green, var(--vscode-testing-iconPassed)) !important;
 	opacity: 0.85;
 }
 
@@ -286,8 +286,27 @@
 .copilot-prototype-dashboard-header-actions {
 	display: flex;
 	align-items: center;
-	gap: 2px;
+	gap: 6px;
 	margin-left: auto;
+}
+
+.copilot-prototype-dashboard-header-ctas {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.copilot-prototype-dashboard-header-ctas:empty {
+	display: none;
+}
+
+.copilot-prototype-dashboard-header-ctas .monaco-button {
+	padding: 2px 8px;
+	font-size: 11px;
+	line-height: 16px;
+	height: auto;
+	width: auto;
+	white-space: nowrap;
 }
 
 .copilot-prototype-dashboard-tabs {
@@ -416,8 +435,8 @@
 }
 
 .copilot-prototype-dashboard-card.highlight {
-	border-color: var(--vscode-focusBorder);
-	background-color: rgba(0, 120, 212, 0.04);
+	border-color: transparent;
+	background-color: transparent;
 }
 
 .copilot-prototype-dashboard-card.highlight.warning {
@@ -426,13 +445,13 @@
 }
 
 .copilot-prototype-dashboard-card.highlight.info {
-	border-color: var(--vscode-focusBorder);
-	background-color: rgba(0, 120, 212, 0.04);
+	border-color: transparent;
+	background-color: transparent;
 }
 
 .copilot-prototype-dashboard-card.highlight.error {
-	border-color: var(--vscode-editorError-foreground);
-	background-color: rgba(255, 0, 0, 0.04);
+	border-color: transparent;
+	background-color: transparent;
 }
 
 .copilot-prototype-dashboard-card.disabled {
@@ -454,7 +473,7 @@
 .copilot-prototype-dashboard-card-name {
 	font-weight: 600;
 	font-size: 11px;
-	color: var(--vscode-foreground);
+	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 }
 
@@ -496,7 +515,7 @@
 }
 
 .copilot-prototype-dashboard-card-percent-value.warning {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-dashboard-card-percent-value.info {
@@ -504,7 +523,7 @@
 }
 
 .copilot-prototype-dashboard-card-percent-value.error {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-dashboard-card-percent-label {
@@ -522,50 +541,129 @@
 }
 
 .copilot-prototype-dashboard-card-bar.warning {
-	background-color: var(--vscode-gauge-warningBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 20%, transparent);
 }
 
 .copilot-prototype-dashboard-card-bar.warning .copilot-prototype-dashboard-card-bar-fill {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorWarning-foreground) 50%, white) 0%,
+		var(--vscode-editorWarning-foreground) 100%
+	);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-dashboard-card-bar.info {
-	background-color: rgba(0, 120, 212, 0.15);
+	background-color: color-mix(in srgb, var(--vscode-focusBorder) 20%, transparent);
 }
 
 .copilot-prototype-dashboard-card-bar.info .copilot-prototype-dashboard-card-bar-fill {
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-focusBorder) 50%, white) 0%,
+		var(--vscode-focusBorder) 100%
+	);
 	background-color: var(--vscode-focusBorder);
 }
 
 .copilot-prototype-dashboard-card-bar.error {
-	background-color: var(--vscode-gauge-errorBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 20%, transparent);
 }
 
 .copilot-prototype-dashboard-card-bar.error .copilot-prototype-dashboard-card-bar-fill {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorError-foreground) 50%, white) 0%,
+		var(--vscode-editorError-foreground) 100%
+	);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-dashboard-card-bar-fill {
 	height: 100%;
 	border-radius: 4px;
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-gauge-foreground) 50%, white) 0%,
+		var(--vscode-gauge-foreground) 100%
+	);
 	background-color: var(--vscode-gauge-foreground);
+	background-size: 100% 100%;
+	animation: copilot-prototype-celebrate-pulse 4s ease-in-out infinite;
 }
 
 .copilot-prototype-dashboard-card.highlight .copilot-prototype-dashboard-card-bar-fill {
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-focusBorder) 50%, white) 0%,
+		var(--vscode-focusBorder) 100%
+	);
 	background-color: var(--vscode-focusBorder);
 }
 
 .copilot-prototype-dashboard-card.highlight.warning .copilot-prototype-dashboard-card-bar-fill {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorWarning-foreground) 50%, white) 0%,
+		var(--vscode-editorWarning-foreground) 100%
+	);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-dashboard-card.highlight.error .copilot-prototype-dashboard-card-bar-fill {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorError-foreground) 50%, white) 0%,
+		var(--vscode-editorError-foreground) 100%
+	);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-dashboard-card.disabled .copilot-prototype-dashboard-card-bar-fill {
-	background: var(--vscode-gauge-errorForeground, var(--vscode-editorError-foreground));
+	background-image: none;
+	background-color: var(--vscode-editorError-foreground);
 	opacity: 0.7;
+	animation: none;
+}
+
+/* Celebrate variant — used on TBB3 to make hitting (or approaching) the
+	monthly limit feel positive. Tasteful, limited-color gradient flowing to
+	the right to represent pushing towards the upper limit without looking like a loader. */
+
+@keyframes copilot-prototype-celebrate-pulse {
+	0%, 100% {
+		opacity: 0.6;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+.copilot-prototype-dashboard-card-bar.celebrate,
+.copilot-prototype-chat-banner-bar.celebrate {
+	background-color: color-mix(in srgb, var(--vscode-button-background, var(--vscode-focusBorder)) 18%, transparent);
+	border-color: transparent;
+}
+
+.copilot-prototype-dashboard-card-bar.celebrate .copilot-prototype-dashboard-card-bar-fill,
+.copilot-prototype-chat-banner-bar.celebrate .copilot-prototype-chat-banner-bar-fill,
+.copilot-prototype-dashboard-card.celebrate .copilot-prototype-dashboard-card-bar-fill {
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-button-background, var(--vscode-focusBorder)) 50%, white) 0%,
+		var(--vscode-button-background, var(--vscode-focusBorder)) 100%
+	);
+	background-size: 100% 100%;
+	animation: copilot-prototype-celebrate-pulse 4s ease-in-out infinite;
+	border-radius: inherit;
+}
+
+.copilot-prototype-dashboard-card-percent-value.celebrate {
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-chat-banner.celebrate .copilot-prototype-chat-banner-percent {
+	color: var(--vscode-foreground);
 }
 
 .copilot-prototype-dashboard-card-detail {
@@ -642,13 +740,13 @@
 	line-height: 1.4;
 	padding: 8px 10px;
 	border-radius: var(--vscode-cornerRadius-small);
-	border: 1px solid var(--vscode-gauge-warningForeground, rgba(255,200,0,0.5));
-	background-color: rgba(255, 200, 0, 0.04);
+	border: 1px solid var(--vscode-editorWarning-foreground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 6%, var(--vscode-editorWidget-background));
 }
 
 .copilot-prototype-dashboard-warning.error {
 	border-color: var(--vscode-editorError-foreground);
-	background-color: rgba(255, 0, 0, 0.04);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 6%, var(--vscode-editorWidget-background));
 }
 
 .copilot-prototype-dashboard-warning-icon {
@@ -680,7 +778,7 @@
 
 .copilot-prototype-dashboard-info.highlight {
 	border-color: var(--vscode-focusBorder);
-	background-color: rgba(0, 120, 212, 0.04);
+	background-color: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background));
 }
 
 .copilot-prototype-dashboard-info-icon {
@@ -690,6 +788,44 @@
 
 .copilot-prototype-dashboard-info.highlight .copilot-prototype-dashboard-info-icon {
 	color: var(--vscode-focusBorder);
+}
+
+/* Celebrate callout — single-accent border + shine sweep for TBB3 positive states */
+.copilot-prototype-dashboard-info.celebrate {
+	position: relative;
+	border-color: transparent;
+	background-color: color-mix(in srgb, var(--vscode-button-background, var(--vscode-focusBorder)) 6%, var(--vscode-editorWidget-background));
+}
+
+.copilot-prototype-dashboard-info.celebrate::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: var(--vscode-cornerRadius-small);
+	padding: 1px;
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-button-background, var(--vscode-focusBorder)) 50%, white) 0%,
+		var(--vscode-button-background, var(--vscode-focusBorder)) 100%
+	);
+	background-size: 100% 100%;
+	animation: copilot-prototype-celebrate-pulse 4s ease-in-out infinite;
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	mask-composite: exclude;
+	pointer-events: none;
+}
+
+.copilot-prototype-dashboard-info-icon.celebrate {
+	color: var(--vscode-button-background, var(--vscode-focusBorder));
+	background: none;
+	-webkit-background-clip: initial;
+	background-clip: initial;
 }
 
 .copilot-prototype-dashboard-info-text {
@@ -778,28 +914,47 @@
 .copilot-prototype-dashboard-gauge-bar-fill {
 	height: 100%;
 	border-radius: 4px;
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-gauge-foreground) 50%, white) 0%,
+		var(--vscode-gauge-foreground) 100%
+	);
 	background-color: var(--vscode-gauge-foreground);
+	background-size: 100% 100%;
+	animation: copilot-prototype-celebrate-pulse 4s ease-in-out infinite;
 }
 
 .copilot-prototype-dashboard-gauge.disabled .copilot-prototype-dashboard-gauge-bar-fill {
-	background: var(--vscode-descriptionForeground);
+	background-image: none;
+	background-color: var(--vscode-descriptionForeground);
 	opacity: 0.4;
+	animation: none;
 }
 
 .copilot-prototype-dashboard-gauge.warning .copilot-prototype-dashboard-gauge-bar {
-	background-color: var(--vscode-gauge-warningBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 20%, transparent);
 }
 
 .copilot-prototype-dashboard-gauge.warning .copilot-prototype-dashboard-gauge-bar-fill {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorWarning-foreground) 50%, white) 0%,
+		var(--vscode-editorWarning-foreground) 100%
+	);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-dashboard-gauge.error .copilot-prototype-dashboard-gauge-bar {
-	background-color: var(--vscode-gauge-errorBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 20%, transparent);
 }
 
 .copilot-prototype-dashboard-gauge.error .copilot-prototype-dashboard-gauge-bar-fill {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorError-foreground) 50%, white) 0%,
+		var(--vscode-editorError-foreground) 100%
+	);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-dashboard-gauge-desc {
@@ -1092,35 +1247,39 @@
 	max-width: 100%;
 	box-sizing: border-box;
 	padding: 8px 10px 16px 10px;
-	background-color: var(--vscode-editorWidget-background);
 	border-radius: var(--vscode-cornerRadius-small);
-	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent));
 	font-size: var(--vscode-chat-font-size-body-s);
 	font-family: var(--vscode-chat-font-family, inherit);
 	color: var(--vscode-descriptionForeground);
 	flex-shrink: 0;
+	border: 1px solid var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground));
+	background-color: color-mix(in srgb, var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground)) 6%, var(--vscode-editorWidget-background));
 }
 
 .copilot-prototype-chat-banner.info {
-	border-color: var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground));
-	background-color: color-mix(in srgb, var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground)) 6%, var(--vscode-editorWidget-background));
 	padding-bottom: 30px;
 }
 
 .copilot-prototype-chat-banner.info.simple {
-	padding-bottom: 30px;
+	padding-bottom: 42px;
 }
 
 .copilot-prototype-chat-banner.warning {
-	border-color: var(--vscode-editorWarning-foreground);
-	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 6%, var(--vscode-editorWidget-background));
 	padding-bottom: 36px;
 }
 
 .copilot-prototype-chat-banner.error {
-	border-color: var(--vscode-editorError-foreground);
-	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 6%, var(--vscode-editorWidget-background));
 	padding-bottom: 36px;
+}
+
+.copilot-prototype-chat-banner.celebrate {
+	padding-bottom: 30px;
+}
+
+/* Compact gauge banner overrides: keep it to 2 lines max. */
+.copilot-prototype-chat-banner.compact {
+	gap: 4px;
+	padding: 8px 10px 42px 10px;
 }
 
 .copilot-prototype-chat-banner-top {
@@ -1187,6 +1346,11 @@
 }
 
 .copilot-prototype-chat-banner.info .copilot-prototype-chat-banner-bar-fill {
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground)) 50%, white) 0%,
+		var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground)) 100%
+	);
 	background-color: var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground));
 }
 
@@ -1195,25 +1359,42 @@
 }
 
 .copilot-prototype-chat-banner.warning .copilot-prototype-chat-banner-bar {
-	background-color: var(--vscode-gauge-warningBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 20%, transparent);
 }
 
 .copilot-prototype-chat-banner.warning .copilot-prototype-chat-banner-bar-fill {
-	background-color: var(--vscode-gauge-warningForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorWarning-foreground) 50%, white) 0%,
+		var(--vscode-editorWarning-foreground) 100%
+	);
+	background-color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-chat-banner.error .copilot-prototype-chat-banner-bar {
-	background-color: var(--vscode-gauge-errorBackground);
+	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 20%, transparent);
 }
 
 .copilot-prototype-chat-banner.error .copilot-prototype-chat-banner-bar-fill {
-	background-color: var(--vscode-gauge-errorForeground);
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-editorError-foreground) 50%, white) 0%,
+		var(--vscode-editorError-foreground) 100%
+	);
+	background-color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-chat-banner-bar-fill {
 	height: 100%;
 	border-radius: 4px;
+	background-image: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--vscode-gauge-foreground) 50%, white) 0%,
+		var(--vscode-gauge-foreground) 100%
+	);
 	background-color: var(--vscode-gauge-foreground);
+	background-size: 100% 100%;
+	animation: copilot-prototype-celebrate-pulse 4s ease-in-out infinite;
 }
 
 /* Banner bottom row */
@@ -1236,11 +1417,11 @@
 }
 
 .copilot-prototype-chat-banner.warning .copilot-prototype-chat-banner-percent {
-	color: var(--vscode-gauge-warningForeground);
+	color: var(--vscode-editorWarning-foreground);
 }
 
 .copilot-prototype-chat-banner.error .copilot-prototype-chat-banner-percent {
-	color: var(--vscode-gauge-errorForeground);
+	color: var(--vscode-editorError-foreground);
 }
 
 .copilot-prototype-chat-banner-reset {
@@ -1265,6 +1446,68 @@
 .copilot-prototype-chat-banner-link:hover {
 	text-decoration: underline;
 	color: var(--vscode-textLink-activeForeground);
+}
+
+/* Compact gauge banner: title row + (description + actions) row */
+.copilot-prototype-chat-banner.compact {
+	display: flex;
+	flex-direction: column;
+}
+
+.copilot-prototype-chat-banner.compact .copilot-prototype-chat-banner-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.4;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.copilot-prototype-chat-banner-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.copilot-prototype-chat-banner-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	flex: 0 0 auto;
+	margin-left: auto;
+}
+
+.copilot-prototype-chat-banner-btn {
+	padding: 1px 8px;
+	font-size: 11px;
+	line-height: 16px;
+	height: 20px;
+	border-radius: var(--vscode-cornerRadius-small, 4px);
+	border: 1px solid transparent;
+	cursor: pointer;
+	font-family: inherit;
+	background: transparent;
+	color: var(--vscode-foreground);
+	white-space: nowrap;
+}
+
+.copilot-prototype-chat-banner-btn:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.copilot-prototype-chat-banner-btn.primary {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: var(--vscode-button-background);
+}
+
+.copilot-prototype-chat-banner-btn.primary:hover {
+	background-color: var(--vscode-button-hoverBackground);
+	border-color: var(--vscode-button-hoverBackground);
 }
 
 /* ---- Inline warning card (shown above input when limit is reached) ---- */

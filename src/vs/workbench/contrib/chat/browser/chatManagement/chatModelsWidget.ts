@@ -511,59 +511,102 @@ class ModelNameColumnRenderer extends ModelsTableColumnRenderer<IModelNameColumn
 	}
 }
 
-interface IMultiplierColumnTemplateData extends IModelTableColumnTemplateData {
-	readonly multiplierElement: HTMLElement;
+interface ICostColumnTemplateData extends IModelTableColumnTemplateData {
+	readonly costElement: HTMLElement;
 }
 
-class MultiplierColumnRenderer extends ModelsTableColumnRenderer<IMultiplierColumnTemplateData> {
-	static readonly TEMPLATE_ID = 'multiplier';
-
-	readonly templateId: string = MultiplierColumnRenderer.TEMPLATE_ID;
+abstract class BaseCostColumnRenderer extends ModelsTableColumnRenderer<ICostColumnTemplateData> {
 
 	constructor(
-		@IHoverService private readonly hoverService: IHoverService
+		@IHoverService protected readonly hoverService: IHoverService
 	) {
 		super();
 	}
 
-	renderTemplate(container: HTMLElement): IMultiplierColumnTemplateData {
+	abstract get salt(): number;
+	abstract get fullLabel(): string;
+
+	renderTemplate(container: HTMLElement): ICostColumnTemplateData {
 		const disposables = new DisposableStore();
 		const elementDisposables = new DisposableStore();
-		const multiplierElement = DOM.append(container, $('.model-multiplier'));
-		return {
-			container,
-			multiplierElement,
-			disposables,
-			elementDisposables
-		};
+		const costElement = DOM.append(container, $('.model-cost-cell'));
+		return { container, costElement, disposables, elementDisposables };
 	}
 
-	override renderElement(entry: IViewModelEntry, index: number, templateData: IMultiplierColumnTemplateData): void {
-		templateData.multiplierElement.textContent = '';
+	override renderElement(entry: IViewModelEntry, index: number, templateData: ICostColumnTemplateData): void {
+		templateData.costElement.textContent = '';
 		super.renderElement(entry, index, templateData);
 	}
 
-	override renderGroupElement(element: ILanguageModelGroupEntry, index: number, templateData: IMultiplierColumnTemplateData): void {
+	override renderGroupElement(_element: ILanguageModelGroupEntry, _index: number, _templateData: ICostColumnTemplateData): void { }
+	override renderVendorElement(_element: ILanguageModelProviderEntry, _index: number, _templateData: ICostColumnTemplateData): void { }
+
+	override renderModelElement(entry: ILanguageModelEntry, _index: number, templateData: ICostColumnTemplateData): void {
+		const value = computeCost(entry.model.identifier, this.salt);
+		templateData.costElement.textContent = `${value} AIC`;
+		templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
+			content: localize('cost.colTooltip', "{0}: {1} AIC per request", this.fullLabel, value),
+			appearance: { compact: true, skipFadeInAnimation: true }
+		})));
 	}
+}
 
-	override renderVendorElement(element: ILanguageModelProviderEntry, index: number, templateData: IMultiplierColumnTemplateData): void {
+class InputCostColumnRenderer extends BaseCostColumnRenderer {
+	static readonly TEMPLATE_ID = 'cost.input';
+	readonly templateId: string = InputCostColumnRenderer.TEMPLATE_ID;
+	get salt(): number { return 1; }
+	get fullLabel(): string { return localize('cost.inputFull', "Input"); }
+}
 
+class OutputCostColumnRenderer extends BaseCostColumnRenderer {
+	static readonly TEMPLATE_ID = 'cost.output';
+	readonly templateId: string = OutputCostColumnRenderer.TEMPLATE_ID;
+	get salt(): number { return 2; }
+	get fullLabel(): string { return localize('cost.outputFull', "Output"); }
+	override renderModelElement(entry: ILanguageModelEntry, index: number, templateData: ICostColumnTemplateData): void {
+		// Output is typically more expensive — scale up modestly
+		const value = computeCost(entry.model.identifier, this.salt) * 2;
+		templateData.costElement.textContent = `${value} AIC`;
+		templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
+			content: localize('cost.colTooltip', "{0}: {1} AIC per request", this.fullLabel, value),
+			appearance: { compact: true, skipFadeInAnimation: true }
+		})));
 	}
+}
 
-	override renderModelElement(entry: ILanguageModelEntry, index: number, templateData: IMultiplierColumnTemplateData): void {
-		const multiplierText = entry.model.metadata.multiplier ?? '-';
-		templateData.multiplierElement.textContent = multiplierText;
-
-		if (multiplierText !== '-') {
-			templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
-				content: localize('multiplier.tooltip', "Every chat message counts {0} towards your premium model request quota", multiplierText),
-				appearance: {
-					compact: true,
-					skipFadeInAnimation: true
-				}
-			})));
-		}
+class CacheCostColumnRenderer extends BaseCostColumnRenderer {
+	static readonly TEMPLATE_ID = 'cost.cache';
+	readonly templateId: string = CacheCostColumnRenderer.TEMPLATE_ID;
+	get salt(): number { return 3; }
+	get fullLabel(): string { return localize('cost.cacheFull', "Input cache"); }
+	override renderModelElement(entry: ILanguageModelEntry, index: number, templateData: ICostColumnTemplateData): void {
+		// Cache is typically much cheaper than input.
+		const input = computeCost(entry.model.identifier, 1);
+		const value = Math.max(1, Math.round(input / 5));
+		templateData.costElement.textContent = `${value} AIC`;
+		templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
+			content: localize('cost.colTooltip', "{0}: {1} AIC per request", this.fullLabel, value),
+			appearance: { compact: true, skipFadeInAnimation: true }
+		})));
 	}
+}
+
+function hashString(s: string): number {
+	let h = 2166136261 >>> 0;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 16777619) >>> 0;
+	}
+	return h >>> 0;
+}
+
+function computeCost(identifier: string, salt: number): number {
+	const seed = hashString(identifier);
+	let x = (seed + salt * 0x9E3779B1) >>> 0;
+	x = Math.imul(x ^ (x >>> 15), 0x85EBCA6B) >>> 0;
+	x = Math.imul(x ^ (x >>> 13), 0xC2B2AE35) >>> 0;
+	x = (x ^ (x >>> 16)) >>> 0; // unsigned: avoid negative modulo
+	return 1 + (x % 10);
 }
 
 interface ITokenLimitsColumnTemplateData extends IModelTableColumnTemplateData {
@@ -1030,7 +1073,9 @@ export class ChatModelsWidget extends Disposable {
 
 		const gutterColumnRenderer = this.instantiationService.createInstance(GutterColumnRenderer, this.viewModel);
 		const modelNameColumnRenderer = this.instantiationService.createInstance(ModelNameColumnRenderer);
-		const costColumnRenderer = this.instantiationService.createInstance(MultiplierColumnRenderer);
+		const inputCostColumnRenderer = this.instantiationService.createInstance(InputCostColumnRenderer);
+		const outputCostColumnRenderer = this.instantiationService.createInstance(OutputCostColumnRenderer);
+		const cacheCostColumnRenderer = this.instantiationService.createInstance(CacheCostColumnRenderer);
 		const tokenLimitsColumnRenderer = this.instantiationService.createInstance(TokenLimitsColumnRenderer);
 		const capabilitiesColumnRenderer = this.instantiationService.createInstance(CapabilitiesColumnRenderer);
 		const actionsColumnRenderer = this.instantiationService.createInstance(ActionsColumnRenderer, this.viewModel);
@@ -1093,11 +1138,27 @@ export class ChatModelsWidget extends Disposable {
 				project(row: IViewModelEntry): IViewModelEntry { return row; }
 			},
 			{
-				label: localize('cost', 'Request Multiplier'),
+				label: localize('cost.input.col', 'Input Cost'),
 				tooltip: '',
-				weight: 0.1,
-				minimumWidth: 60,
-				templateId: MultiplierColumnRenderer.TEMPLATE_ID,
+				weight: 0.08,
+				minimumWidth: 90,
+				templateId: InputCostColumnRenderer.TEMPLATE_ID,
+				project(row: IViewModelEntry): IViewModelEntry { return row; }
+			},
+			{
+				label: localize('cost.output.col', 'Output Cost'),
+				tooltip: '',
+				weight: 0.08,
+				minimumWidth: 100,
+				templateId: OutputCostColumnRenderer.TEMPLATE_ID,
+				project(row: IViewModelEntry): IViewModelEntry { return row; }
+			},
+			{
+				label: localize('cost.cache.col', 'Cache Cost'),
+				tooltip: '',
+				weight: 0.08,
+				minimumWidth: 90,
+				templateId: CacheCostColumnRenderer.TEMPLATE_ID,
 				project(row: IViewModelEntry): IViewModelEntry { return row; }
 			},
 			{
@@ -1120,7 +1181,9 @@ export class ChatModelsWidget extends Disposable {
 			[
 				gutterColumnRenderer,
 				modelNameColumnRenderer,
-				costColumnRenderer,
+				inputCostColumnRenderer,
+				outputCostColumnRenderer,
+				cacheCostColumnRenderer,
 				tokenLimitsColumnRenderer,
 				capabilitiesColumnRenderer,
 				actionsColumnRenderer,

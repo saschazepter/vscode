@@ -8,7 +8,7 @@ import './media/accountWidget.css';
 import './media/accountTitleBarWidget.css';
 import '../../../../workbench/contrib/chat/browser/chatStatus/media/chatStatus.css';
 import '../../../../workbench/contrib/chat/browser/media/copilotPrototypeShell.css';
-import { CopilotPrototypeShellCoinStatusBarContribution, CopilotCurrentModelStatusBarContribution } from '../../../../workbench/contrib/chat/browser/copilotPrototypeShell.contribution.js';
+import { CopilotPrototypeShellCoinStatusBarContribution, CopilotCurrentModelStatusBarContribution, CopilotTBB3StatusBarContribution } from '../../../../workbench/contrib/chat/browser/copilotPrototypeShell.contribution.js';
 import Severity from '../../../../base/common/severity.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
@@ -669,12 +669,15 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		// Use the prototype dashboard if available
 		const tbbInstance = CopilotPrototypeShellCoinStatusBarContribution.instance;
 		const currentInstance = CopilotCurrentModelStatusBarContribution.instance;
+		const tbb3Instance = CopilotTBB3StatusBarContribution.instance;
 		if (tbbInstance) {
 			const cts = new CancellationTokenSource();
 			store.add(cts);
 			let dashboard: HTMLElement;
 			if (tbbInstance.billingMode === 'current-model' && currentInstance) {
 				dashboard = currentInstance.renderDashboard(cts.token);
+			} else if (tbbInstance.billingMode === 'tbb-3.0' && tbb3Instance) {
+				dashboard = tbb3Instance.renderDashboard(cts.token);
 			} else {
 				dashboard = tbbInstance.renderDashboard(cts.token);
 			}
@@ -789,8 +792,9 @@ class TitleBarTBBWidget extends BaseActionViewItem {
 
 		const tbbInstance = CopilotPrototypeShellCoinStatusBarContribution.instance;
 		const currentInstance = CopilotCurrentModelStatusBarContribution.instance;
+		const tbb3Instance = CopilotTBB3StatusBarContribution.instance;
 
-		if (!tbbInstance || !currentInstance) {
+		if (!tbbInstance || !currentInstance || !tbb3Instance) {
 			const msg = $('div');
 			msg.style.padding = '12px';
 			msg.style.color = 'var(--vscode-descriptionForeground)';
@@ -799,7 +803,7 @@ class TitleBarTBBWidget extends BaseActionViewItem {
 			return panel;
 		}
 
-		// Top-level toggle: TBB | Current
+		// Top-level toggle: TBB | Current | TBB 3.0
 		const topTabs = $('div.copilot-prototype-coin-tabs');
 		topTabs.style.marginBottom = '4px';
 
@@ -813,32 +817,38 @@ class TitleBarTBBWidget extends BaseActionViewItem {
 		currentTab.tabIndex = 0;
 		currentTab.role = 'tab';
 
-		topTabs.append(tbbTab, currentTab);
+		const tbb3Tab = $('div.copilot-prototype-coin-tab');
+		tbb3Tab.textContent = localize('tabTBB3', "Token Based Billing 3.0");
+		tbb3Tab.tabIndex = 0;
+		tbb3Tab.role = 'tab';
+
+		topTabs.append(tbbTab, currentTab, tbb3Tab);
 		panel.appendChild(topTabs);
 
 		const tbbContainer = $('div');
 		const currentContainer = $('div');
 		currentContainer.style.display = 'none';
+		const tbb3Container = $('div');
+		tbb3Container.style.display = 'none';
 
 		tbbInstance.renderController(tbbContainer, panelStore);
 		currentInstance.renderController(currentContainer, panelStore);
+		tbb3Instance.renderController(tbb3Container, panelStore);
 
-		panel.append(tbbContainer, currentContainer);
+		panel.append(tbbContainer, currentContainer, tbb3Container);
 
-		tbbTab.addEventListener('click', () => {
-			tbbTab.classList.add('active');
-			currentTab.classList.remove('active');
-			tbbContainer.style.display = '';
-			currentContainer.style.display = 'none';
-			tbbInstance.setBillingMode('token-based');
-		});
-		currentTab.addEventListener('click', () => {
-			currentTab.classList.add('active');
-			tbbTab.classList.remove('active');
-			currentContainer.style.display = '';
-			tbbContainer.style.display = 'none';
-			tbbInstance.setBillingMode('current-model');
-		});
+		const activate = (mode: 'token-based' | 'current-model' | 'tbb-3.0') => {
+			tbbTab.classList.toggle('active', mode === 'token-based');
+			currentTab.classList.toggle('active', mode === 'current-model');
+			tbb3Tab.classList.toggle('active', mode === 'tbb-3.0');
+			tbbContainer.style.display = mode === 'token-based' ? '' : 'none';
+			currentContainer.style.display = mode === 'current-model' ? '' : 'none';
+			tbb3Container.style.display = mode === 'tbb-3.0' ? '' : 'none';
+			tbbInstance.setBillingMode(mode);
+		};
+		tbbTab.addEventListener('click', () => activate('token-based'));
+		currentTab.addEventListener('click', () => activate('current-model'));
+		tbb3Tab.addEventListener('click', () => activate('tbb-3.0'));
 
 		return panel;
 	}

@@ -1,3 +1,4 @@
+import { SubmenuAction } from "../../../../../../base/common/actions.js";
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
@@ -106,64 +107,181 @@ function createModelItem(
 }
 
 /**
- * Returns a short description summarizing the model's current configuration values
- * for properties marked with group 'navigation' (e.g., "High", "Medium").
+ * Returns the current "Thinking Effort" / reasoning-effort filled-bulb count for
+ * a model based on its navigation-group configuration property, or -1 if the model
+ * doesn't expose one. Effort is mapped onto a 3-bulb scale where the lowest enum
+ * value is 0 bulbs and the highest is 3.
  */
-function getModelConfigurationDescription(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService: ILanguageModelsService): string | undefined {
-	const schema = model.metadata.configurationSchema;
-	if (!schema?.properties) {
-		return undefined;
-	}
+function getModelThinkingEffort(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService: ILanguageModelsService): number {
+    const schema = model.metadata.configurationSchema;
+    if (!schema?.properties) {
+        return -1;
+    }
+    const currentConfig = languageModelsService.getModelConfiguration(model.identifier) ?? {};
+    for (const [key, propSchema] of Object.entries(schema.properties)) {
+        if (propSchema.group !== 'navigation') {
+            continue;
+        }
+        const isEffort = key.toLowerCase().includes('reasoning') ||
+            key.toLowerCase().includes('thinking') ||
+            (typeof propSchema.title === 'string' && propSchema.title.toLowerCase().includes('thinking effort'));
+        if (!isEffort || !propSchema.enum || propSchema.enum.length < 2) {
+            continue;
+        }
+        const value = currentConfig[key] ?? propSchema.default;
+        const idx = propSchema.enum.indexOf(value);
+        if (idx < 0) {
+            continue;
+        }
+        // Map the chosen enum index linearly onto a 0..3 bulb scale.
+        const lastIdx = propSchema.enum.length - 1;
+        if (lastIdx === 0) {
+            return 0;
+        }
+        return Math.round((idx / lastIdx) * 3);
+    }
+    return -1;
+}
 
-	const currentConfig = languageModelsService.getModelConfiguration(model.identifier) ?? {};
-	const parts: string[] = [];
+function createBulbsElement(filledCount: number, total: number = 3): HTMLElement {
+    const container = dom.$('span.chat-model-bulbs');
+    for (let i = 0; i < total; i++) {
+        const item = dom.$('span.chat-model-bulb');
+        if (i < filledCount) {
+            item.classList.add('filled');
+        } else {
+            item.classList.add('empty');
+        }
+        container.appendChild(item);
+    }
+    return container;
+}
 
-	for (const [key, propSchema] of Object.entries(schema.properties)) {
-		if (propSchema.group !== 'navigation') {
-			continue;
-		}
-		if (!propSchema.enum || propSchema.enum.length < 2) {
-			continue;
-		}
-		const value = currentConfig[key] ?? propSchema.default;
-		if (value === undefined) {
-			continue;
-		}
-		const enumItemLabels = propSchema.enumItemLabels;
-		const enumIndex = propSchema.enum?.indexOf(value) ?? -1;
-		const label = enumItemLabels?.[enumIndex] ?? String(value);
-		parts.push(label);
-	}
+function createCostElement(filledCount: number, total: number = 3): HTMLElement {
+    const container = dom.$('span.chat-model-cost');
+    if (filledCount > 0) {
+        container.classList.add('has-fill');
+    }
 
-	return parts.length > 0 ? parts.join(', ') : undefined;
+    const dollar = dom.$('span.chat-model-cost-dollar');
+    dollar.textContent = '$';
+    container.appendChild(dollar);
+
+    const dots = dom.$('span.chat-model-cost-dots');
+    for (let i = 0; i < total; i++) {
+        const dot = dom.$('span.chat-model-cost-dot');
+        if (i < filledCount) {
+            dot.classList.add('filled');
+        }
+        dots.appendChild(dot);
+    }
+    container.appendChild(dots);
+    return container;
+}
+
+function getCostBucket(modelName: string): number {
+    const n = modelName.toLowerCase();
+    if (n.includes('mini') || n.includes('haiku') || n.includes('3.5') || n.includes('nano')) {
+        return 1;
+    }
+    if (n.includes('opus') || n.includes('o1-preview') || n.includes('gpt-5') || n.includes('claude 4')) {
+        return 3;
+    }
+    return 2;
 }
 
 function createModelAction(
-	model: ILanguageModelChatMetadataAndIdentifier,
-	selectedModelId: string | undefined,
-	onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
-	languageModelsService: ILanguageModelsService,
-	section?: string,
+    model: ILanguageModelChatMetadataAndIdentifier,
+    selectedModelId: string | undefined,
+    onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
+    languageModelsService: ILanguageModelsService,
+    section?: string,
 ): IActionWidgetDropdownAction & { section?: string } {
-	const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
-	const configDescription = getModelConfigurationDescription(model, languageModelsService);
-	const baseDescription = model.metadata.detail;
-	const description = configDescription && baseDescription
-		? `${configDescription} · ${baseDescription}`
-		: configDescription ?? baseDescription;
-	return {
-		id: model.identifier,
-		enabled: true,
-		icon: model.metadata.statusIcon,
-		checked: model.identifier === selectedModelId,
-		class: undefined,
-		description,
-		tooltip: model.metadata.name,
-		label: model.metadata.name,
-		section,
-		toolbarActions: toolbarActions && toolbarActions.length > 0 ? toolbarActions : undefined,
-		run: () => onSelect(model),
-	};
+    const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
+
+    // Compute the model's current Thinking Effort on a 0..3 bulb scale.
+    const bulbsFilled = getModelThinkingEffort(model, languageModelsService);
+
+    // Mock a Context Window configurable if none exists.
+    // Only Claude Opus is mocked as using 1M.
+    if (!toolbarActions.find(a => a.id.toLowerCase().includes('contextwindow'))) {
+        const isOpus = model.metadata.name.toLowerCase().includes('opus 4.6');
+        const ctxLabel = localize('contextWindow', "Context Window");
+        toolbarActions.unshift(new SubmenuAction('configureModel.mock.contextwindow', ctxLabel, [
+            { id: 'cw.200', label: localize('cw200k', "200K"), tooltip: localize('cw200ktip', "Default context window"), class: undefined, enabled: true, checked: !isOpus, run: async () => { } } as any,
+            { id: 'cw.1m', label: localize('cw1m', "1M"), class: undefined, enabled: true, tooltip: localize('cw1mtip', "Extended context window"), checked: isOpus, run: async () => { } } as any
+        ]));
+    }
+
+    // Add Lightbulb prefixes to Thinking Effort submenu items so the count is visible there too.
+    for (const action of toolbarActions) {
+        if (action instanceof SubmenuAction && action.id.toLowerCase().includes('thinkingeffort')) {
+            for (const sub of action.actions) {
+                const idLog = sub.id.toLowerCase();
+                // Strip any prior prefix/suffix appended by us (lightbulb + blank tokens around the label).
+                sub.label = sub.label
+                    .replace(/^(?:\s*\$\((?:lightbulb|blank)\))+\s*/g, '')
+                    .replace(/\s*(?:\$\((?:lightbulb|blank)\))+\s*$/g, '');
+                let count = 0;
+                if (idLog.includes('xhigh')) { count = 3; }
+                else if (idLog.includes('high')) { count = 3; }
+                else if (idLog.includes('medium')) { count = 2; }
+                else if (idLog.includes('low')) { count = 1; }
+                else if (idLog.includes('minimal')) { count = 0; }
+                const total = 3;
+                const filled = '$(lightbulb)'.repeat(count);
+                const empty = '$(blank)'.repeat(Math.max(0, total - count));
+                // Prepend filled+empty bulbs as icons so the dropdown row mirrors the model row indicator.
+                sub.label = filled + empty + ' ' + sub.label;
+            }
+        }
+    }
+
+    const wrap = dom.$('span.chat-model-3-col-desc');
+    wrap.style.display = 'flex';
+    wrap.style.justifyContent = 'flex-end';
+    wrap.style.alignItems = 'center';
+    wrap.style.flex = '0 0 auto';
+    wrap.style.minWidth = '0';
+    wrap.style.paddingLeft = '12px';
+    wrap.style.gap = '0';
+
+    const indicators = dom.$('span.chat-model-indicators');
+    indicators.style.display = 'inline-flex';
+    indicators.style.alignItems = 'center';
+    indicators.style.flex = '0 0 auto';
+
+    // Context window chip — mock: only Claude Opus uses 1M (matches the mocked Context Window selection).
+    const costBucket = getCostBucket(model.metadata.name);
+    const modelNameLower = model.metadata.name.toLowerCase();
+    const is1M = modelNameLower.includes('opus 4.6');
+    if (is1M) {
+        const ctx = dom.$('span.chat-model-context');
+        ctx.textContent = '1M';
+        indicators.appendChild(ctx);
+    }
+
+    if (bulbsFilled >= 0) {
+        indicators.appendChild(createBulbsElement(bulbsFilled, 3));
+    }
+
+    indicators.appendChild(createCostElement(costBucket, 3));
+
+    wrap.appendChild(indicators);
+
+    return {
+        id: model.identifier,
+        enabled: true,
+        icon: model.metadata.statusIcon,
+        checked: model.identifier === selectedModelId,
+        class: undefined,
+        description: wrap as HTMLElement, // Indicators column
+        tooltip: model.metadata.name,
+        label: model.metadata.name,
+        section,
+        toolbarActions: toolbarActions && toolbarActions.length > 0 ? toolbarActions : undefined,
+        run: () => onSelect(model),
+    };
 }
 
 function shouldShowManageModelsAction(chatEntitlementService: IChatEntitlementService): boolean {
@@ -765,13 +883,20 @@ export class ModelPickerWidget extends Disposable {
 		}
 
 		const modelLabel = name ?? localize('chat.modelPicker.auto', "Auto");
-		const configDescription = this._selectedModel
-			? getModelConfigurationDescription(this._selectedModel, this._languageModelsService)
-			: undefined;
-		const fullLabel = configDescription
-			? `${modelLabel} · ${configDescription}`
-			: modelLabel;
-		domChildren.push(dom.$('span.chat-input-picker-label', undefined, fullLabel));
+		const bulbsFilled = this._selectedModel
+			? getModelThinkingEffort(this._selectedModel, this._languageModelsService)
+			: -1;
+		domChildren.push(dom.$('span.chat-input-picker-label', undefined, modelLabel));
+		// Mock: Claude Opus uses 1M context — surface the chip in the collapsed state too.
+		if (modelLabel.toLowerCase().includes('opus 4.6')) {
+			const ctx = dom.$('span.chat-model-context');
+			ctx.textContent = '1M';
+			domChildren.push(ctx);
+		}
+		if (bulbsFilled > 0) {
+			// Collapsed picker label only shows the *filled* bulbs (no empty placeholders).
+			domChildren.push(createBulbsElement(bulbsFilled, bulbsFilled));
+		}
 
 		// Badge icon between label and chevron
 		if (this._badgeIcon) {
@@ -783,13 +908,12 @@ export class ModelPickerWidget extends Disposable {
 		dom.reset(this._domNode, ...domChildren);
 
 		// Aria
-		this._domNode.ariaLabel = localize('chat.modelPicker.ariaLabel', "Pick Model, {0}", fullLabel);
+		this._domNode.ariaLabel = localize('chat.modelPicker.ariaLabel', "Pick Model, {0}", modelLabel);
 	}
 }
 
 
 function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): MarkdownString {
-	const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 	markdown.appendMarkdown(`**${model.metadata.name}**`);
 
@@ -803,22 +927,5 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): M
 		markdown.appendMarkdown(`${cleanTooltip}`);
 	}
 
-	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
-		markdown.appendMarkdown(`\n\n`);
-		const totalTokens = (model.metadata.maxInputTokens ?? 0) + (model.metadata.maxOutputTokens ?? 0);
-		markdown.appendMarkdown(`${localize('models.contextSize', 'Context Size')}: `);
-		markdown.appendMarkdown(`${formatTokenCount(totalTokens)}`);
-	}
-
 	return markdown;
-}
-
-
-function formatTokenCount(count: number): string {
-	if (count >= 1000000) {
-		return `${(count / 1000000).toFixed(1)}M`;
-	} else if (count >= 1000) {
-		return `${(count / 1000).toFixed(0)}K`;
-	}
-	return count.toString();
 }

@@ -1756,6 +1756,125 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	margin-bottom: 4px;
 }
 
+/* Thinking-effort lightbulb scale (used in model picker button + dropdown rows). */
+.chat-model-bulbs {
+	display: inline-flex;
+	align-items: center;
+	gap: 0;
+	margin-left: 6px;
+	vertical-align: middle;
+	line-height: 1;
+}
+
+.chat-model-bulb {
+	display: inline-block;
+	width: 10px;
+	height: 12px;
+	flex: 0 0 10px;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-position: center;
+	-webkit-mask-size: 10px 12px;
+	mask-size: 10px 12px;
+}
+
+/* Filled bulb: solid lightbulb glyph rendered via CSS mask so it picks up theme color. */
+.chat-model-bulb.filled {
+	-webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
+	mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
+	background-color: var(--vscode-icon-foreground);
+}
+
+/* Empty bulb: hollow outline lightbulb so the empty state is clearly distinguishable
+   from a faded/disabled filled bulb. */
+.chat-model-bulb.empty {
+	-webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path fill-rule='evenodd' clip-rule='evenodd' d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM2.5566 11L2.49083 10.7589C2.43154 10.5414 2.29795 10.3284 2.04654 10.0811C1.40165 9.44664 1 8.51994 1 7.5C1 5.567 2.567 4 4.5 4C6.433 4 8 5.567 8 7.5C8 8.51994 7.59835 9.44664 6.95346 10.0811C6.70205 10.3284 6.56846 10.5414 6.50917 10.7589L6.4434 11H2.5566ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
+	mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path fill-rule='evenodd' clip-rule='evenodd' d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM2.5566 11L2.49083 10.7589C2.43154 10.5414 2.29795 10.3284 2.04654 10.0811C1.40165 9.44664 1 8.51994 1 7.5C1 5.567 2.567 4 4.5 4C6.433 4 8 5.567 8 7.5C8 8.51994 7.59835 9.44664 6.95346 10.0811C6.70205 10.3284 6.56846 10.5414 6.50917 10.7589L6.4434 11H2.5566ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
+	background-color: var(--vscode-icon-foreground);
+	opacity: 0.55;
+}
+
+.chat-model-bulbs-description {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* Cost / pricing scale — solid filled squares for "spend" with bolded $ when applicable. */
+.chat-model-cost {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 6px;
+	padding-left: 6px;
+	border-left: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+	line-height: 1;
+}
+
+.chat-model-cost-dollar {
+	font-size: 11px;
+	font-weight: 400;
+	opacity: 0.55;
+	line-height: 1;
+}
+
+.chat-model-cost.has-fill .chat-model-cost-dollar {
+	font-weight: 500;
+	opacity: 0.85;
+}
+
+.chat-model-cost-dots {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.chat-model-cost-dot {
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	box-sizing: border-box;
+	border-radius: 1px;
+	background: transparent;
+	border: 1px solid var(--vscode-icon-foreground);
+	opacity: 0.55;
+}
+
+.chat-model-cost-dot.filled {
+	background: var(--vscode-icon-foreground);
+	border-color: var(--vscode-icon-foreground);
+	opacity: 1;
+}
+
+/* 1M (or other) context window chip shown in the model row indicators. */
+.chat-model-context {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1;
+	color: var(--vscode-icon-foreground);
+	margin-left: 8px;
+	margin-right: 6px;
+	padding-right: 6px;
+	border-right: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+}
+
+/* AIC (AI credits per message) shown after the cost scale. */
+.chat-model-aic {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1;
+	color: var(--vscode-icon-foreground);
+	opacity: 0.85;
+	margin-left: 8px;
+	padding-left: 8px;
+	border-left: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+}
+
 .interactive-session .chat-input-toolbars .codicon-debug-stop {
 	color: var(--vscode-icon-foreground) !important;
 }

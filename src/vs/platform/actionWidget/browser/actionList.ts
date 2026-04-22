@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import * as dom from '../../../base/browser/dom.js';
+import { renderLabelWithIcons } from '../../../base/browser/ui/iconLabel/iconLabels.js';
 import { StandardMouseEvent } from '../../../base/browser/mouseEvent.js';
 import { renderMarkdown } from '../../../base/browser/markdownRenderer.js';
 import { ActionBar } from '../../../base/browser/ui/actionbar/actionbar.js';
@@ -58,7 +59,7 @@ export interface IActionListItem<T> {
 	readonly group?: { kind?: unknown; icon?: ThemeIcon; title: string };
 	readonly disabled?: boolean;
 	readonly label?: string;
-	readonly description?: string | IMarkdownString;
+	readonly description?: string | IMarkdownString | HTMLElement;
 	/**
 	 * Optional hover configuration shown when focusing/hovering over the item.
 	 */
@@ -267,7 +268,13 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		}
 		data.previousClassName = element.className;
 
-		data.text.textContent = stripNewlines(element.label);
+		const cleanLabel = stripNewlines(element.label);
+		if (cleanLabel.includes('$(')) {
+			dom.clearNode(data.text);
+			data.text.append(...renderLabelWithIcons(cleanLabel));
+		} else {
+			data.text.textContent = cleanLabel;
+		}
 
 		// Render optional badge
 		if (element.badge) {
@@ -286,6 +293,8 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 			dom.clearNode(data.description!);
 			if (typeof element.description === 'string') {
 				data.description!.textContent = stripNewlines(element.description);
+			} else if (element.description instanceof HTMLElement) {
+				data.description!.appendChild(element.description);
 			} else {
 				const rendered = renderMarkdown(element.description, {
 					actionHandler: (content: string) => {
@@ -560,7 +569,11 @@ export class ActionListWidget<T> extends Disposable {
 					if (element.kind === ActionListItemKind.Action) {
 						let label = element.label ? stripNewlines(element?.label) : '';
 						if (element.description) {
-							const descText = typeof element.description === 'string' ? element.description : element.description.value;
+							const descText = typeof element.description === 'string'
+								? element.description
+								: element.description instanceof HTMLElement
+									? (element.description.textContent ?? '')
+									: element.description.value;
 							label = label + ', ' + stripNewlines(descText);
 						}
 						if (element.disabled) {
@@ -740,7 +753,11 @@ export class ActionListWidget<T> extends Disposable {
 				}
 				// Match against label and description
 				const label = (item.label ?? '').toLowerCase();
-				const descValue = typeof item.description === 'string' ? item.description : item.description?.value ?? '';
+				const descValue = typeof item.description === 'string'
+					? item.description
+					: item.description instanceof HTMLElement
+						? (item.description.textContent ?? '')
+						: item.description?.value ?? '';
 				const desc = descValue.toLowerCase();
 				if (label.includes(filterLower) || desc.includes(filterLower)) {
 					visible.push(item);
