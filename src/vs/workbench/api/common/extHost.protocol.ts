@@ -3663,8 +3663,6 @@ export type ChatInputNotificationDto = {
 	severity: ChatInputNotificationSeverityDto;
 	message: string;
 	description: string | undefined;
-	progress: number | undefined;
-	detail: string | undefined;
 	actions: ChatInputNotificationActionDto[];
 	dismissible: boolean;
 	autoDismissOnMessage: boolean;

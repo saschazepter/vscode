@@ -24,8 +24,6 @@ export class MainThreadChatInputNotification extends Disposable implements MainT
 			severity: notification.severity as number as ChatInputNotificationSeverity,
 			message: notification.message,
 			description: notification.description,
-			progress: notification.progress,
-			detail: notification.detail,
 			actions: notification.actions,
 			dismissible: notification.dismissible,
 			autoDismissOnMessage: notification.autoDismissOnMessage,

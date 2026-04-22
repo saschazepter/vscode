@@ -33,15 +33,14 @@ export class ChatInputNotificationContribution extends Disposable {
 		this._register(this._authService.onDidAuthenticationChange(() => this._updateQuotaNotification()));
 		{
 			const test = this._ensureNotification();
-			test.severity = vscode.ChatInputNotificationSeverity.Warning;
-			test.message = 'Monthly Budget';
-			test.progress = 75;
-			test.detail = 'Resets May 1 at 10:00 AM';
-			test.description = 'Copilot will pause when the monthly budget is reached.';
+			test.severity = vscode.ChatInputNotificationSeverity.Info;
+			test.message = 'Approaching Monthly Limit';
+			test.description = 'You\'re getting the most out of Copilot \u2014 upgrade to keep going.';
 			test.dismissible = true;
 			test.autoDismissOnMessage = true;
 			test.actions = [
-				{ label: 'View Usage', commandId: 'workbench.action.chat.openQuotaDashboard' },
+				{ label: 'View Budget', commandId: 'workbench.action.chat.openQuotaDashboard' },
+				{ label: 'Upgrade', commandId: 'workbench.action.chat.upgradePlan' },
 			];
 			test.show();
 		}

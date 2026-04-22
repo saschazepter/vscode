@@ -25,8 +25,6 @@ export interface IChatInputNotification {
 	readonly severity: ChatInputNotificationSeverity;
 	readonly message: string;
 	readonly description: string | undefined;
-	readonly progress: number | undefined;
-	readonly detail: string | undefined;
 	readonly actions: readonly IChatInputNotificationAction[];
 	readonly dismissible: boolean;
 	readonly autoDismissOnMessage: boolean;

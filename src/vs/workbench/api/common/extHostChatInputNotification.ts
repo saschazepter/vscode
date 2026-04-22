@@ -30,8 +30,6 @@ export class ExtHostChatInputNotification {
 			severity: extHostProtocol.ChatInputNotificationSeverityDto.Info,
 			message: '',
 			description: undefined,
-			progress: undefined,
-			detail: undefined,
 			actions: [],
 			dismissible: true,
 			autoDismissOnMessage: false,
@@ -75,22 +73,6 @@ export class ExtHostChatInputNotification {
 			},
 			set description(value: string | undefined) {
 				state.description = value;
-				syncState();
-			},
-
-			get progress(): number | undefined {
-				return state.progress;
-			},
-			set progress(value: number | undefined) {
-				state.progress = value !== undefined ? Math.max(0, Math.min(100, value)) : undefined;
-				syncState();
-			},
-
-			get detail(): string | undefined {
-				return state.detail;
-			},
-			set detail(value: string | undefined) {
-				state.detail = value;
 				syncState();
 			},
 

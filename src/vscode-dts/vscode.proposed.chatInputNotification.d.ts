@@ -75,23 +75,7 @@ declare module 'vscode' {
 		description: string | undefined;
 
 		/**
-		 * Optional progress value between 0 and 100. When set, a horizontal
-		 * progress bar is rendered below the title, colored by the notification's
-		 * severity. A label showing "{progress}% used" is also displayed.
-		 * Set to `undefined` to hide the bar.
-		 */
-		progress: number | undefined;
-
-		/**
-		 * Optional detail text shown alongside the progress label
-		 * (e.g., "Resets May 1 at 10:00 AM"). Plain text only.
-		 */
-		detail: string | undefined;
-
-		/**
-		 * Optional action buttons to display. When a progress bar is shown,
-		 * actions render as text links in the detail row. Otherwise they
-		 * render as buttons below the description.
+		 * Optional action buttons to display.
 		 */
 		actions: ChatInputNotificationAction[];
 

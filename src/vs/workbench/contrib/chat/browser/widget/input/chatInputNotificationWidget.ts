@@ -103,76 +103,40 @@ export class ChatInputNotificationWidget extends Disposable {
 			}));
 		}
 
-		// Progress bar (optional, below header)
-		if (notification.progress !== undefined) {
-			const progressContainer = dom.append(container, $('.chat-input-notification-progress'));
-			const progressBar = dom.append(progressContainer, $('.chat-input-notification-progress-bar'));
-			progressBar.style.width = `${Math.max(0, Math.min(100, notification.progress))}%`;
-		}
+		// Body row: description + actions on the same line
+		const hasBody = notification.description || notification.actions.length > 0;
+		if (hasBody) {
+			const bodyRow = dom.append(container, $('.chat-input-notification-body'));
 
-		// Detail row: "X% used" + detail text + link-style actions (when progress is set)
-		const hasDetailRow = notification.progress !== undefined || notification.detail || notification.actions.length > 0;
-		if (hasDetailRow && notification.progress !== undefined) {
-			const detailRow = dom.append(container, $('.chat-input-notification-detail-row'));
-
-			// Progress label "X% used"
-			const progressLabel = dom.append(detailRow, $('.chat-input-notification-progress-label'));
-			progressLabel.textContent = `${Math.round(notification.progress)}% used`;
-
-			// Detail text
-			if (notification.detail) {
-				const detailText = dom.append(detailRow, $('.chat-input-notification-detail'));
-				detailText.textContent = notification.detail;
+			if (notification.description) {
+				const descriptionElement = dom.append(bodyRow, $('.chat-input-notification-description'));
+				descriptionElement.textContent = notification.description;
 			}
 
-			// Spacer
-			dom.append(detailRow, $('.chat-input-notification-detail-spacer'));
+			if (notification.actions.length > 0) {
+				const actionsContainer = dom.append(bodyRow, $('.chat-input-notification-actions'));
 
-			// Actions as links
-			for (const action of notification.actions) {
-				const link = dom.append(detailRow, $('a.chat-input-notification-action-link'));
-				link.textContent = action.label;
-				link.tabIndex = 0;
-				link.role = 'button';
-				link.ariaLabel = `${notification.message} ${action.label}`;
+				for (let i = 0; i < notification.actions.length; i++) {
+					const action = notification.actions[i];
+					const isLast = i === notification.actions.length - 1;
 
-				this._contentDisposables.add(dom.addDisposableListener(link, dom.EventType.CLICK, async (e) => {
-					e.preventDefault();
-					this._telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', {
-						id: action.commandId,
-						from: 'chatInputNotification',
-					});
-					await this._commandService.executeCommand(action.commandId, ...(action.commandArgs ?? []));
-				}));
-			}
-		}
+					const button = this._contentDisposables.add(new Button(actionsContainer, {
+						...defaultButtonStyles,
+						supportIcons: true,
+						secondary: !isLast,
+					}));
+					button.element.classList.add('chat-input-notification-action-button');
+					button.label = action.label;
+					button.element.ariaLabel = `${notification.message} ${action.label}`;
 
-		// Description (optional, below detail row)
-		if (notification.description) {
-			const descriptionElement = dom.append(container, $('.chat-input-notification-description'));
-			descriptionElement.textContent = notification.description;
-		}
-
-		// Actions as buttons (only when no progress bar — fallback layout)
-		if (notification.progress === undefined && notification.actions.length > 0) {
-			const actionsContainer = dom.append(container, $('.chat-input-notification-actions'));
-
-			for (const action of notification.actions) {
-				const button = this._contentDisposables.add(new Button(actionsContainer, {
-					...defaultButtonStyles,
-					supportIcons: true,
-				}));
-				button.element.classList.add('chat-input-notification-action-button');
-				button.label = action.label;
-				button.element.ariaLabel = `${notification.message} ${action.label}`;
-
-				this._contentDisposables.add(button.onDidClick(async () => {
-					this._telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', {
-						id: action.commandId,
-						from: 'chatInputNotification',
-					});
-					await this._commandService.executeCommand(action.commandId, ...(action.commandArgs ?? []));
-				}));
+					this._contentDisposables.add(button.onDidClick(async () => {
+						this._telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', {
+							id: action.commandId,
+							from: 'chatInputNotification',
+						});
+						await this._commandService.executeCommand(action.commandId, ...(action.commandArgs ?? []));
+					}));
+				}
 			}
 		}
 	}
