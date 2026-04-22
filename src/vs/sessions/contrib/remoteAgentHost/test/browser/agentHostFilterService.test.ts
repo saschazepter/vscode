@@ -90,13 +90,12 @@ suite('AgentHostFilterService', () => {
 		assert.deepStrictEqual([...service.hosts], []);
 	});
 
-	test('defaults to first host when none persisted', () => {
+	test('defaults to undefined when none persisted outside web', () => {
 		const providers = new StubSessionsProvidersService();
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:9999', 'Host B') as unknown as ISessionsProvider));
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:4321', 'Host A', RemoteAgentHostConnectionStatus.Disconnected) as unknown as ISessionsProvider));
 		const service = createService(providers);
-		// Hosts are sorted alphabetically by label, so "Host A" comes first.
-		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
+		assert.strictEqual(service.selectedProviderId, undefined);
 	});
 
 	test('surfaces registered remote providers with their connection status', () => {
@@ -126,7 +125,7 @@ suite('AgentHostFilterService', () => {
 		assert.strictEqual(events, 1);
 	});
 
-	test('setSelectedProviderId persists and fires change', () => {
+	test('setSelectedProviderId fires change and is not restored outside web', () => {
 		const providers = new StubSessionsProvidersService();
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:4321', 'Host A') as unknown as ISessionsProvider));
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:9999', 'Host B') as unknown as ISessionsProvider));
@@ -140,12 +139,12 @@ suite('AgentHostFilterService', () => {
 		assert.strictEqual(service.selectedProviderId, pid('localhost:9999'));
 		assert.strictEqual(events, 1);
 
-		// Recreate service with same storage — selection should persist
+		// Recreate service with same storage — selection should not be restored outside web.
 		const service2 = createService(providers, storage);
-		assert.strictEqual(service2.selectedProviderId, pid('localhost:9999'));
+		assert.strictEqual(service2.selectedProviderId, undefined);
 	});
 
-	test('falls back to first remaining host when selected host disappears', () => {
+	test('falls back to undefined outside web when selected host disappears', () => {
 		const providers = new StubSessionsProvidersService();
 		const hostA = new StubRemoteProvider('localhost:4321', 'Host A');
 		const hostB = new StubRemoteProvider('localhost:9999', 'Host B');
@@ -156,16 +155,16 @@ suite('AgentHostFilterService', () => {
 		service.setSelectedProviderId(pid('localhost:9999'));
 		assert.strictEqual(service.selectedProviderId, pid('localhost:9999'));
 
-		// Remove Host B — selection should fall back to Host A (first remaining).
+		// Remove Host B — selection should fall back to no host outside web.
 		hostBReg.dispose();
-		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
+		assert.strictEqual(service.selectedProviderId, undefined);
 	});
 
 	test('setSelectedProviderId ignores unknown hosts', () => {
 		const providers = new StubSessionsProvidersService();
 		store.add(providers.registerProvider(new StubRemoteProvider('localhost:4321', 'Host A') as unknown as ISessionsProvider));
 		const service = createService(providers);
-		// Default selection is the first (only) host.
+		service.setSelectedProviderId(pid('localhost:4321'));
 		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
 		service.setSelectedProviderId('agenthost-nonexistent');
 		assert.strictEqual(service.selectedProviderId, pid('localhost:4321'));
