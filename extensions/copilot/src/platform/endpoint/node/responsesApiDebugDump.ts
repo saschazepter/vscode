@@ -10,8 +10,9 @@ import { ILogService } from '../../log/common/logService';
 
 /**
  * Set to `true` to dump every SSE event from the Responses API to a
- * timestamped log file at the repo root. Useful for debugging phased
- * output, commentary/final_answer concatenation, and stream ordering.
+ * timestamped log file under `<repo-root>/.responses-stream-dumps/`.
+ * Useful for debugging phased output, commentary/final_answer
+ * concatenation, and stream ordering.
  *
  * **Do not commit with this set to `true`.**
  */
@@ -52,28 +53,18 @@ export function createResponsesStreamDumper(requestId: string, logService: ILogS
 	}
 
 	try {
-		const repoRoot = findRepoRoot() ?? process.cwd();
+		// At runtime this file lives in `extensions/copilot/dist/`; go up
+		// three levels to land at the repo root, then write into a
+		// dedicated (gitignored) subfolder so dumps don't pollute `dist/`.
+		const repoRoot = path.resolve(__dirname, '..', '..', '..');
+		const dumpDir = path.join(repoRoot, '.responses-stream-dumps');
+		fs.mkdirSync(dumpDir, { recursive: true });
 		const ts = new Date().toISOString().replace(/[:.]/g, '-');
-		const filePath = path.join(repoRoot, `responses-stream-${ts}-${requestId}.log`);
+		const filePath = path.join(dumpDir, `responses-stream-${ts}-${requestId.slice(0, 4)}.log`);
 		fs.writeFileSync(filePath, `# Responses API SSE stream dump\n# requestId=${requestId}\n# started=${new Date().toISOString()}\n\n`);
 		logService.info(`[responsesAPI] Dumping SSE stream to ${filePath}`);
 		return new ResponsesStreamDumper(filePath);
 	} catch {
 		return noopDumper;
 	}
-}
-
-function findRepoRoot(): string | undefined {
-	let dir = __dirname;
-	for (let i = 0; i < 12; i++) {
-		if (fs.existsSync(path.join(dir, 'product.json')) && fs.existsSync(path.join(dir, 'extensions', 'copilot'))) {
-			return dir;
-		}
-		const parent = path.dirname(dir);
-		if (parent === dir) {
-			return undefined;
-		}
-		dir = parent;
-	}
-	return undefined;
 }
