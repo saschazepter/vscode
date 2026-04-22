@@ -256,14 +256,14 @@
 /* ---- Phone Layout: Chat Welcome Page ---- */
 
 /* Make the welcome page a flex column that fills the chat area */
-.agent-sessions-workbench.phone-layout .chat-full-welcome {
+.agent-sessions-workbench.phone-layout .new-chat-widget-container {
 	display: flex !important;
 	flex-direction: column !important;
 	height: 100% !important;
 	padding: 8px 8px 0 8px !important;
 }
 
-.agent-sessions-workbench.phone-layout .chat-full-welcome-content {
+.agent-sessions-workbench.phone-layout .new-chat-widget-content {
 	display: flex !important;
 	flex-direction: column !important;
 	flex: 1 !important;
@@ -273,7 +273,7 @@
 }
 
 /* Workspace picker centered vertically with icon above */
-.agent-sessions-workbench.phone-layout .chat-full-welcome-pickers-container {
+.agent-sessions-workbench.phone-layout .new-session-workspace-picker-container {
 	flex: 1 !important;
 	display: flex !important;
 	flex-direction: column !important;
@@ -283,20 +283,25 @@
 }
 
 /* Show the sessions logo above the workspace picker — same asset as the auth page */
-.agent-sessions-workbench.phone-layout .chat-full-welcome-pickers-container::before {
+.agent-sessions-workbench.phone-layout .new-session-workspace-picker-container::before {
 	content: '';
 	display: block;
 	width: 64px;
 	height: 64px;
 	margin-bottom: 16px;
-	background-image: url('../../../../sessions/contrib/welcome/browser/media/sessions-logo-light.svg');
+	background-image: url('../../media/sessions-logo-light.svg');
 	background-size: contain;
 	background-repeat: no-repeat;
 	background-position: center;
 }
 
+.vs .agent-sessions-workbench.phone-layout .new-session-workspace-picker-container::before,
+.hc-light .agent-sessions-workbench.phone-layout .new-session-workspace-picker-container::before {
+	background-image: url('../../media/sessions-logo-dark.svg');
+}
+
 /* Center the picker text */
-.agent-sessions-workbench.phone-layout .chat-full-welcome-pickers {
+.agent-sessions-workbench.phone-layout .session-workspace-picker {
 	display: flex !important;
 	flex-direction: column !important;
 	align-items: center !important;
@@ -304,13 +309,13 @@
 	font-size: 16px !important;
 }
 
-.agent-sessions-workbench.phone-layout .chat-full-welcome-pickers-label {
+.agent-sessions-workbench.phone-layout .session-workspace-picker-label {
 	font-size: 18px !important;
 	opacity: 0.6;
 }
 
 /* Input slot pinned to the bottom */
-.agent-sessions-workbench.phone-layout .chat-full-welcome-inputSlot {
+.agent-sessions-workbench.phone-layout .new-chat-input-container {
 	flex-shrink: 0 !important;
 	padding: 0 0 8px 0 !important;
 	max-width: 100% !important;
@@ -323,7 +328,7 @@
 }
 
 /* Hide the local mode bar (Copilot CLI / Default Approvals / Branch) on phone */
-.agent-sessions-workbench.phone-layout .chat-full-welcome-local-mode {
+.agent-sessions-workbench.phone-layout .new-chat-bottom-container {
 	display: none !important;
 }
 
