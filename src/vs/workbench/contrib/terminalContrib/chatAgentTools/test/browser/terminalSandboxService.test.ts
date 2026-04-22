@@ -407,13 +407,35 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(config.filesystem.allowRead.includes('/configured/path'), 'Sandbox config should re-allow reads from configured allowWrite paths');
 		ok(config.filesystem.allowRead.includes('/configured/readable/path'), 'Sandbox config should preserve configured allowRead paths');
 		ok(config.filesystem.allowRead.includes('/home/user/.npm'), 'Sandbox config should re-allow reads from default write paths');
-		ok(config.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Sandbox config should include git read allow-list paths');
-		ok(config.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Sandbox config should include node read allow-list paths');
-		ok(config.filesystem.allowRead.includes('/home/user/.cache/pip'), 'Sandbox config should include common dev read allow-list paths');
+		ok(!config.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Sandbox config should not include command-specific git read allow-list paths before a command is parsed');
+		ok(!config.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Sandbox config should not include command-specific node read allow-list paths before a command is parsed');
+		ok(!config.filesystem.allowRead.includes('/home/user/.cache/pip'), 'Sandbox config should not include command-specific common dev read allow-list paths before a command is parsed');
 		ok(config.filesystem.allowRead.includes('/app'), 'Sandbox config should include the VS Code app root');
 		ok(!config.filesystem.allowRead.includes('/app/node'), 'Sandbox config should not redundantly include app root child paths');
 		ok(!config.filesystem.allowRead.includes('/app/node_modules'), 'Sandbox config should not redundantly include app root child paths');
 		ok(!config.filesystem.allowRead.includes('/app/node_modules/@vscode/ripgrep'), 'Sandbox config should not redundantly include app root child paths');
+	});
+
+	test('should only add command-specific allowRead paths for the current command keywords', async () => {
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		await sandboxService.prepareSandboxConfigForCommand(['node']);
+		const nodeConfigContent = createdFiles.get(configPath);
+		ok(nodeConfigContent, 'Config file should be rewritten for node commands');
+
+		const nodeConfig = JSON.parse(nodeConfigContent);
+		ok(nodeConfig.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Node commands should include node-specific read allow-list paths');
+		ok(!nodeConfig.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Node commands should not include git-specific read allow-list paths');
+
+		await sandboxService.prepareSandboxConfigForCommand(['git']);
+		const gitConfigContent = createdFiles.get(configPath);
+		ok(gitConfigContent, 'Config file should be rewritten for git commands');
+
+		const gitConfig = JSON.parse(gitConfigContent);
+		ok(gitConfig.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Git commands should include git-specific read allow-list paths');
+		ok(!gitConfig.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Refreshing for a new command should start allowRead from the current command keywords');
 	});
 
 	test('should expand home paths in linux filesystem sandbox config paths', async () => {

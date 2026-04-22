@@ -73,6 +73,7 @@ export interface ITerminalSandboxService {
 	isEnabled(): Promise<boolean>;
 	getOS(): Promise<OperatingSystem>;
 	checkForSandboxingPrereqs(forceRefresh?: boolean): Promise<ITerminalSandboxPrerequisiteCheckResult>;
+	prepareSandboxConfigForCommand?(commandKeywords: readonly string[]): Promise<void>;
 	wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string): ITerminalSandboxWrapResult;
 	getSandboxConfigPath(forceRefresh?: boolean): Promise<string | undefined>;
 	getTempDir(): URI | undefined;
@@ -95,6 +96,10 @@ export class NullTerminalSandboxService implements ITerminalSandboxService {
 
 	async checkForSandboxingPrereqs(): Promise<ITerminalSandboxPrerequisiteCheckResult> {
 		return { enabled: false, sandboxConfigPath: undefined, failedCheck: undefined };
+	}
+
+	async prepareSandboxConfigForCommand(): Promise<void> {
+		// No-op.
 	}
 
 	wrapCommand(command: string): ITerminalSandboxWrapResult {

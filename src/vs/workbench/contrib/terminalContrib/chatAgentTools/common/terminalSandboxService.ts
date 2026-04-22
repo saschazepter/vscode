@@ -35,7 +35,7 @@ import { ElicitationState, IChatService } from '../../../chat/common/chatService
 import { SANDBOX_HELPER_CHANNEL_NAME, SandboxHelperChannelClient } from '../../../../../platform/sandbox/common/sandboxHelperIpc.js';
 import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ISandboxDependencyInstallOptions, type ISandboxDependencyInstallResult, type ITerminalSandboxPrerequisiteCheckResult, type ITerminalSandboxResolvedNetworkDomains, type ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
-import { getTerminalSandboxReadAllowList } from './terminalSandboxReadAllowList.js';
+import { getTerminalSandboxReadAllowListForCommands } from './terminalSandboxReadAllowList.js';
 
 export { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 export type { ISandboxDependencyInstallOptions, ISandboxDependencyInstallResult, ISandboxDependencyInstallTerminal, ITerminalSandboxPrerequisiteCheckResult, ITerminalSandboxResolvedNetworkDomains, ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
@@ -71,6 +71,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private _remoteEnvDetailsPromise: Promise<IRemoteAgentEnvironment | null>;
 	private _remoteEnvDetails: IRemoteAgentEnvironment | null = null;
 	private _appRoot: string;
+	private _commandReadAllowKeywords: readonly string[] = [];
 	private _os: OperatingSystem = OS;
 	private _defaultWritePaths: string[] = ['~/.npm'];
 	private static readonly _sandboxTempDirName = 'tmp';
@@ -196,6 +197,11 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 
 	public getTempDir(): URI | undefined {
 		return this._tempDir;
+	}
+
+	public async prepareSandboxConfigForCommand(commandKeywords: readonly string[]): Promise<void> {
+		this._commandReadAllowKeywords = [...new Set(commandKeywords.map(keyword => keyword.toLowerCase()))];
+		await this.getSandboxConfigPath(true);
 	}
 
 	public setNeedsForceUpdateConfigFile(): void {
@@ -631,7 +637,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private _updateAllowReadPathsWithAllowWrite(configuredAllowRead: string[] | undefined, allowWrite: string[]): string[] {
-		return [...new Set([...(configuredAllowRead ?? []), ...getTerminalSandboxReadAllowList(this._os), ...this._getSandboxRuntimeReadPaths(), ...allowWrite])];
+		return [...new Set([...(configuredAllowRead ?? []), ...getTerminalSandboxReadAllowListForCommands(this._os, this._commandReadAllowKeywords), ...this._getSandboxRuntimeReadPaths(), ...allowWrite])];
 	}
 
 	private _resolveLinuxFileSystemPaths(paths: string[] | undefined): string[] {

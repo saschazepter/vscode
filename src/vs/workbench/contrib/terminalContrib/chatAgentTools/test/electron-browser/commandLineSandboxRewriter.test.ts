@@ -10,12 +10,16 @@ import type { TestInstantiationService } from '../../../../../../platform/instan
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
 import { CommandLineSandboxRewriter } from '../../browser/tools/commandLineRewriter/commandLineSandboxRewriter.js';
 import type { ICommandLineRewriterOptions } from '../../browser/tools/commandLineRewriter/commandLineRewriter.js';
+import type { TreeSitterCommandParser } from '../../browser/treeSitterCommandParser.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../common/terminalSandboxService.js';
 
 suite('CommandLineSandboxRewriter', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	let instantiationService: TestInstantiationService;
+	const stubTreeSitterCommandParser = (keywords: string[] = []): TreeSitterCommandParser => ({
+		extractCommandKeywords: async () => keywords,
+	} as unknown as TreeSitterCommandParser);
 
 	const stubSandboxService = (overrides: Partial<ITerminalSandboxService> = {}) => {
 		instantiationService = workbenchInstantiationService({}, store);
@@ -47,7 +51,7 @@ suite('CommandLineSandboxRewriter', () => {
 
 	test('returns undefined when sandbox is disabled', async () => {
 		stubSandboxService();
-		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter));
+		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser()));
 		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
 		strictEqual(result, undefined);
 	});
@@ -61,7 +65,7 @@ suite('CommandLineSandboxRewriter', () => {
 			checkForSandboxingPrereqs: async () => ({ enabled: false, sandboxConfigPath: undefined, failedCheck: TerminalSandboxPrerequisiteCheck.Config }),
 		});
 
-		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter));
+		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser()));
 		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
 		strictEqual(result, undefined);
 	});
@@ -76,7 +80,7 @@ suite('CommandLineSandboxRewriter', () => {
 			}),
 		});
 
-		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter));
+		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser()));
 		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
 		strictEqual(result, undefined);
 	});
@@ -84,6 +88,9 @@ suite('CommandLineSandboxRewriter', () => {
 	test('wraps command when sandbox is enabled and config exists', async () => {
 		const calls: string[] = [];
 		stubSandboxService({
+			prepareSandboxConfigForCommand: async keywords => {
+				calls.push(`prepare:${keywords.join(',')}`);
+			},
 			wrapCommand: (command, _requestUnsandboxedExecution) => {
 				calls.push('wrapCommand');
 				return {
@@ -97,16 +104,19 @@ suite('CommandLineSandboxRewriter', () => {
 			},
 		});
 
-		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter));
+		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser(['node'])));
 		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'wrapCommand']);
+		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'prepare:node', 'wrapCommand']);
 	});
 
 	test('wraps command and forwards sandbox bypass flag when explicitly requested', async () => {
 		const calls: string[] = [];
 		stubSandboxService({
+			prepareSandboxConfigForCommand: async keywords => {
+				calls.push(`prepare:${keywords.join(',')}`);
+			},
 			wrapCommand: (command, requestUnsandboxedExecution) => {
 				calls.push(`wrap:${command}:${String(requestUnsandboxedExecution)}`);
 				return {
@@ -120,7 +130,7 @@ suite('CommandLineSandboxRewriter', () => {
 			},
 		});
 
-		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter));
+		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser(['git'])));
 		const result = await rewriter.rewrite({
 			...createRewriteOptions('echo hello'),
 			requestUnsandboxedExecution: true,
@@ -128,6 +138,6 @@ suite('CommandLineSandboxRewriter', () => {
 
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['prereqs', 'wrap:echo hello:true']);
+		deepStrictEqual(calls, ['prereqs', 'prepare:git', 'wrap:echo hello:true']);
 	});
 });

@@ -8,6 +8,7 @@ import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { BugIndicatingError, ErrorNoTelemetry } from '../../../../../base/common/errors.js';
 import { Lazy } from '../../../../../base/common/lazy.js';
 import { Disposable, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { posix, win32 } from '../../../../../base/common/path.js';
 import { ITreeSitterLibraryService } from '../../../../../editor/common/services/treeSitter/treeSitterLibraryService.js';
 import { ICommandFileWriteParser } from './commandParsers/commandFileWriteParser.js';
 import { SedFileWriteParser } from './commandParsers/sedFileWriteParser.js';
@@ -28,6 +29,8 @@ export const enum TreeSitterCommandParserLanguage {
  * TODO: Remove once upstream tree-sitter PowerShell grammer is updated.
  */
 const pwshFlagEqualsRegex = /(^|\s)(-{1,2}[\w-]+)=/g;
+const bashEnvAssignmentRegex = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]+)$/;
+const bashCommandPrefixRegex = /^(?:command|builtin|env)$/;
 
 // TODO: Remove once upstream tree-sitter PowerShell grammer is updated.
 function maskPwshFlagEquals(commandLine: string): string {
@@ -70,6 +73,18 @@ export class TreeSitterCommandParser extends Disposable {
 			')',
 		].join('\n'));
 		return captures;
+	}
+
+	async extractCommandKeywords(languageId: TreeSitterCommandParserLanguage, commandLine: string): Promise<string[]> {
+		const captures = await this._queryTree(languageId, commandLine, '(command) @command');
+		const keywords = new Set<string>();
+		for (const capture of captures) {
+			const keyword = this._extractCommandKeyword(languageId, capture.node.text);
+			if (keyword) {
+				keywords.add(keyword);
+			}
+		}
+		return [...keywords];
 	}
 
 	async getFileWrites(languageId: TreeSitterCommandParserLanguage, commandLine: string): Promise<string[]> {
@@ -122,6 +137,97 @@ export class TreeSitterCommandParser extends Disposable {
 	private async _queryTree(languageId: TreeSitterCommandParserLanguage, commandLine: string, querySource: string): Promise<QueryCapture[]> {
 		const { tree, query } = await this._doQuery(languageId, commandLine, querySource);
 		return query.captures(tree.rootNode);
+	}
+
+	private _extractCommandKeyword(languageId: TreeSitterCommandParserLanguage, subCommand: string): string | undefined {
+		const tokens = this._tokenizeCommand(subCommand.trimStart());
+		if (tokens.length === 0) {
+			return undefined;
+		}
+
+		let index = 0;
+		if (languageId === TreeSitterCommandParserLanguage.PowerShell) {
+			while (tokens[index] === '&' || tokens[index] === '.') {
+				index++;
+			}
+		}
+
+		for (; index < tokens.length; index++) {
+			const token = tokens[index];
+			if (!token) {
+				continue;
+			}
+
+			if (languageId === TreeSitterCommandParserLanguage.Bash) {
+				if (bashEnvAssignmentRegex.test(token)) {
+					continue;
+				}
+				if (bashCommandPrefixRegex.test(token)) {
+					continue;
+				}
+			}
+
+			if (token.startsWith('-') || token.startsWith('$')) {
+				continue;
+			}
+
+			const normalized = this._normalizeCommandKeyword(token);
+			if (normalized) {
+				return normalized;
+			}
+		}
+
+		return undefined;
+	}
+
+	private _tokenizeCommand(commandLine: string): string[] {
+		const result: string[] = [];
+		let current = '';
+		let quote: string | undefined;
+
+		for (let index = 0; index < commandLine.length; index++) {
+			const char = commandLine[index];
+			if (quote) {
+				current += char;
+				if (char === quote) {
+					quote = undefined;
+				}
+				continue;
+			}
+
+			if (char === '"' || char === '\'') {
+				quote = char;
+				current += char;
+				continue;
+			}
+
+			if (/\s/.test(char)) {
+				if (current.length > 0) {
+					result.push(current);
+					current = '';
+				}
+				continue;
+			}
+
+			current += char;
+		}
+
+		if (current.length > 0) {
+			result.push(current);
+		}
+
+		return result;
+	}
+
+	private _normalizeCommandKeyword(token: string): string | undefined {
+		const unquoted = token.replace(/^['"]|['"]$/g, '');
+		if (!unquoted) {
+			return undefined;
+		}
+
+		const pathBase = unquoted.includes('\\') ? win32.basename(unquoted) : posix.basename(unquoted);
+		const normalized = pathBase.toLowerCase().replace(/\.(?:exe|cmd|bat|ps1)$/i, '');
+		return normalized || undefined;
 	}
 
 	private async _doQuery(languageId: TreeSitterCommandParserLanguage, commandLine: string, querySource: string): Promise<{ tree: Tree; query: Query }> {

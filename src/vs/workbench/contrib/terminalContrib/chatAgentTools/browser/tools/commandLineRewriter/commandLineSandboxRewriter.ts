@@ -4,11 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../../../../base/common/lifecycle.js';
+import { isPowerShell } from '../../runInTerminalHelpers.js';
+import { TreeSitterCommandParser, TreeSitterCommandParserLanguage } from '../../treeSitterCommandParser.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../../common/terminalSandboxService.js';
 import type { ICommandLineRewriter, ICommandLineRewriterOptions, ICommandLineRewriterResult } from './commandLineRewriter.js';
 
 export class CommandLineSandboxRewriter extends Disposable implements ICommandLineRewriter {
 	constructor(
+		private readonly _treeSitterCommandParser: TreeSitterCommandParser,
 		@ITerminalSandboxService private readonly _sandboxService: ITerminalSandboxService,
 	) {
 		super();
@@ -20,6 +23,8 @@ export class CommandLineSandboxRewriter extends Disposable implements ICommandLi
 			return undefined;
 		}
 
+		await this._sandboxService.prepareSandboxConfigForCommand?.(await this._parseCommandKeywords(options));
+
 		const wrappedCommand = this._sandboxService.wrapCommand(options.commandLine, options.requestUnsandboxedExecution, options.shell);
 		return {
 			rewritten: wrappedCommand.command,
@@ -30,5 +35,16 @@ export class CommandLineSandboxRewriter extends Disposable implements ICommandLi
 			blockedDomains: wrappedCommand.blockedDomains,
 			deniedDomains: wrappedCommand.deniedDomains,
 		};
+	}
+
+	private async _parseCommandKeywords(options: ICommandLineRewriterOptions): Promise<string[]> {
+		try {
+			const languageId = isPowerShell(options.shell, options.os)
+				? TreeSitterCommandParserLanguage.PowerShell
+				: TreeSitterCommandParserLanguage.Bash;
+			return await this._treeSitterCommandParser.extractCommandKeywords(languageId, options.commandLine);
+		} catch {
+			return [];
+		}
 	}
 }
