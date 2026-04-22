@@ -481,6 +481,8 @@ export class InlineChatController implements IEditorContribution {
 
 			if (!response?.isInProgress.read(r)) {
 
+				this.#zone.rawValue?.status.set(response?.result?.details ?? '', undefined);
+
 				if (response?.result?.errorDetails) {
 					// ERROR case
 					this.#zone.rawValue?.widget.updateInfo(`$(error) ${response.result.errorDetails.message}`);
