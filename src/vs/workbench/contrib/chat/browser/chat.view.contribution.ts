@@ -3,10 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/**
- * This file is modified as part of the production build of the extension.
- *
- * WARNING: Do not move or rename this file.
- */
-export const LICENSE_AGREEMENT: string | undefined = undefined;
-export const INTEGRATION_ID: string = 'code-oss';
+import { WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
+import { AgentPluginsViewsContribution } from './agentPluginsView.js';
+
+registerWorkbenchContribution2(AgentPluginsViewsContribution.ID, AgentPluginsViewsContribution, WorkbenchPhase.AfterRestored);
