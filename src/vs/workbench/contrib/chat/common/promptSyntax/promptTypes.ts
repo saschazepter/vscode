@@ -137,6 +137,7 @@ export enum PromptFileSource {
 	AgentsPersonal = 'agents-personal',
 	ConfigWorkspace = 'config-workspace',
 	ConfigPersonal = 'config-personal',
+	UserData = 'user-data',
 	ExtensionContribution = 'extension-contribution',
 	ExtensionAPI = 'extension-api',
 	Plugin = 'plugin',

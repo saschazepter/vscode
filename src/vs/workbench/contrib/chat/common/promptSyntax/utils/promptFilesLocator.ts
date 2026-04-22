@@ -62,7 +62,7 @@ export class PromptFilesLocator {
 			uri: userDataPromptsHome,
 			parent: userDataPromptsHome,
 			filePattern: undefined,
-			source: PromptFileSource.CopilotPersonal,
+			source: PromptFileSource.UserData,
 			storage: PromptsStorage.user,
 			displayPath: nls.localize('promptsUserDataFolder', "User Data"),
 			isDefault: true
@@ -750,7 +750,11 @@ export class PromptFilesLocator {
 			}
 			const results = await this.findAgentSkillsInFolder(uri, token);
 			for (const skillUri of results) {
-				allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
+				if (storage === PromptsStorage.local) {
+					allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
+				} else {
+					allResults.push({ uri: skillUri, source, storage, type: PromptsType.skill });
+				}
 			}
 		}
 

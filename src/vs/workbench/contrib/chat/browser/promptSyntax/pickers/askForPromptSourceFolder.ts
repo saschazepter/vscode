@@ -3,16 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { extUri, isEqual } from '../../../../../../base/common/resources.js';
+import { isEqual } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../../../editor/browser/editorExtensions.js';
 import { localize } from '../../../../../../nls.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
-import { PROMPT_DOCUMENTATION_URL, PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+import { PROMPT_DOCUMENTATION_URL, PromptFileSource, PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { IPickOptions, IQuickInputService, IQuickPickItem } from '../../../../../../platform/quickinput/common/quickInput.js';
-import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPromptPath, IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 
 
@@ -33,15 +32,14 @@ export async function askForPromptSourceFolder(
 	const quickInputService = accessor.get(IQuickInputService);
 	const promptsService = accessor.get(IPromptsService);
 	const labelService = accessor.get(ILabelService);
-	const workspaceService = accessor.get(IWorkspaceContextService);
 
-	// get prompts source folders based on the prompt type
-	const folders = await promptsService.getSourceFolders(type);
+	// get resolved source folders with full metadata (source, isDefault, displayPath)
+	const resolvedFolders = await promptsService.getResolvedSourceFolders(type);
 
 	// if no source folders found, show 'learn more' dialog
 	// note! this is a temporary solution and must be replaced with a dialog to select
 	//       a custom folder path, or switch to a different prompt type
-	if (folders.length === 0) {
+	if (resolvedFolders.length === 0) {
 		await instantiationService.invokeFunction(accessor => showNoFoldersDialog(accessor, type));
 		return;
 	}
@@ -52,47 +50,54 @@ export async function askForPromptSourceFolder(
 		matchOnDescription: true,
 	};
 
+	// Determine which folder is the "default" for new files:
+	// prefer .agents (universal) workspace, then .agents user, then first folder
+	const defaultFolder = !existingFolder
+		? resolvedFolders.find(f => f.source === PromptFileSource.AgentsWorkspace)
+		?? resolvedFolders.find(f => f.source === PromptFileSource.AgentsPersonal)
+		?? resolvedFolders[0]
+		: undefined;
+
+	// Sort folders: default first among workspace folders, .agents first among user folders
+	const sortedFolders = [...resolvedFolders];
+	if (defaultFolder) {
+		const defaultIdx = sortedFolders.findIndex(f => isEqual(f.uri, defaultFolder.uri));
+		if (defaultIdx > 0) {
+			const [item] = sortedFolders.splice(defaultIdx, 1);
+			sortedFolders.unshift(item);
+		}
+	}
+	// Move ~/.agents above other ~/. user folders
+	const userAgentsIdx = sortedFolders.findIndex(f => f.source === PromptFileSource.AgentsPersonal);
+	if (userAgentsIdx > 0) {
+		const firstUserIdx = sortedFolders.findIndex(f => f.storage === PromptsStorage.user);
+		if (firstUserIdx >= 0 && userAgentsIdx > firstUserIdx) {
+			const [item] = sortedFolders.splice(userAgentsIdx, 1);
+			sortedFolders.splice(firstUserIdx, 0, item);
+		}
+	}
+
 	// create list of source folder locations
-	const foldersList = folders.map<IFolderQuickPickItem>(folder => {
-		const uri = folder.uri;
+	const foldersList = sortedFolders.map<IFolderQuickPickItem>(resolved => {
+		const uri = resolved.uri;
+		const isDefault = defaultFolder && isEqual(uri, defaultFolder.uri);
+		const sourceDescription = getSourceDescription(resolved.source);
 		const detail = (existingFolder && isEqual(uri, existingFolder)) ? localize('current.folder', "Current Location") : undefined;
-		if (folder.storage !== PromptsStorage.local) {
-			return {
-				type: 'item',
-				label: promptsService.getPromptLocationLabel(folder),
-				detail,
-				tooltip: labelService.getUriLabel(uri),
-				folder
-			};
-		}
 
-		const { folders } = workspaceService.getWorkspace();
-		const isMultirootWorkspace = (folders.length > 1);
+		// Use the original display path (e.g. '.agents/skills', '~/.copilot/skills')
+		// as the label, falling back to workspace-relative or absolute path
+		const basePath = resolved.displayPath ?? labelService.getUriLabel(uri, { relative: resolved.storage === PromptsStorage.local });
+		const label = isDefault ? localize('pathWithDefault', "{0} (default)", basePath) : basePath;
 
-		const firstFolder = folders[0];
+		const folder: IPromptPath = { uri, storage: resolved.storage, type };
 
-		// if multi-root or empty workspace, or source folder `uri` does not point to
-		// the root folder of a single-root workspace, return the default label and description
-		if (isMultirootWorkspace || !firstFolder || !extUri.isEqual(firstFolder.uri, uri)) {
-			return {
-				type: 'item',
-				label: labelService.getUriLabel(uri, { relative: true }),
-				detail,
-				tooltip: labelService.getUriLabel(uri),
-				folder,
-			};
-		}
-
-		// if source folder points to the root of this single-root workspace,
-		// use appropriate label and description strings to prevent confusion
 		return {
-			type: 'item',
-			label: localize(
-				'commands.prompts.create.source-folder.current-workspace',
-				"Current Workspace",
-			),
+			type: 'item' as const,
+			label,
+			description: sourceDescription,
 			detail,
 			tooltip: labelService.getUriLabel(uri),
+			picked: isDefault,
 			folder,
 		};
 	});
@@ -103,6 +108,31 @@ export async function askForPromptSourceFolder(
 	}
 
 	return answer.folder;
+}
+
+/**
+ * Returns a human-readable description for a prompt file source.
+ */
+export function getSourceDescription(source: PromptFileSource): string | undefined {
+	switch (source) {
+		case PromptFileSource.AgentsWorkspace:
+			return localize('source.agentsWorkspace', "Applies to workspace and is discovered by all agents");
+		case PromptFileSource.AgentsPersonal:
+			return localize('source.agentsPersonal', "Applies globally and is discovered by all agents");
+		case PromptFileSource.GitHubWorkspace:
+			return localize('source.copilotWorkspace', "Applies to workspace and is discovered by Copilot agents");
+		case PromptFileSource.CopilotPersonal:
+			return localize('source.copilotPersonal', "Applies globally and is discovered by Copilot agents");
+		case PromptFileSource.ClaudeWorkspace:
+		case PromptFileSource.ClaudeWorkspaceLocal:
+			return localize('source.claudeWorkspace', "Applies to workspace and is discovered by Claude agents");
+		case PromptFileSource.ClaudePersonal:
+			return localize('source.claudePersonal', "Applies globally and is discovered by Claude agents");
+		case PromptFileSource.UserData:
+			return localize('source.userData', "Applies globally and roams with Settings Sync");
+		default:
+			return undefined;
+	}
 }
 
 function getPlaceholderStringforNew(type: PromptsType): string {

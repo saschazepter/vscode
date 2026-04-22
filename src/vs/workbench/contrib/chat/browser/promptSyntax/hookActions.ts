@@ -28,6 +28,7 @@ import { formatHookCommandLabel, getEffectiveCommandFieldKey } from '../../commo
 import { getCopilotCliHookTypeName, resolveCopilotCliHookType } from '../../common/promptSyntax/hookCopilotCliCompat.js';
 import { getHookSourceFormat, HookSourceFormat, buildNewHookEntry } from '../../common/promptSyntax/hookCompatibility.js';
 import { getClaudeHookTypeName, resolveClaudeHookType } from '../../common/promptSyntax/hookClaudeCompat.js';
+import { getSourceDescription } from './pickers/askForPromptSourceFolder.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
@@ -647,21 +648,22 @@ export async function showConfigureHooksQuickPick(
 				}
 
 				case Step.SelectFolder: {
-					// Get source folders for hooks
-					const allFolders = await promptsService.getSourceFolders(PromptsType.hook);
-					const localFolders = allFolders.filter(f => f.storage === PromptsStorage.local);
+					// Get resolved source folders with metadata for hooks
+					const resolvedFolders = await promptsService.getResolvedSourceFolders(PromptsType.hook);
+					const localResolvedFolders = resolvedFolders.filter(f => f.storage === PromptsStorage.local);
 
-					if (localFolders.length === 0) {
+					if (localResolvedFolders.length === 0) {
 						notificationService.error(localize('commands.hook.noLocalFolders', "Please open a workspace folder to configure hooks."));
 						return;
 					}
 
 					// Auto-select if only one folder, otherwise show picker
-					selectedFolder = localFolders[0];
-					if (localFolders.length > 1) {
-						const folderItems = localFolders.map(folder => ({
-							label: labelService.getUriLabel(folder.uri, { relative: true }),
-							folder
+					selectedFolder = { uri: localResolvedFolders[0].uri };
+					if (localResolvedFolders.length > 1) {
+						const folderItems = localResolvedFolders.map(resolved => ({
+							label: resolved.displayPath ?? labelService.getUriLabel(resolved.uri, { relative: true }),
+							description: getSourceDescription(resolved.source),
+							folder: { uri: resolved.uri }
 						}));
 
 						picker.items = folderItems;
