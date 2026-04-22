@@ -73,7 +73,7 @@ function isResponsesCompactionContextManagementEnabled(endpoint: IChatEndpoint, 
 		&& !modelsWithoutResponsesContextManagement.has(endpoint.family);
 }
 
-export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.ChatRequest) => {
+export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.ChatRequest, model?: IChatEndpoint) => {
 	const toolsService = accessor.get<IToolsService>(IToolsService);
 	const testService = accessor.get<ITestProvider>(ITestProvider);
 	const tasksService = accessor.get<ITasksService>(ITasksService);
@@ -81,7 +81,7 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 	const experimentationService = accessor.get<IExperimentationService>(IExperimentationService);
 	const endpointProvider = accessor.get<IEndpointProvider>(IEndpointProvider);
 	const editToolLearningService = accessor.get<IEditToolLearningService>(IEditToolLearningService);
-	const model = await endpointProvider.getChatEndpoint(request);
+	model ??= await endpointProvider.getChatEndpoint(request);
 
 	const allowTools: Record<string, boolean> = {};
 
