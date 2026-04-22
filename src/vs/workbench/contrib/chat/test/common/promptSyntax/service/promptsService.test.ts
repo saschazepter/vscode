@@ -3310,7 +3310,7 @@ suite('PromptsService', () => {
 				},
 			]);
 
-			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension, undefined, undefined);
 
 			const result = await service.findAgentSkills(CancellationToken.None);
 			assert.ok(result, 'Should return results');
@@ -3345,7 +3345,7 @@ suite('PromptsService', () => {
 				},
 			]);
 
-			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension, undefined, undefined);
 
 			const result = await service.findAgentSkills(CancellationToken.None);
 			assert.ok(result, 'Should return results');
@@ -3381,7 +3381,7 @@ suite('PromptsService', () => {
 				},
 			]);
 
-			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension);
+			const registered = service.registerContributedFile(PromptsType.skill, contributedSkillUri, extension, undefined, undefined);
 
 			const result = await service.findAgentSkills(CancellationToken.None);
 			assert.ok(result, 'Should return results');
