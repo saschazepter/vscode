@@ -167,9 +167,9 @@ export class ChatStatusDashboard extends DomWidget {
 		const hasQuotas = !!(chat || premiumChat);
 		const isAnonymousWithSentiment = this.chatEntitlementService.anonymous && this.chatEntitlementService.sentiment.completed;
 		const hasUsageSection = hasQuotas || isAnonymousWithSentiment;
-		const hasVisibleUsageContent = !!(chat && !chat.unlimited && chat.percentRemaining > 0) ||
-			!!(premiumChat && !premiumChat.unlimited && premiumChat.percentRemaining > 0) ||
-			!!(completions && !completions.unlimited && completions.percentRemaining > 0) ||
+		const hasVisibleUsageContent = chat?.unlimited === false ||
+			premiumChat?.unlimited === false ||
+			completions?.unlimited === false ||
 			isAnonymousWithSentiment;
 		const contributedEntries = [...this.chatStatusItemService.getEntries()];
 		const hasInlineSuggestionsSection =
@@ -201,7 +201,7 @@ export class ChatStatusDashboard extends DomWidget {
 			const initialOverageEnabled = this.chatEntitlementService.quotas.overageEnabled ?? false;
 
 			if (canConfigureOverage) {
-				headerOverageButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate }));
+				headerOverageButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
 				headerOverageButton.element.classList.add('header-cta-button');
 				headerOverageButton.label = initialOverageEnabled ? localize('manageBudget', "Manage Budget") : localize('configureBudget', "Configure Budget");
 				this._store.add(headerOverageButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageOverageUrl)))));
@@ -211,7 +211,7 @@ export class ChatStatusDashboard extends DomWidget {
 			}
 
 			if (showUpgrade) {
-				const upgradeButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
+				const upgradeButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate }));
 				upgradeButton.element.classList.add('header-cta-button');
 				upgradeButton.label = localize('upgrade', "Upgrade");
 				this._store.add(upgradeButton.onDidClick(() => this.runCommandAndClose('workbench.action.chat.upgradePlan')));
@@ -227,6 +227,16 @@ export class ChatStatusDashboard extends DomWidget {
 		// Usage section — always shown inline
 		if (hasVisibleUsageContent) {
 			this.renderUsageContent(this.element, token, headerOverageButton, updatePromise);
+		}
+
+		// Premium chat included indicator (shown when premium chat is unlimited)
+		if (premiumChat?.unlimited) {
+			const includedTitle = premiumChat.tokenBasedBilling
+				? localize('includedTitleTBB', "Monthly Limit")
+				: localize('includedTitle', "Premium Requests");
+			const includedContainer = this.element.appendChild($('div.quota-indicator.included'));
+			includedContainer.appendChild($('div.quota-title', undefined, includedTitle));
+			includedContainer.appendChild($('div.description', undefined, localize('premiumIncluded', "Included with your organization's plan.")));
 		}
 
 		// Quick Settings — collapsible region
@@ -353,12 +363,12 @@ export class ChatStatusDashboard extends DomWidget {
 			}
 
 			let chatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (chatQuota && !chatQuota.unlimited && chatQuota.percentRemaining > 0) {
+			if (chatQuota && !chatQuota.unlimited) {
 				chatQuotaIndicator = this.createQuotaIndicator(container, this._store, chatQuota, localize('chatsLabel', "Chat messages"), resetLabel);
 			}
 
 			let premiumChatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.percentRemaining > 0) {
+			if (premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.percentRemaining >= 0) {
 				const premiumChatLabel = premiumChatQuota.tokenBasedBilling
 					? localize('monthlyLimitLabel', "Monthly Limit")
 					: this.chatEntitlementService.quotas.overageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
@@ -367,7 +377,7 @@ export class ChatStatusDashboard extends DomWidget {
 			}
 
 			let completionsQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
-			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.percentRemaining > 0) {
+			if (completionsQuota && !completionsQuota.unlimited && completionsQuota.percentRemaining >= 0) {
 				completionsQuotaIndicator = this.createQuotaIndicator(container, this._store, completionsQuota, localize('completionsLabel', "Inline Suggestions"), resetLabel);
 			}
 
@@ -586,8 +596,6 @@ export class ChatStatusDashboard extends DomWidget {
 		));
 
 		const update = (quota: IQuotaSnapshot | string) => {
-			quotaIndicator.classList.remove('error');
-			quotaIndicator.classList.remove('warning');
 			quotaIndicator.classList.remove('dimmed');
 
 			let usedPercentage: number;
@@ -608,11 +616,7 @@ export class ChatStatusDashboard extends DomWidget {
 			quotaBit.style.width = `${usedPercentage}%`;
 
 			if (usedPercentage >= 100) {
-				// Keep the bar highlighted in the error color while dimming the number.
-				quotaIndicator.classList.add('error');
 				quotaIndicator.classList.add('dimmed');
-			} else if (usedPercentage >= 75) {
-				quotaIndicator.classList.add('warning');
 			}
 		};
 

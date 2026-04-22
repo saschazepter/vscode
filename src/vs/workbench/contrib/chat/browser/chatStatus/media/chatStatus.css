@@ -6,7 +6,7 @@
 /* Overall */
 
 .chat-status-bar-entry-tooltip {
-	padding: 16px;
+	padding: 14px;
 	min-width: 380px;
 	max-width: 440px;
 }
@@ -23,7 +23,7 @@
 	align-items: center;
 	gap: 6px;
 	width: 100%;
-	padding: 10px 0 0 0;
+	padding: 10px 0 8px 0;
 	border: none;
 	border-top: 1px solid var(--vscode-editorWidget-border);
 	background: none;
@@ -163,14 +163,18 @@
 /* Quota Indicator */
 
 .chat-status-bar-entry-tooltip .quota-indicator {
-	margin-bottom: 24px;
+	margin-bottom: 20px;
 	padding: 0;
 	border: none;
 	border-radius: 0;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator:last-of-type {
-	margin-bottom: 16px;
+	margin-bottom: 12px;
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.included {
+	margin-bottom: 4px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-title {
@@ -230,34 +234,14 @@
 	border-radius: 4px;
 }
 
-.chat-status-bar-entry-tooltip .quota-indicator.warning .quota-bar {
-	background-color: var(--vscode-editorWidget-border);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.warning .quota-bar .quota-bit {
-	background-color: var(--vscode-editorWarning-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.warning .quota-percentage .quota-value {
-	color: var(--vscode-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.error .quota-bar {
-	background-color: var(--vscode-editorWidget-border);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.error .quota-bar .quota-bit {
-	background-color: var(--vscode-editorError-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator.error .quota-percentage .quota-value {
-	color: var(--vscode-foreground);
-}
-
-/* Dimmed state when quota limit is fully exhausted - only dims the number, the bar stays highlighted */
+/* Dimmed state when quota limit is fully exhausted */
 
 .chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-percentage .quota-value {
 	color: var(--vscode-disabledForeground);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator.dimmed .quota-bar .quota-bit {
+	opacity: 0.5;
 }
 
 /* Quota Callout */
