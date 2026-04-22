@@ -2523,7 +2523,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							this.permissionWidget?.refresh();
 						},
 					};
-					return this.permissionWidget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, secondaryPickerOptions);
+					const widget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, secondaryPickerOptions);
+					this.permissionWidget = widget;
+					widget.onDidDispose(() => {
+						if (this.permissionWidget === widget) {
+							this.permissionWidget = undefined;
+						}
+					});
+					return widget;
 				} else if (action.id === ChatSessionPrimaryPickerAction.ID && action instanceof MenuItemAction) {
 					// Create all pickers and return a container action view item
 					const widgets = this.createChatSessionPickerWidgets(action, secondaryPickerOptions);
@@ -2532,14 +2539,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					}
 					// Create a container to hold all picker widgets
 					return this.instantiationService.createInstance(ChatSessionPickersContainerActionItem, action, widgets);
-					const widget = this.instantiationService.createInstance(PermissionPickerActionItem, action, delegate, pickerOptions);
-					this.permissionWidget = widget;
-					widget.onDidDispose(() => {
-						if (this.permissionWidget === widget) {
-							this.permissionWidget = undefined;
-						}
-					});
-					return widget;
 				}
 				return undefined;
 			}
