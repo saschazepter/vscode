@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -14,12 +13,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { resolvePromptSlashCommand } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
-import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
-import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
-import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
-import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
-import { ILanguageModelToolsService } from '../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
+import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ActiveSessionContextKeys, IsolationMode } from '../../changes/common/changes.js';
@@ -197,29 +191,24 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 
 		async run(accessor: ServicesAccessor): Promise<void> {
 			const sessionsManagementService = accessor.get(ISessionsManagementService);
-			const chatService = accessor.get(IChatService);
-			const promptsService = accessor.get(IPromptsService);
-			const toolsService = accessor.get(ILanguageModelToolsService);
+			const chatWidgetService = accessor.get(IChatWidgetService);
 
 			const activeSession = sessionsManagementService.activeSession.get();
 			if (!activeSession) {
 				return;
 			}
 
-			const prompt = `/${spec.skill}`;
-			const ref = await chatService.acquireOrLoadSession(activeSession.resource, ChatAgentLocation.Chat, CancellationToken.None, 'AgentHostSkillButton');
-			try {
-				const promptFile = await resolvePromptSlashCommand(prompt, promptsService, toolsService);
-				const attachedContext: IChatRequestVariableEntry[] | undefined = promptFile ? [promptFile] : undefined;
-				const result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: activeSession.sessionType, attachedContext });
-				if (result.kind === 'queued') {
-					await result.deferred;
-				} else if (result.kind === 'sent') {
-					await result.data.responseCompletePromise;
-				}
-			} finally {
-				ref?.dispose();
+			// Dispatch through the chat widget that is currently rendering the
+			// session, rather than calling `IChatService.sendRequest` directly.
+			// The widget owns view-state the model alone doesn't carry — tool
+			// confirmation rendering, instruction collection, working-set
+			// expansion, slash-command parsing, etc. — and bypassing it leaves
+			// those affordances unwired.
+			const widget = chatWidgetService.getWidgetBySessionResource(activeSession.resource);
+			if (!widget) {
+				return;
 			}
+			await widget.acceptInput(`/${spec.skill}`);
 		}
 	});
 }
