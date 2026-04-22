@@ -531,7 +531,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 				const folderRepo = await this.folderRepositoryManager.getFolderRepository(copilotcliSessionId, undefined, token);
 				const [history, title, optionGroups] = await Promise.all([
 					this.getSessionHistory(copilotcliSessionId, folderRepo, token),
-					this.customSessionTitleService.getCustomSessionTitle(copilotcliSessionId),
+					this.sessionService.getSessionTitle(copilotcliSessionId, token),
 					this._optionGroupBuilder.buildExistingSessionInputStateGroups(resource, token),
 				]);
 

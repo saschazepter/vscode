@@ -89,6 +89,7 @@ export interface ICopilotCLISessionService {
 
 	// Session metadata querying
 	getSessionItem(sessionId: string, token: CancellationToken): Promise<ICopilotCLISessionItem | undefined>;
+	getSessionTitle(sessionId: string, token: CancellationToken): Promise<string>;
 	getAllSessions(token: CancellationToken): Promise<readonly ICopilotCLISessionItem[]>;
 
 	// SDK session management
