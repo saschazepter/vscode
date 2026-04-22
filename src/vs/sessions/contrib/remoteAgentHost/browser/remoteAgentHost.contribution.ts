@@ -526,7 +526,12 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 							continue;
 						}
 						this._logService.info(`[RemoteAgentHost] Authenticating for resource: ${resource.resource}`);
-						await loggedConnection.authenticate({ resource: resource.resource, token });
+						try {
+							await loggedConnection.authenticate({ resource: resource.resource, token });
+						} catch (rpcErr) {
+							authTokenCache?.clear(resource.resource);
+							throw rpcErr;
+						}
 					} else {
 						this._logService.info(`[RemoteAgentHost] No token resolved for resource: ${resource.resource}`);
 					}
@@ -561,11 +566,11 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 					const resourceUri = URI.parse(resource.resource);
 					const token = await this._resolveTokenForResource(resourceUri, resource.authorization_servers ?? [], resource.scopes_supported ?? []);
 					if (token) {
-						authTokenCache?.updateAndIsChanged(resource.resource, token);
 						await loggedConnection.authenticate({
 							resource: resource.resource,
 							token,
 						});
+						authTokenCache?.updateAndIsChanged(resource.resource, token);
 					} else {
 						const providerId = await this._authenticationService.getOrActivateProviderIdForServer(serverUri, resourceUri);
 						if (!providerId) {
@@ -578,11 +583,11 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 							authorizationServer: serverUri,
 						});
 
-						authTokenCache?.updateAndIsChanged(resource.resource, session.accessToken);
 						await loggedConnection.authenticate({
 							resource: resource.resource,
 							token: session.accessToken,
 						});
+						authTokenCache?.updateAndIsChanged(resource.resource, session.accessToken);
 					}
 
 					this._logService.info(`[RemoteAgentHost] Interactive authentication succeeded for ${resource.resource}`);

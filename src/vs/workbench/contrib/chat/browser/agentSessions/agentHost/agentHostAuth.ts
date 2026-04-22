@@ -33,8 +33,17 @@ export class AgentHostAuthTokenCache {
 		return true;
 	}
 
-	clear(): void {
-		this._lastTokens.clear();
+	/**
+	 * Clear the cached token for a specific resource, or all resources if
+	 * no argument is given. Call after a failed `authenticate` RPC (per-resource)
+	 * or when the agent host process restarts (all resources).
+	 */
+	clear(resource?: string): void {
+		if (resource !== undefined) {
+			this._lastTokens.delete(resource);
+		} else {
+			this._lastTokens.clear();
+		}
 	}
 }
 

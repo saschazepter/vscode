@@ -97,6 +97,12 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			this._handleRootStateChange(rootState);
 		}));
 
+		// Clear the auth cache whenever the local agent host (re)starts so the
+		// first post-restart authenticate RPC is never skipped as "unchanged".
+		this._register(this._agentHostService.onAgentHostStart(() => {
+			this._authTokenCache.clear();
+		}));
+
 		// Process initial root state if already available
 		const initialRootState = this._agentHostService.rootState.value;
 		if (initialRootState && !(initialRootState instanceof Error)) {
@@ -281,7 +287,13 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 							continue;
 						}
 						this._logService.info(`[AgentHost] Authenticating for resource: ${resource.resource}`);
-						await this._loggedConnection!.authenticate({ resource: resource.resource, token });
+						try {
+							await this._loggedConnection!.authenticate({ resource: resource.resource, token });
+						} catch (rpcErr) {
+							// Clear the cached token so the next auth pass will retry.
+							this._authTokenCache.clear(resource.resource);
+							throw rpcErr;
+						}
 					} else {
 						this._logService.info(`[AgentHost] No token resolved for resource: ${resource.resource}`);
 					}
@@ -315,11 +327,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 				const resourceUri = URI.parse(resource.resource);
 				const resolved = await resolveTokenForResource(resourceUri, resource.authorization_servers || [], resource.scopes_supported || [], this._authenticationService, this._logService, '[AgentHost]');
 				if (resolved) {
-					this._authTokenCache.updateAndIsChanged(resource.resource, resolved);
 					await this._loggedConnection!.authenticate({
 						resource: resource.resource,
 						token: resolved,
 					});
+					this._authTokenCache.updateAndIsChanged(resource.resource, resolved);
 					return true;
 				}
 
