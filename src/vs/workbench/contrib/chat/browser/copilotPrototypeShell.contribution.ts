@@ -1001,7 +1001,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 				return {
 					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
 					description: localize('inlineSessionReachedDescProNoO', "Resets at 10:00 AM. Set up an overage budget to continue."),
-					buttonLabel: localize('configureBudget', "Configure Budget"),
+					buttonLabel: localize('configureBudget', "Manage Budget"),
 				};
 			}
 			return {
@@ -1030,7 +1030,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 				return {
 					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
 					description: localize('inlineWeeklyReachedDescProNoO', "Resets April 6 at 10:00 AM. Set up an overage budget to continue."),
-					buttonLabel: localize('configureBudget', "Configure Budget"),
+					buttonLabel: localize('configureBudget', "Manage Budget"),
 				};
 			}
 			return {
@@ -1413,7 +1413,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			steps.push({
 				title: localize('ftBudgetTitle', "Overage budget"),
 				description: localize('ftBudgetDescNoO', "Configure a monthly budget to keep using Copilot when your included limits are reached. You only pay for what you use."),
-				cta: localize('ftConfigureBudget', "Configure Budget"),
+				cta: localize('ftConfigureBudget', "Manage Budget"),
 			});
 		} else if (!isMax) {
 			// Pro/Pro+ with overage — overage already shown inline, just explain the dashboard
@@ -1576,7 +1576,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardApproachWarningPro', "Copilot will pause at the limit. Upgrade or configure budget to continue. ")));
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardApproachWarningPro', "Copilot will pause at the limit. Upgrade or manage budget to continue. ")));
 			} else {
 				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardApproachWarning', "Copilot will pause when the limit is reached. ")));
 			}
@@ -1589,7 +1589,7 @@ export class CopilotPrototypeShellCoinStatusBarContribution extends Disposable i
 			warningIcon.append(...renderLabelWithIcons('$(error)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardReachedWarningPro', "Copilot is paused until the limit resets. Upgrade or configure budget to continue. ")));
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardReachedWarningPro', "Copilot is paused until the limit resets. Upgrade or manage budget to continue. ")));
 			} else {
 				warningBody.appendChild(mainWindow.document.createTextNode(localize('cardReachedWarning', "Copilot is paused until the limit resets. ")));
 			}
@@ -2863,17 +2863,17 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 
 	static readonly INDIVIDUAL_SKUS = ['Edu/Free', 'Pro/Pro+ No O', 'Pro/Pro+', 'Max'];
 	static readonly ENTERPRISE_SKUS = ['Ent/Bus ULB', 'Ent/Bus'];
-	static readonly STATES = ['Default', 'Monthly Approached', 'Monthly Exhausted', 'Monthly Reset', 'Overage Approached', 'Overage Exhausted', 'Overage Reset'];
+	static readonly STATES = ['Default', 'Monthly Approached', 'Monthly Exhausted', 'Monthly Reset', 'Overage Exhausted', 'Overage Reset'];
 	static readonly EXCLUDED_CELLS: ReadonlySet<string> = new Set([
 		// Edu/Free has no overage budget at all
-		'Edu/Free|Overage Approached', 'Edu/Free|Overage Exhausted', 'Edu/Free|Overage Reset',
+		'Edu/Free|Overage Exhausted', 'Edu/Free|Overage Reset',
 		// Pro/Pro+ No O has no overage budget configured
-		'Pro/Pro+ No O|Overage Approached', 'Pro/Pro+ No O|Overage Exhausted', 'Pro/Pro+ No O|Overage Reset',
+		'Pro/Pro+ No O|Overage Exhausted', 'Pro/Pro+ No O|Overage Reset',
 		// Regular Ent/Bus is unlimited — no monthly limit or overage states
 		'Ent/Bus|Monthly Approached', 'Ent/Bus|Monthly Exhausted', 'Ent/Bus|Monthly Reset',
-		'Ent/Bus|Overage Approached', 'Ent/Bus|Overage Exhausted', 'Ent/Bus|Overage Reset',
+		'Ent/Bus|Overage Exhausted', 'Ent/Bus|Overage Reset',
 		// Ent/Bus ULB has admin-managed overage — no per-user overage states
-		'Ent/Bus ULB|Overage Approached', 'Ent/Bus ULB|Overage Exhausted', 'Ent/Bus ULB|Overage Reset',
+		'Ent/Bus ULB|Overage Exhausted', 'Ent/Bus ULB|Overage Reset',
 	]);
 
 	constructor(
@@ -2974,11 +2974,11 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 							? localize('tbb3BannerHasOverageApproachShort', "Your overage budget is ready to keep things flowing.")
 							: isFree
 								? localize('tbb3BannerFreeApproachShort', "You're getting the most out of Copilot. Upgrade to keep going.")
-								: localize('tbb3BannerPaidApproachShort', "Configure overage to keep building without interruption."),
+								: localize('tbb3BannerPaidApproachShort', "Manage your budget to keep building without interruption."),
 					actions: isEntULB
 						? []
 						: isFree
-							? [viewBudgetAction, upgradeAction]
+							? [viewUsageAction, upgradeAction]
 							: [viewUsageAction, manageBudgetAction],
 				});
 				break;
@@ -3003,27 +3003,17 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 						description: isEntULB
 							? localize('tbb3BannerEntExhaustedShort', "Request more usage from your admin to pick up where you left off.")
 							: isFree
-								? localize('tbb3BannerFreeExhaustedShort', "You made the most of Copilot Free. Upgrade to keep going.")
+								? localize('tbb3BannerFreeExhaustedShort', "You've made the most of Copilot Free. Upgrade to keep going.")
 								: isProNoO
-									? localize('tbb3BannerProNoOExhaustedShort', "Configure overage to pick up right where you left off.")
+									? localize('tbb3BannerProNoOExhaustedShort', "Manage your budget to pick up right where you left off.")
 									: localize('tbb3BannerPaidExhaustedShort', "Copilot will be back when limits reset."),
 						actions: isEntULB
 							? []
 							: isFree
-								? [viewBudgetAction, upgradeAction]
+								? [viewUsageAction, upgradeAction]
 								: [viewUsageAction, manageBudgetAction],
 					});
 				}
-				break;
-			case 'Overage Approached':
-				// Pro/Pro+ + Max: still using overage budget.
-				tbb1.showCustomGaugeBanner({
-					title: localize('tbb3OverageApproachingPct', "Overage Limit at {0}%", 75),
-					percent: 75,
-					severity: 'celebrate',
-					description: localize('tbb3BannerOverageApproachDesc', "Your overage budget is keeping Copilot going strong."),
-					actions: [viewUsageAction, manageBudgetAction],
-				});
 				break;
 			case 'Overage Exhausted':
 				tbb1.showCustomGaugeBanner({
@@ -3108,7 +3098,6 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 		const monthlyApproached = state === 'Monthly Approached';
 		const monthlyExhausted = state === 'Monthly Exhausted';
 		const monthlyReset = state === 'Monthly Reset';
-		const overageApproached = state === 'Overage Approached';
 		const overageExhausted = state === 'Overage Exhausted';
 		const overageReset = state === 'Overage Reset';
 
@@ -3127,7 +3116,7 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 					? localize('tbb3HasOverageApproachCelebrate', "You're approaching your monthly limit for Copilot. Your overage budget will keep things flowing once you hit it.")
 					: isFree
 						? localize('tbb3FreeApproachCelebrate', "You're approaching your monthly limit for Copilot Free. Upgrade to keep the momentum going.")
-						: localize('tbb3PaidApproachCelebrate', "You're getting close to your monthly limit for Copilot. Configure an overage budget to keep going."));
+						: localize('tbb3PaidApproachCelebrate', "You're getting close to your monthly limit for Copilot. Manage your budget to keep going."));
 			} else if (monthlyExhausted && hasOverage) {
 				// Pro/Pro+ + Max: monthly limit reached, overage now in use
 				this.createCelebrateMsg(usageContent, localize('tbb3MonthlyReachedCelebrate', "You've reached your monthly limit. Your overage budget is keeping Copilot going until limits reset."));
@@ -3136,11 +3125,9 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 					this.createCelebrateMsg(usageContent, localize('tbb3FreeExhaustedCelebrate', "You've reached your monthly limit for Copilot Free. Upgrade to keep going."));
 				} else {
 					this.createCelebrateMsg(usageContent, isProNoO
-						? localize('tbb3ProNoOExhaustedWarn', "You've reached your monthly limit. Configure an overage budget to keep going.")
+						? localize('tbb3ProNoOExhaustedWarn', "You've reached your monthly limit. Manage your budget to keep going.")
 						: localize('tbb3PaidExhaustedWarn2', "Copilot is paused until the monthly limit resets."));
 				}
-			} else if (overageApproached) {
-				this.createCelebrateMsg(usageContent, localize('tbb3OverageApproachCelebrate', "You're approaching your overage limit. Your overage budget is in use until limits reset."));
 			} else if (overageExhausted) {
 				this.createCelebrateMsg(usageContent, localize('tbb3OverageReachedWarn', "You've reached your overage limit for this month. Increase your overage budget to keep going."));
 			} else if (monthlyReset || overageReset) {
@@ -3166,10 +3153,10 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 				? localize('tbb3CardMonthlyLimit', "Monthly Limit")
 				: localize('tbb3CardMonthly', "Monthly Budget");
 			const monthlyPct = monthlyApproached ? 75
-				: (monthlyExhausted || overageApproached || overageExhausted) ? 100
+				: (monthlyExhausted || overageExhausted) ? 100
 					: (monthlyReset || overageReset) ? 0
 						: 42;
-			const monthlySev = (monthlyApproached || monthlyExhausted || overageApproached || overageExhausted) ? 'celebrate' as const : undefined;
+			const monthlySev = (monthlyApproached || monthlyExhausted || overageExhausted) ? 'celebrate' as const : undefined;
 			const monthlyDisabled = false;
 			this.createCard(cards, {
 				name: monthlyName,
@@ -3201,19 +3188,19 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 				upgradeBtn.label = localize('upgrade', "Upgrade");
 				disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
 			} else if (isProNoO) {
-				// Pro/Pro+ No O — when monthly is exhausted, only Upgrade + Configure Overage are available.
+				// Pro/Pro+ No O — Manage Budget is the primary CTA so the user can set up an overage budget.
 				if (monthlyExhausted) {
 					const upgradeBtn = disposables.add(new Button(headerCtas, { ...defaultButtonStyles, secondary: true }));
 					upgradeBtn.label = localize('upgrade', "Upgrade");
 					disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
-					// Primary action: configure an overage budget to unblock Copilot.
 					const configBtn = disposables.add(new Button(headerCtas, { ...defaultButtonStyles }));
-					configBtn.label = localize('tbb3ConfigureOverage', "Configure Budget");
+					configBtn.label = localize('tbb3ConfigureOverage', "Manage Budget");
 					disposables.add(configBtn.onDidClick(() => this.advanceState()));
 				} else {
-					const upgradeBtn = disposables.add(new Button(headerCtas, { ...defaultButtonStyles, secondary: true }));
-					upgradeBtn.label = localize('upgrade', "Upgrade");
-					disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
+					// Approaching/other non-exhausted states — secondary CTA.
+					const manageBtn = disposables.add(new Button(headerCtas, { ...defaultButtonStyles, secondary: true }));
+					manageBtn.label = localize('tbb3ConfigureOverage', "Manage Budget");
+					disposables.add(manageBtn.onDidClick(() => this.advanceState()));
 				}
 			} else {
 				// Pro/Pro+ and Max — "Manage Overage Budget" becomes primary when overage is exhausted.
