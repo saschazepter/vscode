@@ -460,7 +460,7 @@ import './contrib/sessions/browser/sessions.contribution.js';
 import './contrib/sessions/browser/views/sessionsListModelService.js';
 import './contrib/remoteAgentHost/browser/agentHostFilterService.js';
 import './contrib/sessions/browser/customizationsToolbar.contribution.js';
-import './contrib/changes/browser/changesView.contribution.js';
+import './contrib/changes/browser/changes.contribution.js';
 import './contrib/layout/browser/layout.contribution.js';
 import './contrib/codeReview/browser/codeReview.contributions.js';
 import './contrib/files/browser/files.contribution.js';
