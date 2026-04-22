@@ -650,21 +650,24 @@ export async function showConfigureHooksQuickPick(
 					// Get source folders for hooks (uses getSourceFolders which
 					// excludes Claude paths and normalizes to directories)
 					const allFolders = await promptsService.getSourceFolders(PromptsType.hook);
-					const localFolders = allFolders.filter(f => f.storage === PromptsStorage.local);
 
-					if (localFolders.length === 0) {
+					if (allFolders.length === 0) {
 						notificationService.error(localize('commands.hook.noLocalFolders', "Please open a workspace folder to configure hooks."));
 						return;
 					}
 
 					// Auto-select if only one folder, otherwise show picker
-					selectedFolder = localFolders[0];
-					if (localFolders.length > 1) {
-						const folderItems = localFolders.map(folder => ({
-							label: labelService.getUriLabel(folder.uri, { relative: true }),
-							description: folder.source ? getSourceDescription(folder.source) : undefined,
-							folder
-						}));
+					selectedFolder = allFolders[0];
+					if (allFolders.length > 1) {
+						const folderItems = allFolders.map((folder, index) => {
+							const basePath = labelService.getUriLabel(folder.uri, { relative: true });
+							const label = index === 0 ? localize('commands.hook.defaultFolder', "{0} (default)", basePath) : basePath;
+							return {
+								label,
+								description: folder.source ? getSourceDescription(folder.source) : undefined,
+								folder
+							};
+						});
 
 						picker.items = folderItems;
 						picker.value = '';
