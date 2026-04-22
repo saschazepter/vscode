@@ -6,15 +6,15 @@
 import { mock } from '../../../../../base/test/common/mock.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { ComponentFixtureContext, createEditorServices, defineComponentFixture, defineThemedFixtureGroup } from '../../../../../workbench/test/browser/componentFixtures/fixtureUtils.js';
-import { ISessionsBlockedOverlayOptions, SessionsBlockedReason, SessionsPolicyBlockedOverlay } from '../../browser/sessionsPolicyBlocked.js';
+import { SessionsPolicyBlockedOverlay } from '../../browser/sessionsPolicyBlocked.js';
 
-function createOverlay(ctx: ComponentFixtureContext, options: ISessionsBlockedOverlayOptions): void {
-	ctx.container.style.width = '600px';
-	ctx.container.style.height = '400px';
-	ctx.container.style.position = 'relative';
+function renderPolicyBlocked({ container, disposableStore, theme }: ComponentFixtureContext): void {
+	container.style.width = '600px';
+	container.style.height = '400px';
+	container.style.position = 'relative';
 
-	const instantiationService = createEditorServices(ctx.disposableStore, {
-		colorTheme: ctx.theme,
+	const instantiationService = createEditorServices(disposableStore, {
+		colorTheme: theme,
 		additionalServices: (reg) => {
 			reg.defineInstance(IProductService, new class extends mock<IProductService>() {
 				override readonly quality = 'insider';
@@ -23,26 +23,12 @@ function createOverlay(ctx: ComponentFixtureContext, options: ISessionsBlockedOv
 		},
 	});
 
-	ctx.disposableStore.add(instantiationService.createInstance(SessionsPolicyBlockedOverlay, ctx.container, options));
+	disposableStore.add(instantiationService.createInstance(SessionsPolicyBlockedOverlay, container));
 }
 
 export default defineThemedFixtureGroup({ path: 'sessions/' }, {
 	PolicyBlocked: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		render: (ctx) => createOverlay(ctx, { reason: SessionsBlockedReason.AgentDisabled }),
-	}),
-	AccountPolicyGate: defineComponentFixture({
-		labels: { kind: 'screenshot' },
-		render: (ctx) => createOverlay(ctx, {
-			reason: SessionsBlockedReason.AccountPolicyGate,
-			accountName: 'octocat',
-			approvedOrganizations: ['github', 'microsoft'],
-		}),
-	}),
-	AccountPolicyGateNoAccount: defineComponentFixture({
-		labels: { kind: 'screenshot' },
-		render: (ctx) => createOverlay(ctx, {
-			reason: SessionsBlockedReason.AccountPolicyGate,
-		}),
+		render: renderPolicyBlocked,
 	}),
 });

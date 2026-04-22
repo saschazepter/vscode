@@ -196,10 +196,8 @@ registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, Instantia
 // Default Account
 import '../workbench/services/accounts/browser/defaultAccount.js';
 
-// Account Policy Gate — handled by sessions' own policyBlocked overlay
-// (see src/vs/sessions/contrib/policyBlocked/). The workbench-layer
-// accountPolicyGate.contribution is NOT imported here to avoid a
-// duplicate notification toast behind the full-screen overlay.
+// Account Policy Gate (notification + context key + telemetry)
+import '../workbench/services/policies/browser/accountPolicyGate.contribution.js';
 
 // Telemetry
 import '../workbench/contrib/telemetry/browser/telemetry.contribution.js';
