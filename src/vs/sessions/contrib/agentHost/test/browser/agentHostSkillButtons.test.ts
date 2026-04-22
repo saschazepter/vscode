@@ -179,10 +179,9 @@ suite('agentHostSkillButtons - menu registration', () => {
 		return menuItems;
 	}
 
-	test('registers five skill button menu items on the apply submenu', () => {
+	test('registers four skill button menu items on the apply submenu', () => {
 		const ids = skillButtonItems().map(item => item.command.id).sort();
 		assert.deepStrictEqual(ids, [
-			'workbench.action.agentSessions.runSkill.commit',
 			'workbench.action.agentSessions.runSkill.createDraftPR',
 			'workbench.action.agentSessions.runSkill.createPR',
 			'workbench.action.agentSessions.runSkill.merge',
@@ -218,7 +217,7 @@ suite('agentHostSkillButtons - menu registration', () => {
 	});
 
 	test('isAgentHostSkillButtonId only matches our prefix', () => {
-		assert.strictEqual(isAgentHostSkillButtonId('workbench.action.agentSessions.runSkill.commit'), true);
+		assert.strictEqual(isAgentHostSkillButtonId('workbench.action.agentSessions.runSkill.merge'), true);
 		assert.strictEqual(isAgentHostSkillButtonId('github.copilot.sessions.commit'), false);
 		assert.strictEqual(isAgentHostSkillButtonId(''), false);
 	});

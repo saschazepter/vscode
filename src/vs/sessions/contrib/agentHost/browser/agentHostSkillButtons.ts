@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -13,7 +14,8 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ActiveSessionContextKeys, IsolationMode } from '../../changes/common/changes.js';
@@ -83,15 +85,6 @@ interface IAgentHostSkillButtonSpec {
 const AGENT_HOST_SKILL_BUTTON_ID_PREFIX = 'workbench.action.agentSessions.runSkill.';
 
 const AGENT_HOST_SKILL_BUTTONS: readonly IAgentHostSkillButtonSpec[] = [
-	{
-		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}commit`,
-		title: localize('agentSessions.runSkill.commit', "Commit"),
-		skill: 'commit',
-		icon: Codicon.gitCommit,
-		group: 'commit',
-		order: 1,
-		extraWhen: ActiveSessionContextKeys.HasUncommittedChanges,
-	},
 	{
 		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}merge`,
 		title: localize('agentSessions.runSkill.merge', "Merge Changes"),
@@ -191,24 +184,33 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 
 		async run(accessor: ServicesAccessor): Promise<void> {
 			const sessionsManagementService = accessor.get(ISessionsManagementService);
-			const chatWidgetService = accessor.get(IChatWidgetService);
+			const chatService = accessor.get(IChatService);
 
 			const activeSession = sessionsManagementService.activeSession.get();
 			if (!activeSession) {
 				return;
 			}
 
-			// Dispatch through the chat widget that is currently rendering the
-			// session, rather than calling `IChatService.sendRequest` directly.
-			// The widget owns view-state the model alone doesn't carry — tool
-			// confirmation rendering, instruction collection, working-set
-			// expansion, slash-command parsing, etc. — and bypassing it leaves
-			// those affordances unwired.
-			const widget = chatWidgetService.getWidgetBySessionResource(activeSession.resource);
-			if (!widget) {
-				return;
+			// `activeSession.resource.scheme` matches the chat session
+			// contribution `type` registered for the agent-host (e.g.
+			// `agent-host-copilotcli`), which is the agent id `IChatService`
+			// uses for routing. The `sessionType` field is the *logical*,
+			// user-facing id (e.g. `copilotcli`) that is deliberately shared
+			// between the EH copilotcli extension and the local/remote
+			// agent-host providers, so it is NOT a valid agent id here.
+			const agentId = activeSession.resource.scheme;
+			const prompt = `/${spec.skill}`;
+			const ref = await chatService.acquireOrLoadSession(activeSession.resource, ChatAgentLocation.Chat, CancellationToken.None, 'AgentHostSkillButton');
+			try {
+				const result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId });
+				if (result.kind === 'queued') {
+					await result.deferred;
+				} else if (result.kind === 'sent') {
+					await result.data.responseCompletePromise;
+				}
+			} finally {
+				ref?.dispose();
 			}
-			await widget.acceptInput(`/${spec.skill}`);
 		}
 	});
 }
