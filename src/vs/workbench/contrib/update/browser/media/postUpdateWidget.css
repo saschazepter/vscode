@@ -30,7 +30,8 @@
 /* Banner */
 .post-update-widget .banner {
 	position: relative;
-	min-height: 140px;
+	aspect-ratio: 16 / 5;
+	min-height: 90px;
 	background-position: center;
 	background-size: cover;
 	background-repeat: no-repeat;
