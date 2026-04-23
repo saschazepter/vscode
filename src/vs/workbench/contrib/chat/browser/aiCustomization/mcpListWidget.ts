@@ -962,12 +962,14 @@ export class McpListWidget extends Disposable {
 		if (searchBarHeight === 0 && !this._layoutDeferred) {
 			this._layoutDeferred = true;
 			DOM.getWindow(this.element).requestAnimationFrame(() => {
-				this._layoutDeferred = false;
-				this.layout(this.lastHeight, this.lastWidth);
+				try {
+					this.layout(this.lastHeight, this.lastWidth);
+				} finally {
+					this._layoutDeferred = false;
+				}
 			});
 			return;
 		}
-		this._layoutDeferred = false;
 		const footerHeight = this.sectionHeader.offsetHeight;
 		const listHeight = Math.max(0, height - searchBarHeight - footerHeight);
 
