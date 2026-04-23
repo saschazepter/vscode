@@ -592,6 +592,56 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(keys.enableButtonVisible, true);
 			assert.strictEqual(keys.disableButtonVisible, false);
 		});
+
+		test('mixed: application-scoped disabled, API-scoped enabled', async () => {
+			const ps = createMockPromptsService();
+			const disabled = new ResourceSet();
+			disabled.add(agentUri);
+			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
+
+			const source = createItemSource({
+				harnessId: 'cli',
+				itemProvider: createMockItemProvider([
+					{ uri: agentUri, type: PromptsType.agent, name: 'Extension Agent', enablementScope: 'application' },
+					{ uri: skillUri, type: PromptsType.agent, name: 'CLI Agent', enablementScope: 'global' },
+				]),
+				enablementProvider: createMockEnablementProvider(),
+				promptsService: ps,
+			});
+
+			const result = await source.fetchItems(PromptsType.agent);
+			assert.deepStrictEqual(
+				result.map(i => ({ name: i.name, disabled: i.disabled, enablementScope: i.enablementScope })),
+				[
+					{ name: 'CLI Agent', disabled: false, enablementScope: 'global' },
+					{ name: 'Extension Agent', disabled: true, enablementScope: 'application' },
+				],
+			);
+		});
+
+		test('ghost entry for disabled application-scoped item not in provider results', async () => {
+			const ps = createMockPromptsService();
+			const disabled = new ResourceSet();
+			disabled.add(agentUri);
+			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
+
+			// Provider returns NO items — the disabled extension agent was filtered out
+			const source = createItemSource({
+				harnessId: 'cli',
+				itemProvider: createMockItemProvider([]),
+				enablementProvider: createMockEnablementProvider(),
+				promptsService: ps,
+			});
+
+			const result = await source.fetchItems(PromptsType.agent);
+			assert.strictEqual(result.length, 1, 'ghost entry should be created');
+			assert.strictEqual(result[0].disabled, true);
+			// Ghost entries from vscodeDisabledUris get enablementScope: 'workspace'
+			assert.strictEqual(result[0].enablementScope, 'workspace');
+
+			const keys = computeContextKeys(result[0]);
+			assert.strictEqual(keys.enableButtonVisible, true, 'Enable button should be visible');
+		});
 	});
 
 	suite('provider item with pre-set enabled:false', () => {
