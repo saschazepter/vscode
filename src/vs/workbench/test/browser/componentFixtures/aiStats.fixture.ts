@@ -5,14 +5,14 @@
 
 import { observableValue } from '../../../../base/common/observable.js';
 import { createAiStatsHover, IAiStatsHoverData } from '../../../contrib/editTelemetry/browser/editStats/aiStatsStatusBar.js';
-import { ISessionData } from '../../../contrib/editTelemetry/browser/editStats/aiStatsChart.js';
+import { AiStatsRange, IAiStatsOverview } from '../../../contrib/editTelemetry/browser/editStats/aiStatsFeature.js';
 import { Random } from '../../../../editor/test/common/core/random.js';
 import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from './fixtureUtils.js';
 
 export default defineThemedFixtureGroup({ path: 'chat/' }, {
 	AiStatsHover: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		render: (context) => renderAiStatsHover({ ...context, data: createSampleDataWithSessions() }),
+		render: (context) => renderAiStatsHover({ ...context, data: createSampleData() }),
 	}),
 
 	AiStatsHoverNoData: defineComponentFixture({
@@ -21,61 +21,59 @@ export default defineThemedFixtureGroup({ path: 'chat/' }, {
 	}),
 });
 
-function createSampleDataWithSessions(): IAiStatsHoverData {
+function createSampleData(): IAiStatsHoverData {
 	const random = Random.create(42);
-
-	// Use a fixed base time for determinism (Jan 1, 2025, 12:00:00 UTC)
-	const baseTime = 1735732800000;
-	const dayMs = 24 * 60 * 60 * 1000;
-	const sessionLengthMs = 5 * 60 * 1000;
-
-	// Generate fake session data for the last 7 days
-	const fakeSessions: ISessionData[] = [];
-	for (let day = 6; day >= 0; day--) {
-		const dayStart = baseTime - day * dayMs;
-		const sessionsPerDay = random.nextIntRange(3, 9);
-		for (let s = 0; s < sessionsPerDay; s++) {
-			const sessionTime = dayStart + s * sessionLengthMs * 2;
-			fakeSessions.push({
-				startTime: sessionTime,
-				typedCharacters: random.nextIntRange(100, 600),
-				aiCharacters: random.nextIntRange(200, 1000),
-				acceptedInlineSuggestions: random.nextIntRange(1, 16),
-				chatEditCount: random.nextIntRange(0, 5),
-			});
+	const heatmap: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
+	for (let dow = 0; dow < 7; dow++) {
+		for (let h = 0; h < 24; h++) {
+			// Bias toward 9-17 weekdays
+			const baseline = (dow > 0 && dow < 6 && h >= 9 && h <= 17) ? 5 : 1;
+			heatmap[dow][h] = random.nextIntRange(0, baseline + 1);
 		}
 	}
-
-	const totalAi = fakeSessions.reduce((sum, s) => sum + s.aiCharacters, 0);
-	const totalTyped = fakeSessions.reduce((sum, s) => sum + s.typedCharacters, 0);
-	const aiRate = totalAi / (totalAi + totalTyped);
-
-	// "Today" for the fixture is the baseTime day
-	const startOfToday = baseTime - (baseTime % dayMs);
-	const todaySessions = fakeSessions.filter(s => s.startTime >= startOfToday);
-	const acceptedToday = todaySessions.reduce((sum, s) => sum + (s.acceptedInlineSuggestions ?? 0), 0);
-
+	const overview: IAiStatsOverview = {
+		sessions: 74,
+		messages: 4_222,
+		totalTokens: 93_600,
+		activeDays: 30,
+		currentStreak: 1,
+		longestStreak: 8,
+		peakHour: 13,
+		favoriteModel: 'claude-opus-4-1',
+		heatmap,
+	};
 	return {
-		aiRate: observableValue('aiRate', aiRate),
-		acceptedInlineSuggestionsToday: observableValue('acceptedToday', acceptedToday),
-		sessions: observableValue('sessions', fakeSessions),
+		overview: observableValue('overview', overview),
+		range: observableValue<AiStatsRange>('range', 'all'),
+		triggerRecompute: () => { },
 	};
 }
 
 function createEmptyData(): IAiStatsHoverData {
+	const overview: IAiStatsOverview = {
+		sessions: 0,
+		messages: 0,
+		totalTokens: 0,
+		activeDays: 0,
+		currentStreak: 0,
+		longestStreak: 0,
+		peakHour: undefined,
+		favoriteModel: undefined,
+		heatmap: Array.from({ length: 7 }, () => new Array<number>(24).fill(0)),
+	};
 	return {
-		aiRate: observableValue('aiRate', 0),
-		acceptedInlineSuggestionsToday: observableValue('acceptedToday', 0),
-		sessions: observableValue('sessions', []),
+		overview: observableValue('overview', overview),
+		range: observableValue<AiStatsRange>('range', 'all'),
+		triggerRecompute: () => { },
 	};
 }
 
-interface RenderAiStatsOptions extends ComponentFixtureContext {
+interface RenderOptions extends ComponentFixtureContext {
 	data: IAiStatsHoverData;
 }
 
-function renderAiStatsHover({ container, disposableStore, data }: RenderAiStatsOptions): void {
-	container.style.width = '320px';
+function renderAiStatsHover({ container, disposableStore, data }: RenderOptions): void {
+	container.style.width = '360px';
 	container.style.padding = '8px';
 	container.style.backgroundColor = 'var(--vscode-editorHoverWidget-background)';
 	container.style.border = '1px solid var(--vscode-editorHoverWidget-border)';

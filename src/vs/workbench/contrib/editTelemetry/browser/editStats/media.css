@@ -33,37 +33,110 @@
 		margin-bottom: 5px;
 	}
 
-	/* Chart toggle buttons */
-	.chart-view-toggle {
+	/* Time range pills */
+	.ai-stats-range-pills {
+		display: flex;
+		gap: 4px;
+		margin-bottom: 8px;
+	}
+
+	.ai-stats-range-pill {
+		padding: 2px 8px;
+		border-radius: 10px;
+		font-size: 11px;
+		cursor: pointer;
+		opacity: 0.7;
+		background-color: var(--vscode-toolbar-hoverBackground, transparent);
+		transition: opacity 0.15s, background-color 0.15s;
+	}
+
+	.ai-stats-range-pill:hover {
+		opacity: 1;
+	}
+
+	.ai-stats-range-pill.active {
+		opacity: 1;
+		background-color: var(--vscode-toolbar-activeBackground);
+		color: var(--vscode-foreground);
+	}
+
+	/* Stats grid */
+	.ai-stats-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 6px;
+		margin-bottom: 8px;
+	}
+
+	.ai-stats-cell {
+		display: flex;
+		flex-direction: column;
+		padding: 6px 8px;
+		background-color: var(--vscode-editorWidget-background);
+		border: 1px solid var(--vscode-widget-border, transparent);
+		border-radius: 4px;
+		min-width: 0;
+	}
+
+	.ai-stats-cell-label {
+		font-size: 10px;
+		color: var(--vscode-descriptionForeground);
+		text-transform: none;
+		margin-bottom: 2px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.ai-stats-cell-value {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--vscode-foreground);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* Heatmap */
+	.ai-stats-heatmap {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin: 4px 0 6px 0;
+	}
+
+	.ai-stats-heatmap-row {
 		display: flex;
 		gap: 2px;
 	}
 
-	.chart-toggle-button {
-		padding: 2px 6px;
-		border-radius: 3px;
-		cursor: pointer;
-		opacity: 0.6;
-		transition: opacity 0.15s, background-color 0.15s;
+	.ai-stats-heatmap-cell {
+		flex: 1;
+		height: 10px;
+		border-radius: 2px;
+		background-color: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.1));
 	}
 
-	.chart-toggle-button:hover {
-		opacity: 1;
-		background-color: var(--vscode-toolbar-hoverBackground);
+	.ai-stats-heatmap-cell.level-1 {
+		background-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 30%, transparent);
 	}
 
-	.chart-toggle-button.active {
-		opacity: 1;
-		background-color: var(--vscode-toolbar-activeBackground);
+	.ai-stats-heatmap-cell.level-2 {
+		background-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 55%, transparent);
 	}
 
-	/* Chart container */
-	.ai-stats-chart-container {
+	.ai-stats-heatmap-cell.level-3 {
+		background-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 75%, transparent);
+	}
+
+	.ai-stats-heatmap-cell.level-4 {
+		background-color: var(--vscode-charts-blue, #3794ff);
+	}
+
+	.ai-stats-footer {
+		font-size: 11px;
+		color: var(--vscode-descriptionForeground);
 		margin-top: 4px;
-	}
-
-	.ai-stats-chart-container svg {
-		overflow: visible;
 	}
 
 	/* Setup for New User */
