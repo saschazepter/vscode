@@ -1006,6 +1006,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 
 	async $sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, message: string, options: { systemInitiatedLabel: string }): Promise<void> {
 		const resource = URI.revive(sessionResource);
+		this._logService.info(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest handle=${handle} resource=${resource.toString()} label=${options.systemInitiatedLabel}`);
 		const ownedHandle = this._sessionTypeToHandle.get(resource.scheme);
 		if (ownedHandle !== handle) {
 			throw new Error(`sendSystemInitiatedRequest: extension does not own a chat session content provider for scheme '${resource.scheme}'`);
@@ -1014,15 +1015,16 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		// user navigates away from the panel (mirrors RunInTerminalTool).
 		const sessionRef = this._chatService.acquireExistingSession(resource, 'MainThreadChatSessions#sendSystemInitiatedRequest');
 		if (!sessionRef) {
-			this._logService.warn(`[MainThreadChatSessions] $sendSystemInitiatedRequest: chat model not loaded for ${resource.toString()}; dropping request`);
+			this._logService.warn(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest: chat model not loaded for ${resource.toString()}; dropping request`);
 			return;
 		}
 		try {
-			await this._chatService.sendRequest(resource, message, {
+			const result = await this._chatService.sendRequest(resource, message, {
 				isSystemInitiated: true,
 				systemInitiatedLabel: options.systemInitiatedLabel,
 				queue: ChatRequestQueueKind.Steering,
 			});
+			this._logService.info(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest result kind=${result?.kind}`);
 		} finally {
 			sessionRef.dispose();
 		}

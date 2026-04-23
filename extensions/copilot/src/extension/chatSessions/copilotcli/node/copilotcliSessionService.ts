@@ -142,6 +142,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 	private readonly _onDidReceiveSystemNotification = this._register(new Emitter<{ readonly sessionId: string; readonly message: string; readonly label: string }>());
 	public readonly onDidReceiveSystemNotification = this._onDidReceiveSystemNotification.event;
+	private readonly _instanceId = Math.random().toString(36).slice(2, 8);
 
 	private readonly _onDidCloseSession = this._register(new Emitter<string>());
 	private readonly sessionTerminators = new DisposableMap<string, IDisposable>();
@@ -183,6 +184,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		@ICopilotCLIModels private readonly _copilotCLIModels: ICopilotCLIModels,
 	) {
 		super();
+		this.logService.info(`[anthony] [CopilotCLISessionService] CONSTRUCTED instance=${this._instanceId}`);
 		this.showExternalSessions = this.configurationService.getConfig(ConfigKey.Advanced.CLIShowExternalSessions);
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(ConfigKey.Advanced.CLIShowExternalSessions.fullyQualifiedId)) {
@@ -1063,6 +1065,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			this._onDidChangeSessions.fire();
 		}));
 		session.add(session.onDidReceiveSystemNotification(notification => {
+			this.logService.info(`[anthony] [CopilotCLISessionService instance=${this._instanceId}] forwarding system notification for session ${sdkSession.sessionId}, label=${notification.label}`);
 			this._onDidReceiveSystemNotification.fire({ sessionId: sdkSession.sessionId, ...notification });
 		}));
 		session.add(toDisposable(() => {
@@ -1121,6 +1124,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		let hasKeepAliveRef = false;
 		const releaseKeepAlive = () => {
 			if (hasKeepAliveRef) {
+				this.logService.info(`[anthony] [CopilotCLISessionService] releasing post-turn keep-alive ref for session ${sdkSession.sessionId}`);
 				hasKeepAliveRef = false;
 				refCountedSession.release();
 			}
@@ -1130,12 +1134,14 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		session.add(toDisposable(releaseKeepAlive));
 		session.add(session.onDidChangeStatus(() => {
 			const status = session.status;
+			this.logService.info(`[anthony] [CopilotCLISessionService] onDidChangeStatus for session ${sdkSession.sessionId}: status=${status}, permissionRequested=${session.permissionRequested}`);
 			if (session.permissionRequested) {
 				keepAliveTimer.clear();
 				return;
 			}
 			if (status === undefined || status === ChatSessionStatus.Completed || status === ChatSessionStatus.Failed) {
 				if (!hasKeepAliveRef) {
+					this.logService.info(`[anthony] [CopilotCLISessionService] acquired post-turn keep-alive ref for session ${sdkSession.sessionId}`);
 					refCountedSession.acquire();
 					hasKeepAliveRef = true;
 				}
