@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
@@ -94,9 +93,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/** User's session indexing preference (resolved once per repo). */
 	private readonly _indexingPreference: SessionIndexingPreference;
 
-	/** Cloud sync status shown in the Copilot status dashboard. */
-	private readonly _chatStatusItem: vscode.ChatStatusItem;
-
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
@@ -119,10 +115,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			maxResetTimeoutMs: 30_000,
 		});
 
-		// Create chat status item for cloud sync status (shown in Copilot status dashboard)
-		this._chatStatusItem = vscode.window.createChatStatusItem('copilot.cloudSyncStatus');
-		this._chatStatusItem.title = 'Session Sync';
-
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
 
@@ -136,11 +128,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const localEnabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled) ? localEnabledNew.read(reader) : localEnabledOld.read(reader);
 			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
 			if (!localEnabled || !cloudEnabled) {
-				this._updateStatusBar('disabled');
 				return;
 			}
-
-			this._updateStatusBar('idle');
 
 			// Listen to completed OTel spans — deferred off the callback
 			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
@@ -171,7 +160,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		this._translationStates.clear();
 		this._disabledSessions.clear();
 		this._initializingSessions.clear();
-		this._chatStatusItem.dispose();
 
 		super.dispose();
 	}
@@ -257,34 +245,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				addSecretValues(token.token);
 			}
 		}).catch(() => { /* non-fatal */ });
-	}
-
-	// ── Status bar ───────────────────────────────────────────────────────────────
-
-	private _updateStatusBar(state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'error'): void {
-		switch (state) {
-			case 'disabled':
-				this._chatStatusItem.description = 'Off';
-				this._chatStatusItem.detail = '';
-				break;
-			case 'idle':
-				this._chatStatusItem.description = 'Enabled';
-				this._chatStatusItem.detail = '';
-				break;
-			case 'syncing':
-				this._chatStatusItem.description = 'Uploading... $(loading~spin)';
-				this._chatStatusItem.detail = '';
-				break;
-			case 'synced':
-				this._chatStatusItem.description = 'Up to date';
-				this._chatStatusItem.detail = '';
-				break;
-			case 'error':
-				this._chatStatusItem.description = 'Error — retrying';
-				this._chatStatusItem.detail = '';
-				break;
-		}
-		this._chatStatusItem.show();
 	}
 
 	// ── Lazy session initialization ──────────────────────────────────────────────
@@ -543,8 +503,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		this._isFlushing = true;
-		this._updateStatusBar('syncing');
-		let flushStatus: 'synced' | 'error' | undefined;
 		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
 
 		try {
@@ -587,7 +545,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
-				flushStatus = 'synced';
 
 				if (!this._firstCloudWriteLogged) {
 					this._firstCloudWriteLogged = true;
@@ -599,13 +556,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				}
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
-				flushStatus = 'error';
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
 			this._eventBuffer.unshift(...batch);
 			this._circuitBreaker.recordFailure();
-			flushStatus = 'error';
 
 			this._telemetryService.sendMSFTTelemetryErrorEvent('chronicle.cloudSync', {
 				operation: 'flushBatch',
@@ -614,7 +569,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			}, { droppedEvents: batch.length });
 		} finally {
 			this._isFlushing = false;
-			this._updateStatusBar(flushStatus ?? 'idle');
 		}
 
 		if (this._eventBuffer.length > SOFT_BUFFER_CAP && this._flushTimer !== undefined) {
