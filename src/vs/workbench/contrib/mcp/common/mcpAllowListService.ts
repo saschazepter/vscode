@@ -20,6 +20,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IAuthenticationService } from '../../../services/authentication/common/authentication.js';
 import { IGitService } from '../../git/common/gitService.js';
+import { ISCMService } from '../../scm/common/scm.js';
 import { parseRemoteUrl } from '../../git/common/utils.js';
 
 const ALLOWLIST_CACHE_KEY = 'mcp.enterprise.allowlist.cache';
@@ -92,11 +93,13 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 		@IStorageService private readonly storageService: IStorageService,
 		@IGitService private readonly gitService: IGitService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@ISCMService private readonly scmService: ISCMService,
 	) {
 		super();
 
 		this._register(this.defaultAccountService.onDidChangePolicyData(() => this.loadPolicy()));
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadPolicy()));
+		this._register(this.scmService.onDidAddRepository(() => this.loadPolicy(/* isRefresh */ true)));
 		void this.loadPolicy();
 	}
 
@@ -204,7 +207,7 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 		let result: AllowList = undefined;
 		let lastError: Error | undefined = undefined;
 
-		for (const { entry, repo } of this.listRegistryQueries()) {
+		for (const { entry, repo } of await this.listRegistryQueries()) {
 			if (token.isCancellationRequested) {
 				return undefined;
 			}
@@ -235,18 +238,28 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 	/**
 	 * Maps workspace repos to their enterprise entries; unmatched entries are queried without repo context.
 	 */
-	private * listRegistryQueries(): Iterable<RegistryQuery> {
+	private async listRegistryQueries(): Promise<RegistryQuery[]> {
 		const entries = this.defaultAccountService.policyData?.mcpAllowlistEntries;
 		if (!entries || entries.length === 0) {
-			return;
+			return [];
 		}
 
 		const entryMap = new Map(entries.map(e => [e.ownerLogin, e]));
+		const queries: RegistryQuery[] = [];
 		const seenRepos = new Set<string>();
 		const matchedOwners = new Set<string>();
 
-		for (const repository of this.gitService.repositories) {
-			for (const remote of repository.state.get().remotes) {
+		for (const scmRepo of this.scmService.repositories) {
+			if (!scmRepo.provider.rootUri) {
+				continue;
+			}
+
+			const gitRepo = await this.gitService.openRepository(scmRepo.provider.rootUri);
+			if (!gitRepo) {
+				continue;
+			}
+
+			for (const remote of gitRepo.state.get().remotes) {
 				if (!remote.fetchUrl) {
 					continue;
 				}
@@ -270,18 +283,20 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 				seenRepos.add(repo);
 				const entry = entryMap.get(owner);
 				if (entry) {
-					yield { entry, repo };
+					queries.push({ entry, repo });
 					matchedOwners.add(owner);
 				}
 			}
 		}
 
-		// Entries with no matching are queried without repo context
+		// Entries with no matching repos are queried without repo context
 		for (const [owner, entry] of entryMap) {
 			if (!matchedOwners.has(owner)) {
-				yield { entry };
+				queries.push({ entry });
 			}
 		}
+
+		return queries;
 	}
 
 	/**
@@ -307,7 +322,7 @@ export class McpAllowListService extends Disposable implements IMcpAllowListServ
 	 */
 	private async fetchAllowList(query: RegistryQuery, authToken: LazyStatefulPromise<string>, token: CancellationToken): Promise<AllowList> {
 		const { entry, repo } = query;
-		const url = `${entry.registryUrl}/enterprise/v0.1/servers${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`;
+		const url = `${entry.registryUrl}/v0.1/servers${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`;
 
 		this.logService.debug(`[McpAllowlist] Fetching allowlist from ${url}`);
 		const response = await this.requestService.request({
