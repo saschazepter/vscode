@@ -98,8 +98,22 @@ const skippedMissionControlEventTypes = new Set([
 	'session.tools_updated',
 ]);
 
-function shouldForwardMissionControlEventType(eventType: string): boolean {
-	return !skippedMissionControlEventTypes.has(eventType);
+function shouldForwardMissionControlEvent(event: { type?: string; data?: unknown }): boolean {
+	const eventType = event.type ?? 'unknown';
+	if (skippedMissionControlEventTypes.has(eventType)) {
+		return false;
+	}
+
+	if (eventType === 'tool.execution_start' || eventType === 'tool.execution_complete') {
+		const toolName = typeof event.data === 'object' && event.data !== null && 'toolName' in event.data
+			? event.data.toolName
+			: undefined;
+		if (toolName === 'report_intent') {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 export const builtinSlashSCommands = {
@@ -1152,7 +1166,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				// Use the static helper instead of this._bufferMcEvent to avoid
 				// relying on the instance that started MC (it may be stale).
 				const eventType = (event as { type?: string }).type ?? 'unknown';
-				if (!shouldForwardMissionControlEventType(eventType)) {
+				if (!shouldForwardMissionControlEvent(event as { type?: string; data?: unknown })) {
 					return;
 				}
 				const e = event as { type?: string; data?: unknown; id?: string; timestamp?: string; parentId?: string | null };
@@ -1303,7 +1317,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (!state) {
 			return;
 		}
-		if (!shouldForwardMissionControlEventType(eventType)) {
+		if (!shouldForwardMissionControlEvent(event)) {
 			return;
 		}
 		this.logService.info(`[CopilotCLISession] MC buffered event: ${eventType}`);

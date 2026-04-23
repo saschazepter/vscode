@@ -807,6 +807,40 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('session.idle');
 	});
 
+	it('does not forward report_intent tool events to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: { toolCallId: 'ri-1', toolName: 'report_intent', arguments: { intent: 'Running echo command' } },
+		});
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_complete',
+			data: { toolCallId: 'ri-1', toolName: 'report_intent', success: true },
+		});
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: { toolCallId: 'bash-1', toolName: 'bash', arguments: { command: 'echo hello' } },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('tool.execution_start');
+		expect((remoteState.mcEventBuffer[0] as { data: { toolName: string } }).data.toolName).toBe('bash');
+	});
+
 	it('immediately pushes invocation messages for non-permission-requiring tools like MCP', async () => {
 		let resolveSend: () => void;
 		sdkSession.send = async () => new Promise<void>(r => { resolveSend = r; });

@@ -16,7 +16,7 @@ function createResponse(body: string): Response {
 }
 
 describe('MissionControlApiClient', () => {
-	it('uses the copilot-developer-cli integration id for all mission control requests', async () => {
+	it('uses the vscode-chat integration id for all mission control requests', async () => {
 		const requests: Array<{ url: string; options: FetchOptions }> = [];
 		const fetcherService = {
 			_serviceBrand: undefined,
@@ -76,10 +76,10 @@ describe('MissionControlApiClient', () => {
 
 		expect(requests).toHaveLength(4);
 		expect(requests.map(({ options }) => options.headers?.['Copilot-Integration-Id'])).toEqual([
-			'copilot-developer-cli',
-			'copilot-developer-cli',
-			'copilot-developer-cli',
-			'copilot-developer-cli',
+			'vscode-chat',
+			'vscode-chat',
+			'vscode-chat',
+			'vscode-chat',
 		]);
 		expect(requests.map(({ url }) => url)).toEqual([
 			'https://api.github.test/agents/sessions',
