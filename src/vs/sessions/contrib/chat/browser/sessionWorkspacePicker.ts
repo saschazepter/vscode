@@ -919,8 +919,7 @@ export class WorkspacePicker extends Disposable {
 		this._vsCodeRecentFolderUris = recentlyOpened.workspaces
 			.filter(isRecentFolder)
 			.map(f => f.folderUri)
-			.filter(uri => !this._isCopilotWorktree(uri))
-			.slice(0, 10);
+			.filter(uri => !this._isCopilotWorktree(uri));
 	}
 
 	/**
@@ -960,6 +959,9 @@ export class WorkspacePicker extends Disposable {
 				if (workspace) {
 					result.push({ providerId: provider.id, workspace });
 				}
+			}
+			if (result.length >= 10) {
+				break;
 			}
 		}
 
