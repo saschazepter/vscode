@@ -55,6 +55,7 @@ import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
 import { convertReferenceToVariable } from './copilotCLIPromptReferences';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
+import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 const REPOSITORY_OPTION_ID = 'repository';
 
@@ -171,7 +172,6 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 	private readonly _onDidCommitChatSessionItem = this._register(new Emitter<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }>());
 	public readonly onDidCommitChatSessionItem: Event<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }> = this._onDidCommitChatSessionItem.event;
 
-
 	public resolveChatSessionItem?: (item: vscode.ChatSessionItem, token: vscode.CancellationToken) => Promise<vscode.ChatSessionItem | undefined>;
 
 	constructor(
@@ -187,6 +187,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		@IOctoKitService private readonly octoKitService: IOctoKitService,
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@ISessionWorkingDirectoryStore private readonly _sessionWorkingDirMap: ISessionWorkingDirectoryStore,
 	) {
 		super();
 		this._register(this.terminalIntegration);
@@ -215,6 +216,10 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		this._register(this.copilotcliSessionService.onDidChangeSessions(() => {
 			this.notifySessionsChange();
 		}));
+	}
+
+	public getAssociatedSessions(folder: Uri): string[] {
+		return this._sessionWorkingDirMap.getSessionIdsForFolder(folder);
 	}
 
 	/**
@@ -266,6 +271,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		let worktreeProperties = await raceCancellation(this.worktreeManager.getWorktreeProperties(session.id), token);
 		const workingDirectory = worktreeProperties?.worktreePath ? vscode.Uri.file(worktreeProperties.worktreePath)
 			: session.workingDirectory;
+		if (workingDirectory) {
+			this._sessionWorkingDirMap.addEntry(session.id, workingDirectory, worktreeProperties ? 'worktree' : 'folder');
+		}
 
 		const label = session.label;
 
@@ -297,7 +305,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// eager pass and let `resolveChatSessionItem` fill it in lazily for visible items.
 		// But if computing changes is easy (cached or the like), then include them right away to avoid a second update pass.
 		let changes: vscode.ChatSessionChangedFile[] | undefined;
-		if (!token.isCancellationRequested && (options?.includeChanges || (await this.canBuildChangesFast(session.id, worktreeProperties)))) {
+		if (!token.isCancellationRequested && (options?.includeChanges || (await this.hasCachedChanges(session.id, worktreeProperties)))) {
 			changes = await this.buildChanges(session.id, worktreeProperties, workingDirectory, token);
 
 			// We need to get an updated version of worktree properties here because when the
@@ -406,19 +414,15 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		} satisfies vscode.ChatSessionItem;
 	}
 
-	private async canBuildChangesFast(sessionId: string, worktreeProperties: Awaited<ReturnType<IChatSessionWorktreeService['getWorktreeProperties']>>): Promise<boolean> {
+	private async hasCachedChanges(sessionId: string, worktreeProperties: Awaited<ReturnType<IChatSessionWorktreeService['getWorktreeProperties']>>): Promise<boolean> {
 		if (!this.configurationService.getConfig(ConfigKey.Advanced.CLIChatLazyLoadSessionItem)) {
 			return true;
 		}
-		if (!worktreeProperties?.repositoryPath) {
-			return false;
-		}
-		const [trusted, hasCachedWorktreeChanges, hasCachedWorkspaceChanges] = await Promise.all([
-			vscode.workspace.isResourceTrusted(vscode.Uri.file(worktreeProperties.repositoryPath)),
+		const [hasCachedWorktreeChanges, hasCachedWorkspaceChanges] = await Promise.all([
 			this.worktreeManager.hasCachedChanges(sessionId),
 			this.workspaceFolderService.hasCachedChanges(sessionId)
 		]);
-		return trusted && (hasCachedWorktreeChanges || hasCachedWorkspaceChanges);
+		return hasCachedWorktreeChanges || hasCachedWorkspaceChanges;
 	}
 
 
@@ -2727,17 +2731,15 @@ export function registerCLIChatCommands(
 			logService.trace('[commitToWorktree] Commit successful');
 
 			// Clear the worktree changes cache so getWorktreeChanges() recomputes
-			const sessionId = await copilotCLIWorktreeManagerService.getSessionIdForWorktree(worktreeUri);
-			if (sessionId) {
+			const sessionIds = await copilotcliSessionItemProvider.getAssociatedSessions(worktreeUri);
+			await Promise.all(sessionIds.map(async sessionId => {
 				const props = await copilotCLIWorktreeManagerService.getWorktreeProperties(sessionId);
 				if (props) {
 					await copilotCLIWorktreeManagerService.setWorktreeProperties(sessionId, { ...props, changes: undefined });
 				} else {
 					logService.error('[commitToWorktree] No worktree properties found for session:', sessionId);
 				}
-			} else {
-				logService.error('[commitToWorktree] No session found for worktree:', worktreeUri.toString());
-			}
+			}));
 
 			logService.trace('[commitToWorktree] Notifying sessions change');
 			copilotcliSessionItemProvider.notifySessionsChange();
