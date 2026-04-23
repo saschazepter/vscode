@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import picomatch from 'picomatch';
 import * as vscode from 'vscode';
 import { INativeEnvService } from '../../../platform/env/common/envService';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
@@ -131,7 +132,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this.logService.debug(`[ClaudeCustomizationProvider] agents (${agentItems.length}): ${agentItems.map(a => a.name).join(', ') || '(none)'}${sdkAgents.length ? ' [sdk]' : ' [files-only, no session]'}`);
 
 		// Instructions from hard-coded CLAUDE.md paths (checked for existence)
-		const settings = await this._readSettings();
+		const settings = await this._readMergedSettings();
 		const instructionItems = await this.discoverInstructions(settings);
 		items.push(...instructionItems);
 		this.logService.debug(`[ClaudeCustomizationProvider] instructions (${instructionItems.length}): ${instructionItems.map(i => i.name).join(', ') || '(none)'}`);
@@ -141,7 +142,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		const skillItems: vscode.ChatSessionCustomizationItem[] = [];
 		for (const skill of await this.promptsService.getSkills(token)) {
 			if (this.isClaudePath(skill.uri)) {
-				const folderName = basename(dirname(skill.uri)) || basename(skill.uri);
+				const folderName = basename(dirname(skill.uri));
 				const override = skillOverrides[folderName];
 				const item: vscode.ChatSessionCustomizationItem = {
 					uri: skill.uri,
@@ -187,12 +188,16 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			if (await this.fileExists(uri)) {
 				const name = basename(uri).replace(/\.md$/i, '');
 				const excluded = excludes.some(pattern => this._matchesExclude(uri, pattern));
+				// We can only toggle enablement for items excluded by the exact absolute
+				// path we write (our known pattern). Glob-based excludes from the user's
+				// settings are shown as disabled but cannot be toggled from the UI.
+				const excludedByKnownPattern = excluded && excludes.includes(uri.path);
 				items.push({
 					uri,
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
-					enablementScope: excluded
-						? vscode.ChatSessionCustomizationEnablementScope.Global
+					enablementScope: !excluded || excludedByKnownPattern
+						? vscode.ChatSessionCustomizationEnablementScope.Workspace
 						: vscode.ChatSessionCustomizationEnablementScope.None,
 					enabled: !excluded,
 				});
@@ -294,17 +299,29 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	/**
 	 * Path to the user-level claude settings file (`~/.claude/settings.json`).
 	 */
-	private get _settingsUri(): URI {
+	private get _userSettingsUri(): URI {
 		return URI.joinPath(this.envService.userHome, '.claude', 'settings.json');
 	}
 
 	/**
-	 * Reads the user-level `~/.claude/settings.json` as a typed object.
+	 * Returns the workspace-local settings URI for the first workspace folder.
+	 * Falls back to the user-level settings URI if no workspace folders exist.
+	 */
+	private get _workspaceSettingsUri(): URI {
+		const folders = this.workspaceService.getWorkspaceFolders();
+		if (folders.length > 0) {
+			return URI.joinPath(folders[0], '.claude', 'settings.local.json');
+		}
+		return this._userSettingsUri;
+	}
+
+	/**
+	 * Reads a single settings file as a typed object.
 	 * Returns an empty object if the file doesn't exist or can't be parsed.
 	 */
-	private async _readSettings(): Promise<ClaudeSettings> {
+	private async _readSettingsFile(uri: URI): Promise<ClaudeSettings> {
 		try {
-			const bytes = await this.fileSystemService.readFile(this._settingsUri);
+			const bytes = await this.fileSystemService.readFile(uri);
 			const parsed = JSON.parse(new TextDecoder().decode(bytes));
 			return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
 		} catch {
@@ -313,36 +330,74 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	}
 
 	/**
-	 * Writes the user-level `~/.claude/settings.json`.
+	 * Reads and merges settings from all settings files (workspace + user-level).
+	 * Workspace settings take precedence over user-level for object keys;
+	 * array values (e.g. `claudeMdExcludes`) are concatenated.
 	 */
-	private async _writeSettings(settings: ClaudeSettings): Promise<void> {
+	private async _readMergedSettings(): Promise<ClaudeSettings> {
+		const allSettings = await Promise.all(
+			this.getSettingsFilePaths().map(uri => this._readSettingsFile(uri))
+		);
+
+		const merged: Record<string, unknown> = {};
+		for (const settings of allSettings) {
+			for (const [key, value] of Object.entries(settings)) {
+				if (value === undefined) {
+					continue;
+				}
+				const existing = merged[key];
+				if (Array.isArray(existing) && Array.isArray(value)) {
+					merged[key] = [...existing, ...value];
+				} else if (existing === undefined) {
+					merged[key] = value;
+				}
+				// First-writer-wins for non-array scalar/object values
+			}
+		}
+
+		return merged as ClaudeSettings;
+	}
+
+	/**
+	 * Writes settings to the appropriate file based on scope.
+	 * - `Workspace`: writes to `<workspace>/.claude/settings.local.json`
+	 * - `Global` (or other): writes to `~/.claude/settings.json`
+	 */
+	private async _writeSettings(settings: ClaudeSettings, scope: vscode.ChatSessionCustomizationEnablementScope): Promise<void> {
+		const targetUri = scope === vscode.ChatSessionCustomizationEnablementScope.Workspace
+			? this._workspaceSettingsUri
+			: this._userSettingsUri;
 		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
-		await this.fileSystemService.writeFile(this._settingsUri, content);
+		await this.fileSystemService.writeFile(targetUri, content);
 	}
 
 	/**
 	 * Checks whether a URI matches a claudeMdExcludes pattern.
-	 * Patterns can be absolute paths or simple glob-like suffixes.
+	 * Patterns are matched against absolute file paths using picomatch,
+	 * consistent with how Claude Code evaluates them.
 	 */
 	private _matchesExclude(uri: URI, pattern: string): boolean {
-		const uriPath = uri.path;
-		// Absolute path match
-		if (pattern.startsWith('/') && !pattern.includes('*')) {
-			return uriPath === pattern;
+		return this._getExcludeMatcher(pattern)(uri.path);
+	}
+
+	private readonly _excludeMatcherCache = new Map<string, picomatch.Matcher>();
+
+	private _getExcludeMatcher(pattern: string): picomatch.Matcher {
+		let matcher = this._excludeMatcherCache.get(pattern);
+		if (!matcher) {
+			matcher = picomatch(pattern, { dot: true });
+			this._excludeMatcherCache.set(pattern, matcher);
 		}
-		// Simple suffix/glob match: strip leading **/ and check endsWith
-		const suffix = pattern.replace(/^\*\*\//, '');
-		if (suffix !== pattern && !suffix.includes('*')) {
-			return uriPath.endsWith('/' + suffix) || uriPath === suffix;
-		}
-		// Exact match fallback
-		return uriPath === pattern;
+		return matcher;
 	}
 
 	// --- Enablement ---
 
-	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
-		const settings = { ...await this._readSettings() };
+	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
+		const settingsFileUri = scope === vscode.ChatSessionCustomizationEnablementScope.Workspace
+			? this._workspaceSettingsUri
+			: this._userSettingsUri;
+		const settings = { ...await this._readSettingsFile(settingsFileUri) };
 
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
 			// skillOverrides: Record<string, 'on' | 'name-only' | 'user-invocable-only' | 'off'>
@@ -353,17 +408,17 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			} else {
 				overrides[folderName] = 'off';
 			}
-			(settings as Record<string, unknown>).skillOverrides = Object.keys(overrides).length > 0 ? overrides : undefined;
+			settings.skillOverrides = Object.keys(overrides).length > 0 ? overrides : undefined;
 		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id) {
 			// claudeMdExcludes: string[] of absolute paths or glob patterns
-			const uriPath = URI.from(uri).path;
+			const targetUri = URI.from(uri);
 			const currentExcludes = [...(settings.claudeMdExcludes ?? [])];
 			if (enabled) {
-				(settings as Record<string, unknown>).claudeMdExcludes = currentExcludes.filter(p => !this._matchesExclude(URI.from(uri), p));
+				settings.claudeMdExcludes = currentExcludes.filter(p => !this._matchesExclude(targetUri, p));
 			} else {
-				if (!currentExcludes.some(p => this._matchesExclude(URI.from(uri), p))) {
-					currentExcludes.push(uriPath);
-					(settings as Record<string, unknown>).claudeMdExcludes = currentExcludes;
+				if (!currentExcludes.some(p => this._matchesExclude(targetUri, p))) {
+					currentExcludes.push(targetUri.path);
+					settings.claudeMdExcludes = currentExcludes;
 				}
 			}
 		} else {
@@ -371,9 +426,13 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			return;
 		}
 
-		await this._writeSettings(settings);
-		this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${this._settingsUri.toString()}`);
-		this._onDidChange.fire();
+		try {
+			await this._writeSettings(settings, scope);
+			this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${settingsFileUri.toString()}`);
+			this._onDidChange.fire();
+		} catch (err) {
+			vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Claude settings: {0}', err instanceof Error ? err.message : String(err)));
+		}
 	}
 }
 

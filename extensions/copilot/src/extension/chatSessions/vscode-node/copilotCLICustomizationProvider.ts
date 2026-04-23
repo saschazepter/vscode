@@ -324,8 +324,12 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			return;
 		}
 
-		await this._writeSettings(settings);
-		this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} "${name}" in ${this._settingsUri.toString()}`);
-		this._onDidChange.fire();
+		try {
+			await this._writeSettings(settings);
+			this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} "${name}" in ${this._settingsUri.toString()}`);
+			this._onDidChange.fire();
+		} catch (err) {
+			vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Copilot settings: {0}', err instanceof Error ? err.message : String(err)));
+		}
 	}
 }
