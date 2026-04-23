@@ -8,8 +8,9 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IPromptsService, PromptsStorage, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IAICustomizationWorkspaceService, applyStorageSourceFilter, IStorageSourceFilter } from '../../common/aiCustomizationWorkspaceService.js';
-import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
-import { ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
+import { AICustomizationManagementSection, REMOTE_GROUP_KEY } from './aiCustomizationManagement.js';
+import { ICustomizationDisableProvider, ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
+import { enumerateLocalCustomizationsForHarness, SYNCABLE_PROMPT_TYPES } from '../agentSessions/agentHost/agentHostLocalCustomizations.js';
 
 /**
  * Maps section ID to prompt type. Duplicated from aiCustomizationListWidget
@@ -73,7 +74,7 @@ export async function generateCustomizationDebugReport(
 		lines.push(`  id: ${activeDescriptor.id}`);
 		lines.push(`  label: ${activeDescriptor.label}`);
 		lines.push(`  hasItemProvider: ${!!activeDescriptor.itemProvider}`);
-		lines.push(`  hasSyncProvider: ${!!activeDescriptor.syncProvider}`);
+		lines.push(`  hasDisableProvider: ${!!activeDescriptor.disableProvider}`);
 		lines.push(`  hiddenSections: ${activeDescriptor.hiddenSections ? `[${activeDescriptor.hiddenSections.join(', ')}]` : '(none)'}`);
 		lines.push(`  workspaceSubpaths: ${activeDescriptor.workspaceSubpaths ? `[${activeDescriptor.workspaceSubpaths.join(', ')}]` : '(none)'}`);
 		lines.push(`  hideGenerateButton: ${activeDescriptor.hideGenerateButton ?? false}`);
@@ -92,31 +93,31 @@ export async function generateCustomizationDebugReport(
 	lines.push('');
 
 	// Determine which provider the widget actually uses (mirrors getItemSource logic)
-	const extensionProvider = activeDescriptor?.itemProvider;
-	const hasSyncProvider = !!activeDescriptor?.syncProvider;
-	const effectiveProvider = extensionProvider ?? (hasSyncProvider ? undefined : promptsServiceItemProvider);
+	const effectiveProvider = activeDescriptor?.itemProvider ?? promptsServiceItemProvider;
 
 	// Stage 1: Provider output
 	if (effectiveProvider) {
 		let providerLabel: string;
-		if (extensionProvider) {
+		if (activeDescriptor?.itemProvider) {
 			providerLabel = 'Extension Provider';
 		} else {
 			providerLabel = 'PromptsService Adapter (fallback — no extension provider registered)';
 		}
 		await appendProviderData(lines, effectiveProvider, promptType, providerLabel);
-	} else if (hasSyncProvider) {
-		lines.push('--- Stage 1: No item provider (sync-only harness) ---');
-		lines.push('');
 	} else {
 		lines.push('--- Stage 1: No provider available ---');
 		lines.push('');
 	}
 
 	// Stage 2: Raw PromptsService data — always useful for diagnostics
-	if (!extensionProvider) {
+	if (!activeDescriptor?.itemProvider) {
 		await appendRawServiceData(lines, promptsService, promptType);
 		await appendFilteredData(lines, promptsService, promptType, filter);
+	}
+
+	// Stage 2.5: Sync pipeline — what we send to the server and what's disabled
+	if (activeDescriptor?.disableProvider) {
+		await appendSyncPipelineData(lines, promptsService, activeDescriptor.disableProvider, promptType);
 	}
 
 	// Stage 3: Widget state
@@ -139,6 +140,13 @@ async function appendProviderData(lines: string[], provider: ICustomizationItemP
 	}
 
 	lines.push(`  Total items from provider: ${allItems.length}`);
+
+	// Separate remote (server-originated) vs local (client-originated) items
+	const remoteItems = allItems.filter(i => i.groupKey === REMOTE_GROUP_KEY || i.type === 'plugin');
+	const localItems = allItems.filter(i => i.groupKey !== REMOTE_GROUP_KEY && i.type !== 'plugin');
+	lines.push(`  Remote (from server): ${remoteItems.length}`);
+	lines.push(`  Local (synced from client): ${localItems.length}`);
+	lines.push('');
 
 	// Group by type for summary
 	const byType = new Map<string, typeof allItems>();
@@ -309,4 +317,58 @@ function appendFileList(lines: string[], files: readonly { uri: URI }[]): void {
 	for (const f of files) {
 		lines.push(`    ${f.uri.fsPath}`);
 	}
+}
+
+async function appendSyncPipelineData(
+	lines: string[],
+	promptsService: IPromptsService,
+	disableProvider: ICustomizationDisableProvider,
+	promptType: PromptsType,
+): Promise<void> {
+	lines.push('--- Sync Pipeline (client → server) ---');
+
+	if (!SYNCABLE_PROMPT_TYPES.includes(promptType)) {
+		lines.push(`  Type "${promptType}" is not syncable (only ${SYNCABLE_PROMPT_TYPES.join(', ')})`);
+		lines.push('');
+		return;
+	}
+
+	const enumerated = await enumerateLocalCustomizationsForHarness(promptsService, disableProvider, CancellationToken.None);
+	const forType = enumerated.filter(e => e.type === promptType);
+	const enabled = forType.filter(e => !e.disabled);
+	const disabled = forType.filter(e => e.disabled);
+
+	lines.push(`  Eligible files (${promptType}): ${forType.length}`);
+	lines.push(`    Synced (enabled): ${enabled.length}`);
+	lines.push(`    Disabled (opted out): ${disabled.length}`);
+
+	if (enabled.length) {
+		lines.push('');
+		lines.push('  Synced:');
+		for (const e of enabled) {
+			lines.push(`    [${e.storage}] ${e.uri.fsPath}`);
+		}
+	}
+
+	if (disabled.length) {
+		lines.push('');
+		lines.push('  Disabled:');
+		for (const d of disabled) {
+			lines.push(`    [${d.storage}] ${d.uri.fsPath}`);
+		}
+	}
+
+	// Summary across all types
+	const allEnumerated = await enumerateLocalCustomizationsForHarness(promptsService, disableProvider, CancellationToken.None);
+	const allEnabled = allEnumerated.filter(e => !e.disabled);
+	const allDisabled = allEnumerated.filter(e => e.disabled);
+	lines.push('');
+	lines.push(`  All types summary:`);
+	for (const t of SYNCABLE_PROMPT_TYPES) {
+		const tEnabled = allEnabled.filter(e => e.type === t).length;
+		const tDisabled = allDisabled.filter(e => e.type === t).length;
+		lines.push(`    ${t}: ${tEnabled} synced, ${tDisabled} disabled`);
+	}
+	lines.push(`    Total: ${allEnabled.length} synced, ${allDisabled.length} disabled`);
+	lines.push('');
 }
