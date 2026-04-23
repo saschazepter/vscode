@@ -38,6 +38,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			disableableTypes: [
 				vscode.ChatSessionCustomizationType.Skill,
 				vscode.ChatSessionCustomizationType.Hook,
+				vscode.ChatSessionCustomizationType.Plugins,
 			].filter((t): t is vscode.ChatSessionCustomizationType => t !== undefined),
 		};
 	}
@@ -231,11 +232,21 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Collects all plugin items from the prompt file service.
 	 */
 	private async getPluginItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		return (await this.promptsService.getPlugins(token)).filter(isEnabledForCopilotCLI).map(p => ({
-			uri: p.uri,
-			type: vscode.ChatSessionCustomizationType.Plugins,
-			name: basename(p.uri),
-		}));
+		const settings = await this._readSettings();
+		const enabledPlugins = (settings.enabledPlugins && typeof settings.enabledPlugins === 'object' && !Array.isArray(settings.enabledPlugins))
+			? settings.enabledPlugins as Record<string, boolean>
+			: {};
+		return (await this.promptsService.getPlugins(token)).filter(isEnabledForCopilotCLI).map(p => {
+			const name = basename(p.uri);
+			// A plugin is disabled if explicitly set to false in enabledPlugins
+			const enabled = enabledPlugins[name] !== false;
+			return {
+				uri: p.uri,
+				type: vscode.ChatSessionCustomizationType.Plugins,
+				name,
+				enabled,
+			};
+		});
 	}
 
 	// --- Enablement ---
@@ -284,6 +295,11 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			const name = basename(URI.from(uri)).replace(/\.json$/i, '');
 			return { settingsKey: 'disabledHooks', name };
 		}
+		if (type.id === vscode.ChatSessionCustomizationType.Plugins?.id) {
+			// Plugins use enabledPlugins map (Record<string, boolean>)
+			const name = basename(URI.from(uri));
+			return { settingsKey: 'enabledPlugins', name };
+		}
 		// Other types don't have per-item disablement in the CLI config
 		return undefined;
 	}
@@ -297,15 +313,27 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 
 		const { settingsKey, name } = resolved;
 		const settings = await this._readSettings();
-		const currentList = Array.isArray(settings[settingsKey]) ? settings[settingsKey] as string[] : [];
 
-		if (enabled) {
-			// Remove from disabled list
-			settings[settingsKey] = currentList.filter(s => s !== name);
+		if (settingsKey === 'enabledPlugins') {
+			// enabledPlugins is a Record<string, boolean> map
+			const map = (settings[settingsKey] && typeof settings[settingsKey] === 'object' && !Array.isArray(settings[settingsKey]))
+				? { ...settings[settingsKey] as Record<string, boolean> }
+				: {};
+			if (enabled) {
+				delete map[name];
+			} else {
+				map[name] = false;
+			}
+			settings[settingsKey] = Object.keys(map).length > 0 ? map : undefined;
 		} else {
-			// Add to disabled list (if not already present)
-			if (!currentList.includes(name)) {
-				settings[settingsKey] = [...currentList, name];
+			// disabledSkills / disabledHooks are string arrays
+			const currentList = Array.isArray(settings[settingsKey]) ? settings[settingsKey] as string[] : [];
+			if (enabled) {
+				settings[settingsKey] = currentList.filter(s => s !== name);
+			} else {
+				if (!currentList.includes(name)) {
+					settings[settingsKey] = [...currentList, name];
+				}
 			}
 		}
 
