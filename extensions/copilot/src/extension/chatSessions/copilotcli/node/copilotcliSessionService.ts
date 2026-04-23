@@ -1126,7 +1126,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 	}
 
-	private async withWritableSession(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<void>): Promise<void> {
+	private async updateSdkSessionMetadata(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<void>): Promise<void> {
 		let sessionManager: internal.LocalSessionManager | undefined;
 		let shouldCloseSession = false;
 		const sdkSession = (this._sessionWrappers.get(sessionId)?.object.sdkSession as LocalSessionWithTitleUpdates | undefined) ?? await (async () => {
@@ -1152,13 +1152,13 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	}
 
 	public async renameSession(sessionId: string, title: string): Promise<void> {
-		await this.withWritableSession(sessionId, sdkSession => sdkSession.renameSession(title));
+		await this.updateSdkSessionMetadata(sessionId, sdkSession => sdkSession.renameSession(title));
 		this._sessionLabels.delete(sessionId);
 		this._onDidChangeSessions.fire();
 	}
 
 	public async updateSessionSummary(sessionId: string, title: string): Promise<void> {
-		await this.withWritableSession(sessionId, sdkSession => sdkSession.updateSessionSummary(title));
+		await this.updateSdkSessionMetadata(sessionId, sdkSession => sdkSession.updateSessionSummary(title));
 		this._onDidChangeSessions.fire();
 	}
 }
