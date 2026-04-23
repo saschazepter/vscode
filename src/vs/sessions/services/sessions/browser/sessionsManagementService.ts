@@ -415,10 +415,14 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			const sessionState = this._sessionStates.get(session.resource);
 			let initialChat = chats[0];
 			if (sessionState?.activeChatResource) {
-				const lastChatResource = URI.parse(sessionState.activeChatResource);
-				const found = chats.find(c => this.uriIdentityService.extUri.isEqual(c.resource, lastChatResource));
-				if (found) {
-					initialChat = found;
+				try {
+					const lastChatResource = URI.parse(sessionState.activeChatResource);
+					const found = chats.find(c => this.uriIdentityService.extUri.isEqual(c.resource, lastChatResource));
+					if (found) {
+						initialChat = found;
+					}
+				} catch (error) {
+					this.logService.warn('[ActiveSessionService] Failed to restore active chat from stored session state', error);
 				}
 			}
 
