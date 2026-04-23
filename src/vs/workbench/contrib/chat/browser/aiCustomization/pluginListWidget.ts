@@ -14,7 +14,7 @@ import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../.
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
-import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { autorun } from '../../../../../base/common/observable.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -38,7 +38,6 @@ import { formatDisplayName, truncateToFirstLine } from './aiCustomizationListWid
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { CustomizationGroupHeaderRenderer, ICustomizationGroupHeaderEntry, CUSTOMIZATION_GROUP_HEADER_HEIGHT, CUSTOMIZATION_GROUP_HEADER_HEIGHT_WITH_SEPARATOR } from './customizationGroupHeaderRenderer.js';
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
-import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ChatConfiguration } from '../../common/constants.js';
 
@@ -107,7 +106,6 @@ class PluginItemDelegate implements IListVirtualDelegate<IPluginListEntry> {
 
 interface IPluginInstalledItemTemplateData {
 	readonly container: HTMLElement;
-	readonly syncCheckboxContainer: HTMLElement;
 	readonly typeIcon: HTMLElement;
 	readonly name: HTMLElement;
 	readonly description: HTMLElement;
@@ -118,14 +116,9 @@ interface IPluginInstalledItemTemplateData {
 class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemEntry, IPluginInstalledItemTemplateData> {
 	readonly templateId = 'pluginInstalledItem';
 
-	constructor(
-		private readonly _harnessService: ICustomizationHarnessService,
-	) { }
-
 	renderTemplate(container: HTMLElement): IPluginInstalledItemTemplateData {
 		container.classList.add('mcp-server-item');
 
-		const syncCheckboxContainer = DOM.append(container, $('.item-sync-checkbox'));
 		const typeIcon = DOM.append(container, $('.mcp-server-icon'));
 		typeIcon.classList.add(...ThemeIcon.asClassNameArray(pluginIcon));
 
@@ -134,7 +127,7 @@ class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemE
 		const description = DOM.append(details, $('.mcp-server-description'));
 		const status = DOM.append(container, $('.mcp-server-status'));
 
-		return { container, syncCheckboxContainer, typeIcon, name, description, status, disposables: new DisposableStore() };
+		return { container, typeIcon, name, description, status, disposables: new DisposableStore() };
 	}
 
 	renderElement(element: IPluginInstalledItemEntry, _index: number, templateData: IPluginInstalledItemTemplateData): void {
@@ -162,27 +155,6 @@ class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemE
 				templateData.status.classList.add('disabled');
 			}
 		}));
-
-		// Sync checkbox: shown when the active harness has a sync provider
-		const syncProvider = this._harnessService.getActiveDescriptor().syncProvider;
-		if (syncProvider) {
-			templateData.syncCheckboxContainer.style.display = '';
-			const pluginUri = element.item.plugin.uri;
-			const synced = syncProvider.isSelected(pluginUri);
-			const title = synced
-				? localize('unsyncPlugin', "Remove {0} from sync", element.item.name)
-				: localize('syncPlugin', "Add {0} to sync", element.item.name);
-			const checkbox = templateData.disposables.add(
-				new Checkbox(title, synced, defaultCheckboxStyles)
-			);
-			templateData.syncCheckboxContainer.replaceChildren(checkbox.domNode);
-			templateData.disposables.add(checkbox.onChange(() => {
-				syncProvider.toggleUri(pluginUri);
-			}));
-		} else {
-			templateData.syncCheckboxContainer.style.display = 'none';
-			templateData.syncCheckboxContainer.replaceChildren();
-		}
 	}
 
 	disposeTemplate(templateData: IPluginInstalledItemTemplateData): void {
@@ -475,7 +447,7 @@ export class PluginListWidget extends Disposable {
 		// Create list
 		const delegate = new PluginItemDelegate();
 		const groupHeaderRenderer = new CustomizationGroupHeaderRenderer<IPluginGroupHeaderEntry>('pluginGroupHeader', this.hoverService);
-		const installedRenderer = new PluginInstalledItemRenderer(this.harnessService);
+		const installedRenderer = new PluginInstalledItemRenderer();
 		const marketplaceRenderer = new PluginMarketplaceItemRenderer(this.pluginInstallService, this.agentPluginService);
 
 		this.list = this._register(this.instantiationService.createInstance(
@@ -553,22 +525,6 @@ export class PluginListWidget extends Disposable {
 			this.harnessService.activeHarness.read(reader);
 			if (!this.browseMode) {
 				this.refresh();
-			}
-		}));
-
-		// Re-render when the active harness's sync provider selection changes
-		const syncChangeDisposable = this._register(new MutableDisposable());
-		this._register(autorun(reader => {
-			this.harnessService.activeHarness.read(reader);
-			const syncProvider = this.harnessService.getActiveDescriptor().syncProvider;
-			if (syncProvider) {
-				syncChangeDisposable.value = syncProvider.onDidChange(() => {
-					if (!this.browseMode) {
-						this.refresh();
-					}
-				});
-			} else {
-				syncChangeDisposable.clear();
 			}
 		}));
 

@@ -133,11 +133,12 @@ export interface IHarnessDescriptor {
 	 */
 	readonly supportsTroubleshoot?: boolean;
 	/**
-	 * When set, this harness supports syncing local customizations to a
-	 * remote target. The UI shows local items with sync checkboxes when
-	 * this harness is active.
+	 * When set, this harness auto-syncs eligible local customizations to a
+	 * remote target. The provider tracks per-URI opt-outs; presence of this
+	 * field on the descriptor is what enables the auto-sync pipeline for
+	 * the harness.
 	 */
-	readonly syncProvider?: ICustomizationSyncProvider;
+	readonly disableProvider?: ICustomizationDisableProvider;
 }
 
 /**
@@ -182,35 +183,27 @@ export interface ICustomizationItemProvider {
 }
 
 /**
- * Provider interface for harnesses that support syncing local customizations
- * to a remote target (e.g. a remote agent host).
+ * Provider interface for harnesses that auto-sync local customizations to a
+ * remote target (e.g. a remote agent host).
  *
- * The UI shows local customization items with sync checkboxes when the
- * active harness has a sync provider. Selected items are persisted and
- * automatically included in the active client's customization set.
+ * Semantics: every local customization is synced by default. The provider
+ * tracks per-URI **opt-outs**. When the user disables an item in the
+ * AI Customization view, it is excluded from the active client's
+ * customization set without being deleted.
  */
-export interface ICustomizationSyncProvider {
+export interface ICustomizationDisableProvider {
 	/**
-	 * Fires when the set of selected sync items changes.
+	 * Fires when the disabled set changes.
 	 */
 	readonly onDidChange: Event<void>;
 	/**
-	 * Returns the URIs of local customizations currently selected for syncing.
+	 * Returns whether the user has opted out of syncing the given URI.
 	 */
-	getSelectedUris(): readonly URI[];
+	isDisabled(uri: URI): boolean;
 	/**
-	 * Updates the set of local customization URIs selected for syncing.
+	 * Marks (or unmarks) the given URI as opted out of syncing.
 	 */
-	setSelectedUris(uris: readonly URI[]): void;
-	/**
-	 * Returns whether the given URI is currently selected for syncing.
-	 */
-	isSelected(uri: URI): boolean;
-	/**
-	 * Toggles the sync selection state for a single URI.
-	 * @param type Optional prompt type for file-level sync tracking.
-	 */
-	toggleUri(uri: URI, type?: PromptsType): void;
+	setDisabled(uri: URI, disabled: boolean): void;
 }
 
 /**

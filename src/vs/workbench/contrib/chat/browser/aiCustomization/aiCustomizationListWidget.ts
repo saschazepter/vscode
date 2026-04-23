@@ -6,7 +6,6 @@
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { ActionBar } from '../../../../../base/browser/ui/actionbar/actionbar.js';
-import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
@@ -21,11 +20,11 @@ import { WorkbenchList } from '../../../../../platform/list/browser/listService.
 import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon, pluginIcon, builtinIcon } from './aiCustomizationIcons.js';
-import { AI_CUSTOMIZATION_ITEM_STORAGE_KEY, AI_CUSTOMIZATION_ITEM_TYPE_KEY, AI_CUSTOMIZATION_ITEM_URI_KEY, AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY, AICustomizationManagementItemMenuId, AICustomizationManagementCreateMenuId, AICustomizationManagementSection, BUILTIN_STORAGE, AI_CUSTOMIZATION_ITEM_DISABLED_KEY, AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY } from './aiCustomizationManagement.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon, pluginIcon, builtinIcon, remoteIcon } from './aiCustomizationIcons.js';
+import { AI_CUSTOMIZATION_ITEM_STORAGE_KEY, AI_CUSTOMIZATION_ITEM_TYPE_KEY, AI_CUSTOMIZATION_ITEM_URI_KEY, AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY, AI_CUSTOMIZATION_ITEM_GROUP_KEY, AICustomizationManagementItemMenuId, AICustomizationManagementCreateMenuId, AICustomizationManagementSection, BUILTIN_STORAGE, REMOTE_GROUP_KEY, AI_CUSTOMIZATION_ITEM_DISABLED_KEY, AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY } from './aiCustomizationManagement.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
-import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Delayer } from '../../../../../base/common/async.js';
 import { IContextMenuService, IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
@@ -122,7 +121,6 @@ interface IAICustomizationItemTemplateData {
 	readonly container: HTMLElement;
 	readonly actionsContainer: HTMLElement;
 	readonly actionBar: ActionBar;
-	readonly syncCheckboxContainer: HTMLElement;
 	readonly typeIcon: HTMLElement;
 	readonly nameLabel: HighlightedLabel;
 	readonly badge: HTMLElement;
@@ -251,8 +249,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		container.classList.add('ai-customization-list-item');
 
 		const leftSection = DOM.append(container, $('.item-left'));
-		const syncCheckboxContainer = DOM.append(leftSection, $('.item-sync-checkbox'));
-		syncCheckboxContainer.style.display = 'none';
 		const typeIcon = DOM.append(leftSection, $('.item-type-icon'));
 		const textContainer = DOM.append(leftSection, $('.item-text'));
 		const nameRow = DOM.append(textContainer, $('.item-name-row'));
@@ -271,7 +267,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			container,
 			actionsContainer,
 			actionBar,
-			syncCheckboxContainer,
 			typeIcon,
 			nameLabel,
 			badge,
@@ -285,25 +280,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 	renderElement(entry: IFileItemEntry, index: number, templateData: IAICustomizationItemTemplateData): void {
 		templateData.elementDisposables.clear();
 		const element = entry.item;
-
-		// Sync checkbox: shown for syncable local items
-		if (element.syncable) {
-			templateData.syncCheckboxContainer.style.display = '';
-			const title = element.synced
-				? localize('unsyncItem', "Remove {0} from sync", element.name)
-				: localize('syncItem', "Add {0} to sync", element.name);
-			const checkbox = templateData.elementDisposables.add(
-				new Checkbox(title, !!element.synced, defaultCheckboxStyles)
-			);
-			templateData.syncCheckboxContainer.replaceChildren(checkbox.domNode);
-			templateData.elementDisposables.add(checkbox.onChange(() => {
-				const syncProvider = this.harnessService.getActiveDescriptor().syncProvider;
-				syncProvider?.toggleUri(element.uri, element.promptType);
-			}));
-		} else {
-			templateData.syncCheckboxContainer.style.display = 'none';
-			templateData.syncCheckboxContainer.replaceChildren();
-		}
 
 		// Type icon: use per-item override or fall back to prompt type
 		templateData.typeIcon.className = 'item-type-icon';
@@ -437,6 +413,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, element.uri.toString()],
 			[AI_CUSTOMIZATION_ITEM_DISABLED_KEY, element.disabled],
+			[AI_CUSTOMIZATION_ITEM_GROUP_KEY, element.groupKey ?? ''],
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, this.harnessService.getActiveDescriptor().supportsTroubleshoot ?? false],
 		];
 		if (element.storage) {
@@ -774,6 +751,7 @@ export class AICustomizationListWidget extends Disposable {
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, item.uri.toString()],
 			[AI_CUSTOMIZATION_ITEM_DISABLED_KEY, item.disabled],
+			[AI_CUSTOMIZATION_ITEM_GROUP_KEY, item.groupKey ?? ''],
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, this.harnessService.getActiveDescriptor().supportsTroubleshoot ?? false],
 		];
 		if (item.storage) {
@@ -1173,10 +1151,9 @@ export class AICustomizationListWidget extends Disposable {
 		if (this.cachedItemSource && this.cachedItemSource.descriptorId === descriptor.id) {
 			return this.cachedItemSource.source;
 		}
-		const itemProvider = descriptor.itemProvider ?? (descriptor.syncProvider ? undefined : this.promptsServiceItemProvider);
+		const itemProvider = descriptor.itemProvider ?? this.promptsServiceItemProvider;
 		const source = new ProviderCustomizationItemSource(
 			itemProvider,
-			descriptor.syncProvider,
 			this.promptsService,
 			this.workspaceService,
 			this.fileService,
@@ -1269,86 +1246,51 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
-	 * Groups normalized list items for display.
-	 * When a syncProvider is present, shows remote items + local sync items.
-	 * Otherwise, groups items by normalized storage/groupKey.
+	 * Groups normalized list items for display by their storage / groupKey.
+	 *
+	 * In auto-sync harnesses (those with a `disableProvider`), local items
+	 * carry their natural storage (`local` / `user` / `plugin`) and group
+	 * under "Workspace" / "User" / "Plugins" alongside any remote items.
+	 * The per-row disable affordance is rendered in {@link renderElement}.
 	 */
 	private groupMatchedItems(matchedItems: IAICustomizationListItem[]): void {
-		const activeDescriptor = this.harnessService.getActiveDescriptor();
+		// Standard provider layout: group by inferred storage/groupKey.
+		// Instructions use semantic categories (matching core path) so
+		// that provider-supplied groupKeys like 'context-instructions'
+		// are routed to the correct collapsible header.
+		const groups: { groupKey: string; label: string; icon: ThemeIcon; description: string; items: IAICustomizationListItem[] }[] =
+			this.currentSection === AICustomizationManagementSection.Instructions
+				? [
+					{ groupKey: 'agent-instructions', label: localize('agentInstructionsGroup', "Agent Instructions"), icon: instructionsIcon, description: localize('agentInstructionsGroupDescription', "Instruction files automatically loaded for all agent interactions (e.g. AGENTS.md, CLAUDE.md, copilot-instructions.md)."), items: [] },
+					{ groupKey: 'context-instructions', label: localize('contextInstructionsGroup', "Included Based on Context"), icon: instructionsIcon, description: localize('contextInstructionsGroupDescription', "Instructions automatically loaded when matching files are part of the context."), items: [] },
+					{ groupKey: 'on-demand-instructions', label: localize('onDemandInstructionsGroup', "Loaded on Demand"), icon: instructionsIcon, description: localize('onDemandInstructionsGroupDescription', "Instructions loaded only when explicitly referenced."), items: [] },
+					{ groupKey: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, description: localize('workspaceGroupDescription', "Customizations stored as files in your project folder and shared with your team via version control."), items: [] },
+					{ groupKey: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "Customizations stored locally on your machine in a central location. Private to you and available across all projects."), items: [] },
+					{ groupKey: REMOTE_GROUP_KEY, label: localize('remoteGroup', "Remote"), icon: remoteIcon, description: localize('remoteGroupDescription', "Read-only customizations served by the connected agent host."), items: [] },
+					{ groupKey: PromptsStorage.plugin, label: localize('pluginGroup', "Plugins"), icon: pluginIcon, description: localize('pluginGroupDescription', "Read-only customizations provided by installed plugins."), items: [] },
+					{ groupKey: BUILTIN_STORAGE, label: localize('builtinGroup', "Built-in"), icon: builtinIcon, description: localize('builtinGroupDescription', "Built-in customizations shipped with the application."), items: [] },
+				]
+				: [
+					{ groupKey: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, description: localize('workspaceGroupDescription', "Customizations stored as files in your project folder and shared with your team via version control."), items: [] },
+					{ groupKey: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "Customizations stored locally on your machine in a central location. Private to you and available across all projects."), items: [] },
+					{ groupKey: REMOTE_GROUP_KEY, label: localize('remoteGroup', "Remote"), icon: remoteIcon, description: localize('remoteGroupDescription', "Read-only customizations served by the connected agent host."), items: [] },
+					{ groupKey: PromptsStorage.plugin, label: localize('pluginGroup', "Plugins"), icon: pluginIcon, description: localize('pluginGroupDescription', "Read-only customizations provided by installed plugins."), items: [] },
+					{ groupKey: PromptsStorage.extension, label: localize('extensionGroup', "Extensions"), icon: extensionIcon, description: localize('extensionGroupDescription', "Read-only customizations provided by installed extensions."), items: [] },
+					{ groupKey: BUILTIN_STORAGE, label: localize('builtinGroup', "Built-in"), icon: builtinIcon, description: localize('builtinGroupDescription', "Built-in customizations shipped with the application."), items: [] },
+				];
 
-		if (activeDescriptor.syncProvider) {
-			// Sync layout: remote items flat, then local items with sync checkboxes
-			const remoteItems = matchedItems.filter(i => !i.syncable);
-			const localItems = matchedItems.filter(i => i.syncable);
-			const entries: IListEntry[] = [];
-
-			for (const item of remoteItems.sort((a, b) => a.name.localeCompare(b.name))) {
-				entries.push({ type: 'file-item' as const, item });
+		for (const item of matchedItems) {
+			const key = item.groupKey ?? item.storage ?? PromptsStorage.local;
+			let group = groups.find(g => g.groupKey === key);
+			if (!group) {
+				// Dynamically create a group for unknown groupKeys from providers
+				group = { groupKey: key, label: formatDisplayName(key), icon: Codicon.folder, description: '', items: [] };
+				groups.push(group);
 			}
-
-			if (localItems.length > 0) {
-				const syncedCount = localItems.filter(i => i.synced).length;
-				entries.push({
-					type: 'group-header' as const,
-					id: 'group-sync-local',
-					groupKey: 'sync-local',
-					label: localize('localGroup', "Local"),
-					icon: Codicon.folder,
-					count: syncedCount,
-					isFirst: remoteItems.length === 0,
-					description: localize('localGroupDescription', "Local customizations available to sync to the remote agent."),
-					collapsed: false,
-				});
-				const sorted = localItems.sort((a, b) => {
-					if (a.synced !== b.synced) {
-						return a.synced ? -1 : 1;
-					}
-					return a.name.localeCompare(b.name);
-				});
-				for (const item of sorted) {
-					entries.push({ type: 'file-item' as const, item: item.synced ? item : { ...item, disabled: true } });
-				}
-			}
-
-			this.displayEntries = entries;
-		} else {
-			// Standard provider layout: group by inferred storage/groupKey.
-			// Instructions use semantic categories (matching core path) so
-			// that provider-supplied groupKeys like 'context-instructions'
-			// are routed to the correct collapsible header.
-			const groups: { groupKey: string; label: string; icon: ThemeIcon; description: string; items: IAICustomizationListItem[] }[] =
-				this.currentSection === AICustomizationManagementSection.Instructions
-					? [
-						{ groupKey: 'agent-instructions', label: localize('agentInstructionsGroup', "Agent Instructions"), icon: instructionsIcon, description: localize('agentInstructionsGroupDescription', "Instruction files automatically loaded for all agent interactions (e.g. AGENTS.md, CLAUDE.md, copilot-instructions.md)."), items: [] },
-						{ groupKey: 'context-instructions', label: localize('contextInstructionsGroup', "Included Based on Context"), icon: instructionsIcon, description: localize('contextInstructionsGroupDescription', "Instructions automatically loaded when matching files are part of the context."), items: [] },
-						{ groupKey: 'on-demand-instructions', label: localize('onDemandInstructionsGroup', "Loaded on Demand"), icon: instructionsIcon, description: localize('onDemandInstructionsGroupDescription', "Instructions loaded only when explicitly referenced."), items: [] },
-						{ groupKey: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, description: localize('workspaceGroupDescription', "Customizations stored as files in your project folder and shared with your team via version control."), items: [] },
-						{ groupKey: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "Customizations stored locally on your machine in a central location. Private to you and available across all projects."), items: [] },
-						{ groupKey: PromptsStorage.plugin, label: localize('pluginGroup', "Plugins"), icon: pluginIcon, description: localize('pluginGroupDescription', "Read-only customizations provided by installed plugins."), items: [] },
-						{ groupKey: BUILTIN_STORAGE, label: localize('builtinGroup', "Built-in"), icon: builtinIcon, description: localize('builtinGroupDescription', "Built-in customizations shipped with the application."), items: [] },
-					]
-					: [
-						{ groupKey: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, description: localize('workspaceGroupDescription', "Customizations stored as files in your project folder and shared with your team via version control."), items: [] },
-						{ groupKey: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "Customizations stored locally on your machine in a central location. Private to you and available across all projects."), items: [] },
-						{ groupKey: PromptsStorage.plugin, label: localize('pluginGroup', "Plugins"), icon: pluginIcon, description: localize('pluginGroupDescription', "Read-only customizations provided by installed plugins."), items: [] },
-						{ groupKey: PromptsStorage.extension, label: localize('extensionGroup', "Extensions"), icon: extensionIcon, description: localize('extensionGroupDescription', "Read-only customizations provided by installed extensions."), items: [] },
-						{ groupKey: BUILTIN_STORAGE, label: localize('builtinGroup', "Built-in"), icon: builtinIcon, description: localize('builtinGroupDescription', "Built-in customizations shipped with the application."), items: [] },
-					];
-
-			for (const item of matchedItems) {
-				const key = item.groupKey ?? item.storage ?? PromptsStorage.local;
-				let group = groups.find(g => g.groupKey === key);
-				if (!group) {
-					// Dynamically create a group for unknown groupKeys from providers
-					group = { groupKey: key, label: formatDisplayName(key), icon: Codicon.folder, description: '', items: [] };
-					groups.push(group);
-				}
-				group.items.push(item);
-			}
-
-			this.buildGroupedEntries(groups);
+			group.items.push(item);
 		}
 
+		this.buildGroupedEntries(groups);
 		this.commitDisplayEntries();
 	}
 
@@ -1499,8 +1441,10 @@ export class AICustomizationListWidget extends Disposable {
 		// When offsetHeight returns 0 the container just became visible
 		// after display:none and the browser hasn't reflowed yet — defer
 		// layout to the next frame so measurements are accurate.
+		// Skip the retry when the element is hidden (display:none parent)
+		// since rAF will never produce a non-zero measurement.
 		const searchBarHeight = this.searchAndButtonContainer.offsetHeight;
-		if (searchBarHeight === 0) {
+		if (searchBarHeight === 0 && this.element.offsetParent !== null) {
 			DOM.getWindow(this.element).requestAnimationFrame(() => this.layout(height, width));
 			return;
 		}
