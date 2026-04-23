@@ -47,6 +47,7 @@ export interface IWorkspacePluginSettingsService {
 	 * Keys are `"pluginName@marketplaceName"`, values indicate recommendation.
 	 */
 	readonly enabledPlugins: IObservable<ReadonlyMap<string, boolean>>;
+
 }
 
 // --- Parsing helpers ---------------------------------------------------------

@@ -51,6 +51,8 @@ import {
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID,
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_INPUT_ID,
 	AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY,
+	AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY,
+	AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY,
 	AICustomizationManagementCommands,
 	AICustomizationManagementItemMenuId,
 	AICustomizationManagementSection,
@@ -745,18 +747,24 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
 		const promptsService = accessor.get(IPromptsService);
+		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
 		if (!promptType) {
 			return;
 		}
 
-		// Workspace-local items are disabled at workspace scope; user-level items at profile scope
 		const storage = extractStorage(context);
-		const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
-		const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
-		disabled.add(uri);
-		promptsService.setDisabledPromptFiles(promptType, disabled, scope);
+		const enablementProvider = harnessService.getActiveEnablementProvider();
+		if (enablementProvider && storage !== PromptsStorage.extension) {
+			enablementProvider.setEnabled(uri, promptType, false);
+		} else {
+			// Workspace-local items are disabled at workspace scope; user-level items at profile scope
+			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
+			disabled.add(uri);
+			promptsService.setDisabledPromptFiles(promptType, disabled, scope);
+		}
 	}
 });
 
@@ -771,15 +779,22 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
 		const promptsService = accessor.get(IPromptsService);
+		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
 		if (!promptType) {
 			return;
 		}
 
-		const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
-		disabled.add(uri);
-		promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE);
+		const storage = extractStorage(context);
+		const enablementProvider = harnessService.getActiveEnablementProvider();
+		if (enablementProvider && storage !== PromptsStorage.extension) {
+			enablementProvider.setEnabled(uri, promptType, false);
+		} else {
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			disabled.add(uri);
+			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE);
+		}
 	}
 });
 
@@ -795,26 +810,31 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
 		const promptsService = accessor.get(IPromptsService);
+		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
 		if (!promptType) {
 			return;
 		}
 
-		// Remove from both scopes to fully re-enable — but only write
-		// the scopes that actually contain the URI to avoid unnecessary
-		// cache invalidation.
-		const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
-		const wasInProfile = profileDisabled.delete(uri);
+		const storage = extractStorage(context);
+		const enablementProvider = harnessService.getActiveEnablementProvider();
+		if (enablementProvider && storage !== PromptsStorage.extension) {
+			enablementProvider.setEnabled(uri, promptType, true);
+		} else {
+			// Remove from both scopes to fully re-enable
+			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
+			const wasInProfile = profileDisabled.delete(uri);
 
-		const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
-		const wasInWorkspace = workspaceDisabled.delete(uri);
+			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			const wasInWorkspace = workspaceDisabled.delete(uri);
 
-		if (wasInProfile) {
-			promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
-		}
-		if (wasInWorkspace) {
-			promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+			if (wasInProfile) {
+				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
+			}
+			if (wasInWorkspace) {
+				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+			}
 		}
 	}
 });
@@ -824,7 +844,10 @@ registerAction2(class extends Action2 {
  */
 const WHEN_ITEM_IS_NOT_PLUGIN = ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.plugin);
 
-// Context menu: Disable (shown when non-plugin item is enabled)
+const WHEN_ENABLEMENT_SUPPORTED = ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, 'none');
+const WHEN_ITEM_DISABLEABLE = ContextKeyExpr.and(WHEN_ENABLEMENT_SUPPORTED, ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, true));
+
+// Context menu: Disable (shown when non-plugin item is enabled and enablement is supported)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('disable', "Disable") },
 	group: '5_toggle',
@@ -832,10 +855,12 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
 		WHEN_ITEM_IS_NOT_PLUGIN,
+		WHEN_ITEM_DISABLEABLE,
 	),
 });
 
-// Context menu: Disable (Workspace) (shown for user-level and extension items, when a workspace is open)
+// Context menu: Disable (Workspace) (shown when enablement scope is 'workspace', for user-level
+// and extension items, when a workspace is open)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_WORKSPACE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('disableForWorkspace', "Disable (Workspace)") },
 	group: '5_toggle',
@@ -843,6 +868,8 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
 		WHEN_ITEM_IS_NOT_PLUGIN,
+		WHEN_ITEM_DISABLEABLE,
+		ContextKeyExpr.equals(AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, 'workspace'),
 		ContextKeyExpr.or(
 			ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.user),
 			ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.extension),
@@ -851,7 +878,7 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	),
 });
 
-// Context menu: Enable (shown when non-plugin item is disabled)
+// Context menu: Enable (shown when non-plugin item is disabled and enablement is supported)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: ENABLE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('enable', "Enable") },
 	group: '5_toggle',
@@ -859,10 +886,11 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, true),
 		WHEN_ITEM_IS_NOT_PLUGIN,
+		WHEN_ITEM_DISABLEABLE,
 	),
 });
 
-// Inline hover: Disable (shown when non-plugin item is enabled)
+// Inline hover: Disable (shown when non-plugin item is enabled and enablement is supported)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: DISABLE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('disable', "Disable"), icon: Codicon.eyeClosed },
 	group: 'inline',
@@ -870,10 +898,11 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, false),
 		WHEN_ITEM_IS_NOT_PLUGIN,
+		WHEN_ITEM_DISABLEABLE,
 	),
 });
 
-// Inline hover: Enable (shown when non-plugin item is disabled)
+// Inline hover: Enable (shown when non-plugin item is disabled and enablement is supported)
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: ENABLE_AI_CUSTOMIZATION_MGMT_ITEM_ID, title: localize('enable', "Enable"), icon: Codicon.eye },
 	group: 'inline',
@@ -881,6 +910,7 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	when: ContextKeyExpr.and(
 		ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_DISABLED_KEY, true),
 		WHEN_ITEM_IS_NOT_PLUGIN,
+		WHEN_ITEM_DISABLEABLE,
 	),
 });
 

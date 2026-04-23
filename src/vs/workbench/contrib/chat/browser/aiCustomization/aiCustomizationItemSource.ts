@@ -21,7 +21,7 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IAICustomizationWorkspaceService } from '../../common/aiCustomizationWorkspaceService.js';
-import { ICustomizationSyncProvider, ICustomizationItem, ICustomizationItemProvider } from '../../common/customizationHarnessService.js';
+import { ICustomizationSyncProvider, ICustomizationItem, ICustomizationItemProvider, ICustomizationEnablementProvider } from '../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
 import { formatHookCommandLabel } from '../../common/promptSyntax/hookSchema.js';
@@ -314,6 +314,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 	constructor(
 		private readonly itemProvider: ICustomizationItemProvider | undefined,
 		private readonly syncProvider: ICustomizationSyncProvider | undefined,
+		private readonly enablementProvider: ICustomizationEnablementProvider | undefined,
 		private readonly promptsService: IPromptsService,
 		private readonly workspaceService: IAICustomizationWorkspaceService,
 		private readonly fileService: IFileService,
@@ -331,6 +332,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		this.onDidChange = Event.any(
 			this.itemProvider?.onDidChange ?? Event.None,
 			this.syncProvider?.onDidChange ?? Event.None,
+			this.enablementProvider?.onDidChange ?? Event.None,
 			promptServiceEvents,
 		);
 	}
@@ -372,10 +374,12 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
 
-		// Overlay disabled state from storage for providers that don't track
-		// disablement themselves (e.g. extension-contributed harness providers).
+		// Overlay disabled state from the harness's enablement provider, or
+		// fall back to promptsService (StorageService) when no provider is set.
 		// Also add back disabled items that the provider didn't include at all.
-		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
+		const disabledUris = this.enablementProvider
+			? this.enablementProvider.getDisabledPromptFiles(promptType)
+			: this.promptsService.getDisabledPromptFiles(promptType);
 		if (disabledUris.size > 0) {
 			const existingUris = new ResourceSet(normalized.map(i => i.uri));
 			for (let i = 0; i < normalized.length; i++) {
@@ -497,7 +501,9 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			uriUseCounts.set(item.uri, (uriUseCounts.get(item.uri) ?? 0) + 1);
 		}
 		const appended: IAICustomizationListItem[] = [];
-		const disabledPromptFiles = this.promptsService.getDisabledPromptFiles(PromptsType.skill);
+		const disabledPromptFiles = this.enablementProvider
+			? this.enablementProvider.getDisabledPromptFiles(PromptsType.skill)
+			: this.promptsService.getDisabledPromptFiles(PromptsType.skill);
 		for (const p of builtinPaths) {
 			const name = p.name ?? basename(p.uri);
 			if (overriddenNames.has(name)) {
@@ -542,7 +548,9 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			return [];
 		}
 
-		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
+		const disabledUris = this.enablementProvider
+			? this.enablementProvider.getDisabledPromptFiles(promptType)
+			: this.promptsService.getDisabledPromptFiles(promptType);
 		const providerItems: ICustomizationItem[] = files
 			.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user)
 			.map(file => ({

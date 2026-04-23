@@ -787,13 +787,20 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		const handle = ExtHostChatAgents2._customizationProviderIdPool++;
 		this._customizationProviders.set(handle, { extension, provider });
 
+		const enablementScopeMap: Record<number, 'none' | 'global' | 'workspace'> = {
+			0: 'none',  // ChatSessionCustomizationEnablementScope.None
+			1: 'global', // ChatSessionCustomizationEnablementScope.Global
+			2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
+		};
 		const metadataDto: IChatSessionCustomizationProviderMetadataDto = {
 			label: metadata.label,
 			iconId: metadata.iconId,
 			supportedTypes: metadata.supportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
+			enablementScope: metadata.enablementScope !== undefined ? enablementScopeMap[metadata.enablementScope] : undefined,
+			disableableTypes: metadata.disableableTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
 		};
 
-		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier);
+		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier, typeof provider.resolveCustomizationEnablement === 'function');
 
 		const disposables = new DisposableStore();
 
@@ -831,10 +838,24 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				groupKey: item.groupKey,
 				badge: item.badge,
 				badgeTooltip: item.badgeTooltip,
+				enabled: item.enabled,
 			}));
 		} catch (err) {
 			return undefined;
 		}
+	}
+
+	$setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean): void {
+		const providerData = this._customizationProviders.get(handle);
+		if (!providerData?.provider.resolveCustomizationEnablement) {
+			return;
+		}
+		providerData.provider.resolveCustomizationEnablement(
+			URI.revive(uri),
+			typeConvert.ChatSessionCustomizationType.to(type),
+			enabled,
+			CancellationToken.None,
+		);
 	}
 
 	async $detectChatParticipant(handle: number, requestDto: Dto<IChatAgentRequest>, context: { history: IChatAgentHistoryEntryDto[] }, options: { location: ChatAgentLocation; participants?: vscode.ChatParticipantMetadata[] }, token: CancellationToken): Promise<vscode.ChatParticipantDetectionResult | null | undefined> {

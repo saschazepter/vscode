@@ -199,6 +199,7 @@ suite('aiCustomizationListWidget', () => {
 				getStorageSourceFilter: () => ({ sources: [] }),
 				getActiveDescriptor: () => descriptor,
 				registerExternalHarness: () => ({ dispose() { } }),
+				getActiveEnablementProvider: () => undefined,
 			});
 
 			instaService.stub(IAgentPluginService, {

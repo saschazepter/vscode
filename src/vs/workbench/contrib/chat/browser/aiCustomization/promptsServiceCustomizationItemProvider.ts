@@ -56,7 +56,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 
 	private async provideCustomizations(promptType: PromptsType, token: CancellationToken = CancellationToken.None): Promise<ICustomizationItem[]> {
 		const items: ICustomizationItem[] = [];
-		const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
 		const extensionInfoByUri = new ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>();
 
 		if (promptType === PromptsType.agent) {
@@ -67,50 +66,16 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					extensionInfoByUri.set(file.uri, { id: file.extension.identifier, displayName: file.extension.displayName });
 				}
 			}
-			const seenUris = new ResourceSet();
 			for (const agent of agents) {
-				seenUris.add(agent.uri);
 				items.push({
 					uri: agent.uri,
 					type: promptType,
 					name: agent.name,
 					description: agent.description,
 					storage: agent.source.storage,
-					enabled: !disabledUris.has(agent.uri),
 				});
 				if (agent.source.storage === PromptsStorage.extension && !extensionInfoByUri.has(agent.uri)) {
 					extensionInfoByUri.set(agent.uri, { id: agent.source.extensionId });
-				}
-			}
-			// Re-add disabled agent files so they appear in the UI as disabled.
-			// Use discovery info to get properly parsed names/descriptions.
-			if (disabledUris.size > 0) {
-				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.agent, token);
-				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
-				for (const file of discoveryInfo.files) {
-					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
-						items.push({
-							uri: file.promptPath.uri,
-							type: promptType,
-							name: file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)),
-							description: file.promptPath.description,
-							storage: file.promptPath.storage,
-							enabled: false,
-						});
-					}
-				}
-				// Fallback: add disabled agents not found in discovery info
-				for (const file of allAgentFiles) {
-					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
-						items.push({
-							uri: file.uri,
-							type: promptType,
-							name: file.name || getFriendlyName(basename(file.uri)),
-							description: file.description,
-							storage: file.storage,
-							enabled: false,
-						});
-					}
 				}
 			}
 		} else if (promptType === PromptsType.skill) {
@@ -122,10 +87,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				}
 			}
 			const uiIntegrations = this.workspaceService.getSkillUIIntegrations();
-			const seenUris = new ResourceSet();
 			for (const skill of skills || []) {
 				const skillName = skill.name || basename(dirname(skill.uri)) || basename(skill.uri);
-				seenUris.add(skill.uri);
 				const skillFolderName = basename(dirname(skill.uri));
 				const uiTooltip = uiIntegrations.get(skillFolderName);
 				items.push({
@@ -134,132 +97,37 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					name: skillName,
 					description: skill.description,
 					storage: skill.storage,
-					enabled: !disabledUris.has(skill.uri),
 					badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
 					badgeTooltip: uiTooltip,
 				});
 			}
-			if (disabledUris.size > 0) {
-				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.skill, token);
-				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
-				for (const file of discoveryInfo.files) {
-					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
-						const disabledName = file.promptPath.name || basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri);
-						const disabledFolderName = basename(dirname(file.promptPath.uri));
-						const uiTooltip = uiIntegrations.get(disabledFolderName);
-						items.push({
-							uri: file.promptPath.uri,
-							type: promptType,
-							name: disabledName,
-							description: file.promptPath.description,
-							storage: file.promptPath.storage,
-							enabled: false,
-							badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
-							badgeTooltip: uiTooltip,
-						});
-					}
-				}
-				// Fallback: add disabled skills not found in discovery info
-				for (const file of allSkillFiles) {
-					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
-						items.push({
-							uri: file.uri,
-							type: promptType,
-							name: file.name || basename(dirname(file.uri)) || basename(file.uri),
-							description: file.description,
-							storage: file.storage,
-							enabled: false,
-						});
-					}
-				}
-			}
 		} else if (promptType === PromptsType.prompt) {
 			const commands = await this.promptsService.getPromptSlashCommands(token);
-			const seenUris = new ResourceSet();
 			for (const command of commands) {
 				if (command.type === PromptsType.skill) {
 					continue;
 				}
-				seenUris.add(command.uri);
 				items.push({
 					uri: command.uri,
 					type: promptType,
 					name: command.name,
 					description: command.description,
 					storage: command.storage,
-					enabled: !disabledUris.has(command.uri),
 				});
 				if (command.extension) {
 					extensionInfoByUri.set(command.uri, { id: command.extension.identifier, displayName: command.extension.displayName });
 				}
 			}
-			// Re-add disabled prompt files so they appear in the UI as disabled.
-			// Use discovery info to get properly parsed names/descriptions.
-			if (disabledUris.size > 0) {
-				const discoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.prompt, token);
-				const discoveredUris = new ResourceSet(discoveryInfo.files.map(f => f.promptPath.uri));
-				for (const file of discoveryInfo.files) {
-					if (!seenUris.has(file.promptPath.uri) && disabledUris.has(file.promptPath.uri)) {
-						items.push({
-							uri: file.promptPath.uri,
-							type: promptType,
-							name: file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)),
-							description: file.promptPath.description,
-							storage: file.promptPath.storage,
-							enabled: false,
-						});
-					}
-				}
-				// Fallback: add disabled prompts not found in discovery info
-				const allPromptFiles = await this.promptsService.listPromptFiles(PromptsType.prompt, token);
-				for (const file of allPromptFiles) {
-					if (!seenUris.has(file.uri) && !discoveredUris.has(file.uri) && disabledUris.has(file.uri)) {
-						items.push({
-							uri: file.uri,
-							type: promptType,
-							name: file.name || getFriendlyName(basename(file.uri)),
-							description: file.description,
-							storage: file.storage,
-							enabled: false,
-						});
-					}
-				}
-			}
 		} else if (promptType === PromptsType.hook) {
-			await this.fetchPromptServiceHooks(items, disabledUris, promptType);
+			await this.fetchPromptServiceHooks(items, promptType);
 		} else {
-			await this.fetchPromptServiceInstructions(items, extensionInfoByUri, disabledUris, promptType);
+			await this.fetchPromptServiceInstructions(items, extensionInfoByUri, promptType);
 		}
 
-		// Safety net: ensure every disabled URI appears in the items list.
-		// Some disabled files may not be found in discovery info or listPromptFiles
-		// (e.g. when the file's source folder is no longer in the configured locations).
-		if (disabledUris.size > 0) {
-			const itemUris = new ResourceSet(items.map(i => i.uri));
-			for (const uri of disabledUris) {
-				const alreadyInItems = itemUris.has(uri);
-				if (!alreadyInItems) {
-					items.push({
-						uri,
-						type: promptType,
-						name: getFriendlyName(basename(uri)),
-						enabled: false,
-					});
-				} else {
-					const idx = items.findIndex(i => i.uri.toString() === uri.toString());
-					if (idx !== -1 && items[idx].enabled !== false) {
-						// Item exists but is marked as enabled despite being in disabled list — fix it
-						items[idx] = { ...items[idx], enabled: false };
-					}
-				}
-			}
-		}
-
-		const filtered = this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType);
-		return filtered;
+		return this.applyLocalFilters(this.applyBuiltinGroupKeys(items, extensionInfoByUri), promptType);
 	}
 
-	private async fetchPromptServiceHooks(items: ICustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
+	private async fetchPromptServiceHooks(items: ICustomizationItem[], promptType: PromptsType): Promise<void> {
 		const hookFiles = await this.promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
 
 		// Non-plugin hooks: return raw file items — expansion into individual
@@ -272,7 +140,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				type: promptType,
 				name: f.name || getFriendlyName(basename(f.uri)),
 				storage: f.storage,
-				enabled: !disabledUris.has(f.uri),
 			});
 		}
 
@@ -299,14 +166,13 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 						description: `${agent.name}: ${truncatedCmd || localize('hookUnset', "(unset)")}`,
 						storage: agent.source.storage,
 						groupKey: 'agents',
-						enabled: !disabledUris.has(agent.uri),
 					});
 				}
 			}
 		}
 	}
 
-	private async fetchPromptServiceInstructions(items: ICustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>, disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
+	private async fetchPromptServiceInstructions(items: ICustomizationItem[], extensionInfoByUri: ResourceMap<{ id: ExtensionIdentifier; displayName?: string }>, promptType: PromptsType): Promise<void> {
 		const instructionFiles = await this.promptsService.getInstructionFiles(CancellationToken.None);
 		for (const file of instructionFiles) {
 			if (file.extension) {
@@ -325,7 +191,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				name: filename,
 				storage,
 				groupKey: 'agent-instructions',
-				enabled: !disabledUris.has(file.uri),
 			});
 		}
 
@@ -352,7 +217,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					description,
 					storage,
 					groupKey: 'context-instructions',
-					enabled: !disabledUris.has(uri),
 				});
 			} else {
 				items.push({
@@ -362,7 +226,6 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					description,
 					storage,
 					groupKey: 'on-demand-instructions',
-					enabled: !disabledUris.has(uri),
 				});
 			}
 		}

@@ -5,6 +5,7 @@
 
 import * as l10n from '@vscode/l10n';
 import * as vscode from 'vscode';
+import { INativeEnvService } from '../../../platform/env/common/envService';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
 import { ILogService } from '../../../platform/log/common/logService';
@@ -14,7 +15,7 @@ import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { isCancellationError } from '../../../util/vs/base/common/errors';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
-import { basename } from '../../../util/vs/base/common/resources';
+import { basename, dirname } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
 import { ICopilotCLIAgents, isEnabledForCopilotCLI } from '../copilotcli/node/copilotCli';
 
@@ -34,6 +35,10 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				vscode.ChatSessionCustomizationType.Hook,
 				vscode.ChatSessionCustomizationType.Plugins,
 			].filter((t): t is vscode.ChatSessionCustomizationType => t !== undefined),
+			disableableTypes: [
+				vscode.ChatSessionCustomizationType.Skill,
+				vscode.ChatSessionCustomizationType.Hook,
+			].filter((t): t is vscode.ChatSessionCustomizationType => t !== undefined),
 		};
 	}
 
@@ -44,6 +49,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
+		@INativeEnvService private readonly envService: INativeEnvService,
 	) {
 		super();
 
@@ -185,11 +191,20 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Collects all skill items from the prompt file service.
 	 */
 	private async getSkillItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		return (await this.promptsService.getSkills(token)).filter(isEnabledForCopilotCLI).map(s => ({
-			uri: s.uri,
-			type: vscode.ChatSessionCustomizationType.Skill,
-			name: s.name,
-		}));
+		const settings = await this._readSettings();
+		const disabledSkills = new Set<string>(
+			Array.isArray(settings.disabledSkills) ? settings.disabledSkills as string[] : [],
+		);
+		return (await this.promptsService.getSkills(token)).filter(isEnabledForCopilotCLI).map(s => {
+			const name = s.name;
+			const folderName = basename(dirname(s.uri)) || basename(s.uri);
+			return {
+				uri: s.uri,
+				type: vscode.ChatSessionCustomizationType.Skill,
+				name,
+				enabled: !disabledSkills.has(folderName),
+			};
+		});
 	}
 
 	/**
@@ -197,11 +212,19 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Each item is a hook configuration file (JSON).
 	 */
 	private async getHookItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => ({
-			uri: h.uri,
-			type: vscode.ChatSessionCustomizationType.Hook,
-			name: basename(h.uri).replace(/\.json$/i, ''),
-		}));
+		const settings = await this._readSettings();
+		const disabledHooks = new Set<string>(
+			Array.isArray(settings.disabledHooks) ? settings.disabledHooks as string[] : [],
+		);
+		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => {
+			const name = basename(h.uri).replace(/\.json$/i, '');
+			return {
+				uri: h.uri,
+				type: vscode.ChatSessionCustomizationType.Hook,
+				name,
+				enabled: !disabledHooks.has(name),
+			};
+		});
 	}
 
 	/**
@@ -213,5 +236,81 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			type: vscode.ChatSessionCustomizationType.Plugins,
 			name: basename(p.uri),
 		}));
+	}
+
+	// --- Enablement ---
+
+	/**
+	 * Path to the user-level copilot settings file (`~/.copilot/settings.json`).
+	 */
+	private get _settingsUri(): URI {
+		return URI.joinPath(this.envService.userHome, '.copilot', 'settings.json');
+	}
+
+	/**
+	 * Reads the user-level `~/.copilot/settings.json` as a JSON object.
+	 * Returns an empty object if the file doesn't exist or can't be parsed.
+	 */
+	private async _readSettings(): Promise<Record<string, unknown>> {
+		try {
+			const bytes = await this.fileSystemService.readFile(this._settingsUri);
+			const parsed = JSON.parse(new TextDecoder().decode(bytes));
+			return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+		} catch {
+			return {};
+		}
+	}
+
+	/**
+	 * Writes the user-level `~/.copilot/settings.json`.
+	 */
+	private async _writeSettings(settings: Record<string, unknown>): Promise<void> {
+		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
+		await this.fileSystemService.writeFile(this._settingsUri, content);
+	}
+
+	/**
+	 * Resolves the CLI settings key and item name for a given customization type and URI.
+	 * Returns `undefined` for types that don't support per-item disablement in the CLI.
+	 */
+	private _resolveDisablementKey(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType): { settingsKey: string; name: string } | undefined {
+		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
+			// Skills use the folder name as the key in disabledSkills
+			const name = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
+			return { settingsKey: 'disabledSkills', name };
+		}
+		if (type.id === vscode.ChatSessionCustomizationType.Hook?.id) {
+			// Hooks use the filename (without .json) as the key in disabledHooks
+			const name = basename(URI.from(uri)).replace(/\.json$/i, '');
+			return { settingsKey: 'disabledHooks', name };
+		}
+		// Other types don't have per-item disablement in the CLI config
+		return undefined;
+	}
+
+	async resolveCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _token: vscode.CancellationToken): Promise<void> {
+		const resolved = this._resolveDisablementKey(uri, type);
+		if (!resolved) {
+			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
+			return;
+		}
+
+		const { settingsKey, name } = resolved;
+		const settings = await this._readSettings();
+		const currentList = Array.isArray(settings[settingsKey]) ? settings[settingsKey] as string[] : [];
+
+		if (enabled) {
+			// Remove from disabled list
+			settings[settingsKey] = currentList.filter(s => s !== name);
+		} else {
+			// Add to disabled list (if not already present)
+			if (!currentList.includes(name)) {
+				settings[settingsKey] = [...currentList, name];
+			}
+		}
+
+		await this._writeSettings(settings);
+		this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} "${name}" in ${this._settingsUri.toString()}`);
+		this._onDidChange.fire();
 	}
 }

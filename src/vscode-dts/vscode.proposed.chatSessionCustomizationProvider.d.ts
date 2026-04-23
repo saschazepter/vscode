@@ -42,6 +42,18 @@ declare module 'vscode' {
 	}
 
 	/**
+	 * Describes the scope of disablement actions available for a customization provider.
+	 */
+	export enum ChatSessionCustomizationEnablementScope {
+		/** No disable/enable actions are shown. Items cannot be toggled. */
+		None = 0,
+		/** A single "Disable" / "Enable" action is shown. The provider decides how to persist the state. */
+		Global = 1,
+		/** Both "Disable" and "Disable (Workspace)" actions are shown, allowing per-workspace overrides. */
+		Workspace = 2,
+	}
+
+	/**
 	 * Metadata describing a customization provider and its capabilities.
 	 * This drives UI presentation (label, icon) and filtering (unsupported types,
 	 * workspace sub-paths).
@@ -63,6 +75,24 @@ declare module 'vscode' {
 		 * when this provider is active. When omitted, all sections are shown.
 		 */
 		readonly supportedTypes?: readonly ChatSessionCustomizationType[];
+
+		/**
+		 * Controls which disablement actions are available in the management UI.
+		 *
+		 * When omitted, defaults to {@link ChatSessionCustomizationEnablementScope.Global} if
+		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement} is implemented,
+		 * or {@link ChatSessionCustomizationEnablementScope.Workspace} otherwise (built-in
+		 * storage supports both scopes).
+		 */
+		readonly enablementScope?: ChatSessionCustomizationEnablementScope;
+
+		/**
+		 * Customization types for which per-item disable/enable is supported.
+		 * When set, only items matching one of these types will show disable/enable
+		 * actions in the management UI. When omitted, all types are disableable
+		 * (subject to {@link enablementScope}).
+		 */
+		readonly disableableTypes?: readonly ChatSessionCustomizationType[];
 	}
 
 	/**
@@ -109,6 +139,12 @@ declare module 'vscode' {
 		 * Optional tooltip text shown when hovering over the badge.
 		 */
 		readonly badgeTooltip?: string;
+
+		/**
+		 * Whether this customization is currently enabled.
+		 * Defaults to `true` when omitted.
+		 */
+		readonly enabled?: boolean;
 	}
 
 	/**
@@ -145,6 +181,20 @@ declare module 'vscode' {
 		 * @returns The list of customization items, or `undefined` if unavailable.
 		 */
 		provideChatSessionCustomizations(token: CancellationToken): ProviderResult<ChatSessionCustomizationItem[]>;
+
+		/**
+		 * Called when the user enables or disables a customization in the
+		 * management UI. The provider should persist the change and fire
+		 * {@link onDidChange} so the UI re-queries the updated state.
+		 *
+		 * When this method is not implemented, the management UI falls back
+		 * to built-in storage for disablement state.
+		 *
+		 * @param uri The URI of the customization item.
+		 * @param type The type of the customization.
+		 * @param enabled Whether the customization should be enabled (`true`) or disabled (`false`).
+		 */
+		resolveCustomizationEnablement?(uri: Uri, type: ChatSessionCustomizationType, enabled: boolean, token: CancellationToken): void;
 	}
 
 	// #endregion
