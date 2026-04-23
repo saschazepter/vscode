@@ -372,8 +372,15 @@ function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBackground
 						approved: true,
 					},
 				});
-			} catch {
-				// Timeout — re-poll until `active` flips.
+			} catch (e) {
+				// Only ignore the expected 2-second poll timeout. Any other error
+				// (e.g. 'Client closed', exception from matchingRule.inspect) is a
+				// real failure — record it so the test fails deterministically.
+				const msg = e instanceof Error ? e.message : String(e);
+				if (!msg.includes('Timed out') && !msg.includes('timed out')) {
+					errors.push(`approval loop error: ${msg}`);
+					active = false;
+				}
 			}
 		}
 	})();
@@ -1016,7 +1023,7 @@ function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBackground
 		this.timeout(180_000);
 
 		// What this test verifies:
-		//   `write_bash` (and `read_bash` / `stop_bash` / `list_bash`) are
+		//   `write_bash` (and `read_bash` / `bash_shutdown` / `list_bash`) are
 		//   registered as external tools with `skipPermission: true`, mirroring
 		//   the SDK's built-in shell helpers which never call `permissions.request`.
 		//   This regression test catches accidental removal of that flag — if it's
@@ -1029,8 +1036,9 @@ function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBackground
 		//   2. The model is instructed to use `write_bash`. If any permission
 		//      request appears for write_bash, the loop records it in
 		//      `observedToolNames` and we fail the assertion.
-		//   3. We still assert that bash actually ran (otherwise the test is
-		//      vacuous — the model might have ignored the prompt entirely).
+		//   3. We assert that bash actually ran AND that write_bash appeared in
+		//      toolCallStart notifications (so the test is non-vacuous — the model
+		//      actually tried to use the tool, not just piped input via bash).
 
 		const tempDir = mkdtempSync(`${tmpdir()}/ahp-write-bash-skip-perm-`);
 		tempDirs.push(tempDir);
@@ -1071,6 +1079,15 @@ function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBackground
 		// model ignored the prompt and the write_bash assertion below is vacuous.
 		assert.ok(approvalLoop.approvedToolNames.has('bash'),
 			`expected the model to invoke bash for setup; observed approved tools: ${[...approvalLoop.approvedToolNames].join(', ') || '<none>'}`);
+
+		// Non-vacuousness check: write_bash must have actually been invoked
+		// (seen in a toolCallStart notification). If the model piped input via
+		// the original bash command instead of using write_bash, this fails.
+		const writeBashStarts = client.receivedNotifications(n => isActionNotification(n, 'session/toolCallStart'))
+			.map(n => getActionEnvelope(n).action as { toolName?: string })
+			.filter(a => a.toolName === 'write_bash');
+		assert.ok(writeBashStarts.length > 0,
+			`expected write_bash to be invoked at least once (toolCallStart), but it was never called. The model may have piped input via the original bash command instead.`);
 
 		// The actual regression check: write_bash must never reach our
 		// permission handler. If this fails, `skipPermission: true` was likely

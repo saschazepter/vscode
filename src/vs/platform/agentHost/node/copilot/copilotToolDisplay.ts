@@ -257,7 +257,8 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 	if (WRITE_SHELL_TOOL_NAMES.has(toolName)) {
 		const args = parameters as ICopilotShellToolArgs | undefined;
 		if (args?.command) {
-			return md(localize('toolInvoke.writeShellCmd', "Sending {0} to shell", appendEscapedMarkdownInlineCode(truncate(args.command, 80))));
+			const firstLine = args.command.split('\n')[0];
+			return md(localize('toolInvoke.writeShellCmd', "Sending {0} to shell", appendEscapedMarkdownInlineCode(truncate(firstLine, 80))));
 		}
 		return localize('toolInvoke.writeShell', "Sending input to shell");
 	}
@@ -335,7 +336,8 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 	if (WRITE_SHELL_TOOL_NAMES.has(toolName)) {
 		const args = parameters as ICopilotShellToolArgs | undefined;
 		if (args?.command) {
-			return md(localize('toolComplete.writeShellCmd', "Sent {0} to shell", appendEscapedMarkdownInlineCode(truncate(args.command, 80))));
+			const firstLine = args.command.split('\n')[0];
+			return md(localize('toolComplete.writeShellCmd', "Sent {0} to shell", appendEscapedMarkdownInlineCode(truncate(firstLine, 80))));
 		}
 		return localize('toolComplete.writeShell', "Sent input to shell");
 	}
