@@ -142,7 +142,6 @@ export function createAiStatsHover(options: IAiStatsHoverOptions) {
 		n.div({
 			class: 'ai-stats-range-pills',
 		}, [
-			rangePill(options.data, 'all', localize('aiStats.range.all', "All")),
 			rangePill(options.data, '30d', localize('aiStats.range.30d', "30d")),
 			rangePill(options.data, '7d', localize('aiStats.range.7d', "7d")),
 		]),

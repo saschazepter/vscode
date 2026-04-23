@@ -12,7 +12,7 @@ import { IChatModel, IChatRequestModel } from '../../../chat/common/model/chatMo
 import { IChatService } from '../../../chat/common/chatService/chatService.js';
 import { AiStatsStatusBar } from './aiStatsStatusBar.js';
 
-export type AiStatsRange = 'all' | '30d' | '7d';
+export type AiStatsRange = '30d' | '7d';
 
 export interface IAiStatsOverview {
 	readonly sessions: number;
@@ -57,7 +57,7 @@ export class AiStatsFeature extends Disposable {
 	private readonly _recomputeTick = observableValue(this, 0);
 	private readonly _seen = new Set<string>();
 
-	readonly range = observableValue<AiStatsRange>(this, 'all');
+	readonly range = observableValue<AiStatsRange>(this, '30d');
 
 	/**
 	 * Bumps the {@link overview} derived so callers (e.g. the status bar hover)
@@ -235,17 +235,12 @@ export function computeOverview(data: IAiStatsData, totalSessions: number, range
 	const startOfToday = new Date(now);
 	startOfToday.setHours(0, 0, 0, 0);
 
-	let cutoff: number | undefined;
-	if (range === '7d') {
-		cutoff = startOfToday.getTime() - 6 * DAY_MS;
-	} else if (range === '30d') {
-		cutoff = startOfToday.getTime() - 29 * DAY_MS;
-	}
+	const cutoff = range === '7d'
+		? startOfToday.getTime() - 6 * DAY_MS
+		: startOfToday.getTime() - 29 * DAY_MS;
 
 	const allKeys = Object.keys(data.days).sort();
-	const includedKeys = cutoff === undefined
-		? allKeys
-		: allKeys.filter(k => parseDayKey(k) >= cutoff!);
+	const includedKeys = allKeys.filter(k => parseDayKey(k) >= cutoff);
 
 	let messages = 0;
 	let tokens = 0;
@@ -294,17 +289,9 @@ export function computeOverview(data: IAiStatsData, totalSessions: number, range
 		}
 	}
 
-	// Sessions is range-aware: count sessions whose first request was inside the range.
-	// We don't store first-seen-time per session, so for 'all' we use the cap; for ranges,
-	// approximate by summing distinct session days... fall back to total seen.
-	// Simpler: for 'all', use totalSessions; for ranges, use min of totalSessions and messages.
-	let sessions: number;
-	if (range === 'all') {
-		sessions = totalSessions;
-	} else {
-		// Approximation: a session has at least 1 message, so cap by messages.
-		sessions = Math.min(totalSessions, messages);
-	}
+	// Sessions is range-aware: approximate by capping total seen sessions by messages
+	// (a session has at least 1 message in the range to be counted).
+	const sessions = Math.min(totalSessions, messages);
 
 	return {
 		sessions,
