@@ -71,18 +71,17 @@ interface ICopilotFileToolArgs {
 /**
  * Parameters for the `view` tool. The Copilot CLI accepts an optional
  * `view_range: [startLine, endLine]` (1-based, inclusive). `endLine` may be
- * `-1` to mean "to end of file"; we treat that (and any other invalid range)
- * as "no range" and fall back to the path-only display.
+ * `-1` to mean "to end of file".
  */
 interface ICopilotViewToolArgs extends ICopilotFileToolArgs {
 	view_range?: number[];
 }
 
 /**
- * Normalizes a `view_range` array into a `{ startLine, endLine }` pair.
- * Returns `undefined` unless the array has exactly two integer elements with
- * `startLine >= 0` and `endLine >= startLine`. Mirrors the validation in the
- * Copilot Chat extension's `formatViewToolInvocation`.
+ * Normalizes a `view_range` array. Returns `undefined` unless the array has
+ * exactly two integer elements with `startLine >= 0`. `endLine === -1` is
+ * preserved as the "to end of file" sentinel; otherwise `endLine` must be
+ * `>= startLine`.
  */
 function formatViewRange(view_range: number[] | undefined): { startLine: number; endLine: number } | undefined {
 	if (!Array.isArray(view_range) || view_range.length !== 2) {
@@ -92,7 +91,10 @@ function formatViewRange(view_range: number[] | undefined): { startLine: number;
 	if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
 		return undefined;
 	}
-	if (startLine < 0 || endLine < startLine) {
+	if (startLine < 0) {
+		return undefined;
+	}
+	if (endLine !== -1 && endLine < startLine) {
 		return undefined;
 	}
 	return { startLine, endLine };
@@ -247,6 +249,9 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 				const link = formatPathAsMarkdownLink(args.path);
 				const range = formatViewRange(args.view_range);
 				if (range) {
+					if (range.endLine === -1) {
+						return md(localize('toolInvoke.viewFileFromLine', "Reading {0}, from line {1} to the end", link, range.startLine));
+					}
 					if (range.endLine !== range.startLine) {
 						return md(localize('toolInvoke.viewFileRange', "Reading {0}, lines {1} to {2}", link, range.startLine, range.endLine));
 					}
@@ -310,6 +315,9 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 				const link = formatPathAsMarkdownLink(args.path);
 				const range = formatViewRange(args.view_range);
 				if (range) {
+					if (range.endLine === -1) {
+						return md(localize('toolComplete.viewFileFromLine', "Read {0}, from line {1} to the end", link, range.startLine));
+					}
 					if (range.endLine !== range.startLine) {
 						return md(localize('toolComplete.viewFileRange', "Read {0}, lines {1} to {2}", link, range.startLine, range.endLine));
 					}
