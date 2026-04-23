@@ -212,9 +212,6 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			env['GIT_TERMINAL_PROMPT'] = '0';
 			env['DEBIAN_FRONTEND'] = 'noninteractive';
 		}
-		// macOS should launch a login shell by default so that /etc/zprofile
-		// (which runs path_helper) and ~/.zprofile are sourced. This matches
-		// the regular VS Code terminal profile resolver behavior.
 		let shellArgs: string[] = [];
 		if (platform.isMacintosh) {
 			const shellName = pathParse(shell).name;
