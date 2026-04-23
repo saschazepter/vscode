@@ -265,25 +265,33 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 			}
 			const existing = this._connections.get(connectionInfo.address);
 			if (existing) {
+				const nameChanged = existing.name !== connectionInfo.name;
+				const clientIdChanged = existing.loggedConnection.clientId !== connectionInfo.clientId;
+
 				// If the name or clientId changed, tear down and re-register
-				if (existing.name !== connectionInfo.name || existing.loggedConnection.clientId !== connectionInfo.clientId) {
-					this._logService.info(`[RemoteAgentHost] Reconnecting contribution for ${connectionInfo.address}: oldClientId=${existing.loggedConnection.clientId}, newClientId=${connectionInfo.clientId}, nameChanged=${existing.name !== connectionInfo.name}`);
+				if (nameChanged || clientIdChanged) {
+					this._logService.info(`[RemoteAgentHost] Reconnecting contribution for ${connectionInfo.address}: oldClientId=${existing.loggedConnection.clientId}, newClientId=${connectionInfo.clientId}, nameChanged=${nameChanged}`);
 					const oldClientId = existing.loggedConnection.clientId;
 					this._connections.deleteAndDispose(connectionInfo.address);
 					this._setupConnection(connectionInfo);
 
-					// Reconnect active terminals to the new connection
-					const newConnection = this._remoteAgentHostService.getConnection(connectionInfo.address);
-					if (newConnection) {
-						this._agentHostTerminalService.reconnectTerminals(newConnection, oldClientId).then(
-							({ recovered, total }) => {
-								if (total > 0) {
-									this._logService.info(`[RemoteAgentHost] Terminal reconnection: ${recovered}/${total} recovered`);
-									logTerminalRecovery(this._telemetryService, { recoveredCount: recovered, totalCount: total });
-								}
-							},
-							err => this._logService.warn('[RemoteAgentHost] Terminal reconnection failed', err)
-						);
+					// Reconnect active terminals only when the backing
+					// client changed. Name-only updates don't invalidate
+					// subscriptions and would cause unnecessary buffer
+					// clear/replay flicker.
+					if (clientIdChanged) {
+						const newConnection = this._remoteAgentHostService.getConnection(connectionInfo.address);
+						if (newConnection) {
+							this._agentHostTerminalService.reconnectTerminals(newConnection, oldClientId).then(
+								({ recovered, total }) => {
+									if (total > 0) {
+										this._logService.info(`[RemoteAgentHost] Terminal reconnection: ${recovered}/${total} recovered`);
+										logTerminalRecovery(this._telemetryService, { recoveredCount: recovered, totalCount: total });
+									}
+								},
+								err => this._logService.warn('[RemoteAgentHost] Terminal reconnection failed', err)
+							);
+						}
 					}
 				}
 			} else {
