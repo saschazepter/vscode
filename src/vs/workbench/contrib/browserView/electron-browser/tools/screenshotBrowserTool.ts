@@ -96,7 +96,7 @@ export class ScreenshotBrowserTool implements IToolImpl {
 
 		// Note that we don't use Playwright's screenshot methods because they cause brief flashing on the page,
 		// and also doesn't handle zooming well.
-		const browserViewModel = this.browserViewWorkbenchService.getBrowserViewModel(params.pageId);
+		const browserViewModel = await this.browserViewWorkbenchService.getKnownBrowserViews().get(params.pageId)?.resolve();
 		if (!browserViewModel) {
 			return errorResult(`No browser page found with ID ${params.pageId}`);
 		}

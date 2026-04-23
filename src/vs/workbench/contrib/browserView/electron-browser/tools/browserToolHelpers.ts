@@ -12,7 +12,7 @@ import { IAgentNetworkFilterService } from '../../../../../platform/networkFilte
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IToolResult } from '../../../chat/common/tools/languageModelToolsService.js';
 import { BrowserEditorInput } from '../../common/browserEditorInput.js';
-import { IKnownBrowserView, IBrowserViewWorkbenchService } from '../../common/browserView.js';
+import { IBrowserViewWorkbenchService } from '../../common/browserView.js';
 
 // eslint-disable-next-line local/code-import-patterns
 import type { Page } from 'playwright-core';
@@ -27,7 +27,7 @@ export interface FormatBrowserEditorLinesOptions {
 }
 
 /**
- * Formats a list of browser views as summary lines such as
+ * Formats a list of browser editors as summary lines such as
  * `- [pageId] Title (url) (active)`. Active/visible hints are
  * derived from the editor service automatically.
  *
@@ -35,32 +35,29 @@ export interface FormatBrowserEditorLinesOptions {
  * provided, pages whose URL is blocked by network policy are masked to avoid
  * leaking title or URL to the model.
  */
-export function formatBrowserEditorList(editorService: IEditorService, known: readonly IKnownBrowserView[], options?: FormatBrowserEditorLinesOptions): string {
+export function formatBrowserEditorList(editorService: IEditorService, editors: readonly BrowserEditorInput[], options?: FormatBrowserEditorLinesOptions): string {
 	const activeEditor = editorService.activeEditor;
 	const visibleEditors = new Set(editorService.visibleEditors);
 	const indent = options?.indent ?? '';
 	const filterService = options?.agentNetworkFilterService;
-	return known
-		.filter(e => !!e.model)
-		.map((browser, index) => {
-			const page = browser.model!;
-			const url = page.url || 'about:blank';
+	return editors.map((editor, index) => {
+		const url = editor.url || 'about:blank';
 
-			// If the page URL is blocked by network policy, mask its details.
-			let blocked = false;
-			if (filterService && url !== 'about:blank') {
-				try { blocked = !filterService.isUriAllowed(URI.parse(url)); } catch { }
-			}
+		// If the page URL is blocked by network policy, mask its details.
+		let blocked = false;
+		if (filterService && url !== 'about:blank') {
+			try { blocked = !filterService.isUriAllowed(URI.parse(url)); } catch { }
+		}
 
-			const title = blocked ? localize('browser.blockedByPolicy', "Blocked by network domain policy") : (page.title || 'Untitled');
-			const displayUrl = blocked ? '' : ` (${url})`;
-			const hint = browser.editor === activeEditor ? ' (active)' : visibleEditors.has(browser.editor) ? ' (visible)' : '';
-			const id = options?.excludeIds ? '' : `[${page.id}] `;
+		const title = blocked ? localize('browser.blockedByPolicy', "Blocked by network domain policy") : (editor.title || 'Untitled');
+		const displayUrl = blocked ? '' : ` (${url})`;
+		const hint = editor === activeEditor ? ' (active)' : visibleEditors.has(editor) ? ' (visible)' : '';
+		const id = options?.excludeIds ? '' : `[${editor.id}] `;
 
-			// By default, use numbers only if we're excluding IDs, so models don't get confused about which ID to use.
-			const bullet = (options?.numbered ?? options?.excludeIds) ? `${index + 1}. ` : '- ';
-			return `${indent}${bullet}${id}${title}${displayUrl}${hint}`;
-		}).join('\n');
+		// By default, use numbers only if we're excluding IDs, so models don't get confused about which ID to use.
+		const bullet = (options?.numbered ?? options?.excludeIds) ? `${index + 1}. ` : '- ';
+		return `${indent}${bullet}${id}${title}${displayUrl}${hint}`;
+	}).join('\n');
 }
 
 /**
@@ -145,17 +142,17 @@ export function errorResult(message: string): IToolResult {
 }
 
 /**
- * Checks whether a browser view with the same host (hostname + port) already
+ * Checks whether a browser editor with the same host (hostname + port) already
  * exists. When {@link playwrightService} is provided, only pages tracked by Playwright
  * (i.e. shared with the agent) are considered.
  *
- * @returns Matching entries, or empty array if none found.
+ * @returns All matching {@link BrowserEditorInput}s.
  */
 async function findExistingPagesByHost(
 	browserViewService: IBrowserViewWorkbenchService,
 	playwrightService: IPlaywrightService | undefined,
 	url: string,
-): Promise<IKnownBrowserView[]> {
+): Promise<BrowserEditorInput[]> {
 	const parsed = URL.parse(url);
 	if (!parsed || (parsed.protocol !== 'file:' && !parsed.host)) {
 		return [];
@@ -165,21 +162,21 @@ async function findExistingPagesByHost(
 		? new Set(await playwrightService.getTrackedPages())
 		: undefined;
 
-	const results: IKnownBrowserView[] = [];
-	for (const entry of browserViewService.getKnownBrowserViews()) {
-		if (trackedIds && !trackedIds.has(entry.id)) {
+	const results: BrowserEditorInput[] = [];
+	for (const editor of browserViewService.getKnownBrowserViews().values()) {
+		if (!(editor instanceof BrowserEditorInput)) {
 			continue;
 		}
-		if (!entry.model) {
+		if (trackedIds && !trackedIds.has(editor.id)) {
 			continue;
 		}
-		const editorUrl = URL.parse(entry.model.url || '');
+		const editorUrl = URL.parse(editor.url || '');
 		if (
-			!entry.model.url ||
+			!editor.url ||
 			editorUrl?.host === parsed.host ||
 			(parsed.protocol === 'file:' && editorUrl?.protocol === 'file:')
 		) {
-			results.push(entry);
+			results.push(editor);
 		}
 		// Check for subdomain matches
 		if (
@@ -189,7 +186,7 @@ async function findExistingPagesByHost(
 				parsed.host.endsWith('.' + editorUrl.host)
 			)
 		) {
-			results.push(entry);
+			results.push(editor);
 		}
 	}
 	return results;

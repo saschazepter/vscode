@@ -9,14 +9,14 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
-import { IBrowserEditorViewState } from './browserView.js';
+import { IBrowserEditorViewState, IBrowserViewWorkbenchService } from './browserView.js';
 import { EditorInputCapabilities, IEditorSerializer, IUntypedEditorInput, Verbosity } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { TAB_ACTIVE_FOREGROUND } from '../../../common/theme.js';
 import { localize } from '../../../../nls.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IBrowserViewWorkbenchService, IBrowserViewModel } from '../common/browserView.js';
+import { IBrowserViewModel } from '../common/browserView.js';
 import { hasKey } from '../../../../base/common/types.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { logBrowserOpen } from '../../../../platform/browserView/common/browserViewTelemetry.js';
@@ -58,27 +58,31 @@ export class BrowserEditorInput extends EditorInput {
 
 	constructor(
 		options: IBrowserEditorInputData,
+		private _resolveModel: () => Promise<IBrowserViewModel>,
 		@IThemeService private readonly themeService: IThemeService,
-		@IBrowserViewWorkbenchService private readonly browserViewWorkbenchService: IBrowserViewWorkbenchService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService
 	) {
 		super();
 		this._id = options.id;
 		this._initialData = options;
-
-		const existingModel = browserViewWorkbenchService.getBrowserViewModel(this._id);
-		if (existingModel) {
-			this.setModel(existingModel);
-		}
 	}
 
-	setModel(model: IBrowserViewModel): void {
+	get model(): IBrowserViewModel | undefined {
+		return this._model;
+	}
+
+	set model(model: IBrowserViewModel) {
+		if (this._model === model) {
+			return;
+		}
+
 		this._modelStore.clear();
 		this._model = model;
 
 		// Set up cleanup when the model is disposed
 		this._modelStore.add(this._model.onWillDispose(() => {
+			this._modelStore.clear();
 			this._model = undefined;
 		}));
 
@@ -131,16 +135,10 @@ export class BrowserEditorInput extends EditorInput {
 	override async resolve(): Promise<IBrowserViewModel> {
 		if (!this._model && !this._modelPromise) {
 			this._modelPromise = (async () => {
-				const model = await this.browserViewWorkbenchService.getOrCreateBrowserViewModel(this._id, {
-					url: this._initialData.url,
-					title: this._initialData.title,
-					lastFavicon: this._initialData.favicon
-				});
+				this._model = await this._resolveModel();
 				this._modelPromise = undefined;
 
-				this.setModel(model);
-
-				return model;
+				return this._model;
 			})();
 		}
 		return this._model || this._modelPromise!;
@@ -263,11 +261,13 @@ export class BrowserEditorInput extends EditorInput {
 	override copy(): EditorInput {
 		logBrowserOpen(this.telemetryService, 'copyToNewWindow');
 
-		return this.instantiationService.createInstance(BrowserEditorInput, {
-			id: generateUuid(),
-			url: this.url,
-			title: this.title,
-			favicon: this.favicon
+		return this.instantiationService.invokeFunction((accessor) => {
+			const browserViewWorkbenchService = accessor.get(IBrowserViewWorkbenchService);
+			return browserViewWorkbenchService.getOrCreateLazy(generateUuid(), {
+				url: this.url,
+				title: this.title,
+				favicon: this.favicon
+			});
 		});
 	}
 
@@ -327,7 +327,10 @@ export class BrowserEditorSerializer implements IEditorSerializer {
 	deserialize(instantiationService: IInstantiationService, serializedEditor: string): EditorInput | undefined {
 		try {
 			const data: IBrowserEditorInputData = JSON.parse(serializedEditor);
-			return instantiationService.createInstance(BrowserEditorInput, data);
+			return instantiationService.invokeFunction((accessor) => {
+				const browserViewWorkbenchService = accessor.get(IBrowserViewWorkbenchService);
+				return browserViewWorkbenchService.getOrCreateLazy(generateUuid(), data);
+			});
 		} catch {
 			return undefined;
 		}

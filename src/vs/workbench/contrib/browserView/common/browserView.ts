@@ -90,16 +90,6 @@ export interface IBrowserEditorViewState {
 export const IBrowserViewWorkbenchService = createDecorator<IBrowserViewWorkbenchService>('browserViewWorkbenchService');
 
 /**
- * A browser view that is known to the workbench.
- * - `model` is set when the workbench has a live model for the view; i.e. the browser page exists.
- */
-export interface IKnownBrowserView {
-	readonly id: string;
-	readonly editor: BrowserEditorInput;
-	readonly model?: IBrowserViewModel;
-}
-
-/**
  * Workbench-level service for browser views that provides model-based access to browser views.
  * This service manages browser view models that proxy to the main process browser view service.
  */
@@ -114,22 +104,13 @@ export interface IBrowserViewWorkbenchService {
 	/**
 	 * Get all known browser views.
 	 */
-	getKnownBrowserViews(): IKnownBrowserView[];
+	getKnownBrowserViews(): Map<string, BrowserEditorInput>;
 
 	/**
-	 * Get or create a browser view model for the given ID
-	 * @param id The browser view identifier
-	 * @param initialState The initial state to set when the view is first created. Ignored if the view already exists.
-	 * @returns A browser view model that proxies to the main process
+	 * Get an existing browser view for the given ID, or create a new one if it doesn't exist.
+	 * The underlying browser view is not created until the editor is opened or the model is resolved.
 	 */
-	getOrCreateBrowserViewModel(id: string, initialState?: Partial<IBrowserViewState>): Promise<IBrowserViewModel>;
-
-	/**
-	 * Get an existing browser view model for the given ID
-	 * @param id The browser view identifier
-	 * @returns A browser view model, or undefined if the view is unknown to the workbench
-	 */
-	getBrowserViewModel(id: string): IBrowserViewModel | undefined;
+	getOrCreateLazy(id: string, initialState?: IBrowserEditorViewState): BrowserEditorInput;
 
 	/**
 	 * Clear all storage data for the global browser session

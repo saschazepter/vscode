@@ -117,7 +117,7 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 	}
 
 	private _updateBrowserContext(): void {
-		const trackedBrowsers = this.browserViewService.getKnownBrowserViews()
+		const trackedBrowsers = [...this.browserViewService.getKnownBrowserViews().values()]
 			.filter(entry => this._trackedIds.has(entry.id));
 
 		if (trackedBrowsers.length === 0) {

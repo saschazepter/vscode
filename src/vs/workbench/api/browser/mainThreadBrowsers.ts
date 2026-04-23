@@ -38,15 +38,15 @@ export class MainThreadBrowsers extends Disposable implements MainThreadBrowsers
 
 		// Track open browser editors via the workbench service
 		this._register(this.browserViewService.onDidChangeBrowserViews(() => {
-			for (const entry of this.browserViewService.getKnownBrowserViews()) {
-				this._track(entry.editor);
+			for (const editor of this.browserViewService.getKnownBrowserViews().values()) {
+				this._track(editor);
 			}
 		}));
 		this._register(this.editorService.onDidActiveEditorChange(() => this._syncActiveBrowserTab()));
 
 		// Initial sync
-		for (const entry of this.browserViewService.getKnownBrowserViews()) {
-			this._track(entry.editor);
+		for (const editor of this.browserViewService.getKnownBrowserViews().values()) {
+			this._track(editor);
 		}
 		this._syncActiveBrowserTab();
 	}

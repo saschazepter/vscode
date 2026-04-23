@@ -289,7 +289,7 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 		if (options.reuseUrlFilter) {
 			const filterUri = URI.parse(options.reuseUrlFilter);
-			const matchingEntry = browserViewService.getKnownBrowserViews().find(({ editor: e }) => {
+			const matchingEditor = [...browserViewService.getKnownBrowserViews().values()].find((e) => {
 				const editorUri = URI.parse(e.url || '');
 				// URIs default to putting "file" scheme. Check that the scheme is really in the filter.
 				if (filterUri.scheme && options.reuseUrlFilter!.startsWith(`${filterUri.scheme}:`) && filterUri.scheme !== editorUri.scheme) {
@@ -311,11 +311,11 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 				return true;
 			});
-			if (matchingEntry) {
+			if (matchingEditor) {
 				if (options.url) {
-					matchingEntry.editor.navigate(options.url);
+					matchingEditor.navigate(options.url);
 				}
-				await editorService.openEditor(matchingEntry.editor);
+				await editorService.openEditor(matchingEditor);
 				return;
 			}
 		}
@@ -429,7 +429,7 @@ class OpenBrowserFromViewMenuAction extends Action2 {
 		const browserViewService = accessor.get(IBrowserViewWorkbenchService);
 		const commandService = accessor.get(ICommandService);
 
-		const hasOpenBrowserEditor = browserViewService.getKnownBrowserViews().some(e => e.editor);
+		const hasOpenBrowserEditor = browserViewService.getKnownBrowserViews().size > 0;
 
 		if (hasOpenBrowserEditor) {
 			await commandService.executeCommand(BrowserViewCommandId.QuickOpen);
@@ -480,7 +480,7 @@ class BrowserEditorOpenContextKeyContribution extends Disposable implements IWor
 		super();
 
 		const contextKey = CONTEXT_BROWSER_EDITOR_OPEN.bindTo(contextKeyService);
-		const update = () => contextKey.set(browserViewService.getKnownBrowserViews().some(e => e.editor));
+		const update = () => contextKey.set(browserViewService.getKnownBrowserViews().size > 0);
 
 		update();
 		this._register(browserViewService.onDidChangeBrowserViews(() => update()));

@@ -4,8 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { BrowserViewCommandId, BrowserViewStorageScope, IBrowserViewCreatedEvent, IBrowserViewOwner, IBrowserViewService, IBrowserViewState, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
-import { GroupModelChangeKind } from '../../../common/editor.js';
-import { IBrowserViewWorkbenchService, IBrowserViewModel, IKnownBrowserView, BrowserViewModel } from '../common/browserView.js';
+import { IBrowserViewWorkbenchService, IBrowserViewModel, BrowserViewModel, IBrowserEditorViewState } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -33,7 +32,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _browserViewService: IBrowserViewService;
-	private readonly _models = new Map<string, IBrowserViewModel>();
+	private readonly _known = new Map<string, BrowserEditorInput>();
 	private readonly _mainWindowId: number;
 
 	private readonly _onDidChangeBrowserViews = this._register(new Emitter<void>());
@@ -74,63 +73,41 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 			this._openEditorForCreatedView(e);
 		}));
+	}
 
-		// Fire when browser editor inputs are opened or closed
-		this._register(this.editorService.onDidEditorsChange((e) => {
-			if (e.event.editor instanceof BrowserEditorInput && (e.event.kind === GroupModelChangeKind.EDITOR_OPEN || e.event.kind === GroupModelChangeKind.EDITOR_CLOSE)) {
+	getKnownBrowserViews(): Map<string, BrowserEditorInput> {
+		return this._known;
+	}
+
+	getOrCreateLazy(id: string, initialState?: IBrowserEditorViewState, model?: IBrowserViewModel): BrowserEditorInput {
+		if (!this._known.has(id)) {
+			const input = this.instantiationService.createInstance(BrowserEditorInput, { id, ...initialState }, async () => {
+				const state = await this._browserViewService.getOrCreateBrowserView(
+					id,
+					{
+						owner: this._getDefaultOwner(),
+						scope: await this._resolveStorageScope(),
+						initialState: {
+							url: initialState?.url,
+							title: initialState?.title,
+							lastFavicon: initialState?.favicon
+						}
+					}
+				);
+				return this._createModel(id, this._getDefaultOwner(), state);
+			});
+			input.onWillDispose(() => {
+				this._known.delete(id);
 				this._onDidChangeBrowserViews.fire();
+			});
+			if (model) {
+				input.model = model;
 			}
-		}));
-	}
-
-	getKnownBrowserViews(): IKnownBrowserView[] {
-		const entries = new Map<string, IKnownBrowserView>();
-
-		// Add editor inputs
-		for (const editor of this.editorService.editors) {
-			if (editor instanceof BrowserEditorInput) {
-				entries.set(editor.id, { id: editor.id, editor: editor });
-			}
+			this._known.set(id, input);
+			this._onDidChangeBrowserViews.fire();
 		}
 
-		// Add models
-		for (const [id, model] of this._models) {
-			const entry = entries.get(id);
-			if (entry) {
-				entries.set(id, { ...entry, model });
-			}
-		}
-
-		return [...entries.values()];
-	}
-
-	async getOrCreateBrowserViewModel(id: string, initialState?: Partial<IBrowserViewState>): Promise<IBrowserViewModel> {
-		const existing = this._models.get(id);
-		if (existing) {
-			return existing;
-		}
-
-		// View doesn't exist yet — create it via IPC and initialize the model
-		const state = await this._browserViewService.getOrCreateBrowserView(
-			id,
-			{
-				owner: this._getDefaultOwner(),
-				scope: await this._resolveStorageScope(),
-				initialState
-			}
-		);
-
-		// Check again — the create event handler may have already created the model
-		const existingAfterCreate = this._models.get(id);
-		if (existingAfterCreate) {
-			return existingAfterCreate;
-		}
-
-		return this._createModel(id, this._getDefaultOwner(), state);
-	}
-
-	getBrowserViewModel(id: string): IBrowserViewModel | undefined {
-		return this._models.get(id);
+		return this._known.get(id)!;
 	}
 
 	async clearGlobalStorage(): Promise<void> {
@@ -167,7 +144,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	private async _initializeExistingViews(): Promise<void> {
 		const views = await this._browserViewService.getBrowserViews(this._mainWindowId);
 		for (const info of views) {
-			if (!this._models.has(info.id)) {
+			if (!this._known.has(info.id)) {
 				this._createModel(info.id, info.owner, info.state);
 			}
 		}
@@ -175,21 +152,15 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 	private _createModel(id: string, owner: IBrowserViewOwner, state: IBrowserViewState): IBrowserViewModel {
 		// Don't double-create
-		const existing = this._models.get(id);
+		const existing = this._known.get(id)?.model;
 		if (existing) {
 			return existing;
 		}
 
 		const model = this.instantiationService.createInstance(BrowserViewModel, id, owner, state, this._browserViewService);
-		this._models.set(id, model);
 
-		// Clean up model when disposed
-		Event.once(model.onWillDispose)(() => {
-			this._models.delete(id);
-			this._onDidChangeBrowserViews.fire();
-		});
-
-		this._onDidChangeBrowserViews.fire();
+		// Sanity: both pass and assign the model to be sure. It will no-op if already set.
+		this.getOrCreateLazy(id, {}, model).model = model;
 
 		return model;
 	}
