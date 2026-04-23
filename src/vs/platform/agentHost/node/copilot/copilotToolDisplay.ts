@@ -250,7 +250,7 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 				const range = formatViewRange(args.view_range);
 				if (range) {
 					if (range.endLine === -1) {
-						return md(localize('toolInvoke.viewFileFromLine', "Reading {0}, from line {1} to the end", link, range.startLine));
+						return md(localize('toolInvoke.viewFileFromLine', "Reading {0}, line {1} to the end", link, range.startLine));
 					}
 					if (range.endLine !== range.startLine) {
 						return md(localize('toolInvoke.viewFileRange', "Reading {0}, lines {1} to {2}", link, range.startLine, range.endLine));
@@ -316,7 +316,7 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 				const range = formatViewRange(args.view_range);
 				if (range) {
 					if (range.endLine === -1) {
-						return md(localize('toolComplete.viewFileFromLine', "Read {0}, from line {1} to the end", link, range.startLine));
+						return md(localize('toolComplete.viewFileFromLine', "Read {0}, line {1} to the end", link, range.startLine));
 					}
 					if (range.endLine !== range.startLine) {
 						return md(localize('toolComplete.viewFileRange', "Read {0}, lines {1} to {2}", link, range.startLine, range.endLine));
