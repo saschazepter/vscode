@@ -318,7 +318,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 		}
 	}
 
-	async hasWorktreeChanges(sessionId: string): Promise<boolean> {
+	async hasCachedChanges(sessionId: string): Promise<boolean> {
 		const worktreeProperties = await this.getWorktreeProperties(sessionId);
 		if (!worktreeProperties || typeof worktreeProperties === 'string') {
 			return false;

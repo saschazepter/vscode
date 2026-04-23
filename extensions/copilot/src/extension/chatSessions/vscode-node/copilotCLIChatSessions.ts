@@ -413,7 +413,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		}
 		const [trusted, available] = await Promise.all([
 			vscode.workspace.isResourceTrusted(vscode.Uri.file(worktreeProperties.repositoryPath)),
-			this.copilotCLIWorktreeManagerService.hasWorktreeChanges(sessionId)
+			this.copilotCLIWorktreeManagerService.hasCachedChanges(sessionId)
 		]);
 		return trusted && available;
 	}
