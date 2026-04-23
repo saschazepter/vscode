@@ -1522,6 +1522,7 @@ export default tseslint.config(
 						// 'path', NOT allowed: use src/vs/base/common/path.ts instead
 						'perf_hooks',
 						'readline',
+						'ssh2',
 						'stream',
 						'string_decoder',
 						'tas-client',
