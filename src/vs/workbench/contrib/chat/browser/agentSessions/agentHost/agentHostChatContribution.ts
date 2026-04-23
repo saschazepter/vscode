@@ -9,6 +9,7 @@ import { observableValue } from '../../../../../../base/common/observable.js';
 import { isEqualOrParent } from '../../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { localize } from '../../../../../../nls.js';
 import { AgentHostEnabledSettingId, IAgentHostService, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
 import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -177,7 +178,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		// `getAgentSessionProviderName(AgentHostCopilot)`.
 		store.add(this._customizationHarnessService.registerExternalHarness({
 			id: sessionType,
-			label: `${agent.displayName} [Local]`,
+			label: localize('agentHostHarnessLabel.local', "{0} [Local]", agent.displayName),
 			icon: ThemeIcon.fromId(Codicon.server.id),
 			hiddenSections: [],
 			hideGenerateButton: true,
