@@ -538,14 +538,17 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			let allowWritePaths: string[] = [];
 			let allowReadPaths: string[] = [];
 			let denyReadPaths: string[] = [];
+			let denyWritePaths: string[] | undefined;
 			if (this._os === OperatingSystem.Macintosh) {
 				allowWritePaths = this._updateAllowWritePathsWithWorkspaceFolders(macFileSystemSetting.allowWrite);
 				allowReadPaths = this._updateAllowReadPathsWithAllowWrite(macFileSystemSetting.allowRead, allowWritePaths);
 				denyReadPaths = this._updateDenyReadPathsWithHome(macFileSystemSetting.denyRead);
+				denyWritePaths = macFileSystemSetting.denyWrite;
 			} else if (this._os === OperatingSystem.Linux) {
 				allowWritePaths = this._resolveLinuxFileSystemPaths(this._updateAllowWritePathsWithWorkspaceFolders(linuxFileSystemSetting.allowWrite));
 				allowReadPaths = this._resolveLinuxFileSystemPaths(this._updateAllowReadPathsWithAllowWrite(linuxFileSystemSetting.allowRead, allowWritePaths));
 				denyReadPaths = this._resolveLinuxFileSystemPaths(this._updateDenyReadPathsWithHome(linuxFileSystemSetting.denyRead));
+				denyWritePaths = this._resolveLinuxFileSystemPaths(linuxFileSystemSetting.denyWrite);
 			}
 			const sandboxSettings = {
 				network: {
@@ -556,7 +559,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 					denyRead: denyReadPaths,
 					allowRead: allowReadPaths,
 					allowWrite: allowWritePaths,
-					denyWrite: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxFileSystemSetting.denyWrite,
+					denyWrite: denyWritePaths,
 				},
 			};
 			this._mergeAdditionalSandboxConfigProperties(sandboxSettings as Record<string, unknown>, runtimeSetting);

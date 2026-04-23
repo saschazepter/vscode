@@ -298,26 +298,6 @@ function getTerminalSandboxReadAllowListForOperation(operation: TerminalSandboxR
 	}
 }
 
-const allTerminalSandboxReadAllowListOperations: readonly TerminalSandboxReadAllowListOperation[] = [
-	TerminalSandboxReadAllowListOperation.Git,
-	TerminalSandboxReadAllowListOperation.Node,
-	TerminalSandboxReadAllowListOperation.Rust,
-	TerminalSandboxReadAllowListOperation.Go,
-	TerminalSandboxReadAllowListOperation.Python,
-	TerminalSandboxReadAllowListOperation.Java,
-	TerminalSandboxReadAllowListOperation.Dotnet,
-	TerminalSandboxReadAllowListOperation.Nuget,
-	TerminalSandboxReadAllowListOperation.Msbuild,
-	TerminalSandboxReadAllowListOperation.Ruby,
-	TerminalSandboxReadAllowListOperation.NativeBuild,
-	TerminalSandboxReadAllowListOperation.Conan,
-];
-
-export function getTerminalSandboxReadAllowList(os: OperatingSystem): readonly string[] {
-	const paths = allTerminalSandboxReadAllowListOperations.flatMap(operation => getTerminalSandboxReadAllowListForOperation(operation, os));
-	return [...new Set(paths)];
-}
-
 export function getTerminalSandboxReadAllowListForCommands(os: OperatingSystem, commandKeywords: readonly string[]): readonly string[] {
 	if (commandKeywords.length === 0) {
 		return [];

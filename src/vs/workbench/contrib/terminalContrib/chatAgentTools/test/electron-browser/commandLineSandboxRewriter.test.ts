@@ -133,6 +133,6 @@ suite('CommandLineSandboxRewriter', () => {
 
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['prereqs', 'wrap:echo hello:true', 'keywords:git']);
+		deepStrictEqual(calls, ['prereqs', 'wrap:echo hello:true', 'keywords:']);
 	});
 });

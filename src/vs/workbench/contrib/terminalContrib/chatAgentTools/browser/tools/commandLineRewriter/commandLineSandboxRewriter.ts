@@ -37,6 +37,10 @@ export class CommandLineSandboxRewriter extends Disposable implements ICommandLi
 
 	private async _parseCommandKeywords(options: ICommandLineRewriterOptions): Promise<string[]> {
 		try {
+			if (options.requestUnsandboxedExecution === true) {
+				// if the user is requesting unsandboxed execution, not required to parse the command.
+				return [];
+			}
 			const languageId = isPowerShell(options.shell, options.os)
 				? TreeSitterCommandParserLanguage.PowerShell
 				: TreeSitterCommandParserLanguage.Bash;
