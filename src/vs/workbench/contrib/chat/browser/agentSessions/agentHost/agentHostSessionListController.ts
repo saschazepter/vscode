@@ -6,33 +6,55 @@
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { hasKey } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentSession, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
-import { SessionStatus, type ISessionFileDiff, type ISessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ISessionFileDiff, SessionStatus, type SessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ChatSessionStatus, IChatSessionFileChange2, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta } from '../../../common/chatSessionsService.js';
 import { getAgentHostIcon } from '../agentSessions.js';
 
-function mapDiffsToChanges(diffs: readonly ISessionFileDiff[] | readonly { readonly uri: string; readonly added?: number; readonly removed?: number }[] | undefined, connectionAuthority: string): readonly IChatSessionFileChange2[] | undefined {
+type ICompactSessionFileDiff = { readonly uri: string; readonly added?: number; readonly removed?: number };
+
+function mapDiffsToChanges(diffs: readonly ISessionFileDiff[] | readonly ICompactSessionFileDiff[] | undefined, connectionAuthority: string): readonly IChatSessionFileChange2[] | undefined {
 	if (!diffs || diffs.length === 0) {
 		return undefined;
 	}
-	return diffs.map(d => ({
-		uri: toAgentHostUri(URI.parse(d.uri), connectionAuthority),
-		insertions: d.added ?? 0,
-		deletions: d.removed ?? 0,
-	}));
+	const changes: IChatSessionFileChange2[] = [];
+	for (const diff of diffs) {
+		const uri = getDiffUri(diff);
+		if (uri) {
+			changes.push({
+				uri: toAgentHostUri(URI.parse(uri), connectionAuthority),
+				insertions: getDiffAdded(diff) ?? 0,
+				deletions: getDiffRemoved(diff) ?? 0,
+			});
+		}
+	}
+	return changes.length > 0 ? changes : undefined;
+}
+
+function getDiffUri(diff: ISessionFileDiff | ICompactSessionFileDiff): string | undefined {
+	return hasKey(diff, { uri: true }) ? diff.uri : diff.after?.uri ?? diff.before?.uri;
+}
+
+function getDiffAdded(diff: ISessionFileDiff | ICompactSessionFileDiff): number | undefined {
+	return hasKey(diff, { uri: true }) ? diff.added : diff.diff?.added;
+}
+
+function getDiffRemoved(diff: ISessionFileDiff | ICompactSessionFileDiff): number | undefined {
+	return hasKey(diff, { uri: true }) ? diff.removed : diff.diff?.removed;
 }
 
 function mapSessionStatus(status: SessionStatus | undefined): ChatSessionStatus {
-	if (status === SessionStatus.InputNeeded) {
+	if (status !== undefined && (status & SessionStatus.InputNeeded) === SessionStatus.InputNeeded) {
 		return ChatSessionStatus.NeedsInput;
 	}
 	if (status !== undefined && (status & SessionStatus.InProgress)) {
 		return ChatSessionStatus.InProgress;
 	}
-	if (status === SessionStatus.Error) {
+	if (status !== undefined && (status & SessionStatus.Error)) {
 		return ChatSessionStatus.Failed;
 	}
 	return ChatSessionStatus.Completed;
@@ -53,7 +75,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 
 	private _items: IChatSessionItem[] = [];
 	/** Cached full summaries per session so partial updates can be applied. */
-	private readonly _cachedSummaries = new Map<string, ISessionSummary>();
+	private readonly _cachedSummaries = new Map<string, SessionSummary>();
 
 	constructor(
 		private readonly _sessionType: string,
@@ -121,17 +143,21 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 			this._cachedSummaries.clear();
 			this._items = filtered.map(s => {
 				const rawId = AgentSession.id(s.session);
+				let status = s.status ?? SessionStatus.Idle;
+				if (s.isRead) {
+					status |= SessionStatus.IsRead;
+				}
+				if (s.isArchived) {
+					status |= SessionStatus.IsArchived;
+				}
 				this._cachedSummaries.set(rawId, {
 					resource: s.session.toString(),
 					provider: this._provider,
 					title: s.summary ?? `Session ${rawId.substring(0, 8)}`,
-					status: s.status ?? SessionStatus.Idle,
+					status,
 					createdAt: s.startTime,
 					modifiedAt: s.modifiedTime,
 					workingDirectory: s.workingDirectory?.toString(),
-					isRead: s.isRead,
-					isDone: s.isDone,
-					diffs: s.diffs?.map(d => ({ uri: d.uri, added: d.added, removed: d.removed })),
 				});
 				return this._makeItem(rawId, {
 					title: s.summary,
@@ -149,7 +175,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		this._onDidChangeChatSessionItems.fire({ addedOrUpdated: this._items });
 	}
 
-	private _makeItemFromSummary(rawId: string, summary: ISessionSummary, diffs: ISessionFileDiff[] | undefined): IChatSessionItem {
+	private _makeItemFromSummary(rawId: string, summary: SessionSummary, diffs: readonly ISessionFileDiff[] | undefined): IChatSessionItem {
 		const workingDir = typeof summary.workingDirectory === 'string' ? URI.parse(summary.workingDirectory) : summary.workingDirectory;
 		return this._makeItem(rawId, {
 			title: summary.title,
@@ -167,11 +193,11 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		workingDirectory?: URI;
 		createdAt: number;
 		modifiedAt: number;
-		diffs?: readonly ISessionFileDiff[] | readonly { readonly uri: string; readonly added?: number; readonly removed?: number }[];
+		diffs?: readonly ISessionFileDiff[] | readonly ICompactSessionFileDiff[];
 	}): IChatSessionItem {
 		return {
 			resource: URI.from({ scheme: this._sessionType, path: `/${rawId}` }),
-			label: opts.title ?? `Session ${rawId.substring(0, 8)}`,
+			label: opts.title || `Session ${rawId.substring(0, 8)}`,
 			description: this._description,
 			iconPath: getAgentHostIcon(this._productService),
 			status: mapSessionStatus(opts.status),

@@ -72,7 +72,27 @@ export class TestSessionDatabase implements ISessionDatabase {
 
 	async close(): Promise<void> { }
 
+	async vacuumInto(_targetPath: string): Promise<void> { }
+
 	dispose(): void { }
+
+	async setTurnEventId(_turnId: string, _eventId: string): Promise<void> { }
+
+	async getTurnEventId(_turnId: string): Promise<string | undefined> { return undefined; }
+
+	async getNextTurnEventId(_turnId: string): Promise<string | undefined> { return undefined; }
+
+	async getFirstTurnEventId(): Promise<string | undefined> { return undefined; }
+
+	async truncateFromTurn(_turnId: string): Promise<void> { }
+
+	async deleteTurnsAfter(_turnId: string): Promise<void> { }
+
+	async deleteAllTurns(): Promise<void> { }
+
+	async remapTurnIds(_mapping: ReadonlyMap<string, string>): Promise<void> { }
+
+	async whenIdle(): Promise<void> { }
 
 	private _toEditRecords(edits: (IFileEditRecord & IFileEditContent)[]): IFileEditRecord[] {
 		return edits.map(({ beforeContent: _, afterContent: _2, ...metadata }) => metadata);
@@ -114,6 +134,7 @@ export function createSessionDataService(database: ISessionDatabase = new TestSe
 		tryOpenDatabase: async () => createReference(database),
 		deleteSessionData: async () => { },
 		cleanupOrphanedData: async () => { },
+		whenIdle: async () => { },
 	};
 }
 
@@ -126,6 +147,7 @@ export function createNullSessionDataService(): ISessionDataService {
 		tryOpenDatabase: async () => undefined,
 		deleteSessionData: async () => { },
 		cleanupOrphanedData: async () => { },
+		whenIdle: async () => { },
 	};
 }
 

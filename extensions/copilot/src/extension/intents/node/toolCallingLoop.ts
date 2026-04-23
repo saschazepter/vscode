@@ -39,7 +39,7 @@ import { Mutable } from '../../../util/vs/base/common/types';
 import { URI } from '../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
-import { ChatResponsePullRequestPart, LanguageModelDataPart2, LanguageModelPartAudience, LanguageModelTextPart, LanguageModelToolResult2, MarkdownString } from '../../../vscodeTypes';
+import { ChatResponsePullRequestPart, LanguageModelDataPart2, LanguageModelPartAudience, LanguageModelToolResult2, MarkdownString } from '../../../vscodeTypes';
 import { InteractionOutcomeComputer } from '../../inlineChat/node/promptCraftingTypes';
 import { ChatVariablesCollection } from '../../prompt/common/chatVariablesCollection';
 import { AnthropicTokenUsageMetadata, Conversation, IResultMetadata, ResponseStreamParticipant, TurnStatus } from '../../prompt/common/conversation';
@@ -194,6 +194,11 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 
 	private get turn() {
 		return this.options.conversation.getLatestTurn();
+	}
+
+	protected get agentName(): string | undefined {
+		return (this.options.request as { subAgentName?: string }).subAgentName
+			?? (this.options.request as { participant?: string }).participant;
 	}
 
 	constructor(
@@ -685,6 +690,8 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 			if (isFirstTurn) {
 				const startHookResult = await this.executeSessionStartHook({
 					source: 'new',
+					model: this.options.request.model?.id ?? 'unknown',
+					agent_type: this.agentName,
 				}, sessionId, outputStream, token);
 				if (startHookResult.additionalContext) {
 					this.additionalHookContext = startHookResult.additionalContext;
@@ -701,9 +708,7 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 	}
 
 	public async run(outputStream: ChatResponseStream | undefined, token: CancellationToken): Promise<IToolCallLoopResult> {
-		const agentName = (this.options.request as { subAgentName?: string }).subAgentName
-			?? (this.options.request as { participant?: string }).participant
-			?? 'GitHub Copilot Chat';
+		const agentName = this.agentName ?? 'GitHub Copilot Chat';
 
 		// Extract custom mode name for debug logging (kept separate from agentName to avoid metric cardinality)
 		const modeInstructions = (this.options.request as { modeInstructions2?: { name?: string; isBuiltin?: boolean } }).modeInstructions2;
@@ -804,6 +809,10 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 					span.setAttribute(GenAiAttr.INPUT_MESSAGES, truncateForOTel(JSON.stringify([
 						{ role: 'user', parts: [{ type: 'text', content: userMessage }] }
 					])));
+					// Set USER_REQUEST so event translator can emit user.message
+					if (userMessage) {
+						span.setAttribute(CopilotChatAttr.USER_REQUEST, truncateForOTel(userMessage));
+					}
 					// Emit user_message span event for real-time debug panel streaming
 					if (userMessage) {
 						span.addEvent('user_message', { content: userMessage, ...(chatSessionId ? { [CopilotChatAttr.CHAT_SESSION_ID]: chatSessionId } : {}) });
@@ -1317,14 +1326,6 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 						id: this.createInternalToolCallId(call.id),
 						arguments: call.arguments === '' ? '{}' : call.arguments
 					})));
-				}
-				if (delta.serverToolCalls) {
-					for (const serverCall of delta.serverToolCalls) {
-						const result: LanguageModelToolResult2 = {
-							content: [new LanguageModelTextPart(JSON.stringify(serverCall.result, undefined, 2))]
-						};
-						this._requestLogger.logServerToolCall(serverCall.id, serverCall.name, serverCall.args, result);
-					}
 				}
 				if (delta.statefulMarker) {
 					statefulMarker = delta.statefulMarker;

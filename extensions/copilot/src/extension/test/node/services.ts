@@ -58,6 +58,7 @@ import { IClaudeToolPermissionService } from '../../chatSessions/claude/common/c
 import { ClaudeCodeModels, IClaudeCodeModels } from '../../chatSessions/claude/node/claudeCodeModels';
 import { IClaudeCodeSdkService } from '../../chatSessions/claude/node/claudeCodeSdkService';
 import { ClaudeRuntimeDataService } from '../../chatSessions/claude/node/claudeRuntimeDataService';
+import { IClaudePluginService } from '../../chatSessions/claude/node/claudeSkills';
 import { IClaudeSessionStateService } from '../../chatSessions/claude/common/claudeSessionStateService';
 import { ClaudeSessionStateService } from '../../chatSessions/claude/node/claudeSessionStateService';
 import { MockClaudeCodeSdkService } from '../../chatSessions/claude/node/test/mockClaudeCodeSdkService';
@@ -84,6 +85,8 @@ import '../../tools/node/allTools';
 import { TestToolsService } from '../../tools/node/test/testToolsService';
 import { TestToolEmbeddingsComputer } from '../../tools/test/node/virtualTools/testVirtualTools';
 import { ISimilarFilesContextService } from '../../xtab/common/similarFilesContextService';
+import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
+import { SessionStore } from '../../../platform/chronicle/node/sessionStore';
 
 export interface ISimulationModelConfig {
 	chatModel?: string;
@@ -164,7 +167,17 @@ export function createExtensionUnitTestingServices(disposables: Pick<DisposableS
 	testingServiceCollection.define(IChatWebSocketManager, new SyncDescriptor(NullChatWebSocketManager));
 	testingServiceCollection.define(ISimilarFilesContextService, new SyncDescriptor(NullSimilarFilesContextService));
 	testingServiceCollection.define(IAutomodeService, new SyncDescriptor(NullAutomodeService));
+	testingServiceCollection.define(ISessionStore, new SessionStore(':memory:'));
+	testingServiceCollection.define(IClaudePluginService, new NullClaudePluginService());
 	return testingServiceCollection;
+}
+
+class NullClaudePluginService implements IClaudePluginService {
+	declare readonly _serviceBrand: undefined;
+
+	async getPluginLocations(): Promise<never[]> {
+		return [];
+	}
 }
 
 class NullSimilarFilesContextService implements ISimilarFilesContextService {
