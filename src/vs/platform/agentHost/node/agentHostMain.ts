@@ -163,18 +163,37 @@ function startAgentHost(): void {
 			if (!url) {
 				return undefined;
 			}
-			// Inspector URL looks like: ws://host:port/uuid
-			const match = url.match(/^ws:\/\/([^:]+):(\d+)\/(.+)$/);
-			if (!match) {
+			// Inspector URL looks like: ws://host:port/uuid (host may be IPv6 in brackets)
+			try {
+				const parsedUrl = new URL(url);
+				if (parsedUrl.protocol !== 'ws:') {
+					logService.warn(`[AgentHost] Unexpected inspector URL: ${url}`);
+					return undefined;
+				}
+
+				const port = Number(parsedUrl.port);
+				const auth = parsedUrl.pathname.replace(/^\/+/, '');
+				if (!Number.isInteger(port) || !auth) {
+					logService.warn(`[AgentHost] Unexpected inspector URL: ${url}`);
+					return undefined;
+				}
+
+				const host = parsedUrl.hostname === '0.0.0.0'
+					? '127.0.0.1'
+					: parsedUrl.hostname === '::'
+						? '::1'
+						: parsedUrl.hostname;
+				const devtoolsHost = host.includes(':') ? `[${host}]` : host;
+
+				return {
+					host,
+					port,
+					devtoolsUrl: `devtools://devtools/bundled/js_app.html?v8only=true&ws=${devtoolsHost}:${parsedUrl.port}/${auth}`,
+				};
+			} catch {
 				logService.warn(`[AgentHost] Unexpected inspector URL: ${url}`);
 				return undefined;
 			}
-			const [, host, portStr, auth] = match;
-			return {
-				host,
-				port: Number(portStr),
-				devtoolsUrl: `devtools://devtools/bundled/js_app.html?v8only=true&ws=${host}:${portStr}/${auth}`,
-			};
 		},
 	};
 	const connectionTrackerChannel = ProxyChannel.fromService(connectionTrackerService, disposables);
