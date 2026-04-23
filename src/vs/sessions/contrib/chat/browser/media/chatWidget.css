@@ -216,6 +216,14 @@
 	color: var(--vscode-foreground);
 }
 
+.sessions-chat-picker-slot.sessions-chat-workspace-picker .action-label.disconnected {
+	color: var(--vscode-disabledForeground);
+}
+
+.sessions-chat-picker-slot.sessions-chat-workspace-picker .action-label.disconnected > .codicon:not(.sessions-chat-dropdown-chevron) {
+	color: var(--vscode-disabledForeground);
+}
+
 .sessions-chat-picker-slot.sessions-chat-workspace-picker .action-label .sessions-chat-dropdown-label {
 	font-size: 18px;
 }

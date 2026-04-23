@@ -649,16 +649,45 @@ export class WorkspacePicker extends Disposable {
 		dom.clearNode(this._triggerElement);
 		const workspace = this._selectedWorkspace?.workspace;
 		const label = workspace ? workspace.label : localize('pickWorkspace', "workspace");
-		const icon = workspace ? workspace.icon : Codicon.project;
+		const baseIcon = workspace ? workspace.icon : Codicon.project;
+
+		// Reflect remote connection state in the trigger: spinner while
+		// connecting, grayed when offline. The selection itself is preserved
+		// across connection state changes — the user picked it and we keep
+		// honoring that pick until they explicitly choose something else.
+		const status = this._selectedWorkspace
+			? this._connectionStatusFor(this._selectedWorkspace.providerId)
+			: undefined;
+		const isConnecting = status === RemoteAgentHostConnectionStatus.Connecting;
+		const isDisconnected = status === RemoteAgentHostConnectionStatus.Disconnected;
+
+		this._triggerElement.classList.toggle('connecting', isConnecting);
+		this._triggerElement.classList.toggle('disconnected', isDisconnected);
 
 		this._triggerElement.setAttribute('aria-label', workspace
-			? localize('workspacePicker.selectedAriaLabel', "New session in {0}", label)
+			? isDisconnected
+				? localize('workspacePicker.selectedAriaLabelOffline', "New session in {0} (offline)", label)
+				: isConnecting
+					? localize('workspacePicker.selectedAriaLabelConnecting', "New session in {0} (connecting)", label)
+					: localize('workspacePicker.selectedAriaLabel', "New session in {0}", label)
 			: localize('workspacePicker.pickAriaLabel', "Start by picking a workspace"));
 
+		// While connecting, show a spinner in place of the workspace icon so
+		// the user can see the remote is still coming up. Once connected (or
+		// if disconnected), show the workspace's normal icon.
+		const icon = isConnecting ? ThemeIcon.modify(Codicon.loading, 'spin') : baseIcon;
 		dom.append(this._triggerElement, renderIcon(icon));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
 		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown)).classList.add('sessions-chat-dropdown-chevron');
+	}
+
+	private _connectionStatusFor(providerId: string): RemoteAgentHostConnectionStatus | undefined {
+		const provider = this.sessionsProvidersService.getProvider(providerId);
+		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
+			return undefined;
+		}
+		return provider.connectionStatus.get();
 	}
 
 	/**
@@ -667,17 +696,17 @@ export class WorkspacePicker extends Disposable {
 	 * Returns false for providers without connection status (e.g. local providers).
 	 */
 	protected _isProviderUnavailable(providerId: string): boolean {
-		const provider = this.sessionsProvidersService.getProvider(providerId);
-		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
-			return false;
-		}
-		return provider.connectionStatus.get() !== RemoteAgentHostConnectionStatus.Connected;
+		const status = this._connectionStatusFor(providerId);
+		return status !== undefined && status !== RemoteAgentHostConnectionStatus.Connected;
 	}
 
 	/**
-	 * Watch connection status observables from all remote providers.
-	 * When a remote disconnects, clear the selection if it belongs to that
-	 * provider. When a remote reconnects, try to restore a stored workspace.
+	 * Watch connection status observables from all remote providers so the
+	 * trigger label reflects connecting/disconnected state. We deliberately do
+	 * NOT change the selection on connection state changes — the user's
+	 * explicit pick is preserved across reconnects, disconnects, and provider
+	 * registration races. If a remote fails to connect, the trigger renders
+	 * grayed and the gear menu lets them reconnect or pick something else.
 	 */
 	private _watchConnectionStatus(): void {
 		const remoteProviders = this.sessionsProvidersService.getProviders().filter(isAgentHostProvider).filter(p => p.connectionStatus !== undefined);
@@ -690,29 +719,7 @@ export class WorkspacePicker extends Disposable {
 			for (const provider of remoteProviders) {
 				provider.connectionStatus!.read(reader);
 			}
-
-			// If the current selection belongs to an unavailable provider, clear it
-			if (this._selectedWorkspace && this._isProviderUnavailable(this._selectedWorkspace.providerId)) {
-				this._selectedWorkspace = undefined;
-				this._updateTriggerLabel();
-				this._onDidChangeSelection.fire();
-			}
-
-			// Re-restore the checked workspace once its provider becomes available.
-			// Without this, a remote provider that registers in Connecting state
-			// (and so was deemed unavailable at restore time) would never upgrade
-			// the picker after it finishes connecting — the fallback selection
-			// would stick. Only do this if the user hasn't picked, to avoid
-			// changing the workspace out from under them.
-			if (!this._userHasPicked) {
-				const restored = this._restoreCheckedWorkspace();
-				if (restored && !this._isSelectedWorkspace(restored)) {
-					this._selectedWorkspace = restored;
-					this._updateTriggerLabel();
-					this._onDidChangeSelection.fire();
-					this._onDidSelectWorkspace.fire(restored);
-				}
-			}
+			this._updateTriggerLabel();
 		});
 	}
 
@@ -743,7 +750,10 @@ export class WorkspacePicker extends Disposable {
 			return checked;
 		}
 
-		// Fall back to the first resolvable recent workspace from a connected provider
+		// Fall back to the first resolvable recent workspace from a connected provider.
+		// Fallbacks (vs. the user's explicit checked pick) require the provider
+		// to be ready: we don't want to silently land on, e.g., a disconnected
+		// remote workspace that the user never picked.
 		try {
 			const providers = this.sessionsProvidersService.getProviders();
 			const providerIds = new Set(providers.map(p => p.id));
@@ -770,8 +780,10 @@ export class WorkspacePicker extends Disposable {
 
 	/**
 	 * Restore only the checked (previously selected) workspace if its provider
-	 * is currently available. Does not fall back to other workspaces.
-	 * Used by the connection status watcher to avoid unexpected workspace switches.
+	 * is registered. The provider's connection status is intentionally NOT
+	 * checked — we honor the user's explicit pick even if the remote is still
+	 * connecting or currently disconnected. The trigger label reflects the
+	 * connection state separately (spinner / grayed).
 	 */
 	private _restoreCheckedWorkspace(): IWorkspaceSelection | undefined {
 		try {
@@ -781,9 +793,6 @@ export class WorkspacePicker extends Disposable {
 
 			for (const stored of storedRecents) {
 				if (!stored.checked || !providerIds.has(stored.providerId)) {
-					continue;
-				}
-				if (this._isProviderUnavailable(stored.providerId)) {
 					continue;
 				}
 				const uri = URI.revive(stored.uri);
