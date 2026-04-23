@@ -399,6 +399,7 @@ suite('OutputMonitor', () => {
 				monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
 				// Dispose immediately, before the deferred _startMonitoring callback fires.
 				monitor.dispose();
+				await new Promise<void>(resolve => setTimeout(resolve, 0));
 				// ensureNoDisposablesAreLeakedInTestSuite will catch any leaked disposable.
 			});
 		});
