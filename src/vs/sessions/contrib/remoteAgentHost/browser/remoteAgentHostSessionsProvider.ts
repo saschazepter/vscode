@@ -51,6 +51,8 @@ interface ISerializedSessionMetadata {
 	readonly model?: IAgentSessionMetadata['model'];
 	readonly workingDirectory?: string;
 	readonly isRead?: boolean;
+	readonly isArchived?: boolean;
+	/** @deprecated Legacy name for `isArchived`. */
 	readonly isDone?: boolean;
 	readonly project?: { readonly uri: string; readonly displayName: string };
 }
@@ -64,7 +66,7 @@ function serializeMetadata(meta: IAgentSessionMetadata): ISerializedSessionMetad
 		model: meta.model,
 		workingDirectory: meta.workingDirectory?.toString(),
 		isRead: meta.isRead,
-		isDone: meta.isDone,
+		isArchived: meta.isArchived,
 		project: meta.project ? { uri: meta.project.uri.toString(), displayName: meta.project.displayName } : undefined,
 	};
 }
@@ -79,7 +81,7 @@ function deserializeMetadata(raw: ISerializedSessionMetadata): IAgentSessionMeta
 			model: raw.model,
 			workingDirectory: raw.workingDirectory ? URI.parse(raw.workingDirectory) : undefined,
 			isRead: raw.isRead,
-			isDone: raw.isDone,
+			isArchived: raw.isArchived ?? raw.isDone,
 			project: raw.project ? { uri: URI.parse(raw.project.uri), displayName: raw.project.displayName } : undefined,
 		};
 	} catch {
@@ -201,6 +203,8 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 
 		this.browseActions = [{
 			label: localize('folders', "Folders"),
+			description: displayName,
+			group: 'folders',
 			icon: Codicon.remote,
 			providerId: this.id,
 			run: () => this._browseForFolder(),
@@ -470,7 +474,7 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 				modifiedTime: adapter.updatedAt.get().getTime(),
 				model: adapter.modelSelection ?? base.model,
 				isRead: adapter.isRead.get(),
-				isDone: adapter.isArchived.get(),
+				isArchived: adapter.isArchived.get(),
 			}));
 		}
 		if (entries.length === 0) {

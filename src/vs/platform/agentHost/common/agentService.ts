@@ -69,7 +69,7 @@ export interface IAgentSessionMetadata {
 	readonly model?: ModelSelection;
 	readonly workingDirectory?: URI;
 	readonly isRead?: boolean;
-	readonly isDone?: boolean;
+	readonly isArchived?: boolean;
 	readonly diffs?: readonly FileEdit[];
 	/**
 	 * Side-channel metadata mirroring {@link SessionSummary._meta}.
@@ -154,8 +154,6 @@ export interface IAgentCreateSessionConfig {
 		readonly turnIdMapping?: ReadonlyMap<string, string>;
 	};
 }
-
-export const AgentHostSessionConfigBranchNameHintKey = 'branchNameHint';
 
 export interface IAgentResolveSessionConfigParams {
 	readonly provider?: AgentProvider;

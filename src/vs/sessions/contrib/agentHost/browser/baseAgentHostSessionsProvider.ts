@@ -17,7 +17,7 @@ import { localize } from '../../../../nls.js';
 import { AgentSession, IAgentConnection, IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
 import { ResolveSessionConfigResult } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import { NotificationType } from '../../../../platform/agentHost/common/state/protocol/notifications.js';
-import type { FileEdit, ModelSelection, RootState, SessionState, SessionSummary } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import { FileEdit, ModelSelection, RootState, SessionState, SessionSummary, SessionStatus as ProtocolSessionStatus } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import { readSessionGitState, StateComponents, type ISessionGitState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
@@ -128,7 +128,7 @@ export class AgentHostSessionAdapter implements ISession {
 		if (metadata.isRead === false) {
 			this.isRead.set(false, undefined);
 		}
-		if (metadata.isDone) {
+		if (metadata.isArchived) {
 			this.isArchived.set(true, undefined);
 		}
 		if (metadata.diffs && metadata.diffs.length > 0) {
@@ -200,8 +200,8 @@ export class AgentHostSessionAdapter implements ISession {
 			didChange = true;
 		}
 
-		if (metadata.isDone !== undefined && metadata.isDone !== this.isArchived.get()) {
-			this.isArchived.set(metadata.isDone, undefined);
+		if (metadata.isArchived !== undefined && metadata.isArchived !== this.isArchived.get()) {
+			this.isArchived.set(metadata.isArchived, undefined);
 			didChange = true;
 		}
 
@@ -696,7 +696,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 			const connection = this.connection;
 			if (connection) {
-				const action = { type: ActionType.SessionIsDoneChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isDone: true };
+				const action = { type: ActionType.SessionIsArchivedChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isArchived: true };
 				connection.dispatch(action);
 			}
 		}
@@ -710,7 +710,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 			const connection = this.connection;
 			if (connection) {
-				const action = { type: ActionType.SessionIsDoneChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isDone: false };
+				const action = { type: ActionType.SessionIsArchivedChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isArchived: false };
 				connection.dispatch(action);
 			}
 		}
@@ -1137,8 +1137,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				this._handleModelChanged(e.action.session, e.action.model);
 			} else if (e.action.type === ActionType.SessionIsReadChanged && isSessionAction(e.action)) {
 				this._handleIsReadChanged(e.action.session, e.action.isRead);
-			} else if (e.action.type === ActionType.SessionIsDoneChanged && isSessionAction(e.action)) {
-				this._handleIsDoneChanged(e.action.session, e.action.isDone);
+			} else if (e.action.type === ActionType.SessionIsArchivedChanged && isSessionAction(e.action)) {
+				this._handleIsArchivedChanged(e.action.session, e.action.isArchived);
 			} else if (e.action.type === ActionType.SessionConfigChanged && isSessionAction(e.action)) {
 				this._handleConfigChanged(e.action.session, e.action.config, e.action.replace === true);
 			} else if (e.action.type === ActionType.SessionDiffsChanged && isSessionAction(e.action)) {
@@ -1165,8 +1165,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			...(summary.project ? { project: { uri: this.mapProjectUri(URI.parse(summary.project.uri)), displayName: summary.project.displayName } } : {}),
 			model: summary.model,
 			workingDirectory: workingDir,
-			isRead: summary.isRead,
-			isDone: summary.isDone,
+			isRead: !!(summary.status & ProtocolSessionStatus.IsRead),
+			isArchived: !!(summary.status & ProtocolSessionStatus.IsArchived),
 		};
 		const cached = this.createAdapter(meta);
 		this._sessionCache.set(rawId, cached);
@@ -1215,11 +1215,11 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
-	private _handleIsDoneChanged(session: string, isDone: boolean): void {
+	private _handleIsArchivedChanged(session: string, isArchived: boolean): void {
 		const rawId = AgentSession.id(session);
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
-			cached.isArchived.set(isDone, undefined);
+			cached.isArchived.set(isArchived, undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 		}
 	}
@@ -1246,6 +1246,18 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			const uiStatus = mapProtocolStatus(changes.status);
 			if (uiStatus !== cached.status.get()) {
 				cached.status.set(uiStatus, undefined);
+				didChange = true;
+			}
+
+			const isRead = !!(changes.status & ProtocolSessionStatus.IsRead);
+			if (isRead !== cached.isRead.get()) {
+				cached.isRead.set(isRead, undefined);
+				didChange = true;
+			}
+
+			const isArchived = !!(changes.status & ProtocolSessionStatus.IsArchived);
+			if (isArchived !== cached.isArchived.get()) {
+				cached.isArchived.set(isArchived, undefined);
 				didChange = true;
 			}
 		}
