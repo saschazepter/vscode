@@ -1279,8 +1279,8 @@ describe('phase commentary followed by phase final_answer', () => {
 		expect(phases).toEqual(['commentary', 'final_answer']);
 
 		// The accumulated text must separate commentary and final_answer text
-		const lastTextBeforeCompletion = accumulatedTexts[accumulatedTexts.length - 2];
-		expect(lastTextBeforeCompletion).toBe(
+		const finalAccumulatedText = accumulatedTexts[accumulatedTexts.length - 1];
+		expect(finalAccumulatedText).toBe(
 			commentaryText + '\n\n' + finalText
 		);
 
