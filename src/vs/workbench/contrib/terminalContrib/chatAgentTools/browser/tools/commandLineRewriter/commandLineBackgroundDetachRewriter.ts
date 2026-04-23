@@ -46,18 +46,50 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 	}
 
 	private _rewriteForPosix(options: ICommandLineRewriterOptions): ICommandLineRewriterResult {
+		const trimmed = options.commandLine.trimEnd();
+
+		// nohup only accepts a simple external command as its argument — it cannot exec bash
+		// compound statements (for/while/if/case) or shell builtins (eval/set/export/source).
+		// Wrap those in `bash -c '...'` so the whole construct runs as a single executable.
+		let commandToWrap = trimmed;
+		if (this._needsBashCWrapper(trimmed)) {
+			// Escape single quotes for use inside a single-quoted bash -c '...' string.
+			const escaped = trimmed.replace(/'/g, `'\\''`);
+			commandToWrap = `bash -c '${escaped}'`;
+		}
+
 		// If the command already ends with a single trailing `&` (background operator,
 		// as opposed to `&&` for command chaining), don't append another one.
-		const trimmed = options.commandLine.trimEnd();
-		const endsWithBackgroundAmp = /(?:^|[^&])&$/.test(trimmed);
+		const endsWithBackgroundAmp = /(?:^|[^&])&$/.test(commandToWrap);
 		const rewritten = endsWithBackgroundAmp
-			? `nohup ${trimmed}`
-			: `nohup ${options.commandLine} &`;
+			? `nohup ${commandToWrap}`
+			: `nohup ${commandToWrap} &`;
 		return {
 			rewritten,
 			reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
 			forDisplay: options.commandLine,
 		};
+	}
+
+	/**
+	 * Returns true when the command uses bash compound constructs or shell builtins that
+	 * `nohup` cannot exec directly. Such commands must be wrapped in `bash -c '...'` before
+	 * being passed to nohup.
+	 */
+	private _needsBashCWrapper(commandLine: string): boolean {
+		const trimmed = commandLine.trimStart();
+		return (
+			// Bash compound command keywords — syntax constructs that are not executables.
+			/^(for|while|until|if|case|select|function)\b/.test(trimmed) ||
+			// Shell builtins — these only run meaningfully inside the current shell; nohup
+			// cannot exec them (eval, set, export, source, unset, declare, etc.).
+			/^(eval|set|export|source|unset|declare|typeset|local|readonly|alias)\b/.test(trimmed) ||
+			// `. file` (dot-source builtin). Exclude `./script` (relative path) by requiring
+			// a space or end-of-string after the dot.
+			/^\. /.test(trimmed) ||
+			// Compound groupings: subshell `( ... )` or brace group `{ ...; }`.
+			/^[{(]/.test(trimmed)
+		);
 	}
 
 	private _rewriteForPowerShell(options: ICommandLineRewriterOptions): ICommandLineRewriterResult | undefined {

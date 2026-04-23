@@ -94,6 +94,96 @@ suite('CommandLineBackgroundDetachRewriter', () => {
 		});
 	});
 
+	suite('POSIX bash -c wrapping for compound commands and builtins', () => {
+		test('for loop should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('for i in $(seq 1 90); do echo $i; sleep 1; done', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'for i in $(seq 1 90); do echo $i; sleep 1; done' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'for i in $(seq 1 90); do echo $i; sleep 1; done',
+			});
+		});
+
+		test('while loop should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('while true; do sleep 1; done', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'while true; do sleep 1; done' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'while true; do sleep 1; done',
+			});
+		});
+
+		test('if statement should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('if [ -f file ]; then cat file; fi', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'if [ -f file ]; then cat file; fi' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'if [ -f file ]; then cat file; fi',
+			});
+		});
+
+		test('eval builtin should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('eval $SETUP_ENV && opam install coq --yes', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'eval $SETUP_ENV && opam install coq --yes' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'eval $SETUP_ENV && opam install coq --yes',
+			});
+		});
+
+		test('set builtin should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('set -e; cmd1; cmd2', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'set -e; cmd1; cmd2' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'set -e; cmd1; cmd2',
+			});
+		});
+
+		test('export builtin should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('export PATH="/usr/local/bin:$PATH"; myapp', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'export PATH="/usr/local/bin:$PATH"; myapp' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'export PATH="/usr/local/bin:$PATH"; myapp',
+			});
+		});
+
+		test('dot-source builtin should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('. /etc/profile; myapp', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c '. /etc/profile; myapp' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: '. /etc/profile; myapp',
+			});
+		});
+
+		test('relative path ./script should NOT be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('./start.sh', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: 'nohup ./start.sh &',
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: './start.sh',
+			});
+		});
+
+		test('brace group should be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('{ cmd1; cmd2; }', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c '{ cmd1; cmd2; }' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: '{ cmd1; cmd2; }',
+			});
+		});
+
+		test('single quotes in command should be properly escaped', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions(`for f in *.txt; do echo 'file:' $f; done`, '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup bash -c 'for f in *.txt; do echo '\\''file:'\\'' $f; done' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: `for f in *.txt; do echo 'file:' $f; done`,
+			});
+		});
+
+		test('simple external command should NOT be wrapped in bash -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('python3 app.py', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: 'nohup python3 app.py &',
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'python3 app.py',
+			});
+		});
+	});
+
 	suite('POSIX (zsh)', () => {
 		test('should wrap with nohup', () => {
 			deepStrictEqual(rewriter.rewrite(createOptions('node server.js', '/bin/zsh', OperatingSystem.Linux, true)), {
