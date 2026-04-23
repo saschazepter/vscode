@@ -73,8 +73,8 @@ export class ChatSessionRepositoryTracker extends Disposable {
 
 		const sessionIds = await this.sessionWorkingDirectoryStore.getSessionIdsForFolder(uri);
 		const workspaceSessionIds = this.workspaceFolderService.clearWorkspaceChanges(uri);
-		workspaceSessionIds.push(...sessionIds);
-		await Promise.all(workspaceSessionIds.map(async sessionId => {
+		sessionIds.push(...workspaceSessionIds);
+		await Promise.all(sessionIds.map(async sessionId => {
 			// Worktree
 			const worktreeProperties = await this.worktreeService.getWorktreeProperties(sessionId);
 			if (worktreeProperties) {
