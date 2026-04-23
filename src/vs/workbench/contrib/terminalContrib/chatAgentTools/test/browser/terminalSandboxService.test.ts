@@ -41,12 +41,14 @@ suite('TerminalSandboxService - network domains', () => {
 	let sandboxHelperService: MockSandboxHelperService;
 	let remoteAgentService: MockRemoteAgentService;
 	let createdFiles: Map<string, string>;
+	let createFileCount: number;
 	let createdFolders: string[];
 	let deletedFolders: string[];
 	const windowId = 7;
 
 	class MockFileService {
 		async createFile(uri: URI, content: VSBuffer): Promise<any> {
+			createFileCount++;
 			const contentString = content.toString();
 			createdFiles.set(uri.path, contentString);
 			return {};
@@ -163,6 +165,7 @@ suite('TerminalSandboxService - network domains', () => {
 
 	setup(() => {
 		createdFiles = new Map();
+		createFileCount = 0;
 		createdFolders = [];
 		deletedFolders = [];
 		instantiationService = workbenchInstantiationService({}, store);
@@ -421,7 +424,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const configPath = await sandboxService.getSandboxConfigPath();
 
 		ok(configPath, 'Config path should be defined');
-		await sandboxService.prepareSandboxConfigForCommand(['node']);
+		await sandboxService.wrapCommand('node --version', false, 'bash', ['node']);
 		const nodeConfigContent = createdFiles.get(configPath);
 		ok(nodeConfigContent, 'Config file should be rewritten for node commands');
 
@@ -429,13 +432,28 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(nodeConfig.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Node commands should include node-specific read allow-list paths');
 		ok(!nodeConfig.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Node commands should not include git-specific read allow-list paths');
 
-		await sandboxService.prepareSandboxConfigForCommand(['git']);
+		await sandboxService.wrapCommand('git status', false, 'bash', ['git']);
 		const gitConfigContent = createdFiles.get(configPath);
 		ok(gitConfigContent, 'Config file should be rewritten for git commands');
 
 		const gitConfig = JSON.parse(gitConfigContent);
 		ok(gitConfig.filesystem.allowRead.includes('/home/user/.gitconfig'), 'Git commands should include git-specific read allow-list paths');
 		ok(!gitConfig.filesystem.allowRead.includes('/home/user/.nvm/versions'), 'Refreshing for a new command should start allowRead from the current command keywords');
+	});
+
+	test('should not rewrite sandbox config when the parsed command keywords are unchanged', async () => {
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		const initialCreateFileCount = createFileCount;
+
+		await sandboxService.wrapCommand('node --version', false, 'bash', ['node']);
+		const afterFirstNodeCommandCount = createFileCount;
+		strictEqual(afterFirstNodeCommandCount, initialCreateFileCount + 1, 'First node command should rewrite the config once');
+
+		await sandboxService.wrapCommand('node app.js', false, 'bash', ['node']);
+		strictEqual(createFileCount, afterFirstNodeCommandCount, 'Second node command should not rewrite the config when keywords are unchanged');
 	});
 
 	test('should expand home paths in linux filesystem sandbox config paths', async () => {
@@ -533,7 +551,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrappedCommand = sandboxService.wrapCommand('echo test');
+		const wrappedCommand = await sandboxService.wrapCommand('echo test');
 
 		ok(
 			wrappedCommand.command.includes('PATH') && wrappedCommand.command.includes('ripgrep'),
@@ -546,35 +564,35 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		strictEqual(sandboxService.wrapCommand('echo test', true, 'bash').command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test'`);
+		strictEqual((await sandboxService.wrapCommand('echo test', true, 'bash')).command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test'`);
 	});
 
 	test('should preserve TMPDIR for piped unsandboxed commands', async () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		strictEqual(sandboxService.wrapCommand('echo test | cat', true, 'bash').command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test | cat'`);
+		strictEqual((await sandboxService.wrapCommand('echo test | cat', true, 'bash')).command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test | cat'`);
 	});
 
 	test('should preserve trailing backslashes for unsandboxed commands', async () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		strictEqual(sandboxService.wrapCommand('echo test \\', true, 'bash').command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test \\'`);
+		strictEqual((await sandboxService.wrapCommand('echo test \\', true, 'bash')).command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'bash' -c 'echo test \\'`);
 	});
 
 	test('should use fish-compatible wrapping for unsandboxed commands', async () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		strictEqual(sandboxService.wrapCommand('echo test', true, 'fish').command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'fish' -c 'echo test'`);
+		strictEqual((await sandboxService.wrapCommand('echo test', true, 'fish')).command, `env TMPDIR="${sandboxService.getTempDir()?.path}" 'fish' -c 'echo test'`);
 	});
 
 	test('should switch to unsandboxed execution when a domain is not allowlisted', async () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://example.com', false, 'bash');
+		const wrapResult = await sandboxService.wrapCommand('curl https://example.com', false, 'bash');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'Blocked domains should prevent sandbox wrapping');
 		strictEqual(wrapResult.requiresUnsandboxConfirmation, true, 'Blocked domains should require unsandbox confirmation');
@@ -587,7 +605,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://example.com');
+		const wrapResult = await sandboxService.wrapCommand('curl https://example.com');
 
 		strictEqual(wrapResult.isSandboxWrapped, true, 'Exact allowlisted domains should stay sandboxed');
 		strictEqual(wrapResult.blockedDomains, undefined, 'Allowed domains should not be reported as blocked');
@@ -598,7 +616,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl "https://api.github.com/repos/microsoft/vscode"');
+		const wrapResult = await sandboxService.wrapCommand('curl "https://api.github.com/repos/microsoft/vscode"');
 
 		strictEqual(wrapResult.isSandboxWrapped, true, 'Wildcard allowlisted domains should stay sandboxed');
 		strictEqual(wrapResult.blockedDomains, undefined, 'Wildcard allowlisted domains should not be reported as blocked');
@@ -610,7 +628,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://api.github.com/repos/microsoft/vscode');
+		const wrapResult = await sandboxService.wrapCommand('curl https://api.github.com/repos/microsoft/vscode');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'Denied domains should not stay sandboxed');
 		deepStrictEqual(wrapResult.blockedDomains, ['api.github.com']);
@@ -622,7 +640,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://API.GITHUB.COM/repos/microsoft/vscode');
+		const wrapResult = await sandboxService.wrapCommand('curl https://API.GITHUB.COM/repos/microsoft/vscode');
 
 		strictEqual(wrapResult.isSandboxWrapped, true, 'Uppercase hostnames should still match allowlisted domains');
 		strictEqual(wrapResult.blockedDomains, undefined, 'Uppercase allowlisted domains should not be reported as blocked');
@@ -632,7 +650,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://example.com]/path');
+		const wrapResult = await sandboxService.wrapCommand('curl https://example.com]/path');
 
 		strictEqual(wrapResult.isSandboxWrapped, true, 'Malformed URL authorities should not trigger blocked-domain prompts');
 		strictEqual(wrapResult.blockedDomains, undefined, 'Malformed URL authorities should be ignored');
@@ -642,11 +660,11 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const javascriptResult = sandboxService.wrapCommand('cat bundle.js', false, 'bash');
+		const javascriptResult = await sandboxService.wrapCommand('cat bundle.js', false, 'bash');
 		strictEqual(javascriptResult.isSandboxWrapped, true, 'File extensions such as .js should not trigger blocked-domain prompts');
 		strictEqual(javascriptResult.blockedDomains, undefined, 'File extensions such as .js should not be reported as domains');
 
-		const jsonResult = sandboxService.wrapCommand('cat package.json', false, 'bash');
+		const jsonResult = await sandboxService.wrapCommand('cat package.json', false, 'bash');
 		strictEqual(jsonResult.isSandboxWrapped, true, 'File extensions such as .json should not trigger blocked-domain prompts');
 		strictEqual(jsonResult.blockedDomains, undefined, 'File extensions such as .json should not be reported as domains');
 	});
@@ -662,7 +680,7 @@ suite('TerminalSandboxService - network domains', () => {
 		];
 
 		for (const command of commands) {
-			const wrapResult = sandboxService.wrapCommand(command, false, 'bash');
+			const wrapResult = await sandboxService.wrapCommand(command, false, 'bash');
 			strictEqual(wrapResult.isSandboxWrapped, true, `Command ${command} should remain sandboxed`);
 			strictEqual(wrapResult.blockedDomains, undefined, `Command ${command} should not report a blocked domain`);
 		}
@@ -672,11 +690,11 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const testComResult = sandboxService.wrapCommand('curl test.com', false, 'bash');
+		const testComResult = await sandboxService.wrapCommand('curl test.com', false, 'bash');
 		strictEqual(testComResult.isSandboxWrapped, false, 'Well-known bare domain suffixes should trigger domain checks');
 		deepStrictEqual(testComResult.blockedDomains, ['test.com']);
 
-		const testOrgComResult = sandboxService.wrapCommand('curl test.org.com', false, 'bash');
+		const testOrgComResult = await sandboxService.wrapCommand('curl test.org.com', false, 'bash');
 		strictEqual(testOrgComResult.isSandboxWrapped, false, 'Well-known bare domain suffixes should trigger domain checks for multi-label hosts');
 		deepStrictEqual(testOrgComResult.blockedDomains, ['test.org.com']);
 	});
@@ -685,7 +703,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://example.zip/path', false, 'bash');
+		const wrapResult = await sandboxService.wrapCommand('curl https://example.zip/path', false, 'bash');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'URL authorities should still trigger blocked-domain prompts even when their suffix looks like a file extension');
 		deepStrictEqual(wrapResult.blockedDomains, ['example.zip']);
@@ -695,7 +713,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('curl https://example.bar/path', false, 'bash');
+		const wrapResult = await sandboxService.wrapCommand('curl https://example.bar/path', false, 'bash');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'URL authorities should not require a well-known bare-host suffix');
 		deepStrictEqual(wrapResult.blockedDomains, ['example.bar']);
@@ -705,7 +723,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('git clone git@example.zip:owner/repo.git', false, 'bash');
+		const wrapResult = await sandboxService.wrapCommand('git clone git@example.zip:owner/repo.git', false, 'bash');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'SSH remotes should still trigger blocked-domain prompts even when their suffix looks like a file extension');
 		deepStrictEqual(wrapResult.blockedDomains, ['example.zip']);
@@ -725,7 +743,7 @@ suite('TerminalSandboxService - network domains', () => {
 		];
 
 		for (const command of commands) {
-			const wrapResult = sandboxService.wrapCommand(command, false, 'bash');
+			const wrapResult = await sandboxService.wrapCommand(command, false, 'bash');
 			strictEqual(wrapResult.isSandboxWrapped, true, `Command ${command} should remain sandboxed`);
 			strictEqual(wrapResult.blockedDomains, undefined, `Command ${command} should not report a blocked domain`);
 		}
@@ -809,7 +827,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrapResult = sandboxService.wrapCommand('git clone git@github.com:microsoft/vscode.git');
+		const wrapResult = await sandboxService.wrapCommand('git clone git@github.com:microsoft/vscode.git');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'SSH-style remotes should trigger domain checks');
 		deepStrictEqual(wrapResult.blockedDomains, ['github.com']);
@@ -820,7 +838,7 @@ suite('TerminalSandboxService - network domains', () => {
 		await sandboxService.getSandboxConfigPath();
 
 		const command = '";echo SANDBOX_ESCAPE_REPRO; # $(uname) `id`';
-		const wrappedCommand = sandboxService.wrapCommand(command).command;
+		const wrappedCommand = (await sandboxService.wrapCommand(command)).command;
 
 		ok(
 			wrappedCommand.includes(`-c '";echo SANDBOX_ESCAPE_REPRO; # $(uname) \`id\`'`),
@@ -837,7 +855,7 @@ suite('TerminalSandboxService - network domains', () => {
 		await sandboxService.getSandboxConfigPath();
 
 		const command = 'echo $HOME $(printf literal) `id`';
-		const wrappedCommand = sandboxService.wrapCommand(command).command;
+		const wrappedCommand = (await sandboxService.wrapCommand(command)).command;
 
 		ok(
 			wrappedCommand.includes(`-c 'echo $HOME $(printf literal) \`id\`'`),
@@ -854,7 +872,7 @@ suite('TerminalSandboxService - network domains', () => {
 		await sandboxService.getSandboxConfigPath();
 
 		const command = 'echo $HOME $(curl eth0.me) `id`';
-		const wrapResult = sandboxService.wrapCommand(command, false, 'bash');
+		const wrapResult = await sandboxService.wrapCommand(command, false, 'bash');
 
 		strictEqual(wrapResult.isSandboxWrapped, false, 'Commands with blocked domains inside substitutions should not stay sandboxed');
 		strictEqual(wrapResult.requiresUnsandboxConfirmation, true, 'Blocked domains inside substitutions should require confirmation');
@@ -867,7 +885,7 @@ suite('TerminalSandboxService - network domains', () => {
 		await sandboxService.getSandboxConfigPath();
 
 		const command = `';printf breakout; #'`;
-		const wrappedCommand = sandboxService.wrapCommand(command).command;
+		const wrappedCommand = (await sandboxService.wrapCommand(command)).command;
 
 		ok(
 			wrappedCommand.includes(`-c '`),
@@ -888,7 +906,7 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		await sandboxService.getSandboxConfigPath();
 
-		const wrappedCommand = sandboxService.wrapCommand(`echo 'hello'`).command;
+		const wrappedCommand = (await sandboxService.wrapCommand(`echo 'hello'`)).command;
 		strictEqual((wrappedCommand.match(/\\''/g) ?? []).length, 2, 'Single quote escapes should be inserted for each embedded single quote');
 	});
 });

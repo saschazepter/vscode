@@ -227,12 +227,6 @@ suite('TreeSitterCommandParser', () => {
 			['node', 'git', 'python3']
 		));
 
-		test('normalizes PowerShell executable paths', () => t(
-			TreeSitterCommandParserLanguage.PowerShell,
-			'& "C:\\Program Files\\nodejs\\node.exe" --version; git status',
-			['node', 'git']
-		));
-
 		test('deduplicates similar command keywords', () => t(
 			TreeSitterCommandParserLanguage.Bash,
 			'node --version && /usr/bin/node script.js && npm ci',

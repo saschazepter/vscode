@@ -8,7 +8,16 @@ import { OperatingSystem } from '../../../../../base/common/platform.js';
 export const enum TerminalSandboxReadAllowListOperation {
 	Git = 'git',
 	Node = 'node',
-	CommonDev = 'commonDev',
+	Rust = 'rust',
+	Go = 'go',
+	Python = 'python',
+	Java = 'java',
+	Dotnet = 'dotnet',
+	Nuget = 'nuget',
+	Msbuild = 'msbuild',
+	Ruby = 'ruby',
+	NativeBuild = 'nativeBuild',
+	Conan = 'conan',
 }
 
 const terminalSandboxReadAllowListKeywordMap: ReadonlyMap<string, TerminalSandboxReadAllowListOperation> = new Map([
@@ -27,48 +36,42 @@ const terminalSandboxReadAllowListKeywordMap: ReadonlyMap<string, TerminalSandbo
 	['fnm', TerminalSandboxReadAllowListOperation.Node],
 	['asdf', TerminalSandboxReadAllowListOperation.Node],
 	['mise', TerminalSandboxReadAllowListOperation.Node],
-	['cargo', TerminalSandboxReadAllowListOperation.CommonDev],
-	['rustc', TerminalSandboxReadAllowListOperation.CommonDev],
-	['rustup', TerminalSandboxReadAllowListOperation.CommonDev],
-	['go', TerminalSandboxReadAllowListOperation.CommonDev],
-	['gofmt', TerminalSandboxReadAllowListOperation.CommonDev],
-	['python', TerminalSandboxReadAllowListOperation.CommonDev],
-	['python3', TerminalSandboxReadAllowListOperation.CommonDev],
-	['pip', TerminalSandboxReadAllowListOperation.CommonDev],
-	['pip3', TerminalSandboxReadAllowListOperation.CommonDev],
-	['poetry', TerminalSandboxReadAllowListOperation.CommonDev],
-	['uv', TerminalSandboxReadAllowListOperation.CommonDev],
-	['pipx', TerminalSandboxReadAllowListOperation.CommonDev],
-	['pyenv', TerminalSandboxReadAllowListOperation.CommonDev],
-	['java', TerminalSandboxReadAllowListOperation.CommonDev],
-	['javac', TerminalSandboxReadAllowListOperation.CommonDev],
-	['jar', TerminalSandboxReadAllowListOperation.CommonDev],
-	['mvn', TerminalSandboxReadAllowListOperation.CommonDev],
-	['mvnw', TerminalSandboxReadAllowListOperation.CommonDev],
-	['gradle', TerminalSandboxReadAllowListOperation.CommonDev],
-	['gradlew', TerminalSandboxReadAllowListOperation.CommonDev],
-	['sdk', TerminalSandboxReadAllowListOperation.CommonDev],
-	['dotnet', TerminalSandboxReadAllowListOperation.CommonDev],
-	['nuget', TerminalSandboxReadAllowListOperation.CommonDev],
-	['msbuild', TerminalSandboxReadAllowListOperation.CommonDev],
-	['ruby', TerminalSandboxReadAllowListOperation.CommonDev],
-	['gem', TerminalSandboxReadAllowListOperation.CommonDev],
-	['bundle', TerminalSandboxReadAllowListOperation.CommonDev],
-	['bundler', TerminalSandboxReadAllowListOperation.CommonDev],
-	['rake', TerminalSandboxReadAllowListOperation.CommonDev],
-	['rbenv', TerminalSandboxReadAllowListOperation.CommonDev],
-	['rvm', TerminalSandboxReadAllowListOperation.CommonDev],
-	['ccache', TerminalSandboxReadAllowListOperation.CommonDev],
-	['sccache', TerminalSandboxReadAllowListOperation.CommonDev],
-	['conan', TerminalSandboxReadAllowListOperation.CommonDev],
-	['cmake', TerminalSandboxReadAllowListOperation.CommonDev],
+	['cargo', TerminalSandboxReadAllowListOperation.Rust],
+	['rustc', TerminalSandboxReadAllowListOperation.Rust],
+	['rustup', TerminalSandboxReadAllowListOperation.Rust],
+	['go', TerminalSandboxReadAllowListOperation.Go],
+	['gofmt', TerminalSandboxReadAllowListOperation.Go],
+	['python', TerminalSandboxReadAllowListOperation.Python],
+	['python3', TerminalSandboxReadAllowListOperation.Python],
+	['pip', TerminalSandboxReadAllowListOperation.Python],
+	['pip3', TerminalSandboxReadAllowListOperation.Python],
+	['poetry', TerminalSandboxReadAllowListOperation.Python],
+	['uv', TerminalSandboxReadAllowListOperation.Python],
+	['pipx', TerminalSandboxReadAllowListOperation.Python],
+	['pyenv', TerminalSandboxReadAllowListOperation.Python],
+	['java', TerminalSandboxReadAllowListOperation.Java],
+	['javac', TerminalSandboxReadAllowListOperation.Java],
+	['jar', TerminalSandboxReadAllowListOperation.Java],
+	['mvn', TerminalSandboxReadAllowListOperation.Java],
+	['mvnw', TerminalSandboxReadAllowListOperation.Java],
+	['gradle', TerminalSandboxReadAllowListOperation.Java],
+	['gradlew', TerminalSandboxReadAllowListOperation.Java],
+	['sdk', TerminalSandboxReadAllowListOperation.Java],
+	['dotnet', TerminalSandboxReadAllowListOperation.Dotnet],
+	['nuget', TerminalSandboxReadAllowListOperation.Nuget],
+	['msbuild', TerminalSandboxReadAllowListOperation.Msbuild],
+	['ruby', TerminalSandboxReadAllowListOperation.Ruby],
+	['gem', TerminalSandboxReadAllowListOperation.Ruby],
+	['bundle', TerminalSandboxReadAllowListOperation.Ruby],
+	['bundler', TerminalSandboxReadAllowListOperation.Ruby],
+	['rake', TerminalSandboxReadAllowListOperation.Ruby],
+	['rbenv', TerminalSandboxReadAllowListOperation.Ruby],
+	['rvm', TerminalSandboxReadAllowListOperation.Ruby],
+	['ccache', TerminalSandboxReadAllowListOperation.NativeBuild],
+	['sccache', TerminalSandboxReadAllowListOperation.NativeBuild],
+	['cmake', TerminalSandboxReadAllowListOperation.NativeBuild],
+	['conan', TerminalSandboxReadAllowListOperation.Conan],
 ]);
-
-export interface ITerminalSandboxReadAllowListGroup {
-	readonly operation: TerminalSandboxReadAllowListOperation;
-	readonly linux: readonly string[];
-	readonly mac: readonly string[];
-}
 
 /**
  * Paths that common developer tools typically need to read when the user's home
@@ -76,160 +79,242 @@ export interface ITerminalSandboxReadAllowListGroup {
  * and key material such as ~/.ssh, ~/.gnupg, cloud credentials, package manager
  * auth files, and git credential stores.
  */
-export const DefaultTerminalReadAllowList: readonly ITerminalSandboxReadAllowListGroup[] = [
-	{
-		operation: TerminalSandboxReadAllowListOperation.Git,
-		linux: [
-			'~/.gitconfig',
-			'~/.config/git/config',
-			'~/.gitignore',
-			'~/.gitignore_global',
-			'~/.config/git/ignore',
-			'~/.config/git/attributes',
-		],
-		mac: [
-			'~/.gitconfig',
-			'~/.config/git/config',
-			'~/.gitignore',
-			'~/.gitignore_global',
-			'~/.config/git/ignore',
-			'~/.config/git/attributes',
-		],
-	},
-	{
-		operation: TerminalSandboxReadAllowListOperation.Node,
-		linux: [
-			'~/.npm',
-			'~/.cache/node',
-			'~/.cache/node/corepack',
-			'~/.cache/yarn',
-			'~/.yarn/berry',
-			'~/.local/share/pnpm',
-			'~/.pnpm-store',
-			'~/.bun/install/cache',
-			'~/.bun/bin',
-			'~/.deno',
-			'~/.cache/deno',
-			'~/.nvm/versions',
-			'~/.nvm/alias',
-			'~/.volta/bin',
-			'~/.volta/tools',
-			'~/.fnm',
-			'~/.asdf/installs/nodejs',
-			'~/.asdf/shims',
-			'~/.local/share/mise/installs/node',
-			'~/.local/share/mise/shims',
-		],
-		mac: [
-			'~/.npm',
-			'~/Library/Caches/node',
-			'~/Library/Caches/Yarn',
-			'~/Library/Caches/deno',
-			'~/Library/pnpm',
-			'~/.yarn/berry',
-			'~/.local/share/pnpm',
-			'~/.pnpm-store',
-			'~/.bun/install/cache',
-			'~/.bun/bin',
-			'~/.deno',
-			'~/.nvm/versions',
-			'~/.nvm/alias',
-			'~/.volta/bin',
-			'~/.volta/tools',
-			'~/.fnm',
-			'~/.asdf/installs/nodejs',
-			'~/.asdf/shims',
-			'~/.local/share/mise/installs/node',
-			'~/.local/share/mise/shims',
-		],
-	},
-	{
-		operation: TerminalSandboxReadAllowListOperation.CommonDev,
-		linux: [
-			// Rust toolchains and package caches.
-			'~/.cargo/bin',
-			'~/.cargo/registry',
-			'~/.cargo/git',
-			'~/.rustup/toolchains',
-			// Go modules, binaries, and build cache.
-			'~/go/pkg/mod',
-			'~/go/bin',
-			'~/.cache/go-build',
-			// Python package caches and environment managers.
-			'~/.cache/pip',
-			'~/.cache/pypoetry',
-			'~/.cache/uv',
-			'~/.local/bin',
-			'~/.local/share/virtualenv',
-			'~/.local/share/pipx',
-			'~/.pyenv/versions',
-			'~/.pyenv/shims',
-			// Java and JVM package caches.
-			'~/.m2/repository',
-			'~/.gradle/caches',
-			'~/.gradle/wrapper/dists',
-			'~/.sdkman/candidates',
-			// .NET and NuGet packages.
-			'~/.nuget/packages',
-			'~/.dotnet',
-			'~/.local/share/NuGet/v3-cache',
-			// Ruby gems and version managers.
-			'~/.gem',
-			'~/.rbenv/versions',
-			'~/.rbenv/shims',
-			'~/.rvm/rubies',
-			// Native build caches.
-			'~/.cache/ccache',
-			'~/.cache/sccache',
-			// Conan package cache.
-			'~/.conan2/p',
-			'~/.conan2/b',
-		],
-		mac: [
-			// Rust toolchains and package caches.
-			'~/.cargo/bin',
-			'~/.cargo/registry',
-			'~/.cargo/git',
-			'~/.rustup/toolchains',
-			// Go modules, binaries, and build cache.
-			'~/go/pkg/mod',
-			'~/go/bin',
-			'~/Library/Caches/go-build',
-			// Python package caches and environment managers.
-			'~/Library/Caches/pip',
-			'~/Library/Caches/pypoetry',
-			'~/Library/Caches/uv',
-			'~/.local/bin',
-			'~/.local/share/virtualenv',
-			'~/.local/share/pipx',
-			'~/.pyenv/versions',
-			'~/.pyenv/shims',
-			// Java and JVM package caches.
-			'~/.m2/repository',
-			'~/.gradle/caches',
-			'~/.gradle/wrapper/dists',
-			'~/.sdkman/candidates',
-			// .NET and NuGet packages.
-			'~/.nuget/packages',
-			'~/.dotnet',
-			'~/Library/Caches/NuGet/v3-cache',
-			// Ruby gems and version managers.
-			'~/.gem',
-			'~/.rbenv/versions',
-			'~/.rbenv/shims',
-			'~/.rvm/rubies',
-			// Native build caches.
-			'~/Library/Caches/ccache',
-			'~/Library/Caches/sccache',
-			// Conan package cache.
-			'~/.conan2/p',
-			'~/.conan2/b',
-		],
-	},
+
+function getTerminalSandboxReadAllowListForOperation(operation: TerminalSandboxReadAllowListOperation, os: OperatingSystem): readonly string[] {
+	switch (operation) {
+		case TerminalSandboxReadAllowListOperation.Git:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.gitconfig',
+						'~/.config/git/config',
+						'~/.gitignore',
+						'~/.gitignore_global',
+						'~/.config/git/ignore',
+						'~/.config/git/attributes',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Node:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/.npm',
+						'~/Library/Caches/node',
+						'~/Library/Caches/Yarn',
+						'~/Library/Caches/deno',
+						'~/Library/pnpm',
+						'~/.yarn/berry',
+						'~/.local/share/pnpm',
+						'~/.pnpm-store',
+						'~/.bun/install/cache',
+						'~/.bun/bin',
+						'~/.deno',
+						'~/.nvm/versions',
+						'~/.nvm/alias',
+						'~/.volta/bin',
+						'~/.volta/tools',
+						'~/.fnm',
+						'~/.asdf/installs/nodejs',
+						'~/.asdf/shims',
+						'~/.local/share/mise/installs/node',
+						'~/.local/share/mise/shims',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.npm',
+						'~/.cache/node',
+						'~/.cache/node/corepack',
+						'~/.cache/yarn',
+						'~/.yarn/berry',
+						'~/.local/share/pnpm',
+						'~/.pnpm-store',
+						'~/.bun/install/cache',
+						'~/.bun/bin',
+						'~/.deno',
+						'~/.cache/deno',
+						'~/.nvm/versions',
+						'~/.nvm/alias',
+						'~/.volta/bin',
+						'~/.volta/tools',
+						'~/.fnm',
+						'~/.asdf/installs/nodejs',
+						'~/.asdf/shims',
+						'~/.local/share/mise/installs/node',
+						'~/.local/share/mise/shims',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Rust:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.cargo/bin',
+						'~/.cargo/registry',
+						'~/.cargo/git',
+						'~/.rustup/toolchains',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Go:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/go/pkg/mod',
+						'~/go/bin',
+						'~/Library/Caches/go-build',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/go/pkg/mod',
+						'~/go/bin',
+						'~/.cache/go-build',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Python:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/Library/Caches/pip',
+						'~/Library/Caches/pypoetry',
+						'~/Library/Caches/uv',
+						'~/.local/bin',
+						'~/.local/share/virtualenv',
+						'~/.local/share/pipx',
+						'~/.pyenv/versions',
+						'~/.pyenv/shims',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.cache/pip',
+						'~/.cache/pypoetry',
+						'~/.cache/uv',
+						'~/.local/bin',
+						'~/.local/share/virtualenv',
+						'~/.local/share/pipx',
+						'~/.pyenv/versions',
+						'~/.pyenv/shims',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Java:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.m2/repository',
+						'~/.gradle/caches',
+						'~/.gradle/wrapper/dists',
+						'~/.sdkman/candidates',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Dotnet:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.dotnet',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Nuget:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/.nuget/packages',
+						'~/Library/Caches/NuGet/v3-cache',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.nuget/packages',
+						'~/.local/share/NuGet/v3-cache',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Msbuild:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Ruby:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/.gem',
+						'~/.rbenv/versions',
+						'~/.rbenv/shims',
+						'~/.rvm/rubies',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.gem',
+						'~/.rbenv/versions',
+						'~/.rbenv/shims',
+						'~/.rvm/rubies',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.NativeBuild:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+					return [
+						'~/Library/Caches/ccache',
+						'~/Library/Caches/sccache',
+					];
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.cache/ccache',
+						'~/.cache/sccache',
+					];
+			}
+
+		case TerminalSandboxReadAllowListOperation.Conan:
+			switch (os) {
+				case OperatingSystem.Macintosh:
+				case OperatingSystem.Linux:
+				default:
+					return [
+						'~/.conan2/p',
+						'~/.conan2/b',
+					];
+			}
+	}
+}
+
+const allTerminalSandboxReadAllowListOperations: readonly TerminalSandboxReadAllowListOperation[] = [
+	TerminalSandboxReadAllowListOperation.Git,
+	TerminalSandboxReadAllowListOperation.Node,
+	TerminalSandboxReadAllowListOperation.Rust,
+	TerminalSandboxReadAllowListOperation.Go,
+	TerminalSandboxReadAllowListOperation.Python,
+	TerminalSandboxReadAllowListOperation.Java,
+	TerminalSandboxReadAllowListOperation.Dotnet,
+	TerminalSandboxReadAllowListOperation.Nuget,
+	TerminalSandboxReadAllowListOperation.Msbuild,
+	TerminalSandboxReadAllowListOperation.Ruby,
+	TerminalSandboxReadAllowListOperation.NativeBuild,
+	TerminalSandboxReadAllowListOperation.Conan,
 ];
 
 export function getTerminalSandboxReadAllowList(os: OperatingSystem): readonly string[] {
-	const paths = DefaultTerminalReadAllowList.flatMap(group => os === OperatingSystem.Macintosh ? group.mac : group.linux);
+	const paths = allTerminalSandboxReadAllowListOperations.flatMap(operation => getTerminalSandboxReadAllowListForOperation(operation, os));
 	return [...new Set(paths)];
 }
 
@@ -250,8 +335,6 @@ export function getTerminalSandboxReadAllowListForCommands(os: OperatingSystem, 
 		return [];
 	}
 
-	const paths = DefaultTerminalReadAllowList
-		.filter(group => operations.has(group.operation))
-		.flatMap(group => os === OperatingSystem.Macintosh ? group.mac : group.linux);
+	const paths = [...operations].flatMap(operation => getTerminalSandboxReadAllowListForOperation(operation, os));
 	return [...new Set(paths)];
 }

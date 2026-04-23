@@ -26,7 +26,7 @@ suite('CommandLineSandboxRewriter', () => {
 		instantiationService.stub(ITerminalSandboxService, {
 			_serviceBrand: undefined,
 			isEnabled: async () => false,
-			wrapCommand: (command, _requestUnsandboxedExecution) => {
+			wrapCommand: async (command, _requestUnsandboxedExecution) => {
 				return {
 					command,
 					isSandboxWrapped: false,
@@ -58,7 +58,7 @@ suite('CommandLineSandboxRewriter', () => {
 
 	test('returns undefined when sandbox config is unavailable', async () => {
 		stubSandboxService({
-			wrapCommand: command => ({
+			wrapCommand: async command => ({
 				command: `wrapped:${command}`,
 				isSandboxWrapped: true,
 			}),
@@ -88,11 +88,8 @@ suite('CommandLineSandboxRewriter', () => {
 	test('wraps command when sandbox is enabled and config exists', async () => {
 		const calls: string[] = [];
 		stubSandboxService({
-			prepareSandboxConfigForCommand: async keywords => {
-				calls.push(`prepare:${keywords.join(',')}`);
-			},
-			wrapCommand: (command, _requestUnsandboxedExecution) => {
-				calls.push('wrapCommand');
+			wrapCommand: async (command, _requestUnsandboxedExecution, _shell, commandKeywords) => {
+				calls.push(`wrapCommand:${commandKeywords?.join(',') ?? ''}`);
 				return {
 					command: `wrapped:${command}`,
 					isSandboxWrapped: true,
@@ -108,17 +105,15 @@ suite('CommandLineSandboxRewriter', () => {
 		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'prepare:node', 'wrapCommand']);
+		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'wrapCommand:node']);
 	});
 
 	test('wraps command and forwards sandbox bypass flag when explicitly requested', async () => {
 		const calls: string[] = [];
 		stubSandboxService({
-			prepareSandboxConfigForCommand: async keywords => {
-				calls.push(`prepare:${keywords.join(',')}`);
-			},
-			wrapCommand: (command, requestUnsandboxedExecution) => {
+			wrapCommand: async (command, requestUnsandboxedExecution, _shell, commandKeywords) => {
 				calls.push(`wrap:${command}:${String(requestUnsandboxedExecution)}`);
+				calls.push(`keywords:${commandKeywords?.join(',') ?? ''}`);
 				return {
 					command: `wrapped:${command}`,
 					isSandboxWrapped: !requestUnsandboxedExecution,
@@ -138,6 +133,6 @@ suite('CommandLineSandboxRewriter', () => {
 
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['prereqs', 'prepare:git', 'wrap:echo hello:true']);
+		deepStrictEqual(calls, ['prereqs', 'wrap:echo hello:true', 'keywords:git']);
 	});
 });

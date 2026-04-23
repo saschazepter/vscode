@@ -146,7 +146,14 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		return this._os;
 	}
 
-	public wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string): ITerminalSandboxWrapResult {
+	public async wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string, commandKeywords?: readonly string[]): Promise<ITerminalSandboxWrapResult> {
+		const normalizedCommandKeywords = this._normalizeCommandKeywords(commandKeywords ?? []);
+		const shouldRefreshConfig = this._commandReadAllowKeywords.length === 0 || this._needsForceUpdateConfigFile || !this._areCommandKeywordsEqual(this._commandReadAllowKeywords, normalizedCommandKeywords);
+		if (shouldRefreshConfig) {
+			this._commandReadAllowKeywords = normalizedCommandKeywords;
+			await this.getSandboxConfigPath(true);
+		}
+
 		if (!this._sandboxConfigPath || !this._tempDir) {
 			throw new Error('Sandbox config path or temp dir not initialized');
 		}
@@ -197,11 +204,6 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 
 	public getTempDir(): URI | undefined {
 		return this._tempDir;
-	}
-
-	public async prepareSandboxConfigForCommand(commandKeywords: readonly string[]): Promise<void> {
-		this._commandReadAllowKeywords = [...new Set(commandKeywords.map(keyword => keyword.toLowerCase()))];
-		await this.getSandboxConfigPath(true);
 	}
 
 	public setNeedsForceUpdateConfigFile(): void {
@@ -479,6 +481,22 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		}
 	}
 
+	private _normalizeCommandKeywords(commandKeywords: readonly string[]): string[] {
+		return [...new Set(commandKeywords.map(keyword => keyword.toLowerCase()))].sort();
+	}
+
+	private _areCommandKeywordsEqual(a: readonly string[], b: readonly string[]): boolean {
+		if (a.length !== b.length) {
+			return false;
+		}
+		for (let i = 0; i < a.length; i++) {
+			if (a[i] !== b[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private async _isSandboxConfiguredEnabled(): Promise<boolean> {
 		const os = await this.getOS();
 		if (os === OperatingSystem.Windows) {
@@ -517,24 +535,28 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 				: {};
 			const runtimeSetting = this._getSettingValue<Record<string, unknown>>(TerminalChatAgentToolsSettingId.AgentSandboxAdvancedRuntime) ?? {};
 			const configFileUri = URI.joinPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
-			const linuxAllowWrite = this._resolveLinuxFileSystemPaths(this._updateAllowWritePathsWithWorkspaceFolders(linuxFileSystemSetting.allowWrite));
-			const macAllowWrite = this._updateAllowWritePathsWithWorkspaceFolders(macFileSystemSetting.allowWrite);
-			const linuxDenyRead = this._resolveLinuxFileSystemPaths(this._updateDenyReadPathsWithHome(linuxFileSystemSetting.denyRead));
-			const macDenyRead = this._updateDenyReadPathsWithHome(macFileSystemSetting.denyRead);
-			const linuxAllowRead = this._resolveLinuxFileSystemPaths(this._updateAllowReadPathsWithAllowWrite(linuxFileSystemSetting.allowRead, linuxAllowWrite));
-			const macAllowRead = this._updateAllowReadPathsWithAllowWrite(macFileSystemSetting.allowRead, macAllowWrite);
-			const linuxDenyWrite = this._resolveLinuxFileSystemPaths(linuxFileSystemSetting.denyWrite);
-
+			let allowWritePaths: string[] = [];
+			let allowReadPaths: string[] = [];
+			let denyReadPaths: string[] = [];
+			if (this._os === OperatingSystem.Macintosh) {
+				allowWritePaths = this._updateAllowWritePathsWithWorkspaceFolders(macFileSystemSetting.allowWrite);
+				allowReadPaths = this._updateAllowReadPathsWithAllowWrite(macFileSystemSetting.allowRead, allowWritePaths);
+				denyReadPaths = this._updateDenyReadPathsWithHome(macFileSystemSetting.denyRead);
+			} else if (this._os === OperatingSystem.Linux) {
+				allowWritePaths = this._resolveLinuxFileSystemPaths(this._updateAllowWritePathsWithWorkspaceFolders(linuxFileSystemSetting.allowWrite));
+				allowReadPaths = this._resolveLinuxFileSystemPaths(this._updateAllowReadPathsWithAllowWrite(linuxFileSystemSetting.allowRead, allowWritePaths));
+				denyReadPaths = this._resolveLinuxFileSystemPaths(this._updateDenyReadPathsWithHome(linuxFileSystemSetting.denyRead));
+			}
 			const sandboxSettings = {
 				network: {
 					allowedDomains: allowedDomainsSetting,
 					deniedDomains: deniedDomainsSetting
 				},
 				filesystem: {
-					denyRead: this._os === OperatingSystem.Macintosh ? macDenyRead : linuxDenyRead,
-					allowRead: this._os === OperatingSystem.Macintosh ? macAllowRead : linuxAllowRead,
-					allowWrite: this._os === OperatingSystem.Macintosh ? macAllowWrite : linuxAllowWrite,
-					denyWrite: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxDenyWrite,
+					denyRead: denyReadPaths,
+					allowRead: allowReadPaths,
+					allowWrite: allowWritePaths,
+					denyWrite: this._os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxFileSystemSetting.denyWrite,
 				},
 			};
 			this._mergeAdditionalSandboxConfigProperties(sandboxSettings as Record<string, unknown>, runtimeSetting);
