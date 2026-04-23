@@ -49,6 +49,7 @@ import { CopilotCliBridgeSpanProcessor } from './copilotCliBridgeSpanProcessor';
 import { CopilotCLISession, ICopilotCLISession } from './copilotcliSession';
 import { ICopilotCLISkills } from './copilotCLISkills';
 import { ICopilotCLIMCPHandler, McpServerMappings, remapCustomAgentTools } from './mcpHandler';
+import { INTEGRATION_ID } from '../../../../platform/endpoint/common/licenseAgreement';
 
 
 const COPILOT_CLI_WORKSPACE_JSON_FILE_KEY = 'github.copilot.cli.workspaceSessionFile';
@@ -70,7 +71,7 @@ export type ISessionOptions = {
 	mcpServerMappings?: McpServerMappings;
 	additionalWorkspaces?: IWorkspaceInfo[];
 	sessionParentId?: string;
-}
+};
 export type IGetSessionOptions = ISessionOptions & { sessionId: string };
 export type ICreateSessionOptions = ISessionOptions & { sessionId?: string };
 
@@ -690,6 +691,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 		const allOptions: SessionOptions = {
 			clientName: 'vscode',
+			integrationId: INTEGRATION_ID
 		};
 
 		const workingDirectory = getWorkingDirectory(options.workspace);
