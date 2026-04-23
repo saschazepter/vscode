@@ -4,10 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { homedir, tmpdir } from 'os';
+import { memoize } from '../../../base/common/decorators.js';
+import { INodeProcess } from '../../../base/common/platform.js';
+import { joinPath } from '../../../base/common/resources.js';
+import { URI } from '../../../base/common/uri.js';
+import { Schemas } from '../../../base/common/network.js';
 import { NativeParsedArgs } from '../common/argv.js';
 import { IDebugParams } from '../common/environment.js';
 import { AbstractNativeEnvironmentService, parseDebugParams } from '../common/environmentService.js';
-import { getUserDataPath } from './userDataPath.js';
+import { getDefaultUserDataPath, getUserDataPath } from './userDataPath.js';
 import { IProductService } from '../../product/common/productService.js';
 
 export class NativeEnvironmentService extends AbstractNativeEnvironmentService {
@@ -18,6 +23,28 @@ export class NativeEnvironmentService extends AbstractNativeEnvironmentService {
 			tmpDir: tmpdir(),
 			userDataDir: getUserDataPath(args, productService.nameShort)
 		}, productService);
+	}
+
+	@memoize
+	get hostUserRoamingDataHome(): URI | undefined {
+		if (!(process as INodeProcess).isEmbeddedApp) {
+			return undefined;
+		}
+		if (!this.isBuilt) {
+			return undefined;
+		}
+		const quality = this.productService.quality;
+		let hostProductName: string;
+		if (quality === 'stable') {
+			hostProductName = 'Code';
+		} else if (quality === 'insider') {
+			hostProductName = 'Code - Insiders';
+		} else if (quality === 'exploration') {
+			hostProductName = 'Code - Exploration';
+		} else {
+			return undefined;
+		}
+		return joinPath(URI.file(getDefaultUserDataPath(hostProductName)), 'User').with({ scheme: Schemas.vscodeUserData });
 	}
 }
 
