@@ -707,12 +707,12 @@
 	right: 0 !important;
 	width: 100% !important;
 	max-width: 100% !important;
-	border-radius: 16px 16px 0 0 !important;
+	border-radius: 16px 16px 0 0;
 	padding-bottom: env(safe-area-inset-bottom);
 }
 
 .agent-sessions-workbench.phone-layout .quick-input-widget .quick-input-list {
-	max-height: 50vh !important;
+	max-height: 50vh;
 }
 
 .agent-sessions-workbench.phone-layout .quick-input-widget .quick-input-list .monaco-list-row {
@@ -747,8 +747,8 @@
 
 /* Make dialogs near-full-width with larger buttons on phone */
 .agent-sessions-workbench.phone-layout .monaco-dialog-box {
-	width: calc(100% - 32px) !important;
-	max-width: calc(100% - 32px) !important;
+	width: calc(100% - 32px);
+	max-width: calc(100% - 32px);
 }
 
 .agent-sessions-workbench.phone-layout .monaco-dialog-box .dialog-buttons-row .monaco-button {
@@ -768,8 +768,8 @@
 }
 
 .agent-sessions-workbench.phone-layout .notifications-toasts .notification-toast {
-	width: 100% !important;
-	max-width: 100% !important;
+	width: 100%;
+	max-width: 100%;
 }
 
 .agent-sessions-workbench.phone-layout .notifications-toasts .notification-toast .notification-toast-container {
@@ -780,12 +780,12 @@
 
 /* Disable delayed hover cards on touch devices — they never trigger */
 .agent-sessions-workbench.phone-layout .monaco-hover {
-	display: none !important;
+	display: none;
 }
 
 /* Exception: keep hovers that are explicitly triggered (e.g., info buttons) */
 .agent-sessions-workbench.phone-layout .monaco-hover.visible-on-mobile {
-	display: block !important;
+	display: block;
 }
 
 /* ---- Phone Layout: Mobile Editor Modal ---- */
@@ -832,7 +832,7 @@
 .agent-sessions-workbench.phone-layout textarea,
 .agent-sessions-workbench.phone-layout .monaco-inputbox input,
 .agent-sessions-workbench.phone-layout .chat-input-container textarea {
-	font-size: 16px !important;
+	font-size: 16px;
 }
 
 /* ---- Phone Layout: Native Scroll Preservation ---- */

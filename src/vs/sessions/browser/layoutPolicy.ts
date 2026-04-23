@@ -5,7 +5,7 @@
 
 import { Disposable } from '../../base/common/lifecycle.js';
 import { observableValue, derived, IObservable } from '../../base/common/observable.js';
-import { isIOS } from '../../base/common/platform.js';
+import { isIOS, isMobile } from '../../base/common/platform.js';
 import { isAndroid } from '../../base/browser/browser.js';
 import { Gesture } from '../../base/browser/touch.js';
 
@@ -37,7 +37,7 @@ const TABLET_MAX_WIDTH = 1024;
  * only applied on actual mobile devices so that resizing a desktop window
  * below 640px does not switch the agents workbench into phone mode.
  */
-const isMobilePlatform = isIOS || isAndroid;
+const isMobilePlatform = isMobile;
 
 /**
  * Classifies the viewport into one of three classes based on width.

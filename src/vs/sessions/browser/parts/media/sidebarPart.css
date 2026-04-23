@@ -86,8 +86,8 @@
 
 /* The sidebar Part inside fills its container */
 .agent-sessions-workbench.phone-layout .part.sidebar {
-	width: 100% !important;
-	height: 100% !important;
+	width: 100%;
+	height: 100%;
 }
 
 @keyframes sidebar-slide-in {
