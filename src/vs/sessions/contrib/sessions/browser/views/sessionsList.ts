@@ -170,6 +170,8 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 	private readonly _onDidChangeItemHeight = new Emitter<ISession>();
 	readonly onDidChangeItemHeight: Event<ISession> = this._onDidChangeItemHeight.event;
 
+	private readonly _motionReducedSignal;
+
 	constructor(
 		private readonly options: { grouping: () => SessionsGrouping; sorting: () => SessionsSorting; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean },
 		private readonly approvalModel: AgentSessionApprovalModel | undefined,
@@ -179,7 +181,9 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		private readonly hoverService: IHoverService,
 		private readonly agentSessionsService: IAgentSessionsService,
 		private readonly accessibilityService: IAccessibilityService,
-	) { }
+	) {
+		this._motionReducedSignal = observableSignalFromEvent('reduceMotion', this.accessibilityService.onDidChangeReducedMotion);
+	}
 
 	renderTemplate(container: HTMLElement): ISessionItemTemplate {
 		const disposables = new DisposableStore();
@@ -249,21 +253,26 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		// recreates the autorun. Without template-level tracking, the selector
 		// resets to undefined and the DOM is rebuilt every time, restarting the
 		// CSS spin animation.
-		const motionReducedSignal = observableSignalFromEvent('reduceMotion', this.accessibilityService.onDidChangeReducedMotion);
 		template.elementDisposables.add(autorun(reader => {
 			const sessionStatus = element.status.read(reader);
 			const isRead = this.options.isRead(element);
 			const isArchived = element.isArchived.read(reader);
 			const gitHubInfo = element.gitHubInfo.read(reader);
-			motionReducedSignal.read(reader);
+			this._motionReducedSignal.read(reader);
 			const icon = this.getStatusIcon(sessionStatus, isRead, isArchived, gitHubInfo?.pullRequest?.icon);
 			const iconSelector = ThemeIcon.asCSSSelector(icon);
+			const iconColor = icon.color ? asCssVariable(icon.color.id) : '';
 
 			if (iconSelector !== template.currentIconSelector) {
 				template.currentIconSelector = iconSelector;
 				DOM.clearNode(template.iconContainer);
 				const iconSpan = DOM.append(template.iconContainer, $(`span${iconSelector}`));
-				iconSpan.style.color = icon.color ? asCssVariable(icon.color.id) : '';
+				iconSpan.style.color = iconColor;
+			} else {
+				const iconSpan = template.iconContainer.firstElementChild as HTMLElement | null;
+				if (iconSpan) {
+					iconSpan.style.color = iconColor;
+				}
 			}
 			template.iconContainer.classList.toggle('session-icon-pulse', sessionStatus === SessionStatus.NeedsInput);
 			template.container.classList.toggle('in-progress', sessionStatus === SessionStatus.InProgress);
