@@ -22,7 +22,7 @@ import { ChatSessionWorktreeFile, ChatSessionWorktreeProperties, IChatSessionWor
 import { IFolderRepositoryManager } from '../../common/folderRepositoryManager';
 import { ICopilotCLISessionService } from '../../copilotcli/node/copilotcliSessionService';
 import { ClaudeFolderRepositoryManager, CopilotCLIFolderRepositoryManager } from '../folderRepositoryManagerImpl';
-import { SessionWorkingDirectoryStore } from '../../common/sessionWorkingDirectoryStore';
+import { MockChatSessionMetadataStore } from '../../common/test/mockChatSessionMetadataStore';
 import type { IClaudeSessionStateService } from '../../claude/common/claudeSessionStateService';
 import type { ClaudeFolderInfo } from '../../claude/common/claudeFolderInfo';
 
@@ -319,7 +319,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 			logService,
 			toolsService,
 			fileSystem,
-			new SessionWorkingDirectoryStore()
+			new MockChatSessionMetadataStore()
 		);
 	});
 
@@ -554,7 +554,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				logService,
 				toolsService,
 				new MockFileSystemService(),
-				new SessionWorkingDirectoryStore()
+				new MockChatSessionMetadataStore()
 			);
 
 			manager.setNewSessionFolder(sessionId, folderUri);
@@ -717,7 +717,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				logService,
 				toolsService,
 				new MockFileSystemService(),
-				new SessionWorkingDirectoryStore()
+				new MockChatSessionMetadataStore()
 			);
 			const token = disposables.add(new CancellationTokenSource()).token;
 			const stream = new MockChatResponseStream();
@@ -749,6 +749,15 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 		};
 
 		describe('initializeFolderRepository', () => {
+			function createMetadataStoreWithWorktree(): MockChatSessionMetadataStore {
+				const store = new MockChatSessionMetadataStore();
+				// Register a session whose worktree path matches worktreeFolderPath so that
+				// getWorktreeSessions(folderUri) returns a session ID that the worktreeService
+				// can resolve via getWorktreeProperties.
+				void store.storeWorktreeInfo(vscode.Uri.file(worktreeFolderPath).fsPath, defaultWorktreeProps);
+				return store;
+			}
+
 			it('skips worktree creation when single workspace folder is already a tracked worktree', async () => {
 				workspaceService = new MockWorkspaceService([URI.file(worktreeFolderPath)]);
 				gitService.setTestActiveRepository({
@@ -759,7 +768,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService(), new SessionWorkingDirectoryStore()
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
 				);
 
 				const sessionId = 'untitled:wt-test-1';
@@ -777,6 +787,12 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 
 			it('skips worktree creation when explicitly selected folder is a tracked worktree', async () => {
 				worktreeService.setTestWorktreeProperties(vscode.Uri.file(worktreeFolderPath).fsPath, defaultWorktreeProps);
+				manager = new CopilotCLIFolderRepositoryManager(
+					worktreeService, workspaceFolderService, sessionService,
+					gitService, workspaceService, logService, toolsService,
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
+				);
 
 				const sessionId = 'untitled:wt-test-2';
 				const token = disposables.add(new CancellationTokenSource()).token;
@@ -805,7 +821,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService(), new SessionWorkingDirectoryStore()
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
 				);
 
 				const sessionId = 'untitled:wt-test-3';
@@ -826,6 +843,12 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 					remotes: [] as string[],
 					changes: { indexChanges: [{ path: 'file.ts' }], workingTree: [{ path: 'other.ts' }], mergeChanges: [], untrackedChanges: [] }
 				} as unknown as RepoContext);
+				manager = new CopilotCLIFolderRepositoryManager(
+					worktreeService, workspaceFolderService, sessionService,
+					gitService, workspaceService, logService, toolsService,
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
+				);
 
 				const sessionId = 'untitled:wt-test-4';
 				const token = disposables.add(new CancellationTokenSource()).token;
@@ -848,6 +871,12 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 					kind: 'repository',
 					remotes: [] as string[],
 				} as RepoContext);
+				manager = new CopilotCLIFolderRepositoryManager(
+					worktreeService, workspaceFolderService, sessionService,
+					gitService, workspaceService, logService, toolsService,
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
+				);
 
 				const sessionId = 'untitled:wt-test-5';
 				const token = disposables.add(new CancellationTokenSource()).token;
@@ -873,7 +902,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService(), new SessionWorkingDirectoryStore()
+					new MockFileSystemService(),
+					createMetadataStoreWithWorktree()
 				);
 
 				const sessionId = 'untitled:wt-test-6';
@@ -899,7 +929,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService(), new SessionWorkingDirectoryStore()
+					new MockFileSystemService(),
+					new MockChatSessionMetadataStore()
 				);
 
 				(worktreeService.createWorktree as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1035,7 +1066,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				logService,
 				toolsService,
 				new MockFileSystemService(),
-				new SessionWorkingDirectoryStore()
+				new MockChatSessionMetadataStore()
 			);
 
 			const sessionId = 'untitled:empty-test';
@@ -1105,7 +1136,7 @@ describe('ClaudeFolderRepositoryManager', () => {
 			toolsService,
 			sessionStateService,
 			fileSystem,
-			new SessionWorkingDirectoryStore()
+			new MockChatSessionMetadataStore()
 		);
 	});
 

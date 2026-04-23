@@ -23,7 +23,6 @@ import { IChatSessionMetadataStore } from '../../common/chatSessionMetadataStore
 import { IChatSessionWorkspaceFolderService } from '../../common/chatSessionWorkspaceFolderService';
 import { ChatSessionWorktreeProperties, IChatSessionWorktreeService } from '../../common/chatSessionWorktreeService';
 import { IFolderRepositoryManager, IsolationMode } from '../../common/folderRepositoryManager';
-import { SessionWorkingDirectoryStore } from '../../common/sessionWorkingDirectoryStore';
 import { emptyWorkspaceInfo } from '../../common/workspaceInfo';
 import { ICustomSessionTitleService } from '../../copilotcli/common/customSessionTitleService';
 import { ICopilotCLISession } from '../../copilotcli/node/copilotcliSession';
@@ -207,7 +206,6 @@ function createProvider() {
 		workspaceFolderService,
 		metadataStore,
 		new NullWorkspaceService(),
-		new SessionWorkingDirectoryStore(),
 	);
 
 	return {

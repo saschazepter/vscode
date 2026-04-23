@@ -55,7 +55,6 @@ import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
 import { convertReferenceToVariable } from './copilotCLIPromptReferences';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
-import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 const REPOSITORY_OPTION_ID = 'repository';
 
@@ -187,7 +186,6 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		@IOctoKitService private readonly octoKitService: IOctoKitService,
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@ISessionWorkingDirectoryStore private readonly _sessionWorkingDirMap: ISessionWorkingDirectoryStore,
 	) {
 		super();
 		this._register(this.terminalIntegration);
@@ -219,7 +217,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 	}
 
 	public getAssociatedSessions(folder: Uri): string[] {
-		return this._sessionWorkingDirMap.getSessionIdsForFolder(folder);
+		return this.chatSessionMetadataStore.getSessionIdsForFolder(folder);
 	}
 
 	/**
@@ -271,9 +269,6 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		let worktreeProperties = await raceCancellation(this.worktreeManager.getWorktreeProperties(session.id), token);
 		const workingDirectory = worktreeProperties?.worktreePath ? vscode.Uri.file(worktreeProperties.worktreePath)
 			: session.workingDirectory;
-		if (workingDirectory) {
-			this._sessionWorkingDirMap.addEntry(session.id, workingDirectory, worktreeProperties ? 'worktree' : 'folder');
-		}
 
 		const label = session.label;
 

@@ -10,7 +10,7 @@ import { IChatSessionWorkspaceFolderService } from '../common/chatSessionWorkspa
 import { IChatSessionWorktreeService } from '../common/chatSessionWorktreeService';
 import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
 import { IGitService } from '../../../platform/git/common/gitService';
-import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
+import { IChatSessionMetadataStore } from '../common/chatSessionMetadataStore';
 
 export class ChatSessionRepositoryTracker extends Disposable {
 	private readonly repositories = new DisposableResourceMap();
@@ -21,7 +21,7 @@ export class ChatSessionRepositoryTracker extends Disposable {
 		@IChatSessionWorkspaceFolderService private readonly workspaceFolderService: IChatSessionWorkspaceFolderService,
 		@IGitService private readonly gitService: IGitService,
 		@ILogService private readonly logService: ILogService,
-		@ISessionWorkingDirectoryStore private readonly sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
+		@IChatSessionMetadataStore private readonly metadataStore: IChatSessionMetadataStore
 	) {
 		super();
 
@@ -71,7 +71,7 @@ export class ChatSessionRepositoryTracker extends Disposable {
 	private async onDidChangeRepositoryState(uri: vscode.Uri): Promise<void> {
 		this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangeRepositoryState] Repository state changed for ${uri.toString()}. Updating session properties.`);
 
-		const sessionIds = await this.sessionWorkingDirectoryStore.getSessionIdsForFolder(uri);
+		const sessionIds = await this.metadataStore.getSessionIdsForFolder(uri);
 		const workspaceSessionIds = this.workspaceFolderService.clearWorkspaceChanges(uri);
 		sessionIds.push(...workspaceSessionIds);
 		await Promise.all(Array.from(new Set(sessionIds)).map(async sessionId => {

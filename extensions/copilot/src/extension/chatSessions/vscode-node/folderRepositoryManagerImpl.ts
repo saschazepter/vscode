@@ -16,7 +16,7 @@ import { ResourceSet } from '../../../util/vs/base/common/map';
 import { isEqual } from '../../../util/vs/base/common/resources';
 import { createTimeout } from '../../inlineEdits/common/common';
 import { IToolsService } from '../../tools/common/toolsService';
-import { RepositoryProperties } from '../common/chatSessionMetadataStore';
+import { RepositoryProperties, IChatSessionMetadataStore } from '../common/chatSessionMetadataStore';
 import { IChatSessionWorkspaceFolderService } from '../common/chatSessionWorkspaceFolderService';
 import { ChatSessionWorktreeProperties, IChatSessionWorktreeService } from '../common/chatSessionWorktreeService';
 import {
@@ -30,7 +30,6 @@ import { isUntitledSessionId } from '../common/utils';
 import { isWelcomeView } from '../copilotcli/node/copilotCli';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
-import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 /**
  * Message shown when user needs to trust a folder to continue.
@@ -68,7 +67,7 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 		protected readonly workspaceService: IWorkspaceService,
 		protected readonly logService: ILogService,
 		protected readonly toolsService: IToolsService,
-		protected readonly sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
+		protected readonly metadataStore: IChatSessionMetadataStore
 
 	) {
 		super();
@@ -213,7 +212,7 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 
 			// If we're in a single folder workspace, possible the user has opened the worktree folder directly.
 			if (sessionId && folderUri) {
-				const worktreeSessionIds = this.sessionWorkingDirectoryStore.getWorktreeSessions(folderUri);
+				const worktreeSessionIds = this.metadataStore.getWorktreeSessions(folderUri);
 				worktreeProperties = worktreeSessionIds.length ? await this.worktreeService.getWorktreeProperties(worktreeSessionIds[0]) : undefined;
 				worktree = worktreeProperties ? vscode.Uri.file(worktreeProperties.worktreePath) : undefined;
 				repositoryUri = worktreeProperties ? vscode.Uri.file(worktreeProperties.repositoryPath) : repositoryUri;
@@ -242,7 +241,7 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 
 			// If we're in a single folder workspace, possible the user has opened the worktree folder directly.
 			if (sessionId && folderUri) {
-				const worktreeSessionIds = this.sessionWorkingDirectoryStore.getWorktreeSessions(folderUri);
+				const worktreeSessionIds = this.metadataStore.getWorktreeSessions(folderUri);
 				worktreeProperties = worktreeSessionIds.length ? await this.worktreeService.getWorktreeProperties(worktreeSessionIds[0]) : undefined;
 				worktree = worktreeProperties ? vscode.Uri.file(worktreeProperties.worktreePath) : undefined;
 				repositoryUri = worktreeProperties ? vscode.Uri.file(worktreeProperties.repositoryPath) : repositoryUri;
@@ -860,9 +859,9 @@ export class CopilotCLIFolderRepositoryManager extends FolderRepositoryManager {
 		@ILogService logService: ILogService,
 		@IToolsService toolsService: IToolsService,
 		@IFileSystemService private readonly fileSystem: IFileSystemService,
-		@ISessionWorkingDirectoryStore sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
+		@IChatSessionMetadataStore metadataStore: IChatSessionMetadataStore
 	) {
-		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, sessionWorkingDirectoryStore);
+		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, metadataStore);
 	}
 
 	/**
@@ -904,9 +903,9 @@ export class ClaudeFolderRepositoryManager extends FolderRepositoryManager {
 		@IToolsService toolsService: IToolsService,
 		@IClaudeSessionStateService private readonly sessionStateService: IClaudeSessionStateService,
 		@IFileSystemService private readonly fileSystem: IFileSystemService,
-		@ISessionWorkingDirectoryStore sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
+		@IChatSessionMetadataStore metadataStore: IChatSessionMetadataStore
 	) {
-		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, sessionWorkingDirectoryStore);
+		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, metadataStore);
 	}
 
 	/**

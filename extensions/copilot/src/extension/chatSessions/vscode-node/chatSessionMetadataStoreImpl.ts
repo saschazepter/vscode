@@ -46,6 +46,11 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 	 */
 	private _cache: Record<string, ChatSessionMetadataFile> = {};
 
+	/** Session ID → indexed path and kind, for reverse-lookup cleanup. */
+	private readonly _sessionFolderEntry = new Map<string, { path: string; kind: 'worktree' | 'folder' }>();
+	/** Folder path → set of session IDs (worktree path or workspace folder path). */
+	private readonly _folderToSessions = new Map<string, Set<string>>();
+
 	/** Path of the shared bulk metadata cache file in `~/.copilot/`. */
 	private readonly _cacheFile = Uri.file(getCopilotBulkMetadataFile());
 
@@ -85,6 +90,65 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 		return this._ready;
 	}
 
+	public getSessionIdsForFolder(folder: vscode.Uri): string[] {
+		return Array.from(this._folderToSessions.get(folder.fsPath) ?? []);
+	}
+
+	public getWorktreeSessions(folder: vscode.Uri): string[] {
+		const sessions = this._folderToSessions.get(folder.fsPath);
+		if (!sessions) {
+			return [];
+		}
+		const result: string[] = [];
+		for (const sessionId of sessions) {
+			if (this._sessionFolderEntry.get(sessionId)?.kind === 'worktree') {
+				result.push(sessionId);
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Maintains {@link _sessionFolderEntry} and {@link _folderToSessions} so
+	 * that {@link getSessionIdsForFolder} and {@link getWorktreeSessions}
+	 * are O(1) lookups instead of full-cache scans.
+	 */
+	private _updateFolderIndex(sessionId: string, metadata: ChatSessionMetadataFile | undefined): void {
+		// Remove old entry
+		const old = this._sessionFolderEntry.get(sessionId);
+		if (old) {
+			const set = this._folderToSessions.get(old.path);
+			if (set) {
+				set.delete(sessionId);
+				if (set.size === 0) {
+					this._folderToSessions.delete(old.path);
+				}
+			}
+			this._sessionFolderEntry.delete(sessionId);
+		}
+
+		if (!metadata) {
+			return;
+		}
+
+		// Prefer worktree path over workspace folder path
+		const worktreePath = metadata.worktreeProperties?.worktreePath;
+		const folderPath = metadata.workspaceFolder?.folderPath;
+		const path = worktreePath ?? folderPath;
+		if (!path) {
+			return;
+		}
+
+		const kind: 'worktree' | 'folder' = worktreePath ? 'worktree' : 'folder';
+		this._sessionFolderEntry.set(sessionId, { path, kind });
+		let set = this._folderToSessions.get(path);
+		if (!set) {
+			set = new Set();
+			this._folderToSessions.set(path, set);
+		}
+		set.add(sessionId);
+	}
+
 	private async initializeStorage(): Promise<void> {
 		// One-time migration from the legacy per-install bulk file in
 		// globalStorageUri to the shared `~/.copilot/` location.
@@ -103,6 +167,11 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 			}
 		}
 
+		// Build folder index from the cleaned cache.
+		for (const [sessionId, metadata] of Object.entries(this._cache)) {
+			this._updateFolderIndex(sessionId, metadata);
+		}
+
 		// this.extensionContext.globalState.update(WORKTREE_MEMENTO_KEY, undefined);
 		// this.extensionContext.globalState.update(WORKSPACE_FOLDER_MEMENTO_KEY, undefined);
 	}
@@ -119,6 +188,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 		await this._ready;
 		if (sessionId in this._cache) {
 			delete this._cache[sessionId];
+			this._updateFolderIndex(sessionId, undefined);
 			const data = await this.getGlobalStorageData().catch(() => ({} as Record<string, ChatSessionMetadataFile>));
 			delete data[sessionId];
 			await this.writeToGlobalStorage(data);
@@ -144,6 +214,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 		// cannot stomp fields written by other processes (Step 3b: stale-cache fix).
 		const existing = this._cache[sessionId] ?? {};
 		this._cache[sessionId] = { ...existing, ...fields };
+		this._updateFolderIndex(sessionId, this._cache[sessionId]);
 		await this.updateSessionMetadata(sessionId, fields);
 		this.updateGlobalStorage();
 	}
@@ -341,6 +412,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 		const metadata = await this.readSessionMetadataFile(sessionId);
 		if (metadata) {
 			this._cache[sessionId] = metadata;
+			this._updateFolderIndex(sessionId, metadata);
 			return metadata;
 		}
 
@@ -390,6 +462,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 					if (!createDirectoryIfNotFound) {
 						// Lets not delete the session from our storage, but mark it as written to session state so that we won't try to write to session state again and again.
 						this._cache[sessionId] = { ...updates, writtenToDisc: true };
+						this._updateFolderIndex(sessionId, this._cache[sessionId]);
 						this.updateGlobalStorage();
 						return;
 					}
@@ -423,6 +496,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 			await this.fileSystemService.writeFile(fileUri, content);
 
 			this._cache[sessionId] = { ...merged, writtenToDisc: true };
+			this._updateFolderIndex(sessionId, this._cache[sessionId]);
 			this.updateGlobalStorage();
 			this.logService.trace(`[ChatSessionMetadataStore] Wrote metadata for session ${sessionId}`);
 		});
@@ -452,6 +526,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 						if (!local) {
 							data[sessionId] = diskEntry;
 							this._cache[sessionId] = diskEntry;
+							this._updateFolderIndex(sessionId, diskEntry);
 							continue;
 						}
 						const localModified = local.modified ?? 0;
@@ -459,6 +534,7 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 						if (diskModified > localModified) {
 							data[sessionId] = diskEntry;
 							this._cache[sessionId] = diskEntry;
+							this._updateFolderIndex(sessionId, diskEntry);
 						}
 					}
 				} catch {
@@ -514,12 +590,14 @@ export class ChatSessionMetadataStore extends Disposable implements IChatSession
 				const local = this._cache[id];
 				if (!local) {
 					this._cache[id] = diskEntry;
+					this._updateFolderIndex(id, diskEntry);
 					continue;
 				}
 				const localModified = local.modified ?? 0;
 				const diskModified = diskEntry.modified ?? 0;
 				if (diskModified > localModified) {
 					this._cache[id] = diskEntry;
+					this._updateFolderIndex(id, diskEntry);
 				}
 			}
 		});

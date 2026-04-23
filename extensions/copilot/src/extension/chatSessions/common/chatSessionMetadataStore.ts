@@ -144,4 +144,13 @@ export interface IChatSessionMetadataStore {
 	 * on demand. Concurrent calls collapse: at most one in-flight + one pending.
 	 */
 	refresh(): Promise<void>;
+	/**
+	 * Returns session IDs whose working directory (worktree path or workspace folder)
+	 * matches the given folder URI.
+	 */
+	getSessionIdsForFolder(folder: vscode.Uri): string[];
+	/**
+	 * Returns session IDs that have a worktree whose path matches the given folder URI.
+	 */
+	getWorktreeSessions(folder: vscode.Uri): string[];
 }

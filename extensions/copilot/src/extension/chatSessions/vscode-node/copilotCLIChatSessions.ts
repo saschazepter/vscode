@@ -51,7 +51,6 @@ import { UNTRUSTED_FOLDER_MESSAGE } from './folderRepositoryManagerImpl';
 import { IPullRequestDetectionService } from './pullRequestDetectionService';
 import { getSelectedSessionOptions, ISessionOptionGroupBuilder, OPEN_REPOSITORY_COMMAND_ID, toRepositoryOptionItem, toWorkspaceFolderOptionItem } from './sessionOptionGroupBuilder';
 import { ISessionRequestLifecycle } from './sessionRequestLifecycle';
-import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 
 export interface ICopilotCLIChatSessionItemProvider extends IDisposable {
@@ -146,7 +145,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		@IChatSessionWorkspaceFolderService private readonly _workspaceFolderService: IChatSessionWorkspaceFolderService,
 		@IChatSessionMetadataStore private readonly _metadataStore: IChatSessionMetadataStore,
 		@IWorkspaceService private readonly _workspaceService: IWorkspaceService,
-		@ISessionWorkingDirectoryStore private readonly _sessionWorkingDirMap: ISessionWorkingDirectoryStore,
 	) {
 		super();
 
@@ -310,7 +308,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 	}
 
 	public getAssociatedSessions(folder: Uri): string[] {
-		return this._sessionWorkingDirMap.getSessionIdsForFolder(folder);
+		return this._metadataStore.getSessionIdsForFolder(folder);
 	}
 
 	public async updateInputStateAfterFolderSelection(inputState: vscode.ChatSessionInputState, folderUri: vscode.Uri): Promise<void> {
@@ -346,9 +344,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		let worktreeProperties = await raceCancellation(this.copilotCLIWorktreeManagerService.getWorktreeProperties(session.id), token);
 		const workingDirectory = worktreeProperties?.worktreePath ? vscode.Uri.file(worktreeProperties.worktreePath)
 			: session.workingDirectory;
-		if (workingDirectory) {
-			this._sessionWorkingDirMap.addEntry(session.id, workingDirectory, worktreeProperties ? 'worktree' : 'folder');
-		}
 		if (token.isCancellationRequested) {
 			return item;
 

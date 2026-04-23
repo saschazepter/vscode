@@ -80,7 +80,6 @@ import { IPullRequestDetectionService, PullRequestDetectionService } from './pul
 import { IPullRequestFileChangesService, PullRequestFileChangesService } from './pullRequestFileChangesService';
 import { ISessionOptionGroupBuilder, SessionOptionGroupBuilder } from './sessionOptionGroupBuilder';
 import { ISessionRequestLifecycle, SessionRequestLifecycle } from './sessionRequestLifecycle';
-import { ISessionWorkingDirectoryStore, SessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 
 // https://github.com/microsoft/vscode-pull-request-github/blob/8a5c9a145cd80ee364a3bed9cf616b2bd8ac74c2/src/github/copilotApi.ts#L56-L71
@@ -151,7 +150,6 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[IChatFolderMruService, new SyncDescriptor(ClaudeCodeFolderMruService)],
 				[IClaudeRuntimeDataService, new SyncDescriptor(ClaudeRuntimeDataService)],
 				[IClaudePluginService, new SyncDescriptor(ClaudePluginService)],
-				[ISessionWorkingDirectoryStore, new SyncDescriptor(SessionWorkingDirectoryStore)],
 			));
 		const claudeAgentManager = this._register(claudeAgentInstaService.createInstance(ClaudeAgentManager));
 		const claudeModels = claudeAgentInstaService.invokeFunction(accessor => accessor.get(IClaudeCodeModels));
@@ -196,7 +194,6 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[ISessionOptionGroupBuilder, new SyncDescriptor(SessionOptionGroupBuilder)],
 				[ISessionRequestLifecycle, new SyncDescriptor(SessionRequestLifecycle)],
 				[ICopilotCLIChatSessionInitializer, new SyncDescriptor(CopilotCLIChatSessionInitializer)],
-				[ISessionWorkingDirectoryStore, new SyncDescriptor(SessionWorkingDirectoryStore)],
 				...getServices()
 			));
 
@@ -266,7 +263,6 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[ICopilotCLISkills, new SyncDescriptor(CopilotCLISkills)],
 				[IChatSessionMetadataStore, new SyncDescriptor(ChatSessionMetadataStore)],
 				[IChatFolderMruService, new SyncDescriptor(CopilotCLIFolderMruService)],
-				[ISessionWorkingDirectoryStore, new SyncDescriptor(SessionWorkingDirectoryStore)],
 				...getServices()
 			));
 
