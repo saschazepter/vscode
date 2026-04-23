@@ -10,6 +10,7 @@ import { Disposable, DisposableStore } from '../../../../../../base/common/lifec
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { localize } from '../../../../../../nls.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { defaultButtonStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
 import { ChatInputNotificationSeverity, IChatInputNotification, IChatInputNotificationService } from './chatInputNotificationService.js';
@@ -48,6 +49,8 @@ export class ChatInputNotificationWidget extends Disposable {
 		super();
 
 		this.domNode = $('.chat-input-notification-container');
+		this.domNode.setAttribute('role', 'status');
+		this.domNode.setAttribute('aria-live', 'polite');
 
 		this._register(this._notificationService.onDidChange(() => this._render()));
 		this._render();
@@ -59,11 +62,11 @@ export class ChatInputNotificationWidget extends Disposable {
 
 		const notification = this._notificationService.getActiveNotification();
 		if (!notification) {
-			this.domNode.style.display = 'none';
+			this.domNode.parentElement?.classList.remove('has-notification');
 			return;
 		}
 
-		this.domNode.style.display = '';
+		this.domNode.parentElement?.classList.add('has-notification');
 		this._renderNotification(notification);
 	}
 
@@ -90,7 +93,7 @@ export class ChatInputNotificationWidget extends Disposable {
 			dismissButton.appendChild(dom.$(ThemeIcon.asCSSSelector(Codicon.close)));
 			dismissButton.tabIndex = 0;
 			dismissButton.role = 'button';
-			dismissButton.ariaLabel = 'Dismiss notification';
+			dismissButton.ariaLabel = localize('dismissNotification', "Dismiss notification");
 
 			this._contentDisposables.add(dom.addDisposableListener(dismissButton, dom.EventType.CLICK, () => {
 				this._notificationService.dismissNotification(notification.id);

@@ -105,11 +105,18 @@ export class ExtHostChatInputNotification {
 				syncState();
 			},
 			hide: () => {
+				if (disposed) {
+					return;
+				}
 				visible = false;
 				this._proxy.$disposeNotification(internalId);
 			},
 			dispose: () => {
+				if (disposed) {
+					return;
+				}
 				disposed = true;
+				visible = false;
 				this._proxy.$disposeNotification(internalId);
 				this._items.delete(internalId);
 			},

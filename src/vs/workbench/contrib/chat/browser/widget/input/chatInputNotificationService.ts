@@ -96,7 +96,7 @@ class ChatInputNotificationService extends Disposable implements IChatInputNotif
 	}
 
 	dismissNotification(id: string): void {
-		if (this._notifications.has(id)) {
+		if (this._notifications.has(id) && !this._dismissed.has(id)) {
 			this._dismissed.add(id);
 			this._onDidChange.fire();
 		}

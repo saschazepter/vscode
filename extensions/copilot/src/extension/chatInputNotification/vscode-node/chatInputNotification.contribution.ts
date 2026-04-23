@@ -43,6 +43,7 @@ export class ChatInputNotificationContribution extends Disposable {
 				{ label: 'Upgrade', commandId: 'workbench.action.chat.upgradePlan' },
 			];
 			test.show();
+			test.message = 'Setting message after show!';
 		}
 	}
 
@@ -63,7 +64,7 @@ export class ChatInputNotificationContribution extends Disposable {
 		if (this._debugTest) { return; } // DEBUG: skip real logic while testing UI
 		if (!this._chatQuotaService.quotaExhausted) {
 			// Quota is not exhausted — remove the error notification if present
-			this._disposeNotification();
+			this._hideNotification();
 			return;
 		}
 
@@ -133,7 +134,7 @@ export class ChatInputNotificationContribution extends Disposable {
 		return this._notification;
 	}
 
-	private _disposeNotification(): void {
+	private _hideNotification(): void {
 		if (this._notification) {
 			this._notification.hide();
 		}
