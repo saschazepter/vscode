@@ -1119,19 +1119,17 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		// existing `sessionTerminators` 5-minute lifetime and covers every
 		// async-completion path the SDK emits.
 		let hasKeepAliveRef = false;
-		const releaseKeepAlive = (reason: string) => {
+		const releaseKeepAlive = () => {
 			if (hasKeepAliveRef) {
 				hasKeepAliveRef = false;
-				this.logService.info(`[anthony] [CopilotCLISession] releasing post-turn keep-alive ref for session ${sdkSession.sessionId} (${reason})`);
 				refCountedSession.release();
 			}
 		};
 		const keepAliveTimer = new MutableDisposable<IDisposable>();
 		session.add(keepAliveTimer);
-		session.add(toDisposable(() => releaseKeepAlive('session disposed')));
+		session.add(toDisposable(releaseKeepAlive));
 		session.add(session.onDidChangeStatus(() => {
 			const status = session.status;
-			this.logService.info(`[anthony] [CopilotCLISession] onDidChangeStatus for session ${sdkSession.sessionId}: status=${status}, permissionRequested=${session.permissionRequested}`);
 			if (session.permissionRequested) {
 				keepAliveTimer.clear();
 				return;
@@ -1140,22 +1138,14 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 				if (!hasKeepAliveRef) {
 					refCountedSession.acquire();
 					hasKeepAliveRef = true;
-					this.logService.info(`[anthony] [CopilotCLISession] acquired post-turn keep-alive ref for session ${sdkSession.sessionId}`);
 				}
-				keepAliveTimer.value = disposableTimeout(() => releaseKeepAlive('post-turn window elapsed'), SESSION_SHUTDOWN_TIMEOUT_MS);
+				keepAliveTimer.value = disposableTimeout(releaseKeepAlive, SESSION_SHUTDOWN_TIMEOUT_MS);
 			} else {
 				// Session is busy again (new turn started); hold the ref and
 				// cancel the release timer.
 				keepAliveTimer.clear();
 			}
 		}));
-		// Also log system.notification turnaround from the SDK so we can see
-		// the full path: status → notification received → forwarded.
-		session.add(toDisposable(sdkSession.on('session.background_tasks_changed', () => {
-			const tasks = sdkSession.getBackgroundTasks();
-			const taskSummary = tasks.map(t => `${t.type}:${t.status}`).join(', ');
-			this.logService.info(`[anthony] [CopilotCLISession] background_tasks_changed for session ${sdkSession.sessionId}: [${taskSummary}]`);
-		})));
 
 		return refCountedSession;
 	}

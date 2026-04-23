@@ -153,10 +153,8 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		// chip + fresh response bubble (issue #309290).
 		this._register(this.sessionService.onDidReceiveSystemNotification(({ sessionId, message, label }) => {
 			const sessionResource = SessionIdForCLI.getResource(sessionId);
-			this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] Sending system-initiated request for session ${sessionId}, scheme=${sessionResource.scheme}, label=${label}`);
 			vscode.chat.sendSystemInitiatedRequest(sessionResource, message, { systemInitiatedLabel: label })
-				.then(() => this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] system-initiated request accepted for session ${sessionId}`),
-					err => this.logService.error(err, `[anthony] [CopilotCLIChatSessionContentProvider] Failed to send system-initiated request for session ${sessionId}`));
+				.then(undefined, err => this.logService.error(err, `[CopilotCLIChatSessionContentProvider] Failed to send system-initiated request for session ${sessionId}`));
 		}));
 
 		let isRefreshing = false;
