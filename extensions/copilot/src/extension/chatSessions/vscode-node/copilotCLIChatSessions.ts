@@ -151,13 +151,10 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		// Forward SDK system notifications (async shell completed, etc.) into
 		// the chat panel as a system-initiated request so the user sees a UI
 		// chip + fresh response bubble (issue #309290).
-		this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] CONSTRUCTED, subscribing to onDidReceiveSystemNotification on sessionService=${(this.sessionService as unknown as { _instanceId?: string })._instanceId ?? 'unknown'}`);
 		this._register(this.sessionService.onDidReceiveSystemNotification(({ sessionId, message, label }) => {
 			const sessionResource = SessionIdForCLI.getResource(sessionId);
-			this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] sending system-initiated request for session ${sessionId}, label=${label}, resource=${sessionResource.toString()}`);
 			vscode.chat.sendSystemInitiatedRequest(sessionResource, message, { systemInitiatedLabel: label })
-				.then(() => this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] system-initiated request resolved for session ${sessionId}`),
-					err => this.logService.error(err, `[anthony] [CopilotCLIChatSessionContentProvider] Failed to send system-initiated request for session ${sessionId}`));
+				.then(undefined, err => this.logService.error(err, `[CopilotCLIChatSessionContentProvider] Failed to send system-initiated request for session ${sessionId}`));
 		}));
 
 		let isRefreshing = false;

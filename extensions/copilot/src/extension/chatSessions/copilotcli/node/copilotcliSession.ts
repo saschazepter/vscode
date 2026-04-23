@@ -230,20 +230,16 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		// chat request via `vscode.chat.sendSystemInitiatedRequest` so the
 		// notification surfaces as a UI bubble and the SDK's auto-injected
 		// follow-up turn streams into a fresh chat response (issue #309290).
-		this.logService.info(`[anthony] [CopilotCLISession] subscribing to system.notification for session ${this.sessionId}`);
+		// notification surfaces as a UI bubble and the SDK's auto-injected
+		// follow-up turn streams into a fresh chat response (issue #309290).
 		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
 			try {
-				const kindType = (event?.data?.kind as { type?: string } | undefined)?.type ?? 'unknown';
-				this.logService.info(`[anthony] [CopilotCLISession] system.notification received for session ${this.sessionId}: kind=${kindType}`);
 				const notification = this._buildSystemNotification(event);
 				if (notification) {
-					this.logService.info(`[anthony] [CopilotCLISession] firing onDidReceiveSystemNotification for session ${this.sessionId}, label=${notification.label}`);
 					this._onDidReceiveSystemNotification.fire(notification);
-				} else {
-					this.logService.info(`[anthony] [CopilotCLISession] system.notification skipped (unsupported kind=${kindType}) for session ${this.sessionId}`);
 				}
 			} catch (err) {
-				this.logService.error(err, `[anthony] [CopilotCLISession] Failed to translate system.notification for session ${this.sessionId}`);
+				this.logService.error(err, `[CopilotCLISession] Failed to translate system.notification for session ${this.sessionId}`);
 			}
 		})));
 	}
