@@ -1721,7 +1721,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		if (endCwd && this._workspaceContextService.getWorkspaceFolder(endCwd) === null) {
 			const folders = this._workspaceContextService.getWorkspace().folders;
 			if (folders.length > 0) {
-				resultText.push(`\nNote: The shell's current directory (${endCwd.fsPath}) is outside the workspace root. Files written here may not be captured by tools that inspect the workspace.\n`);
+				resultText.push(`\nNote: The shell's current directory (${this._labelService.getUriLabel(endCwd)}) is outside the workspace root. Files written here may not be captured by tools that inspect the workspace.\n`);
 			}
 		}
 
