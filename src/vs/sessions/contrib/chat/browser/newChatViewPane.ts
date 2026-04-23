@@ -95,12 +95,41 @@ class NewChatWidget extends Disposable {
 		// Create initial session for any workspace already selected at construct time.
 		// If the selection arrives later (provider registers asynchronously), the
 		// picker fires onDidSelectWorkspace and our listener handles it.
+		// Skip if an active session already exists (restored by openNewSessionView
+		// from a pending new session when navigating back from another session).
 		const restoredProject = this._workspacePicker.selectedProject;
-		if (restoredProject) {
+		if (!this._syncWorkspacePickerFromActiveSession() && restoredProject) {
 			this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
 		}
 
 		chatWidgetContainer.classList.add('revealed');
+	}
+
+	/**
+	 * If a pending session was restored by {@link openNewSessionView}, sync
+	 * the workspace picker to match the session's workspace. The picker may
+	 * have restored a workspace from a different provider (e.g. remote vs
+	 * local), so overwrite it with the session's actual workspace without
+	 * firing the event (which would trigger {@link _onWorkspaceSelected} and
+	 * create a new session).
+	 *
+	 * @returns `true` if an active session was found and the picker was synced.
+	 */
+	private _syncWorkspacePickerFromActiveSession(): boolean {
+		const activeSession = this.sessionsManagementService.activeSession.get();
+		if (!activeSession) {
+			return false;
+		}
+
+		const sessionWorkspace = activeSession.workspace.get();
+		if (sessionWorkspace) {
+			this._workspacePicker.setSelectedWorkspace(
+				{ providerId: activeSession.providerId, workspace: sessionWorkspace },
+				/* fireEvent */ false,
+			);
+		}
+
+		return true;
 	}
 
 	private _createNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {

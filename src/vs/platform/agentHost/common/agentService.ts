@@ -148,8 +148,6 @@ export interface IAgentCreateSessionConfig {
 	};
 }
 
-export const AgentHostSessionConfigBranchNameHintKey = 'branchNameHint';
-
 export interface IAgentResolveSessionConfigParams {
 	readonly provider?: AgentProvider;
 	readonly workingDirectory?: URI;

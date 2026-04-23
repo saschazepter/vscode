@@ -284,6 +284,13 @@ suite('OutputMonitor', () => {
 			assert.strictEqual(detectsInputRequiredPattern('Enter your name: '), true);
 			assert.strictEqual(detectsInputRequiredPattern('Password: '), true);
 			assert.strictEqual(detectsInputRequiredPattern('File to overwrite: '), true);
+
+			// Non-prompts: a trailing colon without a following space is typical of normal
+			// command output (headers, log lines ending with ':' before a newline) and must
+			// not be treated as an input prompt.
+			assert.strictEqual(detectsInputRequiredPattern('Running tests:'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Results:\n'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Summary:'), false);
 		});
 
 		test('detects prompts with parenthesized default values', () => {
@@ -294,9 +301,16 @@ suite('OutputMonitor', () => {
 		});
 
 		test('detects trailing questions', () => {
-			assert.strictEqual(detectsInputRequiredPattern('Continue?'), true);
+			assert.strictEqual(detectsInputRequiredPattern('Continue? '), true);
 			assert.strictEqual(detectsInputRequiredPattern('Proceed?   '), true);
-			assert.strictEqual(detectsInputRequiredPattern('Are you sure?'), true);
+			assert.strictEqual(detectsInputRequiredPattern('Are you sure? '), true);
+
+			// Non-prompts: a trailing '?' without a following space is typical of
+			// normal command output (log lines, error messages) and must not be
+			// treated as an input prompt.
+			assert.strictEqual(detectsInputRequiredPattern('Continue?'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Are you sure?\n'), false);
+			assert.strictEqual(detectsInputRequiredPattern('What happened?'), false);
 		});
 
 		test('detects press any key prompts', () => {
@@ -372,6 +386,34 @@ suite('OutputMonitor', () => {
 			assert.strictEqual(detectsVSCodeTaskFinishMessage('Continue? (y/n)'), false);
 			assert.strictEqual(detectsVSCodeTaskFinishMessage('Password:'), false);
 			assert.strictEqual(detectsVSCodeTaskFinishMessage('press h to show help'), false);
+		});
+	});
+
+	suite('disposable leak regression', () => {
+		test('disposing before timeout(0) fires does not leak idle input listener', async () => {
+			// Regression: disposing immediately (before the deferred _startMonitoring fires)
+			// must not leak the FunctionDisposable created by onDidInputData.
+			// The CTS must be cancelled synchronously so that when timeout(0) fires and
+			// _setupIdleInputListener runs, isCancellationRequested is already true.
+			return runWithFakedTimers({}, async () => {
+				monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
+				// Dispose immediately, before the deferred _startMonitoring callback fires.
+				monitor.dispose();
+				await new Promise<void>(resolve => setTimeout(resolve, 0));
+				// ensureNoDisposablesAreLeakedInTestSuite will catch any leaked disposable.
+			});
+		});
+
+		test('disposing after monitoring completes does not leak idle input listener', async () => {
+			// Verifies the finally block in _startMonitoring clears _userInputListener before
+			// firing onDidFinishCommand. Any undisposed FunctionDisposable from onDidInputData
+			// would be caught by ensureNoDisposablesAreLeakedInTestSuite.
+			return runWithFakedTimers({}, async () => {
+				execution.isActive = async () => false;
+				monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
+				await Event.toPromise(monitor.onDidFinishCommand);
+				monitor.dispose();
+			});
 		});
 	});
 
