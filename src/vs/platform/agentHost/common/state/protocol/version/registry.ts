@@ -61,6 +61,7 @@ export const ACTION_INTRODUCED_IN: { readonly [K in StateAction['type']]: number
 	[ActionType.SessionIsDoneChanged]: 1,
 	[ActionType.SessionDiffsChanged]: 1,
 	[ActionType.SessionConfigChanged]: 1,
+	[ActionType.SessionMetaChanged]: 1,
 	[ActionType.RootTerminalsChanged]: 1,
 	[ActionType.RootConfigChanged]: 1,
 	[ActionType.TerminalData]: 1,

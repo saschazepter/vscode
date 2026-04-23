@@ -243,7 +243,7 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(sessions[0].summary, 'User first message');
 		});
 
-		test('createSession attaches git state into summary _meta when working directory is present', async () => {
+		test('createSession attaches git state into state _meta when working directory is present', async () => {
 			const workingDirectory = URI.file('/workspace/repo');
 			const gitState = {
 				hasGitHubRemote: true,
@@ -284,10 +284,9 @@ suite('AgentService (node dispatcher)', () => {
 
 			const sessions = await localService.listSessions();
 			assert.strictEqual(sessions.length, 1);
-			assert.deepStrictEqual(sessions[0]._meta, { git: gitState });
 			assert.deepStrictEqual(calls, [workingDirectory.fsPath]);
 			assert.deepStrictEqual(
-				localService.stateManager.getSessionState(session.toString())?.summary._meta,
+				localService.stateManager.getSessionState(session.toString())?._meta,
 				{ git: gitState },
 			);
 		});
@@ -311,14 +310,14 @@ suite('AgentService (node dispatcher)', () => {
 			// No resolvedWorkingDirectory set on the mock.
 			localService.registerProvider(agent);
 
-			await localService.createSession({ provider: 'copilot' });
+			const session = await localService.createSession({ provider: 'copilot' });
 			for (let i = 0; i < 5; i++) {
 				await Promise.resolve();
 			}
 			const sessions = await localService.listSessions();
 
 			assert.strictEqual(sessions.length, 1);
-			assert.strictEqual(sessions[0]._meta, undefined);
+			assert.strictEqual(localService.stateManager.getSessionState(session.toString())?._meta, undefined);
 		});
 
 		test('createSession stores live session config', async () => {

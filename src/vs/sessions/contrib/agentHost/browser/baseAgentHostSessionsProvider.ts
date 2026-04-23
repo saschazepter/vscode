@@ -423,6 +423,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		this._ensureSessionCache();
 		for (const cached of this._sessionCache.values()) {
 			if (cached.resource.toString() === resource.toString()) {
+				// Opening a session: subscribe to its AHP state so that
+				// `_meta` (e.g. lazy git state computed by the agent host)
+				// flows into the cached adapter.
+				this._ensureSessionStateSubscription(cached.sessionId);
 				return cached;
 			}
 		}
@@ -964,12 +968,36 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const ref = connection.getSubscription(StateComponents.Session, sessionUri);
 		const store = new DisposableStore();
 		store.add(ref);
-		store.add(ref.object.onDidChange(state => this._seedRunningConfigFromState(sessionId, state)));
+		store.add(ref.object.onDidChange(state => this._applySessionStateUpdate(sessionId, state)));
 		this._sessionStateSubscriptions.set(sessionId, store);
 
 		const value = ref.object.value;
 		if (value && !(value instanceof Error)) {
-			this._seedRunningConfigFromState(sessionId, value);
+			this._applySessionStateUpdate(sessionId, value);
+		}
+	}
+
+	/**
+	 * Fan-out for AHP `SessionState` snapshots: keeps both the running
+	 * session config and the cached adapter's `_meta` (e.g. git state) in
+	 * sync.
+	 */
+	private _applySessionStateUpdate(sessionId: string, state: SessionState): void {
+		this._seedRunningConfigFromState(sessionId, state);
+		this._applySessionMetaFromState(sessionId, state);
+	}
+
+	private _applySessionMetaFromState(sessionId: string, state: SessionState): void {
+		const rawId = this._rawIdFromChatId(sessionId);
+		if (!rawId) {
+			return;
+		}
+		const cached = this._sessionCache.get(rawId);
+		if (!cached) {
+			return;
+		}
+		if (cached.setMeta(state._meta)) {
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
 		}
 	}
 
@@ -1233,10 +1261,6 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				cached.changes.set(diffsToChanges(changes.diffs, mapUri), undefined);
 				didChange = true;
 			}
-		}
-
-		if (changes._meta !== undefined && cached.setMeta(changes._meta)) {
-			didChange = true;
 		}
 
 		if (didChange) {

@@ -203,22 +203,16 @@ export class AgentHostStateManager extends Disposable {
 	// ---- Session meta -------------------------------------------------------
 
 	/**
-	 * Overwrites the `_meta` slot on a session's summary and schedules a
-	 * `SessionSummaryChanged` notification. No-op for unknown sessions.
+	 * Replaces `state._meta` on a session by dispatching a
+	 * {@link ActionType.SessionMetaChanged} action so the change flows
+	 * through the action envelope (and thus to all live subscribers).
 	 *
 	 * The full `_meta` object is replaced (not merged) so callers stay in
 	 * control of the convention for their own keys; use the `withSessionXxx`
 	 * helpers in `sessionState.ts` to combine slots.
 	 */
 	setSessionMeta(session: URI, meta: SessionMeta | undefined): void {
-		const state = this._sessionStates.get(session);
-		if (!state) {
-			return;
-		}
-		const newSummary: SessionSummary = { ...state.summary, _meta: meta };
-		this._sessionStates.set(session, { ...state, summary: newSummary });
-		this._dirtySummaries.add(session);
-		this._summaryNotifyScheduler.schedule();
+		this.dispatchServerAction({ type: ActionType.SessionMetaChanged, session, meta });
 	}
 
 	// ---- Turn tracking ------------------------------------------------------
@@ -328,7 +322,6 @@ export class AgentHostStateManager extends Disposable {
 			if (current.isRead !== lastNotified.isRead) { changes.isRead = current.isRead; }
 			if (current.isDone !== lastNotified.isDone) { changes.isDone = current.isDone; }
 			if (current.diffs !== lastNotified.diffs) { changes.diffs = current.diffs; }
-			if (current._meta !== lastNotified._meta) { changes._meta = current._meta; }
 
 			this._lastNotifiedSummaries.set(session, current);
 

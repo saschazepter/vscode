@@ -1940,7 +1940,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(controller.items[0].description, undefined);
 		});
 
-		test('list controller propagates gitState into item metadata', async () => {
+		test('list controller surfaces only working directory in metadata (git state is now per-session state, not summary)', async () => {
 			const { instantiationService, agentHostService } = createTestServices(disposables);
 
 			const controller = disposables.add(instantiationService.createInstance(
@@ -1953,32 +1953,12 @@ suite('AgentHostChatContribution', () => {
 				modifiedTime: 2000,
 				summary: 'With git',
 				workingDirectory,
-				_meta: {
-					git: {
-						hasGitHubRemote: true,
-						branchName: 'feature/foo',
-						baseBranchName: 'main',
-						baseBranchProtected: true,
-						upstreamBranchName: 'origin/feature/foo',
-						incomingChanges: 0,
-						outgoingChanges: 2,
-						uncommittedChanges: 1,
-					},
-				},
 			});
 			await controller.refresh(CancellationToken.None);
 
 			assert.strictEqual(controller.items.length, 1);
 			assert.deepStrictEqual(controller.items[0].metadata, {
 				workingDirectoryPath: workingDirectory.fsPath,
-				repositoryPath: workingDirectory.fsPath,
-				hasGitHubRemote: true,
-				branchName: 'feature/foo',
-				baseBranchName: 'main',
-				upstreamBranchName: 'origin/feature/foo',
-				incomingChanges: 0,
-				outgoingChanges: 2,
-				uncommittedChanges: 1,
 			});
 		});
 

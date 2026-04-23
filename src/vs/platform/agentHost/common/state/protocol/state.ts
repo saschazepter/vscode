@@ -323,6 +323,13 @@ export interface SessionState {
 	 * {@link SessionActiveClient.customizations | activeClient.customizations}.
 	 */
 	customizations?: SessionCustomization[];
+	/**
+	 * Side-channel metadata. Keys are well-known or producer-defined;
+	 * consumers MUST ignore unknown keys. Lives on session state (rather
+	 * than {@link SessionSummary}) because it is only meaningful to clients
+	 * that have opened the session.
+	 */
+	_meta?: SessionMeta;
 }
 
 /**
@@ -396,11 +403,6 @@ export interface SessionSummary {
 	isDone?: boolean;
 	/** Files changed during this session with diff statistics */
 	diffs?: FileEdit[];
-	/**
-	 * Side-channel metadata. Keys are well-known or producer-defined;
-	 * consumers MUST ignore unknown keys.
-	 */
-	_meta?: SessionMeta;
 }
 
 // ─── Config Schema Types ─────────────────────────────────────────────────────

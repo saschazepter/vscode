@@ -10,7 +10,7 @@ import { hasKey } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentSession, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
-import { ISessionFileDiff, SessionMeta, readSessionGitState, SessionStatus, type ISessionGitState, type SessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ISessionFileDiff, SessionStatus, type SessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ChatSessionStatus, IChatSessionFileChange2, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta } from '../../../common/chatSessionsService.js';
 import { getAgentHostIcon } from '../agentSessions.js';
@@ -100,7 +100,6 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 					createdAt: n.summary.createdAt,
 					modifiedAt: n.summary.modifiedAt,
 					diffs: n.summary.diffs,
-					meta: n.summary._meta,
 				});
 				this._items.push(item);
 				this._onDidChangeChatSessionItems.fire({ addedOrUpdated: [item] });
@@ -162,7 +161,6 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 					createdAt: s.startTime,
 					modifiedAt: s.modifiedTime,
 					diffs: s.diffs,
-					meta: s._meta,
 				});
 			});
 		} catch {
@@ -181,7 +179,6 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 			createdAt: summary.createdAt,
 			modifiedAt: summary.modifiedAt,
 			diffs,
-			meta: summary._meta,
 		});
 	}
 
@@ -192,7 +189,6 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		createdAt: number;
 		modifiedAt: number;
 		diffs?: readonly ISessionFileDiff[] | readonly ICompactSessionFileDiff[];
-		meta?: SessionMeta;
 	}): IChatSessionItem {
 		return {
 			resource: URI.from({ scheme: this._sessionType, path: `/${rawId}` }),
@@ -200,7 +196,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 			description: this._description,
 			iconPath: getAgentHostIcon(this._productService),
 			status: mapSessionStatus(opts.status),
-			metadata: this._buildMetadata(opts.workingDirectory, readSessionGitState(opts.meta)),
+			metadata: this._buildMetadata(opts.workingDirectory),
 			timing: {
 				created: opts.createdAt,
 				lastRequestStarted: opts.modifiedAt,
@@ -210,8 +206,8 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		};
 	}
 
-	private _buildMetadata(workingDirectory: URI | undefined, gitState: ISessionGitState | undefined): { readonly [key: string]: unknown } | undefined {
-		if (!this._description && !workingDirectory && !gitState) {
+	private _buildMetadata(workingDirectory: URI | undefined): { readonly [key: string]: unknown } | undefined {
+		if (!this._description && !workingDirectory) {
 			return undefined;
 		}
 		const result: { [key: string]: unknown } = {};
@@ -220,37 +216,6 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		}
 		if (workingDirectory) {
 			result.workingDirectoryPath = workingDirectory.fsPath;
-		}
-		if (gitState) {
-			// `repositoryPath` is the key that `changesViewModel` reads to decide whether the
-			// session has a git repository at all. Only set it when the agent has actually
-			// reported git state for the working directory — its absence means the agent either
-			// doesn't track git or the working directory isn't a repo.
-			if (workingDirectory) {
-				result.repositoryPath = workingDirectory.fsPath;
-			}
-			// Field names mirror what `changesViewModel` reads off `IChatSessionItem.metadata`.
-			if (gitState.hasGitHubRemote !== undefined) {
-				result.hasGitHubRemote = gitState.hasGitHubRemote;
-			}
-			if (gitState.branchName !== undefined) {
-				result.branchName = gitState.branchName;
-			}
-			if (gitState.baseBranchName !== undefined) {
-				result.baseBranchName = gitState.baseBranchName;
-			}
-			if (gitState.upstreamBranchName !== undefined) {
-				result.upstreamBranchName = gitState.upstreamBranchName;
-			}
-			if (gitState.incomingChanges !== undefined) {
-				result.incomingChanges = gitState.incomingChanges;
-			}
-			if (gitState.outgoingChanges !== undefined) {
-				result.outgoingChanges = gitState.outgoingChanges;
-			}
-			if (gitState.uncommittedChanges !== undefined) {
-				result.uncommittedChanges = gitState.uncommittedChanges;
-			}
 		}
 		return Object.keys(result).length > 0 ? result : undefined;
 	}

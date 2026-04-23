@@ -188,11 +188,6 @@ export class AgentService extends Disposable implements IAgentService {
 					summary: liveState.summary.title || s.summary,
 					status: liveState.summary.status,
 					model: liveState.summary.model ?? s.model,
-					// Git state (under `_meta.git`) is computed lazily by
-					// `_attachGitState` once a session enters the state manager
-					// (on create or restore). Prefer the live copy so clients
-					// see it as soon as it arrives.
-					_meta: liveState.summary._meta ?? s._meta,
 				};
 			}
 			return s;
@@ -305,7 +300,7 @@ export class AgentService extends Disposable implements IAgentService {
 
 	/**
 	 * Fire-and-forget probe that resolves the session's git state for its
-	 * working directory (if any) and merges it into `summary._meta.git` via
+	 * working directory (if any) and merges it into `state._meta.git` via
 	 * the state manager. Failures are logged; sessions simply remain without
 	 * git state.
 	 */
@@ -319,7 +314,7 @@ export class AgentService extends Disposable implements IAgentService {
 					return;
 				}
 				const sessionKey = session.toString();
-				const current = this._stateManager.getSessionState(sessionKey)?.summary._meta;
+				const current = this._stateManager.getSessionState(sessionKey)?._meta;
 				this._stateManager.setSessionMeta(sessionKey, withSessionGitState(current, gitState));
 			},
 			e => {
@@ -561,10 +556,15 @@ export class AgentService extends Disposable implements IAgentService {
 			isRead,
 			isDone,
 			diffs,
-			_meta: meta._meta,
 		};
 
 		this._stateManager.restoreSession(summary, turns);
+
+		// Restore persisted `_meta` (e.g. git state) onto the new session
+		// state. This dispatches a SessionMetaChanged action.
+		if (meta._meta) {
+			this._stateManager.setSessionMeta(sessionStr, meta._meta);
+		}
 
 		// Resolve the session config so clients (e.g. the running-session
 		// auto-approve picker) can render session-mutable properties for
