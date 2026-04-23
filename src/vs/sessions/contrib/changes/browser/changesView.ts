@@ -56,10 +56,12 @@ import { createFileIconThemableTreeContainerScope } from '../../../../workbench/
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../../workbench/services/editor/common/editorService.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
+import { getChangesMultiDiffSourceUri } from './changesMultiDiffSourceResolver.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
-import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, ISessionFileChange, SessionStatus } from '../../../services/sessions/common/session.js';
+import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, SessionStatus } from '../../../services/sessions/common/session.js';
 import { Orientation } from '../../../../base/browser/ui/sash/sash.js';
 import { IView, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
 import { Color } from '../../../../base/common/color.js';
@@ -73,8 +75,6 @@ import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { isIChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 
 const $ = dom.$;
 
@@ -273,7 +273,6 @@ export class ChangesViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ISessionsManagementService private readonly sessionManagementService: ISessionsManagementService,
 		@ILabelService private readonly labelService: ILabelService,
@@ -1019,33 +1018,32 @@ export class ChangesViewPane extends ViewPane {
 			return;
 		}
 
-		const compare = (aChange: ISessionFileChange, bChange: ISessionFileChange): number => {
-			const aPath = isIChatSessionFileChange2(aChange) ? aChange.uri.fsPath : aChange.modifiedUri.fsPath;
-			const bPath = isIChatSessionFileChange2(bChange) ? bChange.uri.fsPath : bChange.modifiedUri.fsPath;
-			return comparePaths(aPath, bPath);
-		};
+		// Determine the reveal target (original/modified URI pair) from the
+		// current change list, so the multi-diff editor can navigate to it.
+		let options: IMultiDiffEditorOptions | undefined;
+		if (reveal) {
+			const target = changes.find(c => isEqual(c.modifiedUri, reveal));
+			if (target) {
+				options = {
+					viewState: {
+						revealData: {
+							resource: {
+								original: target.originalUri,
+								modified: target.modifiedUri,
+							},
+						},
+					},
+				} satisfies IMultiDiffEditorOptions;
+			}
+		}
 
-		// Sort the changes
-		const resources = changes.toSorted(compare).map(d => ({
-			originalUri: d.originalUri,
-			modifiedUri: d.modifiedUri
-		}));
-
-		// Ensure the reveal resource is part of the changes
-		reveal = reveal
-			? resources.some(r => isEqual(r.modifiedUri, reveal))
-				? reveal
-				: undefined
-			: undefined;
-
-		// Open multi-file diff editor
-		await this.commandService.executeCommand('_workbench.openMultiDiffEditor', {
-			multiDiffSourceUri: sessionResource.with({ scheme: sessionResource.scheme + '-session-changes' }),
-			title: localize('sessions.changes.title', 'Session Changes'),
-			resources,
-			reveal: reveal
-				? { modifiedUri: reveal }
-				: undefined
+		// Open the multi-diff editor using the sessions source URI. The resource
+		// list is resolved via `SessionsMultiDiffSourceResolver` and updates
+		// reactively as `activeSessionChangesObs` changes.
+		await this.editorService.openEditor({
+			multiDiffSource: getChangesMultiDiffSourceUri(sessionResource),
+			label: localize('sessions.changes.title', 'Session Changes'),
+			options,
 		});
 	}
 

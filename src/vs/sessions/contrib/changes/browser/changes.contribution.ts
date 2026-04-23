@@ -13,6 +13,7 @@ import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensi
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../common/changes.js';
 import { ChangesViewPane, ChangesViewPaneContainer } from './changesView.js';
 import { ChangesTitleBarContribution } from './changesTitleBarWidget.js';
+import { ChangesMultiDiffSourceResolverContribution } from './changesMultiDiffSourceResolver.js';
 import './changesViewActions.js';
 import './checksActions.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
@@ -58,3 +59,4 @@ viewsRegistry.registerViews([{
 }], changesViewContainer);
 
 registerWorkbenchContribution2(ChangesTitleBarContribution.ID, ChangesTitleBarContribution, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2(ChangesMultiDiffSourceResolverContribution.ID, ChangesMultiDiffSourceResolverContribution, WorkbenchPhase.AfterRestored);
