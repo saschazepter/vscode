@@ -38,8 +38,8 @@ export class AiStatsStatusBar extends Disposable {
 		const hoverStore = this._register(new DisposableStore());
 
 		this._register(this._statusbarService.addEntry({
-			name: localize('aiStatsStatusBar.name', "AI Usage Statistics"),
-			ariaLabel: localize('aiStatsStatusBar.aria', "AI usage statistics status bar"),
+			name: localize('aiStatsStatusBar.name', "Copilot Usage Metrics"),
+			ariaLabel: localize('aiStatsStatusBar.aria', "Copilot usage metrics status bar"),
 			text: '',
 			tooltip: {
 				element: async (_token) => {
@@ -120,7 +120,7 @@ export function createAiStatsHover(options: IAiStatsHoverOptions) {
 		n.div({
 			class: 'header',
 		}, [
-			n.div({ style: { flex: 1 } }, [localize('aiStatsStatusBarHeader', "AI Usage Statistics")]),
+			n.div({ style: { flex: 1 } }, [localize('aiStatsStatusBarHeader', "Copilot Usage Metrics")]),
 			n.div({ style: { marginLeft: 'auto' } }, options.onOpenSettings
 				? actionBar([
 					{
