@@ -2932,9 +2932,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// pending, this is "Plan review required" with a spinner. Once the
 		// user has answered, it transitions to the action that was taken
 		// (e.g. "Approved plan", "Started implementation with autopilot"),
-		// and — when the user provided feedback — folds the feedback into
-		// the same progress row as a blockquote so the transcript captures
-		// what was said.
+		// and — when the user provided feedback — appends that feedback
+		// inline in the same progress row after a colon, collapsing
+		// whitespace so the transcript reads as a single line.
 		const renderProgress = (): IChatContentPart => {
 			const message = this.getPlanReviewProgressMessage(review);
 			if (!message) {
@@ -3024,9 +3024,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const action = review.actions.find(a => a.label === result.action);
 		if (action?.permissionLevel === 'autopilot') {
 			return localize('chat.planReview.autopilot', "Started implementation with Autopilot");
-		}
-		if (action && /implement/i.test(action.label)) {
-			return localize('chat.planReview.approvedAndImplement', "Approved plan and beginning implementation");
 		}
 		return localize('chat.planReview.approved', "Approved plan");
 	}

@@ -135,7 +135,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		// Optional Edit button.
 		if (review.planUri) {
 			const fileName = basename(URI.revive(review.planUri));
-			const editButton = this._register(new Button(this._titleActionsEl, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: localize('chat.planReview.editTooltip', 'Edit {0}', fileName) }));
+			const editButtonLabel = localize('chat.planReview.editTooltip', 'Edit {0}', fileName);
+			const editButton = this._register(new Button(this._titleActionsEl, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: editButtonLabel, ariaLabel: editButtonLabel }));
 			editButton.element.classList.add('chat-plan-review-title-button', 'chat-plan-review-title-icon-button');
 			editButton.label = `$(${Codicon.edit.id})`;
 			this._register(editButton.onDidClick(() => this.openPlanFile()));
@@ -223,7 +224,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		const label = dom.append(header, dom.$('.chat-plan-review-feedback-label'));
 		label.textContent = localize('chat.planReview.feedbackLabel', 'Additional feedback');
 
-		const closeButton = this._register(new Button(header, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: localize('chat.planReview.exitFeedback', "Cancel feedback") }));
+		const closeButtonAriaLabel = localize('chat.planReview.exitFeedback', "Cancel feedback");
+		const closeButton = this._register(new Button(header, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: closeButtonAriaLabel, ariaLabel: closeButtonAriaLabel }));
 		closeButton.element.classList.add('chat-plan-review-title-button', 'chat-plan-review-title-icon-button', 'chat-plan-review-feedback-close');
 		closeButton.label = `$(${Codicon.close.id})`;
 		this._register(closeButton.onDidClick(() => this.exitFeedbackMode()));
