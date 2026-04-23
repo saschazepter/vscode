@@ -68,6 +68,32 @@ interface ICopilotFileToolArgs {
 	path: string;
 }
 
+/**
+ * Parameters for the `view` tool. The Copilot CLI accepts an optional
+ * `view_range: [startLine, endLine]` (1-based, inclusive). `endLine` may be
+ * `-1` to mean "to end of file".
+ */
+interface ICopilotViewToolArgs extends ICopilotFileToolArgs {
+	view_range?: number[];
+}
+
+/**
+ * Formats a `view_range` array into a human-readable line range string,
+ * or returns `undefined` if the range is not a usable two-element array.
+ */
+function formatViewRange(view_range: number[] | undefined): { startLine: number; endLine: number | undefined } | undefined {
+	if (!Array.isArray(view_range) || view_range.length < 1) {
+		return undefined;
+	}
+	const startLine = view_range[0];
+	if (typeof startLine !== 'number' || !isFinite(startLine)) {
+		return undefined;
+	}
+	const rawEnd = view_range.length >= 2 ? view_range[1] : undefined;
+	const endLine = typeof rawEnd === 'number' && isFinite(rawEnd) && rawEnd >= 0 ? rawEnd : undefined;
+	return { startLine, endLine };
+}
+
 /** Parameters for the `grep` tool. */
 interface ICopilotGrepToolArgs {
 	pattern: string;
@@ -212,9 +238,17 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 
 	switch (toolName) {
 		case CopilotToolName.View: {
-			const args = parameters as ICopilotFileToolArgs | undefined;
+			const args = parameters as ICopilotViewToolArgs | undefined;
 			if (args?.path) {
-				return md(localize('toolInvoke.viewFile', "Reading {0}", formatPathAsMarkdownLink(args.path)));
+				const link = formatPathAsMarkdownLink(args.path);
+				const range = formatViewRange(args.view_range);
+				if (range) {
+					if (range.endLine !== undefined && range.endLine !== range.startLine) {
+						return md(localize('toolInvoke.viewFileRange', "Reading {0}, lines {1} to {2}", link, range.startLine, range.endLine));
+					}
+					return md(localize('toolInvoke.viewFileLine', "Reading {0}, line {1}", link, range.startLine));
+				}
+				return md(localize('toolInvoke.viewFile', "Reading {0}", link));
 			}
 			return localize('toolInvoke.view', "Reading file");
 		}
@@ -267,9 +301,17 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 
 	switch (toolName) {
 		case CopilotToolName.View: {
-			const args = parameters as ICopilotFileToolArgs | undefined;
+			const args = parameters as ICopilotViewToolArgs | undefined;
 			if (args?.path) {
-				return md(localize('toolComplete.viewFile', "Read {0}", formatPathAsMarkdownLink(args.path)));
+				const link = formatPathAsMarkdownLink(args.path);
+				const range = formatViewRange(args.view_range);
+				if (range) {
+					if (range.endLine !== undefined && range.endLine !== range.startLine) {
+						return md(localize('toolComplete.viewFileRange', "Read {0}, lines {1} to {2}", link, range.startLine, range.endLine));
+					}
+					return md(localize('toolComplete.viewFileLine', "Read {0}, line {1}", link, range.startLine));
+				}
+				return md(localize('toolComplete.viewFile', "Read {0}", link));
 			}
 			return localize('toolComplete.view', "Read file");
 		}
