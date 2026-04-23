@@ -224,6 +224,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				type: vscode.ChatSessionCustomizationType.Skill,
 				name,
 				enabled: !disabledSkills.has(folderName),
+				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
 			};
 		});
 	}
@@ -233,14 +234,11 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Each item is a hook configuration file (JSON).
 	 */
 	private async getHookItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => {
-			const name = basename(h.uri).replace(/\.json$/i, '');
-			return {
-				uri: h.uri,
-				type: vscode.ChatSessionCustomizationType.Hook,
-				name,
-			};
-		});
+		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => ({
+			uri: h.uri,
+			type: vscode.ChatSessionCustomizationType.Hook,
+			name: basename(h.uri).replace(/\.json$/i, ''),
+		}));
 	}
 
 	/**
@@ -260,6 +258,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				type: vscode.ChatSessionCustomizationType.Plugins,
 				name,
 				enabled,
+				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
 			};
 		});
 	}
@@ -295,56 +294,34 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		await this.fileSystemService.writeFile(this._settingsUri, content);
 	}
 
-	/**
-	 * Resolves the CLI settings key and item name for a given customization type and URI.
-	 * Returns `undefined` for types that don't support per-item disablement in the CLI.
-	 */
-	private _resolveDisablementKey(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType): { settingsKey: string; name: string } | undefined {
+	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
+		const settings = await this._readSettings();
+		let name: string;
+
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
 			// Skills use the folder name as the key in disabledSkills
-			const name = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
-			return { settingsKey: 'disabledSkills', name };
-		}
-		if (type.id === vscode.ChatSessionCustomizationType.Plugins?.id) {
+			name = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
+			const currentList = Array.isArray(settings.disabledSkills) ? settings.disabledSkills as string[] : [];
+			if (enabled) {
+				settings.disabledSkills = currentList.filter(s => s !== name);
+			} else if (!currentList.includes(name)) {
+				settings.disabledSkills = [...currentList, name];
+			}
+		} else if (type.id === vscode.ChatSessionCustomizationType.Plugins?.id) {
 			// Plugins use enabledPlugins map (Record<string, boolean>)
-			const name = basename(URI.from(uri));
-			return { settingsKey: 'enabledPlugins', name };
-		}
-		// Other types don't have per-item disablement in the CLI config
-		return undefined;
-	}
-
-	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
-		const resolved = this._resolveDisablementKey(uri, type);
-		if (!resolved) {
-			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
-			return;
-		}
-
-		const { settingsKey, name } = resolved;
-		const settings = await this._readSettings();
-
-		if (settingsKey === 'enabledPlugins') {
-			// enabledPlugins is a Record<string, boolean> map
-			const map = (settings[settingsKey] && typeof settings[settingsKey] === 'object' && !Array.isArray(settings[settingsKey]))
-				? { ...settings[settingsKey] as Record<string, boolean> }
+			name = basename(URI.from(uri));
+			const map = (settings.enabledPlugins && typeof settings.enabledPlugins === 'object' && !Array.isArray(settings.enabledPlugins))
+				? { ...settings.enabledPlugins as Record<string, boolean> }
 				: {};
 			if (enabled) {
 				delete map[name];
 			} else {
 				map[name] = false;
 			}
-			settings[settingsKey] = Object.keys(map).length > 0 ? map : undefined;
+			settings.enabledPlugins = Object.keys(map).length > 0 ? map : undefined;
 		} else {
-			// disabledSkills are string arrays
-			const currentList = Array.isArray(settings[settingsKey]) ? settings[settingsKey] as string[] : [];
-			if (enabled) {
-				settings[settingsKey] = currentList.filter(s => s !== name);
-			} else {
-				if (!currentList.includes(name)) {
-					settings[settingsKey] = [...currentList, name];
-				}
-			}
+			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
+			return;
 		}
 
 		await this._writeSettings(settings);

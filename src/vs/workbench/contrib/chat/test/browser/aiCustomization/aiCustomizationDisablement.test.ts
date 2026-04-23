@@ -436,6 +436,26 @@ suite('aiCustomizationDisablement', () => {
 			assert.ok(builtin);
 			assert.strictEqual(builtin.disabled, true);
 		});
+
+		test('external harness: builtin skills get enablementScope: application', async () => {
+			const builtinUri = URI.file('/app/builtins/fetch/SKILL.md');
+			const ps = createMockPromptsService();
+			(ps as { listPromptFilesForStorage: Function }).listPromptFilesForStorage = async () => [
+				{ uri: builtinUri, name: 'fetch', description: 'Fetch web pages' },
+			];
+
+			const source = createItemSource({
+				harnessId: 'cli',
+				itemProvider: createMockItemProvider([]),
+				enablementProvider: createMockEnablementProvider(),
+				promptsService: ps,
+			});
+
+			const result = await source.fetchItems(PromptsType.skill);
+			const builtin = result.find(i => i.name === 'fetch');
+			assert.ok(builtin);
+			assert.strictEqual(builtin.enablementScope, 'application');
+		});
 	});
 
 	suite('ghost entries for disabled items not in provider results', () => {

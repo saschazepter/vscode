@@ -603,7 +603,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				enabled: !disabledPromptFiles.has(p.uri),
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
 				badgeTooltip: uiTooltip,
-				enablementScope: 'workspace',
+				enablementScope: this.hasNativeItemProvider ? 'application' : 'workspace',
 			};
 			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
 		}
