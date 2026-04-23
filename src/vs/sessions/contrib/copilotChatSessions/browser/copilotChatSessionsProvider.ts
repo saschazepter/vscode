@@ -1265,12 +1265,15 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		this.browseActions = [
 			{
 				label: localize('folders', "Folders"),
+				description: localize('local', "Local"),
+				group: 'folders',
 				icon: Codicon.folderOpened,
 				providerId: this.id,
 				run: () => this._browseForFolder(),
 			},
 			{
 				label: localize('repositories', "Repositories"),
+				description: localize('github', "GitHub"),
 				icon: Codicon.repo,
 				providerId: this.id,
 				run: () => this._browseForRepo(),

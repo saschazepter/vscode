@@ -269,6 +269,10 @@
 		text-overflow: ellipsis;
 	}
 
+	.group-title {
+		margin-left: auto;
+	}
+
 	.action-list-item-toolbar {
 		margin-left: 4px;
 		margin-right: 10px;
