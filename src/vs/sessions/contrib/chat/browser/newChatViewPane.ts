@@ -90,21 +90,7 @@ class NewChatWidget extends Disposable {
 		// Skip if an active session already exists (restored by openNewSessionView
 		// from a pending new session when navigating back from another session).
 		const restoredProject = this._workspacePicker.selectedProject;
-		const activeSession = this.sessionsManagementService.activeSession.get();
-		if (activeSession) {
-			// Pending session was restored — sync the workspace picker to match
-			// the session's workspace. The picker may have restored a workspace
-			// from a different provider (e.g. remote vs local), so overwrite it
-			// with the session's actual workspace without firing the event (which
-			// would trigger _onWorkspaceSelected and create a new session).
-			const sessionWorkspace = activeSession.workspace.get();
-			if (sessionWorkspace) {
-				this._workspacePicker.setSelectedWorkspace(
-					{ providerId: activeSession.providerId, workspace: sessionWorkspace },
-					/* fireEvent */ false,
-				);
-			}
-		} else if (restoredProject) {
+		if (!this._syncWorkspacePickerFromActiveSession() && restoredProject) {
 			if (this.sessionsProvidersService.getProviders().length > 0) {
 				this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
 			} else {
@@ -118,6 +104,33 @@ class NewChatWidget extends Disposable {
 		}
 
 		chatWidgetContainer.classList.add('revealed');
+	}
+
+	/**
+	 * If a pending session was restored by {@link openNewSessionView}, sync
+	 * the workspace picker to match the session's workspace. The picker may
+	 * have restored a workspace from a different provider (e.g. remote vs
+	 * local), so overwrite it with the session's actual workspace without
+	 * firing the event (which would trigger {@link _onWorkspaceSelected} and
+	 * create a new session).
+	 *
+	 * @returns `true` if an active session was found and the picker was synced.
+	 */
+	private _syncWorkspacePickerFromActiveSession(): boolean {
+		const activeSession = this.sessionsManagementService.activeSession.get();
+		if (!activeSession) {
+			return false;
+		}
+
+		const sessionWorkspace = activeSession.workspace.get();
+		if (sessionWorkspace) {
+			this._workspacePicker.setSelectedWorkspace(
+				{ providerId: activeSession.providerId, workspace: sessionWorkspace },
+				/* fireEvent */ false,
+			);
+		}
+
+		return true;
 	}
 
 	private _createNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
