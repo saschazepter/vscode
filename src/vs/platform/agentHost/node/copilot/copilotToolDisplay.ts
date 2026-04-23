@@ -71,26 +71,30 @@ interface ICopilotFileToolArgs {
 /**
  * Parameters for the `view` tool. The Copilot CLI accepts an optional
  * `view_range: [startLine, endLine]` (1-based, inclusive). `endLine` may be
- * `-1` to mean "to end of file".
+ * `-1` to mean "to end of file"; we treat that (and any other invalid range)
+ * as "no range" and fall back to the path-only display.
  */
 interface ICopilotViewToolArgs extends ICopilotFileToolArgs {
 	view_range?: number[];
 }
 
 /**
- * Formats a `view_range` array into a human-readable line range string,
- * or returns `undefined` if the range is not a usable two-element array.
+ * Normalizes a `view_range` array into a `{ startLine, endLine }` pair.
+ * Returns `undefined` unless the array has exactly two integer elements with
+ * `startLine >= 0` and `endLine >= startLine`. Mirrors the validation in the
+ * Copilot Chat extension's `formatViewToolInvocation`.
  */
-function formatViewRange(view_range: number[] | undefined): { startLine: number; endLine: number | undefined } | undefined {
-	if (!Array.isArray(view_range) || view_range.length < 1) {
+function formatViewRange(view_range: number[] | undefined): { startLine: number; endLine: number } | undefined {
+	if (!Array.isArray(view_range) || view_range.length !== 2) {
 		return undefined;
 	}
-	const startLine = view_range[0];
-	if (typeof startLine !== 'number' || !isFinite(startLine)) {
+	const [startLine, endLine] = view_range;
+	if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
 		return undefined;
 	}
-	const rawEnd = view_range.length >= 2 ? view_range[1] : undefined;
-	const endLine = typeof rawEnd === 'number' && isFinite(rawEnd) && rawEnd >= 0 ? rawEnd : undefined;
+	if (startLine < 0 || endLine < startLine) {
+		return undefined;
+	}
 	return { startLine, endLine };
 }
 
@@ -243,7 +247,7 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 				const link = formatPathAsMarkdownLink(args.path);
 				const range = formatViewRange(args.view_range);
 				if (range) {
-					if (range.endLine !== undefined && range.endLine !== range.startLine) {
+					if (range.endLine !== range.startLine) {
 						return md(localize('toolInvoke.viewFileRange', "Reading {0}, lines {1} to {2}", link, range.startLine, range.endLine));
 					}
 					return md(localize('toolInvoke.viewFileLine', "Reading {0}, line {1}", link, range.startLine));
@@ -306,7 +310,7 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 				const link = formatPathAsMarkdownLink(args.path);
 				const range = formatViewRange(args.view_range);
 				if (range) {
-					if (range.endLine !== undefined && range.endLine !== range.startLine) {
+					if (range.endLine !== range.startLine) {
 						return md(localize('toolComplete.viewFileRange', "Read {0}, lines {1} to {2}", link, range.startLine, range.endLine));
 					}
 					return md(localize('toolComplete.viewFileLine', "Read {0}, line {1}", link, range.startLine));
