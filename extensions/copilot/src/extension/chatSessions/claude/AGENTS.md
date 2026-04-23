@@ -230,10 +230,43 @@ In multi-root and empty workspaces, a folder picker option appears in the chat s
 - **`common/claudeFolderInfo.ts`**: `ClaudeFolderInfo` interface
 - **`../../chatSessions/common/claudeWorkspaceFolderService.ts`**: `IClaudeWorkspaceFolderService` interface — computes git diff changes for session items
 - **`../../chatSessions/vscode-node/claudeWorkspaceFolderServiceImpl.ts`**: Implementation — diffs the session's branch against its base branch, caches results, and maps changes to `ChatSessionChangedFile[]` for display in the Sessions view
-- **`../../chatSessions/vscode-node/claudeChatSessionContentProvider.ts`**: Folder resolution, picker options, and handler integration
+- **`../../chatSessions/vscode-node/claudeChatSessionContentProvider.ts`**: Folder resolution, picker options, session metadata enrichment, and git command handlers
+- **`../../chatSessions/common/builtinSlashCommands.ts`**: Shared constants for built-in slash commands (`/commit`, `/sync`, `/merge`, etc.) used by both Claude and CopilotCLI sessions
 - **`../../chatSessions/vscode-node/folderRepositoryManagerImpl.ts`**: `FolderRepositoryManager` (abstract base) with `ClaudeFolderRepositoryManager` subclass — the Claude subclass does not depend on `ICopilotCLISessionService` (CopilotCLI has its own subclass `CopilotCLIFolderRepositoryManager`)
 - **`node/claudeCodeAgent.ts`**: Consumes `ClaudeFolderInfo` in `ClaudeCodeSession._startSession()`
 - **`node/sessionParser/claudeCodeSessionService.ts`**: `_getProjectSlugs()` generates slugs for all folders
+
+## Session Metadata and Git Commands
+
+### Session Metadata Enrichment
+
+Each Claude session item carries metadata that drives the Sessions view UI (button visibility, status indicators). The `ClaudeChatSessionItemController._buildSessionMetadata()` method enriches session items with git repository state:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `workingDirectoryPath` | `string` | Session's working directory (always present) |
+| `repositoryPath` | `string?` | Git repository root path |
+| `branchName` | `string?` | Current HEAD branch name |
+| `upstreamBranchName` | `string?` | Upstream tracking ref (e.g., `origin/main`) |
+| `hasGitHubRemote` | `boolean?` | Whether any remote points to GitHub |
+| `incomingChanges` | `number?` | Commits behind upstream |
+| `outgoingChanges` | `number?` | Commits ahead of upstream |
+| `uncommittedChanges` | `number?` | Total uncommitted changes (merge + index + working tree + untracked) |
+
+These metadata fields map to `when`-clause context keys in `package.json` (e.g., `sessions.hasGitRepository`, `sessions.hasUncommittedChanges`, `sessions.hasUpstream`) that control which action buttons appear in the Changes view.
+
+### Git Action Commands
+
+The `ClaudeChatSessionItemController` registers four git-related commands that appear as action buttons in the Sessions/Changes view:
+
+| Command | When Visible | Action |
+|---------|-------------|--------|
+| `github.copilot.claude.sessions.commit` | Has git repo + uncommitted changes | Sends `/commit` prompt to the session |
+| `github.copilot.claude.sessions.commitAndSync` | Has git repo + uncommitted changes + upstream | Sends `/commit and /sync` prompt |
+| `github.copilot.claude.sessions.sync` | Has git repo + no uncommitted changes + upstream | Sends `/sync` prompt |
+| `github.copilot.claude.sessions.initializeRepository` | No git repo | Calls `IGitService.initRepository()` on the session's workspace folder |
+
+The commit, commitAndSync, and sync commands use a shared `_registerPromptCommand()` helper that extracts the session resource and dispatches via `workbench.action.chat.openSessionWithPrompt.claude-code`. The slash command strings come from the shared `builtinSlashCommands` module (`../../common/builtinSlashCommands.ts`).
 
 ## Testing
 
@@ -243,6 +276,9 @@ Unit tests are located in `node/test/`:
 - `claudePluginService.spec.ts`: Tests for plugin location resolution
 - `mockClaudeCodeSdkService.ts`: Mock SDK service for testing
 - `fixtures/`: Sample `.jsonl` session files for testing
+
+Additional tests for the session item controller and content provider:
+- `../../chatSessions/vscode-node/test/claudeChatSessionContentProvider.spec.ts`: Tests for session metadata enrichment, git command handlers, session lifecycle, and content provider behavior
 
 ## Extension Registries
 

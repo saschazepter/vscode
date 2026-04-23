@@ -165,6 +165,7 @@ class ChangesButtonBarWidget extends Disposable {
 	private _getButtonConfiguration(action: IAction, outgoingChanges: number, reviewState: { isLoading: boolean; commentCount: number | undefined }): { showIcon: boolean; showLabel: boolean; isSecondary?: boolean; customLabel?: string; customClass?: string } | undefined {
 		if (
 			action.id === 'github.copilot.sessions.sync' ||
+			action.id === 'github.copilot.claude.sessions.sync' ||
 			action.id === 'github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR'
 		) {
 			const customLabel = outgoingChanges > 0
@@ -197,6 +198,8 @@ class ChangesButtonBarWidget extends Disposable {
 			action.id === 'pr.checkoutFromChat' ||
 			action.id === 'github.copilot.sessions.initializeRepository' ||
 			action.id === 'github.copilot.sessions.commit' ||
+			action.id === 'github.copilot.claude.sessions.initializeRepository' ||
+			action.id === 'github.copilot.claude.sessions.commit' ||
 			action.id === 'agentSession.markAsDone'
 		) {
 			return { showIcon: true, showLabel: true, isSecondary: false };

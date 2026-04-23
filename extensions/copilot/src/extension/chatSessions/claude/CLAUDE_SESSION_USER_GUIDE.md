@@ -230,6 +230,19 @@ Each session in the list displays:
 
 Sessions are sorted by recency — the most recent session appears at the top. In the dedicated sidebar, they're also grouped by time period.
 
+#### Git Action Buttons
+
+When a session has a git repository, action buttons appear in the Changes view based on the repository state:
+
+| Button | When It Appears | What It Does |
+|--------|----------------|-------------|
+| **Commit** | Uncommitted changes exist | Sends `/commit` to the session — Claude stages and commits your changes |
+| **Commit and Sync** | Uncommitted changes exist + upstream branch configured | Sends `/commit and /sync` — Claude commits and pushes/pulls |
+| **Sync Changes** | No uncommitted changes + upstream branch configured | Sends `/sync` — Claude pushes/pulls with the remote |
+| **Initialize Repository** | No git repository in the session's working directory | Creates a new git repository in the session's folder |
+
+These buttons let you manage git operations without leaving the Sessions view or typing commands manually.
+
 #### Searching and Filtering Sessions
 
 The Sessions toolbar (above the session list) provides three tools:
