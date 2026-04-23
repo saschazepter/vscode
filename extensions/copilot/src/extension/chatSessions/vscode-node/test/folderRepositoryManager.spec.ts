@@ -22,6 +22,7 @@ import { ChatSessionWorktreeFile, ChatSessionWorktreeProperties, IChatSessionWor
 import { IFolderRepositoryManager } from '../../common/folderRepositoryManager';
 import { ICopilotCLISessionService } from '../../copilotcli/node/copilotcliSessionService';
 import { ClaudeFolderRepositoryManager, CopilotCLIFolderRepositoryManager } from '../folderRepositoryManagerImpl';
+import { SessionWorkingDirectoryStore } from '../../common/sessionWorkingDirectoryStore';
 import type { IClaudeSessionStateService } from '../../claude/common/claudeSessionStateService';
 import type { ClaudeFolderInfo } from '../../claude/common/claudeFolderInfo';
 
@@ -317,7 +318,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 			workspaceService,
 			logService,
 			toolsService,
-			fileSystem
+			fileSystem,
+			new SessionWorkingDirectoryStore()
 		);
 	});
 
@@ -551,7 +553,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				workspaceService,
 				logService,
 				toolsService,
-				new MockFileSystemService()
+				new MockFileSystemService(),
+				new SessionWorkingDirectoryStore()
 			);
 
 			manager.setNewSessionFolder(sessionId, folderUri);
@@ -713,7 +716,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				workspaceService,
 				logService,
 				toolsService,
-				new MockFileSystemService()
+				new MockFileSystemService(),
+				new SessionWorkingDirectoryStore()
 			);
 			const token = disposables.add(new CancellationTokenSource()).token;
 			const stream = new MockChatResponseStream();
@@ -755,7 +759,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService()
+					new MockFileSystemService(), new SessionWorkingDirectoryStore()
 				);
 
 				const sessionId = 'untitled:wt-test-1';
@@ -801,7 +805,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService()
+					new MockFileSystemService(), new SessionWorkingDirectoryStore()
 				);
 
 				const sessionId = 'untitled:wt-test-3';
@@ -869,7 +873,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService()
+					new MockFileSystemService(), new SessionWorkingDirectoryStore()
 				);
 
 				const sessionId = 'untitled:wt-test-6';
@@ -895,7 +899,7 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				manager = new CopilotCLIFolderRepositoryManager(
 					worktreeService, workspaceFolderService, sessionService,
 					gitService, workspaceService, logService, toolsService,
-					new MockFileSystemService()
+					new MockFileSystemService(), new SessionWorkingDirectoryStore()
 				);
 
 				(worktreeService.createWorktree as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1030,7 +1034,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 				workspaceService,
 				logService,
 				toolsService,
-				new MockFileSystemService()
+				new MockFileSystemService(),
+				new SessionWorkingDirectoryStore()
 			);
 
 			const sessionId = 'untitled:empty-test';
@@ -1099,7 +1104,8 @@ describe('ClaudeFolderRepositoryManager', () => {
 			logService,
 			toolsService,
 			sessionStateService,
-			fileSystem
+			fileSystem,
+			new SessionWorkingDirectoryStore()
 		);
 	});
 

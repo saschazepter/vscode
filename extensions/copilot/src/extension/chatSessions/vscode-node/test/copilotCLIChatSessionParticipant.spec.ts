@@ -42,6 +42,7 @@ import { IChatSessionWorkspaceFolderService } from '../../common/chatSessionWork
 import { IChatSessionWorktreeCheckpointService } from '../../common/chatSessionWorktreeCheckpointService';
 import { IChatSessionWorktreeService, type ChatSessionWorktreeFile, type ChatSessionWorktreeProperties, type ChatSessionWorktreePropertiesV2 } from '../../common/chatSessionWorktreeService';
 import { IChatFolderMruService } from '../../common/folderRepositoryManager';
+import { SessionWorkingDirectoryStore } from '../../common/sessionWorkingDirectoryStore';
 import { MockChatSessionMetadataStore } from '../../common/test/mockChatSessionMetadataStore';
 import { getWorkingDirectory, IWorkspaceInfo } from '../../common/workspaceInfo';
 import { IChatDelegationSummaryService } from '../../copilotcli/common/delegationSummaryService';
@@ -414,7 +415,8 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 			workspaceService,
 			logService,
 			tools,
-			fileSystem
+			fileSystem,
+			new SessionWorkingDirectoryStore()
 		);
 
 		instantiationService = accessor.get(IInstantiationService);
