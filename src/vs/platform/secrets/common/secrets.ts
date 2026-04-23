@@ -6,7 +6,7 @@
 import { SequencerByKey } from '../../../base/common/async.js';
 import { IEncryptionService } from '../../encryption/common/encryptionService.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
-import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../storage/common/storage.js';
+import { IStorageService, IStorageValueChangeEvent, InMemoryStorageService, StorageScope, StorageTarget } from '../../storage/common/storage.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { ILogService } from '../../log/common/log.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
@@ -227,7 +227,10 @@ export class BaseSecretStorageService extends Disposable implements ISecretStora
 		}
 
 		this._onDidChangeValueDisposable.clear();
-		this._onDidChangeValueDisposable.add(storageService.onDidChangeValue(StorageScope.APPLICATION, undefined, this._onDidChangeValueDisposable)(e => {
+		this._onDidChangeValueDisposable.add(Event.any<IStorageValueChangeEvent>(
+			storageService.onDidChangeValue(StorageScope.APPLICATION, undefined, this._onDidChangeValueDisposable),
+			storageService.onDidChangeValue(StorageScope.APPLICATION_SHARED, undefined, this._onDidChangeValueDisposable),
+		)(e => {
 			this.onDidChangeValue(e.key);
 		}));
 		return storageService;
