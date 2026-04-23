@@ -193,23 +193,25 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	 * Open an editor tab for a newly created browser view.
 	 */
 	private _openEditorForCreatedView(e: IBrowserViewCreatedEvent): void {
-		const { parentViewId, auxiliaryWindow, ...rest } = e.openOptions;
+		const opts = e.openOptions;
 		const resource = BrowserViewUri.forId(e.info.id);
 
 		// Resolve target group: auxiliary window, parent's group, or default
 		let targetGroup: number | typeof AUX_WINDOW_GROUP | undefined;
-		if (auxiliaryWindow) {
+		if (opts.auxiliaryWindow) {
 			targetGroup = AUX_WINDOW_GROUP;
-		} else if (parentViewId) {
-			targetGroup = this._findEditorGroupForView(parentViewId);
+		} else if (opts.parentViewId) {
+			targetGroup = this._findEditorGroupForView(opts.parentViewId);
 		}
 
 		void this.editorService.openEditor({
 			resource,
 			options: {
-				...rest,
-				auxiliary: auxiliaryWindow
-					? { bounds: auxiliaryWindow, compact: true }
+				inactive: opts.background,
+				preserveFocus: opts.preserveFocus,
+				pinned: opts.pinned,
+				auxiliary: opts.auxiliaryWindow
+					? { bounds: opts.auxiliaryWindow, compact: true }
 					: undefined,
 			}
 		}, targetGroup);

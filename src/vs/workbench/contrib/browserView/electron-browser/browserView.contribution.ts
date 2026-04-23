@@ -82,8 +82,8 @@ class BrowserEditorResolverContribution implements IWorkbenchContribution {
 					return {
 						editor: browserInput,
 						options: {
-							...options,
-							pinned: !!browserInput.url // pin if navigated
+							pinned: !!browserInput.url, // pin if navigated
+							...options
 						}
 					};
 				}

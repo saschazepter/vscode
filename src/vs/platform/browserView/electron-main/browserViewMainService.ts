@@ -400,7 +400,7 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 					void this.openNew(params.linkURL, {
 						owner: view.owner,
 						session: view.session,
-						openOptions: { preserveFocus: true, inactive: true },
+						openOptions: { preserveFocus: true, background: true },
 						source: 'browserLinkBackground'
 					});
 				}
@@ -431,7 +431,7 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 					void this.openNew(params.srcURL!, {
 						owner: view.owner,
 						session: view.session,
-						openOptions: { preserveFocus: true, inactive: true },
+						openOptions: { preserveFocus: true, background: true },
 						source: 'browserLinkBackground'
 					});
 				}

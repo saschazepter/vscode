@@ -104,7 +104,7 @@ export interface IBrowserViewInfo {
  */
 export interface IBrowserViewOpenOptions {
 	readonly preserveFocus?: boolean;
-	readonly inactive?: boolean;
+	readonly background?: boolean;
 	readonly pinned?: boolean;
 	/** The parent view ID. Used by the workbench to place the new tab in the same editor group. */
 	readonly parentViewId?: string;

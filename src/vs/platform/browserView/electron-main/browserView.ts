@@ -149,7 +149,7 @@ export class BrowserView extends Disposable {
 
 					const childView = createChildView(details.url, options, {
 						pinned: true,
-						inactive: location === NewPageLocation.Background,
+						background: location === NewPageLocation.Background,
 						parentViewId: id,
 						auxiliaryWindow: location === NewPageLocation.NewWindow
 							? { x: options.x, y: options.y, width: options.width, height: options.height }
