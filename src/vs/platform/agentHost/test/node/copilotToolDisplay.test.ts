@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { getPermissionDisplay, type ITypedPermissionRequest } from '../../node/copilot/copilotToolDisplay.js';
+import { getInvocationMessage, getPastTenseMessage, getPermissionDisplay, type ITypedPermissionRequest } from '../../node/copilot/copilotToolDisplay.js';
 
 suite('getPermissionDisplay — cd-prefix stripping', () => {
 
@@ -73,5 +73,54 @@ suite('getPermissionDisplay — cd-prefix stripping', () => {
 		} as ITypedPermissionRequest;
 		const display = getPermissionDisplay(request, wd);
 		assert.strictEqual(display.toolInput, 'dir');
+	});
+});
+
+suite('view tool — view_range display', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	function invocation(parameters: Record<string, unknown> | undefined): string {
+		const result = getInvocationMessage('view', 'View File', parameters);
+		return typeof result === 'string' ? result : result.markdown;
+	}
+
+	function pastTense(parameters: Record<string, unknown> | undefined): string {
+		const result = getPastTenseMessage('view', 'View File', parameters, true);
+		return typeof result === 'string' ? result : result.markdown;
+	}
+
+	test('renders path-only when view_range is absent', () => {
+		assert.ok(invocation({ path: '/repo/file.ts' }).startsWith('Reading ['));
+		assert.ok(pastTense({ path: '/repo/file.ts' }).startsWith('Read ['));
+	});
+
+	test('renders "lines X to Y" for a valid two-element range', () => {
+		assert.ok(invocation({ path: '/repo/file.ts', view_range: [10, 20] }).endsWith(', lines 10 to 20'));
+		assert.ok(pastTense({ path: '/repo/file.ts', view_range: [10, 20] }).endsWith(', lines 10 to 20'));
+	});
+
+	test('renders "line X" when start === end', () => {
+		assert.ok(invocation({ path: '/repo/file.ts', view_range: [10, 10] }).endsWith(', line 10'));
+		assert.ok(pastTense({ path: '/repo/file.ts', view_range: [10, 10] }).endsWith(', line 10'));
+	});
+
+	test('renders "line X to the end" for the -1 EOF sentinel', () => {
+		assert.ok(invocation({ path: '/repo/file.ts', view_range: [10, -1] }).endsWith(', line 10 to the end'));
+		assert.ok(pastTense({ path: '/repo/file.ts', view_range: [10, -1] }).endsWith(', line 10 to the end'));
+	});
+
+	test('falls back to path-only for invalid ranges', () => {
+		// end < start (and not -1)
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [20, 10] }).includes(','));
+		// negative start
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [-5, 10] }).includes(','));
+		// non-integer
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [1.5, 10] }).includes(','));
+		// wrong arity
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [10] }).includes(','));
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [10, 20, 30] }).includes(','));
+		// non-array
+		assert.ok(!invocation({ path: '/repo/file.ts', view_range: 'whatever' }).includes(','));
 	});
 });

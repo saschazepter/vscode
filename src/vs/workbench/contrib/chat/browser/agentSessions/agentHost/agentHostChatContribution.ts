@@ -9,6 +9,7 @@ import { observableValue } from '../../../../../../base/common/observable.js';
 import { isEqualOrParent } from '../../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { localize } from '../../../../../../nls.js';
 import { AgentHostEnabledSettingId, IAgentHostService, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
 import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -168,9 +169,16 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		// Customization sync provider + bundler + observable
 		const syncProvider = store.add(new AgentCustomizationSyncProvider(sessionType, this._storageService));
 		const bundler = store.add(this._instantiationService.createInstance(SyncedCustomizationBundler, sessionType));
+		// Distinguish from the extension-host Copilot CLI harness, which
+		// registers under the same `Copilot CLI` displayName via the chat
+		// session customization provider API. Without the `[Local]` suffix
+		// both harnesses render identically in the customizations view.
+		// Matches the workspace-label convention from
+		// `buildAgentHostSessionWorkspace` and the provider-name in
+		// `getAgentSessionProviderName(AgentHostCopilot)`.
 		store.add(this._customizationHarnessService.registerExternalHarness({
 			id: sessionType,
-			label: agent.displayName,
+			label: localize('agentHostHarnessLabel.local', "{0} [Local]", agent.displayName),
 			icon: ThemeIcon.fromId(Codicon.server.id),
 			hiddenSections: [],
 			hideGenerateButton: true,
