@@ -134,14 +134,23 @@ class NewChatWidget extends Disposable {
 
 	private _createNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
 		const provider = this.sessionsProvidersService.getProviders().find(p => p.id === selection.providerId);
+		const repoUri = selection.workspace.repositories[0].uri;
+
+		// Drop the carried-over sessionTypeId if it doesn't apply to this provider —
+		// happens when the picker upgrades to a different provider after restore and
+		// the previous active session's type (e.g. EH CLI's "agents") doesn't exist
+		// on the new provider (e.g. agent host).
+		if (sessionTypeId && provider && !provider.getSessionTypes(repoUri).some(t => t.id === sessionTypeId)) {
+			sessionTypeId = undefined;
+		}
 
 		// Session types may not be available yet (e.g., agent host still connecting).
 		// If so, wait for them before creating the session — otherwise createNewSession
 		// throws and the new chat view is left without an active session, which hides
 		// agent-host-specific UI (model picker etc.) until the user re-picks the workspace.
-		if (provider && !sessionTypeId && provider.getSessionTypes(selection.workspace.repositories[0].uri).length === 0 && provider.onDidChangeSessionTypes) {
+		if (provider && !sessionTypeId && provider.getSessionTypes(repoUri).length === 0 && provider.onDidChangeSessionTypes) {
 			this._pendingSessionTypeWait.value = provider.onDidChangeSessionTypes(() => {
-				if (provider.getSessionTypes(selection.workspace.repositories[0].uri).length > 0) {
+				if (provider.getSessionTypes(repoUri).length > 0) {
 					this._pendingSessionTypeWait.clear();
 					this._createNewSession(selection, sessionTypeId);
 				}
@@ -150,7 +159,7 @@ class NewChatWidget extends Disposable {
 		}
 
 		try {
-			this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
+			this.sessionsManagementService.createNewSession(selection.providerId, repoUri, sessionTypeId);
 		} catch (e) {
 			this.logService.error('Failed to create new session:', e);
 		}
