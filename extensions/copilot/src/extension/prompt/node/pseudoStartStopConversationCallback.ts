@@ -13,7 +13,7 @@ import { isEncryptedThinkingDelta } from '../../../platform/thinking/common/thin
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { URI } from '../../../util/vs/base/common/uri';
 import { ChatResponseClearToPreviousToolInvocationReason } from '../../../vscodeTypes';
-import { getContributedToolName, getToolName } from '../../tools/common/toolNames';
+import { getContributedToolName } from '../../tools/common/toolNames';
 import { IResponseProcessor, IResponseProcessorContext } from './intents';
 
 disableErrorLogging();
@@ -98,7 +98,7 @@ export class PseudoStopStartResponseProcessor implements IResponseProcessor {
 
 		if (delta.beginToolCalls?.length) {
 			for (const beginCall of delta.beginToolCalls) {
-				progress.beginToolInvocation(beginCall.id ?? '', getContributedToolName(getToolName(beginCall.name)), { subagentInvocationId: this.options?.subagentInvocationId });
+				progress.beginToolInvocation(beginCall.id ?? '', getContributedToolName(beginCall.name), { subagentInvocationId: this.options?.subagentInvocationId });
 			}
 		}
 

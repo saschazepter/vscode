@@ -23,7 +23,7 @@ import { Conversation, Turn } from '../../prompt/common/conversation';
 import { IBuildPromptContext } from '../../prompt/common/intents';
 import { SearchSubagentToolCallingLoop } from '../../prompt/node/searchSubagentToolCallingLoop';
 import { ToolName } from '../common/toolNames';
-import { CopilotToolMode, ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
+import { CopilotToolMode, ICopilotTool, ICopilotToolCtor, ToolRegistry } from '../common/toolsRegistry';
 
 export interface ISearchSubagentParams {
 
@@ -65,23 +65,16 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 	) { }
 
 	alternativeDefinition(tool: vscode.LanguageModelToolInformation): vscode.LanguageModelToolInformation {
-		const exploreAgentEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.ExploreAgentEnabled, this.experimentationService);
 		const thoroughnessEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentThoroughnessEnabled, this.experimentationService);
-
-		if (exploreAgentEnabled && !thoroughnessEnabled) {
+		if (!thoroughnessEnabled) {
 			return tool;
 		}
 
-		const updatedTool = { ...tool };
-
-		if (!exploreAgentEnabled) {
-			updatedTool.name = 'explore_subagent';
-		}
-
-		if (thoroughnessEnabled) {
-			updatedTool.description = tool.description
-				+ '\n- thoroughness (optional): Search thoroughness — \'normal\' (balanced and quick, sufficient for most cases) or \'deep\' (more turns, broader exploration; only use when normal is clearly not enough).';
-			updatedTool.inputSchema = {
+		return {
+			...tool,
+			description: tool.description
+				+ '\n- thoroughness (optional): Search thoroughness — \'normal\' (balanced and quick, sufficient for most cases) or \'deep\' (more turns, broader exploration; only use when normal is clearly not enough).',
+			inputSchema: {
 				...tool.inputSchema as Record<string, unknown>,
 				properties: {
 					...(tool.inputSchema as { properties: Record<string, unknown> }).properties,
@@ -91,10 +84,8 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 						description: 'Controls the search thoroughness and turn limit. \'normal\' is balanced and quick, sufficient for most searches. Only use \'deep\' when the task clearly requires broader exploration across many files.',
 					},
 				},
-			};
-		}
-
-		return updatedTool;
+			},
+		};
 	}
 	async invoke(options: vscode.LanguageModelToolInvocationOptions<ISearchSubagentParams>, token: vscode.CancellationToken) {
 		// Get the current working directory from workspace folders
@@ -260,4 +251,14 @@ class SearchSubagentTool implements ICopilotTool<ISearchSubagentParams> {
 	}
 }
 
+/**
+ * Identical to SearchSubagentTool but registered under the `explore_subagent` name.
+ * Conditionally enabled via package.json `when` clause when the Explore agent is disabled.
+ */
+class ExploreSubagentTool extends (SearchSubagentTool as new (...args: never[]) => SearchSubagentTool) {
+	public static readonly toolName = ToolName.ExploreSubagent;
+	public static readonly nonDeferred = true;
+}
+
 ToolRegistry.registerTool(SearchSubagentTool);
+ToolRegistry.registerTool(ExploreSubagentTool as unknown as ICopilotToolCtor);

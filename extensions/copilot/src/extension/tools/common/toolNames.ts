@@ -68,6 +68,7 @@ export enum ToolName {
 	CoreConfirmationToolWithOptions = 'vscode_get_confirmation_with_options',
 	CoreTerminalConfirmationTool = 'vscode_get_terminal_confirmation',
 	SearchSubagent = 'search_subagent',
+	ExploreSubagent = 'explore_subagent',
 	CoreAskQuestions = 'vscode_askQuestions',
 	SwitchAgent = 'switch_agent',
 	ToolSearch = 'tool_search',
@@ -163,17 +164,22 @@ export function getContributedToolName(name: string | ToolName): string | Contri
 	return toolNameToContributedToolNames.get(name as ToolName) ?? name;
 }
 
-/**
- * Maps alternative tool names (e.g. from alternativeDefinition) back to their canonical ToolName.
- * When a tool is presented to the LLM under a different name, the LLM will call back with that
- * alternative name, and we need to resolve it back to the registered ToolName.
- */
-const toolNameAliases = new Map<string, ToolName>([
-	['explore_subagent', ToolName.SearchSubagent],
-]);
-
 export function getToolName(name: string | ContributedToolName): string | ToolName {
-	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? toolNameAliases.get(name) ?? name;
+	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? name;
+}
+
+/**
+ * Returns the active search/explore subagent tool name if either is enabled in the tools map.
+ * Use this in prompts to check for and reference whichever variant is active.
+ */
+export function getActiveSearchSubagentName(tools: Partial<Record<ToolName, boolean>>): string | undefined {
+	if (tools[ToolName.SearchSubagent]) {
+		return ToolName.SearchSubagent;
+	}
+	if (tools[ToolName.ExploreSubagent]) {
+		return ToolName.ExploreSubagent;
+	}
+	return undefined;
 }
 
 export function mapContributedToolNamesInString(str: string): string {
@@ -215,6 +221,7 @@ export const toolCategories: Record<ToolName, ToolCategory> = {
 	[ToolName.ReadProjectStructure]: ToolCategory.Core,
 	[ToolName.CoreRunSubagent]: ToolCategory.Core,
 	[ToolName.SearchSubagent]: ToolCategory.Core,
+	[ToolName.ExploreSubagent]: ToolCategory.Core,
 	[ToolName.ExecutionSubagent]: ToolCategory.Core,
 
 	// already enabled only when tasks are enabled
