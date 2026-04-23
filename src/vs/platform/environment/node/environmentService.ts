@@ -12,7 +12,7 @@ import { Schemas } from '../../../base/common/network.js';
 import { NativeParsedArgs } from '../common/argv.js';
 import { IDebugParams } from '../common/environment.js';
 import { AbstractNativeEnvironmentService, parseDebugParams } from '../common/environmentService.js';
-import { getDefaultUserDataPath, getUserDataPath } from './userDataPath.js';
+import { getUserDataPath } from './userDataPath.js';
 import { IProductService } from '../../product/common/productService.js';
 
 export class NativeEnvironmentService extends AbstractNativeEnvironmentService {
@@ -44,7 +44,12 @@ export class NativeEnvironmentService extends AbstractNativeEnvironmentService {
 		} else {
 			return undefined;
 		}
-		return joinPath(URI.file(getDefaultUserDataPath(hostProductName)), 'User').with({ scheme: Schemas.vscodeUserData });
+
+		// Honor the same env-var overrides that the host VS Code itself uses
+		// (portable mode and VSCODE_APPDATA), but intentionally skip --user-data-dir
+		// because that CLI arg belongs to the Agents app, not the host.
+		const hostUserDataPath = getUserDataPath(this.args, hostProductName);
+		return joinPath(URI.file(hostUserDataPath), 'User').with({ scheme: Schemas.vscodeUserData });
 	}
 }
 
