@@ -243,7 +243,7 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(sessions[0].summary, 'User first message');
 		});
 
-		test('listSessions overlays git state into _meta when a working directory is present', async () => {
+		test('createSession attaches git state into summary _meta when working directory is present', async () => {
 			const workingDirectory = URI.file('/workspace/repo');
 			const gitState = {
 				hasGitHubRemote: true,
@@ -274,15 +274,25 @@ suite('AgentService (node dispatcher)', () => {
 			agent.sessionMetadataOverrides = { workingDirectory };
 			localService.registerProvider(agent);
 
-			await localService.createSession({ provider: 'copilot' });
-			const sessions = await localService.listSessions();
+			const session = await localService.createSession({ provider: 'copilot' });
 
+			// _attachGitState is fire-and-forget; drain microtasks until the
+			// git service's promise has resolved and setSessionMeta has run.
+			for (let i = 0; i < 5; i++) {
+				await Promise.resolve();
+			}
+
+			const sessions = await localService.listSessions();
 			assert.strictEqual(sessions.length, 1);
 			assert.deepStrictEqual(sessions[0]._meta, { git: gitState });
 			assert.deepStrictEqual(calls, [workingDirectory.fsPath]);
+			assert.deepStrictEqual(
+				localService.stateManager.getSessionState(session.toString())?.summary._meta,
+				{ git: gitState },
+			);
 		});
 
-		test('listSessions skips git overlay when no working directory or no git state', async () => {
+		test('createSession skips git overlay when no working directory or no git state', async () => {
 			const gitService = {
 				_serviceBrand: undefined,
 				isInsideWorkTree: async () => false,
@@ -302,6 +312,9 @@ suite('AgentService (node dispatcher)', () => {
 			localService.registerProvider(agent);
 
 			await localService.createSession({ provider: 'copilot' });
+			for (let i = 0; i < 5; i++) {
+				await Promise.resolve();
+			}
 			const sessions = await localService.listSessions();
 
 			assert.strictEqual(sessions.length, 1);

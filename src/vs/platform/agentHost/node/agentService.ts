@@ -178,10 +178,8 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		// Overlay live session state from the state manager.
-		// For the title, prefer the state manager's value when it is
-		// non-empty, so SDK-sourced titles are not overwritten by the
-		// initial empty placeholder.
+		// Additionally, overlay live session state from the state manager
+		// which is more up to date than what's on disk.
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
@@ -190,34 +188,18 @@ export class AgentService extends Disposable implements IAgentService {
 					summary: liveState.summary.title || s.summary,
 					status: liveState.summary.status,
 					model: liveState.summary.model ?? s.model,
+					// Git state (under `_meta.git`) is computed lazily by
+					// `_attachGitState` once a session enters the state manager
+					// (on create or restore). Prefer the live copy so clients
+					// see it as soon as it arrives.
+					_meta: liveState.summary._meta ?? s._meta,
 				};
 			}
 			return s;
 		});
 
-		// Overlay git state under `_meta.git` for sessions that have a
-		// working directory backed by a git work tree. Each computation is
-		// cached briefly inside the git service, so back-to-back list calls
-		// do not re-shell-out for the same directory. Failures are logged and
-		// the session is returned without git state.
-		const withGitState = await Promise.all(withStatus.map(async s => {
-			if (!this._gitService || !s.workingDirectory) {
-				return s;
-			}
-			try {
-				const gitState = await this._gitService.getSessionGitState(s.workingDirectory);
-				if (!gitState) {
-					return s;
-				}
-				return { ...s, _meta: withSessionGitState(s._meta, gitState) };
-			} catch (e) {
-				this._logService.warn(`[AgentService] Failed to compute git state for ${s.session}`, e);
-				return s;
-			}
-		}));
-
-		this._logService.trace(`[AgentService] listSessions returned ${withGitState.length} sessions`);
-		return withGitState;
+		this._logService.trace(`[AgentService] listSessions returned ${withStatus.length} sessions`);
+		return withStatus;
 	}
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
@@ -314,7 +296,36 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		this._stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: session.toString() });
 
+		// Lazily compute git state for sessions with a working directory;
+		// attaches under `summary._meta.git` once ready.
+		this._attachGitState(session, created.workingDirectory ?? config?.workingDirectory);
+
 		return session;
+	}
+
+	/**
+	 * Fire-and-forget probe that resolves the session's git state for its
+	 * working directory (if any) and merges it into `summary._meta.git` via
+	 * the state manager. Failures are logged; sessions simply remain without
+	 * git state.
+	 */
+	private _attachGitState(session: URI, workingDirectory: URI | undefined): void {
+		if (!this._gitService || !workingDirectory) {
+			return;
+		}
+		this._gitService.getSessionGitState(workingDirectory).then(
+			gitState => {
+				if (!gitState) {
+					return;
+				}
+				const sessionKey = session.toString();
+				const current = this._stateManager.getSessionState(sessionKey)?.summary._meta;
+				this._stateManager.setSessionMeta(sessionKey, withSessionGitState(current, gitState));
+			},
+			e => {
+				this._logService.warn(`[AgentService] Failed to compute git state for ${session}`, e);
+			},
+		);
 	}
 
 	private _persistConfigValues(session: URI, values: Record<string, unknown>): void {
@@ -572,6 +583,10 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 
 		this._logService.info(`[AgentService] Restored session ${sessionStr} with ${turns.length} turns`);
+
+		// Lazily compute git state for sessions with a working directory;
+		// attaches under `summary._meta.git` once ready.
+		this._attachGitState(session, meta.workingDirectory);
 	}
 
 	async resourceRead(uri: URI): Promise<ResourceReadResult> {

@@ -87,6 +87,12 @@ export class AgentHostSessionAdapter implements ISession {
 
 	readonly agentProvider: string;
 
+	// Retained so we can rebuild `workspace` when only `_meta` changes via
+	// a SessionSummaryChanged notification (without a full list refresh).
+	private _project: IAgentSessionMetadata['project'];
+	private _workingDirectory: URI | undefined;
+	private _meta: IAgentSessionMetadata['_meta'];
+
 	constructor(
 		metadata: IAgentSessionMetadata,
 		providerId: string,
@@ -113,7 +119,10 @@ export class AgentHostSessionAdapter implements ISession {
 		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${resourceScheme}:${metadata.model.id}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', _options.description);
-		this.workspace = observableValue('workspace', _options.buildWorkspace(metadata.project, metadata.workingDirectory, readSessionGitState(metadata._meta)));
+		this._project = metadata.project;
+		this._workingDirectory = metadata.workingDirectory;
+		this._meta = metadata._meta;
+		this.workspace = observableValue('workspace', _options.buildWorkspace(this._project, this._workingDirectory, readSessionGitState(this._meta)));
 		this.loading = _options.loading;
 
 		if (metadata.isRead === false) {
@@ -177,7 +186,10 @@ export class AgentHostSessionAdapter implements ISession {
 			didChange = true;
 		}
 
-		const workspace = this._options.buildWorkspace(metadata.project, metadata.workingDirectory, readSessionGitState(metadata._meta));
+		this._project = metadata.project;
+		this._workingDirectory = metadata.workingDirectory;
+		this._meta = metadata._meta;
+		const workspace = this._options.buildWorkspace(this._project, this._workingDirectory, readSessionGitState(this._meta));
 		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
 			didChange = true;
@@ -206,6 +218,20 @@ export class AgentHostSessionAdapter implements ISession {
 		}
 
 		return didChange;
+	}
+
+	/**
+	 * Apply a SessionSummary `_meta` delta and rebuild the workspace if the
+	 * git state changed. Returns `true` iff the workspace actually changed.
+	 */
+	setMeta(meta: IAgentSessionMetadata['_meta']): boolean {
+		this._meta = meta;
+		const workspace = this._options.buildWorkspace(this._project, this._workingDirectory, readSessionGitState(this._meta));
+		if (agentHostSessionWorkspaceKey(workspace) === agentHostSessionWorkspaceKey(this.workspace.get())) {
+			return false;
+		}
+		this.workspace.set(workspace, undefined);
+		return true;
 	}
 }
 
@@ -1207,6 +1233,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				cached.changes.set(diffsToChanges(changes.diffs, mapUri), undefined);
 				didChange = true;
 			}
+		}
+
+		if (changes._meta !== undefined && cached.setMeta(changes._meta)) {
+			didChange = true;
 		}
 
 		if (didChange) {

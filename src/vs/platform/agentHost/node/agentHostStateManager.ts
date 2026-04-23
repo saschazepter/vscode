@@ -10,7 +10,7 @@ import { ILogService } from '../../log/common/log.js';
 import { ActionType, NotificationType, ActionEnvelope, ActionOrigin, INotification, SessionAction, RootAction, StateAction, isRootAction, isSessionAction, type TerminalAction } from '../common/state/sessionActions.js';
 import type { IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { rootReducer, sessionReducer } from '../common/state/sessionReducers.js';
-import { createRootState, createSessionState, SessionLifecycle, type RootState, type SessionState, type SessionSummary, type Turn, type URI, ROOT_STATE_URI } from '../common/state/sessionState.js';
+import { createRootState, createSessionState, SessionLifecycle, type RootState, type SessionMeta, type SessionState, type SessionSummary, type Turn, type URI, ROOT_STATE_URI } from '../common/state/sessionState.js';
 
 /**
  * Server-side state manager for the sessions process protocol.
@@ -200,6 +200,27 @@ export class AgentHostStateManager extends Disposable {
 		});
 	}
 
+	// ---- Session meta -------------------------------------------------------
+
+	/**
+	 * Overwrites the `_meta` slot on a session's summary and schedules a
+	 * `SessionSummaryChanged` notification. No-op for unknown sessions.
+	 *
+	 * The full `_meta` object is replaced (not merged) so callers stay in
+	 * control of the convention for their own keys; use the `withSessionXxx`
+	 * helpers in `sessionState.ts` to combine slots.
+	 */
+	setSessionMeta(session: URI, meta: SessionMeta | undefined): void {
+		const state = this._sessionStates.get(session);
+		if (!state) {
+			return;
+		}
+		const newSummary: SessionSummary = { ...state.summary, _meta: meta };
+		this._sessionStates.set(session, { ...state, summary: newSummary });
+		this._dirtySummaries.add(session);
+		this._summaryNotifyScheduler.schedule();
+	}
+
 	// ---- Turn tracking ------------------------------------------------------
 
 	/**
@@ -307,6 +328,7 @@ export class AgentHostStateManager extends Disposable {
 			if (current.isRead !== lastNotified.isRead) { changes.isRead = current.isRead; }
 			if (current.isDone !== lastNotified.isDone) { changes.isDone = current.isDone; }
 			if (current.diffs !== lastNotified.diffs) { changes.diffs = current.diffs; }
+			if (current._meta !== lastNotified._meta) { changes._meta = current._meta; }
 
 			this._lastNotifiedSummaries.set(session, current);
 
