@@ -7,6 +7,7 @@ import { URI } from '../../../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../../../base/common/resources.js';
 import { PromptFileSource, PromptsType } from '../promptTypes.js';
 import { PromptsStorage } from '../service/promptsService.js';
+import { compareIgnoreCase } from '../../../../../../base/common/strings.js';
 
 /**
  * File extension for the reusable prompt files.
@@ -37,7 +38,7 @@ export const SKILL_FILENAME = 'SKILL.md';
  * Check if a filename is a skill file (case insensitive).
  */
 export function isSkillFilename(filename: string): boolean {
-	return filename.toLowerCase() === SKILL_FILENAME.toLowerCase();
+	return compareIgnoreCase(filename, SKILL_FILENAME) === 0;
 }
 
 /**
