@@ -108,9 +108,10 @@ export class SessionsLayoutPolicy extends Disposable {
 			case 'phone':
 				return { sidebar: false, auxiliaryBar: false, panel: false, chatBar: true, editor: false };
 			case 'tablet':
-				return { sidebar: true, auxiliaryBar: false, panel: false, chatBar: true, editor: false };
 			case 'desktop':
-				return { sidebar: true, auxiliaryBar: false, panel: false, chatBar: true, editor: false };
+				// Tablet and desktop share the standard multi-part workbench defaults.
+				// A dedicated tablet layout has not been designed yet.
+				return { sidebar: true, auxiliaryBar: true, panel: false, chatBar: true, editor: false };
 		}
 	}
 
@@ -133,13 +134,8 @@ export class SessionsLayoutPolicy extends Disposable {
 					chatBarWidth: width,
 				};
 			case 'tablet':
-				return {
-					sideBarSize: 250,
-					auxiliaryBarSize: 300,
-					panelSize: 250,
-					chatBarWidth: width - 250,
-				};
 			case 'desktop':
+				// Tablet currently falls back to desktop sizing.
 				return {
 					sideBarSize: 300,
 					auxiliaryBarSize: 380,
