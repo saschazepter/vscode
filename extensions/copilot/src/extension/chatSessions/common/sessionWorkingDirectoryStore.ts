@@ -6,7 +6,6 @@
 import type { Uri } from 'vscode';
 import { createServiceIdentifier } from '../../../util/common/services';
 import { ResourceMap } from '../../../util/vs/base/common/map';
-import { ChatSessionWorktreeProperties } from './chatSessionWorktreeService';
 
 interface SessionEntry {
 	readonly folder: Uri;
