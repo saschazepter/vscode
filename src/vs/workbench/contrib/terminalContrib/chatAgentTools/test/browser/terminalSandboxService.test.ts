@@ -486,6 +486,67 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(!config.filesystem.denyWrite.includes('~/.custom-write/file.txt'), 'denyWrite should not include unexpanded home paths on Linux');
 	});
 
+	test('should deny home reads while reallowing writable paths for reads on macOS', async () => {
+		remoteAgentService.remoteEnvironment = {
+			...remoteAgentService.remoteEnvironment!,
+			os: OperatingSystem.Macintosh
+		};
+		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxMacFileSystem, {
+			allowWrite: ['/configured/path'],
+			denyRead: ['/secret/path'],
+			allowRead: ['/configured/readable/path'],
+			denyWrite: []
+		});
+
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		const configContent = createdFiles.get(configPath);
+		ok(configContent, 'Config file should be created');
+
+		const config = JSON.parse(configContent);
+		ok(config.filesystem.denyRead.includes('/home/user'), 'Sandbox config should deny arbitrary reads from the user home on macOS');
+		ok(config.filesystem.denyRead.includes('/secret/path'), 'Sandbox config should preserve configured denyRead paths on macOS');
+		ok(config.filesystem.allowRead.includes('/workspace-one'), 'Sandbox config should re-allow reads from workspace folders on macOS');
+		ok(config.filesystem.allowRead.includes('/configured/path'), 'Sandbox config should re-allow reads from configured allowWrite paths on macOS');
+		ok(config.filesystem.allowRead.includes('/configured/readable/path'), 'Sandbox config should preserve configured allowRead paths on macOS');
+	});
+
+	test('should not expand home paths in macOS filesystem sandbox config paths', async () => {
+		remoteAgentService.remoteEnvironment = {
+			...remoteAgentService.remoteEnvironment!,
+			os: OperatingSystem.Macintosh
+		};
+		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxMacFileSystem, {
+			allowWrite: ['~/.custom-write', '/glob/**/*.ts'],
+			denyRead: ['~/.secret', '/secret/*'],
+			allowRead: ['~/.custom-readable', '/readable/{a,b}'],
+			denyWrite: ['~/.custom-write/file.txt', '/configured/path/file?.txt']
+		});
+
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		const configPath = await sandboxService.getSandboxConfigPath();
+
+		ok(configPath, 'Config path should be defined');
+		const configContent = createdFiles.get(configPath);
+		ok(configContent, 'Config file should be created');
+
+		const config = JSON.parse(configContent);
+		ok(config.filesystem.allowWrite.includes('~/.custom-write'), 'allowWrite should preserve unexpanded home paths on macOS');
+		ok(config.filesystem.allowWrite.includes('/glob/**/*.ts'), 'Non-home allowWrite paths should be preserved on macOS');
+		ok(!config.filesystem.allowWrite.includes('/home/user/.custom-write'), 'allowWrite should not expand ~ on macOS');
+		ok(config.filesystem.denyRead.includes('~/.secret'), 'denyRead should preserve unexpanded home paths on macOS');
+		ok(config.filesystem.denyRead.includes('/secret/*'), 'Non-home denyRead paths should be preserved on macOS');
+		ok(!config.filesystem.denyRead.includes('/home/user/.secret'), 'denyRead should not expand ~ on macOS');
+		ok(config.filesystem.allowRead.includes('~/.custom-readable'), 'allowRead should preserve unexpanded home paths on macOS');
+		ok(config.filesystem.allowRead.includes('/readable/{a,b}'), 'Non-home allowRead paths should be preserved on macOS');
+		ok(!config.filesystem.allowRead.includes('/home/user/.custom-readable'), 'allowRead should not expand ~ on macOS');
+		ok(config.filesystem.denyWrite.includes('~/.custom-write/file.txt'), 'denyWrite should preserve unexpanded home paths on macOS');
+		ok(config.filesystem.denyWrite.includes('/configured/path/file?.txt'), 'Non-home denyWrite paths should be preserved on macOS');
+		ok(!config.filesystem.denyWrite.includes('/home/user/.custom-write/file.txt'), 'denyWrite should not expand ~ on macOS');
+	});
+
 	test('should refresh allowWrite paths when workspace folders change', async () => {
 		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, {
 			allowWrite: ['/configured/path'],
