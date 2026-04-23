@@ -12,7 +12,6 @@ import xml2js from 'xml2js';
 import gulp from 'gulp';
 import fancyLog from 'fancy-log';
 import ansiColors from 'ansi-colors';
-import iconv from '@vscode/iconv-lite-umd';
 import { type l10nJsonFormat, getL10nXlf, type l10nJsonDetails, getL10nFilesFromXlf, getL10nJson } from '@vscode/l10n-dev';
 
 const REPO_ROOT_PATH = path.join(import.meta.dirname, '../..');
@@ -28,7 +27,7 @@ export interface Language {
 }
 
 export interface InnoSetup {
-	codePage: string; //code page for encoding (http://www.jrsoftware.org/ishelp/index.php?topic=langoptionssection)
+	codePage: string; //code page for encoding (http://www.jrsoftware.org/ishelp/index.php?topic=langoptionssection) — no longer used, ISL files are now UTF-8 with BOM
 }
 
 export const defaultLanguages: Language[] = [
@@ -824,7 +823,7 @@ export function prepareIslFiles(language: Language, innoSetupConfig: InnoSetup):
 	});
 }
 
-function createIslFile(name: string, messages: l10nJsonFormat, language: Language, innoSetup: InnoSetup): File {
+function createIslFile(name: string, messages: l10nJsonFormat, language: Language, _innoSetup: InnoSetup): File {
 	const content: string[] = [];
 	let originalContent: TextModel;
 	if (path.basename(name) === 'Default') {
@@ -855,11 +854,13 @@ function createIslFile(name: string, messages: l10nJsonFormat, language: Languag
 
 	const basename = path.basename(name);
 	const filePath = `${basename}.${language.id}.isl`;
-	const encoded = iconv.encode(Buffer.from(content.join('\r\n'), 'utf8').toString(), innoSetup.codePage);
+	const utf8BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
+	const contentBuffer = Buffer.from(content.join('\r\n'), 'utf8');
+	const encoded = Buffer.concat([utf8BOM, contentBuffer]);
 
 	return new File({
 		path: filePath,
-		contents: Buffer.from(encoded),
+		contents: encoded,
 	});
 }
 
