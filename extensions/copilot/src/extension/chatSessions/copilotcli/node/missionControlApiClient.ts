@@ -4,12 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IAuthenticationService } from '../../../../platform/authentication/common/authentication';
+import { INTEGRATION_ID } from '../../../../platform/endpoint/common/licenseAgreement';
 import { PermissiveAuthRequiredError } from '../../../../platform/github/common/githubService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IFetcherService } from '../../../../platform/networking/common/fetcherService';
-
-/** Integration id for Mission Control requests originating from VS Code chat. */
-const INTEGRATION_ID = 'vscode-chat';
 
 /** Base path for Mission Control (agent session) endpoints. */
 const SESSIONS_PATH = '/agents/sessions';

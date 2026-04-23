@@ -6,6 +6,7 @@
 import type { AuthenticationSession } from 'vscode';
 import { describe, expect, it, vi } from 'vitest';
 import type { IAuthenticationService } from '../../../../../platform/authentication/common/authentication';
+import { INTEGRATION_ID } from '../../../../../platform/endpoint/common/licenseAgreement';
 import type { ILogService } from '../../../../../platform/log/common/logService';
 import { type FetchOptions, type IFetcherService, HeadersImpl, Response } from '../../../../../platform/networking/common/fetcherService';
 import { Emitter } from '../../../../../util/vs/base/common/event';
@@ -16,7 +17,7 @@ function createResponse(body: string): Response {
 }
 
 describe('MissionControlApiClient', () => {
-	it('uses the vscode-chat integration id for all mission control requests', async () => {
+	it('uses the shared integration id for all mission control requests', async () => {
 		const requests: Array<{ url: string; options: FetchOptions }> = [];
 		const fetcherService = {
 			_serviceBrand: undefined,
@@ -76,10 +77,10 @@ describe('MissionControlApiClient', () => {
 
 		expect(requests).toHaveLength(4);
 		expect(requests.map(({ options }) => options.headers?.['Copilot-Integration-Id'])).toEqual([
-			'vscode-chat',
-			'vscode-chat',
-			'vscode-chat',
-			'vscode-chat',
+			INTEGRATION_ID,
+			INTEGRATION_ID,
+			INTEGRATION_ID,
+			INTEGRATION_ID,
 		]);
 		expect(requests.map(({ url }) => url)).toEqual([
 			'https://api.github.test/agents/sessions',
