@@ -33,9 +33,21 @@ const PHONE_MAX_WIDTH = 640;
 const TABLET_MAX_WIDTH = 1024;
 
 /**
+ * Whether the current platform is a phone/tablet OS. The phone layout is
+ * only applied on actual mobile devices so that resizing a desktop window
+ * below 640px does not switch the agents workbench into phone mode.
+ */
+const isMobilePlatform = isIOS || isAndroid;
+
+/**
  * Classifies the viewport into one of three classes based on width.
+ * Phone and tablet classifications are gated on a mobile OS; desktop
+ * browsers and Electron always report `desktop` regardless of width.
  */
 function classifyViewport(width: number): ViewportClass {
+	if (!isMobilePlatform) {
+		return 'desktop';
+	}
 	if (width < PHONE_MAX_WIDTH) {
 		return 'phone';
 	}
