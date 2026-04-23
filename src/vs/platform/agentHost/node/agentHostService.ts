@@ -51,8 +51,14 @@ export class AgentHostProcessManager extends Disposable {
 		}
 	}
 
-	private _start(): void {
-		const connection = this._starter.start();
+	private async _start(): Promise<void> {
+		this._started = true;
+		const connection = await this._starter.start();
+
+		if (this._store.isDisposed) {
+			connection.store.dispose();
+			return;
+		}
 
 		this._logService.info('AgentHostProcessManager: agent host started');
 
@@ -75,6 +81,5 @@ export class AgentHostProcessManager extends Disposable {
 		}));
 
 		this._register(toDisposable(() => connection.store.dispose()));
-		this._started = true;
 	}
 }

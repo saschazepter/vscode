@@ -63,8 +63,13 @@ export class ServerAgentHostManager extends Disposable implements IServerAgentHo
 		this._start();
 	}
 
-	private _start(): void {
-		const connection = this._starter.start();
+	private async _start(): Promise<void> {
+		const connection = await this._starter.start();
+
+		if (this._store.isDisposed) {
+			connection.store.dispose();
+			return;
+		}
 
 		this._logService.info('ServerAgentHostManager: agent host started');
 
