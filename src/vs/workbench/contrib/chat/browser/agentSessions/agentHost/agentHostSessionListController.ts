@@ -10,7 +10,7 @@ import { hasKey } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentSession, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
-import { ISessionFileDiff, ISessionMeta, readSessionGitState, SessionStatus, type ISessionGitState, type ISessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ISessionFileDiff, SessionMeta, readSessionGitState, SessionStatus, type ISessionGitState, type SessionSummary } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ChatSessionStatus, IChatSessionFileChange2, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta } from '../../../common/chatSessionsService.js';
 import { getAgentHostIcon } from '../agentSessions.js';
@@ -75,7 +75,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 
 	private _items: IChatSessionItem[] = [];
 	/** Cached full summaries per session so partial updates can be applied. */
-	private readonly _cachedSummaries = new Map<string, ISessionSummary>();
+	private readonly _cachedSummaries = new Map<string, SessionSummary>();
 
 	constructor(
 		private readonly _sessionType: string,
@@ -172,7 +172,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		this._onDidChangeChatSessionItems.fire({ addedOrUpdated: this._items });
 	}
 
-	private _makeItemFromSummary(rawId: string, summary: ISessionSummary, diffs: readonly ISessionFileDiff[] | undefined): IChatSessionItem {
+	private _makeItemFromSummary(rawId: string, summary: SessionSummary, diffs: readonly ISessionFileDiff[] | undefined): IChatSessionItem {
 		const workingDir = typeof summary.workingDirectory === 'string' ? URI.parse(summary.workingDirectory) : summary.workingDirectory;
 		return this._makeItem(rawId, {
 			title: summary.title,
@@ -192,7 +192,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		createdAt: number;
 		modifiedAt: number;
 		diffs?: readonly ISessionFileDiff[] | readonly ICompactSessionFileDiff[];
-		meta?: ISessionMeta;
+		meta?: SessionMeta;
 	}): IChatSessionItem {
 		return {
 			resource: URI.from({ scheme: this._sessionType, path: `/${rawId}` }),

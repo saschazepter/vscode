@@ -14,75 +14,75 @@ import { hasKey } from '../../../../base/common/types.js';
 import {
 	SessionLifecycle,
 	ToolResultContentType,
-	IToolResultFileEditContent,
-	type IActiveTurn,
-	type IRootState,
-	type ISessionMeta,
-	type ISessionState,
-	type ISessionSummary,
-	type IToolCallCancelledState,
-	type IToolCallCompletedState,
-	type IToolCallResult,
-	type IToolCallState,
-	type IToolResultContent,
-	type IToolResultSubagentContent,
-	type IToolResultTextContent,
-	type IUserMessage,
-	ITerminalState,
+	ToolResultFileEditContent,
+	type ActiveTurn,
+	type RootState,
+	type SessionMeta,
+	type SessionState,
+	type SessionSummary,
+	type ToolCallCancelledState,
+	type ToolCallCompletedState,
+	type ToolCallResult,
+	type ToolCallState,
+	type ToolResultContent,
+	type ToolResultSubagentContent,
+	type ToolResultTextContent,
+	type UserMessage,
+	TerminalState,
 } from './protocol/state.js';
 
 // Re-export everything from the protocol state module
 export {
-	type IActiveTurn,
-	type IAgentInfo,
-	type IConfigPropertySchema,
-	type IConfigSchema,
-	type IContentRef,
-	type IErrorInfo,
-	type IProjectInfo,
-	type IMarkdownResponsePart,
-	type IMessageAttachment,
-	type IReasoningResponsePart,
-	type IResponsePart,
-	type IRootState,
-	type ISessionActiveClient,
-	type ISessionConfigState,
-	type IFileEdit as ISessionFileDiff,
-	type ISessionMeta,
-	type IModelSelection,
-	type ISessionModelInfo,
-	type ISessionState,
-	type ISessionSummary,
-	type ISnapshot,
-	type ITerminalState,
-	type IToolAnnotations,
-	type IToolCallCancelledState,
-	type IToolCallCompletedState,
-	type IToolCallPendingConfirmationState,
-	type IToolCallPendingResultConfirmationState,
-	type IToolCallResponsePart,
-	type IToolCallResult,
-	type IToolCallRunningState,
-	type IToolCallState,
-	type IToolCallStreamingState,
-	type IToolDefinition,
-	type ICustomizationRef,
-	type ISessionCustomization,
-	type IToolResultEmbeddedResourceContent as IToolResultBinaryContent,
-	type IToolResultContent,
-	type IToolResultFileEditContent,
-	type IToolResultSubagentContent,
-	type IToolResultTextContent,
-	type ITurn,
-	type IUsageInfo,
-	type IUserMessage,
-	type IPendingMessage,
+	type ActiveTurn,
+	type AgentInfo,
+	type ConfigPropertySchema,
+	type ConfigSchema,
+	type ContentRef,
+	type ErrorInfo,
+	type ProjectInfo,
+	type MarkdownResponsePart,
+	type MessageAttachment,
+	type ReasoningResponsePart,
+	type ResponsePart,
+	type RootState,
+	type SessionActiveClient,
+	type SessionConfigState,
+	type FileEdit as ISessionFileDiff,
+	type ModelSelection,
+	type SessionMeta,
+	type SessionModelInfo,
+	type SessionState,
+	type SessionSummary,
+	type Snapshot,
+	type TerminalState,
+	type ToolAnnotations,
+	type ToolCallCancelledState,
+	type ToolCallCompletedState,
+	type ToolCallPendingConfirmationState,
+	type ToolCallPendingResultConfirmationState,
+	type ToolCallResponsePart,
+	type ToolCallResult,
+	type ToolCallRunningState,
+	type ToolCallState,
+	type ToolCallStreamingState,
+	type ToolDefinition,
+	type CustomizationRef,
+	type SessionCustomization,
+	type ToolResultEmbeddedResourceContent as IToolResultBinaryContent,
+	type ToolResultContent,
+	type ToolResultFileEditContent,
+	type ToolResultSubagentContent,
+	type ToolResultTextContent,
+	type Turn,
+	type UsageInfo,
+	type UserMessage,
+	type PendingMessage,
 	type StringOrMarkdown,
 	type URI,
-	type ISessionInputRequest,
-	type ISessionInputQuestion,
-	type ISessionInputAnswer,
-	type ISessionInputOption,
+	type SessionInputRequest,
+	type SessionInputQuestion,
+	type SessionInputAnswer,
+	type SessionInputOption,
 	AttachmentType,
 	CustomizationStatus,
 	PendingMessageKind,
@@ -105,7 +105,7 @@ export {
 
 /**
  * The kind of file edit operation. Derived from the presence/absence of
- * `before`/`after` in {@link IToolResultFileEditContent}.
+ * `before`/`after` in {@link ToolResultFileEditContent}.
  */
 export const enum FileEditKind {
 	/** Content edit (same file URI, different content). */
@@ -128,12 +128,12 @@ export const ROOT_STATE_URI = 'agenthost:/root';
 /**
  * A tool call in a terminal state, stored in completed turns.
  */
-export type ICompletedToolCall = IToolCallCompletedState | IToolCallCancelledState;
+export type ICompletedToolCall = ToolCallCompletedState | ToolCallCancelledState;
 
 /**
  * Derived status type for the tool call lifecycle.
  */
-export type ToolCallStatusString = IToolCallState['status'];
+export type ToolCallStatusString = ToolCallState['status'];
 
 // ---- Tool output helper -----------------------------------------------------
 
@@ -143,11 +143,11 @@ export type ToolCallStatusString = IToolCallState['status'];
  *
  * Returns `undefined` if there are no text content parts.
  */
-export function getToolOutputText(result: IToolCallResult): string | undefined {
+export function getToolOutputText(result: ToolCallResult): string | undefined {
 	if (!result.content || result.content.length === 0) {
 		return undefined;
 	}
-	const textParts: IToolResultTextContent[] = [];
+	const textParts: ToolResultTextContent[] = [];
 	for (const c of result.content) {
 		if (hasKey(c, { type: true }) && c.type === ToolResultContentType.Text) {
 			textParts.push(c);
@@ -163,11 +163,11 @@ export function getToolOutputText(result: IToolCallResult): string | undefined {
  * Extracts file edit content entries from a tool call result's `content` array.
  * Returns an empty array if there are no file edit content parts.
  */
-export function getToolFileEdits(result: IToolCallResult): IToolResultFileEditContent[] {
+export function getToolFileEdits(result: ToolCallResult): ToolResultFileEditContent[] {
 	if (!result.content || result.content.length === 0) {
 		return [];
 	}
-	const edits: IToolResultFileEditContent[] = [];
+	const edits: ToolResultFileEditContent[] = [];
 	for (const c of result.content) {
 		if (hasKey(c, { type: true }) && c.type === ToolResultContentType.FileEdit) {
 			edits.push(c);
@@ -181,13 +181,13 @@ export function getToolFileEdits(result: IToolCallResult): IToolResultFileEditCo
  * Works with both completed tool call results and running tool call states.
  * Returns `undefined` if there are no subagent content parts.
  */
-export function getToolSubagentContent(result: { content?: readonly IToolResultContent[] }): IToolResultSubagentContent | undefined {
+export function getToolSubagentContent(result: { content?: readonly ToolResultContent[] }): ToolResultSubagentContent | undefined {
 	if (!result.content || result.content.length === 0) {
 		return undefined;
 	}
 	for (const c of result.content) {
 		if (hasKey(c, { type: true }) && c.type === ToolResultContentType.Subagent) {
-			return c as IToolResultSubagentContent;
+			return c as ToolResultSubagentContent;
 		}
 	}
 	return undefined;
@@ -233,14 +233,14 @@ export function isSubagentSession(uri: string): boolean {
 
 // ---- Factory helpers --------------------------------------------------------
 
-export function createRootState(): IRootState {
+export function createRootState(): RootState {
 	return {
 		agents: [],
 		activeSessions: 0,
 	};
 }
 
-export function createSessionState(summary: ISessionSummary): ISessionState {
+export function createSessionState(summary: SessionSummary): SessionState {
 	return {
 		summary,
 		lifecycle: SessionLifecycle.Creating,
@@ -249,7 +249,7 @@ export function createSessionState(summary: ISessionSummary): ISessionState {
 	};
 }
 
-export function createActiveTurn(id: string, userMessage: IUserMessage): IActiveTurn {
+export function createActiveTurn(id: string, userMessage: UserMessage): ActiveTurn {
 	return {
 		id,
 		userMessage,
@@ -265,15 +265,15 @@ export const enum StateComponents {
 }
 
 export type ComponentToState = {
-	[StateComponents.Root]: IRootState;
-	[StateComponents.Session]: ISessionState;
-	[StateComponents.Terminal]: ITerminalState;
+	[StateComponents.Root]: RootState;
+	[StateComponents.Session]: SessionState;
+	[StateComponents.Terminal]: TerminalState;
 };
 
-// ---- ISessionMeta accessors -------------------------------------------------
+// ---- SessionMeta accessors -------------------------------------------------
 
 /**
- * Reserved key under {@link ISessionMeta} for the well-known git-state
+ * Reserved key under {@link SessionMeta} for the well-known git-state
  * payload. Value at this key, when present, MUST be shaped like
  * {@link ISessionGitState}. This is a VS Code-specific convention layered
  * on top of the protocol's generic `_meta` bag — the protocol itself does
@@ -283,7 +283,7 @@ export const SESSION_META_GIT_KEY = 'git';
 
 /**
  * Git state of a session's working directory, carried under
- * {@link ISessionMeta} at {@link SESSION_META_GIT_KEY}. Used by clients to
+ * {@link SessionMeta} at {@link SESSION_META_GIT_KEY}. Used by clients to
  * drive source-control affordances (e.g. PR/merge buttons in the Agents
  * app).
  *
@@ -311,11 +311,11 @@ export interface ISessionGitState {
 }
 
 /**
- * Reads the well-known git-state payload from {@link ISessionMeta}, if
+ * Reads the well-known git-state payload from {@link SessionMeta}, if
  * present. Returns `undefined` when the meta bag is absent or the value at
  * the git key is the wrong shape.
  */
-export function readSessionGitState(meta: ISessionMeta | undefined): ISessionGitState | undefined {
+export function readSessionGitState(meta: SessionMeta | undefined): ISessionGitState | undefined {
 	const value = meta?.[SESSION_META_GIT_KEY];
 	if (!value || typeof value !== 'object') {
 		return undefined;
@@ -324,11 +324,11 @@ export function readSessionGitState(meta: ISessionMeta | undefined): ISessionGit
 }
 
 /**
- * Returns a new {@link ISessionMeta} with the git-state payload set to
+ * Returns a new {@link SessionMeta} with the git-state payload set to
  * `gitState`, or with the git slot removed if `gitState` is `undefined`.
  * Returns `undefined` if the result would be empty.
  */
-export function withSessionGitState(meta: ISessionMeta | undefined, gitState: ISessionGitState | undefined): ISessionMeta | undefined {
+export function withSessionGitState(meta: SessionMeta | undefined, gitState: ISessionGitState | undefined): SessionMeta | undefined {
 	const next: { [key: string]: unknown } = { ...meta };
 	if (gitState !== undefined) {
 		next[SESSION_META_GIT_KEY] = gitState;

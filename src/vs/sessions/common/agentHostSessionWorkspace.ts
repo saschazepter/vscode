@@ -19,6 +19,7 @@ export interface IAgentHostSessionWorkspaceOptions {
 	readonly providerLabel?: string;
 	readonly fallbackIcon: ThemeIcon;
 	readonly requiresWorkspaceTrust: boolean;
+	readonly description?: string;
 }
 
 export function agentHostSessionWorkspaceKey(workspace: ISessionWorkspace | undefined): string | undefined {
@@ -33,6 +34,7 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 		const repositoryWorkingDirectory = extUri.isEqual(workingDirectory, project.uri) ? undefined : workingDirectory;
 		return {
 			label: options.providerLabel ? `${project.displayName} [${options.providerLabel}]` : project.displayName,
+			description: options.description,
 			icon: Codicon.repo,
 			repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: undefined, baseBranchName, baseBranchProtected }],
 			requiresWorkspaceTrust: options.requiresWorkspaceTrust,
@@ -46,6 +48,7 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 	const folderName = basename(workingDirectory) || workingDirectory.path;
 	return {
 		label: options.providerLabel ? `${folderName} [${options.providerLabel}]` : folderName,
+		description: options.description,
 		icon: options.fallbackIcon,
 		repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: undefined, baseBranchName, baseBranchProtected }],
 		requiresWorkspaceTrust: options.requiresWorkspaceTrust,
