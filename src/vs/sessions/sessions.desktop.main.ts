@@ -176,7 +176,6 @@ import '../workbench/contrib/remoteTunnel/electron-browser/remoteTunnel.contribu
 // Chat
 import './contrib/agentFeedback/browser/agentFeedback.contribution.js';
 import './contrib/chat/electron-browser/openInVSCode.contribution.js';
-import './contrib/chat/electron-browser/debugAgentHost.contribution.js';
 
 // Encryption
 import '../workbench/contrib/encryption/electron-browser/encryption.contribution.js';
