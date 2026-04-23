@@ -11,6 +11,7 @@ import { Action2 } from '../../../../../platform/actions/common/actions.js';
 import { IAgentHostService } from '../../../../../platform/agentHost/common/agentService.js';
 import { INativeHostService } from '../../../../../platform/native/common/native.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
+import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 export class DebugAgentHostInDevToolsAction extends Action2 {
 	static readonly ID = 'workbench.action.chat.debugAgentHostInDevTools';
@@ -22,6 +23,7 @@ export class DebugAgentHostInDevToolsAction extends Action2 {
 			category: Categories.Developer,
 			f1: true,
 			icon: Codicon.debugStart,
+			precondition: ChatContextKeys.enabled,
 		});
 	}
 
