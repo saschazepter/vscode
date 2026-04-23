@@ -115,10 +115,13 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 		// Start async to ensure listeners are set up.
 		// Capture `cts` locally so that if continueMonitoringAsync replaces
-		// _currentMonitoringCts before this fires, we detect the cancellation
-		// and avoid starting a duplicate monitoring loop.
+		// _currentMonitoringCts before this fires, we detect the replacement
+		// and avoid starting a duplicate monitoring loop. _startMonitoring
+		// handles a cancelled token correctly by firing onDidFinishCommand in
+		// its finally block, so we always call it when we're still the current
+		// CTS (even if the token has since been cancelled).
 		timeout(0).then(() => {
-			if (cts.token.isCancellationRequested) {
+			if (this._currentMonitoringCts !== cts) {
 				return;
 			}
 			this._startMonitoring(command, invocationContext, cts.token);
