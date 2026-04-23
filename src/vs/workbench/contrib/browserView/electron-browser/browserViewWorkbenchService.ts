@@ -3,15 +3,22 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { BrowserViewCommandId, IBrowserViewService, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
-import { IBrowserViewWorkbenchService, IBrowserViewModel, BrowserViewModel } from '../common/browserView.js';
+import { BrowserViewCommandId, BrowserViewStorageScope, IBrowserViewCreatedEvent, IBrowserViewOwner, IBrowserViewService, IBrowserViewState, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
+import { IBrowserViewWorkbenchService, IBrowserViewModel, IKnownBrowserView, BrowserViewModel } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { Event } from '../../../../base/common/event.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
+import { AUX_WINDOW_GROUP, IEditorService } from '../../../services/editor/common/editorService.js';
+import { mainWindow } from '../../../../base/browser/window.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
+import { BrowserEditorInput } from '../common/browserEditorInput.js';
+import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -25,27 +32,100 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 	private readonly _browserViewService: IBrowserViewService;
 	private readonly _models = new Map<string, IBrowserViewModel>();
+	private readonly _mainWindowId: number;
+
+	private readonly _onDidChangeBrowserViews = this._register(new Emitter<void>());
+	readonly onDidChangeBrowserViews: Event<void> = this._onDidChangeBrowserViews.event;
 
 	constructor(
 		@IMainProcessService mainProcessService: IMainProcessService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IKeybindingService private readonly keybindingService: IKeybindingService
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService
 	) {
 		super();
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
 		this._browserViewService = ProxyChannel.toService<IBrowserViewService>(channel);
+		this._mainWindowId = mainWindow.vscodeWindowId;
 
 		this.sendKeybindings();
 		this._register(this.keybindingService.onDidUpdateKeybindings(() => this.sendKeybindings()));
+
+		// Eagerly create models for all views we already own.
+		this._initializeExistingViews();
+
+		// Listen for new browser views
+		this._register(this._browserViewService.onDidCreateBrowserView(e => {
+			if (e.info.owner.mainWindowId !== this._mainWindowId) {
+				return; // Not for this window
+			}
+
+			// Eagerly create the model from the state we already have
+			this._createModel(e.info.id, e.info.owner, e.info.state);
+
+			this._openEditorForCreatedView(e);
+		}));
+
+		// Fire when browser editor inputs are opened or closed
+		this._register(this.editorService.onDidEditorsChange((e) => {
+			if (e.event.editor instanceof BrowserEditorInput) {
+				this._onDidChangeBrowserViews.fire();
+			}
+		}));
 	}
 
-	async getOrCreateBrowserViewModel(id: string): Promise<IBrowserViewModel> {
-		return this._getBrowserViewModel(id, true);
+	getKnownBrowserViews(): IKnownBrowserView[] {
+		const entries = new Map<string, IKnownBrowserView>();
+
+		// Add editor inputs
+		for (const editor of this.editorService.editors) {
+			if (editor instanceof BrowserEditorInput) {
+				entries.set(editor.id, { id: editor.id, editor: editor });
+			}
+		}
+
+		// Add models
+		for (const [id, model] of this._models) {
+			const entry = entries.get(id);
+			if (entry) {
+				entries.set(id, { ...entry, model });
+			}
+		}
+
+		return [...entries.values()];
 	}
 
-	async getBrowserViewModel(id: string): Promise<IBrowserViewModel> {
-		return this._getBrowserViewModel(id, false);
+	async getOrCreateBrowserViewModel(id: string, initialState?: Partial<IBrowserViewState>): Promise<IBrowserViewModel> {
+		const existing = this._models.get(id);
+		if (existing) {
+			return existing;
+		}
+
+		// View doesn't exist yet — create it via IPC and initialize the model
+		const state = await this._browserViewService.getOrCreateBrowserView(
+			id,
+			{
+				owner: this._getDefaultOwner(),
+				scope: await this._resolveStorageScope(),
+				initialState
+			}
+		);
+
+		// Check again — the create event handler may have already created the model
+		const existingAfterCreate = this._models.get(id);
+		if (existingAfterCreate) {
+			return existingAfterCreate;
+		}
+
+		return this._createModel(id, this._getDefaultOwner(), state);
+	}
+
+	getBrowserViewModel(id: string): IBrowserViewModel | undefined {
+		return this._models.get(id);
 	}
 
 	async clearGlobalStorage(): Promise<void> {
@@ -57,29 +137,97 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		return this._browserViewService.clearWorkspaceStorage(workspaceId);
 	}
 
-	private async _getBrowserViewModel(id: string, create: boolean): Promise<IBrowserViewModel> {
-		let model = this._models.get(id);
-		if (model) {
-			return model;
+	private _getDefaultOwner(): IBrowserViewOwner {
+		return { mainWindowId: this._mainWindowId };
+	}
+
+	private async _resolveStorageScope(): Promise<BrowserViewStorageScope> {
+		const dataStorageSetting = this.configurationService.getValue<BrowserViewStorageScope>(
+			'workbench.browser.dataStorage'
+		) ?? BrowserViewStorageScope.Global;
+
+		await this.workspaceTrustManagementService.workspaceTrustInitialized;
+
+		const isWorkspaceUntrusted =
+			this.workspaceContextService.getWorkbenchState() !== WorkbenchState.EMPTY &&
+			!this.workspaceTrustManagementService.isWorkspaceTrusted();
+
+		return isWorkspaceUntrusted ? BrowserViewStorageScope.Ephemeral : dataStorageSetting;
+	}
+
+	/**
+	 * Fetch all views owned by this window from the main service and create
+	 * models for them so they are available synchronously.
+	 */
+	private async _initializeExistingViews(): Promise<void> {
+		const views = await this._browserViewService.getBrowserViews(this._mainWindowId);
+		for (const info of views) {
+			if (!this._models.has(info.id)) {
+				this._createModel(info.id, info.owner, info.state);
+			}
+		}
+	}
+
+	private _createModel(id: string, owner: IBrowserViewOwner, state: IBrowserViewState): IBrowserViewModel {
+		// Don't double-create
+		const existing = this._models.get(id);
+		if (existing) {
+			return existing;
 		}
 
-		model = this.instantiationService.createInstance(BrowserViewModel, id, this._browserViewService);
+		const model = this.instantiationService.createInstance(BrowserViewModel, id, owner, state, this._browserViewService);
 		this._models.set(id, model);
-
-		// Initialize the model with current state
-		try {
-			await model.initialize(create);
-		} catch (e) {
-			this._models.delete(id);
-			throw e;
-		}
 
 		// Clean up model when disposed
 		Event.once(model.onWillDispose)(() => {
 			this._models.delete(id);
+			this._onDidChangeBrowserViews.fire();
 		});
 
+		this._onDidChangeBrowserViews.fire();
+
 		return model;
+	}
+
+	/**
+	 * Open an editor tab for a newly created browser view.
+	 */
+	private _openEditorForCreatedView(e: IBrowserViewCreatedEvent): void {
+		const { parentViewId, auxiliaryWindow, ...rest } = e.openOptions;
+		const resource = BrowserViewUri.forId(e.info.id);
+
+		// Resolve target group: auxiliary window, parent's group, or default
+		let targetGroup: number | typeof AUX_WINDOW_GROUP | undefined;
+		if (auxiliaryWindow) {
+			targetGroup = AUX_WINDOW_GROUP;
+		} else if (parentViewId) {
+			targetGroup = this._findEditorGroupForView(parentViewId);
+		}
+
+		void this.editorService.openEditor({
+			resource,
+			options: {
+				...rest,
+				auxiliary: auxiliaryWindow
+					? { bounds: auxiliaryWindow, compact: true }
+					: undefined,
+			}
+		}, targetGroup);
+	}
+
+	/**
+	 * Find the editor group that currently contains a browser view with the
+	 * given ID, or undefined if not open in any group.
+	 */
+	private _findEditorGroupForView(viewId: string): number | undefined {
+		for (const group of this.editorGroupsService.groups) {
+			for (const editor of group.editors) {
+				if (editor instanceof BrowserEditorInput && editor.id === viewId) {
+					return group.id;
+				}
+			}
+		}
+		return undefined;
 	}
 
 	private sendKeybindings(): void {

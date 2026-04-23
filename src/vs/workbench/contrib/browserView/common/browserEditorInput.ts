@@ -18,10 +18,10 @@ import { localize } from '../../../../nls.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IBrowserViewWorkbenchService, IBrowserViewModel } from '../common/browserView.js';
 import { hasKey } from '../../../../base/common/types.js';
-import { ILifecycleService, ShutdownReason } from '../../../services/lifecycle/common/lifecycle.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { logBrowserOpen } from '../../../../platform/browserView/common/browserViewTelemetry.js';
 import { LRUCachedFunction } from '../../../../base/common/cache.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 
 const LOADING_SPINNER_SVG = (color: string | undefined) => `
 	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
@@ -51,14 +51,15 @@ export class BrowserEditorInput extends EditorInput {
 
 	private readonly _id: string;
 	private _initialData: IBrowserEditorInputData;
+
 	private _model: IBrowserViewModel | undefined;
 	private _modelPromise: Promise<IBrowserViewModel> | undefined;
+	private _modelStore = this._register(new DisposableStore());
 
 	constructor(
 		options: IBrowserEditorInputData,
 		@IThemeService private readonly themeService: IThemeService,
 		@IBrowserViewWorkbenchService private readonly browserViewWorkbenchService: IBrowserViewWorkbenchService,
-		@ILifecycleService private readonly lifecycleService: ILifecycleService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService
 	) {
@@ -66,17 +67,33 @@ export class BrowserEditorInput extends EditorInput {
 		this._id = options.id;
 		this._initialData = options;
 
-		this._register(this.lifecycleService.onWillShutdown((e) => {
-			if (this._model) {
-				// For reloads, we simply hide / re-show the view.
-				if (e.reason === ShutdownReason.RELOAD) {
-					void this._model.setVisible(false);
-				} else {
-					this._model.dispose();
-					this._model = undefined;
-				}
-			}
+		const existingModel = browserViewWorkbenchService.getBrowserViewModel(this._id);
+		if (existingModel) {
+			this.setModel(existingModel);
+		}
+	}
+
+	setModel(model: IBrowserViewModel): void {
+		this._modelStore.clear();
+		this._model = model;
+
+		// Set up cleanup when the model is disposed
+		this._modelStore.add(this._model.onWillDispose(() => {
+			this._model = undefined;
 		}));
+
+		// Auto-close editor when webcontents closes
+		this._modelStore.add(this._model.onDidClose(() => {
+			this.dispose();
+		}));
+
+		// Listen for label-relevant changes to fire onDidChangeLabel
+		this._modelStore.add(this._model.onDidChangeTitle(() => this._onDidChangeLabel.fire()));
+		this._modelStore.add(this._model.onDidChangeFavicon(() => this._onDidChangeLabel.fire()));
+		this._modelStore.add(this._model.onDidChangeLoadingState(() => this._onDidChangeLabel.fire()));
+		this._modelStore.add(this._model.onDidNavigate(() => this._onDidChangeLabel.fire()));
+
+		this._onDidChangeLabel.fire();
 	}
 
 	get id() {
@@ -114,33 +131,16 @@ export class BrowserEditorInput extends EditorInput {
 	override async resolve(): Promise<IBrowserViewModel> {
 		if (!this._model && !this._modelPromise) {
 			this._modelPromise = (async () => {
-				this._model = await this.browserViewWorkbenchService.getOrCreateBrowserViewModel(this._id);
+				const model = await this.browserViewWorkbenchService.getOrCreateBrowserViewModel(this._id, {
+					url: this._initialData.url,
+					title: this._initialData.title,
+					lastFavicon: this._initialData.favicon
+				});
 				this._modelPromise = undefined;
 
-				// Set up cleanup when the model is disposed
-				this._register(this._model.onWillDispose(() => {
-					this._model = undefined;
-				}));
+				this.setModel(model);
 
-				// Auto-close editor when webcontents closes
-				this._register(this._model.onDidClose(() => {
-					this.dispose();
-				}));
-
-				// Listen for label-relevant changes to fire onDidChangeLabel
-				this._register(this._model.onDidChangeTitle(() => this._onDidChangeLabel.fire()));
-				this._register(this._model.onDidChangeFavicon(() => this._onDidChangeLabel.fire()));
-				this._register(this._model.onDidChangeLoadingState(() => this._onDidChangeLabel.fire()));
-				this._register(this._model.onDidNavigate(() => this._onDidChangeLabel.fire()));
-
-				// Navigate to initial URL if provided
-				if (this._initialData.url) {
-					this._model.setInitialURL(this._initialData.url, this._initialData.title, this._initialData.favicon);
-				}
-
-				this._onDidChangeLabel.fire();
-
-				return this._model;
+				return model;
 			})();
 		}
 		return this._model || this._modelPromise!;

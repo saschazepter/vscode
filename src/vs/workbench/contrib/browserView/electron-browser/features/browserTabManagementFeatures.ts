@@ -25,6 +25,7 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { ContextKeyExpr, IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { BrowserViewCommandId } from '../../../../../platform/browserView/common/browserView.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
+import { IBrowserViewWorkbenchService } from '../../common/browserView.js';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '../../../../../platform/configuration/common/configurationRegistry.js';
 import { workbenchConfigurationNodeBase } from '../../../../common/configuration.js';
 import { IExternalOpener, IOpenerService } from '../../../../../platform/opener/common/opener.js';
@@ -279,6 +280,7 @@ class OpenIntegratedBrowserAction extends Action2 {
 	async run(accessor: ServicesAccessor, urlOrOptions?: string | IOpenBrowserOptions): Promise<void> {
 		const editorService = accessor.get(IEditorService);
 		const telemetryService = accessor.get(ITelemetryService);
+		const browserViewService = accessor.get(IBrowserViewWorkbenchService);
 
 		// Parse arguments
 		const options = typeof urlOrOptions === 'string' ? { url: urlOrOptions } : (urlOrOptions ?? {});
@@ -287,11 +289,7 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 		if (options.reuseUrlFilter) {
 			const filterUri = URI.parse(options.reuseUrlFilter);
-			const matchingEditor = editorService.editors.find((e): e is BrowserEditorInput => {
-				if (!(e instanceof BrowserEditorInput)) {
-					return false;
-				}
-
+			const matchingEntry = browserViewService.getKnownBrowserViews().find(({ editor: e }) => {
 				const editorUri = URI.parse(e.url || '');
 				// URIs default to putting "file" scheme. Check that the scheme is really in the filter.
 				if (filterUri.scheme && options.reuseUrlFilter!.startsWith(`${filterUri.scheme}:`) && filterUri.scheme !== editorUri.scheme) {
@@ -313,11 +311,11 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 				return true;
 			});
-			if (matchingEditor) {
+			if (matchingEntry) {
 				if (options.url) {
-					matchingEditor.navigate(options.url);
+					matchingEntry.editor.navigate(options.url);
 				}
-				await editorService.openEditor(matchingEditor);
+				await editorService.openEditor(matchingEntry.editor);
 				return;
 			}
 		}
@@ -428,10 +426,10 @@ class OpenBrowserFromViewMenuAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const editorService = accessor.get(IEditorService);
+		const browserViewService = accessor.get(IBrowserViewWorkbenchService);
 		const commandService = accessor.get(ICommandService);
 
-		const hasOpenBrowserEditor = editorService.editors.some(editor => editor instanceof BrowserEditorInput);
+		const hasOpenBrowserEditor = browserViewService.getKnownBrowserViews().some(e => e.editor);
 
 		if (hasOpenBrowserEditor) {
 			await commandService.executeCommand(BrowserViewCommandId.QuickOpen);
@@ -477,25 +475,15 @@ class BrowserEditorOpenContextKeyContribution extends Disposable implements IWor
 
 	constructor(
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IEditorService editorService: IEditorService,
+		@IBrowserViewWorkbenchService browserViewService: IBrowserViewWorkbenchService,
 	) {
 		super();
 
 		const contextKey = CONTEXT_BROWSER_EDITOR_OPEN.bindTo(contextKeyService);
-		const update = () => contextKey.set(editorService.editors.some(e => e instanceof BrowserEditorInput));
+		const update = () => contextKey.set(browserViewService.getKnownBrowserViews().some(e => e.editor));
 
 		update();
-
-		this._register(editorService.onWillOpenEditor(e => {
-			if (e.editor instanceof BrowserEditorInput) {
-				contextKey.set(true);
-			}
-		}));
-		this._register(editorService.onDidCloseEditor(e => {
-			if (e.editor instanceof BrowserEditorInput) {
-				update();
-			}
-		}));
+		this._register(browserViewService.onDidChangeBrowserViews(() => update()));
 	}
 }
 

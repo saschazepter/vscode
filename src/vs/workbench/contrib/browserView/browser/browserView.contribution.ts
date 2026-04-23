@@ -4,19 +4,26 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
-import { IBrowserViewWorkbenchService, IBrowserViewCDPService, IBrowserViewModel } from '../common/browserView.js';
+import { IBrowserViewWorkbenchService, IBrowserViewCDPService, IBrowserViewModel, IKnownBrowserView } from '../common/browserView.js';
 import { Event } from '../../../../base/common/event.js';
 import { CDPEvent, CDPRequest, CDPResponse } from '../../../../platform/browserView/common/cdp/types.js';
+import { IBrowserViewState } from '../../../../platform/browserView/common/browserView.js';
 
 class WebBrowserViewWorkbenchService implements IBrowserViewWorkbenchService {
 	declare readonly _serviceBrand: undefined;
 
-	async getOrCreateBrowserViewModel(_id: string): Promise<IBrowserViewModel> {
+	readonly onDidChangeBrowserViews = Event.None;
+
+	getKnownBrowserViews(): IKnownBrowserView[] {
+		return [];
+	}
+
+	async getOrCreateBrowserViewModel(_id: string, _initialState?: Partial<IBrowserViewState>): Promise<IBrowserViewModel> {
 		throw new Error('Integrated Browser is not available in web.');
 	}
 
-	async getBrowserViewModel(_id: string): Promise<IBrowserViewModel> {
-		throw new Error('Integrated Browser is not available in web.');
+	getBrowserViewModel(_id: string): IBrowserViewModel | undefined {
+		return undefined;
 	}
 
 	async clearGlobalStorage(): Promise<void> { }
