@@ -292,7 +292,7 @@ export class ChatStatusDashboard extends DomWidget {
 			const anonymousUser = this.chatEntitlementService.anonymous;
 			const disabled = this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted;
 			const signedOut = this.chatEntitlementService.entitlement === ChatEntitlement.Unknown;
-			if (newUser || signedOut || disabled) {
+			if (newUser || (signedOut && !this.chatEntitlementService.clientByokEnabled) || disabled) {
 				this.element.appendChild($('hr'));
 
 				let descriptionText: string | MarkdownString;
@@ -470,7 +470,7 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.Unknown || this.chatEntitlementService.entitlement === ChatEntitlement.Available) {
-			return this.chatEntitlementService.anonymous; // signed out or not-yet-signed-up users can only use Chat if anonymous access is allowed
+			return this.chatEntitlementService.anonymous || this.chatEntitlementService.clientByokEnabled; // signed out or not-yet-signed-up users can only use Chat if anonymous access or BYOK is allowed
 		}
 
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && this.chatEntitlementService.quotas.chat?.percentRemaining === 0 && this.chatEntitlementService.quotas.completions?.percentRemaining === 0) {

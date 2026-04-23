@@ -263,7 +263,8 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 			this.context.state.entitlement === ChatEntitlement.Available ||		// Entitlement available: run setup to sign up
 			(
 				this.context.state.entitlement === ChatEntitlement.Unknown &&	// Entitlement unknown: run setup to sign in / sign up
-				!this.chatEntitlementService.anonymous							// unless anonymous access is enabled
+				!this.chatEntitlementService.anonymous &&						// unless anonymous access is enabled
+				!this.chatEntitlementService.clientByokEnabled					// unless BYOK is enabled
 			)
 		) {
 			return this.doInvokeWithSetup(request, progress, chatService, languageModelsService, chatWidgetService, chatAgentService, languageModelToolsService, defaultAccountService);

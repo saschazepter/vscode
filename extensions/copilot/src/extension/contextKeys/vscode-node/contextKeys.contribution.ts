@@ -209,13 +209,8 @@ export class ContextKeysContribution extends Disposable {
 		}
 	}
 
-	private async _updateClientByokEnabledContext() {
-		try {
-			const copilotToken = await this._authenticationService.getCopilotToken();
-			commands.executeCommand('setContext', clientByokEnabledContextKey, copilotToken.isClientBYOKEnabled());
-		} catch (e) {
-			commands.executeCommand('setContext', clientByokEnabledContextKey, undefined);
-		}
+	private _updateClientByokEnabledContext() {
+		commands.executeCommand('setContext', clientByokEnabledContextKey, true);
 	}
 
 	private _updateShowLogViewContext() {

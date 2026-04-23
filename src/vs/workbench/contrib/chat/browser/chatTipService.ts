@@ -429,7 +429,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Tips are only relevant after sign-in has completed.
-		if (this._chatEntitlementService.entitlement === ChatEntitlement.Unknown) {
+		if (this._chatEntitlementService.entitlement === ChatEntitlement.Unknown && !this._chatEntitlementService.clientByokEnabled) {
 			return undefined;
 		}
 
