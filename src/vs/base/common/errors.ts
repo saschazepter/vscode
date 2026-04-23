@@ -325,6 +325,18 @@ export class ErrorNoTelemetry extends Error {
 }
 
 /**
+ * Marks an error so that {@link ErrorNoTelemetry.isErrorNoTelemetry} detects it
+ * and the error telemetry pipeline does not report it as an unhandled error.
+ * Useful when the original error class (e.g. `FileSystemProviderError`) needs
+ * to be preserved for callers but the error itself represents an expected
+ * condition that should not surface in error telemetry.
+ */
+export function markAsErrorNoTelemetry<T extends Error>(error: T): T {
+	error.name = 'CodeExpectedError';
+	return error;
+}
+
+/**
  * This error indicates a bug.
  * Do not throw this for invalid user input.
  * Only catch this error to recover gracefully from bugs.
