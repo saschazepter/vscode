@@ -812,14 +812,6 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		this._customizationProviders.set(handle, registration);
 	}
 
-	/**
-	 * Called by the management UI when the user toggles a customization item's enabled state.
-	 * Delegates to the extension's setCustomizationEnabled callback.
-	 */
-	$setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean): void {
-		this._proxy.$setCustomizationEnabled(handle, uri, type, enabled);
-	}
-
 	$unregisterChatSessionCustomizationProvider(handle: number): void {
 		this._customizationProviders.deleteAndDispose(handle);
 		this._customizationProviderEmitters.deleteAndDispose(handle);

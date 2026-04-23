@@ -194,7 +194,7 @@ declare module 'vscode' {
 		 * @param type The type of the customization.
 		 * @param enabled Whether the customization should be enabled (`true`) or disabled (`false`).
 		 */
-		resolveCustomizationEnablement?(uri: Uri, type: ChatSessionCustomizationType, enabled: boolean, token: CancellationToken): void;
+		resolveCustomizationEnablement?(uri: Uri, type: ChatSessionCustomizationType, enabled: boolean, token: CancellationToken): Thenable<void>;
 	}
 
 	// #endregion
