@@ -368,10 +368,17 @@ suite('WorkspacePicker - Connection Status', () => {
 		// workspace belonged to a provider that registered later than another available
 		// provider (for example, local-agent-host registering after default-copilot),
 		// the stored entry was filtered out and never restored.
+		//
+		// Realistic shape: storage holds BOTH a (non-checked) recent for the
+		// early-registering provider and a (checked) recent for the late-registering
+		// provider. The picker must not lock onto the early-registering recent as a
+		// fallback — it should wait, then upgrade to the checked entry once that
+		// provider arrives.
 		const copilotProvider = createMockProvider('default-copilot');
 
 		const storage = disposables.add(new TestStorageService());
 		seedStorage(storage, [
+			{ uri: URI.file('/copilot/old-project'), providerId: 'default-copilot', checked: false },
 			{ uri: URI.file('/agent-host/project'), providerId: 'local-agent-host', checked: true },
 		]);
 
@@ -379,8 +386,9 @@ suite('WorkspacePicker - Connection Status', () => {
 		providersService.setProviders([copilotProvider]);
 		const picker = createTestPicker(disposables, providersService, storage);
 
-		// Nothing to restore yet — the stored entry's provider isn't registered.
-		assertSelectedProvider(picker, undefined, 'No selection while target provider is unregistered');
+		// Nothing should be auto-selected: the checked entry's provider isn't
+		// registered, and we must not fall back to a different recent.
+		assertSelectedProvider(picker, undefined, 'No fallback selection while checked entry\'s provider is unregistered');
 
 		// Now the late provider arrives.
 		const agentHostProvider = createMockProvider('local-agent-host');

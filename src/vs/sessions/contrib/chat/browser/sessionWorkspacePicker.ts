@@ -120,7 +120,9 @@ export class WorkspacePicker extends Disposable {
 		this._selectedWorkspace = this._restoreSelectedWorkspace();
 
 		// React to provider registrations/removals: re-validate the current
-		// selection and attempt to restore a stored workspace when none is active.
+		// selection and attempt to restore a stored workspace when none is active,
+		// or upgrade from a fallback to the user's actual checked entry once its
+		// provider arrives.
 		this._register(this.sessionsProvidersService.onDidChangeProviders(() => {
 			if (this._selectedWorkspace) {
 				// Validate that the selected workspace's provider is still registered
@@ -130,7 +132,16 @@ export class WorkspacePicker extends Disposable {
 					this._updateTriggerLabel();
 				}
 			}
-			if (!this._selectedWorkspace) {
+			// If the user's last-selected (checked) entry just became resolvable
+			// and we're either unselected or sitting on a different workspace,
+			// switch to the checked entry.
+			const checked = this._restoreCheckedWorkspace();
+			if (checked && !this._isSelectedWorkspace(checked)) {
+				this._selectedWorkspace = checked;
+				this._updateTriggerLabel();
+				this._onDidChangeSelection.fire();
+				this._onDidSelectWorkspace.fire(checked);
+			} else if (!this._selectedWorkspace) {
 				const restored = this._restoreSelectedWorkspace();
 				if (restored) {
 					this._selectedWorkspace = restored;
@@ -701,11 +712,33 @@ export class WorkspacePicker extends Disposable {
 		this._addRecentWorkspace(selection.providerId, selection.workspace, true);
 	}
 
+	/**
+	 * Returns true if the storage has a `checked` entry whose provider is not
+	 * currently registered. Used to suppress fallback to a different recent
+	 * workspace while we wait for the user's actual selection's provider to
+	 * register (providers register asynchronously during workbench startup).
+	 */
+	private _hasPendingCheckedEntry(): boolean {
+		try {
+			const providerIds = new Set(this.sessionsProvidersService.getProviders().map(p => p.id));
+			return this._getStoredRecentWorkspaces().some(s => s.checked && !providerIds.has(s.providerId));
+		} catch {
+			return false;
+		}
+	}
+
 	private _restoreSelectedWorkspace(): IWorkspaceSelection | undefined {
 		// Try the checked entry first
 		const checked = this._restoreCheckedWorkspace();
 		if (checked) {
 			return checked;
+		}
+
+		// If the user's last-selected (checked) entry is for a provider that
+		// hasn't registered yet, don't fall back to an unrelated workspace —
+		// wait for the provider to arrive (handled in onDidChangeProviders).
+		if (this._hasPendingCheckedEntry()) {
+			return undefined;
 		}
 
 		// Fall back to the first resolvable recent workspace from a connected provider
