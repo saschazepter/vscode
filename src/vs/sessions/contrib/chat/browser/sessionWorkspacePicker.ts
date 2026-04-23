@@ -11,7 +11,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
-import { Schemas } from '../../../../base/common/network.js';
+import { basename } from '../../../../base/common/resources.js';
 import { isNative } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
@@ -229,8 +229,8 @@ export class WorkspacePicker extends Disposable {
 		};
 
 		const listOptions = showFilter
-			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true }
-			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true };
+			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, fixedWidth: 600 }
+			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, fixedWidth: 600 };
 		triggerElement.setAttribute('aria-expanded', 'true');
 
 		this.actionWidgetService.show<IWorkspacePickerItem>(
@@ -329,6 +329,16 @@ export class WorkspacePicker extends Disposable {
 		return this.sessionsProvidersService.getProviders().flatMap(p => p.browseActions);
 	}
 
+	/**
+	 * Builds the picker items list from recent workspaces.
+	 *
+	 * Ordering:
+	 * 1. Own recents (from sessions picker storage) come first, followed by
+	 *    VS Code recent folders — both retain their original storage order.
+	 * 2. Items are grouped by provider/group title. Groups are sorted by
+	 *    first-appearance index so the first group encountered stays on top.
+	 * 3. Within each group the original insertion order is preserved (stable sort).
+	 */
 	protected _buildItems(): IActionListItem<IWorkspacePickerItem>[] {
 		const items: IActionListItem<IWorkspacePickerItem>[] = [];
 
@@ -363,13 +373,15 @@ export class WorkspacePicker extends Disposable {
 			}
 		}
 
-		// Sort by group name, then by label within each group
-		workspaceEntries.sort((a, b) => {
-			const groupCmp = a.groupTitle.localeCompare(b.groupTitle);
-			if (groupCmp !== 0) {
-				return groupCmp;
+		// Group entries by groupTitle, preserving the original order within each group
+		const groupOrder = new Map<string, number>();
+		workspaceEntries.forEach((entry, index) => {
+			if (!groupOrder.has(entry.groupTitle)) {
+				groupOrder.set(entry.groupTitle, index);
 			}
-			return a.workspace.label.localeCompare(b.workspace.label);
+		});
+		workspaceEntries.sort((a, b) => {
+			return (groupOrder.get(a.groupTitle) ?? 0) - (groupOrder.get(b.groupTitle) ?? 0);
 		});
 
 		// Add items with separators between groups
@@ -849,16 +861,7 @@ export class WorkspacePicker extends Disposable {
 				}
 				return { providerId: stored.providerId, workspace };
 			})
-			.filter((w): w is { providerId: string; workspace: ISessionWorkspace } => w !== undefined)
-			.sort((a, b) => {
-				// Local folders first, then remote repositories, alphabetical within each group
-				const aIsLocal = a.workspace.repositories[0]?.uri.scheme === Schemas.file;
-				const bIsLocal = b.workspace.repositories[0]?.uri.scheme === Schemas.file;
-				if (aIsLocal !== bIsLocal) {
-					return aIsLocal ? -1 : 1;
-				}
-				return a.workspace.label.localeCompare(b.workspace.label);
-			});
+			.filter((w): w is { providerId: string; workspace: ISessionWorkspace } => w !== undefined);
 	}
 
 	protected _removeRecentWorkspace(selection: IWorkspaceSelection): void {
@@ -915,7 +918,17 @@ export class WorkspacePicker extends Disposable {
 		const recentlyOpened = await this.workspacesService.getRecentlyOpened();
 		this._vsCodeRecentFolderUris = recentlyOpened.workspaces
 			.filter(isRecentFolder)
-			.map(f => f.folderUri);
+			.map(f => f.folderUri)
+			.filter(uri => !this._isCopilotWorktree(uri))
+			.slice(0, 10);
+	}
+
+	/**
+	 * Returns whether the given URI points to a copilot-managed folder
+	 * (a folder whose name starts with `copilot-`).
+	 */
+	private _isCopilotWorktree(uri: URI): boolean {
+		return basename(uri).startsWith('copilot-');
 	}
 
 	/**
@@ -947,6 +960,9 @@ export class WorkspacePicker extends Disposable {
 				if (workspace) {
 					result.push({ providerId: provider.id, workspace });
 				}
+			}
+			if (result.length >= 10) {
+				break;
 			}
 		}
 
