@@ -4606,7 +4606,7 @@
 					},
 					"github.copilot.chat.cli.lazyLoadSessionItem.enabled": {
 						"type": "boolean",
-						"default": false,
+						"default": true,
 						"markdownDescription": "%github.copilot.config.cli.lazyLoadSessionItem.enabled%",
 						"tags": [
 							"advanced"
