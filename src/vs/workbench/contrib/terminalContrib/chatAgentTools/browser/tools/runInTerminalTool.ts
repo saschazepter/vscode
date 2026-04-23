@@ -1715,6 +1715,16 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		const isError = exitCode !== undefined && exitCode !== 0;
 		const endCwd = await toolTerminal.instance.getCwdResource();
 
+		// Cwd-drift hint: warn the model when the shell has moved outside the workspace.
+		// Work done outside the workspace root may not be captured by tools that inspect
+		// the workspace (e.g. git diff in the workspace root yields an empty patch).
+		if (endCwd && this._workspaceContextService.getWorkspaceFolder(endCwd) === null) {
+			const folders = this._workspaceContextService.getWorkspace().folders;
+			if (folders.length > 0) {
+				resultText.push(`\nNote: The shell's current directory (${endCwd.fsPath}) is outside the workspace root. Files written here may not be captured by tools that inspect the workspace.\n`);
+			}
+		}
+
 		const imageContent = await this._extractImagesFromOutput(terminalResult, endCwd);
 
 		return {
