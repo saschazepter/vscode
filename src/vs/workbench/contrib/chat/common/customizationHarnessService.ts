@@ -60,7 +60,7 @@ export interface ISectionOverride {
  */
 export interface IHarnessDescriptor {
 	/**
-	 * The session types that this harness applies to.
+	 * The harness/session-type identifier.
 	 */
 	readonly id: string;
 	readonly label: string;
