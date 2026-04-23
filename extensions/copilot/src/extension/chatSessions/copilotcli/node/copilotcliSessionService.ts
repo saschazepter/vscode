@@ -370,35 +370,49 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	}
 
 	/**
-	 * Gets the session title.
-	 * Always give preference to label defined by user, then title from CLI session object.
-	 * If we have the metadata then use that over extracting label ourselves or using any cache.
+	 * Single source of truth for both `getSessionTitle()` (editor/header) and
+	 * `_getAllSessions()` (sidebar list) so the two surfaces never diverge.
+	 *
+	 * Precedence:
+	 *   1. Explicit renamed title — active wrapper title, SDK `name`, or legacy custom title.
+	 *   2. Cached derived label in `_sessionLabels` (from a previous history scan).
+	 *   3. Pending prompt for in-flight new sessions.
+	 *   4. Clean metadata `summary` (rejected if it looks truncated).
+	 *   5. First user message from session history (cached on success).
+	 *   6. Raw metadata `summary` as a display-only last resort (not cached).
 	 */
 	private async getSessionTitleImpl(sessionId: string, metadata: LocalSessionMetadata | undefined, token: CancellationToken): Promise<string> {
-		// Prefer SDK-backed data first. Local title storage remains only as a fallback for
-		// legacy sessions and for newly-created VS Code sessions that have not yet been
-		// materialized in the SDK.
-		const accurateTitle =
+		const explicitTitle =
 			this._sessionWrappers.get(sessionId)?.object.title ??
 			metadata?.name ??
-			await this.customSessionTitleService.getCustomSessionTitle(sessionId) ??
-			labelFromPrompt(this._sessionWrappers.get(sessionId)?.object.pendingPrompt ?? '');
+			await this.customSessionTitleService.getCustomSessionTitle(sessionId);
+		if (explicitTitle) {
+			return explicitTitle;
+		}
 
-		if (accurateTitle) {
-			return accurateTitle;
+		const cached = this._sessionLabels.get(sessionId);
+		if (cached) {
+			return cached;
+		}
+
+		const pendingLabel = labelFromPrompt(this._sessionWrappers.get(sessionId)?.object.pendingPrompt ?? '');
+		if (pendingLabel) {
+			return pendingLabel;
 		}
 
 		const summarizedTitle = labelFromPrompt(metadata?.summary ?? '');
-		if (summarizedTitle) {
-			if (summarizedTitle.endsWith('...')) {
-				// If the SDK is going to just give us a truncated version of the first user message as the summary, then we might as well extract the label ourselves from the first user message instead of using the truncated summary.
-			} else {
-				return summarizedTitle;
-			}
+		if (summarizedTitle && !summarizedTitle.endsWith('...') && !summarizedTitle.includes('<')) {
+			return summarizedTitle;
 		}
 
 		const firstUserMessage = await this.getFirstUserMessageFromSession(sessionId, token);
-		return labelFromPrompt(firstUserMessage ?? '');
+		const fromHistory = labelFromPrompt(firstUserMessage ?? '');
+		if (fromHistory) {
+			this._sessionLabels.set(sessionId, fromHistory);
+			return fromHistory;
+		}
+
+		return metadata?.summary ?? '';
 	}
 
 
@@ -435,34 +449,15 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 					const startTime = metadata.startTime.getTime();
 					const endTime = metadata.modifiedTime.getTime();
 					const label = await this.getSessionTitleImpl(metadata.sessionId, metadata, token);
-					// CLI adds `<current_datetime>` tags to user prompt, this needs to be removed.
-					// However in summary CLI can end up truncating the prompt and adding `... <current_dateti...` at the end.
-					// So if we see a `<` in the label, we need to load the session to get the first user message.
-					if (label && !label.includes('<')) {
-						return {
-							id,
-							label,
-							timing: { created: startTime, startTime, endTime },
-							workingDirectory
-						};
+					if (!label) {
+						return;
 					}
-
-					try {
-						const firstUserMessage = await this.getFirstUserMessageFromSession(metadata.sessionId, token);
-						const label = labelFromPrompt(firstUserMessage ?? metadata.summary ?? '');
-						if (!label) {
-							return;
-						}
-						this._sessionLabels.set(metadata.sessionId, label);
-						return {
-							id,
-							label,
-							timing: { created: startTime, startTime, endTime },
-							workingDirectory
-						};
-					} catch (error) {
-						this.logService.warn(`Failed to load session ${metadata.sessionId}: ${error}`);
-					}
+					return {
+						id,
+						label,
+						timing: { created: startTime, startTime, endTime },
+						workingDirectory
+					};
 				})
 			));
 
@@ -1161,6 +1156,10 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 	public async updateSessionSummary(sessionId: string, title: string): Promise<void> {
 		await this.updateSdkSessionMetadata(sessionId, title, sdkSession => sdkSession.updateSessionSummary(title));
+		// Invalidate the derived-label cache so a subsequent title resolution
+		// can pick up the freshly-written summary instead of returning a stale
+		// label that was extracted from session history on a prior pass.
+		this._sessionLabels.delete(sessionId);
 		this._onDidChangeSessions.fire();
 	}
 }
