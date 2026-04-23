@@ -652,6 +652,7 @@ export interface ISessionsList {
 	resetFilters(): void;
 	setWorkspaceGroupCapped(capped: boolean): void;
 	isWorkspaceGroupCapped(): boolean;
+	collapseAllSections(): void;
 }
 
 export class SessionsList extends Disposable implements ISessionsList {
@@ -1185,6 +1186,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 	isWorkspaceGroupCapped(): boolean {
 		return this.workspaceGroupCapped;
+	}
+
+	collapseAllSections(): void {
+		this.tree.collapseAll();
 	}
 
 	// -- Section collapse persistence --
