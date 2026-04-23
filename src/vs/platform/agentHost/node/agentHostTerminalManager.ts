@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import { DeferredPromise, raceCancellablePromises, timeout } from '../../../base/common/async.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
-import { dirname } from '../../../base/common/path.js';
+import { dirname, parse as pathParse } from '../../../base/common/path.js';
 import * as platform from '../../../base/common/platform.js';
 import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
@@ -211,10 +211,19 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			env['GIT_TERMINAL_PROMPT'] = '0';
 			env['DEBIAN_FRONTEND'] = 'noninteractive';
 		}
+		// macOS should launch a login shell by default so that /etc/zprofile
+		// (which runs path_helper) and ~/.zprofile are sourced. This matches
+		// the regular VS Code terminal profile resolver behavior.
 		let shellArgs: string[] = [];
+		if (platform.isMacintosh) {
+			const shellName = pathParse(shell).name;
+			if (shellName === 'zsh' || shellName === 'bash') {
+				shellArgs = ['--login'];
+			}
+		}
 
 		const injection = await getShellIntegrationInjection(
-			{ executable: shell, args: [], forceShellIntegration: true },
+			{ executable: shell, args: shellArgs, forceShellIntegration: true },
 			{
 				shellIntegration: { enabled: true, suggestEnabled: false, nonce },
 				windowsUseConptyDll: false,
