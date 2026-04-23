@@ -845,12 +845,12 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		}
 	}
 
-	$setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean): void {
+	async $setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean): Promise<void> {
 		const providerData = this._customizationProviders.get(handle);
 		if (!providerData?.provider.resolveCustomizationEnablement) {
 			return;
 		}
-		providerData.provider.resolveCustomizationEnablement(
+		await providerData.provider.resolveCustomizationEnablement(
 			URI.revive(uri),
 			typeConvert.ChatSessionCustomizationType.to(type),
 			enabled,

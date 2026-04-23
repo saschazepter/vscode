@@ -376,14 +376,26 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		// Overlay disabled state from the harness's enablement provider, or
 		// fall back to promptsService (StorageService) when no provider is set.
+		// Extension items are always stored in promptsService regardless of the
+		// harness's enablement provider, so merge both sources when a provider is active.
 		// Also add back disabled items that the provider didn't include at all.
 		const disabledUris = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(promptType)
 			: this.promptsService.getDisabledPromptFiles(promptType);
-		if (disabledUris.size > 0) {
+		const extensionDisabledUris = this.enablementProvider
+			? this.promptsService.getDisabledPromptFiles(promptType)
+			: undefined;
+		if (disabledUris.size > 0 || (extensionDisabledUris && extensionDisabledUris.size > 0)) {
 			const existingUris = new ResourceSet(normalized.map(i => i.uri));
 			for (let i = 0; i < normalized.length; i++) {
-				if (!normalized[i].disabled && disabledUris.has(normalized[i].uri)) {
+				if (normalized[i].disabled) {
+					continue;
+				}
+				const isExtension = normalized[i].storage === PromptsStorage.extension;
+				const isDisabled = isExtension
+					? (extensionDisabledUris?.has(normalized[i].uri) ?? false)
+					: disabledUris.has(normalized[i].uri);
+				if (isDisabled) {
 					normalized[i] = { ...normalized[i], disabled: true };
 				}
 			}
