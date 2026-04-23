@@ -112,7 +112,6 @@ export interface ICopilotCLISessionService {
 export const ICopilotCLISessionService = createServiceIdentifier<ICopilotCLISessionService>('ICopilotCLISessionService');
 
 const SESSION_SHUTDOWN_TIMEOUT_MS = 300 * 1000;
-type LocalSessionWithTitleUpdates = Session & Pick<LocalSession, 'renameSession' | 'updateSessionSummary'>;
 
 export class CopilotCLISessionService extends Disposable implements ICopilotCLISessionService {
 	declare _serviceBrand: undefined;
@@ -1126,18 +1125,21 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}
 	}
 
-	private async updateSdkSessionMetadata(sessionId: string, operation: (sdkSession: LocalSessionWithTitleUpdates) => Promise<void>): Promise<void> {
+	private async updateSdkSessionMetadata(sessionId: string, title: string, operation: (sdkSession: LocalSession) => Promise<void>): Promise<void> {
 		let sessionManager: internal.LocalSessionManager | undefined;
 		let shouldCloseSession = false;
-		const sdkSession = (this._sessionWrappers.get(sessionId)?.object.sdkSession as LocalSessionWithTitleUpdates | undefined) ?? await (async () => {
+		const sdkSession = (this._sessionWrappers.get(sessionId)?.object.sdkSession as LocalSession | undefined) ?? await (async () => {
 			sessionManager = await this.getSessionManager();
-			const session = await sessionManager.getSession({ sessionId }, true) as LocalSessionWithTitleUpdates | undefined;
+			const session = await sessionManager.getSession({ sessionId }, true) as LocalSession | undefined;
 			shouldCloseSession = !!session;
 			return session;
 		})();
 
 		if (!sdkSession) {
-			throw new Error(`Failed to update missing Copilot CLI session ${sessionId}.`);
+			// SDK session not yet materialized (e.g. brand-new VS Code sessionId).
+			// Stage locally; `createSession` syncs it into the SDK once the session is created.
+			await this.customSessionTitleService.setCustomSessionTitle(sessionId, title);
+			return;
 		}
 
 		try {
@@ -1152,13 +1154,13 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	}
 
 	public async renameSession(sessionId: string, title: string): Promise<void> {
-		await this.updateSdkSessionMetadata(sessionId, sdkSession => sdkSession.renameSession(title));
+		await this.updateSdkSessionMetadata(sessionId, title, sdkSession => sdkSession.renameSession(title));
 		this._sessionLabels.delete(sessionId);
 		this._onDidChangeSessions.fire();
 	}
 
 	public async updateSessionSummary(sessionId: string, title: string): Promise<void> {
-		await this.updateSdkSessionMetadata(sessionId, sdkSession => sdkSession.updateSessionSummary(title));
+		await this.updateSdkSessionMetadata(sessionId, title, sdkSession => sdkSession.updateSessionSummary(title));
 		this._onDidChangeSessions.fire();
 	}
 }

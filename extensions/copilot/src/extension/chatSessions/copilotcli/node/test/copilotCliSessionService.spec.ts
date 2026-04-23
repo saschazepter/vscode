@@ -337,7 +337,7 @@ describe('CopilotCLISessionService', () => {
 	});
 
 	describe('CopilotCLISessionService.renameSession', () => {
-		it('renames an inactive session through copilot/sdk and stores the custom title', async () => {
+		it('renames an inactive session through copilot/sdk', async () => {
 			const sessionId = 'rename-inactive';
 			manager.sessions.set(sessionId, new MockCliSdkSession(sessionId, new Date()));
 
@@ -352,7 +352,7 @@ describe('CopilotCLISessionService', () => {
 
 			await service.renameSession(session.object.sessionId, 'Wrapped Session Name');
 
-			expect((session.object.sdkSession as MockCliSdkSession).title).toBe('Wrapped Session Name');
+			expect(manager.sessions.get(session.object.sessionId)?.title).toBe('Wrapped Session Name');
 			expect(await service.getSessionTitle(session.object.sessionId, CancellationToken.None)).toBe('Wrapped Session Name');
 			session.dispose();
 		});
@@ -373,7 +373,7 @@ describe('CopilotCLISessionService', () => {
 
 			const session = await service.createSession({ sessionId, ...sessionOptionsFor(URI.file('/tmp')) }, CancellationToken.None);
 
-			expect((session.object.sdkSession as MockCliSdkSession).summary).toBe('Staged Session Title');
+			expect(manager.sessions.get(sessionId)?.summary).toBe('Staged Session Title');
 			expect(await service.getSessionTitle(sessionId, CancellationToken.None)).toBe('Staged Session Title');
 			session.dispose();
 		});
