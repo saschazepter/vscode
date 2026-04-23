@@ -811,10 +811,6 @@ export class ChatEntitlementRequests extends Disposable {
 			quotas.overageEnabled = overageSource?.overage_permitted ?? false;
 			quotas.overageCount = overageSource?.overage_count ?? 0;
 		}
-
-		// DEBUG: Override quota values for testing. Uncomment and tweak as needed.
-		// quotas.overageEnabled = false;
-
 		return quotas;
 	}
 
