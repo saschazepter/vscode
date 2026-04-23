@@ -486,15 +486,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private _areCommandKeywordsEqual(a: readonly string[], b: readonly string[]): boolean {
-		if (a.length !== b.length) {
-			return false;
-		}
-		for (let i = 0; i < a.length; i++) {
-			if (a[i] !== b[i]) {
-				return false;
-			}
-		}
-		return true;
+		return a.length === b.length && a.every((keyword, index) => keyword === b[index]);
 	}
 
 	private async _isSandboxConfiguredEnabled(): Promise<boolean> {
