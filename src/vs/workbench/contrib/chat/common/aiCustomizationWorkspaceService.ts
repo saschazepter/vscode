@@ -25,6 +25,19 @@ export type AICustomizationPromptsStorage = PromptsStorage | 'builtin';
 export const BUILTIN_STORAGE: AICustomizationPromptsStorage = 'builtin';
 
 /**
+ * Group key used by harness item providers to surface customizations
+ * that originate from a remote agent host (e.g. Open Plugins expanded
+ * from {@link SessionCustomization} entries).
+ *
+ * Items with this `groupKey` are routed to the "Remote" group in the
+ * list widget, separately from local "Workspace" / "User" / "Plugins"
+ * groups. They retain a `storage` of {@link PromptsStorage.plugin} so
+ * existing read-only context-key checks (delete, edit) continue to
+ * apply.
+ */
+export const REMOTE_GROUP_KEY = 'remote';
+
+/**
  * Possible section IDs for the AI Customization Management Editor sidebar.
  */
 export const AICustomizationManagementSection = {

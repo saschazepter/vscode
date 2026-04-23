@@ -70,6 +70,12 @@ export const extensionIcon = registerIcon('ai-customization-extension', Codicon.
 export const pluginIcon = registerIcon('ai-customization-plugin', Codicon.plug, localize('aiCustomizationPluginIcon', "Icon for plugin-contributed items."));
 
 /**
+ * Icon for the "Remote" group — customizations served by an active
+ * agent host harness.
+ */
+export const remoteIcon = registerIcon('ai-customization-remote', Codicon.cloud, localize('aiCustomizationRemoteIcon', "Icon for remote agent host items."));
+
+/**
  * Icon for built-in storage.
  */
 export const builtinIcon = registerIcon('ai-customization-builtin', Codicon.starFull, localize('aiCustomizationBuiltinIcon', "Icon for built-in items."));

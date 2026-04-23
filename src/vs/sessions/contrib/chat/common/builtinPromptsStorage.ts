@@ -9,7 +9,7 @@ import { AICustomizationPromptsStorage } from '../../../../workbench/contrib/cha
 
 // Re-export from common for backward compatibility
 export type { AICustomizationPromptsStorage } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
-export { BUILTIN_STORAGE } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
+export { BUILTIN_STORAGE, REMOTE_GROUP_KEY } from '../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
 
 /**
  * Prompt path for built-in prompts bundled with the Agents app.

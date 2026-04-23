@@ -11,7 +11,7 @@ import { MenuId } from '../../../../../platform/actions/common/actions.js';
 // Re-export for convenience — consumers import from this file
 export { AICustomizationManagementSection } from '../../common/aiCustomizationWorkspaceService.js';
 export type { AICustomizationPromptsStorage } from '../../common/aiCustomizationWorkspaceService.js';
-export { BUILTIN_STORAGE } from '../../common/aiCustomizationWorkspaceService.js';
+export { BUILTIN_STORAGE, REMOTE_GROUP_KEY } from '../../common/aiCustomizationWorkspaceService.js';
 
 /**
  * Editor pane ID for the AI Customizations Management Editor.
@@ -105,6 +105,14 @@ export const AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY = 'aiCustomizationManagementIt
  * Context key indicating whether the item is disabled.
  */
 export const AI_CUSTOMIZATION_ITEM_DISABLED_KEY = 'aiCustomizationManagementItemDisabled';
+
+/**
+ * Context key for the item's group key (e.g. {@link REMOTE_GROUP_KEY}),
+ * used by menu when-clauses to hide actions on items that belong to
+ * groupings other than the natural storage groups (Workspace / User /
+ * Plugins / Extensions / Built-in). Empty string when no groupKey is set.
+ */
+export const AI_CUSTOMIZATION_ITEM_GROUP_KEY = 'aiCustomizationManagementItemGroupKey';
 
 /**
  * Context key indicating whether the active harness supports troubleshooting.

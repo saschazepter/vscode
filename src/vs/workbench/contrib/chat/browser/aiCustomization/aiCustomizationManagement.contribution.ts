@@ -43,6 +43,7 @@ import { IChatWidgetService } from '../chat.js';
 import { AgentPluginItemKind } from '../agentPluginEditor/agentPluginItems.js';
 import {
 	AI_CUSTOMIZATION_ITEM_DISABLED_KEY,
+	AI_CUSTOMIZATION_ITEM_GROUP_KEY,
 	AI_CUSTOMIZATION_ITEM_STORAGE_KEY,
 	AI_CUSTOMIZATION_ITEM_TYPE_KEY,
 	AI_CUSTOMIZATION_ITEM_URI_KEY,
@@ -53,6 +54,7 @@ import {
 	AICustomizationManagementItemMenuId,
 	AICustomizationManagementSection,
 	BUILTIN_STORAGE,
+	REMOTE_GROUP_KEY,
 } from './aiCustomizationManagement.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
@@ -464,18 +466,27 @@ registerAction2(class extends Action2 {
 });
 
 /**
- * When clause that hides an action for read-only (extension, plugin, built-in) items.
+ * When clause that hides an action for read-only items: extension-,
+ * plugin-, built-in-, and remote-AHP-served entries.
  */
 const WHEN_ITEM_IS_DELETABLE = ContextKeyExpr.and(
 	ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.extension),
 	ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.plugin),
 	ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, BUILTIN_STORAGE),
+	ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_GROUP_KEY, REMOTE_GROUP_KEY),
 );
 
 /**
- * When clause that shows an action only for plugin items.
+ * When clause that shows an action only for items that originate from a
+ * locally-installed plugin. Excludes remote-AHP-served children that
+ * borrow {@link PromptsStorage.plugin} as their storage but live under
+ * the {@link REMOTE_GROUP_KEY} group — those have no local plugin to
+ * uninstall or open, so plugin-specific actions would no-op.
  */
-const WHEN_ITEM_IS_PLUGIN = ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.plugin);
+const WHEN_ITEM_IS_PLUGIN = ContextKeyExpr.and(
+	ContextKeyExpr.equals(AI_CUSTOMIZATION_ITEM_STORAGE_KEY, PromptsStorage.plugin),
+	ContextKeyExpr.notEquals(AI_CUSTOMIZATION_ITEM_GROUP_KEY, REMOTE_GROUP_KEY),
+);
 
 // Register context menu items
 
