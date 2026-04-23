@@ -159,21 +159,7 @@ export default tseslint.config(
 				}
 			],
 			'jsdoc/no-types': 'warn',
-			'local/code-no-static-self-ref': 'warn'
-		}
-	},
-	// vscode TS
-	{
-		files: [
-			'src/**/*.ts',
-		],
-		languageOptions: {
-			parser: tseslint.parser,
-		},
-		plugins: {
-			'@typescript-eslint': tseslint.plugin,
-		},
-		rules: {
+			'local/code-no-static-self-ref': 'warn',
 			'@typescript-eslint/naming-convention': [
 				'warn',
 				{
@@ -695,6 +681,7 @@ export default tseslint.config(
 			'src/vs/workbench/contrib/search/browser/replace.ts',
 			'src/vs/workbench/contrib/search/browser/replaceService.ts',
 			'src/vs/workbench/contrib/search/browser/searchActionsCopy.ts',
+			'src/vs/workbench/contrib/search/browser/searchActionsBase.ts',
 			'src/vs/workbench/contrib/search/browser/searchActionsFind.ts',
 			'src/vs/workbench/contrib/search/browser/searchActionsNav.ts',
 			'src/vs/workbench/contrib/search/browser/searchActionsRemoveReplace.ts',
@@ -1618,6 +1605,16 @@ export default tseslint.config(
 					]
 				},
 				{
+					'target': 'src/vs/platform/agentHost/node/diffWorkerMain.ts',
+					'layer': 'node',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/common/diff/**', // diffing logic used by the agent host
+					]
+				},
+				{
 					'target': 'src/vs/platform/*/~',
 					'restrictions': [
 						'vs/base/~',
@@ -1900,7 +1897,8 @@ export default tseslint.config(
 						'vs/workbench/api/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/workbench/contrib/terminal/terminal.all.js'
+						'vs/workbench/contrib/terminal/terminal.all.js',
+						'vs/sessions/common/theme.js' // side-effect import for color registry
 					]
 				},
 				{

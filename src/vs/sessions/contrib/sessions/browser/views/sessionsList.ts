@@ -29,7 +29,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { ServiceCollection } from '../../../../../platform/instantiation/common/serviceCollection.js';
 import { WorkbenchObjectTree } from '../../../../../platform/list/browser/listService.js';
-import { IStyleOverride, defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { IStyleOverride, defaultButtonStyles, defaultFindWidgetStyles, defaultToggleStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { CopilotCLISessionType, GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
@@ -41,6 +41,9 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
+import { IAgentSessionsService } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { ISessionsListModelService } from './sessionsListModelService.js';
+import { IAgentHostFilterService } from '../../../remoteAgentHost/common/agentHostFilter.js';
 
 const $ = DOM.$;
 
@@ -165,12 +168,13 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 	readonly onDidChangeItemHeight: Event<ISession> = this._onDidChangeItemHeight.event;
 
 	constructor(
-		private readonly options: { grouping: () => SessionsGrouping; sorting: () => SessionsSorting; isPinned: (session: ISession) => boolean },
+		private readonly options: { grouping: () => SessionsGrouping; sorting: () => SessionsSorting; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean },
 		private readonly approvalModel: AgentSessionApprovalModel | undefined,
 		private readonly instantiationService: IInstantiationService,
 		private readonly contextKeyService: IContextKeyService,
 		private readonly markdownRendererService: IMarkdownRendererService,
 		private readonly hoverService: IHoverService,
+		private readonly agentSessionsService: IAgentSessionsService,
 	) { }
 
 	renderTemplate(container: HTMLElement): ISessionItemTemplate {
@@ -211,6 +215,12 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 	private renderSession(element: ISession, template: ISessionItemTemplate, matches?: IMatch[]): void {
 		template.elementDisposables.clear();
 
+		// Trigger lazy resolve for expensive session properties (e.g. changes)
+		// so that providers which populate them on demand deliver fresh data
+		// by the time the row renders. Only fires for sessions that become
+		// visible in the viewport (O(visible rows), not O(all sessions)).
+		this.agentSessionsService.model.observeSession(element.resource);
+
 		// Toolbar context
 		template.titleToolbar.context = element;
 
@@ -218,7 +228,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		const isPinned = this.options.isPinned(element);
 		IsSessionPinnedContext.bindTo(template.contextKeyService).set(isPinned);
 		IsSessionArchivedContext.bindTo(template.contextKeyService).set(element.isArchived.get());
-		IsSessionReadContext.bindTo(template.contextKeyService).set(element.isRead.get());
+		IsSessionReadContext.bindTo(template.contextKeyService).set(this.options.isRead(element));
 
 		// Pinned & archived styling — reactive
 		template.elementDisposables.add(autorun(reader => {
@@ -228,11 +238,10 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			template.container.classList.toggle('pinned', isPinned && !isArchived);
 		}));
 
-
 		// Icon — reactive based on status, read state, and PR
 		template.elementDisposables.add(autorun(reader => {
 			const sessionStatus = element.status.read(reader);
-			const isRead = element.isRead.read(reader);
+			const isRead = this.options.isRead(element);
 			const isArchived = element.isArchived.read(reader);
 			const gitHubInfo = element.gitHubInfo.read(reader);
 			DOM.clearNode(template.iconContainer);
@@ -240,6 +249,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			const iconSpan = DOM.append(template.iconContainer, $(`span${ThemeIcon.asCSSSelector(icon)}`));
 			iconSpan.style.color = icon.color ? asCssVariable(icon.color.id) : '';
 			template.iconContainer.classList.toggle('session-icon-pulse', sessionStatus === SessionStatus.NeedsInput);
+			template.container.classList.toggle('in-progress', sessionStatus === SessionStatus.InProgress);
 		}));
 
 		// Title — reactive
@@ -456,7 +466,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 
 	private getStatusIcon(status: SessionStatus, isRead: boolean, isArchived: boolean, pullRequestIcon?: ThemeIcon): ThemeIcon {
 		switch (status) {
-			case SessionStatus.InProgress: return { ...Codicon.sessionInProgress, color: themeColorFromId('textLink.foreground') };
+			case SessionStatus.InProgress: return { ...ThemeIcon.modify(Codicon.loading, 'spin'), color: themeColorFromId('textLink.foreground') };
 			case SessionStatus.NeedsInput: return { ...Codicon.circleFilled, color: themeColorFromId('list.warningForeground') };
 			case SessionStatus.Error: return { ...Codicon.error, color: themeColorFromId('errorForeground') };
 			default:
@@ -612,6 +622,7 @@ export interface ISessionsListControlOptions {
 	readonly overrideStyles?: IStyleOverride<IListStyles>;
 	readonly grouping: () => SessionsGrouping;
 	readonly sorting: () => SessionsSorting;
+	readonly findWidgetContainer?: HTMLElement;
 	onSessionOpen(resource: URI, preserveFocus: boolean): void;
 }
 
@@ -623,8 +634,14 @@ export type ISessionsListOptions = ISessionsListControlOptions;
 export interface ISessionsList {
 	readonly element: HTMLElement;
 	readonly onDidUpdate: Event<void>;
+	readonly onDidChangeFindOpenState: Event<boolean>;
 	refresh(): void;
 	reveal(sessionResource: URI): boolean;
+	/**
+	 * Returns the sessions currently visible in the list, in display order.
+	 * Sessions hidden by workspace group capping ("show more") are excluded.
+	 */
+	getVisibleSessions(): readonly ISession[];
 	clearFocus(): void;
 	hasFocusOrSelection(): boolean;
 	setVisible(visible: boolean): void;
@@ -632,6 +649,7 @@ export interface ISessionsList {
 	focus(): void;
 	update(expandAll?: boolean): void;
 	openFind(): void;
+	closeFind(): void;
 	resetSectionCollapseState(): void;
 	pinSession(session: ISession): void;
 	unpinSession(session: ISession): void;
@@ -647,12 +665,12 @@ export interface ISessionsList {
 	resetFilters(): void;
 	setWorkspaceGroupCapped(capped: boolean): void;
 	isWorkspaceGroupCapped(): boolean;
+	collapseAllSections(): void;
 }
 
 export class SessionsList extends Disposable implements ISessionsList {
 
 	private static readonly SECTION_COLLAPSE_STATE_KEY = 'sessionsListControl.sectionCollapseState';
-	private static readonly PINNED_SESSIONS_KEY = 'sessionsListControl.pinnedSessions';
 	private static readonly EXCLUDED_TYPES_KEY = 'sessionsListControl.excludedSessionTypes';
 	private static readonly EXCLUDED_STATUSES_KEY = 'sessionsListControl.excludedStatuses';
 	private static readonly EXCLUDE_ARCHIVED_KEY = 'sessionsListControl.excludeArchived';
@@ -664,7 +682,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 	private readonly tree: WorkbenchObjectTree<SessionListItem, FuzzyScore>;
 	private sessions: ISession[] = [];
 	private visible = true;
-	private readonly _pinnedSessionIds: Set<string>;
 	private readonly excludedSessionTypes: Set<string>;
 	private readonly excludedStatuses: Set<SessionStatus>;
 	private _excludeArchived: boolean;
@@ -672,9 +689,13 @@ export class SessionsList extends Disposable implements ISessionsList {
 	private workspaceGroupCapped: boolean;
 	private readonly expandedWorkspaceGroups = new Set<string>();
 	private findOpen = false;
+	private suspendCollapseStatePersistence = false;
 
 	private readonly _onDidUpdate = this._register(new Emitter<void>());
 	readonly onDidUpdate: Event<void> = this._onDidUpdate.event;
+
+	private readonly _onDidChangeFindOpenState = this._register(new Emitter<boolean>());
+	readonly onDidChangeFindOpenState: Event<boolean> = this._onDidChangeFindOpenState.event;
 
 	get element(): HTMLElement { return this.listContainer; }
 
@@ -682,6 +703,8 @@ export class SessionsList extends Disposable implements ISessionsList {
 		container: HTMLElement,
 		private readonly options: ISessionsListControlOptions,
 		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
+		@ISessionsListModelService private readonly _sessionsListModelService: ISessionsListModelService,
+		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IStorageService private readonly storageService: IStorageService,
@@ -690,9 +713,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 	) {
 		super();
-
-		// Load pinned sessions from storage
-		this._pinnedSessionIds = this.loadPinnedSessions();
 
 		// Load excluded session types from storage
 		this.excludedSessionTypes = this.loadExcludedSessionTypes();
@@ -710,13 +730,15 @@ export class SessionsList extends Disposable implements ISessionsList {
 		const approvalModel = this._register(instantiationService.createInstance(AgentSessionApprovalModel));
 		const markdownRendererService = instantiationService.invokeFunction(accessor => accessor.get(IMarkdownRendererService));
 		const hoverService = instantiationService.invokeFunction(accessor => accessor.get(IHoverService));
+		const agentSessionsService = instantiationService.invokeFunction(accessor => accessor.get(IAgentSessionsService));
 		const sessionRenderer = new SessionItemRenderer(
-			{ grouping: this.options.grouping, sorting: this.options.sorting, isPinned: s => this.isSessionPinned(s) },
+			{ grouping: this.options.grouping, sorting: this.options.sorting, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s) },
 			approvalModel,
 			instantiationService,
 			contextKeyService,
 			markdownRendererService,
 			hoverService,
+			agentSessionsService,
 		);
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
@@ -751,6 +773,14 @@ export class SessionsList extends Disposable implements ISessionsList {
 				indent: 0,
 				findWidgetEnabled: true,
 				defaultFindMode: TreeFindMode.Filter,
+				findWidgetContainer: this.options.findWidgetContainer,
+				findWidgetStyles: {
+					...defaultFindWidgetStyles,
+					toggleStyles: {
+						...defaultToggleStyles,
+						inputActiveOptionBorder: 'transparent',
+					},
+				},
 				keyboardNavigationLabelProvider: {
 					getKeyboardNavigationLabel: (element: SessionListItem) => {
 						if (isSessionSection(element)) {
@@ -779,6 +809,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 				return;
 			}
 			if (!isSessionSection(element)) {
+				this.markRead(element);
 				this.options.onSessionOpen(element.resource, e.editorOptions.preserveFocus ?? false);
 			}
 		}));
@@ -792,6 +823,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 		this._register(this.tree.onContextMenu(e => this.onContextMenu(e)));
 
 		this._register(this.tree.onDidChangeCollapseState(e => {
+			if (this.suspendCollapseStatePersistence) {
+				return;
+			}
 			const element = e.node.element;
 			if (element && isSessionSection(element)) {
 				this.saveSectionCollapseState(element.id, e.node.collapsed);
@@ -800,6 +834,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		this._register(this.tree.onDidChangeFindOpenState(open => {
 			this.findOpen = open;
+			this._onDidChangeFindOpenState.fire(open);
 			this.update();
 		}));
 
@@ -809,10 +844,26 @@ export class SessionsList extends Disposable implements ISessionsList {
 			}
 		}));
 
+		this._register(this._sessionsListModelService.onDidChange(() => {
+			if (this.visible) {
+				this.update();
+			}
+		}));
+
+		this._register(this._agentHostFilterService.onDidChange(() => {
+			if (this.visible) {
+				this.update();
+			}
+		}));
+
 		// Re-update when the active session changes so that a filtered-out
-		// session becomes visible while active and hides again when unselected
+		// session becomes visible while active and hides again when unselected.
+		// Also mark the newly active session as read.
 		this._register(autorun(reader => {
-			this._sessionsManagementService.activeSession.read(reader);
+			const activeSession = this._sessionsManagementService.activeSession.read(reader);
+			if (activeSession) {
+				this._sessionsListModelService.markRead(activeSession);
+			}
 			if (this.visible) {
 				this.update();
 			}
@@ -831,6 +882,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		// Filter by session type and status
 		let filtered = this.sessions;
+		const hostFilter = this._agentHostFilterService.selectedProviderId;
+		if (hostFilter !== undefined) {
+			filtered = filtered.filter(s => s.providerId === hostFilter);
+		}
 		if (this.excludedSessionTypes.size > 0) {
 			filtered = filtered.filter(s => !this.excludedSessionTypes.has(s.sessionType));
 		}
@@ -841,7 +896,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 			filtered = filtered.filter(s => !s.isArchived.get());
 		}
 		if (this._excludeRead) {
-			filtered = filtered.filter(s => !s.isRead.get());
+			filtered = filtered.filter(s => !this.isSessionRead(s));
 		}
 
 		// Always include the active session even if it was filtered out,
@@ -853,46 +908,16 @@ export class SessionsList extends Disposable implements ISessionsList {
 			}
 		}
 
-		const sorted = this.sortSessions(filtered);
-
-		// Separate pinned and archived sessions (archived always wins over pinned)
-		const pinned: ISession[] = [];
-		const archived: ISession[] = [];
-		const regular: ISession[] = [];
-		for (const session of sorted) {
-			if (session.isArchived.get()) {
-				archived.push(session);
-			} else if (this.isSessionPinned(session)) {
-				pinned.push(session);
-			} else {
-				regular.push(session);
-			}
-		}
-
 		const grouping = this.options.grouping();
-		const sections: ISessionSection[] = [];
-
-		// Group remaining non-archived sessions
-		const grouped = grouping === SessionsGrouping.Workspace
-			? this.groupByWorkspace(regular)
-			: this.groupByDate(regular);
-		sections.push(...grouped);
-
-		// Add archived section at the bottom
-		if (archived.length > 0) {
-			sections.push({ id: 'archived', label: localize('archived', "Done"), sessions: archived });
-		}
+		const sections = groupSessionsForList(filtered, grouping, this.options.sorting(), session => this.isSessionPinned(session));
 
 		const hasTodaySessions = sections.some(s => s.id === 'today' && s.sessions.length > 0);
 
-		// Pinned sessions appear flat at the top (no section header)
-		const children: IObjectTreeElement<SessionListItem>[] = [
-			...pinned.map(session => ({ element: session as SessionListItem })),
-		];
+		const children: IObjectTreeElement<SessionListItem>[] = [];
 
 		children.push(...sections.map(section => {
 			const isWorkspaceGroup = grouping === SessionsGrouping.Workspace
-				&& section.id !== 'archived';
+				&& section.id.startsWith('workspace:');
 			const isCapped = isWorkspaceGroup && this.workspaceGroupCapped
 				&& !this.findOpen
 				&& !this.expandedWorkspaceGroups.has(section.label)
@@ -932,6 +957,36 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		this.tree.setChildren(null, children);
 		this._onDidUpdate.fire();
+	}
+
+	getVisibleSessions(): readonly ISession[] {
+		// Derive the visible session list from the tree model so that index-based
+		// navigation matches what the user actually sees: this respects collapsed
+		// sections, find-widget filtering, and excludes section / show-more nodes.
+		const sessions = new Set<ISession>(this.sessions);
+		const visibleSessions: ISession[] = [];
+
+		const collect = (node: ITreeNode<SessionListItem | null, FuzzyScore | undefined>): void => {
+			if (!node.visible) {
+				return;
+			}
+			if (node.element && sessions.has(node.element as ISession)) {
+				visibleSessions.push(node.element as ISession);
+			}
+			if (node.collapsed) {
+				return;
+			}
+			for (const child of node.children) {
+				collect(child);
+			}
+		};
+
+		const root = this.tree.getNode();
+		for (const child of root.children) {
+			collect(child);
+		}
+
+		return visibleSessions;
 	}
 
 	reveal(sessionResource: URI): boolean {
@@ -976,10 +1031,18 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 	focus(): void {
 		this.tree.domFocus();
+
+		if (this.tree.getFocus().length === 0) {
+			this.tree.focusFirst();
+		}
 	}
 
 	openFind(): void {
 		this.tree.openFind();
+	}
+
+	closeFind(): void {
+		this.tree.closeFind();
 	}
 
 	// Context menu
@@ -996,7 +1059,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		const contextOverlay: [string, boolean | string][] = [
 			[IsSessionPinnedContext.key, this.isSessionPinned(element)],
 			[IsSessionArchivedContext.key, element.isArchived.get()],
-			[IsSessionReadContext.key, element.isRead.get()],
+			[IsSessionReadContext.key, this.isSessionRead(element)],
 			['chatSessionType', element.sessionType],
 			[ChatSessionProviderIdContext.key, element.providerId],
 		];
@@ -1019,42 +1082,29 @@ export class SessionsList extends Disposable implements ISessionsList {
 	// -- Pinning --
 
 	pinSession(session: ISession): void {
-		this._pinnedSessionIds.add(session.sessionId);
-		this.savePinnedSessions();
-		this.update();
+		this._sessionsListModelService.pinSession(session);
 	}
 
 	unpinSession(session: ISession): void {
-		this._pinnedSessionIds.delete(session.sessionId);
-		this.savePinnedSessions();
-		this.update();
+		this._sessionsListModelService.unpinSession(session);
 	}
 
 	isSessionPinned(session: ISession): boolean {
-		return this._pinnedSessionIds.has(session.sessionId);
+		return this._sessionsListModelService.isSessionPinned(session);
 	}
 
-	private loadPinnedSessions(): Set<string> {
-		const raw = this.storageService.get(SessionsList.PINNED_SESSIONS_KEY, StorageScope.PROFILE);
-		if (raw) {
-			try {
-				const arr = JSON.parse(raw);
-				if (Array.isArray(arr)) {
-					return new Set(arr);
-				}
-			} catch {
-				// ignore corrupt data
-			}
-		}
-		return new Set();
+	// -- Read/Unread --
+
+	markRead(session: ISession): void {
+		this._sessionsListModelService.markRead(session);
 	}
 
-	private savePinnedSessions(): void {
-		if (this._pinnedSessionIds.size === 0) {
-			this.storageService.remove(SessionsList.PINNED_SESSIONS_KEY, StorageScope.PROFILE);
-		} else {
-			this.storageService.store(SessionsList.PINNED_SESSIONS_KEY, JSON.stringify([...this._pinnedSessionIds]), StorageScope.PROFILE, StorageTarget.USER);
-		}
+	markUnread(session: ISession): void {
+		this._sessionsListModelService.markUnread(session);
+	}
+
+	isSessionRead(session: ISession): boolean {
+		return this._sessionsListModelService.isSessionRead(session);
 	}
 
 	// -- Session type filtering --
@@ -1187,6 +1237,16 @@ export class SessionsList extends Disposable implements ISessionsList {
 		return this.workspaceGroupCapped;
 	}
 
+	collapseAllSections(): void {
+		this.suspendCollapseStatePersistence = true;
+		try {
+			this.tree.collapseAll();
+		} finally {
+			this.suspendCollapseStatePersistence = false;
+		}
+		this.saveBulkCollapseState(true);
+	}
+
 	// -- Section collapse persistence --
 
 	private getSavedCollapseState(sectionId: string): boolean | undefined {
@@ -1221,21 +1281,16 @@ export class SessionsList extends Disposable implements ISessionsList {
 		this.storageService.store(SessionsList.SECTION_COLLAPSE_STATE_KEY, JSON.stringify(state), StorageScope.PROFILE, StorageTarget.USER);
 	}
 
-	// -- Sorting --
-
-	private sortSessions(sessions: ISession[]): ISession[] {
-		return sortSessions(sessions, this.options.sorting());
+	private saveBulkCollapseState(collapsed: boolean): void {
+		const state: Record<string, boolean> = {};
+		for (const child of this.tree.getNode(null).children) {
+			if (child.element && isSessionSection(child.element)) {
+				state[child.element.id] = collapsed;
+			}
+		}
+		this.storageService.store(SessionsList.SECTION_COLLAPSE_STATE_KEY, JSON.stringify(state), StorageScope.PROFILE, StorageTarget.USER);
 	}
 
-	// -- Grouping --
-
-	private groupByWorkspace(sessions: ISession[]): ISessionSection[] {
-		return groupByWorkspace(sessions);
-	}
-
-	private groupByDate(sessions: ISession[]): ISessionSection[] {
-		return groupByDate(sessions, this.options.sorting());
-	}
 }
 
 //#endregion
@@ -1264,6 +1319,44 @@ export function sortSessions(sessions: ISession[], sorting: SessionsSorting): IS
 		}
 		return b.createdAt.getTime() - a.createdAt.getTime();
 	});
+}
+
+export function groupSessionsForList(
+	sessions: ISession[],
+	grouping: SessionsGrouping,
+	sorting: SessionsSorting,
+	isSessionPinned: (session: ISession) => boolean,
+): ISessionSection[] {
+	const sorted = sortSessions(sessions, sorting);
+
+	// Archived always wins over pinned so done sessions stay grouped together.
+	const pinned: ISession[] = [];
+	const archived: ISession[] = [];
+	const regular: ISession[] = [];
+	for (const session of sorted) {
+		if (session.isArchived.get()) {
+			archived.push(session);
+		} else if (isSessionPinned(session)) {
+			pinned.push(session);
+		} else {
+			regular.push(session);
+		}
+	}
+
+	const sections: ISessionSection[] = [];
+	if (pinned.length > 0) {
+		sections.push({ id: 'pinned', label: localize('pinned', "Pinned"), sessions: pinned });
+	}
+
+	sections.push(...(grouping === SessionsGrouping.Workspace
+		? groupByWorkspace(regular)
+		: groupByDate(regular, sorting)));
+
+	if (archived.length > 0) {
+		sections.push({ id: 'archived', label: localize('archived', "Done"), sessions: archived });
+	}
+
+	return sections;
 }
 
 export function groupByWorkspace(sessions: ISession[]): ISessionSection[] {
