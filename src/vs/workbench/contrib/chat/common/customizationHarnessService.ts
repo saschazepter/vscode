@@ -411,7 +411,7 @@ function buildAllSources(extras: readonly string[]): readonly string[] {
  * Creates a "VS Code" harness descriptor that shows all storage sources
  * with no user-root restrictions.
  */
-export function createVSCodeHarnessDescriptor(extras: readonly string[]): IHarnessDescriptor {
+export function createVSCodeHarnessDescriptor(extras: readonly string[], enablementProvider?: ICustomizationEnablementProvider): IHarnessDescriptor {
 	const filter: IStorageSourceFilter = { sources: buildAllSources(extras) };
 	return {
 		id: CustomizationHarness.VSCode,
@@ -424,6 +424,7 @@ export function createVSCodeHarnessDescriptor(extras: readonly string[]): IHarne
 			}],
 		]),
 		getStorageSourceFilter: () => filter,
+		enablementProvider,
 	};
 }
 

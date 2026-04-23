@@ -439,8 +439,10 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// When plugin is set, enablement targets the plugin — always use global scope
-		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? 'none');
+		// When plugin is set, enablement targets the plugin — always use global scope.
+		// When the harness has an enablement provider, items are disableable even without per-item scope.
+		const harnessDefault = descriptor.enablementProvider ? 'workspace' : 'none';
+		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? harnessDefault);
 		const isDisableable = !!element.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
@@ -784,8 +786,10 @@ export class AICustomizationListWidget extends Disposable {
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// When plugin is set, enablement targets the plugin — always use global scope
-		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? 'none');
+		// When plugin is set, enablement targets the plugin — always use global scope.
+		// When the harness has an enablement provider, items are disableable even without per-item scope.
+		const harnessDefault = descriptor.enablementProvider ? 'workspace' : 'none';
+		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? harnessDefault);
 		const isDisableable = !!item.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
