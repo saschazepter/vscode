@@ -182,6 +182,27 @@ function extractPluginUri(context: AICustomizationContext): URI | undefined {
 }
 
 /**
+ * Extracts the serialized plugin info from context, if present.
+ */
+function extractPlugin(context: AICustomizationContext): { uri: URI; type: string; name: string } | undefined {
+	if (URI.isUri(context) || typeof context === 'string') {
+		return undefined;
+	}
+	const raw = context.plugin;
+	if (!raw || typeof raw !== 'object') {
+		return undefined;
+	}
+	const plugin = raw as Record<string, unknown>;
+	const uri = typeof plugin.uri === 'string' ? URI.parse(plugin.uri) : undefined;
+	const type = typeof plugin.type === 'string' ? plugin.type : undefined;
+	const name = typeof plugin.name === 'string' ? plugin.name : undefined;
+	if (!uri || !type || !name) {
+		return undefined;
+	}
+	return { uri, type, name };
+}
+
+/**
  * Extracts the item name from context.
  */
 function extractName(context: AICustomizationContext): string | undefined {
@@ -754,6 +775,16 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
+		// When this item has a parent plugin, disable the plugin instead
+		const plugin = extractPlugin(context);
+		if (plugin) {
+			const enablementProvider = harnessService.getActiveEnablementProvider();
+			if (enablementProvider) {
+				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, false);
+			}
+			return;
+		}
+
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		if (enablementProvider) {
 			enablementProvider.setEnabled(uri, promptType, false);
@@ -813,6 +844,16 @@ registerAction2(class extends Action2 {
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
 		if (!promptType) {
+			return;
+		}
+
+		// When this item has a parent plugin, enable the plugin instead
+		const plugin = extractPlugin(context);
+		if (plugin) {
+			const enablementProvider = harnessService.getActiveEnablementProvider();
+			if (enablementProvider) {
+				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, true);
+			}
 			return;
 		}
 

@@ -15,6 +15,7 @@ import { URI } from '../../../../util/vs/base/common/uri';
 import { CLIAgentInfo, ICopilotCLIAgents } from '../../copilotcli/node/copilotCli';
 import { CopilotCLICustomizationProvider } from '../copilotCLICustomizationProvider';
 import { MockPromptsService } from '../../../../platform/promptFiles/test/common/mockPromptsService';
+import { INativeEnvService } from '../../../../platform/env/common/envService';
 
 class FakeChatSessionCustomizationType {
 	static readonly Agent = new FakeChatSessionCustomizationType('agent');
@@ -119,7 +120,7 @@ describe('CopilotCLICustomizationProvider', () => {
 			new TestLogService(),
 			{ getWorkspaceFolders: () => [] } as any,
 			{ stat: () => Promise.reject(new Error('not found')) } as any,
-			{ userHome: URI.file('/home/testuser') } as any,
+			{ userHome: URI.file('/home/testuser') } as unknown as INativeEnvService,
 		));
 	});
 
@@ -341,7 +342,7 @@ describe('CopilotCLICustomizationProvider', () => {
 						? Promise.resolve({ type: 1, ctime: 0, mtime: 0, size: 0 })
 						: Promise.reject(new Error('not found')),
 				} as any,
-				{ userHome: URI.file('/home/testuser') } as any,
+				{ userHome: URI.file('/home/testuser') } as unknown as INativeEnvService,
 			));
 
 			mockPromptsService.setInstructions([]);

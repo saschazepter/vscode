@@ -734,7 +734,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 				if (!items) {
 					return undefined;
 				}
-				return items.map((item: IChatSessionCustomizationItemDto): ICustomizationItem => ({
+				const convertItem = (item: IChatSessionCustomizationItemDto): ICustomizationItem => ({
 					uri: URI.revive(item.uri),
 					type: item.type,
 					name: item.name,
@@ -743,7 +743,10 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					badge: item.badge,
 					badgeTooltip: item.badgeTooltip,
 					enabled: item.enabled,
-				}));
+					enablementScope: item.enablementScope,
+					plugin: item.plugin ? convertItem(item.plugin) : undefined,
+				});
+				return items.map(convertItem);
 			},
 		};
 
@@ -804,8 +807,6 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			}),
 			itemProvider,
 			enablementProvider,
-			enablementScope: metadata.enablementScope,
-			disableableTypes: metadata.disableableTypes ? new Set(metadata.disableableTypes) : undefined,
 		};
 
 		const registration = this._customizationHarnessService.registerExternalHarness(descriptor);

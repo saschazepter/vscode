@@ -67,6 +67,10 @@ export interface IAICustomizationListItem {
 	readonly status?: 'loading' | 'loaded' | 'degraded' | 'error';
 	/** Human-readable status detail (e.g. error message or warning). */
 	readonly statusMessage?: string;
+	/** Per-item enablement scope override. When absent, falls back to the harness-level enablementScope. */
+	readonly enablementScope?: 'none' | 'global' | 'workspace';
+	/** Optional reference to the parent plugin item. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
+	readonly plugin?: ICustomizationItem;
 	/** When true, this item can be selected for syncing to a remote harness. */
 	readonly syncable?: boolean;
 	/** When true, this syncable item is currently selected for syncing. */
@@ -224,6 +228,8 @@ export class AICustomizationItemNormalizer {
 			extensionLabel,
 			status: item.status,
 			statusMessage: item.statusMessage,
+			enablementScope: item.enablementScope,
+			plugin: item.plugin,
 		};
 	}
 

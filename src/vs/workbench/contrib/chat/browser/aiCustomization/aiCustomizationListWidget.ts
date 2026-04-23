@@ -22,7 +22,7 @@ import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../.
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon, pluginIcon, builtinIcon } from './aiCustomizationIcons.js';
-import { AI_CUSTOMIZATION_ITEM_STORAGE_KEY, AI_CUSTOMIZATION_ITEM_TYPE_KEY, AI_CUSTOMIZATION_ITEM_URI_KEY, AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY, AICustomizationManagementItemMenuId, AICustomizationManagementCreateMenuId, AICustomizationManagementSection, BUILTIN_STORAGE, AI_CUSTOMIZATION_ITEM_DISABLED_KEY, AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY } from './aiCustomizationManagement.js';
+import { AI_CUSTOMIZATION_ITEM_STORAGE_KEY, AI_CUSTOMIZATION_ITEM_TYPE_KEY, AI_CUSTOMIZATION_ITEM_URI_KEY, AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY, AICustomizationManagementItemMenuId, AICustomizationManagementCreateMenuId, AICustomizationManagementSection, BUILTIN_STORAGE, AI_CUSTOMIZATION_ITEM_DISABLED_KEY, AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY } from './aiCustomizationManagement.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
@@ -434,18 +434,22 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			storage: element.storage,
 			pluginUri: element.pluginUri?.toString(),
 			itemId: element.id,
+			plugin: element.plugin ? { uri: element.plugin.uri.toString(), type: element.plugin.type, name: element.plugin.name } : undefined,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		const isDisableable = !descriptor.disableableTypes || descriptor.disableableTypes.has(element.promptType);
+		// When plugin is set, enablement targets the plugin — always use global scope
+		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace'));
+		const isDisableable = !!element.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, element.uri.toString()],
 			[AI_CUSTOMIZATION_ITEM_DISABLED_KEY, element.disabled],
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
-			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, descriptor.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace')],
+			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
 			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!element.plugin],
 		];
 		if (element.storage) {
 			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, element.storage]);
@@ -775,18 +779,22 @@ export class AICustomizationListWidget extends Disposable {
 			storage: item.storage,
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
+			plugin: item.plugin ? { uri: item.plugin.uri.toString(), type: item.plugin.type, name: item.plugin.name } : undefined,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		const isDisableable = !descriptor.disableableTypes || descriptor.disableableTypes.has(item.promptType);
+		// When plugin is set, enablement targets the plugin — always use global scope
+		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace'));
+		const isDisableable = !!item.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, item.uri.toString()],
 			[AI_CUSTOMIZATION_ITEM_DISABLED_KEY, item.disabled],
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
-			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, descriptor.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace')],
+			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
 			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.plugin],
 		];
 		if (item.storage) {
 			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, item.storage]);

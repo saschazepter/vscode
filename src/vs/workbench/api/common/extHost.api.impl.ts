@@ -2158,6 +2158,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			ChatLocation: extHostTypes.ChatLocation,
 			ChatSessionStatus: extHostTypes.ChatSessionStatus,
 			ChatSessionCustomizationType: extHostTypes.ChatSessionCustomizationType,
+			ChatSessionCustomizationEnablementScope: extHostTypes.ChatSessionCustomizationEnablementScope,
 			ChatDebugLogLevel: extHostTypes.ChatDebugLogLevel,
 			ChatDebugToolCallResult: extHostTypes.ChatDebugToolCallResult,
 			ChatDebugHookResult: extHostTypes.ChatDebugHookResult,

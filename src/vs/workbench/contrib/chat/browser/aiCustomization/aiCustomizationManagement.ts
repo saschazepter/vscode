@@ -123,6 +123,11 @@ export const AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY = 'aiCustomizationManagementE
 export const AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY = 'aiCustomizationManagementItemDisableable';
 
 /**
+ * Context key indicating whether the current item has a parent plugin (from provider).
+ */
+export const AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY = 'aiCustomizationManagementItemHasPlugin';
+
+/**
  * Storage key for persisting the selected section.
  */
 export const AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY = 'aiCustomizationManagement.selectedSection';

@@ -35,11 +35,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				vscode.ChatSessionCustomizationType.Hook,
 				vscode.ChatSessionCustomizationType.Plugins,
 			].filter((t): t is vscode.ChatSessionCustomizationType => t !== undefined),
-			disableableTypes: [
-				vscode.ChatSessionCustomizationType.Skill,
-				vscode.ChatSessionCustomizationType.Hook,
-				vscode.ChatSessionCustomizationType.Plugins,
-			].filter((t): t is vscode.ChatSessionCustomizationType => t !== undefined),
 		};
 	}
 
@@ -100,6 +95,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			type: vscode.ChatSessionCustomizationType.Agent,
 			name: agent.displayName || agent.name,
 			description: agent.description,
+			enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 		}));
 	}
 
@@ -141,6 +137,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				type: vscode.ChatSessionCustomizationType.Instructions,
 				name: basename(uri),
 				groupKey: 'agent-instructions',
+				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 			});
 		}
 
@@ -173,6 +170,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					groupKey: 'context-instructions',
 					badge,
 					badgeTooltip,
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			} else {
 				items.push({
@@ -181,6 +179,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					name,
 					description,
 					groupKey: 'on-demand-instructions',
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			}
 		}

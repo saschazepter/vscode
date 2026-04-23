@@ -10,7 +10,7 @@ import { ILogService } from '../../../platform/log/common/logService';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
-import { basename } from '../../../util/vs/base/common/resources';
+import { basename, dirname } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
 import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
@@ -57,6 +57,16 @@ interface MatcherConfig {
 
 interface HooksSettings {
 	readonly hooks?: Partial<Record<string, MatcherConfig[]>>;
+}
+
+/**
+ * Shape of `.claude/settings.json` fields relevant to enablement.
+ */
+interface ClaudeSettings {
+	readonly skillOverrides?: Record<string, 'on' | 'name-only' | 'user-invocable-only' | 'off'>;
+	readonly claudeMdExcludes?: string[];
+	readonly disableAllHooks?: boolean;
+	[key: string]: unknown;
 }
 
 export class ClaudeCustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
@@ -108,6 +118,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				type: vscode.ChatSessionCustomizationType.Agent,
 				name: agent.name,
 				description: agent.description,
+				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				// No groupKey — vscode infers Built-in from non-file: scheme
 			});
 		}
@@ -121,6 +132,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 						uri: agent.uri,
 						type: vscode.ChatSessionCustomizationType.Agent,
 						name,
+						enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 					});
 				}
 			}
@@ -130,18 +142,23 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this.logService.debug(`[ClaudeCustomizationProvider] agents (${agentItems.length}): ${agentItems.map(a => a.name).join(', ') || '(none)'}${sdkAgents.length ? ' [sdk]' : ' [files-only, no session]'}`);
 
 		// Instructions from hard-coded CLAUDE.md paths (checked for existence)
-		const instructionItems = await this.discoverInstructions();
+		const settings = await this._readSettings();
+		const instructionItems = await this.discoverInstructions(settings);
 		items.push(...instructionItems);
 		this.logService.debug(`[ClaudeCustomizationProvider] instructions (${instructionItems.length}): ${instructionItems.map(i => i.name).join(', ') || '(none)'}`);
 
 		// Skills from .claude/skills/ directories (user-defined SKILL.md files)
+		const skillOverrides = settings.skillOverrides ?? {};
 		const skillItems: vscode.ChatSessionCustomizationItem[] = [];
 		for (const skill of await this.promptsService.getSkills(token)) {
 			if (this.isClaudePath(skill.uri)) {
+				const folderName = basename(dirname(skill.uri)) || basename(skill.uri);
+				const override = skillOverrides[folderName];
 				const item: vscode.ChatSessionCustomizationItem = {
 					uri: skill.uri,
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
+					enabled: override !== 'off',
 				};
 				skillItems.push(item);
 			}
@@ -150,7 +167,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this.logService.debug(`[ClaudeCustomizationProvider] skills (${skillItems.length}): ${skillItems.map(s => s.name).join(', ') || '(none)'}`);
 
 		// Hooks from .claude/settings.json files
-		const hookItems = await this.discoverHooks();
+		const hookItems = await this.discoverHooks(settings);
 		items.push(...hookItems);
 		this.logService.debug(`[ClaudeCustomizationProvider] hooks (${hookItems.length}): ${hookItems.map(h => h.name).join(', ') || '(none)'}`);
 
@@ -158,9 +175,10 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		return items;
 	}
 
-	private async discoverInstructions(): Promise<vscode.ChatSessionCustomizationItem[]> {
+	private async discoverInstructions(settings: ClaudeSettings): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: vscode.ChatSessionCustomizationItem[] = [];
 		const candidates: URI[] = [];
+		const excludes = settings.claudeMdExcludes ?? [];
 
 		for (const folder of this.workspaceService.getWorkspaceFolders()) {
 			for (const entry of WORKSPACE_INSTRUCTION_PATHS) {
@@ -179,10 +197,15 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		for (const uri of candidates) {
 			if (await this.fileExists(uri)) {
 				const name = basename(uri).replace(/\.md$/i, '');
+				const excluded = excludes.some(pattern => this._matchesExclude(uri, pattern));
 				items.push({
 					uri,
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
+					enablementScope: excluded
+						? vscode.ChatSessionCustomizationEnablementScope.Global
+						: vscode.ChatSessionCustomizationEnablementScope.None,
+					enabled: !excluded,
 				});
 			}
 		}
@@ -199,20 +222,21 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		}
 	}
 
-	private async discoverHooks(): Promise<vscode.ChatSessionCustomizationItem[]> {
+	private async discoverHooks(settings: ClaudeSettings): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: vscode.ChatSessionCustomizationItem[] = [];
 		const settingsPaths = this.getSettingsFilePaths();
+		const allHooksDisabled = settings.disableAllHooks === true;
 
 		for (const settingsUri of settingsPaths) {
 			try {
 				const content = await this.fileSystemService.readFile(settingsUri);
-				const settings: HooksSettings = JSON.parse(new TextDecoder().decode(content));
-				if (!settings.hooks) {
+				const fileSettings: HooksSettings = JSON.parse(new TextDecoder().decode(content));
+				if (!fileSettings.hooks) {
 					continue;
 				}
 
 				for (const eventId of HOOK_EVENT_IDS) {
-					const matchers = settings.hooks[eventId];
+					const matchers = fileSettings.hooks[eventId];
 					if (!matchers || matchers.length === 0) {
 						continue;
 					}
@@ -225,6 +249,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								type: vscode.ChatSessionCustomizationType.Hook,
 								name: `${eventId}${matcherLabel}`,
 								description: hook.command,
+								enabled: !allHooksDisabled,
+								// Individual hooks can't be toggled — only disableAllHooks
+								enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 							});
 						}
 					}
@@ -272,6 +299,93 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		}
 
 		return false;
+	}
+
+	// --- Settings ---
+
+	/**
+	 * Path to the user-level claude settings file (`~/.claude/settings.json`).
+	 */
+	private get _settingsUri(): URI {
+		return URI.joinPath(this.envService.userHome, '.claude', 'settings.json');
+	}
+
+	/**
+	 * Reads the user-level `~/.claude/settings.json` as a typed object.
+	 * Returns an empty object if the file doesn't exist or can't be parsed.
+	 */
+	private async _readSettings(): Promise<ClaudeSettings> {
+		try {
+			const bytes = await this.fileSystemService.readFile(this._settingsUri);
+			const parsed = JSON.parse(new TextDecoder().decode(bytes));
+			return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+		} catch {
+			return {};
+		}
+	}
+
+	/**
+	 * Writes the user-level `~/.claude/settings.json`.
+	 */
+	private async _writeSettings(settings: ClaudeSettings): Promise<void> {
+		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
+		await this.fileSystemService.writeFile(this._settingsUri, content);
+	}
+
+	/**
+	 * Checks whether a URI matches a claudeMdExcludes pattern.
+	 * Patterns can be absolute paths or simple glob-like suffixes.
+	 */
+	private _matchesExclude(uri: URI, pattern: string): boolean {
+		const uriPath = uri.path;
+		// Absolute path match
+		if (pattern.startsWith('/') && !pattern.includes('*')) {
+			return uriPath === pattern;
+		}
+		// Simple suffix/glob match: strip leading **/ and check endsWith
+		const suffix = pattern.replace(/^\*\*\//, '');
+		if (suffix !== pattern && !suffix.includes('*')) {
+			return uriPath.endsWith('/' + suffix) || uriPath === suffix;
+		}
+		// Exact match fallback
+		return uriPath === pattern;
+	}
+
+	// --- Enablement ---
+
+	async resolveCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _token: vscode.CancellationToken): Promise<void> {
+		const settings = { ...await this._readSettings() };
+
+		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
+			// skillOverrides: Record<string, 'on' | 'name-only' | 'user-invocable-only' | 'off'>
+			const folderName = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
+			const overrides = { ...settings.skillOverrides ?? {} };
+			if (enabled) {
+				delete overrides[folderName];
+			} else {
+				overrides[folderName] = 'off';
+			}
+			(settings as Record<string, unknown>).skillOverrides = Object.keys(overrides).length > 0 ? overrides : undefined;
+		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id) {
+			// claudeMdExcludes: string[] of absolute paths or glob patterns
+			const uriPath = URI.from(uri).path;
+			const currentExcludes = [...(settings.claudeMdExcludes ?? [])];
+			if (enabled) {
+				(settings as Record<string, unknown>).claudeMdExcludes = currentExcludes.filter(p => !this._matchesExclude(URI.from(uri), p));
+			} else {
+				if (!currentExcludes.some(p => this._matchesExclude(URI.from(uri), p))) {
+					currentExcludes.push(uriPath);
+					(settings as Record<string, unknown>).claudeMdExcludes = currentExcludes;
+				}
+			}
+		} else {
+			this.logService.warn(`[ClaudeCustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
+			return;
+		}
+
+		await this._writeSettings(settings);
+		this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${this._settingsUri.toString()}`);
+		this._onDidChange.fire();
 	}
 }
 

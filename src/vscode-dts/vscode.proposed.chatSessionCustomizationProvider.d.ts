@@ -75,24 +75,6 @@ declare module 'vscode' {
 		 * when this provider is active. When omitted, all sections are shown.
 		 */
 		readonly supportedTypes?: readonly ChatSessionCustomizationType[];
-
-		/**
-		 * Controls which disablement actions are available in the management UI.
-		 *
-		 * When omitted, defaults to {@link ChatSessionCustomizationEnablementScope.Global} if
-		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement} is implemented,
-		 * or {@link ChatSessionCustomizationEnablementScope.Workspace} otherwise (built-in
-		 * storage supports both scopes).
-		 */
-		readonly enablementScope?: ChatSessionCustomizationEnablementScope;
-
-		/**
-		 * Customization types for which per-item disable/enable is supported.
-		 * When set, only items matching one of these types will show disable/enable
-		 * actions in the management UI. When omitted, all types are disableable
-		 * (subject to {@link enablementScope}).
-		 */
-		readonly disableableTypes?: readonly ChatSessionCustomizationType[];
 	}
 
 	/**
@@ -145,6 +127,30 @@ declare module 'vscode' {
 		 * Defaults to `true` when omitted.
 		 */
 		readonly enabled?: boolean;
+
+		/**
+		 * Controls which disablement actions are available for this item.
+		 *
+		 * When omitted, defaults to {@link ChatSessionCustomizationEnablementScope.Global} if
+		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement} is implemented,
+		 * or {@link ChatSessionCustomizationEnablementScope.Workspace} otherwise (built-in
+		 * storage supports both scopes).
+		 *
+		 * Ignored when {@link plugin} is set — plugin items always use global-scope
+		 * enablement targeting the plugin itself.
+		 */
+		readonly enablementScope?: ChatSessionCustomizationEnablementScope;
+
+		/**
+		 * Optional reference to the parent plugin of this customization item.
+		 *
+		 * When set, all enable/disable actions for this item target the plugin
+		 * instead of the individual item, and the item's own
+		 * {@link enablementScope} is ignored. The plugin item is itself a
+		 * {@link ChatSessionCustomizationItem} so it can be passed directly to
+		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement}.
+		 */
+		readonly plugin?: ChatSessionCustomizationItem;
 	}
 
 	/**

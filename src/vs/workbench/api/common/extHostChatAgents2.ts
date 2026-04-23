@@ -485,6 +485,11 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	private readonly _promptFileProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider | vscode.ChatHookProvider }>();
 
 	private static _customizationProviderIdPool = 0;
+	private static readonly _enablementScopeMap: Record<number, 'none' | 'global' | 'workspace'> = {
+		0: 'none',  // ChatSessionCustomizationEnablementScope.None
+		1: 'global', // ChatSessionCustomizationEnablementScope.Global
+		2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
+	};
 	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider }>();
 
 	private readonly _sessionDisposables: DisposableResourceMap<DisposableStore> = this._register(new DisposableResourceMap());
@@ -787,17 +792,10 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		const handle = ExtHostChatAgents2._customizationProviderIdPool++;
 		this._customizationProviders.set(handle, { extension, provider });
 
-		const enablementScopeMap: Record<number, 'none' | 'global' | 'workspace'> = {
-			0: 'none',  // ChatSessionCustomizationEnablementScope.None
-			1: 'global', // ChatSessionCustomizationEnablementScope.Global
-			2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
-		};
 		const metadataDto: IChatSessionCustomizationProviderMetadataDto = {
 			label: metadata.label,
 			iconId: metadata.iconId,
 			supportedTypes: metadata.supportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
-			enablementScope: metadata.enablementScope !== undefined ? enablementScopeMap[metadata.enablementScope] : undefined,
-			disableableTypes: metadata.disableableTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
 		};
 
 		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier, typeof provider.resolveCustomizationEnablement === 'function');
@@ -830,7 +828,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				return undefined;
 			}
 
-			return items.map(item => ({
+			const convertItem = (item: vscode.ChatSessionCustomizationItem): IChatSessionCustomizationItemDto => ({
 				uri: item.uri,
 				type: typeConvert.ChatSessionCustomizationType.from(item.type),
 				name: item.name,
@@ -839,7 +837,11 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				badge: item.badge,
 				badgeTooltip: item.badgeTooltip,
 				enabled: item.enabled,
-			}));
+				enablementScope: item.enablementScope !== undefined ? ExtHostChatAgents2._enablementScopeMap[item.enablementScope] : undefined,
+				plugin: item.plugin ? convertItem(item.plugin) : undefined,
+			});
+
+			return items.map(convertItem);
 		} catch (err) {
 			return undefined;
 		}

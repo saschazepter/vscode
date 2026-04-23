@@ -144,20 +144,6 @@ export interface IHarnessDescriptor {
 	 * the management UI falls back to promptsService (StorageService).
 	 */
 	readonly enablementProvider?: ICustomizationEnablementProvider;
-	/**
-	 * Controls which disablement actions are available in the management UI.
-	 * - `'none'` — No disable/enable actions are shown.
-	 * - `'global'` — A single "Disable" / "Enable" action is shown.
-	 * - `'workspace'` — Both "Disable" and "Disable (Workspace)" actions are shown.
-	 *
-	 * Defaults to `'global'` when an enablementProvider is set, `'workspace'` otherwise.
-	 */
-	readonly enablementScope?: 'none' | 'global' | 'workspace';
-	/**
-	 * When set, only items whose type is in this set will show disable/enable
-	 * actions. When absent, all types are disableable (subject to enablementScope).
-	 */
-	readonly disableableTypes?: ReadonlySet<string>;
 }
 
 /**
@@ -178,12 +164,16 @@ export interface ICustomizationItem {
 	readonly statusMessage?: string;
 	/** Whether this customization is currently enabled. */
 	readonly enabled?: boolean;
+	/** Per-item enablement scope override. When absent, falls back to the harness-level enablementScope. */
+	readonly enablementScope?: 'none' | 'global' | 'workspace';
 	/** When set, items with the same groupKey are displayed under a shared collapsible header. */
 	readonly groupKey?: string;
 	/** When set, shows a small inline badge next to the item name (e.g. an applyTo glob pattern). */
 	readonly badge?: string;
 	/** Tooltip shown when hovering the badge. */
 	readonly badgeTooltip?: string;
+	/** Optional reference to the parent plugin. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
+	readonly plugin?: ICustomizationItem;
 }
 
 /**
