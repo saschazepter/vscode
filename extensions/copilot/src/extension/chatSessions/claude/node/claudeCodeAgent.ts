@@ -440,7 +440,7 @@ export class ClaudeCodeSession extends Disposable {
 				plugins.push({ type: 'local', path: pluginLocation.fsPath });
 			}
 			if (plugins.length > 0) {
-				this.logService.info(`[ClaudeCodeSession] Passing ${plugins.length} plugin(s) from skill locations: [${plugins.map(p => p.path).join(', ')}]`);
+				this.logService.info(`[ClaudeCodeSession] Passing ${plugins.length} plugin(s) from skill locations`);
 			}
 		} catch (error) {
 			const errorMessage = error instanceof Error ? (error.stack ?? error.message) : String(error);

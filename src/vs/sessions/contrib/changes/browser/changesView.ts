@@ -200,6 +200,7 @@ class ChangesButtonBarWidget extends Disposable {
 			action.id === 'github.copilot.sessions.commit' ||
 			action.id === 'github.copilot.claude.sessions.initializeRepository' ||
 			action.id === 'github.copilot.claude.sessions.commit' ||
+			action.id === 'github.copilot.claude.sessions.commitAndSync' ||
 			action.id === 'agentSession.markAsDone'
 		) {
 			return { showIcon: true, showLabel: true, isSecondary: false };
