@@ -30,6 +30,7 @@ import { isUntitledSessionId } from '../common/utils';
 import { isWelcomeView } from '../copilotcli/node/copilotCli';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
+import { ISessionWorkingDirectoryStore } from '../common/sessionWorkingDirectoryStore';
 
 /**
  * Message shown when user needs to trust a folder to continue.
@@ -67,6 +68,7 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 		protected readonly workspaceService: IWorkspaceService,
 		protected readonly logService: ILogService,
 		protected readonly toolsService: IToolsService,
+		protected readonly sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
 
 	) {
 		super();
@@ -211,7 +213,8 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 
 			// If we're in a single folder workspace, possible the user has opened the worktree folder directly.
 			if (sessionId && folderUri) {
-				worktreeProperties = await this.worktreeService.getWorktreeProperties(folderUri);
+				const worktreeSessionIds = this.sessionWorkingDirectoryStore.getWorktreeSessions(folderUri);
+				worktreeProperties = worktreeSessionIds.length ? await this.worktreeService.getWorktreeProperties(worktreeSessionIds[0]) : undefined;
 				worktree = worktreeProperties ? vscode.Uri.file(worktreeProperties.worktreePath) : undefined;
 				repositoryUri = worktreeProperties ? vscode.Uri.file(worktreeProperties.repositoryPath) : repositoryUri;
 			}
@@ -239,7 +242,8 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 
 			// If we're in a single folder workspace, possible the user has opened the worktree folder directly.
 			if (sessionId && folderUri) {
-				worktreeProperties = await this.worktreeService.getWorktreeProperties(folderUri);
+				const worktreeSessionIds = this.sessionWorkingDirectoryStore.getWorktreeSessions(folderUri);
+				worktreeProperties = worktreeSessionIds.length ? await this.worktreeService.getWorktreeProperties(worktreeSessionIds[0]) : undefined;
 				worktree = worktreeProperties ? vscode.Uri.file(worktreeProperties.worktreePath) : undefined;
 				repositoryUri = worktreeProperties ? vscode.Uri.file(worktreeProperties.repositoryPath) : repositoryUri;
 			}
@@ -855,9 +859,10 @@ export class CopilotCLIFolderRepositoryManager extends FolderRepositoryManager {
 		@IWorkspaceService workspaceService: IWorkspaceService,
 		@ILogService logService: ILogService,
 		@IToolsService toolsService: IToolsService,
-		@IFileSystemService private readonly fileSystem: IFileSystemService
+		@IFileSystemService private readonly fileSystem: IFileSystemService,
+		@ISessionWorkingDirectoryStore sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
 	) {
-		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService);
+		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, sessionWorkingDirectoryStore);
 	}
 
 	/**
@@ -898,9 +903,10 @@ export class ClaudeFolderRepositoryManager extends FolderRepositoryManager {
 		@ILogService logService: ILogService,
 		@IToolsService toolsService: IToolsService,
 		@IClaudeSessionStateService private readonly sessionStateService: IClaudeSessionStateService,
-		@IFileSystemService private readonly fileSystem: IFileSystemService
+		@IFileSystemService private readonly fileSystem: IFileSystemService,
+		@ISessionWorkingDirectoryStore sessionWorkingDirectoryStore: ISessionWorkingDirectoryStore
 	) {
-		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService);
+		super(worktreeService, workspaceFolderService, gitService, workspaceService, logService, toolsService, sessionWorkingDirectoryStore);
 	}
 
 	/**

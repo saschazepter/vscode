@@ -6,6 +6,7 @@
 import type { Uri } from 'vscode';
 import { createServiceIdentifier } from '../../../util/common/services';
 import { ResourceMap } from '../../../util/vs/base/common/map';
+import { ChatSessionWorktreeProperties } from './chatSessionWorktreeService';
 
 interface SessionEntry {
 	readonly folder: Uri;
@@ -16,6 +17,7 @@ export const ISessionWorkingDirectoryStore = createServiceIdentifier<ISessionWor
 export interface ISessionWorkingDirectoryStore {
 	readonly _serviceBrand: undefined;
 	getSessionIdsForFolder(folder: Uri): string[];
+	getWorktreeSessions(folder: Uri): string[];
 	addEntry(sessionId: string, folder: Uri, folderKind: 'worktree' | 'folder'): void;
 }
 
@@ -37,6 +39,20 @@ export class SessionWorkingDirectoryStore implements ISessionWorkingDirectorySto
 		return Array.from(sessionIds);
 	}
 
+	getWorktreeSessions(folder: Uri): string[] {
+		const sessionIds = new Set<string>();
+		const entry = this._byFolder.get(folder);
+		if (entry) {
+			for (const sessionId of entry) {
+				const sessionEntry = this._byId.get(sessionId);
+				if (sessionEntry?.folderKind === 'worktree') {
+					sessionIds.add(sessionId);
+				}
+			}
+		}
+		return Array.from(sessionIds);
+	}
+
 	addEntry(sessionId: string, folder: Uri, folderKind: 'worktree' | 'folder'): void {
 		if (!this._byId.get(sessionId)) {
 			this._byId.set(sessionId, { folder, folderKind });
@@ -44,26 +60,5 @@ export class SessionWorkingDirectoryStore implements ISessionWorkingDirectorySto
 		const folderEntry = this._byFolder.get(folder) ?? new Set<string>();
 		folderEntry.add(sessionId);
 		this._byFolder.set(folder, folderEntry);
-	}
-
-	deleteEntry(sessionId: string): void {
-		const entry = this._byId.get(sessionId);
-		if (!entry) {
-			return;
-		}
-		const folderEntry = this._byFolder.get(entry.folder);
-		this._byId.delete(sessionId);
-		if (!folderEntry) {
-			return;
-		}
-		folderEntry.delete(sessionId);
-		if (folderEntry.size === 0) {
-			this._byFolder.delete(entry.folder);
-		}
-	}
-
-	clear(): void {
-		this._byId.clear();
-		this._byFolder.clear();
 	}
 }
