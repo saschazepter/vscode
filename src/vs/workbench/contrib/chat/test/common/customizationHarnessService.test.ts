@@ -29,7 +29,7 @@ suite('CustomizationHarnessService', () => {
 	}
 
 	suite('registerExternalHarness', () => {
-		test('forwards item provider changes via onDidChangeCustomizations with sessionType', () => {
+		test('forwards item provider changes via onDidChangeSlashCommands with sessionType', () => {
 			const service = createService();
 			const emitter = new Emitter<void>();
 			store.add(emitter);
