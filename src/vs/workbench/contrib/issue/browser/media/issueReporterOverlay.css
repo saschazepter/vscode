@@ -105,6 +105,103 @@
 	outline: none;
 }
 
+/* Segmented screenshot button */
+.wizard-segmented-btn {
+	display: flex;
+	align-items: stretch;
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.wizard-segmented-main {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 10px;
+	cursor: pointer;
+	font-size: 12px;
+	border-radius: 4px 0 0 4px;
+	color: var(--vscode-button-foreground, #fff);
+	background: var(--vscode-button-background, #0e639c);
+	border: 1px solid var(--vscode-button-background, #0e639c);
+	border-right: none;
+}
+
+.wizard-segmented-main:hover {
+	background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.wizard-segmented-main > * {
+	display: flex;
+	align-items: center;
+}
+
+.wizard-segmented-dropdown {
+	display: flex;
+	align-items: center;
+	padding: 3px 4px;
+	cursor: pointer;
+	border-radius: 0 4px 4px 0;
+	color: var(--vscode-button-foreground, #fff);
+	background: var(--vscode-button-background, #0e639c);
+	border: 1px solid var(--vscode-button-background, #0e639c);
+	border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.wizard-segmented-dropdown:hover {
+	background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.wizard-segmented-dropdown > * {
+	display: flex;
+	align-items: center;
+}
+
+.wizard-segmented-delay-label {
+	font-size: 11px;
+	color: var(--vscode-button-foreground, #fff);
+	background: var(--vscode-button-background, #0e639c);
+	padding: 1px 5px;
+	border-radius: 8px;
+	margin-left: -6px;
+	margin-right: 2px;
+	position: relative;
+	top: -8px;
+	font-weight: 600;
+}
+
+/* Delay dropdown menu */
+.wizard-delay-menu {
+	position: absolute;
+	top: 100%;
+	right: 0;
+	margin-top: 4px;
+	background: var(--vscode-menu-background, var(--vscode-editor-background, #252526));
+	border: 1px solid var(--vscode-menu-border, var(--vscode-input-border, #444));
+	border-radius: 4px;
+	box-shadow: var(--vscode-shadow-lg, 0 2px 8px rgba(0, 0, 0, 0.4));
+	z-index: 10;
+	min-width: 140px;
+	padding: 4px 0;
+}
+
+.wizard-delay-menu-item {
+	padding: 4px 12px;
+	font-size: 12px;
+	cursor: pointer;
+	color: var(--vscode-menu-foreground, var(--vscode-foreground, #ccc));
+	white-space: nowrap;
+}
+
+.wizard-delay-menu-item:hover {
+	background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08)));
+	color: var(--vscode-menu-selectionForeground, var(--vscode-foreground, #fff));
+}
+
+.wizard-delay-menu-item.selected {
+	font-weight: 600;
+}
+
 /* Recording state in floating bar */
 .wizard-floating-bar .wizard-nav-btn.recording {
 	color: var(--vscode-testing-iconErrored, #f14c4c);
@@ -494,6 +591,18 @@
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--vscode-foreground, #ccc);
+	margin-top: 8px;
+	margin-bottom: 4px;
+	display: block;
+}
+
+.wizard-field-label:first-child {
+	margin-top: 0;
+}
+
+.wizard-describe-content {
+	display: flex;
+	flex-direction: column;
 }
 
 .wizard-title-input {

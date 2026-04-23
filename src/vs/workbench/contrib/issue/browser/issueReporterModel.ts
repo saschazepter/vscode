@@ -145,16 +145,12 @@ ${this.getInfos()}
 			return info;
 		}
 
-		const isBugOrPerformanceIssue = this._data.issueType === IssueType.Bug || this._data.issueType === IssueType.PerformanceIssue;
+		if (this._data.includeExtensionData && this._data.extensionData) {
+			info += this.getExtensionData();
+		}
 
-		if (isBugOrPerformanceIssue) {
-			if (this._data.includeExtensionData && this._data.extensionData) {
-				info += this.getExtensionData();
-			}
-
-			if (this._data.includeSystemInfo && this._data.systemInfo) {
-				info += this.generateSystemInfoMd();
-			}
+		if (this._data.includeSystemInfo && this._data.systemInfo) {
+			info += this.generateSystemInfoMd();
 		}
 
 		if (this._data.issueType === IssueType.PerformanceIssue) {
@@ -167,14 +163,12 @@ ${this.getInfos()}
 			}
 		}
 
-		if (isBugOrPerformanceIssue) {
-			if (!this._data.fileOnExtension && this._data.includeExtensions) {
-				info += this.generateExtensionsMd();
-			}
+		if (!this._data.fileOnExtension && this._data.includeExtensions) {
+			info += this.generateExtensionsMd();
+		}
 
-			if (this._data.includeExperiments && this._data.experimentInfo) {
-				info += this.generateExperimentsInfoMd();
-			}
+		if (this._data.includeExperiments && this._data.experimentInfo) {
+			info += this.generateExperimentsInfoMd();
 		}
 
 		return info;
