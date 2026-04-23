@@ -309,14 +309,18 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	) {
 		super();
 
-		// Sessions-scoped mobile viewport tweaks. These are applied here
-		// (rather than in the shared workbench.html) so that the regular
-		// code-web workbench — which does not handle safe-area insets — is
-		// not affected on notched mobile devices.
+		// Sessions-scoped mobile viewport tweaks. Applied here rather than
+		// in the shared `workbench.html` so that the regular code-web
+		// workbench — which does not handle safe-area insets — is not
+		// affected on notched mobile devices. The viewport meta tag lives
+		// in `workbench.html` and cannot be constructed via dom.ts h(),
+		// so iterating pre-existing head children is the correct approach.
 		// eslint-disable-next-line no-restricted-syntax
-		const viewportMeta = mainWindow.document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
-		if (viewportMeta && !viewportMeta.content.includes('viewport-fit=')) {
-			viewportMeta.content = `${viewportMeta.content}, viewport-fit=cover`;
+		for (const meta of mainWindow.document.head.getElementsByTagName('meta')) {
+			if (meta.name === 'viewport' && !meta.content.includes('viewport-fit=')) {
+				meta.content = `${meta.content}, viewport-fit=cover`;
+				break;
+			}
 		}
 
 		// Perf: measure workbench startup time
