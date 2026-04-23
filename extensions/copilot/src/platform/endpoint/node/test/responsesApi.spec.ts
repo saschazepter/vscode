@@ -1184,3 +1184,71 @@ describe('summarizedAtRoundId and stateful marker interaction', () => {
 		services.dispose();
 	});
 });
+
+describe('phase commentary followed by phase final', () => {
+	it('inserts a separator between commentary and final text in the stream', async () => {
+		const services = createPlatformServices();
+		const accessor = services.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const logService = accessor.get(ILogService);
+		const telemetryService = new SpyingTelemetryService();
+		const accumulatedTexts: string[] = [];
+		const phases: string[] = [];
+
+		// Simulate streaming events: commentary message item, then final message item
+		const events = [
+			{ type: 'response.output_item.added', output_index: 0, item: { type: 'message', role: 'assistant', content: [] } },
+			{ type: 'response.output_text.delta', output_index: 0, item_id: 'item-0', content_index: 0, delta: 'Commentary text.', logprobs: [] },
+			{ type: 'response.output_item.done', output_index: 0, item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Commentary text.' }], phase: 'commentary' } },
+			{ type: 'response.output_item.added', output_index: 1, item: { type: 'message', role: 'assistant', content: [] } },
+			{ type: 'response.output_text.delta', output_index: 1, item_id: 'item-1', content_index: 0, delta: 'Final text.', logprobs: [] },
+			{ type: 'response.output_item.done', output_index: 1, item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Final text.' }], phase: 'final' } },
+			{
+				type: 'response.completed',
+				response: {
+					id: 'resp_phase_test',
+					model: 'gpt-5-mini',
+					created_at: 123,
+					usage: { input_tokens: 10, output_tokens: 8, total_tokens: 18, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+					output: [
+						{ type: 'message', content: [{ type: 'output_text', text: 'Commentary text.' }], phase: 'commentary' },
+						{ type: 'message', content: [{ type: 'output_text', text: 'Final text.' }], phase: 'final' },
+					],
+				}
+			}
+		];
+
+		const sseBody = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
+		const response = createFakeStreamResponse(sseBody);
+		const telemetryData = TelemetryData.createAndMarkAsIssued({ modelCallId: 'model-call-phase-test' }, {});
+
+		const stream = await processResponseFromChatEndpoint(
+			instantiationService,
+			telemetryService,
+			logService,
+			response,
+			1,
+			async (text, _unused, delta) => {
+				accumulatedTexts.push(text);
+				if (delta.phase) {
+					phases.push(delta.phase);
+				}
+				return undefined;
+			},
+			telemetryData,
+		);
+
+		for await (const _ of stream) {
+			// consume stream
+		}
+
+		// The accumulated text must not directly concatenate commentary and final text
+		const finalAccumulatedText = accumulatedTexts[accumulatedTexts.length - 1];
+		expect(finalAccumulatedText).toContain('Commentary text.');
+		expect(finalAccumulatedText).toContain('Final text.');
+		expect(finalAccumulatedText).not.toBe('Commentary text.Final text.');
+
+		accessor.dispose();
+		services.dispose();
+	});
+});
