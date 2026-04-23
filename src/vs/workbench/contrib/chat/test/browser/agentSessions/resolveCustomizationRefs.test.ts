@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { type ICustomizationRef } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { type CustomizationRef } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { resolveCustomizationRefs } from '../../../browser/agentSessions/agentHost/agentHostChatContribution.js';
 import { IAgentPlugin } from '../../../common/plugins/agentPluginService.js';
@@ -16,7 +16,7 @@ interface IBundleCall {
 	readonly files: readonly { uri: URI; type: PromptsType }[];
 }
 
-function makeBundler(ref: ICustomizationRef = { uri: 'vscode-synced-customization:///test/' as ProtocolURI, displayName: 'bundle' }) {
+function makeBundler(ref: CustomizationRef = { uri: 'vscode-synced-customization:///test/' as ProtocolURI, displayName: 'bundle' }) {
 	const calls: IBundleCall[] = [];
 	const bundler = {
 		async bundle(files: readonly { uri: URI; type: PromptsType }[]) {
