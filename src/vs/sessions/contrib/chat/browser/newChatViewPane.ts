@@ -86,9 +86,25 @@ class NewChatWidget extends Disposable {
 
 		this._newChatInput.render(chatWidgetContent, parent);
 
-		// Create initial session — wait for providers if none registered yet
+		// Create initial session — wait for providers if none registered yet.
+		// Skip if an active session already exists (restored by openNewSessionView
+		// from a pending new session when navigating back from another session).
 		const restoredProject = this._workspacePicker.selectedProject;
-		if (restoredProject) {
+		const activeSession = this.sessionsManagementService.activeSession.get();
+		if (activeSession) {
+			// Pending session was restored — sync the workspace picker to match
+			// the session's workspace. The picker may have restored a workspace
+			// from a different provider (e.g. remote vs local), so overwrite it
+			// with the session's actual workspace without firing the event (which
+			// would trigger _onWorkspaceSelected and create a new session).
+			const sessionWorkspace = activeSession.workspace.get();
+			if (sessionWorkspace) {
+				this._workspacePicker.setSelectedWorkspace(
+					{ providerId: activeSession.providerId, workspace: sessionWorkspace },
+					/* fireEvent */ false,
+				);
+			}
+		} else if (restoredProject) {
 			if (this.sessionsProvidersService.getProviders().length > 0) {
 				this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
 			} else {
