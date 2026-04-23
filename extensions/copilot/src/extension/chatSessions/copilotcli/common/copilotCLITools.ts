@@ -1741,5 +1741,5 @@ export class FakeToolsService implements IToolsService {
  * We need to ensure these user.messages are not treated as regular user messages in the UI, which could cause confusion as they may not be directly from the user.
  */
 export function isSyntheticUserMessage(event: Extract<SessionEvent, { type: 'user.message' }>): boolean {
-	return event.type === 'user.message' && (!event.data.source || (event.data.source ?? '').toLowerCase() === 'user');
+	return event.type === 'user.message' && !!event.data.source && (event.data.source ?? '').toLowerCase() !== 'user';
 }
