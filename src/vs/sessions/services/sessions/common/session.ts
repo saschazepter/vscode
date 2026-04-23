@@ -51,11 +51,12 @@ export const ClaudeCodeSessionType: ISessionType = {
 };
 
 /**
- * Returns whether the given session type represents a local agent
- * that operates on a workspace (e.g. Copilot CLI, Claude Code).
+ * Returns whether the given session type represents a workspace-backed
+ * agent (e.g. Copilot CLI, Claude Code) that operates on a worktree or
+ * repository — regardless of whether the agent runs locally or remotely.
  * TODO: Somehow make this contributable so we don't have to hardcode session types here.
  */
-export function isLocalAgentSessionType(sessionType: string | undefined): boolean {
+export function isWorkspaceAgentSessionType(sessionType: string | undefined): boolean {
 	return sessionType === COPILOT_CLI_SESSION_TYPE || sessionType === CLAUDE_CODE_SESSION_TYPE;
 }
 
