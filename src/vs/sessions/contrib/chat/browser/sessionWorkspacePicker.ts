@@ -86,6 +86,15 @@ export class WorkspacePicker extends Disposable {
 
 	private _selectedWorkspace: IWorkspaceSelection | undefined;
 
+	/**
+	 * Set to `true` once the user has explicitly picked or cleared a workspace.
+	 * Until then, late-arriving provider registrations are allowed to upgrade
+	 * the current (auto-restored) selection to the user's stored "checked"
+	 * entry. After the user has acted, providers coming and going never moves
+	 * the selection out from under them.
+	 */
+	private _userHasPicked = false;
+
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 	private readonly _connectionStatusListener = this._register(new MutableDisposable());
@@ -133,10 +142,12 @@ export class WorkspacePicker extends Disposable {
 				}
 			}
 			// If the user's last-selected (checked) entry just became resolvable
-			// and we're either unselected or sitting on a different workspace,
-			// switch to the checked entry.
+			// and we're either unselected or sitting on a fallback the user
+			// hasn't confirmed yet, switch to the checked entry. After the
+			// user has explicitly picked, never move the selection from under
+			// them due to background provider registration changes.
 			const checked = this._restoreCheckedWorkspace();
-			if (checked && !this._isSelectedWorkspace(checked)) {
+			if (checked && !this._isSelectedWorkspace(checked) && (!this._selectedWorkspace || !this._userHasPicked)) {
 				this._selectedWorkspace = checked;
 				this._updateTriggerLabel();
 				this._onDidChangeSelection.fire();
@@ -271,6 +282,7 @@ export class WorkspacePicker extends Disposable {
 	 */
 	clearSelection(): void {
 		this.actionWidgetService.hide();
+		this._userHasPicked = true;
 		this._selectedWorkspace = undefined;
 		// Clear checked state from all recents
 		const recents = this._getStoredRecentWorkspaces();
@@ -290,6 +302,7 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	private _selectProject(selection: IWorkspaceSelection, fireEvent = true): void {
+		this._userHasPicked = true;
 		this._selectedWorkspace = selection;
 		this._persistSelectedWorkspace(selection);
 		this._updateTriggerLabel();

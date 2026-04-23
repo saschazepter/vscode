@@ -396,4 +396,37 @@ suite('WorkspacePicker - Connection Status', () => {
 
 		assertSelectedProvider(picker, 'local-agent-host', 'Stored workspace should be restored once its provider registers');
 	});
+
+	test('late-registering provider does not move selection out from under user', () => {
+		// After the user has explicitly picked a workspace, a provider
+		// registering later in the session must not switch the selection to its
+		// stored "checked" entry. We only do that auto-upgrade during initial
+		// startup before the user has acted.
+		const copilotProvider = createMockProvider('default-copilot');
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/agent-host/project'), providerId: 'local-agent-host', checked: true },
+		]);
+
+		providersService.setProviders([copilotProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		// Suppression kicked in: no fallback selection while checked entry is pending.
+		assertSelectedProvider(picker, undefined, 'No fallback while checked entry pending');
+
+		// User explicitly picks a Copilot workspace.
+		const copilotPick: IWorkspaceSelection = {
+			providerId: 'default-copilot',
+			workspace: copilotProvider.resolveWorkspace(URI.file('/copilot/picked'))!,
+		};
+		picker.setSelectedWorkspace(copilotPick, false);
+		assertSelectedProvider(picker, 'default-copilot', 'User pick is honored');
+
+		// Now the late provider for the (still-stored) checked entry arrives.
+		const agentHostProvider = createMockProvider('local-agent-host');
+		providersService.setProviders([copilotProvider, agentHostProvider]);
+
+		assertSelectedProvider(picker, 'default-copilot', 'User selection is preserved across late provider registration');
+	});
 });
