@@ -103,8 +103,8 @@ export enum ChatPermissionLevel {
 
 const chatPermissionLevels = new Set<string>(Object.values(ChatPermissionLevel));
 
-export function isChatPermissionLevel(level: string | undefined): level is ChatPermissionLevel {
-	return level !== undefined && chatPermissionLevels.has(level);
+export function isChatPermissionLevel(level: unknown | undefined): level is ChatPermissionLevel {
+	return chatPermissionLevels.has(level as string);
 }
 
 /**
