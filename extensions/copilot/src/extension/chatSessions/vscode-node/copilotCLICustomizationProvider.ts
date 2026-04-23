@@ -17,7 +17,11 @@ import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { basename, dirname } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
+import type { loadFeatureFlagsFromConfig } from '@github/copilot/sdk';
 import { ICopilotCLIAgents, isEnabledForCopilotCLI } from '../copilotcli/node/copilotCli';
+
+// TODO: We should use an actual exported type from the Copilot SDK. This is currently not available.
+type CopilotUserSettings = Parameters<typeof loadFeatureFlagsFromConfig>[0];
 
 export class CopilotCLICustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
 
@@ -90,11 +94,14 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 */
 	private async getAgentItems(_token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const agentInfos = await this.copilotCLIAgents.getAgents();
-		return agentInfos.map(({ agent, sourceUri }) => ({
+		return agentInfos.map(({ agent, sourceUri, source }) => ({
 			uri: sourceUri,
 			type: vscode.ChatSessionCustomizationType.Agent,
 			name: agent.displayName || agent.name,
 			description: agent.description,
+			// Extension-sourced items are managed by the application (VS Code)
+			// rather than the CLI's settings.json.
+			...(source === 'extension' ? { enablementScope: vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication } : {}),
 		}));
 	}
 
@@ -150,9 +157,15 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			}
 
 			const name = instruction.name;
-			const pattern = instruction.pattern;
 			const description = instruction.description;
 
+			// Extension-sourced items are managed by the application (VS Code)
+			// rather than the CLI's settings.json.
+			const enablementScope = instruction.source === 'extension'
+				? vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication
+				: undefined;
+
+			const pattern = instruction.pattern;
 			if (pattern !== undefined) {
 				const badge = pattern === '**'
 					? l10n.t('always added')
@@ -168,6 +181,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					groupKey: 'context-instructions',
 					badge,
 					badgeTooltip,
+					enablementScope,
 				});
 			} else {
 				items.push({
@@ -176,6 +190,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					name,
 					description,
 					groupKey: 'on-demand-instructions',
+					enablementScope,
 				});
 			}
 		}
@@ -194,6 +209,16 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		return (await this.promptsService.getSkills(token)).filter(isEnabledForCopilotCLI).map(s => {
 			const name = s.name;
 			const folderName = basename(dirname(s.uri)) || basename(s.uri);
+			// Extension-sourced items are managed by the application (VS Code)
+			// rather than the CLI's settings.json.
+			if (s.source === 'extension') {
+				return {
+					uri: s.uri,
+					type: vscode.ChatSessionCustomizationType.Skill,
+					name,
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication,
+				};
+			}
 			return {
 				uri: s.uri,
 				type: vscode.ChatSessionCustomizationType.Skill,
@@ -208,17 +233,12 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Each item is a hook configuration file (JSON).
 	 */
 	private async getHookItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		const settings = await this._readSettings();
-		const disabledHooks = new Set<string>(
-			Array.isArray(settings.disabledHooks) ? settings.disabledHooks as string[] : [],
-		);
 		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => {
 			const name = basename(h.uri).replace(/\.json$/i, '');
 			return {
 				uri: h.uri,
 				type: vscode.ChatSessionCustomizationType.Hook,
 				name,
-				enabled: !disabledHooks.has(name),
 			};
 		});
 	}
@@ -257,7 +277,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Reads the user-level `~/.copilot/settings.json` as a JSON object.
 	 * Returns an empty object if the file doesn't exist or can't be parsed.
 	 */
-	private async _readSettings(): Promise<Record<string, unknown>> {
+	private async _readSettings(): Promise<CopilotUserSettings> {
 		try {
 			const bytes = await this.fileSystemService.readFile(this._settingsUri);
 			const parsed = JSON.parse(new TextDecoder().decode(bytes));
@@ -270,7 +290,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	/**
 	 * Writes the user-level `~/.copilot/settings.json`.
 	 */
-	private async _writeSettings(settings: Record<string, unknown>): Promise<void> {
+	private async _writeSettings(settings: CopilotUserSettings): Promise<void> {
 		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
 		await this.fileSystemService.writeFile(this._settingsUri, content);
 	}
@@ -284,11 +304,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			// Skills use the folder name as the key in disabledSkills
 			const name = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
 			return { settingsKey: 'disabledSkills', name };
-		}
-		if (type.id === vscode.ChatSessionCustomizationType.Hook?.id) {
-			// Hooks use the filename (without .json) as the key in disabledHooks
-			const name = basename(URI.from(uri)).replace(/\.json$/i, '');
-			return { settingsKey: 'disabledHooks', name };
 		}
 		if (type.id === vscode.ChatSessionCustomizationType.Plugins?.id) {
 			// Plugins use enabledPlugins map (Record<string, boolean>)
@@ -321,7 +336,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			}
 			settings[settingsKey] = Object.keys(map).length > 0 ? map : undefined;
 		} else {
-			// disabledSkills / disabledHooks are string arrays
+			// disabledSkills are string arrays
 			const currentList = Array.isArray(settings[settingsKey]) ? settings[settingsKey] as string[] : [];
 			if (enabled) {
 				settings[settingsKey] = currentList.filter(s => s !== name);

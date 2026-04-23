@@ -288,7 +288,9 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			items = items.filter(item => matchesInstructionFileFilter(item.uri.path, instrFilter));
 		}
 
-		return items;
+		// All items from PromptsServiceCustomizationItemProvider are VS Code items
+		// and should be disableable at workspace scope.
+		return items.map(item => ({ ...item, enablementScope: 'workspace' as const }));
 	}
 
 }

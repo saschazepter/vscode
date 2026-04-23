@@ -45,12 +45,12 @@ import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/ho
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { generateCustomizationDebugReport } from './aiCustomizationDebugPanel.js';
-import { getCustomizationSecondaryText } from './aiCustomizationListWidgetUtils.js';
+import { computeItemEnablementKeys, getCustomizationSecondaryText } from './aiCustomizationListWidgetUtils.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { AICustomizationItemNormalizer, IAICustomizationItemSource, IAICustomizationListItem, ProviderCustomizationItemSource } from './aiCustomizationItemSource.js';
+import { AICustomizationItemNormalizer, IAICustomizationItemSource, IAICustomizationListItem, IHookChildInfo, ProviderCustomizationItemSource } from './aiCustomizationItemSource.js';
 import { PromptsServiceCustomizationItemProvider } from './promptsServiceCustomizationItemProvider.js';
 
 export { truncateToFirstLine } from './aiCustomizationListWidgetUtils.js';
@@ -100,7 +100,30 @@ interface IFileItemEntry {
 	readonly item: IAICustomizationListItem;
 }
 
-type IListEntry = IGroupHeaderEntry | IFileItemEntry;
+/**
+ * Represents a collapsible hook file entry in the list.
+ * The top-level entry shows the file name and supports disable/enable.
+ */
+interface IHookFileEntry {
+	readonly type: 'hook-file';
+	readonly item: IAICustomizationListItem;
+	collapsed: boolean;
+}
+
+/**
+ * Represents an individual hook within a hook file.
+ * Clicking jumps to the specific hook in the editor.
+ */
+interface IHookChildEntry {
+	readonly type: 'hook-child';
+	readonly parentItem: IAICustomizationListItem;
+	readonly child: IHookChildInfo;
+}
+
+type IListEntry = IGroupHeaderEntry | IFileItemEntry | IHookFileEntry | IHookChildEntry;
+
+const HOOK_FILE_HEADER_HEIGHT = 36;
+const HOOK_CHILD_HEIGHT = 28;
 
 /**
  * Delegate for the AI Customization list.
@@ -110,11 +133,22 @@ class AICustomizationListDelegate implements IListVirtualDelegate<IListEntry> {
 		if (element.type === 'group-header') {
 			return element.isFirst ? GROUP_HEADER_HEIGHT : GROUP_HEADER_HEIGHT_WITH_SEPARATOR;
 		}
+		if (element.type === 'hook-file') {
+			return HOOK_FILE_HEADER_HEIGHT;
+		}
+		if (element.type === 'hook-child') {
+			return HOOK_CHILD_HEIGHT;
+		}
 		return ITEM_HEIGHT;
 	}
 
 	getTemplateId(element: IListEntry): string {
-		return element.type === 'group-header' ? 'groupHeader' : 'aiCustomizationItem';
+		switch (element.type) {
+			case 'group-header': return 'groupHeader';
+			case 'hook-file': return 'hookFileHeader';
+			case 'hook-child': return 'hookChild';
+			default: return 'aiCustomizationItem';
+		}
 	}
 }
 
@@ -204,6 +238,206 @@ class GroupHeaderRenderer implements IListRenderer<IGroupHeaderEntry, IGroupHead
 		templateData.disposables.dispose();
 	}
 }
+
+// #region Hook file and child renderers
+
+interface IHookFileHeaderTemplateData {
+	readonly container: HTMLElement;
+	readonly chevron: HTMLElement;
+	readonly icon: HTMLElement;
+	readonly label: HTMLElement;
+	readonly count: HTMLElement;
+	readonly actionsContainer: HTMLElement;
+	readonly actionBar: ActionBar;
+	readonly disposables: DisposableStore;
+	readonly elementDisposables: DisposableStore;
+}
+
+/**
+ * Renderer for collapsible hook file headers.
+ * Shows file name, hook count, and supports enable/disable actions.
+ */
+class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileHeaderTemplateData> {
+	readonly templateId = 'hookFileHeader';
+
+	constructor(
+		@IHoverService private readonly hoverService: IHoverService,
+		@ILabelService private readonly labelService: ILabelService,
+		@IMenuService private readonly menuService: IMenuService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
+	) { }
+
+	renderTemplate(container: HTMLElement): IHookFileHeaderTemplateData {
+		const disposables = new DisposableStore();
+		const elementDisposables = new DisposableStore();
+		container.classList.add('ai-customization-hook-file-header');
+
+		const leftSection = DOM.append(container, $('.hook-file-left'));
+		const chevron = DOM.append(leftSection, $('.hook-file-chevron'));
+		const icon = DOM.append(leftSection, $('.hook-file-icon'));
+		const label = DOM.append(leftSection, $('.hook-file-label'));
+		const count = DOM.append(leftSection, $('.hook-file-count'));
+
+		const actionsContainer = DOM.append(container, $('.item-right'));
+		const actionBar = disposables.add(new ActionBar(actionsContainer, {
+			actionViewItemProvider: createActionViewItem.bind(undefined, this.instantiationService),
+		}));
+
+		return { container, chevron, icon, label, count, actionsContainer, actionBar, disposables, elementDisposables };
+	}
+
+	renderElement(element: IHookFileEntry, _index: number, templateData: IHookFileHeaderTemplateData): void {
+		templateData.elementDisposables.clear();
+		const item = element.item;
+
+		// Chevron
+		templateData.chevron.className = 'hook-file-chevron';
+		templateData.chevron.classList.add(...ThemeIcon.asClassNameArray(element.collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+		// Icon
+		templateData.icon.className = 'hook-file-icon';
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(item.disabled ? Codicon.eyeClosed : hookIcon));
+
+		// Label (filename)
+		templateData.label.textContent = item.displayName ?? formatDisplayName(item.name);
+
+		// Count
+		const childCount = item.hookChildren?.length ?? 0;
+		templateData.count.textContent = childCount > 0 ? `${childCount}` : '';
+
+		// Disabled styling
+		templateData.container.classList.toggle('disabled', item.disabled);
+
+		// Hover tooltip: file path
+		const isWorkspaceItem = item.storage === PromptsStorage.local;
+		templateData.elementDisposables.add(this.hoverService.setupDelayedHover(templateData.container, () => ({
+			content: this.labelService.getUriLabel(item.uri, { relative: isWorkspaceItem }),
+			appearance: {
+				compact: true,
+				skipFadeInAnimation: true,
+			}
+		})));
+
+		// Action bar (enable/disable, delete, etc.)
+		const context: Record<string, unknown> = {
+			uri: item.uri.toString(),
+			name: item.name,
+			promptType: item.promptType,
+			storage: item.storage,
+			pluginUri: item.pluginUri?.toString(),
+			itemId: item.id,
+			plugin: item.plugin ? { uri: item.plugin.uri.toString(), type: item.plugin.type, name: item.plugin.name } : undefined,
+			providerEnablementScope: item.enablementScope,
+		};
+
+		const descriptor = this.harnessService.getActiveDescriptor();
+		const { enablementScope: itemEnablementScope, isDisableable } = computeItemEnablementKeys(item);
+		const overlayPairs: [string, string | boolean][] = [
+			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
+			[AI_CUSTOMIZATION_ITEM_URI_KEY, item.uri.toString()],
+			[AI_CUSTOMIZATION_ITEM_DISABLED_KEY, item.disabled],
+			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
+			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
+			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.plugin],
+		];
+		if (item.storage) {
+			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, item.storage]);
+		}
+		if (item.pluginUri) {
+			overlayPairs.push([AI_CUSTOMIZATION_ITEM_PLUGIN_URI_KEY, item.pluginUri.toString()]);
+		}
+		const overlay = this.contextKeyService.createOverlay(overlayPairs);
+
+		const menu = templateData.elementDisposables.add(
+			this.menuService.createMenu(AICustomizationManagementItemMenuId, overlay)
+		);
+
+		const updateActions = () => {
+			const actions = menu.getActions({ arg: context, shouldForwardArgs: true });
+			const { primary } = getContextMenuActions(actions, 'inline');
+			templateData.actionBar.clear();
+			templateData.actionBar.push(primary, { icon: true, label: false });
+		};
+		updateActions();
+		templateData.elementDisposables.add(menu.onDidChange(updateActions));
+		templateData.actionBar.context = context;
+	}
+
+	disposeTemplate(templateData: IHookFileHeaderTemplateData): void {
+		templateData.elementDisposables.dispose();
+		templateData.disposables.dispose();
+	}
+}
+
+interface IHookChildTemplateData {
+	readonly container: HTMLElement;
+	readonly icon: HTMLElement;
+	readonly label: HTMLElement;
+	readonly description: HTMLElement;
+	readonly disposables: DisposableStore;
+	readonly elementDisposables: DisposableStore;
+}
+
+/**
+ * Renderer for individual hook entries within a hook file.
+ * Shows the lifecycle type label and command description.
+ */
+class HookChildRenderer implements IListRenderer<IHookChildEntry, IHookChildTemplateData> {
+	readonly templateId = 'hookChild';
+
+	constructor(
+		@IHoverService private readonly hoverService: IHoverService,
+	) { }
+
+	renderTemplate(container: HTMLElement): IHookChildTemplateData {
+		const disposables = new DisposableStore();
+		const elementDisposables = new DisposableStore();
+		container.classList.add('ai-customization-hook-child');
+
+		const icon = DOM.append(container, $('.hook-child-icon'));
+		const label = DOM.append(container, $('.hook-child-label'));
+		const description = DOM.append(container, $('.hook-child-description'));
+
+		return { container, icon, label, description, disposables, elementDisposables };
+	}
+
+	renderElement(element: IHookChildEntry, _index: number, templateData: IHookChildTemplateData): void {
+		templateData.elementDisposables.clear();
+		const child = element.child;
+
+		// Icon
+		templateData.icon.className = 'hook-child-icon';
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.zap));
+
+		// Label (lifecycle type)
+		templateData.label.textContent = child.label;
+
+		// Description (command)
+		templateData.description.textContent = child.description;
+
+		// Disabled styling inherited from parent
+		templateData.container.classList.toggle('disabled', element.parentItem.disabled);
+
+		// Hover tooltip with full command
+		templateData.elementDisposables.add(this.hoverService.setupDelayedHover(templateData.container, () => ({
+			content: `${child.label}: ${child.description}`,
+			appearance: {
+				compact: true,
+				skipFadeInAnimation: true,
+			}
+		})));
+	}
+
+	disposeTemplate(templateData: IHookChildTemplateData): void {
+		templateData.elementDisposables.dispose();
+		templateData.disposables.dispose();
+	}
+}
+
+// #endregion
 
 /**
  * Returns the icon for a given prompt type.
@@ -435,15 +669,12 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			pluginUri: element.pluginUri?.toString(),
 			itemId: element.id,
 			plugin: element.plugin ? { uri: element.plugin.uri.toString(), type: element.plugin.type, name: element.plugin.name } : undefined,
+			providerEnablementScope: element.enablementScope,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// When plugin is set, enablement targets the plugin — always use global scope.
-		// When the harness has an enablement provider, items are disableable even without per-item scope.
-		const harnessDefault = descriptor.enablementProvider ? 'workspace' : 'none';
-		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? harnessDefault);
-		const isDisableable = !!element.plugin || itemEnablementScope !== 'none';
+		const { enablementScope: itemEnablementScope, isDisableable } = computeItemEnablementKeys(element);
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, element.uri.toString()],
@@ -540,6 +771,7 @@ export class AICustomizationListWidget extends Disposable {
 	private displayEntries: IListEntry[] = [];
 	private searchQuery: string = '';
 	private readonly collapsedGroups = new Set<string>();
+	private readonly collapsedHookFiles = new Set<string>();
 	private readonly dropdownActionDisposables = this._register(new DisposableStore());
 	private _loadItemsSeq = 0;
 
@@ -550,6 +782,9 @@ export class AICustomizationListWidget extends Disposable {
 
 	private readonly _onDidSelectItem = this._register(new Emitter<IAICustomizationListItem>());
 	readonly onDidSelectItem: Event<IAICustomizationListItem> = this._onDidSelectItem.event;
+
+	private readonly _onDidSelectHookChild = this._register(new Emitter<{ item: IAICustomizationListItem; child: IHookChildInfo }>());
+	readonly onDidSelectHookChild: Event<{ item: IAICustomizationListItem; child: IHookChildInfo }> = this._onDidSelectHookChild.event;
 
 	private readonly _onDidChangeItemCount = this._register(new Emitter<number>());
 	readonly onDidChangeItemCount: Event<number> = this._onDidChangeItemCount.event;
@@ -701,15 +936,31 @@ export class AICustomizationListWidget extends Disposable {
 			[
 				new GroupHeaderRenderer(this.hoverService),
 				this.instantiationService.createInstance(AICustomizationItemRenderer),
+				this.instantiationService.createInstance(HookFileHeaderRenderer),
+				this.instantiationService.createInstance(HookChildRenderer),
 			],
 			{
 				identityProvider: {
-					getId: (entry: IListEntry) => entry.type === 'group-header' ? entry.id : entry.item.id,
+					getId: (entry: IListEntry) => {
+						switch (entry.type) {
+							case 'group-header': return entry.id;
+							case 'hook-file': return `hook-file:${entry.item.id}`;
+							case 'hook-child': return `hook-child:${entry.parentItem.id}#${entry.child.originalHookTypeId}[${entry.child.index}]`;
+							default: return entry.item.id;
+						}
+					},
 				},
 				accessibilityProvider: {
 					getAriaLabel: (entry: IListEntry) => {
 						if (entry.type === 'group-header') {
 							return localize('groupAriaLabel', "{0}, {1} items, {2}", entry.label, entry.count, entry.collapsed ? localize('collapsed', "collapsed") : localize('expanded', "expanded"));
+						}
+						if (entry.type === 'hook-file') {
+							const childCount = entry.item.hookChildren?.length ?? 0;
+							return localize('hookFileAriaLabel', "{0}, {1} hooks, {2}", entry.item.name, childCount, entry.collapsed ? localize('collapsed', "collapsed") : localize('expanded', "expanded"));
+						}
+						if (entry.type === 'hook-child') {
+							return localize('hookChildAriaLabel', "{0}, {1}", entry.child.label, entry.child.description);
 						}
 						const nameAndDesc = entry.item.description
 							? localize('itemAriaLabel', "{0}, {1}", entry.item.name, entry.item.description)
@@ -721,18 +972,29 @@ export class AICustomizationListWidget extends Disposable {
 					getWidgetAriaLabel: () => localize('listAriaLabel', "Agent Customizations"),
 				},
 				keyboardNavigationLabelProvider: {
-					getKeyboardNavigationLabel: (entry: IListEntry) => entry.type === 'group-header' ? entry.label : entry.item.name,
+					getKeyboardNavigationLabel: (entry: IListEntry) => {
+						switch (entry.type) {
+							case 'group-header': return entry.label;
+							case 'hook-file': return entry.item.name;
+							case 'hook-child': return entry.child.label;
+							default: return entry.item.name;
+						}
+					},
 				},
 				multipleSelectionSupport: false,
 				openOnSingleClick: true,
 			}
 		));
 
-		// Handle item selection (single click opens item, group header toggles)
+		// Handle item selection (single click opens item, group/hook-file header toggles)
 		this._register(this.list.onDidOpen(e => {
 			if (e.element) {
 				if (e.element.type === 'group-header') {
 					this.toggleGroup(e.element);
+				} else if (e.element.type === 'hook-file') {
+					this.toggleHookFile(e.element);
+				} else if (e.element.type === 'hook-child') {
+					this._onDidSelectHookChild.fire({ item: e.element.parentItem, child: e.element.child });
 				} else {
 					this._onDidSelectItem.fire(e.element.item);
 				}
@@ -767,7 +1029,7 @@ export class AICustomizationListWidget extends Disposable {
 	 * Handles context menu for list items.
 	 */
 	private onContextMenu(e: IListContextMenuEvent<IListEntry>): void {
-		if (!e.element || e.element.type !== 'file-item') {
+		if (!e.element || (e.element.type !== 'file-item' && e.element.type !== 'hook-file')) {
 			return;
 		}
 
@@ -782,15 +1044,12 @@ export class AICustomizationListWidget extends Disposable {
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
 			plugin: item.plugin ? { uri: item.plugin.uri.toString(), type: item.plugin.type, name: item.plugin.name } : undefined,
+			providerEnablementScope: item.enablementScope,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// When plugin is set, enablement targets the plugin — always use global scope.
-		// When the harness has an enablement provider, items are disableable even without per-item scope.
-		const harnessDefault = descriptor.enablementProvider ? 'workspace' : 'none';
-		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? harnessDefault);
-		const isDisableable = !!item.plugin || itemEnablementScope !== 'none';
+		const { enablementScope: itemEnablementScope, isDisableable } = computeItemEnablementKeys(item);
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, item.uri.toString()],
@@ -1208,6 +1467,7 @@ export class AICustomizationListWidget extends Disposable {
 			this.fileService,
 			this.pathService,
 			this.itemNormalizer,
+			!!descriptor.itemProvider,
 		);
 		this.cachedItemSource = { descriptorId: descriptor.id, source };
 		return source;
@@ -1234,7 +1494,12 @@ export class AICustomizationListWidget extends Disposable {
 			const filenameMatches = matchesContiguousSubString(query, item.filename);
 			const badgeMatches = item.badge ? matchesContiguousSubString(query, item.badge) : null;
 
-			if (nameMatches || descriptionMatches || filenameMatches || badgeMatches) {
+			// Also match against hook children labels/descriptions
+			const hookChildMatch = item.hookChildren?.some(child =>
+				matchesContiguousSubString(query, child.label) || matchesContiguousSubString(query, child.description)
+			) ?? false;
+
+			if (nameMatches || descriptionMatches || filenameMatches || badgeMatches || hookChildMatch) {
 				matched.push({
 					...item,
 					nameMatches: nameMatches || undefined,
@@ -1249,12 +1514,15 @@ export class AICustomizationListWidget extends Disposable {
 	/**
 	 * Builds grouped display entries from items assigned to groups.
 	 * Empty groups are omitted. Collapsed groups show only their header.
+	 * For hooks, items with hookChildren are rendered as collapsible file headers.
 	 */
 	private buildGroupedEntries(groups: { groupKey: string; label: string; icon: ThemeIcon; description: string; items: IAICustomizationListItem[] }[]): void {
 		// Sort items within each group
 		for (const group of groups) {
 			group.items.sort((a, b) => a.name.localeCompare(b.name));
 		}
+
+		const isHookSection = this.currentSection === AICustomizationManagementSection.Hooks;
 
 		this.displayEntries = [];
 		let isFirstGroup = true;
@@ -1265,13 +1533,18 @@ export class AICustomizationListWidget extends Disposable {
 
 			const collapsed = this.collapsedGroups.has(group.groupKey);
 
+			// For hooks, count the total number of individual hooks across all files
+			const itemCount = isHookSection
+				? group.items.reduce((sum, item) => sum + (item.hookChildren?.length || 1), 0)
+				: group.items.length;
+
 			this.displayEntries.push({
 				type: 'group-header',
 				id: `group-${group.groupKey}`,
 				groupKey: group.groupKey,
 				label: group.label,
 				icon: group.icon,
-				count: group.items.length,
+				count: itemCount,
 				isFirst: isFirstGroup,
 				description: group.description,
 				collapsed,
@@ -1280,7 +1553,18 @@ export class AICustomizationListWidget extends Disposable {
 
 			if (!collapsed) {
 				for (const item of group.items) {
-					this.displayEntries.push({ type: 'file-item', item });
+					if (isHookSection && item.hookChildren && item.hookChildren.length > 0) {
+						// Render as collapsible hook file with children
+						const hookFileCollapsed = this.collapsedHookFiles.has(item.id);
+						this.displayEntries.push({ type: 'hook-file', item, collapsed: hookFileCollapsed });
+						if (!hookFileCollapsed) {
+							for (const child of item.hookChildren) {
+								this.displayEntries.push({ type: 'hook-child', parentItem: item, child });
+							}
+						}
+					} else {
+						this.displayEntries.push({ type: 'file-item', item });
+					}
 				}
 			}
 		}
@@ -1396,6 +1680,19 @@ export class AICustomizationListWidget extends Disposable {
 			this.collapsedGroups.delete(entry.groupKey);
 		} else {
 			this.collapsedGroups.add(entry.groupKey);
+		}
+		this.filterItems();
+	}
+
+	/**
+	 * Toggles the collapsed state of a hook file.
+	 */
+	private toggleHookFile(entry: IHookFileEntry): void {
+		const key = entry.item.id;
+		if (this.collapsedHookFiles.has(key)) {
+			this.collapsedHookFiles.delete(key);
+		} else {
+			this.collapsedHookFiles.add(key);
 		}
 		this.filterItems();
 	}

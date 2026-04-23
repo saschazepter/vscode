@@ -165,7 +165,7 @@ export interface ICustomizationItem {
 	/** Whether this customization is currently enabled. */
 	readonly enabled?: boolean;
 	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
-	readonly enablementScope?: 'none' | 'global' | 'workspace';
+	readonly enablementScope?: 'none' | 'global' | 'workspace' | 'application';
 	/** When set, items with the same groupKey are displayed under a shared collapsible header. */
 	readonly groupKey?: string;
 	/** When set, shows a small inline badge next to the item name (e.g. an applyTo glob pattern). */

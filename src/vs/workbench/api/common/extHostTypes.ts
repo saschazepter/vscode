@@ -3594,6 +3594,7 @@ export enum ChatSessionCustomizationEnablementScope {
 	None = 0,
 	Global = 1,
 	Workspace = 2,
+	ManagedByApplication = 3,
 }
 
 export enum ChatDebugLogLevel {

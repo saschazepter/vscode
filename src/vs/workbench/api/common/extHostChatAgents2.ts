@@ -485,10 +485,11 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	private readonly _promptFileProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider | vscode.ChatHookProvider }>();
 
 	private static _customizationProviderIdPool = 0;
-	private static readonly _enablementScopeMap: Record<number, 'none' | 'global' | 'workspace'> = {
+	private static readonly _enablementScopeMap: Record<number, 'none' | 'global' | 'workspace' | 'application'> = {
 		0: 'none',  // ChatSessionCustomizationEnablementScope.None
 		1: 'global', // ChatSessionCustomizationEnablementScope.Global
 		2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
+		3: 'application', // ChatSessionCustomizationEnablementScope.ManagedByApplication
 	};
 	private static readonly _enablementScopeReverseMap: Record<string, number> = {
 		'global': 1, // ChatSessionCustomizationEnablementScope.Global

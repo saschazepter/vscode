@@ -203,6 +203,22 @@ function extractPlugin(context: AICustomizationContext): { uri: URI; type: strin
 }
 
 /**
+ * Returns true when the provider explicitly set an enablement scope on this item,
+ * meaning the provider's enablementHandler owns disablement for it.
+ * When false, VS Code should handle disablement via promptsService (with namespace).
+ *
+ * Items with `enablementScope: 'application'` are explicitly provider-reported but
+ * application-managed — the provider does NOT own their disablement.
+ */
+function hasProviderEnablement(context: AICustomizationContext): boolean {
+	if (URI.isUri(context) || typeof context === 'string') {
+		return false;
+	}
+	return context.providerEnablementScope !== undefined
+		&& context.providerEnablementScope !== 'application';
+}
+
+/**
  * Extracts the item name from context.
  */
 function extractName(context: AICustomizationContext): string | undefined {
@@ -785,16 +801,23 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
+		// Provider-managed items: delegate to the harness's enablement provider.
+		// VS Code items on external harnesses: persist via promptsService with harness namespace.
+		// VS Code items on the VS Code harness: persist via enablementProvider (no namespace).
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider) {
+		const descriptor = harnessService.getActiveDescriptor();
+		if (enablementProvider && hasProviderEnablement(context)) {
+			enablementProvider.setEnabled(uri, promptType, false, 'global');
+		} else if (enablementProvider && !descriptor.itemProvider) {
+			// VS Code harness — delegate to its enablement provider (no namespace)
 			enablementProvider.setEnabled(uri, promptType, false, 'global');
 		} else {
-			// Workspace-local items are disabled at workspace scope; user-level items at profile scope
+			const namespace = descriptor.id;
 			const storage = extractStorage(context);
 			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope, namespace);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, scope);
+			promptsService.setDisabledPromptFiles(promptType, disabled, scope, namespace);
 		}
 	}
 });
@@ -818,12 +841,17 @@ registerAction2(class extends Action2 {
 		}
 
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider) {
+		const descriptor = harnessService.getActiveDescriptor();
+		if (enablementProvider && hasProviderEnablement(context)) {
+			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
+		} else if (enablementProvider && !descriptor.itemProvider) {
+			// VS Code harness — delegate to its enablement provider (no namespace)
 			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
 		} else {
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			const namespace = descriptor.id;
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE);
+			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE, namespace);
 		}
 	}
 });
@@ -857,22 +885,30 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
+		// Provider-managed items: delegate to the harness's enablement provider.
+		// VS Code items on external harnesses: persist via promptsService with harness namespace.
+		// VS Code items on the VS Code harness: persist via enablementProvider (no namespace).
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider) {
+		const descriptor = harnessService.getActiveDescriptor();
+		if (enablementProvider && hasProviderEnablement(context)) {
+			enablementProvider.setEnabled(uri, promptType, true, 'global');
+		} else if (enablementProvider && !descriptor.itemProvider) {
+			// VS Code harness — delegate to its enablement provider (no namespace)
 			enablementProvider.setEnabled(uri, promptType, true, 'global');
 		} else {
+			const namespace = descriptor.id;
 			// Remove from both scopes to fully re-enable
-			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
+			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE, namespace);
 			const wasInProfile = profileDisabled.delete(uri);
 
-			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
 			const wasInWorkspace = workspaceDisabled.delete(uri);
 
 			if (wasInProfile) {
-				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
+				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE, namespace);
 			}
 			if (wasInWorkspace) {
-				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE, namespace);
 			}
 		}
 	}

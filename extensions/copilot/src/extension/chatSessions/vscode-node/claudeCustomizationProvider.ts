@@ -12,6 +12,7 @@ import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { basename, dirname } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
+import type { Settings as ClaudeSettings } from '@anthropic-ai/claude-agent-sdk';
 import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { IPromptsService } from '../../../platform/promptFiles/common/promptsService';
@@ -57,16 +58,6 @@ interface MatcherConfig {
 
 interface HooksSettings {
 	readonly hooks?: Partial<Record<string, MatcherConfig[]>>;
-}
-
-/**
- * Shape of `.claude/settings.json` fields relevant to enablement.
- */
-interface ClaudeSettings {
-	readonly skillOverrides?: Record<string, 'on' | 'name-only' | 'user-invocable-only' | 'off'>;
-	readonly claudeMdExcludes?: string[];
-	readonly disableAllHooks?: boolean;
-	[key: string]: unknown;
 }
 
 export class ClaudeCustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
