@@ -138,8 +138,8 @@ class InputEditorDecorations extends Disposable {
 		}));
 		this._register(this.chatAgentService.onDidChangeAgents(() => this.triggerInputEditorDecorationsUpdate()));
 		this._register(this.customizationHarnessService.onDidChangeSlashCommands((e) => {
-			const sessionResourse = this.widget.viewModel?.sessionResource;
-			if (sessionResourse && e.sessionType === getChatSessionType(sessionResourse)) {
+			const sessionResource = this.widget.viewModel?.sessionResource;
+			if (sessionResource && e.sessionType === getChatSessionType(sessionResource)) {
 				this.triggerInputEditorDecorationsUpdate();
 			}
 		}));
