@@ -34,10 +34,6 @@
 	color: var(--vscode-foreground);
 }
 
-.chat-status-bar-entry-tooltip .collapsible-header:hover {
-	color: var(--vscode-foreground);
-}
-
 .chat-status-bar-entry-tooltip .collapsible-header:focus {
 	outline: none;
 }
@@ -127,57 +123,9 @@
 	margin-bottom: 5px;
 }
 
-.chat-status-bar-entry-tooltip .button-right {
-	display: flex;
-	justify-content: flex-end;
-}
-
-.chat-status-bar-entry-tooltip .button-right .monaco-button {
-	width: auto;
-	padding: 4px 12px;
-}
-
-.chat-status-bar-entry-tooltip .upgrade-row {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-	margin-top: 8px;
-	padding-bottom: 12px;
-}
-
-.chat-status-bar-entry-tooltip .upgrade-row .upgrade-description {
-	flex: 1;
-	color: var(--vscode-descriptionForeground);
-	font-size: 12px;
-	line-height: 16px;
-}
-
-.chat-status-bar-entry-tooltip .upgrade-row .monaco-button {
-	width: auto;
-	padding: 4px 12px;
-	flex-shrink: 0;
-	margin: 0;
-}
-
-/* Setup for New User */
-
-.chat-status-bar-entry-tooltip .setup .chat-feature-container {
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	padding: 4px;
-}
-
 /* Quota Indicator */
 
 .chat-status-bar-entry-tooltip .quota-indicator {
-	margin-bottom: 14px;
-	padding: 0;
-	border: none;
-	border-radius: 0;
-}
-
-.chat-status-bar-entry-tooltip .quota-indicator:last-of-type {
 	margin-bottom: 14px;
 }
 
@@ -232,8 +180,6 @@
 	height: 4px;
 	background-color: var(--vscode-editorWidget-border);
 	border-radius: 4px;
-	border: none;
-	margin: 0;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-bar .quota-bit {
@@ -254,6 +200,7 @@
 	margin-bottom: 8px;
 	font-size: 12px;
 	line-height: 1.4;
+	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout .callout-icon {
@@ -263,35 +210,15 @@
 	height: 1.4em;
 }
 
-.chat-status-bar-entry-tooltip .quota-callout.warning {
-	border-color: var(--vscode-editorWarning-foreground);
-	background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 6%, var(--vscode-editorWidget-background));
-	color: var(--vscode-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-callout.warning .callout-icon {
-	color: var(--vscode-editorWarning-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-callout.error {
-	border-color: var(--vscode-editorError-foreground);
-	background-color: color-mix(in srgb, var(--vscode-editorError-foreground) 6%, var(--vscode-editorWidget-background));
-	color: var(--vscode-foreground);
-}
-
-.chat-status-bar-entry-tooltip .quota-callout.error .callout-icon {
-	color: var(--vscode-editorError-foreground);
-}
-
 .chat-status-bar-entry-tooltip .quota-callout.info {
 	border-color: var(--vscode-focusBorder);
 	background-color: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background));
-	color: var(--vscode-foreground);
 }
 
 .chat-status-bar-entry-tooltip .quota-callout.info .callout-icon {
 	color: var(--vscode-focusBorder);
 }
+
 
 /* Settings */
 
@@ -328,7 +255,6 @@
 	align-items: center;
 	gap: 6px;
 	min-height: 20px;
-	padding: 0;
 }
 
 .chat-status-bar-entry-tooltip .model-selection .model-text {
@@ -350,7 +276,6 @@
 	align-items: center;
 	gap: 6px;
 	min-height: 20px;
-	padding: 0;
 }
 
 .chat-status-bar-entry-tooltip .suggest-option-selection .suggest-option-text {
@@ -375,10 +300,7 @@
 /* Snoozing */
 
 .chat-status-bar-entry-tooltip .snooze-completions {
-	margin-top: 0;
 	display: flex;
-	flex-direction: row;
-	flex-wrap: nowrap;
 	align-items: center;
 	gap: 8px;
 	min-height: 20px;
