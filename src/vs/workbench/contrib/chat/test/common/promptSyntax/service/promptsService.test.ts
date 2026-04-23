@@ -3286,6 +3286,59 @@ suite('PromptsService', () => {
 			assert.strictEqual(resultAfterDispose?.length, 1, 'Should find 1 skill after disposal');
 			assert.strictEqual(resultAfterDispose?.[0].name, 'Local Skill');
 		});
+
+		test('should exclude disabled skills from results', async () => {
+			testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_SKILLS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.SKILLS_LOCATION_KEY, {});
+
+			const rootFolder = '/disabled-skills-test';
+			const rootFolderUri = URI.file(rootFolder);
+
+			workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+			await mockFiles(fileService, [
+				{
+					path: `${rootFolder}/.github/skills/Enabled Skill/SKILL.md`,
+					contents: [
+						'---',
+						'name: "Enabled Skill"',
+						'description: "Should be returned"',
+						'---',
+						'Enabled skill content',
+					],
+				},
+				{
+					path: `${rootFolder}/.github/skills/Disabled Skill/SKILL.md`,
+					contents: [
+						'---',
+						'name: "Disabled Skill"',
+						'description: "Should be filtered out"',
+						'---',
+						'Disabled skill content',
+					],
+				},
+			]);
+
+			// Before disabling, both skills should be present
+			const allSkills = await service.findAgentSkills(CancellationToken.None);
+			assert.strictEqual(allSkills?.length, 2, 'Should find 2 skills before disabling');
+
+			// Stub getDisabledPromptFiles to simulate disabling one skill
+			// (the test's storageService is sinon-stubbed so set/get don't persist)
+			const disabledSkill = allSkills!.find(s => s.name === 'Disabled Skill')!;
+			const disabledSet = new ResourceSet([disabledSkill.uri]);
+			const stub = sinon.stub(service, 'getDisabledPromptFiles').returns(disabledSet);
+
+			// After disabling, only the enabled skill should be returned
+			const filteredSkills = await service.findAgentSkills(CancellationToken.None);
+			assert.strictEqual(filteredSkills?.length, 1, 'Should find 1 skill after disabling');
+			assert.strictEqual(filteredSkills![0].name, 'Enabled Skill');
+
+			// Re-enable by returning empty disabled set
+			stub.returns(new ResourceSet());
+			const reenabledSkills = await service.findAgentSkills(CancellationToken.None);
+			assert.strictEqual(reenabledSkills?.length, 2, 'Should find 2 skills after re-enabling');
+		});
 	});
 
 	suite('getPromptSlashCommands - skills', () => {
