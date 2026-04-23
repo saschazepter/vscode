@@ -160,9 +160,6 @@ import './contrib/agentHost/browser/agentSessionSettings.contribution.js';
 // Host filter dropdown in the titlebar (scopes the sessions list to a host)
 import './contrib/remoteAgentHost/browser/hostFilter.contribution.js';
 
-// Host filter dropdown in the titlebar (scopes the sessions list to a host)
-import './contrib/remoteAgentHost/browser/hostFilter.contribution.js';
-
 // TODO: support agent feedback in web
 import './contrib/agentFeedback/browser/nullAgentFeedbackService.contribution.js';
 import '../workbench/contrib/webview/browser/webview.web.contribution.js';
