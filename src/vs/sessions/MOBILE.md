@@ -104,46 +104,46 @@ The workbench toggles the `phone-layout` CSS class on `layout()` and creates/des
 
 | File | Purpose |
 |------|---------|
-| `src/vs/sessions/browser/parts/mobile/mobileChatBarPart.ts` | Extends `ChatBarPart`. Overrides `layout()` (no card margins) and `updateStyles()` (no inline card styles). |
-| `src/vs/sessions/browser/parts/mobile/mobileSidebarPart.ts` | Extends `SidebarPart`. Overrides `updateStyles()` (no inline card/title styles). |
-| `src/vs/sessions/browser/parts/mobile/mobileAuxiliaryBarPart.ts` | Extends `AuxiliaryBarPart`. Overrides `layout()` and `updateStyles()` (no card margins or inline styles). |
-| `src/vs/sessions/browser/parts/mobile/mobilePanelPart.ts` | Extends `PanelPart`. Overrides `layout()` and `updateStyles()` (no card margins or inline styles). |
+| `browser/parts/mobile/mobileChatBarPart.ts` | Extends `ChatBarPart`. Overrides `layout()` (no card margins) and `updateStyles()` (no inline card styles). |
+| `browser/parts/mobile/mobileSidebarPart.ts` | Extends `SidebarPart`. Overrides `updateStyles()` (no inline card/title styles). |
+| `browser/parts/mobile/mobileAuxiliaryBarPart.ts` | Extends `AuxiliaryBarPart`. Overrides `layout()` and `updateStyles()` (no card margins or inline styles). |
+| `browser/parts/mobile/mobilePanelPart.ts` | Extends `PanelPart`. Overrides `layout()` and `updateStyles()` (no card margins or inline styles). |
 
 ### Mobile Chrome Components
 
 | File | Purpose |
 |------|---------|
-| `src/vs/sessions/browser/parts/mobile/mobileTopBar.ts` | Phone top bar: hamburger (☰), session title, new session (+). Emits `onDidClickHamburger`, `onDidClickNewSession`, `onDidClickTitle`. |
-| `src/vs/sessions/browser/parts/mobile/mobileChatShell.css` | **Single source of truth** for all phone-layout CSS: flex column layout, split-view-view absolute positioning, card chrome removal, part/content width overrides, sidebar title hiding, composite bar hiding, welcome page layout, sash hiding, button focus overrides, mobile pickers. |
+| `browser/parts/mobile/mobileTopBar.ts` | Phone top bar: hamburger (☰), session title, new session (+). Emits `onDidClickHamburger`, `onDidClickNewSession`, `onDidClickTitle`. |
+| `browser/parts/mobile/mobileChatShell.css` | **Single source of truth** for all phone-layout CSS: flex column layout, split-view-view absolute positioning, card chrome removal, part/content width overrides, sidebar title hiding, composite bar hiding, welcome page layout, sash hiding, button focus overrides, mobile pickers. |
 
 ### Layout & Navigation
 
 | File | Purpose |
 |------|---------|
-| `src/vs/sessions/browser/layoutPolicy.ts` | `SessionsLayoutPolicy`: observable viewport classification (phone/tablet/desktop), platform flags (isIOS, isAndroid, isTouchDevice), part visibility and size defaults. |
-| `src/vs/sessions/browser/mobileNavigationStack.ts` | `MobileNavigationStack`: Android back button integration via `history.pushState` / `popstate`. Supports `push()`, `pop()`, and `clear()`. |
-| `src/vs/sessions/common/contextkeys.ts` | Phone context keys: `IsPhoneLayoutContext`, `KeyboardVisibleContext`. |
+| `browser/layoutPolicy.ts` | `SessionsLayoutPolicy`: observable viewport classification (phone/tablet/desktop), platform flags (isIOS, isAndroid, isTouchDevice), part visibility and size defaults. |
+| `browser/mobileNavigationStack.ts` | `MobileNavigationStack`: Android back button integration via `history.pushState` / `popstate`. Supports `push()`, `pop()`, and `clear()`. |
+| `common/contextkeys.ts` | Phone context keys: `IsPhoneLayoutContext`, `KeyboardVisibleContext`. |
 
 ### Part Instantiation
 
 | File | Purpose |
 |------|---------|
-| `src/vs/sessions/browser/paneCompositePartService.ts` | `AgenticPaneCompositePartService`: checks viewport width at construction time and instantiates `Mobile*Part` vs desktop `*Part` classes accordingly. |
+| `browser/paneCompositePartService.ts` | `AgenticPaneCompositePartService`: checks viewport width at construction time and instantiates `Mobile*Part` vs desktop `*Part` classes accordingly. |
 
 ### Workbench Integration
 
 | File | Key Changes |
 |------|-------------|
-| `src/vs/sessions/browser/workbench.ts` | Layout policy integration, MobileTopBar creation/destruction (via `DisposableStore`), sidebar drawer open/close with backdrop, viewport-class-change detection, window resize listener, grid height calculation (subtracts MobileTopBar height), titlebar grid visibility toggle, `ISessionsManagementService` for new session button. |
-| `src/vs/sessions/browser/parts/chatBarPart.ts` | `_lastLayout` changed from `private` to `protected` for mobile subclass access. |
+| `browser/workbench.ts` | Layout policy integration, MobileTopBar creation/destruction (via `DisposableStore`), sidebar drawer open/close with backdrop, viewport-class-change detection, window resize listener, grid height calculation (subtracts MobileTopBar height), titlebar grid visibility toggle, `ISessionsManagementService` for new session button. |
+| `browser/parts/chatBarPart.ts` | `_lastLayout` changed from `private` to `protected` for mobile subclass access. |
 
 ### Styling
 
 | File | Purpose |
 |------|---------|
-| `src/vs/sessions/browser/parts/mobile/mobileChatShell.css` | All phone-layout CSS (see above). |
-| `src/vs/sessions/browser/parts/media/sidebarPart.css` | Sidebar drawer overlay CSS: 85% width, z-index 250, slide-in animation, backdrop. |
-| `src/vs/sessions/browser/media/style.css` | Mobile overscroll containment, 44px touch targets, quick pick bottom sheets, context menu action sheets, dialog sizing, notification positioning, hover card suppression, editor modal full-screen. |
+| `browser/parts/mobile/mobileChatShell.css` | All phone-layout CSS (see above). |
+| `browser/parts/media/sidebarPart.css` | Sidebar drawer overlay CSS: 85% width, z-index 250, slide-in animation, backdrop. |
+| `browser/media/style.css` | Mobile overscroll containment, 44px touch targets, quick pick bottom sheets, context menu action sheets, dialog sizing, notification positioning, hover card suppression, editor modal full-screen. |
 
 ## Remaining Work
 
