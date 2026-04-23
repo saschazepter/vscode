@@ -789,6 +789,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// regardless of how narrow the window is resized.
 		if (isWeb && isMobile) {
 			this.partVisibility.sidebar = false;
+			this.partVisibility.auxiliaryBar = false;
 		}
 	}
 
