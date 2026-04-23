@@ -114,7 +114,9 @@ export interface IBrowserViewOpenOptions {
 
 export interface IBrowserViewCreatedEvent {
 	readonly info: IBrowserViewInfo;
-	readonly openOptions: IBrowserViewOpenOptions;
+
+	// May be omitted to create the view without opening an editor.
+	readonly openOptions?: IBrowserViewOpenOptions;
 }
 
 export interface IBrowserViewCreateOptions {
