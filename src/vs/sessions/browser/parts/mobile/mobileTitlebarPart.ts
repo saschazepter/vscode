@@ -82,7 +82,8 @@ export class MobileTitlebarPart extends Disposable {
 		// Center slot: title and/or actions container (mutually exclusive)
 		const center = append(this.element, $('div.mobile-top-bar-center'));
 
-		this.sessionTitleElement = append(center, $('div.mobile-session-title'));
+		this.sessionTitleElement = append(center, $('button.mobile-session-title'));
+		this.sessionTitleElement.setAttribute('type', 'button');
 		this.sessionTitleElement.textContent = localize('mobileTopBar.newSession', "New Session");
 		this._register(addDisposableListener(this.sessionTitleElement, EventType.CLICK, () => this._onDidClickTitle.fire()));
 

@@ -71,6 +71,19 @@
 	white-space: nowrap;
 	padding: 0 4px;
 	cursor: pointer;
+	border: none;
+	background: none;
+	touch-action: manipulation;
+	font-family: inherit;
+}
+
+.monaco-workbench .mobile-top-bar .mobile-session-title:focus {
+	outline: none !important;
+}
+
+.mobile-top-bar .mobile-session-title:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
 .mobile-top-bar .mobile-session-title:active {
