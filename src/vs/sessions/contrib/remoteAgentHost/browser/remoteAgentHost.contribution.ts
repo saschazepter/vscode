@@ -24,7 +24,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentCustomizationSyncProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationSyncProvider.js';
-import { resolveTokenForResource } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
+import { resolveTokenForResource, AgentHostAuthTokenCache } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostLanguageModelProvider.js';
 import { AgentHostSessionHandler } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.js';
 import { LoggingAgentConnection } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
@@ -41,6 +41,9 @@ import { createRemoteAgentHarnessDescriptor, RemoteAgentCustomizationItemProvide
 import { RemoteAgentHostSessionsProvider } from './remoteAgentHostSessionsProvider.js';
 import { SyncedCustomizationBundler } from './syncedCustomizationBundler.js';
 import { ISSHRemoteAgentHostService } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
+import { IAgentHostTerminalService } from '../../../../workbench/contrib/terminal/browser/agentHostTerminalService.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { logTerminalRecovery } from '../../../common/sessionsTelemetry.js';
 
 /** Per-connection state bundle, disposed when a connection is removed. */
 class ConnectionState extends Disposable {
@@ -48,6 +51,8 @@ class ConnectionState extends Disposable {
 	readonly agents = this._register(new DisposableMap<AgentProvider, DisposableStore>());
 	readonly modelProviders = new Map<AgentProvider, AgentHostLanguageModelProvider>();
 	readonly loggedConnection: LoggingAgentConnection;
+	/** Dedupes redundant `authenticate` RPCs when the resolved token hasn't changed. */
+	readonly authTokenCache = new AgentHostAuthTokenCache();
 
 	constructor(
 		readonly name: string | undefined,
@@ -97,6 +102,8 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
+		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 
@@ -258,11 +265,34 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 			}
 			const existing = this._connections.get(connectionInfo.address);
 			if (existing) {
+				const nameChanged = existing.name !== connectionInfo.name;
+				const clientIdChanged = existing.loggedConnection.clientId !== connectionInfo.clientId;
+
 				// If the name or clientId changed, tear down and re-register
-				if (existing.name !== connectionInfo.name || existing.loggedConnection.clientId !== connectionInfo.clientId) {
-					this._logService.info(`[RemoteAgentHost] Reconnecting contribution for ${connectionInfo.address}`);
+				if (nameChanged || clientIdChanged) {
+					this._logService.info(`[RemoteAgentHost] Reconnecting contribution for ${connectionInfo.address}: oldClientId=${existing.loggedConnection.clientId}, newClientId=${connectionInfo.clientId}, nameChanged=${nameChanged}`);
+					const oldClientId = existing.loggedConnection.clientId;
 					this._connections.deleteAndDispose(connectionInfo.address);
 					this._setupConnection(connectionInfo);
+
+					// Reconnect active terminals only when the backing
+					// client changed. Name-only updates don't invalidate
+					// subscriptions and would cause unnecessary buffer
+					// clear/replay flicker.
+					if (clientIdChanged) {
+						const newConnection = this._remoteAgentHostService.getConnection(connectionInfo.address);
+						if (newConnection) {
+							this._agentHostTerminalService.reconnectTerminals(newConnection, oldClientId).then(
+								({ recovered, total }) => {
+									if (total > 0) {
+										this._logService.info(`[RemoteAgentHost] Terminal reconnection: ${recovered}/${total} recovered`);
+										logTerminalRecovery(this._telemetryService, { recoveredCount: recovered, totalCount: total });
+									}
+								},
+								err => this._logService.warn('[RemoteAgentHost] Terminal reconnection failed', err)
+							);
+						}
+					}
 				}
 			} else {
 				this._setupConnection(connectionInfo);
@@ -429,7 +459,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 			extensionId: 'vscode.remote-agent-host',
 			extensionDisplayName: 'Remote Agent Host',
 			resolveWorkingDirectory,
-			resolveAuthentication: (resources) => this._resolveAuthenticationInteractively(loggedConnection, resources),
+			resolveAuthentication: (resources) => this._resolveAuthenticationInteractively(address, loggedConnection, resources),
 			customizations,
 		}));
 		agentStore.add(this._chatSessionsService.registerChatSessionContentProvider(sessionType, sessionHandler));
@@ -511,6 +541,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	private async _authenticateWithConnection(address: string, loggedConnection: LoggingAgentConnection, agents: readonly AgentInfo[]): Promise<void> {
 		const providerId = `agenthost-${agentHostAuthority(address)}`;
 		const provider = this._sessionsProvidersService.getProvider<RemoteAgentHostSessionsProvider>(providerId);
+		const authTokenCache = this._connections.get(address)?.authTokenCache;
 		provider?.setAuthenticationPending(true);
 		try {
 			for (const agent of agents) {
@@ -518,8 +549,17 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 					const resourceUri = URI.parse(resource.resource);
 					const token = await this._resolveTokenForResource(resourceUri, resource.authorization_servers ?? [], resource.scopes_supported ?? []);
 					if (token) {
+						if (authTokenCache && !authTokenCache.updateAndIsChanged(resource.resource, token)) {
+							this._logService.trace(`[RemoteAgentHost] Auth token for ${resource.resource} unchanged; skipping authenticate RPC`);
+							continue;
+						}
 						this._logService.info(`[RemoteAgentHost] Authenticating for resource: ${resource.resource}`);
-						await loggedConnection.authenticate({ resource: resource.resource, token });
+						try {
+							await loggedConnection.authenticate({ resource: resource.resource, token });
+						} catch (rpcErr) {
+							authTokenCache?.clear(resource.resource);
+							throw rpcErr;
+						}
 					} else {
 						this._logService.info(`[RemoteAgentHost] No token resolved for resource: ${resource.resource}`);
 					}
@@ -545,7 +585,8 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	 * Interactively prompt the user to authenticate when the server requires it.
 	 * Returns true if authentication succeeded.
 	 */
-	private async _resolveAuthenticationInteractively(loggedConnection: LoggingAgentConnection, protectedResources: readonly ProtectedResourceMetadata[]): Promise<boolean> {
+	private async _resolveAuthenticationInteractively(address: string, loggedConnection: LoggingAgentConnection, protectedResources: readonly ProtectedResourceMetadata[]): Promise<boolean> {
+		const authTokenCache = this._connections.get(address)?.authTokenCache;
 		try {
 			for (const resource of protectedResources) {
 				for (const server of resource.authorization_servers ?? []) {
@@ -557,6 +598,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 							resource: resource.resource,
 							token,
 						});
+						authTokenCache?.updateAndIsChanged(resource.resource, token);
 					} else {
 						const providerId = await this._authenticationService.getOrActivateProviderIdForServer(serverUri, resourceUri);
 						if (!providerId) {
@@ -573,6 +615,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 							resource: resource.resource,
 							token: session.accessToken,
 						});
+						authTokenCache?.updateAndIsChanged(resource.resource, session.accessToken);
 					}
 
 					this._logService.info(`[RemoteAgentHost] Interactive authentication succeeded for ${resource.resource}`);
@@ -609,6 +652,13 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			type: 'string',
 			description: nls.localize('chat.sshRemoteAgentHostCommand', "For development: Override the command used to start the remote agent host over SSH. When set, skips automatic CLI installation and runs this command instead. The command must print a WebSocket URL matching ws://127.0.0.1:PORT (optionally with ?tkn=TOKEN) to stdout or stderr./"),
 			default: '',
+			scope: ConfigurationScope.APPLICATION,
+			tags: ['experimental', 'advanced'],
+		},
+		'chat.agentHost.forwardSSHAgent': {
+			type: 'boolean',
+			description: nls.localize('chat.agentHost.forwardSSHAgent', "When enabled, forwards the local SSH agent to the remote machine during SSH agent host connections to hosts whose SSH config has `ForwardAgent yes`. Only enable this for trusted hosts. The remote agent host process must be restarted for this setting to take effect."),
+			default: false,
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental', 'advanced'],
 		},

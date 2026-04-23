@@ -99,12 +99,32 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 		this._command = command;
 		this._invocationContext = invocationContext;
-		this._register(toDisposable(() => this._currentMonitoringCts?.dispose()));
 
-		// Start async to ensure listeners are set up
+		// Create the CTS synchronously so it is available for cancellation if the
+		// OutputMonitor is disposed before the deferred _startMonitoring fires.
+		// The registered disposable must cancel (not just dispose) the CTS so that
+		// the async monitoring loop's token becomes isCancellationRequested=true and
+		// the loop exits promptly — CancellationTokenSource.dispose() alone does
+		// not set isCancellationRequested.
+		const cts = new CancellationTokenSource(token);
+		this._currentMonitoringCts = cts;
+		this._register(toDisposable(() => {
+			this._currentMonitoringCts?.cancel();
+			this._currentMonitoringCts?.dispose();
+		}));
+
+		// Start async to ensure listeners are set up.
+		// Capture `cts` locally so that if continueMonitoringAsync replaces
+		// _currentMonitoringCts before this fires, we detect the replacement
+		// and avoid starting a duplicate monitoring loop. _startMonitoring
+		// handles a cancelled token correctly by firing onDidFinishCommand in
+		// its finally block, so we always call it when we're still the current
+		// CTS (even if the token has since been cancelled).
 		timeout(0).then(() => {
-			this._currentMonitoringCts = new CancellationTokenSource(token);
-			this._startMonitoring(command, invocationContext, this._currentMonitoringCts.token);
+			if (this._currentMonitoringCts !== cts) {
+				return;
+			}
+			this._startMonitoring(command, invocationContext, cts.token);
 		});
 	}
 
@@ -488,18 +508,25 @@ export function detectsInputRequiredPattern(cursorLine: string): boolean {
 		// Same as above but allows a preceding '?' or ':' and optional wrappers e.g.
 		// "Continue? (y/n)" or "Overwrite: [yes/no]"
 		/[?:]\s*(?:\(|\[)?\s*y(?:es)?\s*\/\s*n(?:o)?\s*(?:\]|\))?\s+$/i,
-		// Confirmation prompts ending with (y) e.g. "Ok to proceed? (y)"
-		/\(y\)\s*$/i,
-		// Line ends with ':'
-		/:\s*$/,
+		// Confirmation prompts ending with (y) followed by trailing space, e.g. "Ok to proceed? (y) "
+		// The trailing space indicates the cursor is positioned after the prompt awaiting input, as
+		// opposed to normal command output that happens to contain "(y)" followed by a newline.
+		/\(y\) +$/i,
+		// Line ends with ':' followed by at least one space. The trailing space indicates a
+		// waiting prompt (cursor positioned after the colon). A bare ':\n' at end of buffer is
+		// usually non-prompt output (e.g. a header or log line) and must not match.
+		/: +$/,
 		// Prompt with parenthesized default value e.g. "package name: (test) " or "version: (1.0.0) "
-		/:\s*\([^)]*\)\s*$/,
+		/:\s*\([^)]*\) +$/,
 		// Line contains (END) which is common in pagers
 		/\(END\)$/,
-		// Password prompt
-		/password[:]?$/i,
-		// Line ends with '?'
-		/\?\s*(?:\([a-z\s]+\))?$/i,
+		// Password prompt (must be followed by optional colon and trailing space to indicate
+		// an active prompt; otherwise normal output containing the word "password" would match).
+		/password:? +$/i,
+		// Line ends with '?' followed by at least one space (optionally followed by a
+		// parenthesized hint like "Continue? (yes/no) "). Requiring trailing space avoids
+		// matching arbitrary command output where a line happens to end with '?'.
+		/\? *(?:\([a-z\s]+\))? +$/i,
 		// "Press a key" or "Press any key"
 		/press a(?:ny)? key/i,
 	].some(e => e.test(cursorLine));

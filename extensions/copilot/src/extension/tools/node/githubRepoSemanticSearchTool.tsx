@@ -38,9 +38,8 @@ interface PrepareError {
 	readonly details?: string;
 }
 
-export class GithubRepoTool implements ICopilotTool<GithubRepoToolParams> {
-	public static readonly toolName = ToolName.GithubRepo;
-
+export class GithubRepoSemanticSearchTool implements ICopilotTool<GithubRepoToolParams> {
+	public static readonly toolName = ToolName.GithubSemanticRepoSearch;
 
 	constructor(
 		@IRunCommandExecutionService _commandService: IRunCommandExecutionService,
@@ -61,14 +60,15 @@ export class GithubRepoTool implements ICopilotTool<GithubRepoToolParams> {
 			throw new Error('No embedding models available');
 		}
 
-		const searchResults = await this._githubCodeSearch.searchRepo({ silent: true }, embeddingType, { githubRepoId, localRepoRoot: undefined, indexedCommit: undefined }, options.input.query, 64, {}, new TelemetryCorrelationId('github-repo-tool'), token);
+		const searchResults = await this._githubCodeSearch.semanticSearch({ silent: true }, embeddingType, { kind: 'repo', githubRepoId, localRepoRoot: undefined, indexedCommit: undefined }, options.input.query, 64, {}, new TelemetryCorrelationId('github-repo-tool'), token);
 
-		// Map the chunks to URIs
-		// TODO: Won't work for proxima or branches not called main
+		// Map the chunks to URIs using the remote URL and ref from the search response
+		const repoBaseUrl = searchResults.remoteUrl ?? `https://github.com/${toGithubNwo(githubRepoId)}`;
+		const ref = searchResults.refName ?? 'main';
 		const chunks = searchResults.chunks.map((entry): FileChunkAndScore => ({
 			chunk: {
 				...entry.chunk,
-				file: URI.joinPath(URI.parse('https://github.com'), toGithubNwo(githubRepoId), 'tree', 'main', entry.chunk.file.path).with({
+				file: URI.joinPath(URI.parse(repoBaseUrl), 'tree', ref, entry.chunk.file.path).with({
 					fragment: `L${entry.chunk.range.startLineNumber}-L${entry.chunk.range.endLineNumber}`,
 				}),
 			},
@@ -229,4 +229,4 @@ class GithubChunkSearchResults extends PromptElement<GithubChunkSearchResultsPro
 }
 
 
-ToolRegistry.registerTool(GithubRepoTool);
+ToolRegistry.registerTool(GithubRepoSemanticSearchTool);
