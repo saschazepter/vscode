@@ -170,7 +170,6 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 
 	private readonly _onDidCommitChatSessionItem = this._register(new Emitter<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }>());
 	public readonly onDidCommitChatSessionItem: Event<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }> = this._onDidCommitChatSessionItem.event;
-	private readonly previouslyCachedChanges = new Map<string, vscode.ChatSessionChangedFile[]>();
 
 
 	public resolveChatSessionItem?: (item: vscode.ChatSessionItem, token: vscode.CancellationToken) => Promise<vscode.ChatSessionItem | undefined>;
@@ -297,10 +296,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// `buildChanges` runs `git diff` and is the slow leg of populating an item. Skip it on the
 		// eager pass and let `resolveChatSessionItem` fill it in lazily for visible items.
 		// But if computing changes is easy (cached or the like), then include them right away to avoid a second update pass.
-		let changes: vscode.ChatSessionChangedFile[] | undefined = this.previouslyCachedChanges.get(session.id);
+		let changes: vscode.ChatSessionChangedFile[] | undefined;
 		if (!token.isCancellationRequested && (options?.includeChanges || (await this.canBuildChangesFast(session.id, worktreeProperties)))) {
 			changes = await this.buildChanges(session.id, worktreeProperties, workingDirectory, token);
-			this.previouslyCachedChanges.set(session.id, changes);
 
 			// We need to get an updated version of worktree properties here because when the
 			// changes are being computed, the worktree properties are also updated with the

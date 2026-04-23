@@ -131,7 +131,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 
 	private readonly controller: vscode.ChatSessionItemController;
 	private readonly newSessions = new ResourceMap<vscode.ChatSessionItem>();
-	private readonly previouslyCachedChanges = new Map<string, vscode.ChatSessionChangedFile[]>();
 
 	constructor(
 		@ICopilotCLISessionService private readonly sessionService: ICopilotCLISessionService,
@@ -225,7 +224,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		}
 		this._register(this.sessionService.onDidDeleteSession(async (e) => {
 			controller.items.delete(SessionIdForCLI.getResource(e));
-			this.previouslyCachedChanges.delete(e);
 		}));
 		this._register(this.sessionService.onDidChangeSession(async (e) => {
 			const item = await this.toChatSessionItem(e);
@@ -315,7 +313,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		if (refreshOptions.reason === 'delete') {
 			const uri = SessionIdForCLI.getResource(refreshOptions.sessionId);
 			this.controller.items.delete(uri);
-			this.previouslyCachedChanges.delete(refreshOptions.sessionId);
 		} else if (refreshOptions.reason === 'update' && hasKey(refreshOptions, { 'sessionIds': true })) {
 			await Promise.allSettled(refreshOptions.sessionIds.map(async sessionId => {
 				const item = await this.sessionService.getSessionItem(sessionId, CancellationToken.None);
@@ -348,8 +345,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		}
 		item.timing = session.timing;
 		item.status = session.status ?? vscode.ChatSessionStatus.Completed;
-		// This way, when user refreshes everything, they get the cached changes immediately.
-		item.changes = this.previouslyCachedChanges.get(session.id);
 
 		// `buildChanges` runs `git diff` and is the slow leg of populating an item. Skip it on the
 		// eager pass and let `resolveChatSessionItem` fill it in lazily for visible items.
@@ -369,7 +364,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			}
 
 			item.changes = changes;
-			this.previouslyCachedChanges.set(session.id, changes);
 		}
 
 		if (token.isCancellationRequested) {
