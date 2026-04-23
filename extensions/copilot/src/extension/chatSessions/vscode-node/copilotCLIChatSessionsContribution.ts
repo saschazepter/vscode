@@ -170,7 +170,6 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 
 	private readonly _onDidCommitChatSessionItem = this._register(new Emitter<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }>());
 	public readonly onDidCommitChatSessionItem: Event<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }> = this._onDidCommitChatSessionItem.event;
-	private readonly previouslyCachedChanges = new Map<string, vscode.ChatSessionChangedFile[]>();
 
 
 	public resolveChatSessionItem?: (item: vscode.ChatSessionItem, token: vscode.CancellationToken) => Promise<vscode.ChatSessionItem | undefined>;
@@ -297,10 +296,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// `buildChanges` runs `git diff` and is the slow leg of populating an item. Skip it on the
 		// eager pass and let `resolveChatSessionItem` fill it in lazily for visible items.
 		// But if computing changes is easy (cached or the like), then include them right away to avoid a second update pass.
-		let changes: vscode.ChatSessionChangedFile[] | undefined = this.previouslyCachedChanges.get(session.id);
+		let changes: vscode.ChatSessionChangedFile[] | undefined;
 		if (!token.isCancellationRequested && (options?.includeChanges || (await this.canBuildChangesFast(session.id, worktreeProperties)))) {
 			changes = await this.buildChanges(session.id, worktreeProperties, workingDirectory, token);
-			this.previouslyCachedChanges.set(session.id, changes);
 
 			// We need to get an updated version of worktree properties here because when the
 			// changes are being computed, the worktree properties are also updated with the
@@ -415,11 +413,12 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		if (!worktreeProperties?.repositoryPath) {
 			return false;
 		}
-		const [trusted, available] = await Promise.all([
+		const [trusted, hasCachedWorktreeChanges, hasCachedWorkspaceChanges] = await Promise.all([
 			vscode.workspace.isResourceTrusted(vscode.Uri.file(worktreeProperties.repositoryPath)),
-			this.worktreeManager.hasWorktreeChanges(sessionId)
+			this.worktreeManager.hasCachedChanges(sessionId),
+			this.workspaceFolderService.hasCachedChanges(sessionId)
 		]);
-		return trusted && available;
+		return trusted && (hasCachedWorktreeChanges || hasCachedWorkspaceChanges);
 	}
 
 
@@ -1454,7 +1453,9 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			// If user has selected a repo, then update with repo information (right icons, etc).
 			if (isUntitled) {
 				void this.lockRepoOptionForSession(context, token);
-				this.customSessionTitleService.generateSessionTitle(session.object.sessionId, request, token).catch(ex => this.logService.error(ex, 'Failed to generate custom session title'));
+				this.customSessionTitleService.generateSessionTitle(session.object.sessionId, request, token)
+					.then(title => title ? this.sessionService.updateSessionSummary(session.object.sessionId, title) : undefined)
+					.catch(ex => this.logService.error(ex, 'Failed to generate custom session title'));
 			}
 			const requestsForSession = this.pendingRequestBySession.get(session.object.sessionId) ?? new Set<vscode.ChatRequest>();
 			requestsForSession.add(request);

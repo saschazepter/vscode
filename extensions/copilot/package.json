@@ -2890,6 +2890,34 @@
 				"enablement": "!chatSessionRequestInProgress",
 				"icon": "$(repo)",
 				"category": "GitHub Copilot"
+			},
+			{
+				"command": "github.copilot.claude.sessions.commit",
+				"title": "%github.copilot.command.claude.sessions.commit%",
+				"enablement": "!chatSessionRequestInProgress",
+				"icon": "$(git-commit)",
+				"category": "GitHub Copilot"
+			},
+			{
+				"command": "github.copilot.claude.sessions.commitAndSync",
+				"title": "%github.copilot.command.claude.sessions.commitAndSync%",
+				"enablement": "!chatSessionRequestInProgress",
+				"icon": "$(sync)",
+				"category": "GitHub Copilot"
+			},
+			{
+				"command": "github.copilot.claude.sessions.sync",
+				"title": "%github.copilot.command.claude.sessions.sync%",
+				"enablement": "!chatSessionRequestInProgress",
+				"icon": "$(sync)",
+				"category": "GitHub Copilot"
+			},
+			{
+				"command": "github.copilot.claude.sessions.initializeRepository",
+				"title": "%github.copilot.command.claude.sessions.initializeRepository%",
+				"enablement": "!chatSessionRequestInProgress",
+				"icon": "$(repo)",
+				"category": "GitHub Copilot"
 			}
 		],
 		"configuration": [
@@ -4657,7 +4685,7 @@
 					},
 					"github.copilot.chat.cli.sessionController.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.sessionController.enabled%",
 						"tags": [
 							"advanced"
@@ -5014,6 +5042,26 @@
 					"command": "github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR",
 					"when": "chatSessionType == copilotcli && isSessionsWindow && sessions.isolationMode == worktree && sessions.hasGitRepository && sessions.hasGitHubRemote && sessions.hasPullRequest && sessions.hasOpenPullRequest",
 					"group": "pull_request@1"
+				},
+				{
+					"command": "github.copilot.claude.sessions.initializeRepository",
+					"when": "chatSessionType == claude-code && isSessionsWindow && !sessions.hasGitRepository",
+					"group": "init@1"
+				},
+				{
+					"command": "github.copilot.claude.sessions.commit",
+					"when": "chatSessionType == claude-code && isSessionsWindow && sessions.hasGitRepository && sessions.hasUncommittedChanges",
+					"group": "commit@1"
+				},
+				{
+					"command": "github.copilot.claude.sessions.commitAndSync",
+					"when": "chatSessionType == claude-code && isSessionsWindow && sessions.hasGitRepository && sessions.hasUncommittedChanges && sessions.hasUpstream",
+					"group": "commit@2"
+				},
+				{
+					"command": "github.copilot.claude.sessions.sync",
+					"when": "chatSessionType == claude-code && isSessionsWindow && sessions.hasGitRepository && !sessions.hasUncommittedChanges && sessions.hasUpstream",
+					"group": "sync@1"
 				}
 			],
 			"chat/contextUsage/actions": [
@@ -5372,6 +5420,22 @@
 				},
 				{
 					"command": "github.copilot.sessions.initializeRepository",
+					"when": "false"
+				},
+				{
+					"command": "github.copilot.claude.sessions.commit",
+					"when": "false"
+				},
+				{
+					"command": "github.copilot.claude.sessions.commitAndSync",
+					"when": "false"
+				},
+				{
+					"command": "github.copilot.claude.sessions.sync",
+					"when": "false"
+				},
+				{
+					"command": "github.copilot.claude.sessions.initializeRepository",
 					"when": "false"
 				}
 			],
