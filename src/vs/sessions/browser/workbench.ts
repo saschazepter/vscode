@@ -99,8 +99,7 @@ enum LayoutClasses {
 	EXPERIMENTAL_SEND_BUTTON_GRADIENT = 'sessions-experimental-send-button-gradient',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized',
-	PHONE_LAYOUT = 'phone-layout',
-	MOBILE_LAYOUT = 'mobile-layout'
+	PHONE_LAYOUT = 'phone-layout'
 }
 
 //#endregion
@@ -309,18 +308,24 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	) {
 		super();
 
-		// Sessions-scoped mobile viewport tweaks. Applied here rather than
-		// in the shared `workbench.html` so that the regular code-web
-		// workbench — which does not handle safe-area insets — is not
-		// affected on notched mobile devices. The viewport meta tag lives
-		// in `workbench.html` and cannot be constructed via dom.ts h(),
-		// so iterating pre-existing head children is the correct approach.
+		// Sessions-scoped mobile viewport tweaks. These are applied here
+		// (rather than in the shared workbench.html) so that the regular
+		// code-web workbench — which does not handle safe-area insets — is
+		// not affected on notched mobile devices.
+		// The viewport `<meta>` tag is injected by the shared workbench.html,
+		// so we cannot use dom.ts `h()` to create it. Look it up by tag name
+		// and filter by the `name` attribute to avoid a selector query.
 		// eslint-disable-next-line no-restricted-syntax
-		for (const meta of mainWindow.document.head.getElementsByTagName('meta')) {
-			if (meta.name === 'viewport' && !meta.content.includes('viewport-fit=')) {
-				meta.content = `${meta.content}, viewport-fit=cover`;
+		const metaElements = mainWindow.document.head.getElementsByTagName('meta');
+		let viewportMeta: HTMLMetaElement | undefined;
+		for (let i = 0; i < metaElements.length; i++) {
+			if (metaElements[i].name === 'viewport') {
+				viewportMeta = metaElements[i];
 				break;
 			}
+		}
+		if (viewportMeta && !viewportMeta.content.includes('viewport-fit=')) {
+			viewportMeta.content = `${viewportMeta.content}, viewport-fit=cover`;
 		}
 
 		// Perf: measure workbench startup time
@@ -422,14 +427,11 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 					editorMaximizedContext.set(this.isEditorMaximized());
 				}));
 
-				// Mobile Layout Context Keys
+				// Phone Layout Context Key
 				const contextKeyService = accessor.get(IContextKeyService);
-				const viewportClassCtx = ViewportClassContext.bindTo(contextKeyService);
-				const isMobileLayoutCtx = IsMobileLayoutContext.bindTo(contextKeyService);
+				const isPhoneLayoutCtx = IsPhoneLayoutContext.bindTo(contextKeyService);
 				this._register(autorun(reader => {
-					const vc = this.layoutPolicy.viewportClass.read(reader);
-					viewportClassCtx.set(vc);
-					isMobileLayoutCtx.set(vc === 'phone' || vc === 'tablet');
+					isPhoneLayoutCtx.set(this.layoutPolicy.viewportClass.read(reader) === 'phone');
 				}));
 
 				// Virtual keyboard detection via visualViewport API.
@@ -1209,7 +1211,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.layoutPolicy.update(this._mainContainerDimension.width, this._mainContainerDimension.height);
 		const currentClass = this.layoutPolicy.viewportClass.get();
 		this.mainContainer.classList.toggle(LayoutClasses.PHONE_LAYOUT, currentClass === 'phone');
-		this.mainContainer.classList.toggle(LayoutClasses.MOBILE_LAYOUT, this.layoutPolicy.isMobileLayout.get());
 
 		// When viewport class changes at runtime (e.g., device emulation toggle),
 		// update part visibility and create/destroy mobile components
@@ -1332,7 +1333,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			LayoutClasses.STATUSBAR_HIDDEN, // agents window never has a status bar
 			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined,
 			this.layoutPolicy.viewportClass.get() === 'phone' ? LayoutClasses.PHONE_LAYOUT : undefined,
-			this.layoutPolicy.isMobileLayout.get() ? LayoutClasses.MOBILE_LAYOUT : undefined,
 		]);
 	}
 

@@ -240,11 +240,11 @@
 }
 
 /* Overscroll containment */
-.agent-sessions-workbench.mobile-layout .interactive-session {
+.agent-sessions-workbench.phone-layout .interactive-session {
 	overscroll-behavior: contain;
 }
 
-.agent-sessions-workbench.mobile-layout .monaco-list {
+.agent-sessions-workbench.phone-layout .monaco-list {
 	overscroll-behavior: contain;
 }
 

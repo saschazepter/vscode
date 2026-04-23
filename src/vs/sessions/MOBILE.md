@@ -20,26 +20,28 @@ After a viewport-class transition the workbench calls `updateStyles()` on each p
 
 ### View & Action Gating
 
-Views, menu items, and actions use `when` clauses with the `sessionsIsMobileLayout` context key to control visibility per viewport class. This follows a **default-deny** approach for mobile:
+Views, menu items, and actions use `when` clauses with the `sessionsIsPhoneLayout` context key to control visibility in phone layout. This follows a **default-deny** approach for phone:
 
-- **Desktop-only features** add `when: IsMobileLayoutContext.negate()` to their view descriptors and menu registrations. They simply don't appear on mobile.
-- **Mobile-compatible features** (chat, sessions list) have no mobile gate — they render on all viewports.
-- **Mobile-specific replacements** (when ready) register with `when: IsMobileLayoutContext` and live in separate files under `parts/mobile/contributions/`.
+- **Desktop-only features** add `when: IsPhoneLayoutContext.negate()` to their view descriptors and menu registrations. They simply don't appear on phone.
+- **Phone-compatible features** (chat, sessions list) have no phone gate — they render on all viewports.
+- **Phone-specific replacements** (when ready) register with `when: IsPhoneLayoutContext` and live in separate files under `parts/mobile/contributions/`.
+
+Tablet and larger viewports currently fall back to the desktop layout; no separate tablet design exists yet.
 
 Two registrations can target the same slot with opposite `when` clauses, pointing to different view classes in different files — giving full file separation with no internal branching.
 
 #### Current Gating Status
 
-| Feature | Mobile Status | Mechanism |
+| Feature | Phone Status | Mechanism |
 |---------|--------------|-----------|
 | Sessions list (sidebar) | ✅ Compatible | No gate |
 | Chat views (ChatBar) | ✅ Compatible | No gate |
-| Changes view (AuxiliaryBar) | ❌ Gated | `when: !sessionsIsMobileLayout` on view descriptor |
-| Files view (AuxiliaryBar) | ❌ Gated | `when: !sessionsIsMobileLayout` on view descriptor |
-| Logs view (Panel) | ❌ Gated | `when: !sessionsIsMobileLayout` on view descriptor |
-| Terminal actions | ❌ Gated | `when: !sessionsIsMobileLayout` on menu item |
-| "Open in VS Code" action | ❌ Gated | `when: !sessionsIsMobileLayout` on menu item |
-| Code review toolbar | ❌ Gated | `when: !sessionsIsMobileLayout` on menu item |
+| Changes view (AuxiliaryBar) | ❌ Gated | `when: !sessionsIsPhoneLayout` on view descriptor |
+| Files view (AuxiliaryBar) | ❌ Gated | `when: !sessionsIsPhoneLayout` on view descriptor |
+| Logs view (Panel) | ❌ Gated | `when: !sessionsIsPhoneLayout` on view descriptor |
+| Terminal actions | ❌ Gated | `when: !sessionsIsPhoneLayout` on menu item |
+| "Open in VS Code" action | ❌ Gated | `when: !sessionsIsPhoneLayout` on menu item |
+| Code review toolbar | ❌ Gated | `when: !sessionsIsPhoneLayout` on menu item |
 | Customizations toolbar | ❌ Hidden | CSS `display: none` on phone |
 | Titlebar | ❌ Hidden | Grid `visible: false` + CSS + MobileTopBar replacement |
 
@@ -72,18 +74,17 @@ On phone-sized viewports (`< 640px` width):
 
 `SessionsLayoutPolicy` classifies the viewport:
 - **phone**: `width < 640px`
-- **tablet**: `640px ≤ width < 1024px`
+- **tablet**: `640px ≤ width < 1024px` (treated as desktop; no phone-specific chrome)
 - **desktop**: `width ≥ 1024px`
 
-The workbench toggles CSS classes (`phone-layout`, `mobile-layout`) on `layout()` and creates/destroys mobile components when the viewport class changes at runtime (e.g., DevTools device emulation). MobileTopBar lifecycle is managed via a `DisposableStore` that is cleared on viewport transitions to prevent leaks.
+The workbench toggles the `phone-layout` CSS class on `layout()` and creates/destroys mobile components when the viewport class changes at runtime (e.g., DevTools device emulation, or a real phone rotating across the 640px breakpoint). MobileTopBar lifecycle is managed via a `DisposableStore` that is cleared on viewport transitions to prevent leaks.
 
 ### Context Keys
 
 | Key | Type | Purpose |
 |-----|------|---------|
-| `sessionsViewportClass` | `string` | `'phone'`, `'tablet'`, or `'desktop'` |
-| `sessionsIsMobileLayout` | `boolean` | `true` when phone or tablet |
-| `sessionsKeyboardVisible` | `boolean` | `true` when virtual keyboard is visible |
+| `sessionsIsPhoneLayout` | `boolean` | `true` when the viewport is phone (< 640px) |
+| `sessionsKeyboardVisible` | `boolean` | `true` when the virtual keyboard is visible |
 
 ### Desktop → Mobile Component Mapping
 
@@ -121,7 +122,7 @@ The workbench toggles CSS classes (`phone-layout`, `mobile-layout`) on `layout()
 |------|---------|
 | `src/vs/sessions/browser/layoutPolicy.ts` | `SessionsLayoutPolicy`: observable viewport classification (phone/tablet/desktop), platform flags (isIOS, isAndroid, isTouchDevice), part visibility and size defaults. |
 | `src/vs/sessions/browser/mobileNavigationStack.ts` | `MobileNavigationStack`: Android back button integration via `history.pushState` / `popstate`. Supports `push()`, `pop()`, and `clear()`. |
-| `src/vs/sessions/common/contextkeys.ts` | Mobile context keys: `ViewportClassContext`, `IsMobileLayoutContext`, `KeyboardVisibleContext`. |
+| `src/vs/sessions/common/contextkeys.ts` | Phone context keys: `IsPhoneLayoutContext`, `KeyboardVisibleContext`. |
 
 ### Part Instantiation
 
@@ -147,7 +148,7 @@ The workbench toggles CSS classes (`phone-layout`, `mobile-layout`) on `layout()
 ## Remaining Work
 
 - **Session title sync**: MobileTopBar shows hardcoded "New Session" — needs to subscribe to `sessionsManagementService.activeSession` and update title when session changes.
-- **Files & Terminal access**: Should become mobile-specific views gated with `when: IsMobileLayoutContext`.
+- **Files & Terminal access**: Should become phone-specific views gated with `when: IsPhoneLayoutContext`.
 - **iOS keyboard handling**: Adjust layout when virtual keyboard appears (context key exists, but no layout response yet).
 - **Session list inline actions**: Make always-visible on touch devices (no hover-to-reveal).
 - **Customizations on mobile**: Currently hidden — needs a mobile-friendly alternative.

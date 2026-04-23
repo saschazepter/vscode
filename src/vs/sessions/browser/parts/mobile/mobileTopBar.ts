@@ -9,6 +9,7 @@ import { $, addDisposableListener, append, EventType } from '../../../../base/br
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { localize } from '../../../../nls.js';
 
 /**
  * Mobile top bar component — a simple DOM element prepended to the

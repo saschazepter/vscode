@@ -117,7 +117,7 @@
 }
 
 /* Increase sidebar footer action button height for touch */
-.agent-sessions-workbench.mobile-layout .part.sidebar > .sidebar-footer .sidebar-action-button {
+.agent-sessions-workbench.phone-layout .part.sidebar > .sidebar-footer .sidebar-action-button {
 	min-height: 44px;
 	padding: 8px 12px;
 }

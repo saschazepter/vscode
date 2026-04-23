@@ -41,8 +41,7 @@ export const EditorMaximizedContext = new RawContextKey<boolean>('editorMaximize
 
 //#region < --- Mobile Layout --- >
 
-export const ViewportClassContext = new RawContextKey<string>('sessionsViewportClass', 'desktop', localize('sessionsViewportClass', "The current viewport class: phone, tablet, or desktop"));
-export const IsMobileLayoutContext = new RawContextKey<boolean>('sessionsIsMobileLayout', false, localize('sessionsIsMobileLayout', "Whether the current layout is mobile (phone or tablet)"));
+export const IsPhoneLayoutContext = new RawContextKey<boolean>('sessionsIsPhoneLayout', false, localize('sessionsIsPhoneLayout', "Whether the current layout is the phone layout"));
 export const KeyboardVisibleContext = new RawContextKey<boolean>('sessionsKeyboardVisible', false, localize('sessionsKeyboardVisible', "Whether the virtual keyboard is visible"));
 
 //#endregion

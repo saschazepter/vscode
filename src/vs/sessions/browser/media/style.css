@@ -652,48 +652,44 @@
 	background live in mobileChatShell.css — do not duplicate them here. */
 
 /*
- * Mobile CSS class hierarchy:
- *   .mobile-layout  — applied to phone AND tablet viewports (< 1024px).
- *                      Use for touch-specific styles: overscroll containment,
- *                      44px touch targets, input zoom prevention, momentum scroll.
- *   .phone-layout   — applied to phone viewports only (< 640px).
- *                      Use for phone-specific layout overrides: bottom-sheet
- *                      quick picks, overlay panels, full-width context menus.
+ * Phone layout (< 640px) styles. Currently the only mobile form factor
+ * supported by the sessions workbench; tablet/larger viewports fall back
+ * to the desktop layout.
  */
 
-/* ---- Mobile Layout: Overscroll Containment ---- */
+/* ---- Phone Layout: Overscroll Containment ---- */
 
 /* Prevent body rubber-band on iOS and Chrome pull-to-refresh on Android */
-.agent-sessions-workbench.mobile-layout .monaco-scrollable-element > .scrollable-element {
+.agent-sessions-workbench.phone-layout .monaco-scrollable-element > .scrollable-element {
 	overscroll-behavior: contain;
 }
 
-.agent-sessions-workbench.mobile-layout .interactive-session {
+.agent-sessions-workbench.phone-layout .interactive-session {
 	overscroll-behavior: contain;
 }
 
-.agent-sessions-workbench.mobile-layout .monaco-list {
+.agent-sessions-workbench.phone-layout .monaco-list {
 	overscroll-behavior: contain;
 }
 
-/* ---- Mobile Layout: Touch Target Sizing ---- */
+/* ---- Phone Layout: Touch Target Sizing ---- */
 
 /* Ensure interactive elements meet 44px minimum touch target */
-.agent-sessions-workbench.mobile-layout .action-item > .action-label {
+.agent-sessions-workbench.phone-layout .action-item > .action-label {
 	min-height: 44px;
 	min-width: 44px;
 }
 
 /* Touch action for tap responsiveness */
-.agent-sessions-workbench.mobile-layout .action-item,
-.agent-sessions-workbench.mobile-layout button {
+.agent-sessions-workbench.phone-layout .action-item,
+.agent-sessions-workbench.phone-layout button {
 	touch-action: manipulation;
 }
 
 /* Disable text selection callout on interactive elements */
-.agent-sessions-workbench.mobile-layout .action-item,
-.agent-sessions-workbench.mobile-layout .monaco-toolbar,
-.agent-sessions-workbench.mobile-layout .sidebar-footer {
+.agent-sessions-workbench.phone-layout .action-item,
+.agent-sessions-workbench.phone-layout .monaco-toolbar,
+.agent-sessions-workbench.phone-layout .sidebar-footer {
 	-webkit-touch-callout: none;
 	user-select: none;
 	-webkit-user-select: none;
@@ -780,15 +776,15 @@
 	border-radius: 12px;
 }
 
-/* ---- Mobile Layout: Hover Cards ---- */
+/* ---- Phone Layout: Hover Cards ---- */
 
 /* Disable delayed hover cards on touch devices — they never trigger */
-.agent-sessions-workbench.mobile-layout .monaco-hover {
+.agent-sessions-workbench.phone-layout .monaco-hover {
 	display: none !important;
 }
 
 /* Exception: keep hovers that are explicitly triggered (e.g., info buttons) */
-.agent-sessions-workbench.mobile-layout .monaco-hover.visible-on-mobile {
+.agent-sessions-workbench.phone-layout .monaco-hover.visible-on-mobile {
 	display: block !important;
 }
 
@@ -828,22 +824,22 @@
 	padding-top: env(safe-area-inset-top);
 }
 
-/* ---- Mobile Layout: Input Auto-Zoom Prevention ---- */
+/* ---- Phone Layout: Input Auto-Zoom Prevention ---- */
 
 /* iOS Safari zooms in on input focus when font-size < 16px.
-	Force minimum 16px on all input elements in mobile layout. */
-.agent-sessions-workbench.mobile-layout input,
-.agent-sessions-workbench.mobile-layout textarea,
-.agent-sessions-workbench.mobile-layout .monaco-inputbox input,
-.agent-sessions-workbench.mobile-layout .chat-input-container textarea {
+	Force minimum 16px on all input elements on phone. */
+.agent-sessions-workbench.phone-layout input,
+.agent-sessions-workbench.phone-layout textarea,
+.agent-sessions-workbench.phone-layout .monaco-inputbox input,
+.agent-sessions-workbench.phone-layout .chat-input-container textarea {
 	font-size: 16px !important;
 }
 
-/* ---- Mobile Layout: Native Scroll Preservation ---- */
+/* ---- Phone Layout: Native Scroll Preservation ---- */
 
-/* Ensure chat content uses momentum scrolling on mobile.
+/* Ensure chat content uses momentum scrolling on phone.
 	The -webkit-overflow-scrolling property is needed for older iOS. */
-.agent-sessions-workbench.mobile-layout .interactive-session .monaco-scrollable-element {
+.agent-sessions-workbench.phone-layout .interactive-session .monaco-scrollable-element {
 	-webkit-overflow-scrolling: touch;
 }
 

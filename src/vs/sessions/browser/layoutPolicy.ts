@@ -71,10 +71,9 @@ export class SessionsLayoutPolicy extends Disposable {
 	/** Current viewport class derived from the most recent `update()` call. */
 	readonly viewportClass: IObservable<ViewportClass> = this._viewportClass;
 
-	/** `true` when the viewport class is `phone` or `tablet`. */
-	readonly isMobileLayout: IObservable<boolean> = derived(this, reader => {
-		const vc = this._viewportClass.read(reader);
-		return vc === 'phone' || vc === 'tablet';
+	/** `true` when the viewport class is `phone`. */
+	readonly isPhoneLayout: IObservable<boolean> = derived(this, reader => {
+		return this._viewportClass.read(reader) === 'phone';
 	});
 
 	constructor() {
