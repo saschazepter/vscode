@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { Attachment, SendOptions, Session, SessionOptions } from '@github/copilot/sdk';
+import type { Attachment, SendOptions, Session, SessionOptions, SystemNotificationEvent } from '@github/copilot/sdk';
 import * as l10n from '@vscode/l10n';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
@@ -117,6 +117,11 @@ function getPromptLabel(input: CopilotCLISessionInput): string {
 	return input.prompt;
 }
 
+export interface ICopilotCLISystemNotification {
+	readonly message: string;
+	readonly label: string;
+}
+
 export interface ICopilotCLISession extends IDisposable {
 	readonly sessionId: string;
 	readonly title?: string;
@@ -124,13 +129,14 @@ export interface ICopilotCLISession extends IDisposable {
 	readonly onDidChangeTitle: vscode.Event<string>;
 	readonly status: vscode.ChatSessionStatus | undefined;
 	readonly onDidChangeStatus: vscode.Event<vscode.ChatSessionStatus | undefined>;
+	readonly onDidReceiveSystemNotification: vscode.Event<ICopilotCLISystemNotification>;
 	readonly workspace: IWorkspaceInfo;
 	readonly additionalWorkspaces: IWorkspaceInfo[];
 	readonly pendingPrompt: string | undefined;
 	attachStream(stream: vscode.ChatResponseStream): IDisposable;
 	setPermissionLevel(level: string | undefined): void;
 	handleRequest(
-		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri },
+		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri; isSystemInitiated?: boolean },
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
 		model: { model: string; reasoningEffort?: string } | undefined,
@@ -166,6 +172,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	}
 	private _onDidChangeTitle = this.add(new Emitter<string>());
 	public onDidChangeTitle = this._onDidChangeTitle.event;
+	private _onDidReceiveSystemNotification = this.add(new Emitter<ICopilotCLISystemNotification>());
+	public onDidReceiveSystemNotification = this._onDidReceiveSystemNotification.event;
 	private _stream?: vscode.ChatResponseStream;
 	private _toolInvocationToken?: ChatParticipantToolToken;
 	public get sdkSession() {
@@ -222,6 +230,57 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		super();
 		this.sessionId = _sdkSession.sessionId;
 		this.add(toDisposable(() => this._todoSqlQuery.dispose()));
+
+		// Forward SDK system notifications (async/detached shell completions,
+		// background agent completions, etc.) to consumers as a typed event.
+		// The chat sessions provider uses this to inject a system-initiated
+		// chat request via `vscode.chat.sendSystemInitiatedRequest` so the
+		// notification surfaces as a UI bubble and the SDK's auto-injected
+		// follow-up turn streams into a fresh chat response (issue #309290).
+		this.logService.info(`[anthony] [CopilotCLISession] subscribing to system.notification for session ${this.sessionId}`);
+		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
+			try {
+				this.logService.info(`[anthony] [CopilotCLISession] system.notification received for session ${this.sessionId}: kind=${(event?.data?.kind as { type?: string } | undefined)?.type ?? 'unknown'}`);
+				const notification = this._buildSystemNotification(event);
+				if (notification) {
+					this.logService.info(`[anthony] [CopilotCLISession] firing onDidReceiveSystemNotification for session ${this.sessionId}, label=${notification.label}`);
+					this._onDidReceiveSystemNotification.fire(notification);
+				} else {
+					this.logService.info(`[anthony] [CopilotCLISession] system.notification skipped (unsupported kind) for session ${this.sessionId}`);
+				}
+			} catch (err) {
+				this.logService.error(err, `[anthony] [CopilotCLISession] Failed to translate system.notification for session ${this.sessionId}`);
+			}
+		})));
+	}
+
+	private _buildSystemNotification(event: SystemNotificationEvent): ICopilotCLISystemNotification | undefined {
+		const data = event?.data;
+		const kind = data?.kind;
+		const message = data?.content;
+		if (!kind || typeof message !== 'string' || message.length === 0) {
+			return undefined;
+		}
+		const description = 'description' in kind ? kind.description : undefined;
+		const shellId = 'shellId' in kind ? kind.shellId : undefined;
+		let label: string | undefined;
+		switch (kind.type) {
+			case 'shell_completed':
+			case 'shell_detached_completed':
+				label = description
+					? l10n.t("`{0}` completed", description)
+					: shellId
+						? l10n.t("Shell `{0}` completed", shellId)
+						: l10n.t("Shell completed");
+				break;
+			case 'agent_completed':
+				label = l10n.t("Background agent completed");
+				break;
+			default:
+				// Skip event kinds we don't surface (agent_idle, new_inbox_message, etc.)
+				return undefined;
+		}
+		return { message, label };
 	}
 
 	attachStream(stream: vscode.ChatResponseStream): IDisposable {
@@ -267,7 +326,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	 * When the session is idle, a normal full request is started instead.
 	 */
 	public async handleRequest(
-		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri },
+		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri; isSystemInitiated?: boolean },
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
 		model: { model: string; reasoningEffort?: string } | undefined,
@@ -288,10 +347,19 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		const handled = this._requestLogger.captureInvocation(capturingToken, async () => {
 			await this.updateModel(model?.model, model?.reasoningEffort, authInfo, token);
 
+			if (request.isSystemInitiated) {
+				// System-initiated requests are triggered by `system.notification`
+				// events. The SDK has already received the notification and queued
+				// its own follow-up turn, so we must NOT call `_sdkSession.send()`
+				// again. Just attach our event listeners to a fresh chat response
+				// and stream the in-flight follow-up assistant turn into it.
+				return this._handleRequestImpl(request, input, attachments, model, token, /*isSystemInitiated*/ true);
+			}
+
 			if (isAlreadyBusyWithAnotherRequest) {
 				return this._handleRequestSteering(input, attachments, model, previousRequestSnapshot, token);
 			} else {
-				return this._handleRequestImpl(request, input, attachments, model, token);
+				return this._handleRequestImpl(request, input, attachments, model, token, /*isSystemInitiated*/ false);
 			}
 		});
 
@@ -352,7 +420,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
 		model: { model: string; reasoningEffort?: string } | undefined,
-		token: vscode.CancellationToken
+		token: vscode.CancellationToken,
+		isSystemInitiated: boolean
 	): Promise<void> {
 		const modelId = model?.model;
 		const promptLabel = getPromptLabel(input);
@@ -387,7 +456,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					this._updateSdkTraceContext(traceparent);
 				}
 				try {
-					return await this._handleRequestImplInner(span, request, input, attachments, modelId, token);
+					return await this._handleRequestImplInner(span, request, input, attachments, modelId, token, isSystemInitiated);
 				} finally {
 					if (traceCtx && this._bridgeProcessor) {
 						this._bridgeProcessor.unregisterTrace(traceCtx.traceId);
@@ -407,7 +476,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
 		modelId: string | undefined,
-		token: vscode.CancellationToken
+		token: vscode.CancellationToken,
+		isSystemInitiated: boolean
 	): Promise<void> {
 		this.attachments.push(...attachments);
 		const prompt = getPromptLabel(input);
@@ -812,8 +882,18 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			})));
 
 			if (!token.isCancellationRequested) {
-				await this.sendRequestInternal(input, attachments, false, logStartTime);
+				if (isSystemInitiated) {
+					// The SDK has already enqueued the system notification and is
+					// running its own follow-up turn. We just wait for that turn
+					// to complete (next `session.idle`) so the listeners above
+					// can stream `assistant.message_delta` / `tool.execution_*`
+					// events into this fresh chat response.
+					await this._awaitNextSessionIdle(token);
+				} else {
+					await this.sendRequestInternal(input, attachments, false, logStartTime);
+				}
 			}
+
 			this.logService.trace(`[CopilotCLISession] Invoking session (completed) ${this.sessionId}`);
 			const resolvedToolIdEditMap: Record<string, string> = {};
 			await Promise.all(Array.from(toolIdEditMap.entries()).map(async ([toolId, editFilePromise]) => {
@@ -914,6 +994,35 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				this.logService.error(error, '[CopilotCLISession] Failed to update artifacts');
 			});
 	}
+	/**
+	 * Wait for the SDK to finish its current (or imminent) follow-up turn.
+	 *
+	 * Used when handling a system-initiated request: the SDK has already
+	 * received a `system.notification`, will run its own follow-up turn (via
+	 * `send({mode:'immediate', source:'system'})`), and we just need to keep
+	 * our chat response open so listeners stream `assistant.message_delta` /
+	 * `tool.execution_*` events into it. Resolves on the next
+	 * `assistant.turn_end`, on cancellation, or after a safety timeout.
+	 */
+	private async _awaitNextSessionIdle(token: vscode.CancellationToken): Promise<void> {
+		if (token.isCancellationRequested) {
+			return;
+		}
+		const SAFETY_TIMEOUT_MS = 5 * 60 * 1000;
+		const disposables = new DisposableStore();
+		try {
+			await new Promise<void>(resolve => {
+				const off = this._sdkSession.on('assistant.turn_end', () => resolve());
+				disposables.add(toDisposable(off));
+				disposables.add(token.onCancellationRequested(() => resolve()));
+				const timer = setTimeout(() => resolve(), SAFETY_TIMEOUT_MS);
+				disposables.add(toDisposable(() => clearTimeout(timer)));
+			});
+		} finally {
+			disposables.dispose();
+		}
+	}
+
 	/**
 	 * Sends a request to the underlying SDK session.
 	 *

@@ -28,7 +28,7 @@ import { IChatEditorOptions } from '../../contrib/chat/browser/widgetHosts/edito
 import { ChatEditorInput } from '../../contrib/chat/browser/widgetHosts/editor/chatEditorInput.js';
 import { IChatRequestVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { IChatDebugService } from '../../contrib/chat/common/chatDebugService.js';
-import { IChatContentInlineReference, IChatDetail, IChatProgress, IChatService, IChatSessionTiming } from '../../contrib/chat/common/chatService/chatService.js';
+import { ChatRequestQueueKind, IChatContentInlineReference, IChatDetail, IChatProgress, IChatService, IChatSessionTiming } from '../../contrib/chat/common/chatService/chatService.js';
 import { ChatSessionOptionsMap, ChatSessionStatus, IChatNewSessionRequest, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionRequestHistoryItem, IChatSessionsService, ReadonlyChatSessionOptionsMap } from '../../contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
@@ -1002,6 +1002,32 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 
 	$handleAnchorResolve(handle: number, sesssionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void {
 		// throw new Error('Method not implemented.');
+	}
+
+	async $sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, message: string, options: { systemInitiatedLabel: string }): Promise<void> {
+		const resource = URI.revive(sessionResource);
+		this._logService.info(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest handle=${handle} resource=${resource.toString()} label=${options.systemInitiatedLabel}`);
+		const ownedHandle = this._sessionTypeToHandle.get(resource.scheme);
+		if (ownedHandle !== handle) {
+			throw new Error(`sendSystemInitiatedRequest: extension does not own a chat session content provider for scheme '${resource.scheme}'`);
+		}
+		// Keep the chat model alive across the send so it isn't disposed if the
+		// user navigates away from the panel (mirrors RunInTerminalTool).
+		const sessionRef = this._chatService.acquireExistingSession(resource, 'MainThreadChatSessions#sendSystemInitiatedRequest');
+		if (!sessionRef) {
+			this._logService.warn(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest: chat model not loaded for ${resource.toString()}; dropping request`);
+			return;
+		}
+		try {
+			const result = await this._chatService.sendRequest(resource, message, {
+				isSystemInitiated: true,
+				systemInitiatedLabel: options.systemInitiatedLabel,
+				queue: ChatRequestQueueKind.Steering,
+			});
+			this._logService.info(`[anthony] [MainThreadChatSessions] $sendSystemInitiatedRequest result kind=${result.kind}`);
+		} finally {
+			sessionRef.dispose();
+		}
 	}
 
 	$onDidChangeChatSessionProviderOptions(handle: number): void {

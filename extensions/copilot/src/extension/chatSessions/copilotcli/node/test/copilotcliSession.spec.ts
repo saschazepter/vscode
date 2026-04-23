@@ -134,6 +134,7 @@ class MockSdkSession {
 	async setSelectedModel(model: string, _reasoningEffort?: string) { this._selectedModel = model; }
 	async getEvents() { return []; }
 	getPlanPath(): string | null { return null; }
+	getBackgroundTasks(): unknown[] { return []; }
 
 	usage = {
 		getMetrics: async () => ({

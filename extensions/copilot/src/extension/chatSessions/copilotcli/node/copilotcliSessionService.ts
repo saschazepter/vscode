@@ -26,7 +26,7 @@ import { disposableTimeout, raceCancellation, raceCancellationError, SequencerBy
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { Emitter, Event } from '../../../../util/vs/base/common/event';
 import { Lazy } from '../../../../util/vs/base/common/lazy';
-import { Disposable, DisposableMap, IDisposable, IReference, RefCountedDisposable, toDisposable } from '../../../../util/vs/base/common/lifecycle';
+import { Disposable, DisposableMap, IDisposable, IReference, MutableDisposable, RefCountedDisposable, toDisposable } from '../../../../util/vs/base/common/lifecycle';
 import { basename, dirname, joinPath } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../../util/vs/base/common/uuid';
@@ -85,6 +85,14 @@ export interface ICopilotCLISessionService {
 	onDidChangeSession: Event<ICopilotCLISessionItem>;
 	onDidCreateSession: Event<ICopilotCLISessionItem>;
 
+	/**
+	 * Fires when an SDK session emits a system notification (e.g. an async
+	 * shell completes, a background agent finishes). Used by the chat sessions
+	 * provider to inject a system-initiated chat request so the notification
+	 * surfaces as a UI bubble (issue #309290).
+	 */
+	onDidReceiveSystemNotification: Event<{ readonly sessionId: string; readonly message: string; readonly label: string }>;
+
 	getSessionWorkingDirectory(sessionId: string): Uri | undefined;
 
 	// Session metadata querying
@@ -131,6 +139,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 	public readonly onDidChangeSession = this._onDidChangeSession.event;
 	private readonly _onDidCreateSession = this._register(new Emitter<ICopilotCLISessionItem>());
 	public readonly onDidCreateSession = this._onDidCreateSession.event;
+
+	private readonly _onDidReceiveSystemNotification = this._register(new Emitter<{ readonly sessionId: string; readonly message: string; readonly label: string }>());
+	public readonly onDidReceiveSystemNotification = this._onDidReceiveSystemNotification.event;
 
 	private readonly _onDidCloseSession = this._register(new Emitter<string>());
 	private readonly sessionTerminators = new DisposableMap<string, IDisposable>();
@@ -1051,6 +1062,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			this.triggerOnDidChangeSessionItem(sdkSession.sessionId, 'statusChange');
 			this._onDidChangeSessions.fire();
 		}));
+		session.add(session.onDidReceiveSystemNotification(notification => {
+			this._onDidReceiveSystemNotification.fire({ sessionId: sdkSession.sessionId, ...notification });
+		}));
 		session.add(toDisposable(() => {
 			this._sessionWrappers.deleteAndLeak(sdkSession.sessionId);
 			this.sessionMutexForGetSession.delete(sdkSession.sessionId);
@@ -1090,6 +1104,59 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 		const refCountedSession = new RefCountedSession(session);
 		this._sessionWrappers.set(sdkSession.sessionId, refCountedSession);
+
+		// Keep the `RefCountedSession` alive for a post-turn window so the SDK
+		// session (and its shell-completion polling loops) survives past
+		// `assistant.turn_end`. Without this, the per-request `DisposableStore`
+		// releases its single ref and the SDK session is closed before any
+		// `system.notification` for an async/detached shell completion can
+		// fire, so no fresh chat bubble appears (issue #309290).
+		//
+		// Note: we can't rely on `getBackgroundTasks()` here because the public
+		// task list only includes *detached* shells and background agents, not
+		// plain `mode: "async"` shells (they're tracked internally by
+		// `shellContext.currentExecutions`). A status-based window matches the
+		// existing `sessionTerminators` 5-minute lifetime and covers every
+		// async-completion path the SDK emits.
+		let hasKeepAliveRef = false;
+		const releaseKeepAlive = (reason: string) => {
+			if (hasKeepAliveRef) {
+				hasKeepAliveRef = false;
+				this.logService.info(`[anthony] [CopilotCLISession] releasing post-turn keep-alive ref for session ${sdkSession.sessionId} (${reason})`);
+				refCountedSession.release();
+			}
+		};
+		const keepAliveTimer = new MutableDisposable<IDisposable>();
+		session.add(keepAliveTimer);
+		session.add(toDisposable(() => releaseKeepAlive('session disposed')));
+		session.add(session.onDidChangeStatus(() => {
+			const status = session.status;
+			this.logService.info(`[anthony] [CopilotCLISession] onDidChangeStatus for session ${sdkSession.sessionId}: status=${status}, permissionRequested=${session.permissionRequested}`);
+			if (session.permissionRequested) {
+				keepAliveTimer.clear();
+				return;
+			}
+			if (status === undefined || status === ChatSessionStatus.Completed || status === ChatSessionStatus.Failed) {
+				if (!hasKeepAliveRef) {
+					refCountedSession.acquire();
+					hasKeepAliveRef = true;
+					this.logService.info(`[anthony] [CopilotCLISession] acquired post-turn keep-alive ref for session ${sdkSession.sessionId}`);
+				}
+				keepAliveTimer.value = disposableTimeout(() => releaseKeepAlive('post-turn window elapsed'), SESSION_SHUTDOWN_TIMEOUT_MS);
+			} else {
+				// Session is busy again (new turn started); hold the ref and
+				// cancel the release timer.
+				keepAliveTimer.clear();
+			}
+		}));
+		// Also log system.notification turnaround from the SDK so we can see
+		// the full path: status → notification received → forwarded.
+		session.add(toDisposable(sdkSession.on('session.background_tasks_changed', () => {
+			const tasks = sdkSession.getBackgroundTasks();
+			const taskSummary = tasks.map(t => `${t.type}:${t.status}`).join(', ');
+			this.logService.info(`[anthony] [CopilotCLISession] background_tasks_changed for session ${sdkSession.sessionId}: [${taskSummary}]`);
+		})));
+
 		return refCountedSession;
 	}
 

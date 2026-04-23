@@ -579,6 +579,42 @@ declare module 'vscode' {
 		 * @returns A disposable that unregisters the provider when disposed.
 		 */
 		export function registerChatSessionContentProvider(scheme: string, provider: ChatSessionContentProvider, defaultChatParticipant: ChatParticipant, capabilities?: ChatSessionCapabilities): Disposable;
+
+		/**
+		 * Inject a system-initiated request into a chat session that this extension owns.
+		 *
+		 * Use this from a {@link ChatSessionContentProvider} to surface out-of-band events
+		 * (for example async terminal command completion, background agent finishing,
+		 * external notifications) as a new turn in the chat UI without requiring the user
+		 * to type a message.
+		 *
+		 * The request is rendered as a compact system-notification bubble rather than a
+		 * normal user message and is queued as a steering request so it preempts the
+		 * currently active turn (if any).
+		 *
+		 * @param sessionResource The URI of the target chat session. Its scheme must
+		 *   match a {@link ChatSessionContentProvider} registered by this extension.
+		 * @param message The message body sent to the session's participant.
+		 * @param options Display and routing options for the system-initiated request.
+		 *
+		 * @returns A thenable that resolves once the request has been accepted and queued
+		 *   for the session participant.
+		 */
+		export function sendSystemInitiatedRequest(sessionResource: Uri, message: string, options: SystemInitiatedChatRequestOptions): Thenable<void>;
+	}
+
+	/**
+	 * Display and routing options for {@link chat.sendSystemInitiatedRequest}.
+	 */
+	export interface SystemInitiatedChatRequestOptions {
+		/**
+		 * Short human-readable label describing the system event that triggered this
+		 * request. Rendered as a compact bubble in the chat UI in place of a user
+		 * message.
+		 *
+		 * Examples: ``"`sleep 10` completed"``, `"Background agent finished"`.
+		 */
+		readonly systemInitiatedLabel: string;
 	}
 
 	export interface ChatContext {

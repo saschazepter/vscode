@@ -1668,6 +1668,10 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatSessionsProvider');
 				return extHostChatSessions.registerChatSessionContentProvider(extension, scheme, chatParticipant, provider, capabilities);
 			},
+			sendSystemInitiatedRequest(sessionResource: vscode.Uri, message: string, options: vscode.SystemInitiatedChatRequestOptions): Thenable<void> {
+				checkProposedApiEnabled(extension, 'chatSessionsProvider');
+				return extHostChatSessions.sendSystemInitiatedRequest(extension, sessionResource, message, options);
+			},
 			registerChatOutputRenderer: (viewType: string, renderer: vscode.ChatOutputRenderer) => {
 				checkProposedApiEnabled(extension, 'chatOutputRenderer');
 				return extHostChatOutputRenderer.registerChatOutputRenderer(extension, viewType, renderer);

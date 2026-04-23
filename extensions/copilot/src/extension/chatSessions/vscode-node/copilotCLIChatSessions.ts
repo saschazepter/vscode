@@ -150,6 +150,17 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 	) {
 		super();
 
+		// Forward SDK system notifications (async shell completed, etc.) into
+		// the chat panel as a system-initiated request so the user sees a UI
+		// chip + fresh response bubble (issue #309290).
+		this._register(this.sessionService.onDidReceiveSystemNotification(({ sessionId, message, label }) => {
+			const sessionResource = SessionIdForCLI.getResource(sessionId);
+			this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] Sending system-initiated request for session ${sessionId}, scheme=${sessionResource.scheme}, label=${label}`);
+			vscode.chat.sendSystemInitiatedRequest(sessionResource, message, { systemInitiatedLabel: label })
+				.then(() => this.logService.info(`[anthony] [CopilotCLIChatSessionContentProvider] system-initiated request accepted for session ${sessionId}`),
+					err => this.logService.error(err, `[anthony] [CopilotCLIChatSessionContentProvider] Failed to send system-initiated request for session ${sessionId}`));
+		}));
+
 		let isRefreshing = false;
 		const refreshSessions = async () => {
 			if (isRefreshing) {
@@ -854,7 +865,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				await this.handleDelegationToCloud(session.object, request, context, stream, token);
 			} else {
 				const { input, attachments } = await this.resolveInput(request, session.object, isNewSession, token);
-				await session.object.handleRequest(request, input, attachments, model, authInfo, token);
+				await session.object.handleRequest({ ...request, isSystemInitiated: request.isSystemInitiated }, input, attachments, model, authInfo, token);
 			}
 
 			return {};
