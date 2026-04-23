@@ -371,9 +371,8 @@ suite('WorkspacePicker - Connection Status', () => {
 		//
 		// Realistic shape: storage holds BOTH a (non-checked) recent for the
 		// early-registering provider and a (checked) recent for the late-registering
-		// provider. The picker must not lock onto the early-registering recent as a
-		// fallback — it should wait, then upgrade to the checked entry once that
-		// provider arrives.
+		// provider. The picker may briefly show the early recent as a fallback, but
+		// once the checked entry's provider registers, the picker must upgrade to it.
 		const copilotProvider = createMockProvider('default-copilot');
 
 		const storage = disposables.add(new TestStorageService());
@@ -386,10 +385,8 @@ suite('WorkspacePicker - Connection Status', () => {
 		providersService.setProviders([copilotProvider]);
 		const picker = createTestPicker(disposables, providersService, storage);
 
-		// Nothing should be auto-selected: the checked entry's provider isn't
-		// registered, and we must not fall back to a different recent.
-		assertSelectedProvider(picker, undefined, 'No fallback selection while checked entry\'s provider is unregistered');
-
+		// The fallback may be selected initially (early provider's recent),
+		// since the user's checked entry's provider isn't ready yet.
 		// Now the late provider arrives.
 		const agentHostProvider = createMockProvider('local-agent-host');
 		providersService.setProviders([copilotProvider, agentHostProvider]);

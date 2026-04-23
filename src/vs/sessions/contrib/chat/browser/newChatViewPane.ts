@@ -114,20 +114,15 @@ class NewChatWidget extends Disposable {
 		// Session types may not be available yet (e.g., agent host still connecting).
 		// If so, wait for them before creating the session.
 		if (!sessionTypeId && provider.getSessionTypes(selection.workspace.repositories[0].uri).length === 0 && provider.onDidChangeSessionTypes) {
-			const onChange = provider.onDidChangeSessionTypes;
-			this._pendingSessionTypeWait.value = onChange(() => {
+			this._pendingSessionTypeWait.value = provider.onDidChangeSessionTypes(() => {
 				if (provider.getSessionTypes(selection.workspace.repositories[0].uri).length > 0) {
 					this._pendingSessionTypeWait.clear();
-					this._doCreateNewSession(selection, sessionTypeId);
+					this._createNewSession(selection, sessionTypeId);
 				}
 			});
 			return;
 		}
 
-		this._doCreateNewSession(selection, sessionTypeId);
-	}
-
-	private _doCreateNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
 		try {
 			this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
 		} catch (e) {
