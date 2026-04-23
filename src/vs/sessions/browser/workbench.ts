@@ -892,8 +892,8 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		// Default sizes
 		const sideBarSize = 300;
-		const editorSize = 650;
-		const auxiliaryBarSize = 380;
+		const editorSize = 600;
+		const auxiliaryBarSize = 340;
 		const panelSize = 300;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
 
