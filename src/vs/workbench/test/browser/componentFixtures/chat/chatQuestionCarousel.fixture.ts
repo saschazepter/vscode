@@ -119,6 +119,19 @@ const multiSelectQuestion: IChatQuestion = {
 	defaultValue: ['lint', 'fmt'],
 };
 
+// 300 character question message used to verify that long titles render in
+// full (no truncation / no ellipsis) in the question carousel header.
+const longQuestionMessage =
+	'Please describe in detail the full end-to-end behavior you expect for this project, including any edge cases around input validation, error handling, accessibility, localization, performance constraints, telemetry requirements, and the shape of the data you plan to send back to the top-level caller.';
+
+const longQuestion: IChatQuestion = {
+	id: 'long-question',
+	type: 'text',
+	title: 'Long question',
+	message: longQuestionMessage,
+	defaultValue: '',
+};
+
 // ============================================================================
 // Fixtures
 // ============================================================================
@@ -137,6 +150,11 @@ export default defineThemedFixtureGroup({ path: 'chat/' }, {
 	MultiSelectQuestion: defineComponentFixture({
 		labels: { kind: 'screenshot' },
 		render: (context) => renderCarousel(context, createCarousel([multiSelectQuestion])),
+	}),
+
+	LongQuestion: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: (context) => renderCarousel(context, createCarousel([longQuestion])),
 	}),
 
 	MultipleQuestions: defineComponentFixture({
