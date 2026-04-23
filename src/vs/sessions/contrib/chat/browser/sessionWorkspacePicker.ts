@@ -343,17 +343,17 @@ export class WorkspacePicker extends Disposable {
 		const recentWorkspaces = [...ownRecentWorkspaces, ...vsCodeRecents];
 
 		// Build flat list of workspace entries with their group info
-		const workspaceEntries: { workspace: ISessionWorkspace; providerId: string; isOwnRecent: boolean; groupTitle: string; isOffline: boolean }[] = [];
+		const workspaceEntries: { workspace: ISessionWorkspace; providerId: string; isOwnRecent: boolean; groupTitle: string; isUnavailable: boolean }[] = [];
 		const providersWithWorkspaces = allProviders.filter(p => recentWorkspaces.some(w => w.providerId === p.id));
 		for (const provider of providersWithWorkspaces) {
-			const isOffline = this._isProviderUnavailable(provider.id);
+			const isUnavailable = this._isProviderUnavailable(provider.id);
 			const providerWorkspaces = recentWorkspaces
 				.map((w, idx) => ({ ...w, isOwnRecent: idx < ownRecentCount }))
 				.filter(w => w.providerId === provider.id);
 			for (const { workspace, providerId, isOwnRecent } of providerWorkspaces) {
 				const groupName = workspace.group ?? provider.label;
-				const groupTitle = isOffline ? localize('workspacePicker.groupOffline', "{0} (Offline)", groupName) : groupName;
-				workspaceEntries.push({ workspace, providerId, isOwnRecent, groupTitle, isOffline });
+				const groupTitle = isUnavailable ? localize('workspacePicker.groupUnavailable', "{0} (Unavailable)", groupName) : groupName;
+				workspaceEntries.push({ workspace, providerId, isOwnRecent, groupTitle, isUnavailable });
 			}
 		}
 
@@ -368,7 +368,7 @@ export class WorkspacePicker extends Disposable {
 
 		// Add items with separators between groups
 		let lastGroupTitle: string | undefined;
-		for (const { workspace, providerId, isOwnRecent, groupTitle, isOffline } of workspaceEntries) {
+		for (const { workspace, providerId, isOwnRecent, groupTitle, isUnavailable } of workspaceEntries) {
 			if (lastGroupTitle !== undefined && lastGroupTitle !== groupTitle) {
 				items.push({ kind: ActionListItemKind.Separator, label: '' });
 			}
@@ -380,7 +380,7 @@ export class WorkspacePicker extends Disposable {
 				label: workspace.label,
 				description: workspace.description,
 				group: { title: groupTitle, icon: workspace.icon },
-				disabled: isOffline,
+				disabled: isUnavailable,
 				item: { selection, checked: selected || undefined },
 				onRemove: isOwnRecent ? () => this._removeRecentWorkspace(selection) : () => this._removeVSCodeRecentWorkspace(selection),
 			});
