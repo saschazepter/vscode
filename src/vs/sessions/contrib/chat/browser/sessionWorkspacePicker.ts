@@ -11,6 +11,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
+import { basename } from '../../../../base/common/resources.js';
 import { isNative } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
@@ -926,10 +927,7 @@ export class WorkspacePicker extends Disposable {
 	 * (a folder whose name starts with `copilot-`).
 	 */
 	private _isCopilotWorktree(uri: URI): boolean {
-		const path = uri.path;
-		const lastSlash = path.lastIndexOf('/');
-		const folderName = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
-		return folderName.startsWith('copilot-');
+		return basename(uri).startsWith('copilot-');
 	}
 
 	/**
