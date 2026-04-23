@@ -63,6 +63,7 @@ import { TerminalToolId } from './toolIds.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import type { ICommandLineRewriter } from './commandLineRewriter/commandLineRewriter.js';
 import { CommandLineCdPrefixRewriter } from './commandLineRewriter/commandLineCdPrefixRewriter.js';
+import { CommandLineMultilineWrapRewriter } from './commandLineRewriter/commandLineMultilineWrapRewriter.js';
 import { CommandLinePreventHistoryRewriter } from './commandLineRewriter/commandLinePreventHistoryRewriter.js';
 import { CommandLinePwshChainOperatorRewriter } from './commandLineRewriter/commandLinePwshChainOperatorRewriter.js';
 import { CommandLineBackgroundDetachRewriter } from './commandLineRewriter/commandLineBackgroundDetachRewriter.js';
@@ -569,6 +570,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 
 		this._commandLineRewriters = [
 			this._register(this._instantiationService.createInstance(CommandLineCdPrefixRewriter)),
+			// MultilineWrapRewriter must come before BackgroundDetachRewriter so that multi-line
+			// commands are wrapped in `<shell> -c '...'` first. Without this, shell integration
+			// sees each line as a separate command and the execute strategy resolves on the first
+			// `onCommandFinished`, returning partial output to the agent while later lines run
+			// unattended in the terminal.
+			this._register(this._instantiationService.createInstance(CommandLineMultilineWrapRewriter)),
 			this._register(this._instantiationService.createInstance(CommandLinePwshChainOperatorRewriter, this._treeSitterCommandParser)),
 		];
 		if (this._enableCommandLineSandboxRewriting) {
