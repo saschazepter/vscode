@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { BaseActionViewItem } from '../../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { autorun, observableValue } from '../../../../../base/common/observable.js';
 import * as nls from '../../../../../nls.js';
 import { IActionViewItemService } from '../../../../../platform/actions/browser/actionViewItemService.js';
@@ -12,6 +12,10 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
+import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
+import { IsSessionsWindowContext } from '../../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../workbench/common/contributions.js';
 import { type ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { type IChatInputPickerOptions } from '../../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
@@ -27,6 +31,9 @@ const IsActiveSessionAgentHost = ContextKeyExpr.or(
 	ContextKeyExpr.regex(ActiveSessionProviderIdContext.key, /^agenthost-/),
 );
 
+// Module-level callback for programmatic picker invocation via keybinding.
+let _agentHostModelPickerShowCallback: (() => void) | undefined;
+
 // -- Agent Host Model Picker Action --
 
 registerAction2(class extends Action2 {
@@ -35,6 +42,11 @@ registerAction2(class extends Action2 {
 			id: 'sessions.agentHost.modelPicker',
 			title: nls.localize2('agentHostModelPicker', "Model"),
 			f1: false,
+			keybinding: {
+				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.Period,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, ChatContextKeys.inChatInput, IsActiveSessionAgentHost),
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+			},
 			menu: [{
 				id: Menus.NewSessionConfig,
 				group: 'navigation',
@@ -43,7 +55,7 @@ registerAction2(class extends Action2 {
 			}],
 		});
 	}
-	override async run(): Promise<void> { /* handled by action view item */ }
+	override async run(): Promise<void> { _agentHostModelPickerShowCallback?.(); }
 });
 
 // -- Agent Host Model Picker Contribution --
@@ -140,6 +152,13 @@ class AgentHostModelPickerContribution extends Disposable implements IWorkbenchC
 				initModelFromActiveSession();
 
 				const disposableStore = new DisposableStore();
+				const showCallback = () => modelPicker.openModelPicker();
+				_agentHostModelPickerShowCallback = showCallback;
+				disposableStore.add(toDisposable(() => {
+					if (_agentHostModelPickerShowCallback === showCallback) {
+						_agentHostModelPickerShowCallback = undefined;
+					}
+				}));
 				disposableStore.add(languageModelsService.onDidChangeLanguageModels(() => initModelFromActiveSession()));
 
 				disposableStore.add(autorun(reader => {

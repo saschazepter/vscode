@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { coalesce } from '../../../../base/common/arrays.js';
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IReader, autorun, observableValue } from '../../../../base/common/observable.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, registerAction2, MenuId, MenuRegistry, isIMenuItem } from '../../../../platform/actions/common/actions.js';
@@ -19,6 +19,10 @@ import { ModelPickerActionItem, IModelPickerDelegate } from '../../../../workben
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { Menus } from '../../../browser/menus.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
@@ -33,6 +37,21 @@ import { ModePicker } from './modePicker.js';
 import { CloudModelPicker } from './modelPicker.js';
 import { CopilotPermissionPickerDelegate, PermissionPicker } from './permissionPicker.js';
 import { ClaudePermissionModePicker } from './claudePermissionModePicker.js';
+
+// -- Picker Show Callback Registry --
+// Module-level registry that maps action IDs to their picker show callbacks.
+// Populated by CopilotPickerActionViewItemContribution when pickers are created;
+// consumed by the action `run()` methods to programmatically open pickers via keybindings.
+const _pickerShowCallbacks = new Map<string, () => void>();
+
+function registerPickerShowCallback(actionId: string, callback: () => void): IDisposable {
+	_pickerShowCallbacks.set(actionId, callback);
+	return toDisposable(() => {
+		if (_pickerShowCallbacks.get(actionId) === callback) {
+			_pickerShowCallbacks.delete(actionId);
+		}
+	});
+}
 
 const IsActiveSessionCopilotCLI = ContextKeyExpr.equals(ActiveSessionTypeContext.key, COPILOT_CLI_SESSION_TYPE);
 const IsActiveSessionCopilotCloud = ContextKeyExpr.equals(ActiveSessionTypeContext.key, COPILOT_CLOUD_SESSION_TYPE);
@@ -89,6 +108,11 @@ registerAction2(class extends Action2 {
 			id: 'sessions.defaultCopilot.modePicker',
 			title: localize2('modePicker', "Mode"),
 			f1: false,
+			keybinding: {
+				primary: KeyMod.CtrlCmd | KeyCode.Period,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, ChatContextKeys.inChatInput, IsActiveSessionCopilotChatCLI),
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+			},
 			menu: [{
 				id: Menus.NewSessionConfig,
 				group: 'navigation',
@@ -97,7 +121,7 @@ registerAction2(class extends Action2 {
 			}],
 		});
 	}
-	override async run(): Promise<void> { /* handled by action view item */ }
+	override async run(): Promise<void> { _pickerShowCallbacks.get('sessions.defaultCopilot.modePicker')?.(); }
 });
 
 registerAction2(class extends Action2 {
@@ -106,6 +130,11 @@ registerAction2(class extends Action2 {
 			id: 'sessions.defaultCopilot.localModelPicker',
 			title: localize2('localModelPicker', "Model"),
 			f1: false,
+			keybinding: {
+				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.Period,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, ChatContextKeys.inChatInput, ContextKeyExpr.or(IsActiveSessionCopilotChatCLI, IsActiveSessionCopilotChatClaudeCode)),
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+			},
 			menu: [{
 				id: Menus.NewSessionConfig,
 				group: 'navigation',
@@ -114,7 +143,7 @@ registerAction2(class extends Action2 {
 			}],
 		});
 	}
-	override async run(): Promise<void> { /* handled by action view item */ }
+	override async run(): Promise<void> { _pickerShowCallbacks.get('sessions.defaultCopilot.localModelPicker')?.(); }
 });
 
 registerAction2(class extends Action2 {
@@ -123,6 +152,11 @@ registerAction2(class extends Action2 {
 			id: 'sessions.defaultCopilot.cloudModelPicker',
 			title: localize2('cloudModelPicker', "Model"),
 			f1: false,
+			keybinding: {
+				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.Period,
+				when: ContextKeyExpr.and(IsSessionsWindowContext, ChatContextKeys.inChatInput, IsActiveSessionCopilotChatCloud),
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+			},
 			menu: [{
 				id: Menus.NewSessionConfig,
 				group: 'navigation',
@@ -131,7 +165,7 @@ registerAction2(class extends Action2 {
 			}],
 		});
 	}
-	override async run(): Promise<void> { /* handled by action view item */ }
+	override async run(): Promise<void> { _pickerShowCallbacks.get('sessions.defaultCopilot.cloudModelPicker')?.(); }
 });
 
 registerAction2(class extends Action2 {
@@ -222,21 +256,24 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 			Menus.NewSessionConfig, 'sessions.defaultCopilot.modePicker',
 			() => {
 				const picker = instantiationService.createInstance(ModePicker);
-				return new PickerActionViewItem(picker);
+				const callbackReg = registerPickerShowCallback('sessions.defaultCopilot.modePicker', () => picker.showPicker());
+				return new PickerActionViewItem(picker, callbackReg);
 			},
 		));
 		this._register(actionViewItemService.register(
 			Menus.NewSessionConfig, 'sessions.defaultCopilot.localModelPicker',
 			() => {
 				const picker = instantiationService.createInstance(SessionModelPicker);
-				return new PickerActionViewItem(picker);
+				const callbackReg = registerPickerShowCallback('sessions.defaultCopilot.localModelPicker', () => picker.showPicker());
+				return new PickerActionViewItem(picker, callbackReg);
 			},
 		));
 		this._register(actionViewItemService.register(
 			Menus.NewSessionConfig, 'sessions.defaultCopilot.cloudModelPicker',
 			() => {
 				const picker = instantiationService.createInstance(CloudModelPicker);
-				return new PickerActionViewItem(picker);
+				const callbackReg = registerPickerShowCallback('sessions.defaultCopilot.cloudModelPicker', () => picker.showPicker());
+				return new PickerActionViewItem(picker, callbackReg);
 			},
 		));
 		this._register(actionViewItemService.register(
@@ -343,6 +380,10 @@ export class SessionModelPicker extends Disposable {
 			const remembered = rememberedModelId ? models.find(m => m.identifier === rememberedModelId) : undefined;
 			this._delegate.setModel(remembered ?? models[0]);
 		}
+	}
+
+	showPicker(): void {
+		this._modelPicker.openModelPicker();
 	}
 
 	render(container: HTMLElement): void {

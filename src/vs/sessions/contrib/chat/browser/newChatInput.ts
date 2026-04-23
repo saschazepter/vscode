@@ -44,6 +44,7 @@ import { VariableCompletionHandler } from './variableCompletions.js';
 import { IChatModelInputState } from '../../../../workbench/contrib/chat/common/model/chatModel.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { ChatHistoryNavigator } from '../../../../workbench/contrib/chat/common/widget/chatWidgetHistoryService.js';
 import { IHistoryNavigationWidget } from '../../../../base/browser/history.js';
 import { registerAndCreateHistoryNavigationContext, IHistoryNavigationContext } from '../../../../platform/history/browser/contextScopedHistoryWidget.js';
@@ -252,6 +253,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		// Create scoped context key service and register history navigation
 		// BEFORE creating the editor, so the editor's context key scope is a child
 		const inputScopedContextKeyService = this._register(this.contextKeyService.createScoped(container));
+		ChatContextKeys.inChatInput.bindTo(inputScopedContextKeyService).set(true);
+		ChatContextKeys.location.bindTo(inputScopedContextKeyService).set(ChatAgentLocation.Chat);
 		const { historyNavigationBackwardsEnablement, historyNavigationForwardsEnablement } = this._register(registerAndCreateHistoryNavigationContext(inputScopedContextKeyService, this));
 		this._historyNavigationBackwardsEnablement = historyNavigationBackwardsEnablement;
 		this._historyNavigationForwardsEnablement = historyNavigationForwardsEnablement;
