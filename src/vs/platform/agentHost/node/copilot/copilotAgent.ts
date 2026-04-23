@@ -7,6 +7,7 @@ import { CopilotClient, ResumeSessionConfig, type CopilotClientOptions, type Ses
 import { rgPath } from '@vscode/ripgrep';
 import * as fs from 'fs/promises';
 import { Limiter, SequencerByKey } from '../../../../base/common/async.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap } from '../../../../base/common/lifecycle.js';
@@ -26,7 +27,7 @@ import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPlu
 import { AgentHostSessionConfigBranchNameHintKey, AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentDeltaEvent, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { ISessionDataService, SESSION_DB_FILENAME } from '../../common/sessionDataService.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { ProtectedResourceMetadata, type ConfigSchema, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
+import { ProtectedResourceMetadata, type ConfigSchema, type ModelSelection, type ToolDefinition, type URI as ProtocolURI } from '../../common/state/protocol/state.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { CustomizationStatus, CustomizationRef, SessionInputResponseKind, type PendingMessage, type SessionInputAnswer, type ToolCallResult, type PolicyState } from '../../common/state/sessionState.js';
 import { IAgentHostGitService } from '../agentHostGitService.js';
@@ -697,6 +698,91 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	setCustomizationEnabled(uri: string, enabled: boolean): void {
 		this._plugins.setEnabled(uri, enabled);
+	}
+
+	async getWorkspaceCustomizations(session: URI): Promise<CustomizationRef[]> {
+		const metadata = await this._readSessionMetadata(session);
+		const cwd = metadata.workingDirectory;
+		if (!cwd) {
+			return [];
+		}
+
+		// Scan well-known prompt file locations in the working directory.
+		// This is intentionally hardcoded for now — the SDK will eventually
+		// discover and report these itself.
+		const candidates = [
+			{ path: '.github/copilot-instructions.md', dir: 'rules' },
+			{ path: '.github/AGENTS.md', dir: 'rules' },
+			{ path: 'AGENTS.md', dir: 'rules' },
+			{ path: 'CLAUDE.md', dir: 'rules' },
+		];
+
+		const found: { uri: URI; dir: string }[] = [];
+		for (const c of candidates) {
+			const uri = URI.joinPath(cwd, c.path);
+			try {
+				const stat = await this._fileService.stat(uri);
+				if (!stat.isDirectory) {
+					found.push({ uri, dir: c.dir });
+				}
+			} catch {
+				// doesn't exist — skip
+			}
+		}
+
+		// Also scan for directories of typed files
+		const typedDirs = [
+			{ path: '.github/agents', dir: 'agents' },
+			{ path: '.github/prompts', dir: 'commands' },
+		];
+		for (const td of typedDirs) {
+			const dirUri = URI.joinPath(cwd, td.path);
+			try {
+				const stat = await this._fileService.resolve(dirUri);
+				if (stat.isDirectory && stat.children) {
+					for (const child of stat.children) {
+						if (!child.isDirectory) {
+							found.push({ uri: child.resource, dir: td.dir });
+						}
+					}
+				}
+			} catch {
+				// doesn't exist — skip
+			}
+		}
+
+		if (found.length === 0) {
+			return [];
+		}
+
+		// Bundle the discovered files into a virtual plugin directory so
+		// they're surfaced through the standard Open Plugin expansion.
+		const pluginDir = URI.joinPath(cwd, '.copilot-workspace-plugin');
+		try {
+			// Write plugin manifest
+			const manifest = { name: 'Workspace', description: `${found.length} customization(s) from the workspace` };
+			await this._fileService.writeFile(
+				URI.joinPath(pluginDir, '.plugin', 'plugin.json'),
+				VSBuffer.fromString(JSON.stringify(manifest, undefined, '\t')),
+			);
+
+			// Copy files into the plugin structure
+			for (const f of found) {
+				const destUri = URI.joinPath(pluginDir, f.dir, basename(f.uri.path));
+				await this._fileService.copy(f.uri, destUri, true);
+			}
+		} catch (err) {
+			this._logService.warn(`[Copilot] Failed to bundle workspace customizations: ${err}`);
+			return [];
+		}
+
+		const nonce = String(found.map(f => f.uri.toString()).sort().join('\n').length);
+		return [{
+			uri: pluginDir.toString() as ProtocolURI,
+			displayName: 'Workspace',
+			description: `${found.length} customization(s) from the workspace`,
+			nonce,
+		}];
 	}
 
 	async sendMessage(session: URI, prompt: string, attachments?: IAgentAttachment[], turnId?: string): Promise<void> {

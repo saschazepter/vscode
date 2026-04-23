@@ -25,11 +25,13 @@ import {
 	ToolResultContentType,
 	buildSubagentSessionUri,
 	getToolFileEdits,
+	type CustomizationRef,
 	type SessionCustomization,
 	type SessionState,
 	type ToolResultContent,
 	type URI as ProtocolURI,
 } from '../common/state/sessionState.js';
+import type { ISyncedCustomization } from '../common/agentPluginManager.js';
 import { AgentEventMapper } from './agentEventMapper.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
 import { NodeWorkerDiffComputeService } from './diffComputeService.js';
@@ -689,43 +691,74 @@ export class AgentSideEffects extends Disposable {
 				const clientId = action.activeClient?.clientId ?? '';
 				agent.setClientTools(URI.parse(action.session), clientId, action.activeClient?.tools ?? []);
 
-				const refs = action.activeClient?.customizations;
-				if (!refs?.length) {
+				const clientRefs = action.activeClient?.customizations ?? [];
+
+				// Discover workspace-level customizations from the agent
+				// (e.g. .github/copilot-instructions.md, .github/agents/).
+				// These are merged with the client-provided refs so the client
+				// sees both in a single SessionCustomizationsChanged dispatch.
+				const workspaceRefsPromise = agent.getWorkspaceCustomizations
+					? agent.getWorkspaceCustomizations(URI.parse(action.session)).catch(err => {
+						this._logService.warn('[AgentSideEffects] getWorkspaceCustomizations failed', err);
+						return [] as CustomizationRef[];
+					})
+					: Promise.resolve([] as CustomizationRef[]);
+
+				const allRefs = [...clientRefs];
+
+				if (!allRefs.length && !agent.getWorkspaceCustomizations) {
 					break;
 				}
-				// Publish initial "loading" status for all customizations
-				const loading: SessionCustomization[] = refs.map(r => ({
-					customization: r,
-					enabled: true,
-					status: CustomizationStatus.Loading,
-				}));
-				this._stateManager.dispatchServerAction({
-					type: ActionType.SessionCustomizationsChanged,
-					session: action.session,
-					customizations: loading,
-				});
-				agent.setClientCustomizations(
-					action.activeClient!.clientId,
-					refs,
-					(synced) => {
-						// Incremental progress: publish updated statuses
-						const statuses: SessionCustomization[] = synced.map(s => s.customization);
+
+				// Publish initial "loading" status for client-provided customizations
+				if (allRefs.length) {
+					const loading: SessionCustomization[] = allRefs.map(r => ({
+						customization: r,
+						enabled: true,
+						status: CustomizationStatus.Loading,
+					}));
+					this._stateManager.dispatchServerAction({
+						type: ActionType.SessionCustomizationsChanged,
+						session: action.session,
+						customizations: loading,
+					});
+				}
+
+				// Sync client customizations in parallel with workspace discovery
+				const clientSyncPromise = allRefs.length
+					? agent.setClientCustomizations(
+						action.activeClient!.clientId,
+						clientRefs,
+						(synced) => {
+							const statuses: SessionCustomization[] = synced.map(s => s.customization);
+							this._stateManager.dispatchServerAction({
+								type: ActionType.SessionCustomizationsChanged,
+								session: action.session,
+								customizations: statuses,
+							});
+						},
+					)
+					: Promise.resolve([] as ISyncedCustomization[]);
+
+				Promise.all([clientSyncPromise, workspaceRefsPromise]).then(([synced, workspaceRefs]) => {
+					const statuses: SessionCustomization[] = synced.map(s => s.customization);
+					// Append workspace customizations as already-loaded entries
+					for (const ref of workspaceRefs) {
+						statuses.push({
+							customization: ref,
+							enabled: true,
+							status: CustomizationStatus.Loaded,
+						});
+					}
+					if (statuses.length) {
 						this._stateManager.dispatchServerAction({
 							type: ActionType.SessionCustomizationsChanged,
 							session: action.session,
 							customizations: statuses,
 						});
-					},
-				).then(synced => {
-					// Final status
-					const statuses: SessionCustomization[] = synced.map(s => s.customization);
-					this._stateManager.dispatchServerAction({
-						type: ActionType.SessionCustomizationsChanged,
-						session: action.session,
-						customizations: statuses,
-					});
+					}
 				}).catch(err => {
-					this._logService.error('[AgentSideEffects] setClientCustomizations failed', err);
+					this._logService.error('[AgentSideEffects] customization sync failed', err);
 				});
 				break;
 			}

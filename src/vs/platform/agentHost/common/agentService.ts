@@ -517,6 +517,16 @@ export interface IAgent {
 	 */
 	setCustomizationEnabled(uri: string, enabled: boolean): void;
 
+	/**
+	 * Returns customization refs discovered from the server-side workspace
+	 * for a given session. These represent prompt files, agents, skills, etc.
+	 * found in the session's working directory — they originate from the
+	 * remote rather than the client.
+	 *
+	 * Optional. When not implemented, no workspace customizations are surfaced.
+	 */
+	getWorkspaceCustomizations?(session: URI): Promise<CustomizationRef[]>;
+
 	/** Gracefully shut down all sessions. */
 	shutdown(): Promise<void>;
 
