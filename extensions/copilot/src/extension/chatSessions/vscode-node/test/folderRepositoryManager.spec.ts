@@ -737,8 +737,8 @@ describe('CopilotCLIFolderRepositoryManager', () => {
 
 	describe('worktree folder opened as workspace folder', () => {
 		const mockToolInvocationToken = {} as vscode.ChatParticipantToolToken;
-		const worktreeFolderPath = '/repo-worktree';
-		const originalRepoPath = '/original-repo';
+		const worktreeFolderPath = vscode.Uri.file('/repo-worktree').fsPath;
+		const originalRepoPath = vscode.Uri.file('/original-repo').fsPath;
 		const defaultWorktreeProps: ChatSessionWorktreeProperties = {
 			autoCommit: true,
 			baseCommit: 'abc123',
