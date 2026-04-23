@@ -5,7 +5,7 @@
 
 import './media/chatWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { derived } from '../../../../base/common/observable.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -36,6 +36,9 @@ class NewChatWidget extends Disposable {
 	private readonly _workspacePicker: WorkspacePicker;
 	private readonly _newChatInput: NewChatInputWidget;
 
+	/** Tracks an in-flight wait for a provider's session types to become available. */
+	private readonly _pendingSessionTypeWait = new MutableDisposable<IDisposable>();
+
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
@@ -45,6 +48,7 @@ class NewChatWidget extends Disposable {
 	) {
 		super();
 		this._workspacePicker = this._register(this.instantiationService.createInstance(isWeb ? ScopedWorkspacePicker : WorkspacePicker));
+		this._register(this._pendingSessionTypeWait);
 
 		const canSendRequest = derived(reader => {
 			const session = this.sessionsManagementService.activeSession.read(reader);
@@ -88,26 +92,47 @@ class NewChatWidget extends Disposable {
 
 		this._newChatInput.render(chatWidgetContent, parent);
 
-		// Create initial session — wait for providers if none registered yet
+		// Create initial session for any workspace already selected at construct time.
+		// If the selection arrives later (provider registers asynchronously), the
+		// picker fires onDidSelectWorkspace and our listener handles it.
 		const restoredProject = this._workspacePicker.selectedProject;
 		if (restoredProject) {
-			if (this.sessionsProvidersService.getProviders().length > 0) {
-				this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
-			} else {
-				// Providers not yet registered (startup race) — wait for first registration
-				const sub = this.sessionsProvidersService.onDidChangeProviders(() => {
-					sub.dispose();
-					this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
-				});
-				this._register(sub);
-			}
+			this._createNewSession(restoredProject, this._newChatInput.sessionTypePicker.selectedType);
 		}
 
 		chatWidgetContainer.classList.add('revealed');
 	}
 
 	private _createNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
-		this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
+		const provider = this.sessionsProvidersService.getProviders().find(p => p.id === selection.providerId);
+		if (!provider) {
+			// Provider not registered yet — wait for it. (Picker will re-fire onDidSelectWorkspace
+			// when its provider arrives, so we don't need to do anything here.)
+			return;
+		}
+
+		// Session types may not be available yet (e.g., agent host still connecting).
+		// If so, wait for them before creating the session.
+		if (!sessionTypeId && provider.getSessionTypes(selection.workspace.repositories[0].uri).length === 0 && provider.onDidChangeSessionTypes) {
+			const onChange = provider.onDidChangeSessionTypes;
+			this._pendingSessionTypeWait.value = onChange(() => {
+				if (provider.getSessionTypes(selection.workspace.repositories[0].uri).length > 0) {
+					this._pendingSessionTypeWait.clear();
+					this._doCreateNewSession(selection, sessionTypeId);
+				}
+			});
+			return;
+		}
+
+		this._doCreateNewSession(selection, sessionTypeId);
+	}
+
+	private _doCreateNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
+		try {
+			this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
+		} catch (e) {
+			this.logService.error('Failed to create new session:', e);
+		}
 	}
 
 	/**
@@ -174,6 +199,9 @@ class NewChatWidget extends Disposable {
 	 * Requests folder trust if needed and creates a new session.
 	 */
 	private async _onWorkspaceSelected(selection: IWorkspaceSelection | undefined, sessionTypeId: string | undefined): Promise<void> {
+		// Cancel any in-flight wait for a previous selection.
+		this._pendingSessionTypeWait.clear();
+
 		if (!selection) {
 			this.sessionsManagementService.unsetNewSession();
 			return;
