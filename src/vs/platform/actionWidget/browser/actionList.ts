@@ -1470,10 +1470,14 @@ export class ActionListWidget<T> extends Disposable {
 		const hoverHeaderHeight = hoverHeader ? hoverHeader.offsetHeight : 0;
 		const totalPanelHeight = totalHeight + hoverHeaderHeight;
 		const viewportHeight = targetWindow.innerHeight;
-		let top = anchorRect.top - parentRect.top - 4;
+		const anchorHeight = anchorRect.height;
+		let top = anchorRect.top - parentRect.top + (anchorHeight - totalPanelHeight) / 2;
 		const panelBottom = parentRect.top + top + totalPanelHeight;
 		if (panelBottom > viewportHeight) {
 			top -= (panelBottom - viewportHeight + 8);
+		}
+		if (parentRect.top + top < 0) {
+			top = -parentRect.top;
 		}
 		this._submenuContainer.style.top = `${top}px`;
 	}
