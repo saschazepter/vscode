@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { Uri } from 'vscode';
-import { ResourceMap } from '../../../../../../src/vs/base/common/map.js';
-import { createServiceIdentifier } from '../../../util/common/services.js';
+import { createServiceIdentifier } from '../../../util/common/services';
+import { ResourceMap } from '../../../util/vs/base/common/map';
 
 interface SessionEntry {
 	readonly folder: Uri;
