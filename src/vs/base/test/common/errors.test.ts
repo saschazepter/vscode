@@ -87,6 +87,7 @@ suite('Errors', () => {
 
 	test('markAsErrorNoTelemetry preserves error type while making it no-telemetry', function () {
 		class MyError extends Error {
+			override readonly name = 'MyError';
 			readonly code = 'MY_CODE';
 		}
 
@@ -95,6 +96,7 @@ suite('Errors', () => {
 
 		assert.strictEqual(marked, error, 'returns the same error instance');
 		assert.ok(error instanceof MyError, 'preserves the original error class');
+		assert.strictEqual(error.name, 'MyError', 'preserves the original error name');
 		assert.strictEqual(error.code, 'MY_CODE', 'preserves additional properties');
 		assert.strictEqual(error.message, 'boom', 'preserves the message');
 		assert.ok(ErrorNoTelemetry.isErrorNoTelemetry(error), 'is detected as ErrorNoTelemetry');
