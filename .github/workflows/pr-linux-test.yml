@@ -255,8 +255,8 @@ jobs:
           fc-cache --version 2>&1 | head -1
         continue-on-error: true
 
-      - name: Transpile client and extensions
-        run: npm run gulp transpile-client-esbuild transpile-extensions
+      - name: Compile
+        run: npm run gulp core-ci
 
       - name: Download Electron and Playwright
         run: |
