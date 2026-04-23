@@ -459,7 +459,7 @@ export interface IActionListOptions {
 	 * by scrollbar presence (which changes with window height). Use this for pickers
 	 * that should have a stable, fixed width (e.g. the workspace picker at 600px).
 	 */
-	readonly maxWidth?: number;
+	readonly fixedWidth?: number;
 
 	/**
 	 * Optional handler for markdown links activated in item descriptions or hovers.
@@ -1729,7 +1729,7 @@ export class ActionList<T> extends Disposable {
 			const anchorTopInViewport = anchorRect.top - targetWindow.pageYOffset;
 			const bottomGap = 30;
 			const spaceBelow = viewportHeight - anchorTopInViewport - anchorRect.height - bottomGap;
-			const spaceAbove = anchorTopInViewport - bottomGap;
+			const spaceAbove = anchorTopInViewport;
 
 			// Lock the direction on first layout based on whether the full
 			// unconstrained list fits below. Once decided, the dropdown stays
@@ -1760,12 +1760,12 @@ export class ActionList<T> extends Disposable {
 		const listHeight = this.computeHeight();
 		this._widget.layout(listHeight);
 
-		// When a fixed maxWidth is provided, skip DOM measurement entirely.
+		// When a fixedWidth is provided, skip DOM measurement entirely.
 		// DOM-based measurement varies with scrollbar presence (which depends on
 		// the list height), causing the width to fluctuate as the window is resized.
 		let computedWidth: number;
-		if (this._options?.maxWidth !== undefined) {
-			computedWidth = this._options.maxWidth;
+		if (this._options?.fixedWidth !== undefined) {
+			computedWidth = this._options.fixedWidth;
 		} else {
 			computedWidth = this._widget.computeMaxWidth(minWidth);
 		}
