@@ -209,7 +209,7 @@ export class ContextKeysContribution extends Disposable {
 		}
 	}
 
-	private _updateClientByokEnabledContext() {
+	private async _updateClientByokEnabledContext() {
 		commands.executeCommand('setContext', clientByokEnabledContextKey, true);
 	}
 
