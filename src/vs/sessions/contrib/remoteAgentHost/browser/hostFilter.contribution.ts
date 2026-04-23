@@ -12,6 +12,7 @@ import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentHostFilterService } from '../common/agentHostFilter.js';
 import { HostFilterActionViewItem } from './hostFilterActionViewItem.js';
@@ -46,6 +47,20 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 					IsAuxiliaryWindowContext.toNegated(),
 					HasAgentHostsContext,
 				),
+			}, {
+				// On phone/mobile layouts the desktop titlebar is replaced
+				// by the MobileTitlebarPart. Surface the host picker in its
+				// center slot while the welcome (home/empty) screen is
+				// visible, so users can still switch hosts and connect.
+				id: Menus.MobileTitleBarCenter,
+				group: 'navigation',
+				order: 0,
+				when: ContextKeyExpr.and(
+					IsWebContext,
+					IsAuxiliaryWindowContext.toNegated(),
+					HasAgentHostsContext,
+					SessionsWelcomeVisibleContext,
+				),
 			}],
 		});
 	}
@@ -75,6 +90,13 @@ class AgentHostFilterContribution extends Disposable implements IWorkbenchContri
 
 		this._register(actionViewItemService.register(
 			Menus.TitleBarLeftLayout,
+			PICK_HOST_FILTER_ID,
+			(action, _options, instaService) => instaService.createInstance(HostFilterActionViewItem, action),
+			filterService.onDidChange,
+		));
+
+		this._register(actionViewItemService.register(
+			Menus.MobileTitleBarCenter,
 			PICK_HOST_FILTER_ID,
 			(action, _options, instaService) => instaService.createInstance(HostFilterActionViewItem, action),
 			filterService.onDidChange,
