@@ -712,7 +712,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		}
 	}
 
-	async $registerChatSessionCustomizationProvider(handle: number, chatSessionType: string, metadata: IChatSessionCustomizationProviderMetadataDto, extensionId: ExtensionIdentifier, hasSetEnabled: boolean): Promise<void> {
+	async $registerChatSessionCustomizationProvider(handle: number, chatSessionType: string, metadata: IChatSessionCustomizationProviderMetadataDto, extensionId: ExtensionIdentifier, hasEnablementHandler: boolean): Promise<void> {
 		// In the sessions window, only the Copilot CLI harness is accepted via the
 		// extension API. Other harnesses (e.g. Claude) are not shown in sessions.
 		// AHP remote servers register directly via registerExternalHarness.
@@ -737,7 +737,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 				if (!items) {
 					return undefined;
 				}
-				const convertItem = (item: IChatSessionCustomizationItemDto): ICustomizationItem => ({
+				const convertItem = (item: IChatSessionCustomizationItemDto, depth = 0): ICustomizationItem => ({
 					uri: URI.revive(item.uri),
 					type: item.type,
 					name: item.name,
@@ -747,9 +747,9 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					badgeTooltip: item.badgeTooltip,
 					enabled: item.enabled,
 					enablementScope: item.enablementScope,
-					plugin: item.plugin ? convertItem(item.plugin) : undefined,
+					plugin: item.plugin && depth < 1 ? convertItem(item.plugin, depth + 1) : undefined,
 				});
-				return items.map(convertItem);
+				return items.map(i => convertItem(i));
 			},
 		};
 
@@ -779,7 +779,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		// Build an enablement provider when the extension implements handleCustomizationEnablement.
 		// This delegates disable/enable to the extension instead of VS Code's StorageService.
 		let enablementProvider: ICustomizationEnablementProvider | undefined;
-		if (hasSetEnabled) {
+		if (hasEnablementHandler) {
 			const proxy = this._proxy;
 			const providerHandle = handle;
 			enablementProvider = {

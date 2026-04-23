@@ -388,7 +388,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		// Also add back disabled items that the provider didn't include at all.
 		const disabledUris = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(promptType)
-			: this.promptsService.getDisabledPromptFiles(promptType, this.harnessId);
+			: this.promptsService.getDisabledPromptFiles(promptType);
 		const extensionDisabledUris = this.enablementProvider
 			? this.promptsService.getDisabledPromptFiles(promptType, this.harnessId)
 			: undefined;
@@ -522,7 +522,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		const appended: IAICustomizationListItem[] = [];
 		const disabledPromptFiles = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(PromptsType.skill)
-			: this.promptsService.getDisabledPromptFiles(PromptsType.skill, this.harnessId);
+			: this.promptsService.getDisabledPromptFiles(PromptsType.skill);
 		for (const p of builtinPaths) {
 			const name = p.name ?? basename(p.uri);
 			if (overriddenNames.has(name)) {
@@ -569,7 +569,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		const disabledUris = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(promptType)
-			: this.promptsService.getDisabledPromptFiles(promptType, this.harnessId);
+			: this.promptsService.getDisabledPromptFiles(promptType);
 		const providerItems: ICustomizationItem[] = files
 			.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user)
 			.map(file => ({

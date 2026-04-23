@@ -792,10 +792,9 @@ registerAction2(class extends Action2 {
 			// Workspace-local items are disabled at workspace scope; user-level items at profile scope
 			const storage = extractStorage(context);
 			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
-			const namespace = harnessService.getActiveDescriptor().id;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope, namespace);
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, scope, namespace);
+			promptsService.setDisabledPromptFiles(promptType, disabled, scope);
 		}
 	}
 });
@@ -822,10 +821,9 @@ registerAction2(class extends Action2 {
 		if (enablementProvider) {
 			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
 		} else {
-			const namespace = harnessService.getActiveDescriptor().id;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE, namespace);
+			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE);
 		}
 	}
 });
@@ -864,18 +862,17 @@ registerAction2(class extends Action2 {
 			enablementProvider.setEnabled(uri, promptType, true, 'global');
 		} else {
 			// Remove from both scopes to fully re-enable
-			const namespace = harnessService.getActiveDescriptor().id;
-			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE, namespace);
+			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
 			const wasInProfile = profileDisabled.delete(uri);
 
-			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
+			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
 			const wasInWorkspace = workspaceDisabled.delete(uri);
 
 			if (wasInProfile) {
-				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE, namespace);
+				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
 			}
 			if (wasInWorkspace) {
-				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE, namespace);
+				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
 			}
 		}
 	}
