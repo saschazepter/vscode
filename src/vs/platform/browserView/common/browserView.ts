@@ -244,7 +244,7 @@ export const browserViewIsolatedWorldId = 999;
 
 export interface IBrowserViewService {
 	/**
-	 * Fires when a new browser view is created from any source (workbench, CDP, context menu, window.open).
+	 * Fires when a new browser view is created from an internal source (e.g. CDP or window.open).
 	 */
 	onDidCreateBrowserView: Event<IBrowserViewCreatedEvent>;
 
@@ -268,7 +268,7 @@ export interface IBrowserViewService {
 	getBrowserViews(windowId?: number): Promise<IBrowserViewInfo[]>;
 
 	/**
-	 * Get or create a browser view instance.
+	 * Get or create a browser view instance. Does not fire `onDidCreateBrowserView`.
 	 *
 	 * @param id The browser view identifier
 	 * @param options Creation options. If a view with the given ID already exists, these options are ignored.

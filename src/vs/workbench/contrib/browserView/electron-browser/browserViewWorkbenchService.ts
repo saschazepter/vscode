@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { BrowserViewCommandId, BrowserViewStorageScope, IBrowserViewCreatedEvent, IBrowserViewOwner, IBrowserViewService, IBrowserViewState, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
+import { GroupModelChangeKind } from '../../../common/editor.js';
 import { IBrowserViewWorkbenchService, IBrowserViewModel, IKnownBrowserView, BrowserViewModel } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
@@ -19,6 +20,7 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { BrowserEditorInput } from '../common/browserEditorInput.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -45,7 +47,8 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		@IEditorService private readonly editorService: IEditorService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService
+		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
+		@ILogService private readonly logService: ILogService
 	) {
 		super();
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
@@ -55,8 +58,10 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		this.sendKeybindings();
 		this._register(this.keybindingService.onDidUpdateKeybindings(() => this.sendKeybindings()));
 
-		// Eagerly create models for all views we already own.
-		this._initializeExistingViews();
+		// Start asynchronously creating models for all views we already own.
+		void this._initializeExistingViews().catch(e => {
+			this.logService.error('[BrowserViewWorkbenchService] Failed to initialize existing browser views.', e);
+		});
 
 		// Listen for new browser views
 		this._register(this._browserViewService.onDidCreateBrowserView(e => {
@@ -72,7 +77,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 		// Fire when browser editor inputs are opened or closed
 		this._register(this.editorService.onDidEditorsChange((e) => {
-			if (e.event.editor instanceof BrowserEditorInput) {
+			if (e.event.editor instanceof BrowserEditorInput && (e.event.kind === GroupModelChangeKind.EDITOR_OPEN || e.event.kind === GroupModelChangeKind.EDITOR_CLOSE)) {
 				this._onDidChangeBrowserViews.fire();
 			}
 		}));

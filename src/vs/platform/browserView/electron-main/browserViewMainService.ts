@@ -328,11 +328,12 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 				const child = this.createBrowserView(generateUuid(), owner, browserSession, electronOptions);
 
 				if (url) {
-					child.loadURL(url);
+					void child.loadURL(url).catch(() => { });
 				}
 
+				const info = this._getViewInfo(child);
 				this._onDidCreateBrowserView.fire({
-					info: this._getViewInfo(child),
+					info: url ? { ...info, state: { ...info.state, url } } : info,
 					openOptions
 				});
 
@@ -368,14 +369,15 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		const view = this.createBrowserView(targetId, owner, session || BrowserSession.getOrCreateEphemeral(targetId));
 
 		if (url) {
-			view.loadURL(url);
+			void view.loadURL(url).catch(() => { });
 		}
 
 		logBrowserOpen(this.telemetryService, source);
 
 		// Fire creation event so the workbench can open an editor tab
+		const info = this._getViewInfo(view);
 		this._onDidCreateBrowserView.fire({
-			info: this._getViewInfo(view),
+			info: url ? { ...info, state: { ...info.state, url } } : info,
 			openOptions
 		});
 
