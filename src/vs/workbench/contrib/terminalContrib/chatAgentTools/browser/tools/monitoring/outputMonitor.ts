@@ -488,18 +488,25 @@ export function detectsInputRequiredPattern(cursorLine: string): boolean {
 		// Same as above but allows a preceding '?' or ':' and optional wrappers e.g.
 		// "Continue? (y/n)" or "Overwrite: [yes/no]"
 		/[?:]\s*(?:\(|\[)?\s*y(?:es)?\s*\/\s*n(?:o)?\s*(?:\]|\))?\s+$/i,
-		// Confirmation prompts ending with (y) e.g. "Ok to proceed? (y)"
-		/\(y\)\s*$/i,
-		// Line ends with ':'
-		/:\s*$/,
+		// Confirmation prompts ending with (y) followed by trailing space, e.g. "Ok to proceed? (y) "
+		// The trailing space indicates the cursor is positioned after the prompt awaiting input, as
+		// opposed to normal command output that happens to contain "(y)" followed by a newline.
+		/\(y\) +$/i,
+		// Line ends with ':' followed by at least one space. The trailing space indicates a
+		// waiting prompt (cursor positioned after the colon). A bare ':\n' at end of buffer is
+		// usually non-prompt output (e.g. a header or log line) and must not match.
+		/: +$/,
 		// Prompt with parenthesized default value e.g. "package name: (test) " or "version: (1.0.0) "
-		/:\s*\([^)]*\)\s*$/,
+		/:\s*\([^)]*\) +$/,
 		// Line contains (END) which is common in pagers
 		/\(END\)$/,
-		// Password prompt
-		/password[:]?$/i,
-		// Line ends with '?'
-		/\?\s*(?:\([a-z\s]+\))?$/i,
+		// Password prompt (must be followed by optional colon and trailing space to indicate
+		// an active prompt; otherwise normal output containing the word "password" would match).
+		/password:? +$/i,
+		// Line ends with '?' followed by at least one space (optionally followed by a
+		// parenthesized hint like "Continue? (yes/no) "). Requiring trailing space avoids
+		// matching arbitrary command output where a line happens to end with '?'.
+		/\? *(?:\([a-z\s]+\))? +$/i,
 		// "Press a key" or "Press any key"
 		/press a(?:ny)? key/i,
 	].some(e => e.test(cursorLine));
