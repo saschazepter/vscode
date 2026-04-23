@@ -92,6 +92,7 @@ function createModelItem(
 	action: IActionWidgetDropdownAction & { section?: string },
 	model?: ILanguageModelChatMetadataAndIdentifier,
 ): IActionListItem<IActionWidgetDropdownAction> {
+	const hoverContent = model ? getModelHoverContent(model) : undefined;
 	return {
 		item: action,
 		kind: ActionListItemKind.Action,
@@ -100,7 +101,8 @@ function createModelItem(
 		group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id) },
 		hideIcon: false,
 		section: action.section,
-		hover: model ? { content: getModelHoverContent(model) } : undefined,
+		hover: hoverContent ? { content: hoverContent } : undefined,
+		tooltip: action.tooltip,
 		submenuActions: action.toolbarActions?.length ? action.toolbarActions : undefined,
 	};
 }
