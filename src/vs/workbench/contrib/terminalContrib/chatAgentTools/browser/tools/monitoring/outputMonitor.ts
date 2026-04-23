@@ -99,12 +99,29 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 		this._command = command;
 		this._invocationContext = invocationContext;
-		this._register(toDisposable(() => this._currentMonitoringCts?.dispose()));
 
-		// Start async to ensure listeners are set up
+		// Create the CTS synchronously so it is available for cancellation if the
+		// OutputMonitor is disposed before the deferred _startMonitoring fires.
+		// The registered disposable must cancel (not just dispose) the CTS so that
+		// the async monitoring loop's token becomes isCancellationRequested=true and
+		// the loop exits promptly — CancellationTokenSource.dispose() alone does
+		// not set isCancellationRequested.
+		const cts = new CancellationTokenSource(token);
+		this._currentMonitoringCts = cts;
+		this._register(toDisposable(() => {
+			this._currentMonitoringCts?.cancel();
+			this._currentMonitoringCts?.dispose();
+		}));
+
+		// Start async to ensure listeners are set up.
+		// Capture `cts` locally so that if continueMonitoringAsync replaces
+		// _currentMonitoringCts before this fires, we detect the cancellation
+		// and avoid starting a duplicate monitoring loop.
 		timeout(0).then(() => {
-			this._currentMonitoringCts = new CancellationTokenSource(token);
-			this._startMonitoring(command, invocationContext, this._currentMonitoringCts.token);
+			if (cts.token.isCancellationRequested) {
+				return;
+			}
+			this._startMonitoring(command, invocationContext, cts.token);
 		});
 	}
 

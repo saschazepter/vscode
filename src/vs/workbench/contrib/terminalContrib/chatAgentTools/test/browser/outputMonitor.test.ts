@@ -389,6 +389,33 @@ suite('OutputMonitor', () => {
 		});
 	});
 
+	suite('disposable leak regression', () => {
+		test('disposing before timeout(0) fires does not leak idle input listener', async () => {
+			// Regression: disposing immediately (before the deferred _startMonitoring fires)
+			// must not leak the FunctionDisposable created by onDidInputData.
+			// The CTS must be cancelled synchronously so that when timeout(0) fires and
+			// _setupIdleInputListener runs, isCancellationRequested is already true.
+			return runWithFakedTimers({}, async () => {
+				monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
+				// Dispose immediately, before the deferred _startMonitoring callback fires.
+				monitor.dispose();
+				// ensureNoDisposablesAreLeakedInTestSuite will catch any leaked disposable.
+			});
+		});
+
+		test('disposing after monitoring completes does not leak idle input listener', async () => {
+			// Verifies the finally block in _startMonitoring clears _userInputListener before
+			// firing onDidFinishCommand. Any undisposed FunctionDisposable from onDidInputData
+			// would be caught by ensureNoDisposablesAreLeakedInTestSuite.
+			return runWithFakedTimers({}, async () => {
+				execution.isActive = async () => false;
+				monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
+				await Event.toPromise(monitor.onDidFinishCommand);
+				monitor.dispose();
+			});
+		});
+	});
+
 	suite('detectsGenericPressAnyKeyPattern', () => {
 		test('detects generic press any key prompts from scripts', () => {
 			assert.strictEqual(detectsGenericPressAnyKeyPattern('Press any key to continue...'), true);
