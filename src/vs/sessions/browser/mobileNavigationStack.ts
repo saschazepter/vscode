@@ -69,23 +69,28 @@ export class MobileNavigationStack extends Disposable {
 	 * Use this when a layer is closed by UI interaction (e.g., backdrop click)
 	 * so the history and stack stay in sync without recursing back into
 	 * close handlers.
+	 *
+	 * Concurrent silent pops are handled via a counter: each call increments
+	 * {@link _pendingSilentPops} and the matching {@link _onPopState} decrements
+	 * it, so rapid back-button taps or multiple overlay closes cannot leak
+	 * suppression state across unrelated pops.
 	 */
 	popSilently(layer: MobileNavigationLayer): void {
 		for (let i = this._stack.length - 1; i >= 0; i--) {
 			if (this._stack[i].layer === layer) {
 				this._stack.splice(i, 1);
-				this._suppressNextPop = true;
+				this._pendingSilentPops++;
 				mainWindow.history.back();
 				return;
 			}
 		}
 	}
 
-	private _suppressNextPop = false;
+	private _pendingSilentPops = 0;
 
 	private _onPopState(e: PopStateEvent): void {
-		if (this._suppressNextPop) {
-			this._suppressNextPop = false;
+		if (this._pendingSilentPops > 0) {
+			this._pendingSilentPops--;
 			return;
 		}
 

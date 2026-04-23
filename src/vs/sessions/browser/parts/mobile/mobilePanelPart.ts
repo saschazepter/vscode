@@ -4,21 +4,26 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
-import { Part } from '../../../../workbench/browser/part.js';
 import { AbstractPaneCompositePart } from '../../../../workbench/browser/parts/paneCompositePart.js';
 import { PanelPart } from '../panelPart.js';
+import { isPhoneLayout } from './mobileLayout.js';
 
 /**
  * Mobile variant of PanelPart.
  *
  * On phone-sized viewports the panel fills the full grid cell
- * without card margins or border insets.
+ * without card margins or border insets. On tablet/desktop it falls
+ * back to the desktop behavior so runtime viewport transitions keep
+ * working.
  */
 export class MobilePanelPart extends PanelPart {
 
 	override updateStyles(): void {
-		// Run base theme wiring (skips PanelPart's card-specific inline styles)
-		AbstractPaneCompositePart.prototype.updateStyles.call(this);
+		super.updateStyles();
+
+		if (!isPhoneLayout(this.layoutService)) {
+			return;
+		}
 
 		const container = this.getContainer();
 		if (container) {
@@ -29,12 +34,17 @@ export class MobilePanelPart extends PanelPart {
 	}
 
 	override layout(width: number, height: number, top: number, left: number): void {
+		if (!isPhoneLayout(this.layoutService)) {
+			super.layout(width, height, top, left);
+			return;
+		}
+
 		if (!this.layoutService.isVisible(Parts.PANEL_PART)) {
 			return;
 		}
 
-		// Full dimensions — no card margins or border subtraction
+		// Full dimensions — no card margins or border subtraction.
+		// AbstractPaneCompositePart.layout internally calls Part.layout.
 		AbstractPaneCompositePart.prototype.layout.call(this, width, height, top, left);
-		Part.prototype.layout.call(this, width, height, top, left);
 	}
 }

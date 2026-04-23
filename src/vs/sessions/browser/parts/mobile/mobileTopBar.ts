@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './mobileChatShell.css';
-import { Disposable } from '../../../../base/common/lifecycle.js';
-import { $, append } from '../../../../base/browser/dom.js';
+import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -37,6 +37,11 @@ export class MobileTopBar extends Disposable {
 
 		this.element = document.createElement('div');
 		this.element.className = 'mobile-top-bar';
+
+		// Register DOM removal before appending so that any exception
+		// between this point and the end of the constructor still cleans
+		// up the element via disposal.
+		this._register(toDisposable(() => this.element.remove()));
 		parent.prepend(this.element);
 
 		// Hamburger button
@@ -44,21 +49,19 @@ export class MobileTopBar extends Disposable {
 		hamburger.setAttribute('aria-label', 'Open sessions');
 		const hamburgerIcon = append(hamburger, $('span'));
 		hamburgerIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.menu));
-		hamburger.addEventListener('click', () => this._onDidClickHamburger.fire());
+		this._register(addDisposableListener(hamburger, EventType.CLICK, () => this._onDidClickHamburger.fire()));
 
 		// Session title
 		this.sessionTitleElement = append(this.element, $('div.mobile-session-title'));
-		this.sessionTitleElement.textContent = 'New Session';
-		this.sessionTitleElement.addEventListener('click', () => this._onDidClickTitle.fire());
+		this.sessionTitleElement.textContent = localize('mobileTopBar.newSession', "New Session");
+		this._register(addDisposableListener(this.sessionTitleElement, EventType.CLICK, () => this._onDidClickTitle.fire()));
 
 		// New session button (+)
 		const newSession = append(this.element, $('button.mobile-top-bar-button'));
 		newSession.setAttribute('aria-label', 'New session');
 		const newSessionIcon = append(newSession, $('span'));
 		newSessionIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plus));
-		newSession.addEventListener('click', () => this._onDidClickNewSession.fire());
-
-		this._register({ dispose: () => this.element.remove() });
+		this._register(addDisposableListener(newSession, EventType.CLICK, () => this._onDidClickNewSession.fire()));
 	}
 
 	setTitle(title: string): void {

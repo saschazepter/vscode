@@ -8,12 +8,15 @@
 
 ### Mobile Part Subclasses
 
-Desktop Parts (`ChatBarPart`, `SidebarPart`, `PanelPart`, `AuxiliaryBarPart`) remain unchanged. Each has a **mobile subclass** that extends it and overrides only `layout()` and/or `updateStyles()` to remove card margins, border insets, and inline theme styles. `AgenticPaneCompositePartService` conditionally instantiates the mobile or desktop variant at startup based on viewport width (`< 640px` → phone).
+Desktop Parts (`ChatBarPart`, `SidebarPart`, `PanelPart`, `AuxiliaryBarPart`) remain unchanged. Each has a **mobile subclass** that extends it and overrides only `layout()` and/or `updateStyles()`. `AgenticPaneCompositePartService` conditionally instantiates the mobile or desktop variant at startup based on viewport width (`< 640px` → phone).
+
+Each mobile Part checks the current layout class (via `isPhoneLayout(layoutService)`) at every call. When the viewport is phone it applies mobile behavior (full-cell layout, no card chrome, no session-bar subtraction). When the viewport is tablet/desktop — which happens when a real phone rotates past the 640px breakpoint — it delegates to the desktop `super` implementation. This means a `Mobile*Part` instance is safe to keep through a viewport-class transition without producing wrong layout math.
 
 This means:
 - Desktop code has **zero** phone-layout checks — all mobile logic lives in mobile subclasses, `MobileTopBar`, and CSS.
+- Phone-instantiated parts adapt correctly to rotation across the 640px breakpoint by delegating to `super`.
 
-**Known limitation:** Part classes are chosen once at construction and never swapped at runtime. If the viewport changes class (e.g., device rotation from portrait to landscape), the original Part implementations remain. This is acceptable because real mobile devices don't switch between phone and desktop — the scenario only occurs in DevTools emulation.
+After a viewport-class transition the workbench calls `updateStyles()` on each pane composite part so card-chrome inline styles get re-applied (desktop) or cleared (phone) for the new class.
 
 ### View & Action Gating
 

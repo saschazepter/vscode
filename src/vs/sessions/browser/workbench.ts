@@ -7,7 +7,7 @@ import '../../workbench/browser/style.js';
 import './media/style.css';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
-import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, isHTMLElement, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
+import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, isHTMLElement, size, Dimension, runWhenWindowIdle, addDisposableListener, EventType } from '../../base/browser/dom.js';
 import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
 import { isFullscreen, onDidChangeFullscreen, isChrome, isFirefox, isSafari } from '../../base/browser/browser.js';
 import { mark } from '../../base/common/performance.js';
@@ -313,6 +313,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// (rather than in the shared workbench.html) so that the regular
 		// code-web workbench — which does not handle safe-area insets — is
 		// not affected on notched mobile devices.
+		// eslint-disable-next-line no-restricted-syntax
 		const viewportMeta = mainWindow.document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
 		if (viewportMeta && !viewportMeta.content.includes('viewport-fit=')) {
 			viewportMeta.content = `${viewportMeta.content}, viewport-fit=cover`;
@@ -427,54 +428,33 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 					isMobileLayoutCtx.set(vc === 'phone' || vc === 'tablet');
 				}));
 
-				// Virtual keyboard detection via visualViewport API
+				// Virtual keyboard detection via visualViewport API.
+				// Use `window.innerHeight` (layout viewport) as the baseline
+				// rather than a captured initial height. Layout viewport
+				// updates on orientation change and split-screen resizes, so
+				// comparing against it avoids stale baselines on landscape
+				// launches, Android split-screen, and iOS URL-bar collapse.
 				if (mainWindow.visualViewport) {
 					const keyboardVisibleCtx = KeyboardVisibleContext.bindTo(contextKeyService);
-					let initialViewportHeight = mainWindow.visualViewport.height;
+					const KEYBOARD_HEIGHT_THRESHOLD_PX = 100;
 
 					const onViewportResize = () => {
 						const vp = mainWindow.visualViewport;
 						if (!vp) {
 							return;
 						}
-						// Keyboard is considered visible when viewport shrinks by more than 150px
-						const heightDiff = initialViewportHeight - vp.height;
-						const isKeyboardUp = heightDiff > 150;
-						keyboardVisibleCtx.set(isKeyboardUp);
-
-						// Update initial height if viewport grew (orientation change, not keyboard)
-						if (vp.height > initialViewportHeight) {
-							initialViewportHeight = vp.height;
-						}
+						const heightDiff = mainWindow.innerHeight - vp.height;
+						keyboardVisibleCtx.set(heightDiff > KEYBOARD_HEIGHT_THRESHOLD_PX);
 					};
 
 					mainWindow.visualViewport.addEventListener('resize', onViewportResize);
 					this._register({ dispose: () => mainWindow.visualViewport?.removeEventListener('resize', onViewportResize) });
 				}
 
-				// Orientation change: re-evaluate viewport class and re-layout
-				const orientationMediaQuery = mainWindow.matchMedia('(orientation: portrait)');
-				let orientationRelayoutHandle: number | undefined;
-				const onOrientationChange = () => {
-					// Small delay to let the viewport settle after orientation change
-					if (orientationRelayoutHandle !== undefined) {
-						mainWindow.clearTimeout(orientationRelayoutHandle);
-					}
-					orientationRelayoutHandle = mainWindow.setTimeout(() => {
-						orientationRelayoutHandle = undefined;
-						this.layout();
-					}, 100);
-				};
-				orientationMediaQuery.addEventListener('change', onOrientationChange);
-				this._register({
-					dispose: () => {
-						orientationMediaQuery.removeEventListener('change', onOrientationChange);
-						if (orientationRelayoutHandle !== undefined) {
-							mainWindow.clearTimeout(orientationRelayoutHandle);
-							orientationRelayoutHandle = undefined;
-						}
-					}
-				});
+				// Orientation changes produce a window `resize` event which
+				// is already handled by `registerLayoutListeners()`. No
+				// separate matchMedia listener is needed — the previous
+				// implementation caused a redundant second layout.
 
 				// Register Listeners
 				this.registerListeners(lifecycleService, storageService, configurationService, hostService, dialogService);
@@ -725,6 +705,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	}
 
 	private sidebarDrawerBackdrop: HTMLElement | undefined;
+	private readonly sidebarDrawerBackdropDisposables = this._register(new DisposableStore());
 
 	private toggleMobileSidebarDrawer(): void {
 		const isOpen = this.partVisibility.sidebar;
@@ -736,11 +717,14 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	}
 
 	private openMobileSidebarDrawer(): void {
-		// Show backdrop
+		// Show backdrop — created fresh each open so its click listener is
+		// tracked by a DisposableStore and cleaned up on close.
 		if (!this.sidebarDrawerBackdrop) {
-			this.sidebarDrawerBackdrop = document.createElement('div');
-			this.sidebarDrawerBackdrop.className = 'mobile-sidebar-backdrop';
-			this.sidebarDrawerBackdrop.addEventListener('click', () => this.closeMobileSidebarDrawer());
+			const backdrop = document.createElement('div');
+			backdrop.className = 'mobile-sidebar-backdrop';
+			this.sidebarDrawerBackdropDisposables.add(addDisposableListener(backdrop, EventType.CLICK, () => this.closeMobileSidebarDrawer()));
+			this.sidebarDrawerBackdropDisposables.add(toDisposable(() => backdrop.remove()));
+			this.sidebarDrawerBackdrop = backdrop;
 		}
 		this.mainContainer.appendChild(this.sidebarDrawerBackdrop);
 
@@ -758,8 +742,9 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	}
 
 	private closeMobileSidebarDrawer(): void {
-		// Remove backdrop
-		this.sidebarDrawerBackdrop?.remove();
+		// Remove backdrop and dispose its listener.
+		this.sidebarDrawerBackdropDisposables.clear();
+		this.sidebarDrawerBackdrop = undefined;
 
 		// Hide sidebar in grid
 		this.setSideBarHidden(true);
@@ -1260,6 +1245,13 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 				if (this.partVisibility.panel !== defaults.panel) {
 					this.setPanelHidden(!defaults.panel);
 				}
+			}
+
+			// Re-run updateStyles() on pane composite parts so that
+			// mobile Part subclasses can re-apply or clear card-chrome
+			// inline styles based on the new `.phone-layout` class.
+			for (const partId of [Parts.CHATBAR_PART, Parts.SIDEBAR_PART, Parts.AUXILIARYBAR_PART, Parts.PANEL_PART]) {
+				this.parts.get(partId)?.updateStyles();
 			}
 		}
 		this._previousViewportClass = currentClass;
