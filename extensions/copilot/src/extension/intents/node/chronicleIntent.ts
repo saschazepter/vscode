@@ -50,7 +50,10 @@ export class ChronicleIntent implements IIntent {
 	readonly id = ChronicleIntent.ID;
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
 	get locations(): ChatLocation[] {
-		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService) ? [ChatLocation.Panel] : [];
+		const enabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled)
+			? this._configService.getExperimentBasedConfig(ConfigKey.Advanced.LocalIndexEnabled, this._expService)
+			: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		return enabled ? [ChatLocation.Panel] : [];
 	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
@@ -68,7 +71,7 @@ export class ChronicleIntent implements IIntent {
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
 		@IFetcherService private readonly _fetcherService: IFetcherService,
-		@IRunCommandExecutionService private readonly _commandService: IRunCommandExecutionService,
+		@IRunCommandExecutionService _commandService: IRunCommandExecutionService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
 	}
@@ -79,27 +82,6 @@ export class ChronicleIntent implements IIntent {
 	private _pendingSystemPrompt: string | undefined;
 
 	/** Whether the cloud sync suggestion has already been shown this session. */
-	private _cloudSyncSuggestionShown = false;
-
-	/**
-	 * Show a non-modal notification suggesting cloud sync when the user
-	 * runs a chronicle command with localIndex enabled but cloudSync disabled.
-	 * The notification is shown once per workspace (persisted in core storage).
-	 */
-	private _suggestCloudSync(): void {
-		if (this._cloudSyncSuggestionShown) {
-			return;
-		}
-		if (this._indexingPreference.hasCloudConsent()) {
-			return; // Already enabled
-		}
-		this._cloudSyncSuggestionShown = true;
-
-		this._commandService.executeCommand('github.copilot.chat.suggestCloudSync').catch(() => {
-			// Command not available (e.g., older VS Code) — ignore
-		});
-	}
-
 	async handleRequest(
 		conversation: Conversation,
 		request: vscode.ChatRequest,
@@ -110,13 +92,13 @@ export class ChronicleIntent implements IIntent {
 		location: ChatLocation,
 		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService)) {
+		const localEnabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled)
+			? this._configService.getExperimentBasedConfig(ConfigKey.Advanced.LocalIndexEnabled, this._expService)
+			: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		if (!localEnabled) {
 			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
-
-		// Suggest cloud sync if local-only (non-blocking notification)
-		this._suggestCloudSync();
 
 		// Route by command name (e.g. 'chronicle:standup') or fall back to parsing the prompt
 		const { subcommand, rest } = this._resolveSubcommand(request);

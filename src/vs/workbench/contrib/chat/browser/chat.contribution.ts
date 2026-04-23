@@ -468,6 +468,24 @@ configurationRegistry.registerConfiguration({
 				},
 			}
 		},
+		[ChatConfiguration.SessionSyncEnabled]: {
+			default: false,
+			markdownDescription: nls.localize('chat.sessionSync.enabled', "Enable session sync to the cloud. When enabled, Copilot session data is synced to your account for cross-device access and richer insights. Requires local session tracking to also be enabled."),
+			type: 'boolean',
+			tags: ['experimental'],
+			policy: {
+				name: 'CopilotSessionSync',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.118',
+				value: (policyData) => policyData.session_sync_enabled === false ? false : undefined,
+				localization: {
+					description: {
+						key: 'chat.sessionSync.enabled.policy',
+						value: nls.localize('chat.sessionSync.enabled.policy', "Enable session sync to the cloud for cross-device Copilot session history. When disabled by organization policy, session data is kept local only."),
+					}
+				},
+			}
+		},
 		[ChatConfiguration.AutoApproveEdits]: {
 			default: {
 				'**/*': true,

@@ -546,6 +546,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				policyData = policyData ?? {};
 				policyData.chat_agent_enabled = tokenEntitlementsData.policyData.chat_agent_enabled;
 				policyData.chat_preview_features_enabled = tokenEntitlementsData.policyData.chat_preview_features_enabled;
+				policyData.session_sync_enabled = tokenEntitlementsData.policyData.session_sync_enabled;
 				policyData.mcp = tokenEntitlementsData.policyData.mcp;
 				if (policyData.mcp) {
 					const mcpRegistryResult = await this.getMcpRegistryProvider(sessions, accountPolicyData, options);
@@ -667,6 +668,8 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 						chat_agent_enabled: tokenMap.get('agent_mode') !== '0',
 						// MCP is only enabled if the flag is explicitly present and set to 1
 						mcp: tokenMap.get('mcp') === '1',
+						// Session sync is disabled if the flag is present and set to 0
+						session_sync_enabled: tokenMap.get('session_sync') !== '0',
 					},
 					copilotTokenInfo: {
 						sn: tokenMap.get('sn'),

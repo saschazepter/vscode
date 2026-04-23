@@ -99,6 +99,21 @@
             "included": true
         },
         {
+            "key": "chat.sessionSync.enabled",
+            "name": "CopilotSessionSync",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.118",
+            "localization": {
+                "description": {
+                    "key": "chat.sessionSync.enabled.policy",
+                    "value": "Enable session sync to the cloud for cross-device Copilot session history. When disabled by organization policy, session data is kept local only."
+                }
+            },
+            "type": "boolean",
+            "default": false,
+            "included": true
+        },
+        {
             "key": "chat.tools.eligibleForAutoApproval",
             "name": "ChatToolsEligibleForAutoApproval",
             "category": "InteractiveSession",
@@ -416,7 +431,7 @@
                 }
             },
             "type": "boolean",
-            "default": false,
+            "default": true,
             "included": true
         },
         {

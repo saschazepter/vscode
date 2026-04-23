@@ -94,8 +94,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/** User's session indexing preference (resolved once per repo). */
 	private readonly _indexingPreference: SessionIndexingPreference;
 
-	/** Status bar item showing cloud sync state. */
-	private readonly _statusBarItem: vscode.StatusBarItem;
+	/** Cloud sync status shown in the Copilot status dashboard. */
+	private readonly _chatStatusItem: vscode.ChatStatusItem;
 
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
@@ -119,25 +119,23 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			maxResetTimeoutMs: 30_000,
 		});
 
-		// Create status bar item for cloud sync status
-		this._statusBarItem = vscode.window.createStatusBarItem('copilot.cloudSync', vscode.StatusBarAlignment.Right, -999);
-		this._statusBarItem.name = 'Copilot Cloud Sync';
+		// Create chat status item for cloud sync status (shown in Copilot status dashboard)
+		this._chatStatusItem = vscode.window.createChatStatusItem('copilot.cloudSyncStatus');
+		this._chatStatusItem.title = 'Session Sync';
 
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
 
 		// Only set up span listener when both local index and cloud sync are enabled.
 		// Uses autorun to react if settings change at runtime.
-		// Both new and old settings taken into account for backward compatibility
-		const localEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
-		const cloudEnabledInternal = this._configService.getConfigObservable(ConfigKey.TeamInternal.SessionSearchCloudSyncEnabled);
-		const cloudEnabledPublic = this._configService.getConfigObservable(ConfigKey.Advanced.SessionSearchCloudSync);
+		const localEnabledNew = this._configService.getExperimentBasedConfigObservable(ConfigKey.Advanced.LocalIndexEnabled, this._expService);
+		const localEnabledOld = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
 		const spanListenerStore = this._register(new DisposableStore());
 		this._register(autorun(reader => {
 			spanListenerStore.clear();
-			const publicValue = cloudEnabledPublic.read(reader);
-			const cloudEnabled = this._configService.isConfigured(ConfigKey.Advanced.SessionSearchCloudSync) ? publicValue : cloudEnabledInternal.read(reader);
-			if (!localEnabled.read(reader) || !cloudEnabled) {
+			const localEnabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled) ? localEnabledNew.read(reader) : localEnabledOld.read(reader);
+			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
+			if (!localEnabled || !cloudEnabled) {
 				this._updateStatusBar('disabled');
 				return;
 			}
@@ -173,7 +171,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		this._translationStates.clear();
 		this._disabledSessions.clear();
 		this._initializingSessions.clear();
-		this._statusBarItem.dispose();
+		this._chatStatusItem.dispose();
 
 		super.dispose();
 	}
@@ -266,33 +264,27 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	private _updateStatusBar(state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'error'): void {
 		switch (state) {
 			case 'disabled':
-				this._statusBarItem.text = '$(cloud)';
-				this._statusBarItem.tooltip = 'Cloud Session Sync: Off — click to open settings to enable';
-				this._statusBarItem.command = {
-					command: 'workbench.action.openSettings',
-					title: 'Open Cloud Sync Settings',
-					arguments: ['github.copilot.chat.sessionSearch.cloudSync'],
-				};
+				this._chatStatusItem.description = 'Off';
+				this._chatStatusItem.detail = '';
 				break;
 			case 'idle':
-				this._statusBarItem.text = '$(cloud-upload)';
-				this._statusBarItem.tooltip = 'Cloud Session Sync: Enabled';
-				this._statusBarItem.command = undefined;
+				this._chatStatusItem.description = 'Enabled';
+				this._chatStatusItem.detail = '';
 				break;
 			case 'syncing':
-				this._statusBarItem.text = '$(cloud-upload) $(sync~spin)';
-				this._statusBarItem.tooltip = 'Cloud Session Sync: Uploading...';
+				this._chatStatusItem.description = 'Uploading... $(loading~spin)';
+				this._chatStatusItem.detail = '';
 				break;
 			case 'synced':
-				this._statusBarItem.text = '$(cloud-upload)';
-				this._statusBarItem.tooltip = 'Cloud Session Sync: Up to date';
+				this._chatStatusItem.description = 'Up to date';
+				this._chatStatusItem.detail = '';
 				break;
 			case 'error':
-				this._statusBarItem.text = '$(cloud-upload)$(warning)';
-				this._statusBarItem.tooltip = 'Cloud Session Sync: Error — retrying';
+				this._chatStatusItem.description = 'Error — retrying';
+				this._chatStatusItem.detail = '';
 				break;
 		}
-		this._statusBarItem.show();
+		this._chatStatusItem.show();
 	}
 
 	// ── Lazy session initialization ──────────────────────────────────────────────

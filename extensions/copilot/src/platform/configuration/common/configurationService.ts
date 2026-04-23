@@ -714,7 +714,8 @@ export namespace ConfigKey {
 		/** Internal: override reasoning/thinking effort sent to model APIs (e.g. Responses API, Messages API). Used by evals. */
 		export const ReasoningEffortOverride = defineSetting<string | null>('chat.reasoningEffortOverride', ConfigType.Simple, null);
 
-		export const SessionSearchCloudSync = defineAndMigrateSetting<boolean>('chat.advanced.sessionSearch.cloudSync.enabled', 'chat.sessionSearch.cloudSync.enabled', false);
+		/** Enable local session tracking and /chronicle commands. */
+		export const LocalIndexEnabled = defineAndMigrateExpSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', 'chat.localIndex.enabled', false);
 	}
 
 	/**
@@ -871,12 +872,8 @@ export namespace ConfigKey {
 		export const ResponsesApiWebSocketEnabled = defineTeamInternalSetting<boolean>('chat.advanced.responsesApi.webSocket.enabled', ConfigType.ExperimentBased, false);
 		export const DebugSimulateWebSocketResponse = defineTeamInternalSetting<string>('chat.advanced.debug.simulateWebSocketResponse', ConfigType.Simple, '');
 
-		/** Enable local session search index — tracks sessions locally and enables chronicle commands.*/
+		/** @deprecated Use Advanced.LocalIndexEnabled instead */
 		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
-		/** Enable cloud sync of session data to cloud. */
-		export const SessionSearchCloudSyncEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.cloudSync.enabled', ConfigType.Simple, false, vBoolean());
-		/** Repository patterns to exclude from cloud sync (exact owner/repo or glob patterns like my-org/*). */
-		export const SessionSearchCloudSyncExcludeRepositories = defineTeamInternalSetting<string[]>('chat.advanced.sessionSearch.cloudSync.excludeRepositories', ConfigType.Simple, []);
 	}
 
 	/**

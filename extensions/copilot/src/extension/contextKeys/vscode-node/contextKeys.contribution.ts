@@ -85,9 +85,11 @@ export class ContextKeysContribution extends Disposable {
 			commands.executeCommand('setContext', debugReportFeedbackContextKey, debugReportFeedback.read(reader));
 		}));
 
-		const sessionSearchEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		const sessionSearchEnabledNew = this._configService.getExperimentBasedConfigObservable(ConfigKey.Advanced.LocalIndexEnabled, this._expService);
+		const sessionSearchEnabledOld = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
 		this._register(autorun(reader => {
-			commands.executeCommand('setContext', sessionSearchEnabledContextKey, sessionSearchEnabled.read(reader));
+			const enabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled) ? sessionSearchEnabledNew.read(reader) : sessionSearchEnabledOld.read(reader);
+			commands.executeCommand('setContext', sessionSearchEnabledContextKey, enabled);
 		}));
 
 		// Listen for extension changes to update PR extension installed context
