@@ -162,9 +162,13 @@
 	flex-shrink: 0;
 	width: 20px;
 	height: 20px;
+	border: none;
+	background: transparent;
+	padding: 0;
 	border-radius: var(--vscode-cornerRadius-small);
 	cursor: pointer;
 	color: var(--vscode-descriptionForeground);
+	touch-action: manipulation;
 }
 
 .new-chat-in-session .sub-session-tip-dismiss:hover {

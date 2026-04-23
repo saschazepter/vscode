@@ -9,6 +9,7 @@ import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { derived } from '../../../../base/common/observable.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -102,10 +103,9 @@ class NewChatInSessionWidget extends Disposable {
 		);
 
 		// Dismiss button
-		const dismissBtn = dom.append(tipWidget, dom.$('a.sub-session-tip-dismiss'));
-		dismissBtn.setAttribute('role', 'button');
+		const dismissBtn = dom.append(tipWidget, dom.$('button.sub-session-tip-dismiss')) as HTMLButtonElement;
+		dismissBtn.type = 'button';
 		dismissBtn.setAttribute('aria-label', localize('subSessionTip.dismiss', "Dismiss tip"));
-		dismissBtn.tabIndex = 0;
 		dom.append(dismissBtn, renderIcon(Codicon.close));
 
 		const dismiss = () => {
@@ -114,10 +114,16 @@ class NewChatInSessionWidget extends Disposable {
 			this._tipDisposable.clear();
 		};
 
-		this._tipDisposable.value = dom.addDisposableListener(dismissBtn, dom.EventType.CLICK, (e) => {
+		const handleDismiss = (e: Event) => {
 			dom.EventHelper.stop(e, true);
 			dismiss();
-		});
+		};
+
+		this._tipDisposable.value = Disposable.from(
+			Gesture.addTarget(dismissBtn),
+			dom.addDisposableListener(dismissBtn, dom.EventType.CLICK, handleDismiss),
+			dom.addDisposableListener(dismissBtn, TouchEventType.Tap, handleDismiss),
+		);
 	}
 
 	/**
