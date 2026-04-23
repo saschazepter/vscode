@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { BrowserViewCommandId, BrowserViewStorageScope, IBrowserViewCreatedEvent, IBrowserViewOwner, IBrowserViewService, IBrowserViewState, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
+import { BrowserViewCommandId, BrowserViewStorageScope, IBrowserViewOpenOptions, IBrowserViewOwner, IBrowserViewService, IBrowserViewState, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
 import { IBrowserViewWorkbenchService, IBrowserViewModel, BrowserViewModel, IBrowserEditorViewState } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
@@ -12,7 +12,6 @@ import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/w
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
 import { AUX_WINDOW_GROUP, IEditorService } from '../../../services/editor/common/editorService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -71,7 +70,10 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			// Eagerly create the model from the state we already have
 			this._createModel(e.info.id, e.info.owner, e.info.state);
 
-			this._openEditorForCreatedView(e);
+			const editor = this._known.get(e.info.id);
+			if (editor) {
+				this._openEditorForCreatedView(editor, e.openOptions);
+			}
 		}));
 	}
 
@@ -168,9 +170,8 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	/**
 	 * Open an editor tab for a newly created browser view.
 	 */
-	private _openEditorForCreatedView(e: IBrowserViewCreatedEvent): void {
-		const opts = e.openOptions;
-		const resource = BrowserViewUri.forId(e.info.id);
+	private _openEditorForCreatedView(view: BrowserEditorInput, openOptions: IBrowserViewOpenOptions): void {
+		const opts = openOptions;
 
 		// Resolve target group: auxiliary window, parent's group, or default
 		let targetGroup: number | typeof AUX_WINDOW_GROUP | undefined;
@@ -180,16 +181,13 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			targetGroup = this._findEditorGroupForView(opts.parentViewId);
 		}
 
-		void this.editorService.openEditor({
-			resource,
-			options: {
-				inactive: opts.background,
-				preserveFocus: opts.preserveFocus,
-				pinned: opts.pinned,
-				auxiliary: opts.auxiliaryWindow
-					? { bounds: opts.auxiliaryWindow, compact: true }
-					: undefined,
-			}
+		void this.editorService.openEditor(view, {
+			inactive: opts.background,
+			preserveFocus: opts.preserveFocus,
+			pinned: opts.pinned,
+			auxiliary: opts.auxiliaryWindow
+				? { bounds: opts.auxiliaryWindow, compact: true }
+				: undefined,
 		}, targetGroup);
 	}
 

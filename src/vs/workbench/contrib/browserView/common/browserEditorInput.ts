@@ -329,7 +329,7 @@ export class BrowserEditorSerializer implements IEditorSerializer {
 			const data: IBrowserEditorInputData = JSON.parse(serializedEditor);
 			return instantiationService.invokeFunction((accessor) => {
 				const browserViewWorkbenchService = accessor.get(IBrowserViewWorkbenchService);
-				return browserViewWorkbenchService.getOrCreateLazy(generateUuid(), data);
+				return browserViewWorkbenchService.getOrCreateLazy(data.id, data);
 			});
 		} catch {
 			return undefined;
