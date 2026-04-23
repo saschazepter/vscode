@@ -168,9 +168,16 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		// Customization sync provider + bundler + observable
 		const syncProvider = store.add(new AgentCustomizationSyncProvider(sessionType, this._storageService));
 		const bundler = store.add(this._instantiationService.createInstance(SyncedCustomizationBundler, sessionType));
+		// Distinguish from the extension-host Copilot CLI harness, which
+		// registers under the same `Copilot CLI` displayName via the chat
+		// session customization provider API. Without the `[Local]` suffix
+		// both harnesses render identically in the customizations view.
+		// Matches the workspace-label convention from
+		// `buildAgentHostSessionWorkspace` and the provider-name in
+		// `getAgentSessionProviderName(AgentHostCopilot)`.
 		store.add(this._customizationHarnessService.registerExternalHarness({
 			id: sessionType,
-			label: agent.displayName,
+			label: `${agent.displayName} [Local]`,
 			icon: ThemeIcon.fromId(Codicon.server.id),
 			hiddenSections: [],
 			hideGenerateButton: true,
