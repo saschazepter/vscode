@@ -780,21 +780,22 @@ registerAction2(class extends Action2 {
 		if (plugin) {
 			const enablementProvider = harnessService.getActiveEnablementProvider();
 			if (enablementProvider) {
-				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, false);
+				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, false, 'global');
 			}
 			return;
 		}
 
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		if (enablementProvider) {
-			enablementProvider.setEnabled(uri, promptType, false);
+			enablementProvider.setEnabled(uri, promptType, false, 'global');
 		} else {
 			// Workspace-local items are disabled at workspace scope; user-level items at profile scope
 			const storage = extractStorage(context);
 			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
+			const namespace = harnessService.getActiveDescriptor().id;
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope, namespace);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, scope);
+			promptsService.setDisabledPromptFiles(promptType, disabled, scope, namespace);
 		}
 	}
 });
@@ -819,11 +820,12 @@ registerAction2(class extends Action2 {
 
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		if (enablementProvider) {
-			enablementProvider.setEnabled(uri, promptType, false);
+			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
 		} else {
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			const namespace = harnessService.getActiveDescriptor().id;
+			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
 			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE);
+			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE, namespace);
 		}
 	}
 });
@@ -852,27 +854,28 @@ registerAction2(class extends Action2 {
 		if (plugin) {
 			const enablementProvider = harnessService.getActiveEnablementProvider();
 			if (enablementProvider) {
-				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, true);
+				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, true, 'global');
 			}
 			return;
 		}
 
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		if (enablementProvider) {
-			enablementProvider.setEnabled(uri, promptType, true);
+			enablementProvider.setEnabled(uri, promptType, true, 'global');
 		} else {
 			// Remove from both scopes to fully re-enable
-			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE);
+			const namespace = harnessService.getActiveDescriptor().id;
+			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE, namespace);
 			const wasInProfile = profileDisabled.delete(uri);
 
-			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
+			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
 			const wasInWorkspace = workspaceDisabled.delete(uri);
 
 			if (wasInProfile) {
-				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE);
+				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE, namespace);
 			}
 			if (wasInWorkspace) {
-				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE);
+				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE, namespace);
 			}
 		}
 	}

@@ -131,10 +131,9 @@ declare module 'vscode' {
 		/**
 		 * Controls which disablement actions are available for this item.
 		 *
-		 * When omitted, defaults to {@link ChatSessionCustomizationEnablementScope.Global} if
-		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement} is implemented,
-		 * or {@link ChatSessionCustomizationEnablementScope.Workspace} otherwise (built-in
-		 * storage supports both scopes).
+		 * Defaults to {@link ChatSessionCustomizationEnablementScope.None} when
+		 * omitted — the item cannot be toggled unless the provider explicitly
+		 * sets a scope.
 		 *
 		 * Ignored when {@link plugin} is set — plugin items always use global-scope
 		 * enablement targeting the plugin itself.
@@ -148,7 +147,7 @@ declare module 'vscode' {
 		 * instead of the individual item, and the item's own
 		 * {@link enablementScope} is ignored. The plugin item is itself a
 		 * {@link ChatSessionCustomizationItem} so it can be passed directly to
-		 * {@link ChatSessionCustomizationProvider.resolveCustomizationEnablement}.
+		 * {@link ChatSessionCustomizationEnablementHandler.handleCustomizationEnablement}.
 		 */
 		readonly plugin?: ChatSessionCustomizationItem;
 	}
@@ -187,20 +186,36 @@ declare module 'vscode' {
 		 * @returns The list of customization items, or `undefined` if unavailable.
 		 */
 		provideChatSessionCustomizations(token: CancellationToken): ProviderResult<ChatSessionCustomizationItem[]>;
+	}
 
+	/**
+	 * A handler that persists enable/disable actions for chat customizations.
+	 *
+	 * When registered alongside a {@link ChatSessionCustomizationProvider},
+	 * the management UI delegates enable/disable actions to this handler.
+	 * Without a handler, items reported by the provider cannot be toggled.
+	 *
+	 * @see {@link chat.registerChatSessionCustomizationProvider}
+	 */
+	export interface ChatSessionCustomizationEnablementHandler {
 		/**
 		 * Called when the user enables or disables a customization in the
-		 * management UI. The provider should persist the change and fire
-		 * {@link onDidChange} so the UI re-queries the updated state.
-		 *
-		 * When this method is not implemented, the management UI falls back
-		 * to built-in storage for disablement state.
+		 * management UI. The handler should persist the change and fire
+		 * {@link ChatSessionCustomizationProvider.onDidChange} so the UI
+		 * re-queries the updated state.
 		 *
 		 * @param uri The URI of the customization item.
 		 * @param type The type of the customization.
 		 * @param enabled Whether the customization should be enabled (`true`) or disabled (`false`).
+		 * @param scope The scope at which enablement should be changed (e.g. {@link ChatSessionCustomizationEnablementScope.Global} or {@link ChatSessionCustomizationEnablementScope.Workspace}).
 		 */
-		resolveCustomizationEnablement?(uri: Uri, type: ChatSessionCustomizationType, enabled: boolean, token: CancellationToken): Thenable<void>;
+		handleCustomizationEnablement(
+			uri: Uri,
+			type: ChatSessionCustomizationType,
+			enabled: boolean,
+			scope: ChatSessionCustomizationEnablementScope,
+			token: CancellationToken
+		): Thenable<void>;
 	}
 
 	// #endregion
@@ -217,9 +232,15 @@ declare module 'vscode' {
 		 * @param chatSessionType The session type this provider is for (e.g. `'cli'`, `'claude'`).
 		 * @param metadata Metadata describing the provider's capabilities and UI presentation.
 		 * @param provider The customization provider implementation.
+		 * @param enablementHandler Optional handler for enable/disable actions. When omitted, items reported by the provider cannot be toggled.
 		 * @returns A disposable that unregisters the provider when disposed.
 		 */
-		export function registerChatSessionCustomizationProvider(chatSessionType: string, metadata: ChatSessionCustomizationProviderMetadata, provider: ChatSessionCustomizationProvider): Disposable;
+		export function registerChatSessionCustomizationProvider(
+			chatSessionType: string,
+			metadata: ChatSessionCustomizationProviderMetadata,
+			provider: ChatSessionCustomizationProvider,
+			enablementHandler?: ChatSessionCustomizationEnablementHandler
+		): Disposable;
 	}
 
 	// #endregion

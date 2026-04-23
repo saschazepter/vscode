@@ -1093,12 +1093,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private readonly disabledPromptsStorageKeyPrefix = 'chat.disabledPromptFiles.';
 	private readonly disabledPromptsWorkspaceStorageKeyPrefix = 'chat.disabledPromptFiles.workspace.';
 
-	public getDisabledPromptFiles(type: PromptsType): ResourceSet {
+	public getDisabledPromptFiles(type: PromptsType, namespace?: string): ResourceSet {
 		const result = new ResourceSet();
+		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
 		// Read profile-level disabled URIs
-		this._readDisabledFromStorage(this.disabledPromptsStorageKeyPrefix + type, StorageScope.PROFILE, result);
+		this._readDisabledFromStorage(this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix, StorageScope.PROFILE, result);
 		// Read workspace-level disabled URIs
-		this._readDisabledFromStorage(this.disabledPromptsWorkspaceStorageKeyPrefix + type, StorageScope.WORKSPACE, result);
+		this._readDisabledFromStorage(this.disabledPromptsWorkspaceStorageKeyPrefix.slice(0, -1) + suffix, StorageScope.WORKSPACE, result);
 		return result;
 	}
 
@@ -1120,11 +1121,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 	}
 
-	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope: StorageScope = StorageScope.PROFILE): void {
+	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope: StorageScope = StorageScope.PROFILE, namespace?: string): void {
 		const disabled = Array.from(uris).map(uri => uri.toJSON());
+		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
 		const key = scope === StorageScope.WORKSPACE
-			? this.disabledPromptsWorkspaceStorageKeyPrefix + type
-			: this.disabledPromptsStorageKeyPrefix + type;
+			? this.disabledPromptsWorkspaceStorageKeyPrefix.slice(0, -1) + suffix
+			: this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix;
 		this.storageService.store(key, JSON.stringify(disabled), scope, StorageTarget.USER);
 		this._refreshCachesForType(type);
 	}
@@ -1132,11 +1134,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 	/**
 	 * Returns the profile-level disabled URIs for a given type (excludes workspace overrides).
 	 */
-	public getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope): ResourceSet {
+	public getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope, namespace?: string): ResourceSet {
 		const result = new ResourceSet();
+		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
 		const key = scope === StorageScope.WORKSPACE
-			? this.disabledPromptsWorkspaceStorageKeyPrefix + type
-			: this.disabledPromptsStorageKeyPrefix + type;
+			? this.disabledPromptsWorkspaceStorageKeyPrefix.slice(0, -1) + suffix
+			: this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix;
 		this._readDisabledFromStorage(key, scope, result);
 		return result;
 	}

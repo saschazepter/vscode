@@ -95,7 +95,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			type: vscode.ChatSessionCustomizationType.Agent,
 			name: agent.displayName || agent.name,
 			description: agent.description,
-			enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 		}));
 	}
 
@@ -137,7 +136,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				type: vscode.ChatSessionCustomizationType.Instructions,
 				name: basename(uri),
 				groupKey: 'agent-instructions',
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 			});
 		}
 
@@ -170,7 +168,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					groupKey: 'context-instructions',
 					badge,
 					badgeTooltip,
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			} else {
 				items.push({
@@ -179,7 +176,6 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					name,
 					description,
 					groupKey: 'on-demand-instructions',
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			}
 		}
@@ -303,7 +299,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		return undefined;
 	}
 
-	async resolveCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _token: vscode.CancellationToken): Promise<void> {
+	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
 		const resolved = this._resolveDisablementKey(uri, type);
 		if (!resolved) {
 			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);

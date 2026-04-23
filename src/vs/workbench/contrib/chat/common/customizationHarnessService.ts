@@ -164,7 +164,7 @@ export interface ICustomizationItem {
 	readonly statusMessage?: string;
 	/** Whether this customization is currently enabled. */
 	readonly enabled?: boolean;
-	/** Per-item enablement scope override. When absent, falls back to the harness-level enablementScope. */
+	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
 	readonly enablementScope?: 'none' | 'global' | 'workspace';
 	/** When set, items with the same groupKey are displayed under a shared collapsible header. */
 	readonly groupKey?: string;
@@ -198,7 +198,7 @@ export interface ICustomizationEnablementProvider {
 	 * Enables or disables a single customization item.
 	 * The provider is expected to persist the change and fire {@link onDidChange}.
 	 */
-	setEnabled(uri: URI, type: PromptsType, enabled: boolean): void;
+	setEnabled(uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void;
 }
 
 /**

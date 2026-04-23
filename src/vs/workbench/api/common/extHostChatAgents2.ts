@@ -490,7 +490,11 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		1: 'global', // ChatSessionCustomizationEnablementScope.Global
 		2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
 	};
-	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider }>();
+	private static readonly _enablementScopeReverseMap: Record<string, number> = {
+		'global': 1, // ChatSessionCustomizationEnablementScope.Global
+		'workspace': 2, // ChatSessionCustomizationEnablementScope.Workspace
+	};
+	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider; enablementHandler?: vscode.ChatSessionCustomizationEnablementHandler }>();
 
 	private readonly _sessionDisposables: DisposableResourceMap<DisposableStore> = this._register(new DisposableResourceMap());
 	private readonly _completionDisposables: DisposableMap<number, DisposableStore> = this._register(new DisposableMap());
@@ -788,9 +792,9 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		return resources;
 	}
 
-	registerChatSessionCustomizationProvider(extension: IExtensionDescription, chatSessionType: string, metadata: vscode.ChatSessionCustomizationProviderMetadata, provider: vscode.ChatSessionCustomizationProvider): vscode.Disposable {
+	registerChatSessionCustomizationProvider(extension: IExtensionDescription, chatSessionType: string, metadata: vscode.ChatSessionCustomizationProviderMetadata, provider: vscode.ChatSessionCustomizationProvider, enablementHandler?: vscode.ChatSessionCustomizationEnablementHandler): vscode.Disposable {
 		const handle = ExtHostChatAgents2._customizationProviderIdPool++;
-		this._customizationProviders.set(handle, { extension, provider });
+		this._customizationProviders.set(handle, { extension, provider, enablementHandler });
 
 		const metadataDto: IChatSessionCustomizationProviderMetadataDto = {
 			label: metadata.label,
@@ -798,7 +802,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			supportedTypes: metadata.supportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
 		};
 
-		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier, typeof provider.resolveCustomizationEnablement === 'function');
+		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier, !!enablementHandler);
 
 		const disposables = new DisposableStore();
 
@@ -847,15 +851,16 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		}
 	}
 
-	async $setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean): Promise<void> {
+	async $setCustomizationEnabled(handle: number, uri: UriComponents, type: string, enabled: boolean, scope: 'global' | 'workspace'): Promise<void> {
 		const providerData = this._customizationProviders.get(handle);
-		if (!providerData?.provider.resolveCustomizationEnablement) {
+		if (!providerData?.enablementHandler) {
 			return;
 		}
-		await providerData.provider.resolveCustomizationEnablement(
+		await providerData.enablementHandler.handleCustomizationEnablement(
 			URI.revive(uri),
 			typeConvert.ChatSessionCustomizationType.to(type),
 			enabled,
+			ExtHostChatAgents2._enablementScopeReverseMap[scope] as vscode.ChatSessionCustomizationEnablementScope,
 			CancellationToken.None,
 		);
 	}

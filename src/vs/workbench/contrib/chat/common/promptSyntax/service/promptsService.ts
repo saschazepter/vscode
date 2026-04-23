@@ -663,19 +663,22 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Returns the list of disabled prompt file URIs for a given type. By default no prompt files are disabled.
+	 * @param namespace Optional harness namespace to isolate disabled state per harness (e.g. `'copilotcli'`, `'claude'`).
 	 */
-	getDisabledPromptFiles(type: PromptsType): ResourceSet;
+	getDisabledPromptFiles(type: PromptsType, namespace?: string): ResourceSet;
 
 	/**
 	 * Persists the set of disabled prompt file URIs for the given type.
 	 * @param scope Storage scope — defaults to profile. Use WORKSPACE to disable for the current workspace only.
+	 * @param namespace Optional harness namespace to isolate disabled state per harness.
 	 */
-	setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope?: StorageScope): void;
+	setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope?: StorageScope, namespace?: string): void;
 
 	/**
 	 * Returns the disabled prompt file URIs for a specific scope.
+	 * @param namespace Optional harness namespace to isolate disabled state per harness.
 	 */
-	getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope): ResourceSet;
+	getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope, namespace?: string): ResourceSet;
 
 	/**
 	 * Registers a prompt file provider that can provide prompt files for repositories.

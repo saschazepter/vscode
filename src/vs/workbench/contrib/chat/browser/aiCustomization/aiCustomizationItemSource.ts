@@ -67,7 +67,7 @@ export interface IAICustomizationListItem {
 	readonly status?: 'loading' | 'loaded' | 'degraded' | 'error';
 	/** Human-readable status detail (e.g. error message or warning). */
 	readonly statusMessage?: string;
-	/** Per-item enablement scope override. When absent, falls back to the harness-level enablementScope. */
+	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
 	readonly enablementScope?: 'none' | 'global' | 'workspace';
 	/** Optional reference to the parent plugin item. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
 	readonly plugin?: ICustomizationItem;
@@ -318,6 +318,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 	readonly onDidChange: Event<void>;
 
 	constructor(
+		private readonly harnessId: string,
 		private readonly itemProvider: ICustomizationItemProvider | undefined,
 		private readonly syncProvider: ICustomizationSyncProvider | undefined,
 		private readonly enablementProvider: ICustomizationEnablementProvider | undefined,
@@ -387,9 +388,9 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		// Also add back disabled items that the provider didn't include at all.
 		const disabledUris = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(promptType)
-			: this.promptsService.getDisabledPromptFiles(promptType);
+			: this.promptsService.getDisabledPromptFiles(promptType, this.harnessId);
 		const extensionDisabledUris = this.enablementProvider
-			? this.promptsService.getDisabledPromptFiles(promptType)
+			? this.promptsService.getDisabledPromptFiles(promptType, this.harnessId)
 			: undefined;
 		if (disabledUris.size > 0 || (extensionDisabledUris && extensionDisabledUris.size > 0)) {
 			const existingUris = new ResourceSet(normalized.map(i => i.uri));
@@ -521,7 +522,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		const appended: IAICustomizationListItem[] = [];
 		const disabledPromptFiles = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(PromptsType.skill)
-			: this.promptsService.getDisabledPromptFiles(PromptsType.skill);
+			: this.promptsService.getDisabledPromptFiles(PromptsType.skill, this.harnessId);
 		for (const p of builtinPaths) {
 			const name = p.name ?? basename(p.uri);
 			if (overriddenNames.has(name)) {
@@ -568,7 +569,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		const disabledUris = this.enablementProvider
 			? this.enablementProvider.getDisabledPromptFiles(promptType)
-			: this.promptsService.getDisabledPromptFiles(promptType);
+			: this.promptsService.getDisabledPromptFiles(promptType, this.harnessId);
 		const providerItems: ICustomizationItem[] = files
 			.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user)
 			.map(file => ({

@@ -440,7 +440,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
 		// When plugin is set, enablement targets the plugin — always use global scope
-		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace'));
+		const itemEnablementScope = element.plugin ? 'global' : (element.enablementScope ?? 'none');
 		const isDisableable = !!element.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
@@ -785,7 +785,7 @@ export class AICustomizationListWidget extends Disposable {
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
 		// When plugin is set, enablement targets the plugin — always use global scope
-		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? (descriptor.enablementProvider ? 'global' : 'workspace'));
+		const itemEnablementScope = item.plugin ? 'global' : (item.enablementScope ?? 'none');
 		const isDisableable = !!item.plugin || itemEnablementScope !== 'none';
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
@@ -1195,6 +1195,7 @@ export class AICustomizationListWidget extends Disposable {
 		}
 		const itemProvider = descriptor.itemProvider ?? (descriptor.syncProvider ? undefined : this.promptsServiceItemProvider);
 		const source = new ProviderCustomizationItemSource(
+			descriptor.id,
 			itemProvider,
 			descriptor.syncProvider,
 			descriptor.enablementProvider,

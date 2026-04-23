@@ -118,7 +118,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				type: vscode.ChatSessionCustomizationType.Agent,
 				name: agent.name,
 				description: agent.description,
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				// No groupKey — vscode infers Built-in from non-file: scheme
 			});
 		}
@@ -132,7 +131,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 						uri: agent.uri,
 						type: vscode.ChatSessionCustomizationType.Agent,
 						name,
-						enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 					});
 				}
 			}
@@ -251,7 +249,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								description: hook.command,
 								enabled: !allHooksDisabled,
 								// Individual hooks can't be toggled — only disableAllHooks
-								enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 							});
 						}
 					}
@@ -353,7 +350,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 	// --- Enablement ---
 
-	async resolveCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _token: vscode.CancellationToken): Promise<void> {
+	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
 		const settings = { ...await this._readSettings() };
 
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {

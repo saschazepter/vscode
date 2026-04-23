@@ -773,7 +773,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			hiddenSections = Object.values(typeToSection).filter(section => !supportedSections.has(section));
 		}
 
-		// Build an enablement provider when the extension implements setCustomizationEnabled.
+		// Build an enablement provider when the extension implements handleCustomizationEnablement.
 		// This delegates disable/enable to the extension instead of VS Code's StorageService.
 		let enablementProvider: ICustomizationEnablementProvider | undefined;
 		if (hasSetEnabled) {
@@ -789,8 +789,8 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					// No separate disabled set needed.
 					return new ResourceSet();
 				},
-				setEnabled: (uri: URI, type: PromptsType, enabled: boolean): void => {
-					proxy.$setCustomizationEnabled(providerHandle, uri.toJSON(), type, enabled);
+				setEnabled: (uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void => {
+					proxy.$setCustomizationEnabled(providerHandle, uri.toJSON(), type, enabled, scope);
 				},
 			};
 		}
