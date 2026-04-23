@@ -139,7 +139,7 @@ export class BaseSecretStorageService extends Disposable implements ISecretStora
 			try {
 				return await readEncryptedSecret(
 					key,
-					(fullKey) => this.getValueFromStorage(fullKey, storageService),
+					(fullKey) => this.getValueFromStorage(key, fullKey, storageService),
 					// If the storage service is in-memory, we don't need to decrypt
 					this._type === 'in-memory' ? (v) => Promise.resolve(v) : (v) => this._encryptionService.decrypt(v),
 					this._logService,
@@ -160,7 +160,7 @@ export class BaseSecretStorageService extends Disposable implements ISecretStora
 				await writeEncryptedSecret(
 					key,
 					value,
-					(fullKey, encrypted) => this.setValueInStorage(fullKey, encrypted, storageService),
+					(fullKey, encrypted) => this.setValueInStorage(key, fullKey, encrypted, storageService),
 					// If the storage service is in-memory, we don't need to encrypt
 					this._type === 'in-memory' ? (v) => Promise.resolve(v) : (v) => this._encryptionService.encrypt(v),
 					this._logService,
@@ -193,21 +193,21 @@ export class BaseSecretStorageService extends Disposable implements ISecretStora
 		});
 	}
 
-	private getValueFromStorage(key: string, storageService: IStorageService): string | undefined {
+	private getValueFromStorage(key: string, fullKey: string, storageService: IStorageService): string | undefined {
 		if (isWindows && CROSS_APP_SHARED_SECRET_KEYS.includes(key)) {
-			this._logService.trace(`[SecretStorageService] Fetching value for cross-app shared secret: ${key}`);
-			return storageService.get(key, StorageScope.APPLICATION_SHARED);
+			this._logService.trace(`[SecretStorageService] Fetching value for cross-app shared secret: ${fullKey}`);
+			return storageService.get(fullKey, StorageScope.APPLICATION_SHARED);
 		}
-		return storageService.get(key, StorageScope.APPLICATION);
+		return storageService.get(fullKey, StorageScope.APPLICATION);
 	}
 
-	private setValueInStorage(key: string, value: string, storageService: IStorageService): void {
+	private setValueInStorage(key: string, fullKey: string, value: string, storageService: IStorageService): void {
 		if (isWindows && CROSS_APP_SHARED_SECRET_KEYS.includes(key)) {
-			this._logService.trace(`[SecretStorageService] Setting value for cross-app shared secret: ${key}`);
-			storageService.store(key, value, StorageScope.APPLICATION_SHARED, StorageTarget.MACHINE);
+			this._logService.trace(`[SecretStorageService] Setting value for cross-app shared secret: ${fullKey}`);
+			storageService.store(fullKey, value, StorageScope.APPLICATION_SHARED, StorageTarget.MACHINE);
 			return;
 		}
-		storageService.store(key, value, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		storageService.store(fullKey, value, StorageScope.APPLICATION, StorageTarget.MACHINE);
 	}
 
 	private async initialize(): Promise<IStorageService> {
