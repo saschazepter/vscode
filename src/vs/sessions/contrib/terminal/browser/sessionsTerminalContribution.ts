@@ -21,7 +21,7 @@ import { Menus } from '../../../browser/menus.js';
 import { isAgentHostProvider, LOCAL_AGENT_HOST_PROVIDER_ID } from '../../../common/agentHostSessionsProvider.js';
 import { SessionsWelcomeVisibleContext, IsPhoneLayoutContext } from '../../../common/contextkeys.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
-import { CopilotCLISessionType, ISession } from '../../../services/sessions/common/session.js';
+import { isLocalAgentSessionType, ISession } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { ContextKeyExpr, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
@@ -42,11 +42,11 @@ interface ISessionTerminalInfo {
 
 /**
  * Returns terminal info for the given session: worktree or repository path for
- * background sessions only. Returns `undefined` for non-background sessions
+ * local agent sessions. Returns `undefined` for non-local sessions
  * (Cloud, Local, etc.) which have no local worktree, or when no path is available.
  */
 function getSessionTerminalInfo(session: ISession | undefined): ISessionTerminalInfo | undefined {
-	if (session?.sessionType !== CopilotCLISessionType.id) {
+	if (!session || !isLocalAgentSessionType(session.sessionType)) {
 		return undefined;
 	}
 	const repo = session.workspace.get()?.repositories[0];
@@ -155,9 +155,9 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 		// When a session is archived or removed, close all terminals for its worktree
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
 			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
-				const worktreeUri = session.workspace.get()?.repositories[0]?.workingDirectory;
-				if (worktreeUri) {
-					this._closeTerminalsForPath(worktreeUri.fsPath);
+				const info = getSessionTerminalInfo(session);
+				if (info) {
+					this._closeTerminalsForPath(info.cwd.fsPath);
 				}
 			}
 		}));

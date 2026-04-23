@@ -50,6 +50,15 @@ export const ClaudeCodeSessionType: ISessionType = {
 	icon: Codicon.claude,
 };
 
+/**
+ * Returns whether the given session type represents a local agent
+ * that operates on a workspace (e.g. Copilot CLI, Claude Code).
+ * TODO: Somehow make this contributable so we don't have to hardcode session types here.
+ */
+export function isLocalAgentSessionType(sessionType: string | undefined): boolean {
+	return sessionType === COPILOT_CLI_SESSION_TYPE || sessionType === CLAUDE_CODE_SESSION_TYPE;
+}
+
 export const GITHUB_REMOTE_FILE_SCHEME = 'github-remote-file';
 
 /**
