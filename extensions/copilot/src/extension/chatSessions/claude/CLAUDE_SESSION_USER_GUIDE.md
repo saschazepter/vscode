@@ -42,6 +42,7 @@ This guide covers the **Claude** session target in VS Code Copilot Chat: what it
 - [Tools Available to Claude](#tools-available-to-claude)
 - [Memory Files (CLAUDE.md)](#memory-files-claudemd)
 - [Custom Subagents](#custom-subagents)
+- [Skills and Plugins](#skills-and-plugins)
 - [Hooks](#hooks)
 - [Settings Reference](#settings-reference)
 - [How It Differs from Other Session Targets](#how-it-differs-from-other-session-targets)
@@ -562,6 +563,68 @@ Use the [`/agents`](#agents--create-and-manage-subagents) slash command to creat
 |----------|------|--------|
 | Project | `.claude/agents/<name>.md` | ✅ Yes (version controlled) |
 | Personal | `~/.claude/agents/<name>.md` | ❌ No (user-specific) |
+
+---
+
+## Skills and Plugins
+
+Claude sessions automatically discover and load **skills** and **plugins** from your workspace and configuration. These extend Claude's capabilities with reusable, packaged functionality — such as custom slash commands, tools, or domain-specific instructions.
+
+### How Skills and Plugins Are Discovered
+
+Claude finds plugin directories from three sources:
+
+| Source | How It Works |
+|--------|-------------|
+| **`chat.agentSkillsLocations` setting** | Paths to directories containing skills. Claude walks one level up from each to find the plugin root. Supports `~/`, absolute, and relative paths. |
+| **Discovered `SKILL.md` files** | The prompts service finds `SKILL.md` files in your workspace. Claude derives the plugin root from each skill's file path. |
+| **Plugin directories** | The prompts service returns plugin root directories directly. |
+
+> **Note:** Directories under `.claude/` are automatically excluded since the Claude SDK loads those on its own.
+
+### Configuring Additional Skill Locations
+
+Use the `chat.agentSkillsLocations` setting to point Claude at additional skill directories:
+
+```json
+{
+  "chat.agentSkillsLocations": {
+    "~/my-skills": true,
+    "/absolute/path/to/skills": true,
+    "relative/skills": true
+  }
+}
+```
+
+- **`~/` paths** are expanded relative to your home directory
+- **Absolute paths** are used as-is
+- **Relative paths** are resolved against each workspace folder
+
+Set a path's value to `false` to disable it without removing the entry.
+
+### Skill File Format
+
+Each skill lives in its own directory with a `SKILL.md` file:
+
+```
+my-plugin/
+└── skills/
+    ├── my-skill/
+    │   └── SKILL.md
+    └── another-skill/
+        └── SKILL.md
+```
+
+`SKILL.md` files use YAML frontmatter for metadata:
+
+```markdown
+---
+name: my-skill
+description: "A brief description of what this skill does"
+---
+
+Instructions for Claude when this skill is invoked...
+```
 
 ---
 

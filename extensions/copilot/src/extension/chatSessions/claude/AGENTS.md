@@ -133,6 +133,20 @@ All interactions are displayed through VS Code's native chat UI, providing a sea
 - Used to resume previous Claude Code conversations
 - See `node/sessionParser/README.md` for detailed documentation
 
+### `node/claudeSkills.ts`
+
+**IClaudePluginService / ClaudePluginService**
+- Resolves plugin root directories for the Claude SDK's `plugins` option
+- Combines three sources of plugin locations:
+  1. **Config skill locations** — from `chat.agentSkillsLocations` setting, resolved via the shared `resolveSkillConfigLocations()` utility. These point to skills directories (e.g. `.../skills/`), so the service walks **one level up** to reach the plugin root expected by the SDK.
+  2. **Discovered skills** — from `IPromptsService.getSkills()`. Each skill has a `SKILL.md` at `<plugin-root>/skills/<skill-name>/SKILL.md`, so the service walks **three levels up** (`dirname(dirname(dirname(uri)))`) to reach the plugin root.
+  3. **Direct plugins** — from `IPromptsService.getPlugins()`, returned as-is since they already point to plugin root directories.
+- Filters out `.claude` directories (the Claude SDK loads these automatically)
+- Deduplicates results using `ResourceSet`
+- Plugin roots are passed to the SDK as `SdkPluginConfig[]` with `{ type: 'local', path }` in `ClaudeCodeSession._doStartSession()`
+
+**Shared utility:** `../../common/skillConfigLocations.ts` — `resolveSkillConfigLocations()` handles `~/` expansion, absolute paths, and relative paths joined to workspace folders. Used by both `ClaudePluginService` and `CopilotCLISkills`.
+
 ### `common/claudeTools.ts`
 
 Defines Claude Code's tool interface:
@@ -226,6 +240,7 @@ In multi-root and empty workspaces, a folder picker option appears in the chat s
 Unit tests are located in `node/test/`:
 - `claudeCodeAgent.spec.ts`: Tests for agent and session logic
 - `claudeCodeSessionService.spec.ts`: Tests for session loading and persistence
+- `claudePluginService.spec.ts`: Tests for plugin location resolution
 - `mockClaudeCodeSdkService.ts`: Mock SDK service for testing
 - `fixtures/`: Sample `.jsonl` session files for testing
 
