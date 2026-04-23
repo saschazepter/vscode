@@ -50,6 +50,7 @@ import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
 import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from '../../../browser/agentSessions/agentHost/agentHostSessionWorkingDirectoryResolver.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
+import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
 
 // ---- Mock agent host service ------------------------------------------------
 
@@ -379,6 +380,13 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 		resolve: sessionResource => workingDirectoryResolver?.resolve(sessionResource),
 	});
 	instantiationService.stub(IWorkbenchEnvironmentService, { isSessionsWindow: false } as Partial<IWorkbenchEnvironmentService>);
+	instantiationService.stub(IPromptsService, {
+		onDidChangeCustomAgents: Event.None,
+		onDidChangeSlashCommands: Event.None,
+		onDidChangeSkills: Event.None,
+		onDidChangeInstructions: Event.None,
+		listPromptFilesForStorage: async () => [],
+	});
 
 	return { instantiationService, agentHostService, chatAgentService };
 }
