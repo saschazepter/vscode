@@ -754,12 +754,12 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		const storage = extractStorage(context);
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider && storage !== PromptsStorage.extension) {
+		if (enablementProvider) {
 			enablementProvider.setEnabled(uri, promptType, false);
 		} else {
 			// Workspace-local items are disabled at workspace scope; user-level items at profile scope
+			const storage = extractStorage(context);
 			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
 			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope);
 			disabled.add(uri);
@@ -786,9 +786,8 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		const storage = extractStorage(context);
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider && storage !== PromptsStorage.extension) {
+		if (enablementProvider) {
 			enablementProvider.setEnabled(uri, promptType, false);
 		} else {
 			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE);
@@ -817,9 +816,8 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		const storage = extractStorage(context);
 		const enablementProvider = harnessService.getActiveEnablementProvider();
-		if (enablementProvider && storage !== PromptsStorage.extension) {
+		if (enablementProvider) {
 			enablementProvider.setEnabled(uri, promptType, true);
 		} else {
 			// Remove from both scopes to fully re-enable

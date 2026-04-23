@@ -438,8 +438,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// Extension items are always disableable via VS Code core, regardless of the harness's disableableTypes
-		const isDisableable = element.storage === PromptsStorage.extension || !descriptor.disableableTypes || descriptor.disableableTypes.has(element.promptType);
+		const isDisableable = !descriptor.disableableTypes || descriptor.disableableTypes.has(element.promptType);
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, element.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, element.uri.toString()],
@@ -780,8 +779,7 @@ export class AICustomizationListWidget extends Disposable {
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
 		const descriptor = this.harnessService.getActiveDescriptor();
-		// Extension items are always disableable via VS Code core, regardless of the harness's disableableTypes
-		const isDisableable = item.storage === PromptsStorage.extension || !descriptor.disableableTypes || descriptor.disableableTypes.has(item.promptType);
+		const isDisableable = !descriptor.disableableTypes || descriptor.disableableTypes.has(item.promptType);
 		const overlayPairs: [string, string | boolean][] = [
 			[AI_CUSTOMIZATION_ITEM_TYPE_KEY, item.promptType],
 			[AI_CUSTOMIZATION_ITEM_URI_KEY, item.uri.toString()],
