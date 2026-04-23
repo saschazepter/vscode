@@ -698,11 +698,15 @@ export class WorkspacePicker extends Disposable {
 				this._onDidChangeSelection.fire();
 			}
 
-			// If no selection, try to restore the previously checked workspace
-			// (only the checked entry, not any fallback, to avoid unexpected switches)
-			if (!this._selectedWorkspace) {
+			// Re-restore the checked workspace once its provider becomes available.
+			// Without this, a remote provider that registers in Connecting state
+			// (and so was deemed unavailable at restore time) would never upgrade
+			// the picker after it finishes connecting — the fallback selection
+			// would stick. Only do this if the user hasn't picked, to avoid
+			// changing the workspace out from under them.
+			if (!this._userHasPicked) {
 				const restored = this._restoreCheckedWorkspace();
-				if (restored) {
+				if (restored && !this._isSelectedWorkspace(restored)) {
 					this._selectedWorkspace = restored;
 					this._updateTriggerLabel();
 					this._onDidChangeSelection.fire();

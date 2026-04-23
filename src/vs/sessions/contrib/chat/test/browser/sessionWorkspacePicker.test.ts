@@ -206,6 +206,28 @@ suite('WorkspacePicker - Connection Status', () => {
 		assertSelectedProvider(picker, 'local-1');
 	});
 
+	test('upgrades to checked remote workspace once it finishes connecting', () => {
+		// SSH remote: provider is registered immediately but starts in Connecting.
+		// Picker falls back to local. When the remote finishes connecting, the
+		// picker should swap to the user's stored remote selection.
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connecting);
+		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
+		const localProvider = createMockProvider('local-1');
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/remote/project'), providerId: 'agenthost-remote-1', checked: true },
+			{ uri: URI.file('/local/project'), providerId: 'local-1', checked: false },
+		]);
+
+		providersService.setProviders([remoteProvider, localProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+		assertSelectedProvider(picker, 'local-1');
+
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Connected, undefined);
+		assertSelectedProvider(picker, 'agenthost-remote-1');
+	});
+
 	test('restore picks connected remote provider', () => {
 		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connected);
 		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
