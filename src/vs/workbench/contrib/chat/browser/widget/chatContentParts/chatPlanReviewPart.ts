@@ -382,11 +382,11 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		// slot so the user can approve while collapsed. Reject is omitted in
 		// the collapsed view (matches chatToolConfirmationCarouselPart).
 		if (!this._isSubmitted) {
+			// Collapsing implicitly cancels feedback mode. Route through
+			// `exitFeedbackMode` so the CSS class, draft, and section
+			// visibility teardown stays centralized.
 			if (this._isCollapsed && this._isFeedbackMode) {
-				this._isFeedbackMode = false;
-				if (this._feedbackSection) {
-					dom.hide(this._feedbackSection);
-				}
+				this.exitFeedbackMode();
 			}
 			const target = this._isCollapsed ? this._inlineActionsEl : this._footerButtonsEl;
 			const other = this._isCollapsed ? this._footerButtonsEl : this._inlineActionsEl;
