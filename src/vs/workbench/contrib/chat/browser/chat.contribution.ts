@@ -738,14 +738,12 @@ configurationRegistry.registerConfiguration({
 		},
 		[mcpServerCollisionBehaviorSection]: {
 			type: 'string',
-			description: nls.localize('chat.mcp.collisionBehavior', "Controls behavior when multiple MCP servers are discovered with the same name. 'disable' disables lower-priority duplicates. 'suffix' appends numeric suffixes to disambiguate."),
+			description: nls.localize('chat.mcp.collisionBehavior', "Controls behavior when multiple MCP servers are discovered with the same name. 'disable' disables lower-priority duplicates."),
 			enum: [
 				McpCollisionBehavior.Disable,
-				McpCollisionBehavior.Suffix,
 			],
 			enumDescriptions: [
 				nls.localize('chat.mcp.collisionBehavior.disable', "Disable lower-priority servers with duplicate names."),
-				nls.localize('chat.mcp.collisionBehavior.suffix', "Append numeric suffixes to servers with duplicate names."),
 			],
 			default: McpCollisionBehavior.Disable,
 		},

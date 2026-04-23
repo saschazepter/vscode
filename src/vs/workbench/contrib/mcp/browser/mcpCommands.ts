@@ -246,7 +246,7 @@ export class McpServerOptionsCommand extends Action2 {
 
 		if (disabled) {
 			items.push({
-				label: localize('mcp.enable', 'Enable Server'),
+				label: localize('mcp.enableWorkspace', 'Enable Server (Workspace)'),
 				action: 'enable'
 			});
 		} else if (McpConnectionState.canBeStarted(serverState.state)) {

@@ -256,19 +256,19 @@ class McpPrefixGenerator {
  * Wraps an {@link EnablementModel} with collision-aware defaults and
  * mutual-exclusion logic for MCP servers with the same label.
  *
- * When collision behavior is `ignore`:
+ * When collision behavior is `disable`:
  * - Servers whose label collides with a higher-priority server are disabled
  *   by default (unless the user has explicitly toggled them).
  * - Enabling a colliding server disables all other servers with the same label.
  *
- * When collision behavior is `number`, delegates everything unchanged.
+ * When collision behavior is `suffix`, delegates everything unchanged.
  */
 export class McpCollisionEnablementModel implements IEnablementModel {
 
 	/**
 	 * For each server definition ID, the list of all definition IDs that share
 	 * the same (case-insensitive) label, in priority order (lowest collection
-	 * order first). Empty when collision behavior is `number`.
+	 * order first). Empty when collision behavior is `suffix`.
 	 */
 	private readonly _collisionGroups: IObservable<ReadonlyMap<string, readonly string[]>>;
 
@@ -347,14 +347,20 @@ export class McpCollisionEnablementModel implements IEnablementModel {
 		}
 
 		// Enabling a colliding server: disable all others in the group atomically
-		transaction(innerTx => {
+		const updateGroup = (innerTx: ITransaction) => {
 			this._base.setEnabled(key, state, innerTx);
 			for (const otherId of group) {
 				if (otherId !== key) {
 					this._base.setEnabled(otherId, ContributionEnablementState.DisabledWorkspace, innerTx);
 				}
 			}
-		});
+		};
+
+		if (tx) {
+			updateGroup(tx);
+		} else {
+			transaction(innerTx => updateGroup(innerTx));
+		}
 	}
 
 	remove(key: string): void {

@@ -794,8 +794,8 @@ suite('Workbench - MCP - Registry', () => {
 			assert.strictEqual(enablementModel.readEnabled('col-1.srv-a'), ContributionEnablementState.DisabledWorkspace);
 		});
 
-		test('no collision effect when behavior is "number"', () => {
-			configurationService.setUserConfiguration('chat.mcp.collisionBehavior', 'number');
+		test('no collision effect when behavior is "suffix"', () => {
+			configurationService.setUserConfiguration('chat.mcp.collisionBehavior', McpCollisionBehavior.Suffix);
 			configurationService.onDidChangeConfigurationEmitter.fire({
 				affectsConfiguration: (key: string) => key === 'chat.mcp.collisionBehavior',
 			} as unknown as IConfigurationChangeEvent);
@@ -806,7 +806,7 @@ suite('Workbench - MCP - Registry', () => {
 			store.add(registry.registerCollection(col2));
 			setupModel();
 
-			// Both should be enabled when collision behavior is "number"
+			// Both should be enabled when collision behavior is "suffix"
 			assert.ok(isContributionEnabled(enablementModel.readEnabled('col-1.srv-a')));
 			assert.ok(isContributionEnabled(enablementModel.readEnabled('col-2.srv-a')));
 		});
