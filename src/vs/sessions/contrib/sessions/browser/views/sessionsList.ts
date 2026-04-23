@@ -41,6 +41,7 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
+import { IAgentSessionsService } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ISessionsListModelService } from './sessionsListModelService.js';
 import { IAgentHostFilterService } from '../../../remoteAgentHost/common/agentHostFilter.js';
 
@@ -173,6 +174,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		private readonly contextKeyService: IContextKeyService,
 		private readonly markdownRendererService: IMarkdownRendererService,
 		private readonly hoverService: IHoverService,
+		private readonly agentSessionsService: IAgentSessionsService,
 	) { }
 
 	renderTemplate(container: HTMLElement): ISessionItemTemplate {
@@ -212,6 +214,12 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 
 	private renderSession(element: ISession, template: ISessionItemTemplate, matches?: IMatch[]): void {
 		template.elementDisposables.clear();
+
+		// Trigger lazy resolve for expensive session properties (e.g. changes)
+		// so that providers which populate them on demand deliver fresh data
+		// by the time the row renders. Only fires for sessions that become
+		// visible in the viewport (O(visible rows), not O(all sessions)).
+		this.agentSessionsService.model.observeSession(element.resource);
 
 		// Toolbar context
 		template.titleToolbar.context = element;
@@ -629,6 +637,11 @@ export interface ISessionsList {
 	readonly onDidChangeFindOpenState: Event<boolean>;
 	refresh(): void;
 	reveal(sessionResource: URI): boolean;
+	/**
+	 * Returns the sessions currently visible in the list, in display order.
+	 * Sessions hidden by workspace group capping ("show more") are excluded.
+	 */
+	getVisibleSessions(): readonly ISession[];
 	clearFocus(): void;
 	hasFocusOrSelection(): boolean;
 	setVisible(visible: boolean): void;
@@ -717,6 +730,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		const approvalModel = this._register(instantiationService.createInstance(AgentSessionApprovalModel));
 		const markdownRendererService = instantiationService.invokeFunction(accessor => accessor.get(IMarkdownRendererService));
 		const hoverService = instantiationService.invokeFunction(accessor => accessor.get(IHoverService));
+		const agentSessionsService = instantiationService.invokeFunction(accessor => accessor.get(IAgentSessionsService));
 		const sessionRenderer = new SessionItemRenderer(
 			{ grouping: this.options.grouping, sorting: this.options.sorting, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s) },
 			approvalModel,
@@ -724,6 +738,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 			contextKeyService,
 			markdownRendererService,
 			hoverService,
+			agentSessionsService,
 		);
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
@@ -942,6 +957,36 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		this.tree.setChildren(null, children);
 		this._onDidUpdate.fire();
+	}
+
+	getVisibleSessions(): readonly ISession[] {
+		// Derive the visible session list from the tree model so that index-based
+		// navigation matches what the user actually sees: this respects collapsed
+		// sections, find-widget filtering, and excludes section / show-more nodes.
+		const sessions = new Set<ISession>(this.sessions);
+		const visibleSessions: ISession[] = [];
+
+		const collect = (node: ITreeNode<SessionListItem | null, FuzzyScore | undefined>): void => {
+			if (!node.visible) {
+				return;
+			}
+			if (node.element && sessions.has(node.element as ISession)) {
+				visibleSessions.push(node.element as ISession);
+			}
+			if (node.collapsed) {
+				return;
+			}
+			for (const child of node.children) {
+				collect(child);
+			}
+		};
+
+		const root = this.tree.getNode();
+		for (const child of root.children) {
+			collect(child);
+		}
+
+		return visibleSessions;
 	}
 
 	reveal(sessionResource: URI): boolean {

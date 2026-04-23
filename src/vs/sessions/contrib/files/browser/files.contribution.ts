@@ -12,7 +12,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewContainerExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
+import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewContainerExtensions, WindowEnablement } from '../../../../workbench/common/views.js';
 import { ExplorerView } from '../../../../workbench/contrib/files/browser/views/explorerView.js';
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
@@ -43,7 +43,7 @@ const filesViewContainer = viewContainerRegistry.registerViewContainer({
 		keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE },
 		order: 0
 	},
-	windowVisibility: WindowVisibility.Sessions,
+	windowEnablement: WindowEnablement.Sessions,
 }, ViewContainerLocation.AuxiliaryBar, { isDefault: true });
 
 class RegisterFilesViewContribution implements IWorkbenchContribution {
@@ -62,7 +62,7 @@ class RegisterFilesViewContribution implements IWorkbenchContribution {
 			canToggleVisibility: false,
 			canMoveView: false,
 			when: ContextKeyExpr.and(WorkspaceFolderCountContext.notEqualsTo('0'), IsPhoneLayoutContext.negate()),
-			windowVisibility: WindowVisibility.Sessions,
+			windowEnablement: WindowEnablement.Sessions,
 		}], filesViewContainer);
 
 		// Register an empty view to show when there are no workspace folders
@@ -74,7 +74,7 @@ class RegisterFilesViewContribution implements IWorkbenchContribution {
 			canToggleVisibility: false,
 			canMoveView: false,
 			when: ContextKeyExpr.and(WorkspaceFolderCountContext.isEqualTo('0'), IsPhoneLayoutContext.negate()),
-			windowVisibility: WindowVisibility.Sessions,
+			windowEnablement: WindowEnablement.Sessions,
 		}], filesViewContainer);
 	}
 }
