@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, shell, webContents } from 'electron';
 import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 'os';
 import { promisify } from 'util';
@@ -648,7 +648,9 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	async openExternal(windowId: number | undefined, url: string, defaultApplication?: string): Promise<boolean> {
 		this.environmentMainService.unsetSnapExportedVariables();
 		try {
-			if (matchesSomeScheme(url, Schemas.http, Schemas.https)) {
+			if (defaultApplication) {
+				await this.openExternalApplication(windowId, url, defaultApplication);
+			} else if (matchesSomeScheme(url, Schemas.http, Schemas.https)) {
 				this.openExternalBrowser(windowId, url, defaultApplication);
 			} else {
 				this.doOpenShellExternal(windowId, url);
@@ -658,6 +660,52 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		}
 
 		return true;
+	}
+
+	private async openExternalApplication(windowId: number | undefined, url: string, application: string): Promise<void> {
+		// On macOS, use `open -a <app> <path>` to hand the folder to the
+		// target app via macOS's standard open-file mechanism.  VS Code
+		// receives this through Electron's `app.on('open-file')` handler
+		// which properly creates a folder window.
+		if (isMacintosh) {
+			const uri = URI.parse(url);
+			if (uri.scheme === Schemas.file) {
+				const child = spawn('open', ['-a', application, uri.fsPath], {
+					detached: true,
+					stdio: 'ignore',
+				});
+				child.on('error', err => this.logService.error(`Error launching ${application} with folder: ${err.message}`));
+				child.unref();
+				return;
+			}
+		}
+
+		if (application.includes(posix.sep) || application.includes(win32.sep)) {
+			const applicationPathExists = await Promises.exists(application);
+			if (!applicationPathExists) {
+				this.logService.error(`Configured external application path does not exist: ${application}`);
+				return this.doOpenShellExternal(windowId, url);
+			}
+		}
+
+		try {
+			const { default: open, apps } = await import('open');
+			const res = await open(url, {
+				app: {
+					name: Object.hasOwn(apps, application) ? apps[(application as keyof typeof apps)] : application
+				}
+			});
+
+			if (!isWindows) {
+				res.stderr?.once('data', (data: Buffer) => {
+					this.logService.error(`Error opening external URL '${url}' using application '${application}': ${data.toString()}`);
+					return this.doOpenShellExternal(windowId, url);
+				});
+			}
+		} catch (error) {
+			this.logService.error(`Unable to open external URL '${url}' using application '${application}' due to ${error}.`);
+			return this.doOpenShellExternal(windowId, url);
+		}
 	}
 
 	private async openExternalBrowser(windowId: number | undefined, url: string, defaultApplication?: string): Promise<void> {

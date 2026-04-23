@@ -108,7 +108,7 @@ The Agent Sessions titlebar includes a custom left toolbar that appears after th
 | Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar (`TitleBarLeft`) | Toggles primary sidebar visibility |
 | Agent Host Filter | `sessions.agentHostFilter.pick` | Left toolbar (`TitleBarLeft`) | Dropdown indicator of the host the workbench is scoped to; lets the user switch hosts or pick "All Hosts". Visible when at least one remote agent host is known (`sessions.hasAgentHosts`). Renders via a custom `HostFilterActionViewItem`. |
 | Run Script | `workbench.action.agentSessions.runScript` | Right toolbar (`TitleBarRight`) | Split button: runs configured script or shows configure dialog |
-| Open... | (submenu) | Right toolbar (`TitleBarRight`) | Split button submenu: Open Terminal, Open in VS Code |
+| Open In | (submenu) | Right toolbar (`TitleBarRight`) | Split button: primary action replays the most recently selected destination; dropdown offers VS Code Stable, VS Code Insiders, Finder, and Copy Path |
 | Toggle Secondary Sidebar | `workbench.action.agentToggleSecondarySidebarVisibility` | Right toolbar (`TitleBarRight`) | Toggles auxiliary bar visibility |
 
 The toggle sidebar action:
@@ -123,10 +123,14 @@ The Run Script action:
 - Dropdown includes "Configure Run Action..." to set/change the script
 - Registered in `contrib/chat/browser/runScriptAction.ts`
 
-The Open... action:
-- Displayed as a split button via `Menus.OpenSubMenu` on `Menus.TitleBarRight`
-- Contains "Open Terminal" (opens terminal at session worktree) and "Open in VS Code" (opens worktree in new VS Code window)
-- Registered in `contrib/chat/browser/chat.contribution.ts`
+The Open In action:
+- Is displayed as a custom split button via the `AgentSessionsOpenInDropdown` submenu on `Menus.TitleBarSessionMenu`
+- Shows the VS Code icon with an "Open In" label on the primary button and a chevron dropdown button beside it
+- Remembers the most recently selected destination and reuses that destination when the primary button is clicked (default: VS Code Stable)
+- Includes "VS Code Stable", "VS Code Insiders", "Finder", and "Copy Path"
+- Uses the active session worktree when a session is open, and falls back to the currently selected new-session workspace when the new-session view is active
+- Opens SSH and tunnel-backed workspaces in VS Code via a `vscode-remote://` authority when available; Finder and Copy Path remain local-folder-only actions
+- Registered in `contrib/chat/browser/openInVSCode.contribution.ts` and `contrib/chat/electron-browser/openInVSCode.contribution.ts`
 
 ### 3.5 Panel Title Actions
 
@@ -663,6 +667,8 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-22 | Updated the sessions titlebar Open In split button docs to match the shortened menu labels ("VS Code Stable", "VS Code Insiders", "Finder", "Copy Path") and the macOS-specific direct-app launch behavior used for local worktrees. |
+| 2026-04-22 | Replaced the titlebar's single "Open in VS Code" action with an "Open In" split button that remembers the last selected destination and now offers VS Code Stable, VS Code Insiders, Finder, and Copy Path, including new-session workspace fallback and remote VS Code open support for SSH/tunnel workspaces. |
 | 2026-04-22 | Increased the sessions titlebar account widget's GitHub profile image from `16px × 16px` to `18px × 18px` while keeping the existing `22px × 22px` control footprint and avatar border treatment. |
 | 2026-04-22 | Added sessions-only toast offset overrides so notification toasts now use `right: 15px` in the default bottom-right placement and `left: 15px` in the bottom-left placement, matching the notification center spacing. |
 | 2026-04-22 | Added a sessions-workbench notification offset override so the shared notification controllers no longer push top-right notifications down to `42px`; sessions now reapply a fixed `40px` top offset for top-right notification center/toast placement. |

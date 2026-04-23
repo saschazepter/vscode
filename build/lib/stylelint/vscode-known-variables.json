@@ -385,6 +385,7 @@
 		"--vscode-extensionIcon-starForeground",
 		"--vscode-extensionIcon-verifiedForeground",
 		"--vscode-focusBorder",
+		"--vscode-font-family",
 		"--vscode-foreground",
 		"--vscode-gauge-background",
 		"--vscode-gauge-border",

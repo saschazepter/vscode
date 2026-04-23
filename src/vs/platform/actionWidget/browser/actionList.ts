@@ -55,7 +55,7 @@ export interface IActionListItemHover {
 export interface IActionListItem<T> {
 	readonly item?: T;
 	readonly kind: ActionListItemKind;
-	readonly group?: { kind?: unknown; icon?: ThemeIcon; title: string };
+	readonly group?: { kind?: unknown; icon?: ThemeIcon; iconUrl?: URI; title: string };
 	readonly disabled?: boolean;
 	readonly label?: string;
 	/**
@@ -247,7 +247,20 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		// Clear previous element disposables
 		data.elementDisposables.clear();
 
-		if (element.group?.icon) {
+		if (element.group?.iconUrl) {
+			data.icon.className = 'icon';
+			data.icon.style.color = '';
+			data.icon.style.display = 'flex';
+			data.icon.style.alignItems = 'center';
+			data.icon.style.justifyContent = 'center';
+			dom.reset(data.icon);
+			const img = document.createElement('img');
+			img.src = element.group.iconUrl.toString(true);
+			img.style.width = '14px';
+			img.style.height = '14px';
+			img.style.display = 'block';
+			data.icon.append(img);
+		} else if (element.group?.icon) {
 			data.icon.className = ThemeIcon.asClassName(element.group.icon);
 			if (element.group.icon.color) {
 				data.icon.style.color = asCssVariable(element.group.icon.color.id);

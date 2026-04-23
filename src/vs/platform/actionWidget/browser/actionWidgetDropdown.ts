@@ -10,6 +10,7 @@ import { IAction } from '../../../base/common/actions.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { ResolvedKeybinding } from '../../../base/common/keybindings.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
+import { URI } from '../../../base/common/uri.js';
 import { IKeybindingService } from '../../keybinding/common/keybinding.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListItemHover, IActionListOptions } from './actionList.js';
@@ -18,6 +19,7 @@ import { IActionWidgetService } from './actionWidget.js';
 export interface IActionWidgetDropdownAction extends IAction {
 	category?: { label: string; order: number; showHeader?: boolean };
 	icon?: ThemeIcon;
+	iconUrl?: URI;
 	description?: string;
 	/**
 	 * Optional detail text displayed as a second line below the label.
@@ -147,7 +149,7 @@ export class ActionWidgetDropdown extends BaseDropdown {
 					toolbarActions: action.toolbarActions,
 					kind: ActionListItemKind.Action,
 					canPreview: false,
-					group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id) },
+					group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id), iconUrl: action.iconUrl },
 					disabled: !action.enabled,
 					hideIcon: false,
 					label: action.label,
