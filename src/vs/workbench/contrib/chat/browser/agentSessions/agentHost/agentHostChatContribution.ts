@@ -4,13 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../../../base/common/codicons.js';
+import { Throttler } from '../../../../../../base/common/async.js';
+import { Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../../base/common/observable.js';
-import { isEqualOrParent } from '../../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { AgentHostEnabledSettingId, IAgentHostService, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
-import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -25,11 +26,11 @@ import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { ICustomizationHarnessService } from '../../../common/customizationHarnessService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
-import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
-import { PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
-import { AgentCustomizationSyncProvider } from './agentCustomizationSyncProvider.js';
+import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
+import { AgentCustomizationDisableProvider } from './agentCustomizationDisableProvider.js';
 import { resolveTokenForResource, AgentHostAuthTokenCache } from './agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from './agentHostLanguageModelProvider.js';
+import { LocalAgentHostCustomizationItemProvider, resolveCustomizationRefs, SYNCABLE_STORAGE_SOURCES } from './agentHostLocalCustomizations.js';
 import { AgentHostSessionHandler } from './agentHostSessionHandler.js';
 import { AgentHostSessionListController } from './agentHostSessionListController.js';
 import { LoggingAgentConnection } from './loggingAgentConnection.js';
@@ -73,6 +74,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
+		@IPromptsService private readonly _promptsService: IPromptsService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
 		super();
@@ -165,8 +167,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		const listController = store.add(this._instantiationService.createInstance(AgentHostSessionListController, sessionType, agent.provider, this._loggedConnection!, undefined, 'local'));
 		store.add(this._chatSessionsService.registerChatSessionItemController(sessionType, listController));
 
-		// Customization sync provider + bundler + observable
-		const syncProvider = store.add(new AgentCustomizationSyncProvider(sessionType, this._storageService));
+		// Customization sync provider + bundler + observable.
+		// Auto-sync semantics: every local customization is synced unless
+		// the user opts out via the AI Customization view.
+		const disableProvider = store.add(new AgentCustomizationDisableProvider(sessionType, this._storageService));
+		const itemProvider = store.add(new LocalAgentHostCustomizationItemProvider(this._promptsService, disableProvider));
 		const bundler = store.add(this._instantiationService.createInstance(SyncedCustomizationBundler, sessionType));
 		store.add(this._customizationHarnessService.registerExternalHarness({
 			id: sessionType,
@@ -174,16 +179,32 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			icon: ThemeIcon.fromId(Codicon.server.id),
 			hiddenSections: [],
 			hideGenerateButton: true,
-			getStorageSourceFilter: () => ({ sources: [PromptsStorage.local, PromptsStorage.user, PromptsStorage.plugin] }),
-			syncProvider,
+			getStorageSourceFilter: () => ({ sources: [...SYNCABLE_STORAGE_SOURCES] }),
+			itemProvider,
+			disableProvider,
 		}));
 
 		const customizations = observableValue<CustomizationRef[]>('agentCustomizations', []);
-		const updateCustomizations = async () => {
-			const refs = await this._resolveCustomizations(syncProvider, bundler);
+		// Serialize re-resolves: bursts of prompt-change events (e.g. plugin
+		// install fans out into all four typed events) would otherwise let
+		// concurrent `bundler.bundle()` calls interleave their `del + write`
+		// steps on the same virtual root, leaving an inconsistent FS and a
+		// non-deterministic last-writer-wins on the customizations observable.
+		const throttler = store.add(new Throttler());
+		const updateCustomizations = () => throttler.queue(async () => {
+			const refs = await resolveCustomizationRefs(this._promptsService, disableProvider, this._agentPluginService, bundler);
 			customizations.set(refs, undefined);
-		};
-		store.add(syncProvider.onDidChange(() => updateCustomizations()));
+		}).catch(() => { /* best-effort */ });
+		// Re-resolve when the user toggles a disable flag, or when the local
+		// customization set changes (file added/removed/updated, plugin
+		// installed/uninstalled).
+		store.add(disableProvider.onDidChange(() => updateCustomizations()));
+		store.add(Event.any(
+			this._promptsService.onDidChangeCustomAgents,
+			this._promptsService.onDidChangeSlashCommands,
+			this._promptsService.onDidChangeSkills,
+			this._promptsService.onDidChangeInstructions,
+		)(() => updateCustomizations()));
 		updateCustomizations(); // resolve initial state
 
 		// Session handler
@@ -221,48 +242,6 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			const agents = this._getRootAgents();
 			this._authenticateWithServer(agents).catch(() => { /* best-effort */ });
 		}));
-	}
-
-	/**
-	 * Resolves the customizations to include in the active client set.
-	 *
-	 * Classifies sync provider entries as plugins (matched against
-	 * installed plugins) or individual files (bundled into a synthetic
-	 * Open Plugin).
-	 */
-	private async _resolveCustomizations(
-		syncProvider: AgentCustomizationSyncProvider,
-		bundler: SyncedCustomizationBundler,
-	): Promise<CustomizationRef[]> {
-		const entries = syncProvider.getSelectedEntries();
-		if (entries.length === 0) {
-			return [];
-		}
-
-		const plugins = this._agentPluginService.plugins.get();
-		const refs: CustomizationRef[] = [];
-		const individualFiles: { uri: URI; type: PromptsType }[] = [];
-
-		for (const entry of entries) {
-			const plugin = plugins.find(p => isEqualOrParent(entry.uri, p.uri));
-			if (plugin) {
-				refs.push({
-					uri: plugin.uri.toString() as ProtocolURI,
-					displayName: plugin.label,
-				});
-			} else if (entry.type) {
-				individualFiles.push({ uri: entry.uri, type: entry.type });
-			}
-		}
-
-		if (individualFiles.length > 0) {
-			const result = await bundler.bundle(individualFiles);
-			if (result) {
-				refs.push(result.ref);
-			}
-		}
-
-		return refs;
 	}
 
 	private _getRootAgents(): readonly AgentInfo[] {
