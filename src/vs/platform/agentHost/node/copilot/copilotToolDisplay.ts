@@ -68,6 +68,38 @@ interface ICopilotFileToolArgs {
 	path: string;
 }
 
+/**
+ * Parameters for the `view` tool. The Copilot CLI accepts an optional
+ * `view_range: [startLine, endLine]` (1-based, inclusive). `endLine` may be
+ * `-1` to mean "to end of file".
+ */
+interface ICopilotViewToolArgs extends ICopilotFileToolArgs {
+	view_range?: number[];
+}
+
+/**
+ * Normalizes a `view_range` array. Returns `undefined` unless the array has
+ * exactly two integer elements with `startLine >= 0`. `endLine === -1` is
+ * preserved as the "to end of file" sentinel; otherwise `endLine` must be
+ * `>= startLine`.
+ */
+function formatViewRange(view_range: number[] | undefined): { startLine: number; endLine: number } | undefined {
+	if (!Array.isArray(view_range) || view_range.length !== 2) {
+		return undefined;
+	}
+	const [startLine, endLine] = view_range;
+	if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
+		return undefined;
+	}
+	if (startLine < 0) {
+		return undefined;
+	}
+	if (endLine !== -1 && endLine < startLine) {
+		return undefined;
+	}
+	return { startLine, endLine };
+}
+
 /** Parameters for the `grep` tool. */
 interface ICopilotGrepToolArgs {
 	pattern: string;
@@ -116,6 +148,18 @@ export function getEditFilePath(parameters: unknown): string | undefined {
 const SHELL_TOOL_NAMES: ReadonlySet<string> = new Set([
 	CopilotToolName.Bash,
 	CopilotToolName.PowerShell,
+]);
+
+/** Set of tool names that write input to an interactive shell session. */
+const WRITE_SHELL_TOOL_NAMES: ReadonlySet<string> = new Set([
+	CopilotToolName.WriteBash,
+	CopilotToolName.WritePowerShell,
+]);
+
+/** Set of tool names that read output from an interactive shell session. */
+const READ_SHELL_TOOL_NAMES: ReadonlySet<string> = new Set([
+	CopilotToolName.ReadBash,
+	CopilotToolName.ReadPowerShell,
 ]);
 
 /** Set of tool names that spawn subagent sessions. */
@@ -210,11 +254,35 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 		return localize('toolInvoke.shell', "Running {0} command", displayName);
 	}
 
+	if (WRITE_SHELL_TOOL_NAMES.has(toolName)) {
+		const args = parameters as ICopilotShellToolArgs | undefined;
+		if (args?.command) {
+			const firstLine = args.command.split('\n')[0];
+			return md(localize('toolInvoke.writeShellCmd', "Sending {0} to shell", appendEscapedMarkdownInlineCode(truncate(firstLine, 80))));
+		}
+		return localize('toolInvoke.writeShell', "Sending input to shell");
+	}
+
+	if (READ_SHELL_TOOL_NAMES.has(toolName)) {
+		return localize('toolInvoke.readShell', "Reading shell output");
+	}
+
 	switch (toolName) {
 		case CopilotToolName.View: {
-			const args = parameters as ICopilotFileToolArgs | undefined;
+			const args = parameters as ICopilotViewToolArgs | undefined;
 			if (args?.path) {
-				return md(localize('toolInvoke.viewFile', "Reading {0}", formatPathAsMarkdownLink(args.path)));
+				const link = formatPathAsMarkdownLink(args.path);
+				const range = formatViewRange(args.view_range);
+				if (range) {
+					if (range.endLine === -1) {
+						return md(localize('toolInvoke.viewFileFromLine', "Reading {0}, line {1} to the end", link, range.startLine));
+					}
+					if (range.endLine !== range.startLine) {
+						return md(localize('toolInvoke.viewFileRange', "Reading {0}, lines {1} to {2}", link, range.startLine, range.endLine));
+					}
+					return md(localize('toolInvoke.viewFileLine', "Reading {0}, line {1}", link, range.startLine));
+				}
+				return md(localize('toolInvoke.viewFile', "Reading {0}", link));
 			}
 			return localize('toolInvoke.view', "Reading file");
 		}
@@ -265,11 +333,35 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 		return localize('toolComplete.shell', "Ran {0} command", displayName);
 	}
 
+	if (WRITE_SHELL_TOOL_NAMES.has(toolName)) {
+		const args = parameters as ICopilotShellToolArgs | undefined;
+		if (args?.command) {
+			const firstLine = args.command.split('\n')[0];
+			return md(localize('toolComplete.writeShellCmd', "Sent {0} to shell", appendEscapedMarkdownInlineCode(truncate(firstLine, 80))));
+		}
+		return localize('toolComplete.writeShell', "Sent input to shell");
+	}
+
+	if (READ_SHELL_TOOL_NAMES.has(toolName)) {
+		return localize('toolComplete.readShell', "Read shell output");
+	}
+
 	switch (toolName) {
 		case CopilotToolName.View: {
-			const args = parameters as ICopilotFileToolArgs | undefined;
+			const args = parameters as ICopilotViewToolArgs | undefined;
 			if (args?.path) {
-				return md(localize('toolComplete.viewFile', "Read {0}", formatPathAsMarkdownLink(args.path)));
+				const link = formatPathAsMarkdownLink(args.path);
+				const range = formatViewRange(args.view_range);
+				if (range) {
+					if (range.endLine === -1) {
+						return md(localize('toolComplete.viewFileFromLine', "Read {0}, line {1} to the end", link, range.startLine));
+					}
+					if (range.endLine !== range.startLine) {
+						return md(localize('toolComplete.viewFileRange', "Read {0}, lines {1} to {2}", link, range.startLine, range.endLine));
+					}
+					return md(localize('toolComplete.viewFileLine', "Read {0}, line {1}", link, range.startLine));
+				}
+				return md(localize('toolComplete.viewFile', "Read {0}", link));
 			}
 			return localize('toolComplete.view', "Read file");
 		}
@@ -311,7 +403,7 @@ export function getToolInputString(toolName: string, parameters: Record<string, 
 		return undefined;
 	}
 
-	if (SHELL_TOOL_NAMES.has(toolName)) {
+	if (SHELL_TOOL_NAMES.has(toolName) || WRITE_SHELL_TOOL_NAMES.has(toolName)) {
 		const args = parameters as ICopilotShellToolArgs | undefined;
 		// Custom tool overrides may wrap the args: { kind: 'custom-tool', args: { command: '...' } }
 		const command = args?.command ?? (args as Record<string, unknown> | undefined)?.args;
@@ -385,7 +477,9 @@ export function getSubagentMetadata(parameters: Record<string, unknown> | undefi
  */
 export function getShellLanguage(toolName: string): string {
 	switch (toolName) {
-		case CopilotToolName.PowerShell: return 'powershell';
+		case CopilotToolName.PowerShell:
+		case CopilotToolName.WritePowerShell:
+		case CopilotToolName.ReadPowerShell: return 'powershell';
 		default: return 'shellscript';
 	}
 }

@@ -202,7 +202,7 @@ export class BrowserViewGroup extends Disposable implements ICDPBrowserTarget, I
 			throw new Error(`Unknown browser context ${browserContextId}`);
 		}
 
-		const target = await this.browserViewMainService.createTarget(url, browserContextId, windowId);
+		const target = await this.browserViewMainService.createTarget(url, windowId, browserContextId);
 		if (target instanceof BrowserView) {
 			await this.addView(target.id);
 			return this.viewTargets.get(target.id)!;

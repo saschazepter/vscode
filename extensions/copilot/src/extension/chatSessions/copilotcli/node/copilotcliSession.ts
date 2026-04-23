@@ -116,14 +116,7 @@ function shouldForwardMissionControlEvent(event: { type?: string; data?: unknown
 	return true;
 }
 
-export const builtinSlashSCommands = {
-	commit: '/commit',
-	sync: '/sync',
-	merge: '/merge',
-	createPr: '/create-pr',
-	createDraftPr: '/create-draft-pr',
-	updatePr: '/update-pr',
-};
+export { builtinSlashCommands as builtinSlashSCommands } from '../../common/builtinSlashCommands';
 
 /**
  * Either a free-form prompt **or** a known command.
