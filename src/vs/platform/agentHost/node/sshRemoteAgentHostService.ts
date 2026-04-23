@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type WebSocket from 'ws';
-import type { ConnectConfig } from 'ssh2';
+import type { AnyAuthMethod, AuthenticationType, ConnectConfig } from 'ssh2';
 import { promises as fsp } from 'fs';
 import * as os from 'os';
 import * as cp from 'child_process';
@@ -92,12 +92,15 @@ function describeAuthAttempt(attempt: SSHAuthAttempt): string {
 export function makeAuthHandler(
 	attempts: readonly SSHAuthAttempt[],
 	logService: ILogService,
-): (methodsLeft: string[] | null, partialSuccess: boolean, callback: (next: object | false) => void) => void {
+): (methodsLeft: AuthenticationType[] | null, partialSuccess: boolean, callback: (next: AnyAuthMethod | false) => void) => void {
 	let index = 0;
 	return (methodsLeft, _partialSuccess, callback) => {
 		while (index < attempts.length) {
 			const attempt = attempts[index++];
-			if (methodsLeft && !methodsLeft.includes(attempt.type)) {
+			// `agent` is a publickey-flavored method at the SSH protocol level —
+			// servers advertise `publickey`, not `agent`, in `methodsLeft`.
+			const protocolMethod: AuthenticationType = attempt.type === 'agent' ? 'publickey' : attempt.type;
+			if (methodsLeft && !methodsLeft.includes(protocolMethod)) {
 				logService.info(`${LOG_PREFIX} Skipping ${describeAuthAttempt(attempt)} — server only allows ${methodsLeft.join(', ')}`);
 				continue;
 			}
@@ -798,9 +801,18 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 		// even though the runtime supports both per the ssh2 docs.
 		connectConfig.authHandler = makeAuthHandler(attempts, this._logService) as unknown as ConnectConfig['authHandler'];
 
-		if (config.agentForward && this._isAgentAvailable()) {
-			connectConfig.agentForward = true;
-			this._logService.info(`${LOG_PREFIX} SSH agent forwarding enabled`);
+		if (config.agentForward) {
+			const agentSock = this._isAgentAvailable();
+			if (agentSock) {
+				// ssh2 needs `connectConfig.agent` set so it knows which local
+				// agent socket to forward to. Without it, agent forwarding is a
+				// no-op even if `agentForward: true` is set.
+				connectConfig.agent = agentSock;
+				connectConfig.agentForward = true;
+				this._logService.info(`${LOG_PREFIX} SSH agent forwarding enabled`);
+			} else {
+				this._logService.warn(`${LOG_PREFIX} SSH agent forwarding requested, but SSH_AUTH_SOCK is not set; agent forwarding disabled`);
+			}
 		}
 
 		return new Promise<SSHClient>((resolve, reject) => {
@@ -856,12 +868,17 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 				break;
 			}
 			case SSHAuthMethod.KeyFile: {
-				if (config.privateKeyPath) {
-					const explicit = await this._readKeyFileIfExists(config.privateKeyPath);
-					if (explicit) {
-						attempts.push({ type: 'publickey', username, key: explicit, keyPath: config.privateKeyPath });
-					}
+				// KeyFile mode has no fallbacks — fail fast with a clear error if
+				// the key is missing or unreadable, rather than letting it surface
+				// downstream as a generic auth failure.
+				if (!config.privateKeyPath) {
+					throw new Error(localize('ssh.keyFileAuthRequiresPath', "Key file authentication requires a private key path."));
 				}
+				const explicit = await this._readKeyFileIfExists(config.privateKeyPath);
+				if (!explicit) {
+					throw new Error(localize('ssh.failedToReadPrivateKey', "Failed to read private key file: {0}", config.privateKeyPath));
+				}
+				attempts.push({ type: 'publickey', username, key: explicit, keyPath: config.privateKeyPath });
 				break;
 			}
 			case SSHAuthMethod.Password: {

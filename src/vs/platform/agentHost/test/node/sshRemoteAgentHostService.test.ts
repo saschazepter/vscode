@@ -1155,6 +1155,23 @@ suite('SSHRemoteAgentHostMainService - _buildAuthAttempts', () => {
 		]);
 	});
 
+	test('KeyFile + missing privateKeyPath throws', async () => {
+		await assert.rejects(
+			() => service.testBuildAuthAttempts(makeConfig({ authMethod: SSHAuthMethod.KeyFile })),
+			/private key path/i,
+		);
+	});
+
+	test('KeyFile + unreadable key throws with the path in the message', async () => {
+		await assert.rejects(
+			() => service.testBuildAuthAttempts(makeConfig({
+				authMethod: SSHAuthMethod.KeyFile,
+				privateKeyPath: '/missing/key',
+			})),
+			/\/missing\/key/,
+		);
+	});
+
 	test('Password → password only', async () => {
 		service.agentSock = '/tmp/ssh-agent.sock';
 		service.keyFiles.set('~/.ssh/id_rsa', RSA);
@@ -1202,5 +1219,18 @@ suite('SSHRemoteAgentHostMainService - makeAuthHandler', () => {
 		handler(['password'], false, next => calls.push(next));
 
 		assert.deepStrictEqual(calls, [false]);
+	});
+
+	test('agent attempts are kept when server allows publickey', () => {
+		// `agent` is a publickey-flavored method; servers advertise `publickey`,
+		// not `agent`, so the agent attempt must not be filtered out here.
+		const handler = makeAuthHandler(
+			[{ type: 'agent', username: 'u', agent: '/sock' }],
+			new NullLogService(),
+		);
+		const calls: Array<object | false> = [];
+		handler(['publickey'], false, next => calls.push(next));
+
+		assert.deepStrictEqual(calls, [{ type: 'agent', username: 'u', agent: '/sock' }]);
 	});
 });
