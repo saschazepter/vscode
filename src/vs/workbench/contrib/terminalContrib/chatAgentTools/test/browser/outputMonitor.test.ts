@@ -284,6 +284,13 @@ suite('OutputMonitor', () => {
 			assert.strictEqual(detectsInputRequiredPattern('Enter your name: '), true);
 			assert.strictEqual(detectsInputRequiredPattern('Password: '), true);
 			assert.strictEqual(detectsInputRequiredPattern('File to overwrite: '), true);
+
+			// Non-prompts: a trailing colon without a following space is typical of normal
+			// command output (headers, log lines ending with ':' before a newline) and must
+			// not be treated as an input prompt.
+			assert.strictEqual(detectsInputRequiredPattern('Running tests:'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Results:\n'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Summary:'), false);
 		});
 
 		test('detects prompts with parenthesized default values', () => {
@@ -294,9 +301,16 @@ suite('OutputMonitor', () => {
 		});
 
 		test('detects trailing questions', () => {
-			assert.strictEqual(detectsInputRequiredPattern('Continue?'), true);
+			assert.strictEqual(detectsInputRequiredPattern('Continue? '), true);
 			assert.strictEqual(detectsInputRequiredPattern('Proceed?   '), true);
-			assert.strictEqual(detectsInputRequiredPattern('Are you sure?'), true);
+			assert.strictEqual(detectsInputRequiredPattern('Are you sure? '), true);
+
+			// Non-prompts: a trailing '?' without a following space is typical of
+			// normal command output (log lines, error messages) and must not be
+			// treated as an input prompt.
+			assert.strictEqual(detectsInputRequiredPattern('Continue?'), false);
+			assert.strictEqual(detectsInputRequiredPattern('Are you sure?\n'), false);
+			assert.strictEqual(detectsInputRequiredPattern('What happened?'), false);
 		});
 
 		test('detects press any key prompts', () => {
