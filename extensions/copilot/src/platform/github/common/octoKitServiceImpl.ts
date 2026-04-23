@@ -466,6 +466,7 @@ export class OctoKitService extends BaseOctoKitService implements IOctoKitServic
 			throw new PermissiveAuthRequiredError();
 		}
 
+		let usedSuggestedActors = true;
 		try {
 			// Try suggestedActors first (preferred API)
 			const actors = await getAssignableActorsWithSuggestedActors(
@@ -484,6 +485,7 @@ export class OctoKitService extends BaseOctoKitService implements IOctoKitServic
 
 			// Fall back to assignableUsers for older GitHub Enterprise Server instances
 			this._logService.trace('Falling back to assignableUsers API');
+			usedSuggestedActors = false;
 			return await getAssignableActorsWithAssignableUsers(
 				this._fetcherService,
 				this._logService,
@@ -495,6 +497,21 @@ export class OctoKitService extends BaseOctoKitService implements IOctoKitServic
 			);
 		} catch (e) {
 			this._logService.error(`Error fetching assignable actors: ${e}`);
+			const properties: { errorCode?: string; usedSuggestedActors: string } = {
+				usedSuggestedActors: String(usedSuggestedActors),
+			};
+			const errorCode = getErrorCode(e);
+			if (errorCode) {
+				properties.errorCode = errorCode;
+			}
+
+			/* __GDPR__
+				"pr.getAssignableUsersFailed" : {
+					"errorCode": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth" },
+					"usedSuggestedActors": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth" }
+				}
+			*/
+			this._telemetryService.sendMSFTTelemetryErrorEvent('pr.getAssignableUsersFailed', properties);
 			return [];
 		}
 	}
@@ -537,4 +554,20 @@ export class OctoKitService extends BaseOctoKitService implements IOctoKitServic
 			return { enabled: undefined };
 		}
 	}
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getErrorCode(e: any): string | undefined {
+	if (e.status !== undefined) {
+		return String(e.status);
+	} else if (e.networkError?.statusCode !== undefined) {
+		return String(e.networkError.statusCode);
+	} else if (e.graphQLErrors?.[0]?.extensions?.code) {
+		return String(e.graphQLErrors[0].extensions.code);
+	} else if (e.code !== undefined) {
+		return String(e.code);
+	} else if (e.name) {
+		return e.name;
+	}
+	return undefined;
 }
