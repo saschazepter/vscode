@@ -6,6 +6,7 @@
 import type { SweCustomAgent } from '@github/copilot/sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
+import { IFileSystemService } from '../../../../platform/filesystem/common/fileSystemService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { MockCustomInstructionsService } from '../../../../platform/test/common/testCustomInstructionsService';
 import { mock } from '../../../../util/common/test/simpleMock';
@@ -15,7 +16,8 @@ import { URI } from '../../../../util/vs/base/common/uri';
 import { CLIAgentInfo, ICopilotCLIAgents } from '../../copilotcli/node/copilotCli';
 import { CopilotCLICustomizationProvider } from '../copilotCLICustomizationProvider';
 import { MockPromptsService } from '../../../../platform/promptFiles/test/common/mockPromptsService';
-import { INativeEnvService } from '../../../../platform/env/common/envService';
+import { CopilotCLISettings, CopilotCLISettingsLocationType, ICopilotCLISettingsService } from '../../copilotcli/common/copilotCLISettingsService';
+import { SessionSettingsFile } from '../../common/sessionSettingsService';
 
 class FakeChatSessionCustomizationType {
 	static readonly Agent = new FakeChatSessionCustomizationType('agent');
@@ -25,6 +27,50 @@ class FakeChatSessionCustomizationType {
 	static readonly Hook = new FakeChatSessionCustomizationType('hook');
 	static readonly Plugins = new FakeChatSessionCustomizationType('plugins');
 	constructor(readonly id: string) { }
+}
+
+const FakeChatSessionCustomizationEnablementScope = {
+	None: 0,
+	Global: 1,
+	Workspace: 2,
+	ManagedByApplication: 3,
+} as const;
+
+class MockFileSystemService extends mock<IFileSystemService>() {
+	private readonly _files = new Map<string, Uint8Array>();
+	readonly writtenFiles = new Map<string, Uint8Array>();
+
+	setFile(uri: URI, content: string) {
+		this._files.set(uri.toString(), new TextEncoder().encode(content));
+	}
+
+	override async stat(uri: URI): Promise<{ type: number; ctime: number; mtime: number; size: number }> {
+		if (!this._files.has(uri.toString())) {
+			throw new Error(`File not found: ${uri.toString()}`);
+		}
+		return { type: 1, ctime: 0, mtime: 0, size: this._files.get(uri.toString())!.length };
+	}
+
+	override async readFile(uri: URI): Promise<Uint8Array> {
+		const content = this._files.get(uri.toString());
+		if (!content) {
+			throw new Error(`File not found: ${uri.toString()}`);
+		}
+		return content;
+	}
+
+	override async writeFile(uri: URI, content: Uint8Array): Promise<void> {
+		this._files.set(uri.toString(), content);
+		this.writtenFiles.set(uri.toString(), content);
+	}
+
+	getWrittenJson(uri: URI): Record<string, unknown> | undefined {
+		const content = this.writtenFiles.get(uri.toString());
+		if (!content) {
+			return undefined;
+		}
+		return JSON.parse(new TextDecoder().decode(content));
+	}
 }
 
 function makeSweAgent(name: string, description = '', displayName?: string): Readonly<SweCustomAgent> {
@@ -74,6 +120,49 @@ function makePlugin(uri: URI): vscode.ChatPlugin {
 	return { uri };
 }
 
+class MockCopilotCLISettingsService extends mock<ICopilotCLISettingsService>() {
+	private readonly _onDidChange = new Emitter<void>();
+	override readonly onDidChange = this._onDidChange.event;
+	private _settings: CopilotCLISettings = {};
+	private _writtenSettings: CopilotCLISettings | undefined;
+	private readonly _settingsUri: URI;
+
+	constructor(userHome: URI) {
+		super();
+		this._settingsUri = URI.joinPath(userHome, '.copilot', 'settings.json');
+	}
+
+	setSettings(settings: CopilotCLISettings) { this._settings = settings; }
+	getWrittenSettings(): CopilotCLISettings | undefined { return this._writtenSettings; }
+
+	override getUris(location?: CopilotCLISettingsLocationType): URI[] {
+		if (!location || location === CopilotCLISettingsLocationType.User) {
+			return [this._settingsUri];
+		}
+		return [];
+	}
+
+	override getUri(_location: CopilotCLISettingsLocationType, _uri: URI): URI {
+		return this._settingsUri;
+	}
+
+	override async readSettingsFile(_uri: URI): Promise<CopilotCLISettings> {
+		return this._settings;
+	}
+
+	override async readAllSettings(): Promise<Readonly<SessionSettingsFile<CopilotCLISettingsLocationType, CopilotCLISettings>[]>> {
+		return [{ type: CopilotCLISettingsLocationType.User, settings: this._settings, uri: this._settingsUri }];
+	}
+
+	override async writeSettingsFile(_uri: URI, settings: CopilotCLISettings): Promise<void> {
+		this._settings = settings;
+		this._writtenSettings = settings;
+	}
+
+	fireDidChange() { this._onDidChange.fire(); }
+	dispose() { this._onDidChange.dispose(); }
+}
+
 class MockCopilotCLIAgents extends mock<ICopilotCLIAgents>() {
 	private readonly _onDidChangeAgents = new Emitter<void>();
 	override readonly onDidChangeAgents = this._onDidChangeAgents.event;
@@ -102,31 +191,41 @@ describe('CopilotCLICustomizationProvider', () => {
 	let mockPromptsService: MockPromptsService;
 	let mockCopilotCLIAgents: MockCopilotCLIAgents;
 	let mockCustomInstructionsService: TestCustomInstructionsService;
+	let mockFileSystemService: MockFileSystemService;
+	let mockCopilotCLISettingsService: MockCopilotCLISettingsService;
 	let provider: CopilotCLICustomizationProvider;
 
+	const userHome = URI.file('/home/testuser');
+
 	let originalChatSessionCustomizationType: unknown;
+	let originalChatSessionCustomizationEnablementScope: unknown;
 
 	beforeEach(() => {
 		originalChatSessionCustomizationType = (vscode as Record<string, unknown>).ChatSessionCustomizationType;
+		originalChatSessionCustomizationEnablementScope = (vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope;
 		(vscode as Record<string, unknown>).ChatSessionCustomizationType = FakeChatSessionCustomizationType;
+		(vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope = FakeChatSessionCustomizationEnablementScope;
 		disposables = new DisposableStore();
 		mockPromptsService = disposables.add(new MockPromptsService());
 		mockCopilotCLIAgents = disposables.add(new MockCopilotCLIAgents());
 		mockCustomInstructionsService = new TestCustomInstructionsService();
+		mockFileSystemService = new MockFileSystemService();
+		mockCopilotCLISettingsService = disposables.add(new MockCopilotCLISettingsService(userHome));
 		provider = disposables.add(new CopilotCLICustomizationProvider(
 			mockCopilotCLIAgents,
 			mockCustomInstructionsService,
 			mockPromptsService,
 			new TestLogService(),
 			{ getWorkspaceFolders: () => [] } as any,
-			{ stat: () => Promise.reject(new Error('not found')) } as any,
-			{ userHome: URI.file('/home/testuser') } as unknown as INativeEnvService,
+			mockFileSystemService,
+			mockCopilotCLISettingsService,
 		));
 	});
 
 	afterEach(() => {
 		disposables.dispose();
 		(vscode as Record<string, unknown>).ChatSessionCustomizationType = originalChatSessionCustomizationType;
+		(vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope = originalChatSessionCustomizationEnablementScope;
 	});
 
 	describe('metadata', () => {
@@ -342,7 +441,7 @@ describe('CopilotCLICustomizationProvider', () => {
 						? Promise.resolve({ type: 1, ctime: 0, mtime: 0, size: 0 })
 						: Promise.reject(new Error('not found')),
 				} as any,
-				{ userHome: URI.file('/home/testuser') } as unknown as INativeEnvService,
+				mockCopilotCLISettingsService,
 			));
 
 			mockPromptsService.setInstructions([]);
@@ -488,6 +587,199 @@ describe('CopilotCLICustomizationProvider', () => {
 			disposables.add(provider.onDidChange(() => { fired = true; }));
 
 			mockCopilotCLIAgents.fireAgentsChanged();
+			expect(fired).toBe(true);
+		});
+
+		it('fires when settings change', () => {
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			mockCopilotCLISettingsService.fireDidChange();
+			expect(fired).toBe(true);
+		});
+	});
+
+	describe('skill enablement', () => {
+		it('marks skill as enabled by default when no settings file', async () => {
+			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enabled).toBe(true);
+		});
+
+		it('marks skill as disabled when in disabledSkills setting', async () => {
+			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['lint-check'] });
+			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enabled).toBe(false);
+		});
+
+		it('marks skill as enabled when not in disabledSkills', async () => {
+			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['other-skill'] });
+			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enabled).toBe(true);
+		});
+
+		it('sets enablementScope to Global for skills', async () => {
+			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+		});
+
+		it('disabling a skill adds it to disabledSkills in settings', async () => {
+			mockCopilotCLISettingsService.setSettings({});
+			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect(written!.disabledSkills).toEqual(['lint-check']);
+		});
+
+		it('enabling a skill removes it from disabledSkills', async () => {
+			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['lint-check', 'other'] });
+			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect(written!.disabledSkills).toEqual(['other']);
+		});
+
+		it('does not duplicate when disabling an already disabled skill', async () => {
+			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['lint-check'] });
+			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect(written!.disabledSkills).toEqual(['lint-check']);
+		});
+
+		it('fires onDidChange after toggling a skill', async () => {
+			mockCopilotCLISettingsService.setSettings({});
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			expect(fired).toBe(true);
+		});
+	});
+
+	describe('plugin enablement', () => {
+		it('marks plugin as enabled by default when no settings file', async () => {
+			const uri = URI.file('/workspace/.copilot/plugins/my-plugin');
+			mockPromptsService.setPlugins([makePlugin(uri)]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const pluginItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Plugins);
+			expect(pluginItems[0].enabled).toBe(true);
+		});
+
+		it('marks plugin as disabled when enabledPlugins is false', async () => {
+			mockCopilotCLISettingsService.setSettings({ enabledPlugins: { 'my-plugin': false } });
+			const uri = URI.file('/workspace/.copilot/plugins/my-plugin');
+			mockPromptsService.setPlugins([makePlugin(uri)]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const pluginItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Plugins);
+			expect(pluginItems[0].enabled).toBe(false);
+		});
+
+		it('marks plugin as enabled when enabledPlugins is true', async () => {
+			mockCopilotCLISettingsService.setSettings({ enabledPlugins: { 'my-plugin': true } });
+			const uri = URI.file('/workspace/.copilot/plugins/my-plugin');
+			mockPromptsService.setPlugins([makePlugin(uri)]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const pluginItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Plugins);
+			expect(pluginItems[0].enabled).toBe(true);
+		});
+
+		it('sets enablementScope to Global for plugins', async () => {
+			const uri = URI.file('/workspace/.copilot/plugins/my-plugin');
+			mockPromptsService.setPlugins([makePlugin(uri)]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const pluginItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Plugins);
+			expect(pluginItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+		});
+
+		it('disabling a plugin sets enabledPlugins to false', async () => {
+			mockCopilotCLISettingsService.setSettings({});
+			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
+
+			await provider.handleCustomizationEnablement(
+				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
+				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect((written!.enabledPlugins as Record<string, boolean>)['my-plugin']).toBe(false);
+		});
+
+		it('enabling a plugin removes it from enabledPlugins', async () => {
+			mockCopilotCLISettingsService.setSettings({ enabledPlugins: { 'my-plugin': false } });
+			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
+
+			await provider.handleCustomizationEnablement(
+				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
+				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect(written!.enabledPlugins).toBeUndefined();
+		});
+
+		it('preserves other plugin entries when toggling one', async () => {
+			mockCopilotCLISettingsService.setSettings({ enabledPlugins: { 'my-plugin': false, 'other-plugin': false } });
+			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
+
+			await provider.handleCustomizationEnablement(
+				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
+				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
+			const written = mockCopilotCLISettingsService.getWrittenSettings();
+			expect(written).toBeDefined();
+			expect((written!.enabledPlugins as Record<string, boolean>)['other-plugin']).toBe(false);
+			expect((written!.enabledPlugins as Record<string, boolean>)['my-plugin']).toBeUndefined();
+		});
+
+		it('fires onDidChange after toggling a plugin', async () => {
+			mockCopilotCLISettingsService.setSettings({});
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
+			await provider.handleCustomizationEnablement(
+				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
+				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+
 			expect(fired).toBe(true);
 		});
 	});

@@ -5,7 +5,6 @@
 
 import * as l10n from '@vscode/l10n';
 import * as vscode from 'vscode';
-import { INativeEnvService } from '../../../platform/env/common/envService';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
 import { ILogService } from '../../../platform/log/common/logService';
@@ -17,11 +16,8 @@ import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { basename, dirname } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
-import type { loadFeatureFlagsFromConfig } from '@github/copilot/sdk';
 import { ICopilotCLIAgents, isEnabledForCopilotCLI } from '../copilotcli/node/copilotCli';
-
-// TODO: We should use an actual exported type from the Copilot SDK. This is currently not available.
-type CopilotUserSettings = Parameters<typeof loadFeatureFlagsFromConfig>[0];
+import { CopilotCLISettingsLocationType, ICopilotCLISettingsService } from '../copilotcli/common/copilotCLISettingsService';
 
 export class CopilotCLICustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
 
@@ -49,7 +45,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
-		@INativeEnvService private readonly envService: INativeEnvService,
+		@ICopilotCLISettingsService private readonly copilotCLISettingsService: ICopilotCLISettingsService,
 	) {
 		super();
 
@@ -59,6 +55,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		this._register(this.promptsService.onDidChangeHooks(() => this._onDidChange.fire()));
 		this._register(this.promptsService.onDidChangePlugins(() => this._onDidChange.fire()));
 		this._register(this.copilotCLIAgents.onDidChangeAgents(() => this._onDidChange.fire()));
+		this._register(this.copilotCLISettingsService.onDidChange(() => this._onDidChange.fire()));
 	}
 
 	async provideChatSessionCustomizations(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
@@ -94,14 +91,12 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 */
 	private async getAgentItems(_token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const agentInfos = await this.copilotCLIAgents.getAgents();
-		return agentInfos.map(({ agent, sourceUri, source }) => ({
+		return agentInfos.map(({ agent, sourceUri }) => ({
 			uri: sourceUri,
 			type: vscode.ChatSessionCustomizationType.Agent,
 			name: agent.displayName || agent.name,
 			description: agent.description,
-			// Extension-sourced items are managed by the application (VS Code)
-			// rather than the CLI's settings.json.
-			...(source === 'extension' ? { enablementScope: vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication } : {}),
+			enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 		}));
 	}
 
@@ -157,15 +152,9 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			}
 
 			const name = instruction.name;
+			const pattern = instruction.pattern;
 			const description = instruction.description;
 
-			// Extension-sourced items are managed by the application (VS Code)
-			// rather than the CLI's settings.json.
-			const enablementScope = instruction.source === 'extension'
-				? vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication
-				: undefined;
-
-			const pattern = instruction.pattern;
 			if (pattern !== undefined) {
 				const badge = pattern === '**'
 					? l10n.t('always added')
@@ -181,7 +170,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					groupKey: 'context-instructions',
 					badge,
 					badgeTooltip,
-					enablementScope,
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			} else {
 				items.push({
@@ -190,7 +179,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					name,
 					description,
 					groupKey: 'on-demand-instructions',
-					enablementScope,
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 				});
 			}
 		}
@@ -202,28 +191,17 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Collects all skill items from the prompt file service.
 	 */
 	private async getSkillItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		const settings = await this._readSettings();
-		const disabledSkills = new Set<string>(
-			Array.isArray(settings.disabledSkills) ? settings.disabledSkills as string[] : [],
-		);
+		const settings = await this._readUserSettings();
+		const disabledSkills = Array.isArray(settings.disabledSkills) ? settings.disabledSkills.filter(s => typeof s === 'string') : [];
+		const disabledSkillsSet = new Set<string>(disabledSkills);
 		return (await this.promptsService.getSkills(token)).filter(isEnabledForCopilotCLI).map(s => {
 			const name = s.name;
-			const folderName = basename(dirname(s.uri)) || basename(s.uri);
-			// Extension-sourced items are managed by the application (VS Code)
-			// rather than the CLI's settings.json.
-			if (s.source === 'extension') {
-				return {
-					uri: s.uri,
-					type: vscode.ChatSessionCustomizationType.Skill,
-					name,
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.ManagedByApplication,
-				};
-			}
+			const skillName = basename(dirname(s.uri));
 			return {
 				uri: s.uri,
 				type: vscode.ChatSessionCustomizationType.Skill,
 				name,
-				enabled: !disabledSkills.has(folderName),
+				enabled: !disabledSkillsSet.has(skillName),
 				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
 			};
 		});
@@ -234,10 +212,15 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Each item is a hook configuration file (JSON).
 	 */
 	private async getHookItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
+		const settings = await this._readUserSettings();
 		return (await this.promptsService.getHooks(token)).filter(isEnabledForCopilotCLI).map(h => ({
 			uri: h.uri,
 			type: vscode.ChatSessionCustomizationType.Hook,
 			name: basename(h.uri).replace(/\.json$/i, ''),
+			// TODO: This is best-effort for now. Each hook file itself can disable all hooks with disableAllHooks.
+			enabled: settings.disableAllHooks === false,
+			// TODO: There isn't a great way to toggle enablement for individual hooks
+			enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 		}));
 	}
 
@@ -245,19 +228,15 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Collects all plugin items from the prompt file service.
 	 */
 	private async getPluginItems(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
-		const settings = await this._readSettings();
-		const enabledPlugins = (settings.enabledPlugins && typeof settings.enabledPlugins === 'object' && !Array.isArray(settings.enabledPlugins))
-			? settings.enabledPlugins as Record<string, boolean>
-			: {};
+		const settings = await this._readUserSettings();
+		const enabledPlugins = typeof settings.enabledPlugins === 'object' ? settings.enabledPlugins : {};
 		return (await this.promptsService.getPlugins(token)).filter(isEnabledForCopilotCLI).map(p => {
 			const name = basename(p.uri);
-			// A plugin is disabled if explicitly set to false in enabledPlugins
-			const enabled = enabledPlugins[name] !== false;
 			return {
 				uri: p.uri,
 				type: vscode.ChatSessionCustomizationType.Plugins,
 				name,
-				enabled,
+				enabled: enabledPlugins[name] !== false,
 				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
 			};
 		});
@@ -266,36 +245,22 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	// --- Enablement ---
 
 	/**
-	 * Path to the user-level copilot settings file (`~/.copilot/settings.json`).
+	 * Reads the user-level settings from the settings service.
+	 */
+	private async _readUserSettings() {
+		const allSettings = await this.copilotCLISettingsService.readAllSettings();
+		return allSettings[0]?.settings ?? {};
+	}
+
+	/**
+	 * Returns the URI of the user-level settings file.
 	 */
 	private get _settingsUri(): URI {
-		return URI.joinPath(this.envService.userHome, '.copilot', 'settings.json');
-	}
-
-	/**
-	 * Reads the user-level `~/.copilot/settings.json` as a JSON object.
-	 * Returns an empty object if the file doesn't exist or can't be parsed.
-	 */
-	private async _readSettings(): Promise<CopilotUserSettings> {
-		try {
-			const bytes = await this.fileSystemService.readFile(this._settingsUri);
-			const parsed = JSON.parse(new TextDecoder().decode(bytes));
-			return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
-		} catch {
-			return {};
-		}
-	}
-
-	/**
-	 * Writes the user-level `~/.copilot/settings.json`.
-	 */
-	private async _writeSettings(settings: CopilotUserSettings): Promise<void> {
-		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
-		await this.fileSystemService.writeFile(this._settingsUri, content);
+		return this.copilotCLISettingsService.getUris(CopilotCLISettingsLocationType.User)[0];
 	}
 
 	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
-		const settings = await this._readSettings();
+		const settings = await this._readUserSettings();
 		let name: string;
 
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
@@ -321,15 +286,16 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			settings.enabledPlugins = Object.keys(map).length > 0 ? map : undefined;
 		} else {
 			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
+			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', type.id));
 			return;
 		}
 
 		try {
-			await this._writeSettings(settings);
+			await this.copilotCLISettingsService.writeSettingsFile(this._settingsUri, settings);
 			this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} "${name}" in ${this._settingsUri.toString()}`);
 			this._onDidChange.fire();
 		} catch (err) {
-			vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Copilot settings: {0}', err instanceof Error ? err.message : String(err)));
+			void vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Copilot settings: {0}', err instanceof Error ? err.message : String(err)));
 		}
 	}
 }

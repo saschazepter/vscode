@@ -51,19 +51,6 @@ declare module 'vscode' {
 		Global = 1,
 		/** Both "Disable" and "Disable (Workspace)" actions are shown, allowing per-workspace overrides. */
 		Workspace = 2,
-		/**
-		 * The item is reported by the provider but its enablement is managed
-		 * by the application rather than the provider's
-		 * {@link ChatSessionCustomizationEnablementHandler}. Disable/enable
-		 * actions are shown but their state is persisted internally.
-		 *
-		 * Use this for items the provider discovers from APIs
-		 * (e.g. extension-contributed customizations) where the provider
-		 * does not own the enablement lifecycle. Note that any enablement
-		 * changes here would not be remembered outside of the current application,
-		 * so it is less portable.
-		 */
-		ManagedByApplication = 3,
 	}
 
 	/**

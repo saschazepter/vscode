@@ -585,6 +585,60 @@ describe('ClaudeCustomizationProvider', () => {
 			expect(hookItems[0].enabled).toBe(false);
 		});
 
+		it('disables hooks in lower-priority settings when higher-priority settings has disableAllHooks', async () => {
+			const workspaceFolder = URI.file('/workspace');
+			mockWorkspaceService.setFolders([workspaceFolder]);
+
+			const localSettingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.local.json');
+			const wsSettingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+
+			mockClaudeSettingsService.setSettingsUris([localSettingsUri, wsSettingsUri]);
+			mockClaudeSettingsService.setFile(localSettingsUri, {
+				disableAllHooks: true,
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './local-init.sh' }] }] },
+			});
+			mockClaudeSettingsService.setFile(wsSettingsUri, {
+				hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: './check.sh' }] }] },
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems).toHaveLength(2);
+			// Local hook disabled by its own disableAllHooks
+			expect(hookItems[0].name).toBe('SessionStart');
+			expect(hookItems[0].enabled).toBe(false);
+			// Workspace hook also disabled because higher-priority local had disableAllHooks
+			expect(hookItems[1].name).toBe('PreToolUse');
+			expect(hookItems[1].enabled).toBe(false);
+		});
+
+		it('does not disable hooks in higher-priority settings when lower-priority has disableAllHooks', async () => {
+			const workspaceFolder = URI.file('/workspace');
+			mockWorkspaceService.setFolders([workspaceFolder]);
+
+			const localSettingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.local.json');
+			const wsSettingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+
+			mockClaudeSettingsService.setSettingsUris([localSettingsUri, wsSettingsUri]);
+			mockClaudeSettingsService.setFile(localSettingsUri, {
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './local-init.sh' }] }] },
+			});
+			mockClaudeSettingsService.setFile(wsSettingsUri, {
+				disableAllHooks: true,
+				hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: './check.sh' }] }] },
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems).toHaveLength(2);
+			// Local (higher priority) hook stays enabled
+			expect(hookItems[0].name).toBe('SessionStart');
+			expect(hookItems[0].enabled).toBe(true);
+			// Workspace hook disabled by its own disableAllHooks
+			expect(hookItems[1].name).toBe('PreToolUse');
+			expect(hookItems[1].enabled).toBe(false);
+		});
+
 		it('gracefully handles no settings files', async () => {
 			mockWorkspaceService.setFolders([URI.file('/workspace')]);
 

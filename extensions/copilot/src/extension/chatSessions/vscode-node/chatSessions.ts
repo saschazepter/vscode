@@ -53,6 +53,8 @@ import { CopilotCLIImageSupport, ICopilotCLIImageSupport } from '../copilotcli/n
 import { CopilotCLIPromptResolver } from '../copilotcli/node/copilotcliPromptResolver';
 import { CopilotCLISessionService, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
 import { CopilotCLISkills, ICopilotCLISkills } from '../copilotcli/node/copilotCLISkills';
+import { ICopilotCLISettingsService } from '../copilotcli/common/copilotCLISettingsService';
+import { CopilotCLISettingsService } from '../copilotcli/node/copilotCLISettingsService';
 import { CopilotCLIMCPHandler, ICopilotCLIMCPHandler } from '../copilotcli/node/mcpHandler';
 import { IUserQuestionHandler } from '../copilotcli/node/userInputHelpers';
 import { CopilotCLIContrib, getServices } from '../copilotcli/vscode-node/contribution';
@@ -197,6 +199,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[ISessionOptionGroupBuilder, new SyncDescriptor(SessionOptionGroupBuilder)],
 				[ISessionRequestLifecycle, new SyncDescriptor(SessionRequestLifecycle)],
 				[ICopilotCLIChatSessionInitializer, new SyncDescriptor(CopilotCLIChatSessionInitializer)],
+				[ICopilotCLISettingsService, new SyncDescriptor(CopilotCLISettingsService)],
 				...getServices()
 			));
 
@@ -266,6 +269,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[ICopilotCLISkills, new SyncDescriptor(CopilotCLISkills)],
 				[IChatSessionMetadataStore, new SyncDescriptor(ChatSessionMetadataStore)],
 				[IChatFolderMruService, new SyncDescriptor(CopilotCLIFolderMruService)],
+				[ICopilotCLISettingsService, new SyncDescriptor(CopilotCLISettingsService)],
 				...getServices()
 			));
 

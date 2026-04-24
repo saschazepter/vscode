@@ -279,7 +279,7 @@ export interface CLIAgentInfo {
 	/** File URI for prompt-file agents, synthetic `copilotcli:` URI for SDK-only agents. */
 	readonly sourceUri: URI;
 	/** Where the agent was loaded from (e.g. 'local', 'extension'). Undefined for SDK-only agents. */
-	readonly source?: string;
+	readonly source?: vscode.ChatResourceSource;
 }
 
 export interface ICopilotCLIAgents {

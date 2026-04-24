@@ -173,13 +173,30 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		for (const uri of candidates) {
 			if (await this.fileExists(uri)) {
 				const name = basename(uri).replace(/\.md$/i, '');
-				const excluded = settingsFiles.some(s => s.settings.claudeMdExcludes?.some(pattern => this._matchesExclude(uri, pattern)));
-				const excludedByKnownPattern = excluded && settingsFiles.some(s => s.settings.claudeMdExcludes?.includes(uri.path));
+
+				let excluded = false;
+				let excludedByUnknownPattern = false;
+
+				for (const file of settingsFiles) {
+					if (!Array.isArray(file.settings.claudeMdExcludes)) {
+						continue;
+					}
+					for (const pattern of file.settings.claudeMdExcludes ?? []) {
+						if (typeof pattern !== 'string') {
+							continue;
+						}
+						if (this._matchesExclude(uri, pattern)) {
+							excluded = true;
+							excludedByUnknownPattern = excludedByUnknownPattern || (uri.path !== pattern);
+						}
+					}
+				}
+
 				items.push({
 					uri,
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
-					enablementScope: !excludedByKnownPattern
+					enablementScope: excludedByUnknownPattern
 						? vscode.ChatSessionCustomizationEnablementScope.None :
 						vscode.ChatSessionCustomizationEnablementScope.Workspace,
 					enabled: !excluded,
@@ -202,20 +219,29 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	private async discoverHooks(settingsFiles: Readonly<ClaudeSettingsFile[]>): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: vscode.ChatSessionCustomizationItem[] = [];
 
+		let disableAllHooks = false;
 		for (const settingsFile of settingsFiles) {
 			try {
-				if (!settingsFile.settings.hooks) {
+				if (!settingsFile.settings.hooks || typeof settingsFile.settings.hooks !== 'object') {
 					continue;
 				}
 
+				// Higher priority settings files override lower priority ones
+				disableAllHooks = disableAllHooks || settingsFile.settings.disableAllHooks === true;
+
 				for (const eventId of HOOK_EVENTS) {
 					const matchers = settingsFile.settings.hooks[eventId];
-					if (!matchers || matchers.length === 0) {
+					if (!Array.isArray(matchers)) {
 						continue;
 					}
-
 					for (const matcher of matchers) {
+						if (!Array.isArray(matcher.hooks)) {
+							continue;
+						}
 						for (const hook of matcher.hooks) {
+							if (typeof hook !== 'object') {
+								continue;
+							}
 							const matcherLabel = matcher.matcher === '*' ? '' : ` (${matcher.matcher})`;
 							let description: string | undefined;
 							switch (hook.type) {
@@ -229,8 +255,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								type: vscode.ChatSessionCustomizationType.Hook,
 								name: `${eventId}${matcherLabel}`,
 								description,
-								enabled: settingsFile.settings.disableAllHooks !== true,
-								enablementScope: vscode.ChatSessionCustomizationEnablementScope.Workspace,
+								enabled: !disableAllHooks,
+								// TODO: There isn't a great way to toggle enablement for individual hooks
+								enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
 							});
 						}
 					}
@@ -313,6 +340,10 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
 
 			for (const file of allSettingsFiles) {
+				if (!file.settings.skillOverrides || typeof file.settings.skillOverrides !== 'object') {
+					continue;
+				}
+
 				const isTarget = targetSettingsUri?.toString() === file.uri.toString();
 				const skillOverrides = { ...file.settings.skillOverrides ?? {} };
 				let shouldUpdateSettings = skillName in skillOverrides;
@@ -333,6 +364,10 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
 
 			for (const file of allSettingsFiles) {
+				if (!file.settings.claudeMdExcludes || !Array.isArray(file.settings.claudeMdExcludes)) {
+					continue;
+				}
+
 				const isTarget = targetSettingsUri?.toString() === file.uri.toString();
 				const filtered = (file.settings.claudeMdExcludes ?? []).filter(p => p !== instructionsUri.path);
 				let shouldUpdateSettings = filtered.length !== (file.settings.claudeMdExcludes ?? []).length;
