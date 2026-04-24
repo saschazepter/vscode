@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createServiceIdentifier } from '../../../util/common/services';
+import { Event } from '../../../util/vs/base/common/event';
 import { IHeaders } from '../../networking/common/fetcherService';
 
 /**
@@ -67,20 +68,16 @@ export interface QuotaSnapshot {
 
 export type QuotaSnapshots = Record<string, QuotaSnapshot>;
 
-export interface IRateLimitWarning {
-	percentUsed: number;
-	type: 'session' | 'weekly';
-	resetDate: Date;
-}
-
 export interface IChatQuotaService {
 	readonly _serviceBrand: undefined;
+	readonly onDidChange: Event<void>;
+	readonly quotaInfo: IChatQuota | undefined;
+	readonly rateLimitInfo: { readonly session: IChatQuota | undefined; readonly weekly: IChatQuota | undefined };
 	quotaExhausted: boolean;
 	overagesEnabled: boolean;
 	processQuotaHeaders(headers: IHeaders): void;
 	processQuotaSnapshots(snapshots: QuotaSnapshots): void;
 	clearQuota(): void;
-	consumeRateLimitWarning(): IRateLimitWarning | undefined;
 }
 
 export const IChatQuotaService = createServiceIdentifier<IChatQuotaService>('IChatQuotaService');
