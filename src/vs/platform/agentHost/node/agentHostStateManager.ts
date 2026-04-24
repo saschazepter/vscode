@@ -212,7 +212,7 @@ export class AgentHostStateManager extends Disposable {
 	 * helpers in `sessionState.ts` to combine slots.
 	 */
 	setSessionMeta(session: URI, meta: SessionMeta | undefined): void {
-		this.dispatchServerAction({ type: ActionType.SessionMetaChanged, session, meta });
+		this.dispatchServerAction({ type: ActionType.SessionMetaChanged, session, _meta: meta });
 	}
 
 	// ---- Turn tracking ------------------------------------------------------

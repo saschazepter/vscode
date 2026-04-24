@@ -332,12 +332,13 @@ export interface SessionState {
 	 */
 	customizations?: SessionCustomization[];
 	/**
-	 * Side-channel metadata. Keys are well-known or producer-defined;
-	 * consumers MUST ignore unknown keys. Lives on session state (rather
-	 * than {@link SessionSummary}) because it is only meaningful to clients
-	 * that have opened the session.
+	 * Additional provider-specific metadata for this session.
+	 *
+	 * Clients MAY look for well-known keys here to provide enhanced UI.
+	 * For example, a `git` key may provide extra git metadata about the session's
+	 * workingDirectory.
 	 */
-	_meta?: SessionMeta;
+	_meta?: Record<string, unknown>;
 }
 
 /**
@@ -372,18 +373,6 @@ export interface ProjectInfo {
 }
 
 /**
- * Well-known property bag attached to several session-level types. Allows
- * extensions and clients to carry side-channel data without growing the core
- * protocol on every addition. Keys SHOULD be namespaced (e.g. `git`,
- * `vscode.foo`) to avoid collisions; all values MUST be JSON-serializable.
- *
- * @category Session State
- */
-export interface SessionMeta {
-	readonly [key: string]: unknown;
-}
-
-/**
  * @category Session State
  */
 export interface SessionSummary {
@@ -395,6 +384,8 @@ export interface SessionSummary {
 	title: string;
 	/** Current session status */
 	status: SessionStatus;
+	/** Human-readable description of what the session is currently doing */
+	activity?: string;
 	/** Creation timestamp */
 	createdAt: number;
 	/** Last modification timestamp */
@@ -604,11 +595,20 @@ export interface SessionInputTextQuestion extends SessionInputQuestionBase {
 /** Numeric question within a session input request. */
 export interface SessionInputNumberQuestion extends SessionInputQuestionBase {
 	kind: SessionInputQuestionKind.Number | SessionInputQuestionKind.Integer;
-	/** Minimum value */
+	/**
+	 * Minimum value
+	 * @format float
+	 */
 	min?: number;
-	/** Maximum value */
+	/**
+	 * Maximum value
+	 * @format float
+	 */
 	max?: number;
-	/** Default numeric value */
+	/**
+	 * Default numeric value
+	 * @format float
+	 */
 	defaultValue?: number;
 }
 
@@ -699,6 +699,7 @@ export interface SessionInputTextAnswerValue {
 
 export interface SessionInputNumberAnswerValue {
 	kind: SessionInputAnswerValueKind.Number;
+	/** @format float */
 	value: number;
 }
 
@@ -1473,6 +1474,11 @@ export interface SessionCustomization {
 	customization: CustomizationRef;
 	/** Whether this customization is currently enabled */
 	enabled: boolean;
+	/**
+	 * The `clientId` of the client that contributed this customization.
+	 * Absent for server-provided customizations.
+	 */
+	clientId?: string;
 	/** Server-reported loading status */
 	status?: CustomizationStatus;
 	/**

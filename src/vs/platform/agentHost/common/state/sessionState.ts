@@ -17,7 +17,6 @@ import {
 	ToolResultFileEditContent,
 	type ActiveTurn,
 	type RootState,
-	type SessionMeta,
 	type SessionState,
 	type SessionSummary,
 	type ToolCallCancelledState,
@@ -49,7 +48,6 @@ export {
 	type SessionConfigState,
 	type FileEdit as ISessionFileDiff,
 	type ModelSelection,
-	type SessionMeta,
 	type SessionModelInfo,
 	type SessionState,
 	type SessionSummary,
@@ -271,6 +269,13 @@ export type ComponentToState = {
 };
 
 // ---- SessionMeta accessors -------------------------------------------------
+
+/**
+ * VS Code-side alias for the protocol's open `_meta` property bag on
+ * {@link SessionState}. Keys SHOULD be namespaced (e.g. `git`, `vscode.foo`)
+ * to avoid collisions; values MUST be JSON-serializable.
+ */
+export type SessionMeta = Record<string, unknown>;
 
 /**
  * Reserved key under {@link SessionMeta} for the well-known git-state
