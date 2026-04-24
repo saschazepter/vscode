@@ -28,4 +28,5 @@ export const Menus = {
 	NewSessionConfig: new MenuId('NewSessions.SessionConfigMenu'),
 	NewSessionControl: new MenuId('NewSessions.SessionControlMenu'),
 	NewSessionRepositoryConfig: new MenuId('NewSessions.RepositoryConfigMenu'),
+	WorkspacePickerManage: new MenuId('Sessions.WorkspacePickerManage'),
 } as const;
