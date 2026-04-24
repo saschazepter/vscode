@@ -20,6 +20,13 @@
 	margin-left: 10px;
 }
 
+.agent-sessions-workbench .part.editor.chat-editor-part:not(.modal-editor-part) {
+	margin-right: 10px;
+	border-right-width: 1px;
+	border-top-right-radius: 8px;
+	border-bottom-right-radius: 8px;
+}
+
 /* Editor Layout Actions Toolbar */
 
 .agent-sessions-workbench .part.editor > .content .editor-group-container > .title .editor-actions {

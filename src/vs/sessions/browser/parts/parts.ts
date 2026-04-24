@@ -5,4 +5,5 @@
 
 export const enum AgenticParts {
 	PROJECTBAR_PART = 'workbench.parts.projectbar',
+	CHAT_EDITOR_PART = 'workbench.parts.chatEditor',
 }
