@@ -19,6 +19,25 @@ import { ClaudeSettingsFile, ClaudeSettingsLocationType, IClaudeSettingsService 
 import { ClaudeCustomizationProvider } from '../claudeCustomizationProvider';
 import { MockPromptsService } from '../../../../platform/promptFiles/test/common/mockPromptsService';
 
+class MockMemento implements vscode.Memento {
+	private readonly _store = new Map<string, unknown>();
+	keys(): readonly string[] { return [...this._store.keys()]; }
+	get<T>(key: string): T | undefined;
+	get<T>(key: string, defaultValue: T): T;
+	get<T>(key: string, defaultValue?: T): T | undefined {
+		const v = this._store.get(key);
+		return v !== undefined ? v as T : defaultValue;
+	}
+	update(key: string, value: unknown): Thenable<void> {
+		if (value === undefined) {
+			this._store.delete(key);
+		} else {
+			this._store.set(key, value);
+		}
+		return Promise.resolve();
+	}
+}
+
 function mockAgent(uri: URI, name: string): vscode.ChatCustomAgent {
 	return { uri, name, source: 'local', userInvocable: true, disableModelInvocation: false } as vscode.ChatCustomAgent;
 }
@@ -189,6 +208,7 @@ describe('ClaudeCustomizationProvider', () => {
 			mockFileSystemService,
 			new MockEnvService(),
 			new TestLogService(),
+			{ globalState: new MockMemento(), workspaceState: new MockMemento() } as any,
 		));
 	});
 

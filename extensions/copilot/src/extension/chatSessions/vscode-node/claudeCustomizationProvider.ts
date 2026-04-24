@@ -17,20 +17,12 @@ import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataSer
 import { ClaudeSettingsFile, ClaudeSettingsLocationType, IClaudeSettingsService } from '../claude/common/claudeSettingsService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { IPromptsService } from '../../../platform/promptFiles/common/promptsService';
+import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { HOOK_EVENTS } from '@anthropic-ai/claude-agent-sdk';
+import { ExtensionDisablementStore } from '../common/extensionDisablementStore';
 
 // TODO: Consider reporting Claude slash commands (from Query.supportedCommands()) when appropriate
 // TODO: Report MCP servers when ChatSessionCustomizationType.Mcp is available (use Query.mcpServerStatus())
-
-/**
- * Settings keys for tracking VS Code extension-contributed customizations
- * that have been disabled in the Claude harness.
- */
-const enum VSCodeDisabledSettingsKey {
-	Agents = 'vscodeDisabledAgents',
-	Instructions = 'vscodeDisabledInstructions',
-	Skills = 'vscodeDisabledSkills',
-}
 
 /**
  * Internal item type that extends the API item with a flag indicating
@@ -61,13 +53,8 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange = this._onDidChange.event;
 
-	/**
-	 * Tracks URIs of VS Code extension-contributed customizations seen
-	 * during the last {@link provideChatSessionCustomizations} call.
-	 * Used by {@link handleCustomizationEnablement} to route disablement
-	 * to the correct settings key.
-	 */
-	private _vscodeOwnedUris = new Set<string>();
+	private readonly _disablementStore: ExtensionDisablementStore;
+	private _lastVscodeOwnedUris = new Set<string>();
 
 	static get metadata(): vscode.ChatSessionCustomizationProviderMetadata {
 		return {
@@ -90,8 +77,11 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
 		@INativeEnvService private readonly envService: INativeEnvService,
 		@ILogService private readonly logService: ILogService,
+		@IVSCodeExtensionContext extensionContext: IVSCodeExtensionContext,
 	) {
 		super();
+
+		this._disablementStore = new ExtensionDisablementStore('claude', extensionContext.globalState, extensionContext.workspaceState);
 
 		this._register(this.runtimeDataService.onDidChange(() => this._onDidChange.fire()));
 		this._register(this.claudeSettingsService.onDidChange(() => this._onDidChange.fire()));
@@ -103,7 +93,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	async provideChatSessionCustomizations(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: ClaudeCustomizationItem[] = [];
 		const settingsFiles = await this.claudeSettingsService.readAllSettings();
-		const allSettings = settingsFiles;
 
 		// Agents: hybrid approach — file-based .claude/ agents merged with SDK-provided agents.
 		// File-based agents are available immediately; SDK agents appear once a session starts.
@@ -166,13 +155,12 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				skillItems.push(item);
 			} else if (skill.extensionId) {
 				// Extension-contributed skills (owned by VS Code)
-				const vscodeDisabledSkills = this._getDisabledUriSet(allSettings, VSCodeDisabledSettingsKey.Skills);
 				skillItems.push({
 					uri: skill.uri,
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
 					vscodeOwned: true,
-					enabled: !vscodeDisabledSkills.has(skill.uri.toString()),
+					enabled: !this._disablementStore.isDisabled(skill.uri, 'skill'),
 					enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
 				});
 			}
@@ -187,8 +175,8 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 		this.logService.debug(`[ClaudeCustomizationProvider] total: ${items.length} items`);
 
-		// Rebuild the vscode-owned URI set from the freshly fetched items.
-		this._vscodeOwnedUris = new Set(
+		// Track vscode-owned URIs for routing enablement handlers
+		this._lastVscodeOwnedUris = new Set(
 			items.filter(i => i.vscodeOwned).map(i => i.uri.toString()),
 		);
 
@@ -379,9 +367,11 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		};
 
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
-			if (this._vscodeOwnedUris.has(uri.toString())) {
+			if (this._lastVscodeOwnedUris.has(uri.toString())) {
 				// VS Code extension-contributed skill
-				await this._toggleVscodeDisabledUri(allSettingsFiles, VSCodeDisabledSettingsKey.Skills, uri.toString(), enabled, writeSettings);
+				await this._disablementStore.setDisabled(URI.from(uri), 'skill', !enabled, 'global');
+				this._onDidChange.fire();
+				return;
 			} else {
 				// Claude-native skill — use skillOverrides
 				const skillName = basename(dirname(uri));
@@ -411,9 +401,11 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				}
 			}
 		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id) {
-			if (this._vscodeOwnedUris.has(uri.toString())) {
+			if (this._lastVscodeOwnedUris.has(uri.toString())) {
 				// VS Code extension-contributed instruction
-				await this._toggleVscodeDisabledUri(allSettingsFiles, VSCodeDisabledSettingsKey.Instructions, uri.toString(), enabled, writeSettings);
+				await this._disablementStore.setDisabled(URI.from(uri), 'instructions', !enabled, 'global');
+				this._onDidChange.fire();
+				return;
 			} else {
 				// Claude-native instruction — use claudeMdExcludes
 				const instructionsUri = uri;
@@ -440,9 +432,11 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					}
 				}
 			}
-		} else if (type.id === vscode.ChatSessionCustomizationType.Agent.id && this._vscodeOwnedUris.has(uri.toString())) {
+		} else if (type.id === vscode.ChatSessionCustomizationType.Agent.id && this._lastVscodeOwnedUris.has(uri.toString())) {
 			// VS Code extension-contributed agent
-			await this._toggleVscodeDisabledUri(allSettingsFiles, VSCodeDisabledSettingsKey.Agents, uri.toString(), enabled, writeSettings);
+			await this._disablementStore.setDisabled(URI.from(uri), 'agent', !enabled, 'global');
+			this._onDidChange.fire();
+			return;
 		} else if (type.id === vscode.ChatSessionCustomizationType.Hook.id) {
 			// Hooks are toggled via the disableAllHooks flag in the settings file
 			// that contains them. Toggling any hook toggles all hooks in that file.
@@ -467,60 +461,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this._onDidChange.fire();
 	}
 
-	// --- VS Code extension-owned enablement helpers ---
-
-	/**
-	 * Reads a disabled URI set from all settings files for the given key.
-	 */
-	private _getDisabledUriSet(settingsFiles: Readonly<ClaudeSettingsFile[]>, key: VSCodeDisabledSettingsKey): Set<string> {
-		const result = new Set<string>();
-		for (const file of settingsFiles) {
-			const list = (file.settings as Record<string, unknown>)[key];
-			if (Array.isArray(list)) {
-				for (const item of list) {
-					if (typeof item === 'string') {
-						result.add(item);
-					}
-				}
-			}
-		}
-		return result;
-	}
-
-	/**
-	 * Toggles a URI string in a disabled list within a settings file.
-	 */
-	private async _toggleVscodeDisabledUri(
-		settingsFiles: Readonly<ClaudeSettingsFile[]>,
-		key: VSCodeDisabledSettingsKey,
-		uriString: string,
-		enabled: boolean,
-		writeSettings: (uri: URI, settings: Parameters<IClaudeSettingsService['writeSettingsFile']>[1]) => Promise<void>,
-	): Promise<void> {
-		if (enabled) {
-			// Remove from all settings files that contain it
-			for (const file of settingsFiles) {
-				const settings = file.settings as Record<string, unknown>;
-				const list = settings[key];
-				if (Array.isArray(list) && list.includes(uriString)) {
-					const filtered = list.filter(s => s !== uriString);
-					const updated = { ...file.settings, [key]: filtered.length > 0 ? filtered : undefined };
-					await writeSettings(file.uri, updated);
-				}
-			}
-		} else {
-			// Add to the first (highest priority) settings file
-			const targetFile = settingsFiles[0];
-			if (targetFile) {
-				const settings = targetFile.settings as Record<string, unknown>;
-				const currentList = Array.isArray(settings[key]) ? (settings[key] as string[]).filter(s => typeof s === 'string') : [];
-				if (!currentList.includes(uriString)) {
-					const updated = { ...targetFile.settings, [key]: [...currentList, uriString] };
-					await writeSettings(targetFile.uri, updated);
-				}
-			}
-		}
-	}
 }
 
 export function isEnabledForClaudeCode(customization: { sessionTypes?: readonly string[] }): boolean {

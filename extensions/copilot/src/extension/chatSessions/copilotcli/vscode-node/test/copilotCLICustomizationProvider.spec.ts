@@ -8,6 +8,25 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { ILogService } from '../../../../../platform/log/common/logService';
 import { MockCustomInstructionsService } from '../../../../../platform/test/common/testCustomInstructionsService';
+
+class MockMemento implements vscode.Memento {
+	private readonly _store = new Map<string, unknown>();
+	keys(): readonly string[] { return [...this._store.keys()]; }
+	get<T>(key: string): T | undefined;
+	get<T>(key: string, defaultValue: T): T;
+	get<T>(key: string, defaultValue?: T): T | undefined {
+		const v = this._store.get(key);
+		return v !== undefined ? v as T : defaultValue;
+	}
+	update(key: string, value: unknown): Thenable<void> {
+		if (value === undefined) {
+			this._store.delete(key);
+		} else {
+			this._store.set(key, value);
+		}
+		return Promise.resolve();
+	}
+}
 import { mock } from '../../../../../util/common/test/simpleMock';
 import { Emitter } from '../../../../../util/vs/base/common/event';
 import { DisposableStore } from '../../../../../util/vs/base/common/lifecycle';
@@ -202,6 +221,8 @@ describe('CopilotCLICustomizationProvider', () => {
 	let mockCustomInstructionsService: TestCustomInstructionsService;
 	let mockFileSystemService: MockFileSystemService;
 	let mockCopilotCLISettingsService: MockCopilotCLISettingsService;
+	let mockGlobalState: MockMemento;
+	let mockWorkspaceState: MockMemento;
 	let provider: CopilotCLICustomizationProvider;
 
 	const userHome = URI.file('/home/testuser');
@@ -220,6 +241,8 @@ describe('CopilotCLICustomizationProvider', () => {
 		mockCustomInstructionsService = new TestCustomInstructionsService();
 		mockFileSystemService = new MockFileSystemService();
 		mockCopilotCLISettingsService = disposables.add(new MockCopilotCLISettingsService(userHome));
+		mockGlobalState = new MockMemento();
+		mockWorkspaceState = new MockMemento();
 		provider = disposables.add(new CopilotCLICustomizationProvider(
 			mockCopilotCLIAgents,
 			mockCustomInstructionsService,
@@ -228,6 +251,7 @@ describe('CopilotCLICustomizationProvider', () => {
 			{ getWorkspaceFolders: () => [] } as any,
 			mockFileSystemService,
 			mockCopilotCLISettingsService,
+			{ globalState: mockGlobalState, workspaceState: mockWorkspaceState } as any,
 		));
 	});
 
@@ -451,6 +475,7 @@ describe('CopilotCLICustomizationProvider', () => {
 						: Promise.reject(new Error('not found')),
 				} as any,
 				mockCopilotCLISettingsService,
+				{ globalState: new MockMemento(), workspaceState: new MockMemento() } as any,
 			));
 
 			mockPromptsService.setInstructions([]);
@@ -618,9 +643,9 @@ describe('CopilotCLICustomizationProvider', () => {
 			expect(skillItems[0].enabled).toBe(true);
 		});
 
-		it('marks extension-contributed skill as disabled when in disabledSkills setting', async () => {
-			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['lint-check'] });
+		it('marks extension-contributed skill as disabled when disabled in store', async () => {
 			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			await mockGlobalState.update('copilotcli.disabled.global.skill', [uri.toString()]);
 			mockPromptsService.setSkills([makeSkill(uri, 'lint-check', 'my-ext.lint')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
