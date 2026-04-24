@@ -265,23 +265,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		return resolveCustomizationRefs(entries, builtinSkillFiles, plugins, bundler);
 	}
 
-	/**
-	 * Returns the always-on built-in skill files to include in the bundle.
-	 * Filters {@link IPromptsService.findAgentSkills} to entries whose storage
-	 * is `BUILTIN_STORAGE`, mapped to the shape the bundler expects.
-	 */
-	private async _collectBuiltinSkillFiles(): Promise<readonly { uri: URI; type: PromptsType }[]> {
-		const skills = await this._promptsService.findAgentSkills(CancellationToken.None);
-		if (!skills) {
-			return [];
-		}
-		const result: { uri: URI; type: PromptsType }[] = [];
-		for (const skill of skills) {
-			if ((skill.storage as PromptsStorage | typeof BUILTIN_STORAGE) === BUILTIN_STORAGE) {
-				result.push({ uri: skill.uri, type: PromptsType.skill });
-			}
-		}
-		return result;
+	private _collectBuiltinSkillFiles(): Promise<readonly { uri: URI; type: PromptsType }[]> {
+		return collectBuiltinSkillFiles(this._promptsService);
 	}
 
 	private _getRootAgents(): readonly AgentInfo[] {
@@ -395,6 +380,30 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
  *
  * Exported for unit testing.
  */
+/**
+ * Returns the always-on built-in skill files to include in the bundle.
+ * Filters {@link IPromptsService.findAgentSkills} to entries whose storage
+ * is `BUILTIN_STORAGE`, mapped to the shape the bundler expects.
+ *
+ * Used by every agent-host harness (local in-process and remote) so the
+ * built-in skills bundled under `vs/sessions/skills/` are always synced
+ * to the agent — that's what backs the toolbar buttons like
+ * `/create-pr` and `/merge`.
+ */
+export async function collectBuiltinSkillFiles(promptsService: IPromptsService): Promise<readonly { uri: URI; type: PromptsType }[]> {
+	const skills = await promptsService.findAgentSkills(CancellationToken.None);
+	if (!skills) {
+		return [];
+	}
+	const result: { uri: URI; type: PromptsType }[] = [];
+	for (const skill of skills) {
+		if ((skill.storage as PromptsStorage | typeof BUILTIN_STORAGE) === BUILTIN_STORAGE) {
+			result.push({ uri: skill.uri, type: PromptsType.skill });
+		}
+	}
+	return result;
+}
+
 export async function resolveCustomizationRefs(
 	entries: readonly { uri: URI; type?: PromptsType }[],
 	builtinSkillFiles: readonly { uri: URI; type: PromptsType }[],

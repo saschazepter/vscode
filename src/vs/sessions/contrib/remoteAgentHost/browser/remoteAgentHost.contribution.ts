@@ -5,14 +5,13 @@
 
 import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../base/common/observable.js';
-import { isEqualOrParent } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import * as nls from '../../../../nls.js';
 import { agentHostAuthority } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { type AgentProvider, type IAgentConnection } from '../../../../platform/agentHost/common/agentService.js';
 import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHostService, RemoteAgentHostAutoConnectSettingId, RemoteAgentHostConnectionStatus, RemoteAgentHostEntryType, RemoteAgentHostsEnabledSettingId, RemoteAgentHostsSettingId, getEntryAddress } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { TunnelAgentHostsSettingId } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
-import { type ProtectedResourceMetadata, type URI as ProtocolURI } from '../../../../platform/agentHost/common/state/protocol/state.js';
+import { type ProtectedResourceMetadata } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo, type CustomizationRef, type RootState } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -25,6 +24,7 @@ import { IStorageService } from '../../../../platform/storage/common/storage.js'
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentCustomizationSyncProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationSyncProvider.js';
 import { resolveTokenForResource, AgentHostAuthTokenCache } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
+import { collectBuiltinSkillFiles, resolveCustomizationRefs } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostChatContribution.js';
 import { AgentHostLanguageModelProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostLanguageModelProvider.js';
 import { AgentHostSessionHandler } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.js';
 import { LoggingAgentConnection } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
@@ -32,7 +32,7 @@ import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/
 import { ICustomizationHarnessService } from '../../../../workbench/contrib/chat/common/customizationHarnessService.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
-import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
+import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { IAgentHostFileSystemService } from '../../../../workbench/services/agentHost/common/agentHostFileSystemService.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
@@ -104,6 +104,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		@IAgentPluginService private readonly _agentPluginService: IAgentPluginService,
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IPromptsService private readonly _promptsService: IPromptsService,
 	) {
 		super();
 
@@ -482,44 +483,25 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	/**
 	 * Resolves the customizations to include in the active client set.
 	 *
-	 * Entries are classified as either:
-	 * - **Plugin**: A selected URI matches an installed plugin's root URI.
-	 * - **Individual file**: All other selected files are bundled into a
-	 *   synthetic Open Plugin via {@link SyncedCustomizationBundler}.
+	 * Combines user-selected sync entries with always-on built-in skills
+	 * (skills bundled with the Agents app under `vs/sessions/skills/`) and
+	 * classifies the result via {@link resolveCustomizationRefs} as plugins
+	 * (matched against installed plugins) or individual files (bundled into
+	 * a synthetic Open Plugin).
 	 */
 	private async _resolveCustomizations(
 		syncProvider: AgentCustomizationSyncProvider,
 		bundler: SyncedCustomizationBundler,
 	): Promise<CustomizationRef[]> {
 		const entries = syncProvider.getSelectedEntries();
-		if (entries.length === 0) {
+		const builtinSkillFiles = await collectBuiltinSkillFiles(this._promptsService);
+
+		if (entries.length === 0 && builtinSkillFiles.length === 0) {
 			return [];
 		}
 
 		const plugins = this._agentPluginService.plugins.get();
-		const refs: CustomizationRef[] = [];
-		const individualFiles: { uri: URI; type: PromptsType }[] = [];
-
-		for (const entry of entries) {
-			const plugin = plugins.find(p => isEqualOrParent(entry.uri, p.uri));
-			if (plugin) {
-				refs.push({
-					uri: plugin.uri.toString() as ProtocolURI,
-					displayName: plugin.label,
-				});
-			} else if (entry.type) {
-				individualFiles.push({ uri: entry.uri, type: entry.type });
-			}
-		}
-
-		if (individualFiles.length > 0) {
-			const result = await bundler.bundle(individualFiles);
-			if (result) {
-				refs.push(result.ref);
-			}
-		}
-
-		return refs;
+		return resolveCustomizationRefs(entries, builtinSkillFiles, plugins, bundler);
 	}
 
 	private _authenticateAllConnections(): void {
