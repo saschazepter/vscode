@@ -15,6 +15,7 @@ import { ITelemetryService } from '../../../platform/telemetry/common/telemetry'
 import { IExtensionContribution } from '../../common/contributions';
 import {
 	extractFilePath,
+	extractPlainTextFromContent,
 	extractRefsFromMcpTool,
 	extractRefsFromTerminal,
 	extractRepoFromMcpTool,
@@ -206,9 +207,13 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		const userRequest = span.attributes[CopilotChatAttr.USER_REQUEST] as string | undefined;
 
 		if (branch || remoteUrl || userRequest) {
-			const summary = userRequest
-				? (userRequest.length > 100 ? userRequest.slice(0, 100).trim() + '...' : userRequest)
-				: undefined;
+			let summary: string | undefined;
+			if (userRequest) {
+				const plain = extractPlainTextFromContent(userRequest);
+				if (plain) {
+					summary = plain.length > 100 ? plain.slice(0, 100).trim() + '...' : plain;
+				}
+			}
 
 			this._bufferSessionUpsert({
 				id: sessionId,
@@ -288,8 +293,11 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		if (!existingSession?.summary) {
 			const firstMessage = userMessages[0]?.content ?? userRequest;
 			if (firstMessage) {
-				const summary = firstMessage.length > 100 ? firstMessage.slice(0, 100).trim() + '...' : firstMessage;
-				this._bufferSessionUpsert({ id: sessionId, summary });
+				const plain = extractPlainTextFromContent(firstMessage);
+				if (plain) {
+					const summary = plain.length > 100 ? plain.slice(0, 100).trim() + '...' : plain;
+					this._bufferSessionUpsert({ id: sessionId, summary });
+				}
 			}
 		}
 

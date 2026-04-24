@@ -141,3 +141,48 @@ export function extractRepoFromMcpTool(toolArgs: unknown): string | undefined {
 export function isGitHubMcpTool(toolName: string): boolean {
 	return toolName.startsWith(GH_MCP_PREFIX);
 }
+
+/**
+ * Extract human-readable plain text from content that may be raw JSON.
+ *
+ * If the string does not start with `[` or `{`, returns it unchanged.
+ * If it starts with `[` or `{` and is valid JSON, attempts to extract text
+ * from known message/content structures:
+ * - `{"type":"text","text":"..."}` — text content parts
+ * - `{"role":"...","content":"..."}` — chat messages with string content
+ *
+ * Returns `undefined` if the content is valid JSON but no human-readable
+ * text can be extracted (e.g. tool results, structured data).
+ * @internal Exported for testing.
+ */
+export function extractPlainTextFromContent(content: string): string | undefined {
+	const trimmed = content.trimStart();
+	if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) {
+		return content;
+	}
+	try {
+		const parsed = JSON.parse(trimmed);
+		const text = _extractTextFromValue(parsed);
+		return text || undefined;
+	} catch {
+		return content; // not valid JSON — treat as plain text
+	}
+}
+
+function _extractTextFromValue(value: unknown): string {
+	if (Array.isArray(value)) {
+		return value.map(_extractTextFromValue).filter(Boolean).join(' ').trim();
+	}
+	if (typeof value === 'object' && value !== null) {
+		const obj = value as Record<string, unknown>;
+		// Text content part: {"type":"text","text":"..."}
+		if (obj.type === 'text' && typeof obj.text === 'string') {
+			return obj.text;
+		}
+		// Chat message with string content: {"role":"...","content":"..."}
+		if (typeof obj.role === 'string' && typeof obj.content === 'string') {
+			return obj.content;
+		}
+	}
+	return '';
+}
