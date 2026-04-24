@@ -713,7 +713,6 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 				description: item.description,
 				userInvocable: parsedPromptFile.header?.userInvocable ?? true,
 				storage: item.storage ?? PromptsStorage.local,
-				when: undefined,
 				sessionTypes: [sessionType],
 				parsedPromptFile,
 			};

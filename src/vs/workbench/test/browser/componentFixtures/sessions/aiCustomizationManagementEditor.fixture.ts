@@ -175,7 +175,6 @@ function createMockPromptsService(files: IFixtureFile[], agentInstructions: IAge
 					storage: f.storage,
 					source: undefined,
 					extension: toExtensionInfo(f) as never,
-					when: undefined,
 				} satisfies IChatPromptSlashCommand;
 			}));
 			return commands;
