@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { FileStat, FileSystemWatcher } from 'vscode';
-import { Emitter, Event } from '../../../../util/vs/base/common/event';
+import { Emitter } from '../../../../util/vs/base/common/event';
 import { basename, dirname } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { IFileSystemService } from '../../common/fileSystemService';
