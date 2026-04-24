@@ -117,7 +117,7 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		if (isWeb) {
 			// On web, show the walkthrough if the user is not authenticated.
 			// Auth is handled by the walkthrough's GitHub button via
-			// IDefaultAccountService. Discovery runs separately after auth.
+			// IAuthenticationService. Discovery runs separately after auth.
 			this._checkWebAuth();
 			this._watchWebAuth();
 			return;
