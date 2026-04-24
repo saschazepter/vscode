@@ -4,12 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { timeout } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ISettableObservable, observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { runWithFakedTimers } from '../../../../../base/test/common/timeTravelScheduler.js';
 import { IActionWidgetService } from '../../../../../platform/actionWidget/browser/actionWidget.js';
 import { RemoteAgentHostConnectionStatus, IRemoteAgentHostService } from '../../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
@@ -175,9 +177,10 @@ suite('WorkspacePicker - Connection Status', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('restore picks checked entry even when remote is disconnected', () => {
-		// We honor the user's explicit pick across connection state changes.
-		// The trigger renders grayed/offline; the gear menu lets them reconnect.
+	test('restore picks checked entry even when remote is disconnected (before grace period)', () => {
+		// Restore is honored synchronously: the picker shows the checked entry
+		// while we wait to see if the connection comes up. The grace-period
+		// fallback (covered in a separate test) only fires later.
 		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
 		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
 		const localProvider = createMockProvider('local-1');
@@ -193,6 +196,86 @@ suite('WorkspacePicker - Connection Status', () => {
 
 		assertSelectedProvider(picker, 'agenthost-remote-1');
 	});
+
+	test('restored remote that never connects falls back after grace period', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		// The provider is registered as Disconnected and never transitions —
+		// e.g. SSH host is unreachable and the status was set before the picker
+		// could subscribe. The picker should fall back to no selection after
+		// the grace period so the view pane drops the stale session.
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
+		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/remote/project'), providerId: 'agenthost-remote-1', checked: true },
+		]);
+
+		providersService.setProviders([remoteProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		assertSelectedProvider(picker, 'agenthost-remote-1', 'Selection is restored synchronously');
+
+		const events: Array<IWorkspaceSelection | undefined> = [];
+		disposables.add(picker.onDidSelectWorkspace(e => events.push(e)));
+
+		// Advance past the grace period.
+		await timeout(10_000);
+
+		assertSelectedProvider(picker, undefined, 'Selection cleared after grace period');
+		assert.deepStrictEqual(events, [undefined], 'onDidSelectWorkspace fired with undefined');
+	}));
+
+	test('restored remote that connects within grace period keeps selection', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
+		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/remote/project'), providerId: 'agenthost-remote-1', checked: true },
+		]);
+
+		providersService.setProviders([remoteProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		// Connection succeeds quickly.
+		await timeout(100);
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Connecting, undefined);
+		await timeout(500);
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Connected, undefined);
+
+		// Advance past the grace period — should not fall back since we connected.
+		await timeout(10_000);
+
+		assertSelectedProvider(picker, 'agenthost-remote-1', 'Selection preserved after successful connect');
+	}));
+
+	test('user pick during connect cancels the fallback', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		// If the user picks a different workspace while the restore-grace-period
+		// timer is running, the timer must not later clear the user's selection.
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
+		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
+		const localProvider = createMockProvider('local-1');
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/remote/project'), providerId: 'agenthost-remote-1', checked: true },
+		]);
+
+		providersService.setProviders([remoteProvider, localProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		// User picks a local workspace while the remote is still trying to connect.
+		const localPick: IWorkspaceSelection = {
+			providerId: 'local-1',
+			workspace: localProvider.resolveWorkspace(URI.file('/local/picked'))!,
+		};
+		picker.setSelectedWorkspace(localPick, false);
+
+		// Grace period elapses; remote still disconnected — must not affect user pick.
+		await timeout(10_000);
+
+		assertSelectedProvider(picker, 'local-1', 'User pick preserved across grace-period elapse');
+	}));
 
 	test('restore picks checked entry while remote is connecting (no fallback flicker)', () => {
 		// SSH remote: provider registers in Disconnected state and immediately
