@@ -44,6 +44,14 @@
 	height: 100%;
 }
 
+.issue-reporter-editor-tab,
+.issue-reporter-editor-tab:focus,
+.issue-reporter-editor-tab:focus-visible,
+.issue-reporter-wizard:focus,
+.issue-reporter-wizard:focus-visible {
+	outline: none !important;
+}
+
 /* ── Floating Capture Bar (debug toolbar style) ── */
 .wizard-floating-bar {
 	position: fixed;
@@ -88,6 +96,20 @@
 	line-height: 1;
 }
 
+.wizard-floating-bar .monaco-button {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 5px;
+	padding: 4px 10px;
+	font-size: 12px;
+	line-height: 1;
+	width: auto;
+	flex: none;
+	height: 26px;
+	box-sizing: border-box;
+}
+
 .wizard-floating-bar .wizard-nav-btn > * {
 	display: flex;
 	align-items: center;
@@ -117,7 +139,7 @@
 	display: flex;
 	align-items: center;
 	gap: 5px;
-	padding: 3px 10px;
+	padding: 4px 10px;
 	cursor: pointer;
 	font-size: 12px;
 	border-radius: 4px 0 0 4px;
@@ -125,6 +147,8 @@
 	background: var(--vscode-button-background, #0e639c);
 	border: 1px solid var(--vscode-button-background, #0e639c);
 	border-right: none;
+	height: 26px;
+	box-sizing: border-box;
 }
 
 .wizard-segmented-main:hover {
@@ -139,13 +163,15 @@
 .wizard-segmented-dropdown {
 	display: flex;
 	align-items: center;
-	padding: 3px 4px;
+	padding: 4px 4px;
 	cursor: pointer;
 	border-radius: 0 4px 4px 0;
 	color: var(--vscode-button-foreground, #fff);
 	background: var(--vscode-button-background, #0e639c);
 	border: 1px solid var(--vscode-button-background, #0e639c);
 	border-left: 1px solid rgba(255, 255, 255, 0.2);
+	height: 26px;
+	box-sizing: border-box;
 }
 
 .wizard-segmented-dropdown:hover {
@@ -157,53 +183,15 @@
 	align-items: center;
 }
 
-.wizard-segmented-delay-label {
-	font-size: 11px;
-	color: var(--vscode-button-foreground, #fff);
-	background: var(--vscode-button-background, #0e639c);
-	padding: 1px 5px;
-	border-radius: 8px;
-	margin-left: -6px;
-	margin-right: 2px;
-	position: relative;
-	top: -8px;
-	font-weight: 600;
-}
-
-/* Delay dropdown menu */
-.wizard-delay-menu {
-	position: absolute;
-	top: 100%;
-	right: 0;
-	margin-top: 4px;
-	background: var(--vscode-menu-background, var(--vscode-editor-background, #252526));
-	border: 1px solid var(--vscode-menu-border, var(--vscode-input-border, #444));
-	border-radius: 4px;
-	box-shadow: var(--vscode-shadow-lg, 0 2px 8px rgba(0, 0, 0, 0.4));
-	z-index: 10;
-	min-width: 140px;
-	padding: 4px 0;
-}
-
-.wizard-delay-menu-item {
-	padding: 4px 12px;
-	font-size: 12px;
-	cursor: pointer;
-	color: var(--vscode-menu-foreground, var(--vscode-foreground, #ccc));
-	white-space: nowrap;
-}
-
-.wizard-delay-menu-item:hover {
-	background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08)));
-	color: var(--vscode-menu-selectionForeground, var(--vscode-foreground, #fff));
-}
-
-.wizard-delay-menu-item.selected {
-	font-weight: 600;
+/* Dim screenshot button during recording (keep drag handle interactive) */
+.wizard-floating-bar.wizard-strip-recording .wizard-segmented-btn {
+	opacity: 0.3;
+	pointer-events: none;
 }
 
 /* Recording state in floating bar */
-.wizard-floating-bar .wizard-nav-btn.recording {
+.wizard-floating-bar .wizard-nav-btn.recording,
+.wizard-floating-bar .monaco-button.recording {
 	color: var(--vscode-testing-iconErrored, #f14c4c);
 	animation: recording-pulse 1.5s ease-in-out infinite;
 }
@@ -285,49 +273,6 @@
 	overflow-y: auto;
 	position: absolute;
 	inset: 0;
-	transition: transform 0.25s ease, opacity 0.25s ease;
-}
-
-.wizard-step.slide-out-left {
-	transform: translateX(-100%);
-	opacity: 0;
-}
-
-.wizard-step.slide-out-right {
-	transform: translateX(100%);
-	opacity: 0;
-}
-
-.wizard-step.slide-in-right {
-	animation: slideInRight 0.25s ease forwards;
-}
-
-.wizard-step.slide-in-left {
-	animation: slideInLeft 0.25s ease forwards;
-}
-
-@keyframes slideInRight {
-	from {
-		transform: translateX(100%);
-		opacity: 0;
-	}
-
-	to {
-		transform: translateX(0);
-		opacity: 1;
-	}
-}
-
-@keyframes slideInLeft {
-	from {
-		transform: translateX(-100%);
-		opacity: 0;
-	}
-
-	to {
-		transform: translateX(0);
-		opacity: 1;
-	}
 }
 
 /* ── Wizard Typography ── */
@@ -372,13 +317,17 @@
 	color: var(--vscode-input-placeholderForeground, #888);
 }
 
-.wizard-textarea.invalid-input,
-.wizard-title-input.invalid-input {
+.wizard-textarea.invalid-input {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
 }
 
-/* ── Category Buttons (Step 2) ── */
+.wizard-describe-content.invalid-input .wizard-textarea {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
+	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
+}
+
+/* ── Category Buttons (Step 1) — radio button style ── */
 .wizard-type-buttons {
 	display: flex;
 	gap: 10px;
@@ -390,15 +339,47 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 10px 20px;
-	border-radius: 20px;
+	padding: 8px 16px;
+	border-radius: 4px;
 	border: 1px solid var(--vscode-input-border, #555);
 	background: transparent;
 	cursor: pointer;
 	font-size: 13px;
 	color: var(--vscode-foreground, #ccc);
-	transition: all 0.15s ease;
+	transition: border-color 0.15s ease;
 	user-select: none;
+}
+
+.wizard-type-btn::before {
+	content: '';
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	border: 2px solid var(--vscode-input-border, #555);
+	background: transparent;
+	flex-shrink: 0;
+	transition: border-color 0.15s ease;
+}
+
+.wizard-type-btn:hover {
+	border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.wizard-type-btn:hover::before {
+	border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.wizard-type-btn.selected {
+	border-color: var(--vscode-focusBorder, #007acc);
+	background: transparent;
+	color: var(--vscode-foreground, #ccc);
+}
+
+.wizard-type-btn.selected::before {
+	border-color: var(--vscode-focusBorder, #007acc);
+	background: var(--vscode-focusBorder, #007acc);
+	box-shadow: inset 0 0 0 2px var(--vscode-editor-background, #1e1e1e);
 }
 
 /* Shortcut badge — shared style for keyboard shortcut indicators */
@@ -418,31 +399,15 @@
 	margin-left: 2px;
 }
 
-.wizard-nav-btn.primary .wizard-shortcut-badge {
+.wizard-nav-btn.primary .wizard-shortcut-badge,
+.monaco-button .wizard-shortcut-badge {
 	border-color: rgba(255, 255, 255, 0.3);
 	color: var(--vscode-button-foreground, #fff);
 	opacity: 0.7;
 }
 
-.wizard-type-btn.selected .wizard-shortcut-badge {
-	border-color: rgba(255, 255, 255, 0.4);
-	color: var(--vscode-button-foreground, #fff);
-	opacity: 0.8;
-}
-
 .wizard-type-buttons.invalid-input .wizard-type-btn {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100);
-}
-
-.wizard-type-btn:hover {
-	border-color: var(--vscode-focusBorder, #007acc);
-	background: rgba(255, 255, 255, 0.04);
-}
-
-.wizard-type-btn.selected {
-	border-color: var(--vscode-focusBorder, #007acc);
-	background: var(--vscode-focusBorder, #007acc);
-	color: var(--vscode-button-foreground, #fff);
 }
 
 .wizard-type-icon {
@@ -570,7 +535,8 @@
 	gap: 6px;
 }
 
-.wizard-capture-btn.disabled {
+.wizard-capture-btn.disabled,
+.monaco-button.wizard-capture-btn:disabled {
 	opacity: 0.5;
 	pointer-events: none;
 }
@@ -605,26 +571,10 @@
 	flex-direction: column;
 }
 
-.wizard-title-input {
-	width: 100%;
-	height: 32px;
-	font-size: 13px;
-	font-family: inherit;
-	color: var(--vscode-input-foreground, #ccc);
-	background: var(--vscode-input-background, #3c3c3c);
-	border: 1px solid var(--vscode-input-border, #555);
-	border-radius: 4px;
-	padding: 0 10px;
-	outline: none;
-	box-sizing: border-box;
-}
-
-.wizard-title-input:focus {
-	border-color: var(--vscode-focusBorder, #007acc);
-}
-
-.wizard-title-input::placeholder {
-	color: var(--vscode-input-placeholderForeground, #888);
+.wizard-field .monaco-inputbox.invalid-input,
+.wizard-field .monaco-inputbox.invalid-input .input {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
+	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
 }
 
 .wizard-review-details {
@@ -700,7 +650,8 @@
 }
 
 /* Button spinner */
-.wizard-nav-btn.uploading {
+.wizard-nav-btn.uploading,
+.monaco-button.uploading {
 	pointer-events: none;
 	opacity: 0.8;
 }
@@ -837,17 +788,12 @@
 	flex-shrink: 0;
 }
 
-.review-diag-toggle {
+.review-diag-toggle.monaco-button {
 	flex-shrink: 0;
-	font-size: 12px !important;
-	padding: 2px 6px !important;
-	box-sizing: border-box;
-	justify-content: center;
-}
-
-.review-diag-toggle > * {
-	display: flex;
-	align-items: center;
+	font-size: 12px;
+	padding: 2px 8px;
+	width: auto;
+	flex: none;
 }
 
 .review-diag-content {
@@ -924,6 +870,14 @@
 	padding: 10px 16px;
 	flex-shrink: 0;
 	background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* Button widget overrides for wizard nav */
+.wizard-nav .monaco-button {
+	padding: 6px 16px;
+	white-space: nowrap;
+	width: auto;
+	flex: none;
 }
 
 /* ── Navigation buttons ── */
@@ -1148,13 +1102,15 @@
    Recording UI
    ═══════════════════════════════════════════════ */
 
-.wizard-record-btn {
+.wizard-record-btn,
+.monaco-button.wizard-record-btn {
 	gap: 6px;
 	border-color: #c33 !important;
 	color: #c33 !important;
 }
 
-.wizard-record-btn:hover {
+.wizard-record-btn:hover,
+.monaco-button.wizard-record-btn:hover {
 	background: rgba(204, 51, 51, 0.1) !important;
 }
 
@@ -1164,7 +1120,8 @@
 	color: #c33;
 }
 
-.wizard-record-btn.recording {
+.wizard-record-btn.recording,
+.monaco-button.wizard-record-btn.recording {
 	background: #c33 !important;
 	border-color: #c33 !important;
 	color: #fff !important;
@@ -1175,7 +1132,8 @@
 	color: #fff;
 }
 
-.wizard-record-btn.recording:hover {
+.wizard-record-btn.recording:hover,
+.monaco-button.wizard-record-btn.recording:hover {
 	background: #a22 !important;
 }
 

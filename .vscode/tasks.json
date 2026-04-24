@@ -115,7 +115,8 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"problemMatcher": []
+			"problemMatcher": [],
+			"inAgents": true
 		},
 		{
 			"type": "npm",
@@ -174,7 +175,8 @@
 				"Kill Copilot - Build"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"inAgents": true
 		},
 		{
 			"label": "Restart VS Code - Build",
@@ -254,7 +256,8 @@
 			"windows": {
 				"command": ".\\scripts\\code.bat"
 			},
-			"problemMatcher": []
+			"problemMatcher": [],
+			"inAgents": true
 		},
 		{
 			"label": "Run Dev Agents",

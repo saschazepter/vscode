@@ -5,12 +5,18 @@
 
 import './media/issueReporterOverlay.css';
 import { $, addDisposableListener, append, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { Button } from '../../../../base/browser/ui/button/button.js';
+import { IContextMenuProvider } from '../../../../base/browser/contextmenu.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
+import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
+import { Action } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
+import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
 import { RecordingState } from './recordingService.js';
@@ -72,10 +78,8 @@ export class IssueReporterOverlay {
 	// Step 3: Screenshots & Recording
 	private screenshotContainer!: HTMLElement;
 	private screenshotDelay = 0;
-	private captureBtn!: HTMLElement;
-	private captureLabel!: HTMLElement;
-	private recordBtn: HTMLElement | undefined;
-	private recordLabel!: HTMLElement;
+	private captureBtn!: Button;
+	private recordBtn: Button | undefined;
 	private recordingElapsedLabel!: HTMLElement;
 	private recordingElapsedTimer: ReturnType<typeof setInterval> | undefined;
 	private recordingStartTime = 0;
@@ -83,7 +87,7 @@ export class IssueReporterOverlay {
 	private readonly recordings: { filePath: string; durationMs: number; thumbnailDataUrl?: string }[] = [];
 
 	// Step 4: Review
-	private titleInput!: HTMLInputElement;
+	private titleInput!: InputBox;
 	private reviewThumbCards: HTMLElement[] = [];
 	private uploading = false;
 	private includeSystemInfo = true;
@@ -92,14 +96,12 @@ export class IssueReporterOverlay {
 	private includeSettings = true;
 	private settingsContent: string | undefined;
 	private workspaceSettingsContent: string | undefined;
-	private activeThemeName: string | undefined;
 
 	// Navigation
 	private stepIndicator!: HTMLElement;
 	private stepLabel!: HTMLElement;
-	private backButton!: HTMLElement;
-	private nextButton!: HTMLElement;
-	private nextShortcutBadge!: HTMLElement;
+	private backButton!: Button;
+	private nextButton!: Button;
 
 	// Progress dots
 	private readonly progressDots: HTMLElement[] = [];
@@ -115,6 +117,7 @@ export class IssueReporterOverlay {
 		private readonly data: IssueReporterData,
 		private readonly recordingSupported: boolean = false,
 		private readonly container: HTMLElement,
+		private readonly contextMenuProvider?: IContextMenuProvider,
 	) {
 		this.model = new IssueReporterModel({
 			...data,
@@ -163,28 +166,16 @@ export class IssueReporterOverlay {
 		// ── Bottom navigation ──
 		const nav = append(this.wizardPanel, $('div.wizard-nav'));
 
-		this.backButton = append(nav, $('div.wizard-nav-btn.wizard-back'));
-		const backArrow = append(this.backButton, $('span'));
-		backArrow.textContent = '\u2190'; // ←
-		const backLabel = append(this.backButton, $('span'));
-		backLabel.textContent = localize('back', "Back");
-		const backShortcut = append(this.backButton, $('span.wizard-shortcut-badge'));
-		backShortcut.textContent = 'Esc';
-		this.backButton.setAttribute('role', 'button');
-		this.backButton.setAttribute('tabindex', '0');
-		this.backButton.title = localize('backEscape', "Back (Escape)");
+		this.backButton = this.disposables.add(new Button(nav, { ...defaultButtonStyles, secondary: true }));
+		this.backButton.label = localize('back', "Back");
+		this.backButton.element.classList.add('wizard-back');
+		this.backButton.element.title = localize('backEscape', "Back (Escape)");
 
-		this.nextButton = append(nav, $('div.wizard-nav-btn.wizard-next.primary'));
-		const nextLabel = append(this.nextButton, $('span.wizard-next-label'));
-		nextLabel.textContent = localize('next', "Next");
-		const nextArrow = append(this.nextButton, $('span.wizard-next-arrow'));
-		nextArrow.textContent = ' \u2192'; // →
-		this.nextShortcutBadge = append(this.nextButton, $('span.wizard-shortcut-badge'));
-		this.nextShortcutBadge.textContent = isMacintosh ? '\u2318\u23CE' : 'Ctrl+\u23CE';
-		this.nextButton.setAttribute('role', 'button');
-		this.nextButton.setAttribute('tabindex', '0');
+		this.nextButton = this.disposables.add(new Button(nav, { ...defaultButtonStyles }));
+		this.nextButton.label = localize('next', "Next");
+		this.nextButton.element.classList.add('wizard-next');
 		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
-		this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
+		this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 
 		this.registerEventHandlers();
 		this.updateStepUI();
@@ -342,14 +333,12 @@ export class IssueReporterOverlay {
 			}
 		};
 
-		for (const { type, label, icon, shortcut } of types) {
+		for (const { type, label, icon } of types) {
 			const btn = append(this.typeButtonGroup, $('div.wizard-type-btn'));
 			btn.setAttribute('role', 'button');
 			btn.setAttribute('tabindex', '0');
 			btn.setAttribute('data-type', String(type));
 
-			const shortcutBadge = append(btn, $('span.wizard-shortcut-badge'));
-			shortcutBadge.textContent = shortcut;
 			const iconEl = append(btn, $('span.wizard-type-icon'));
 			iconEl.appendChild(renderIcon(icon));
 			const labelEl = append(btn, $('span'));
@@ -416,31 +405,31 @@ export class IssueReporterOverlay {
 			this.screenshotDelay = parseInt(delaySelect.value);
 		}));
 
-		this.captureBtn = append(actions, $('div.wizard-nav-btn.wizard-capture-btn.primary'));
-		this.captureBtn.setAttribute('role', 'button');
-		this.captureBtn.setAttribute('tabindex', '0');
-		const cameraIcon = append(this.captureBtn, $('span.wizard-capture-icon'));
+		this.captureBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles }));
+		this.captureBtn.label = localize('addScreenshot', "Add screenshot");
+		this.captureBtn.element.classList.add('wizard-capture-btn');
+		const cameraIcon = document.createElement('span');
+		cameraIcon.className = 'wizard-capture-icon';
 		cameraIcon.appendChild(renderIcon(Codicon.deviceCamera));
-		this.captureLabel = append(this.captureBtn, $('span.wizard-capture-label'));
-		this.captureLabel.textContent = localize('addScreenshot', "Add screenshot");
+		this.captureBtn.element.insertBefore(cameraIcon, this.captureBtn.element.firstChild);
 
-		this.disposables.add(addDisposableListener(this.captureBtn, EventType.CLICK, () => {
-			if (this.getTotalAttachments() >= MAX_ATTACHMENTS || this.captureBtn.classList.contains('disabled')) {
+		this.disposables.add(this.captureBtn.onDidClick(() => {
+			if (this.getTotalAttachments() >= MAX_ATTACHMENTS || !this.captureBtn.enabled) {
 				return;
 			}
 			if (this.screenshotDelay > 0) {
-				this.captureBtn.classList.add('disabled');
-				const origText = this.captureLabel.textContent;
+				this.captureBtn.enabled = false;
+				const origLabel = this.captureBtn.label as string;
 				let remaining = this.screenshotDelay;
-				this.captureLabel.textContent = `${remaining}...`;
+				this.captureBtn.label = `${remaining}...`;
 				const interval = setInterval(() => {
 					remaining--;
 					if (remaining > 0) {
-						this.captureLabel.textContent = `${remaining}...`;
+						this.captureBtn.label = `${remaining}...`;
 					} else {
 						clearInterval(interval);
-						this.captureLabel.textContent = origText;
-						this.captureBtn.classList.remove('disabled');
+						this.captureBtn.label = origLabel;
+						this.captureBtn.enabled = true;
 						this._onDidRequestScreenshot.fire();
 					}
 				}, 1000);
@@ -451,18 +440,18 @@ export class IssueReporterOverlay {
 
 		// Record video button (only when supported)
 		if (this.recordingSupported) {
-			this.recordBtn = append(actions, $('div.wizard-nav-btn.wizard-record-btn'));
-			this.recordBtn.setAttribute('role', 'button');
-			this.recordBtn.setAttribute('tabindex', '0');
-			const recordIcon = append(this.recordBtn, $('span.wizard-record-icon'));
+			this.recordBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			this.recordBtn.label = localize('recordVideo', "Record video");
+			this.recordBtn.element.classList.add('wizard-record-btn');
+			const recordIcon = document.createElement('span');
+			recordIcon.className = 'wizard-record-icon';
 			recordIcon.appendChild(renderIcon(Codicon.record));
-			this.recordLabel = append(this.recordBtn, $('span.wizard-record-label'));
-			this.recordLabel.textContent = localize('recordVideo', "Record video");
+			this.recordBtn.element.insertBefore(recordIcon, this.recordBtn.element.firstChild);
 
-			this.recordingElapsedLabel = append(this.recordBtn, $('span.wizard-recording-elapsed'));
+			this.recordingElapsedLabel = append(this.recordBtn.element, $('span.wizard-recording-elapsed'));
 			this.recordingElapsedLabel.style.display = 'none';
 
-			this.disposables.add(addDisposableListener(this.recordBtn, EventType.CLICK, () => {
+			this.disposables.add(this.recordBtn.onDidClick(() => {
 				if (this.currentRecordingState === RecordingState.Recording) {
 					this._onDidRequestStopRecording.fire();
 				} else if (this.currentRecordingState === RecordingState.Idle && this.getTotalAttachments() < MAX_ATTACHMENTS) {
@@ -478,8 +467,7 @@ export class IssueReporterOverlay {
 		this.createFloatingCaptureBar();
 	}
 
-	private captureStripRecordBtn: HTMLElement | undefined;
-	private captureStripRecordLbl: HTMLElement | undefined;
+	private captureStripRecordBtn: Button | undefined;
 	private captureStripRecordElapsed: HTMLElement | undefined;
 
 	private createFloatingCaptureBar(): void {
@@ -503,63 +491,55 @@ export class IssueReporterOverlay {
 		const captureLbl = append(captureBtn, $('span'));
 		captureLbl.textContent = localize('screenshot', "Screenshot");
 
-		const delayBtn = append(segmented, $('div.wizard-segmented-dropdown.primary'));
-		delayBtn.setAttribute('role', 'button');
-		delayBtn.setAttribute('tabindex', '0');
-		const delayChevron = append(delayBtn, $('span'));
-		delayChevron.appendChild(renderIcon(Codicon.chevronDown));
-
-		// Delay label shown when delay > 0
-		const delayIndicator = append(segmented, $('span.wizard-segmented-delay-label'));
-		delayIndicator.style.display = 'none';
-
-		// Delay dropdown menu (hidden by default)
-		const delayMenu = append(this.floatingBar, $('div.wizard-delay-menu'));
-		delayMenu.style.display = 'none';
+		// Delay dropdown using VS Code's DropdownMenu
 		const delayOptions = [
 			{ label: localize('noDelay', "No delay"), value: 0 },
 			{ label: localize('threeSecDelay', "3 second delay"), value: 3 },
 			{ label: localize('fiveSecDelay', "5 second delay"), value: 5 },
 			{ label: localize('tenSecDelay', "10 second delay"), value: 10 },
 		];
-		for (const opt of delayOptions) {
-			const item = append(delayMenu, $('div.wizard-delay-menu-item'));
-			item.textContent = opt.label;
-			if (opt.value === this.screenshotDelay) {
-				item.classList.add('selected');
-			}
-			this.disposables.add(addDisposableListener(item, EventType.CLICK, () => {
-				this.screenshotDelay = opt.value;
-				delayMenu.style.display = 'none';
-				// Update selection state
-				for (const el of delayMenu.children) {
-					(el as HTMLElement).classList.remove('selected');
-				}
-				item.classList.add('selected');
-				// Update delay indicator
-				if (opt.value > 0) {
-					delayIndicator.textContent = `${opt.value}s`;
-					delayIndicator.style.display = '';
-				} else {
-					delayIndicator.style.display = 'none';
-				}
+		const delayDropdownContainer = append(segmented, $('div.wizard-segmented-dropdown.primary'));
+		delayDropdownContainer.setAttribute('role', 'button');
+		delayDropdownContainer.setAttribute('tabindex', '0');
+		append(delayDropdownContainer, $('span')).appendChild(renderIcon(Codicon.chevronDown));
+
+		if (this.contextMenuProvider) {
+			this.disposables.add(addDisposableListener(delayDropdownContainer, EventType.CLICK, (e) => {
+				e.stopPropagation();
+				const actions = delayOptions.map(opt => {
+					const action = new Action(
+						`delay-${opt.value}`,
+						opt.label,
+						undefined,
+						true,
+						async () => { this.screenshotDelay = opt.value; }
+					);
+					action.checked = opt.value === this.screenshotDelay;
+					return action;
+				});
+				this.contextMenuProvider!.showContextMenu({
+					getAnchor: () => this.floatingBar!,
+					getActions: () => actions,
+					skipTelemetry: true,
+					onHide: () => { for (const a of actions) { a.dispose(); } },
+				});
+			}));
+
+			// Close the delay menu when drag starts.
+			// The drag handler calls e.preventDefault() on pointerdown which
+			// suppresses the mousedown event that the context menu uses for
+			// outside-click detection — so we dispatch a synthetic one.
+			this.disposables.add(addDisposableListener(dragArea, EventType.POINTER_DOWN, () => {
+				dragArea.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 			}));
 		}
 
-		this.disposables.add(addDisposableListener(delayBtn, EventType.CLICK, (e) => {
-			e.stopPropagation();
-			delayMenu.style.display = delayMenu.style.display === 'none' ? '' : 'none';
-		}));
-
-		// Close delay menu when clicking elsewhere
-		this.disposables.add(addDisposableListener(this.floatingBar, EventType.CLICK, () => {
-			delayMenu.style.display = 'none';
-		}));
-
 		this.disposables.add(addDisposableListener(captureBtn, EventType.CLICK, () => {
-			delayMenu.style.display = 'none';
 			if (this.getTotalAttachments() < MAX_ATTACHMENTS && !captureBtn.classList.contains('disabled')) {
 				if (this.screenshotDelay > 0) {
+					// Lock width so button doesn't shrink during countdown
+					captureBtn.style.minWidth = `${captureBtn.offsetWidth}px`;
+					captureBtn.style.textAlign = 'center';
 					captureBtn.classList.add('disabled');
 					let remaining = this.screenshotDelay;
 					captureLbl.textContent = `${remaining}...`;
@@ -571,6 +551,8 @@ export class IssueReporterOverlay {
 							clearInterval(interval);
 							captureLbl.textContent = localize('screenshot', "Screenshot");
 							captureBtn.classList.remove('disabled');
+							captureBtn.style.minWidth = '';
+							captureBtn.style.textAlign = '';
 							this._onDidRequestScreenshot.fire();
 						}
 					}, 1000);
@@ -582,16 +564,12 @@ export class IssueReporterOverlay {
 
 		// Record button
 		if (this.recordingSupported) {
-			this.captureStripRecordBtn = append(this.floatingBar, $('div.wizard-nav-btn.wizard-record-btn'));
-			this.captureStripRecordBtn.setAttribute('role', 'button');
-			this.captureStripRecordBtn.setAttribute('tabindex', '0');
-			const recordIcon = append(this.captureStripRecordBtn, $('span.wizard-record-icon'));
-			recordIcon.appendChild(renderIcon(Codicon.record));
-			this.captureStripRecordLbl = append(this.captureStripRecordBtn, $('span'));
-			this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
-			this.captureStripRecordElapsed = append(this.captureStripRecordBtn, $('span.wizard-recording-elapsed'));
+			this.captureStripRecordBtn = this.disposables.add(new Button(this.floatingBar, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
+			this.captureStripRecordBtn.label = `$(record) ${localize('recordVideo', "Record video")}`;
+			this.captureStripRecordBtn.element.classList.add('wizard-record-btn');
+			this.captureStripRecordElapsed = append(this.captureStripRecordBtn.element, $('span.wizard-recording-elapsed'));
 			this.captureStripRecordElapsed.style.display = 'none';
-			this.disposables.add(addDisposableListener(this.captureStripRecordBtn, EventType.CLICK, () => {
+			this.disposables.add(this.captureStripRecordBtn.onDidClick(() => {
 				if (this.currentRecordingState === RecordingState.Recording) {
 					this._onDidRequestStopRecording.fire();
 				} else if (this.currentRecordingState === RecordingState.Idle && this.getTotalAttachments() < MAX_ATTACHMENTS) {
@@ -674,15 +652,16 @@ export class IssueReporterOverlay {
 		const titleGroup = append(page, $('div.wizard-field'));
 		const titleLabel = append(titleGroup, $('label.wizard-field-label'));
 		titleLabel.textContent = localize('issueTitle', "Issue title");
-		this.titleInput = append(titleGroup, $('input.wizard-title-input')) as HTMLInputElement;
-		this.titleInput.type = 'text';
-		this.titleInput.placeholder = localize('issueTitlePlaceholder', "Brief summary of the issue");
+		this.titleInput = this.disposables.add(new InputBox(titleGroup, undefined, {
+			placeholder: localize('issueTitlePlaceholder', "Brief summary of the issue"),
+			inputBoxStyles: defaultInputBoxStyles,
+		}));
 		if (this.data.issueTitle) {
 			this.titleInput.value = this.data.issueTitle;
 		}
 
-		this.disposables.add(addDisposableListener(this.titleInput, EventType.INPUT, () => {
-			this.titleInput.classList.remove('invalid-input');
+		this.disposables.add(this.titleInput.onDidChange(() => {
+			this.titleInput.element.classList.remove('invalid-input');
 		}));
 
 		// Review details (filled dynamically) — compact horizontal layout
@@ -691,22 +670,10 @@ export class IssueReporterOverlay {
 
 	private registerEventHandlers(): void {
 		// Back
-		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => this.goBack()));
-		this.disposables.add(addDisposableListener(this.backButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
-				e.preventDefault();
-				this.goBack();
-			}
-		}));
+		this.disposables.add(this.backButton.onDidClick(() => this.goBack()));
 
 		// Next
-		this.disposables.add(addDisposableListener(this.nextButton, EventType.CLICK, () => this.goNext()));
-		this.disposables.add(addDisposableListener(this.nextButton, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if ((e.key === 'Enter' && !e.ctrlKey && !e.metaKey) || e.key === ' ') {
-				e.preventDefault();
-				this.goNext();
-			}
-		}));
+		this.disposables.add(this.nextButton.onDidClick(() => this.goNext()));
 
 		// Ctrl+Enter to advance / submit
 		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -777,20 +744,12 @@ export class IssueReporterOverlay {
 		const oldStep = this.currentStep;
 		this.currentStep = step;
 
-		const direction = step > oldStep ? 1 : -1;
 		const oldPage = this.stepPages[oldStep];
 		const newPage = this.stepPages[step];
 
-		oldPage.classList.add(direction > 0 ? 'slide-out-left' : 'slide-out-right');
-		newPage.classList.remove('slide-out-left', 'slide-out-right', 'slide-in-left', 'slide-in-right');
-		newPage.classList.add(direction > 0 ? 'slide-in-right' : 'slide-in-left');
+		// Immediate transition — no animation
+		oldPage.style.display = 'none';
 		newPage.style.display = 'flex';
-
-		setTimeout(() => {
-			oldPage.style.display = 'none';
-			oldPage.classList.remove('slide-out-left', 'slide-out-right');
-			newPage.classList.remove('slide-in-left', 'slide-in-right');
-		}, 250);
 
 		this.updateStepUI();
 
@@ -837,42 +796,21 @@ export class IssueReporterOverlay {
 		}
 
 		// Back button visibility
-		this.backButton.style.display = this.currentStep === WizardStep.Categorize ? 'none' : '';
+		this.backButton.element.style.display = this.currentStep === WizardStep.Categorize ? 'none' : '';
 
 		// Next button label
 		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
-		const nextLabel = this.nextButton.querySelector('.wizard-next-label');
-		const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
 		if (this.currentStep === WizardStep.Review) {
-			if (nextLabel) {
-				nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
-			}
-			if (nextArrow) {
-				nextArrow.textContent = ' \u2192'; // →
-			}
-			this.nextButton.classList.remove('submit');
-			this.nextButton.classList.add('primary');
-			this.nextButton.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
+			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
+			this.nextButton.element.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
 		} else if (this.currentStep === WizardStep.Screenshots) {
-			if (nextLabel) {
-				nextLabel.textContent = this.screenshots.length === 0
-					? localize('skip', "Skip")
-					: localize('next', "Next");
-			}
-			if (nextArrow) {
-				nextArrow.textContent = ' \u00BB'; // »
-			}
-			this.nextButton.classList.remove('submit');
-			this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
+			this.nextButton.label = this.screenshots.length === 0
+				? localize('skip', "Skip")
+				: localize('next', "Next");
+			this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		} else {
-			if (nextLabel) {
-				nextLabel.textContent = localize('next', "Next");
-			}
-			if (nextArrow) {
-				nextArrow.textContent = ' \u2192'; // →
-			}
-			this.nextButton.classList.remove('submit');
-			this.nextButton.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
+			this.nextButton.label = localize('next', "Next");
+			this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		}
 
 		// Show/hide capture strip (only on step 3)
@@ -1119,478 +1057,446 @@ export class IssueReporterOverlay {
 		title.textContent = opts.label;
 
 		const checkWrap = append(header, $('div.review-diag-check-wrap'));
-		const checkbox = append(checkWrap, $('input.review-diag-checkbox')) as HTMLInputElement;
-		checkbox.type = 'checkbox';
-		checkbox.checked = opts.checked;
-		checkbox.id = `diag-${opts.id}`;
+		const checkbox = this.disposables.add(new Checkbox(localize('includeInIssue', "Include in issue"), opts.checked, defaultCheckboxStyles));
+		checkWrap.appendChild(checkbox.domNode);
 		const checkLabel = append(checkWrap, $('label.review-diag-check-label'));
-		checkLabel.setAttribute('for', `diag-${opts.id}`);
 		checkLabel.textContent = localize('includeInIssue', "Include in issue");
-		this.disposables.add(addDisposableListener(checkbox, EventType.CHANGE, () => {
+		this.disposables.add(checkbox.onChange(() => {
 			opts.onToggle(checkbox.checked);
 		}));
 
-		const toggleBtn = append(header, $('div.wizard-nav-btn.review-diag-toggle'));
-		toggleBtn.setAttribute('role', 'button');
-		toggleBtn.setAttribute('tabindex', '0');
-		const toggleIcon = append(toggleBtn, $('span'));
-		toggleIcon.appendChild(renderIcon(Codicon.chevronUp));
-		const toggleLabel = append(toggleBtn, $('span'));
-		toggleLabel.textContent = localize('minimize', "Minimize");
+		const toggleBtn = this.disposables.add(new Button(header, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
+		toggleBtn.label = `$(chevron-up) ${localize('minimize', "Minimize")}`;
+		toggleBtn.element.classList.add('review-diag-toggle');
 
 		// Content
 		const content = append(group, $('div.review-diag-content'));
 		opts.renderContent(content);
 
 		let expanded = true;
-		this.disposables.add(addDisposableListener(toggleBtn, EventType.CLICK, () => {
+		this.disposables.add(toggleBtn.onDidClick(() => {
 			expanded = !expanded;
 			content.style.display = expanded ? '' : 'none';
-			toggleIcon.textContent = '';
-			toggleIcon.appendChild(renderIcon(expanded ? Codicon.chevronUp : Codicon.chevronDown));
-			toggleLabel.textContent = expanded
-				? localize('minimize', "Minimize")
-				: localize('expand', "Expand");
+			toggleBtn.label = expanded
+				? `$(chevron-up) ${localize('minimize', "Minimize")}`
+				: `$(chevron-down) ${localize('expand', "Expand")}`;
 		}));
 	}
 
 	private addDiagRow(table: HTMLElement, label: string, value: string): void {
-	const row = append(table, $('tr'));
-	const th = append(row, $('td.review-diag-key'));
-	th.textContent = label;
-	const td = append(row, $('td.review-diag-val'));
-	td.textContent = value;
-}
+		const row = append(table, $('tr'));
+		const th = append(row, $('td.review-diag-key'));
+		th.textContent = label;
+		const td = append(row, $('td.review-diag-val'));
+		td.textContent = value;
+	}
 
-/** Called by the form service to show upload progress */
-setUploading(uploading: boolean): void {
-	this.uploading = uploading;
-	const nextLabel = this.nextButton.querySelector('.wizard-next-label');
-	const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
+	/** Called by the form service to show upload progress */
+	setUploading(uploading: boolean): void {
+		this.uploading = uploading;
 
-	if(uploading) {
-		this.nextButton.classList.add('uploading');
-		if (nextLabel) {
-			nextLabel.textContent = localize('uploading', "Uploading...");
-		}
-		if (nextArrow) {
-			nextArrow.textContent = '';
-			const spinner = document.createElement('span');
-			spinner.className = 'wizard-btn-spinner';
-			nextArrow.appendChild(spinner);
-		}
-		this.backButton.style.display = 'none';
-	} else {
-		this.nextButton.classList.remove('uploading');
-		if(nextLabel) {
-			nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
-		}
-			if(nextArrow) {
-			nextArrow.textContent = ' \u2192';
+		if (uploading) {
+			this.nextButton.element.classList.add('uploading');
+			this.nextButton.label = localize('uploading', "Uploading...");
+			this.nextButton.enabled = false;
+			this.backButton.element.style.display = 'none';
+		} else {
+			this.nextButton.element.classList.remove('uploading');
+			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
+			this.nextButton.enabled = true;
 		}
 	}
-}
 
-/** Mark a specific attachment as uploading / done */
-setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void {
-	const card = this.reviewThumbCards[index];
-	if(!card) {
-		return;
-	}
+	/** Mark a specific attachment as uploading / done */
+	setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void {
+		const card = this.reviewThumbCards[index];
+		if (!card) {
+			return;
+		}
 		card.classList.remove('upload-pending', 'upload-uploading', 'upload-done');
-	card.classList.add(`upload-${state}`);
+		card.classList.add(`upload-${state}`);
 
-	const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
-	if(!overlay) {
-		return;
-	}
+		const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
+		if (!overlay) {
+			return;
+		}
 
-		if(state === 'done') {
-	// Replace ring with checkmark
-	overlay.textContent = '';
-	const check = document.createElement('span');
-	check.className = 'review-progress-check';
-	check.appendChild(renderIcon(Codicon.check));
-	overlay.appendChild(check);
-}
+		if (state === 'done') {
+			// Replace ring with checkmark
+			overlay.textContent = '';
+			const check = document.createElement('span');
+			check.className = 'review-progress-check';
+			check.appendChild(renderIcon(Codicon.check));
+			overlay.appendChild(check);
+		}
 	}
 
 	private submit(): void {
-	const title = this.titleInput.value.trim();
-	if(!title) {
-		this.titleInput.classList.add('invalid-input');
-		this.titleInput.focus();
-		return;
-	}
+		const title = this.titleInput.value.trim();
+		if (!title) {
+			this.titleInput.element.classList.add('invalid-input');
+			this.titleInput.focus();
+			return;
+		}
 
 		const description = this.composeDescription();
-	this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
+		this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
 
-	const body = this.buildIssueBody();
-	this._onDidSubmit.fire({ title, body });
-}
-
-show(): void {
-	if(this.visible) {
-	return;
-}
-this.visible = true;
-
-this.wizardPanel.classList.add('open', 'wizard-embedded');
-this.wizardPanel.style.maxHeight = 'none';
-append(this.container, this.wizardPanel);
-this.wizardPanel.focus();
+		const body = this.buildIssueBody();
+		this._onDidSubmit.fire({ title, body });
 	}
 
-close(): void {
-	this.visible = false;
-	this._onDidClose.fire();
-}
+	show(): void {
+		if (this.visible) {
+			return;
+		}
+		this.visible = true;
+
+		this.wizardPanel.classList.add('open', 'wizard-embedded');
+		this.wizardPanel.style.maxHeight = 'none';
+		append(this.container, this.wizardPanel);
+		this.wizardPanel.focus();
+	}
+
+	close(): void {
+		this.visible = false;
+		this._onDidClose.fire();
+	}
 
 	private getTotalAttachments(): number {
-	return this.screenshots.length + this.recordings.length;
-}
+		return this.screenshots.length + this.recordings.length;
+	}
 
-addScreenshot(screenshot: IScreenshot): void {
-	if(this.getTotalAttachments() >= MAX_ATTACHMENTS) {
-	return;
-}
-this.screenshots.push(screenshot);
-this.updateScreenshotThumbnails();
-this.updateAttachmentButtons();
-this.updateStepUI();
+	addScreenshot(screenshot: IScreenshot): void {
+		if (this.getTotalAttachments() >= MAX_ATTACHMENTS) {
+			return;
+		}
+		this.screenshots.push(screenshot);
+		this.updateScreenshotThumbnails();
+		this.updateAttachmentButtons();
+		this.updateStepUI();
 
-// Immediately open the annotation editor for the new screenshot
-this.openAnnotationEditor(this.screenshots.length - 1);
+		// Immediately open the annotation editor for the new screenshot
+		this.openAnnotationEditor(this.screenshots.length - 1);
 	}
 
 	private updateAttachmentButtons(): void {
-	const atMax = this.getTotalAttachments() >= MAX_ATTACHMENTS;
+		const atMax = this.getTotalAttachments() >= MAX_ATTACHMENTS;
 
-	this.captureBtn.classList.toggle('disabled', atMax);
-	this.captureLabel.textContent = atMax
-		? localize('maxAttachmentsReached', "Max attachments reached")
-		: localize('addScreenshot', "Add screenshot");
-
-	if(this.recordBtn) {
-	this.recordBtn.classList.toggle('disabled', atMax);
-	if (this.currentRecordingState !== RecordingState.Recording) {
-		this.recordLabel.textContent = atMax
+		this.captureBtn.enabled = !atMax;
+		this.captureBtn.label = atMax
 			? localize('maxAttachmentsReached', "Max attachments reached")
-			: localize('recordVideo', "Record video");
-	}
-}
+			: localize('addScreenshot', "Add screenshot");
+
+		if (this.recordBtn) {
+			this.recordBtn.enabled = !atMax;
+			if (this.currentRecordingState !== RecordingState.Recording) {
+				this.recordBtn.label = atMax
+					? localize('maxAttachmentsReached', "Max attachments reached")
+					: localize('recordVideo', "Record video");
+			}
+		}
 	}
 
 	private updateScreenshotThumbnails(): void {
-	this.screenshotContainer.textContent = '';
+		this.screenshotContainer.textContent = '';
 
-	if(this.screenshots.length === 0 && this.recordings.length === 0) {
-	const empty = append(this.screenshotContainer, $('div.wizard-screenshots-empty'));
-	empty.textContent = localize('noScreenshots', "No screenshots or recordings added yet");
-	return;
-}
+		if (this.screenshots.length === 0 && this.recordings.length === 0) {
+			const empty = append(this.screenshotContainer, $('div.wizard-screenshots-empty'));
+			empty.textContent = localize('noScreenshots', "No screenshots or recordings added yet");
+			return;
+		}
 
-for (let i = 0; i < this.screenshots.length; i++) {
-	const screenshot = this.screenshots[i];
-	const card = append(this.screenshotContainer, $('div.wizard-screenshot-card'));
+		for (let i = 0; i < this.screenshots.length; i++) {
+			const screenshot = this.screenshots[i];
+			const card = append(this.screenshotContainer, $('div.wizard-screenshot-card'));
 
-	const img = append(card, $('img')) as HTMLImageElement;
-	img.src = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
-	img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
+			const img = append(card, $('img')) as HTMLImageElement;
+			img.src = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
+			img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
 
-	this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-		this._onDidRequestOpenScreenshot.fire(screenshot);
-	}));
+			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+				this._onDidRequestOpenScreenshot.fire(screenshot);
+			}));
 
-	const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
-	deleteBtn.setAttribute('role', 'button');
-	deleteBtn.setAttribute('aria-label', localize('deleteScreenshot', "Delete screenshot"));
-	deleteBtn.appendChild(renderIcon(Codicon.close));
-	this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
-		e.stopPropagation();
-		this.screenshots.splice(i, 1);
-		this.updateScreenshotThumbnails();
-		this.updateAttachmentButtons();
-		this.updateStepUI();
-	}));
-}
+			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
+			deleteBtn.setAttribute('role', 'button');
+			deleteBtn.setAttribute('aria-label', localize('deleteScreenshot', "Delete screenshot"));
+			deleteBtn.appendChild(renderIcon(Codicon.close));
+			this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.screenshots.splice(i, 1);
+				this.updateScreenshotThumbnails();
+				this.updateAttachmentButtons();
+				this.updateStepUI();
+			}));
+		}
 
-// Recording thumbnails
-for (let i = 0; i < this.recordings.length; i++) {
-	const rec = this.recordings[i];
-	const card = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-recording-card'));
+		// Recording thumbnails
+		for (let i = 0; i < this.recordings.length; i++) {
+			const rec = this.recordings[i];
+			const card = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-recording-card'));
 
-	// Show video thumbnail if available
-	if (rec.thumbnailDataUrl) {
-		const thumbImg = append(card, $('img.wizard-screenshot-img'));
-		thumbImg.setAttribute('src', rec.thumbnailDataUrl);
-		thumbImg.setAttribute('draggable', 'false');
-	}
+			// Show video thumbnail if available
+			if (rec.thumbnailDataUrl) {
+				const thumbImg = append(card, $('img.wizard-screenshot-img'));
+				thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+				thumbImg.setAttribute('draggable', 'false');
+			}
 
-	// Dark overlay with play icon
-	const playOverlay = append(card, $('div.wizard-recording-play'));
-	playOverlay.appendChild(renderIcon(Codicon.play));
+			// Dark overlay with play icon
+			const playOverlay = append(card, $('div.wizard-recording-play'));
+			playOverlay.appendChild(renderIcon(Codicon.play));
 
-	const durSec = Math.floor(rec.durationMs / 1000);
-	const durLabel = append(card, $('div.wizard-recording-duration'));
-	durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
+			const durSec = Math.floor(rec.durationMs / 1000);
+			const durLabel = append(card, $('div.wizard-recording-duration'));
+			durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
 
-	// Click to open from OS
-	this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
-		this._onDidRequestOpenRecording.fire(rec.filePath);
-	}));
+			// Click to open from OS
+			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+				this._onDidRequestOpenRecording.fire(rec.filePath);
+			}));
 
-	const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
-	deleteBtn.setAttribute('role', 'button');
-	deleteBtn.setAttribute('aria-label', localize('deleteRecording', "Remove recording"));
-	deleteBtn.appendChild(renderIcon(Codicon.close));
-	this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
-		e.stopPropagation();
-		this.recordings.splice(i, 1);
-		this.updateScreenshotThumbnails();
-		this.updateAttachmentButtons();
-		this.updateStepUI();
-	}));
-}
+			const deleteBtn = append(card, $('div.wizard-screenshot-delete'));
+			deleteBtn.setAttribute('role', 'button');
+			deleteBtn.setAttribute('aria-label', localize('deleteRecording', "Remove recording"));
+			deleteBtn.appendChild(renderIcon(Codicon.close));
+			this.disposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.recordings.splice(i, 1);
+				this.updateScreenshotThumbnails();
+				this.updateAttachmentButtons();
+				this.updateStepUI();
+			}));
+		}
 
-if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
-	const addCard = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-screenshot-add'));
-	const plus = append(addCard, $('div.wizard-screenshot-plus'));
-	plus.appendChild(renderIcon(Codicon.add));
-	this.disposables.add(addDisposableListener(addCard, EventType.CLICK, () => {
-		this._onDidRequestScreenshot.fire();
-	}));
-}
+		if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
+			const addCard = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-screenshot-add'));
+			const plus = append(addCard, $('div.wizard-screenshot-plus'));
+			plus.appendChild(renderIcon(Codicon.add));
+			this.disposables.add(addDisposableListener(addCard, EventType.CLICK, () => {
+				this._onDidRequestScreenshot.fire();
+			}));
+		}
 	}
 
 	private openAnnotationEditor(index: number): void {
-	if(index < 0 || index >= this.screenshots.length) {
-	return;
-}
+		if (index < 0 || index >= this.screenshots.length) {
+			return;
+		}
 
-const screenshot = this.screenshots[index];
-const targetWindow = getWindow(this.wizardPanel);
-const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
+		const screenshot = this.screenshots[index];
+		const targetWindow = getWindow(this.wizardPanel);
+		const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
 
-editor.onDidSave(annotatedDataUrl => {
-	screenshot.annotatedDataUrl = annotatedDataUrl;
-	this.updateScreenshotThumbnails();
-});
+		editor.onDidSave(annotatedDataUrl => {
+			screenshot.annotatedDataUrl = annotatedDataUrl;
+			this.updateScreenshotThumbnails();
+		});
 
-editor.onDidCancel(() => {
-	// nothing to do, editor disposes itself
-});
+		editor.onDidCancel(() => {
+			// nothing to do, editor disposes itself
+		});
 	}
 
-getScreenshots(): readonly IScreenshot[] {
-	return this.screenshots;
-}
+	getScreenshots(): readonly IScreenshot[] {
+		return this.screenshots;
+	}
 
-getRecordings(): readonly { filePath: string; durationMs: number; thumbnailDataUrl ?: string } [] {
-	return this.recordings;
-}
+	getRecordings(): readonly { filePath: string; durationMs: number; thumbnailDataUrl?: string }[] {
+		return this.recordings;
+	}
 
 	private buildIssueBody(): string {
-	const description = this.composeDescription();
-	this.model.update({ issueDescription: description });
+		const description = this.composeDescription();
+		this.model.update({ issueDescription: description });
 
-	let body = this.model.serialize();
+		let body = this.model.serialize();
 
-	if (this.includeSettings && this.settingsContent) {
-		body += `\n<details><summary>User Settings</summary>\n\n\`\`\`json\n${this.settingsContent}\n\`\`\`\n\n</details>`;
-		if (this.workspaceSettingsContent) {
-			body += `\n<details><summary>Workspace Settings</summary>\n\n\`\`\`json\n${this.workspaceSettingsContent}\n\`\`\`\n\n</details>`;
+		if (this.includeSettings && this.settingsContent) {
+			body += `\n<details><summary>User Settings</summary>\n\n\`\`\`json\n${this.settingsContent}\n\`\`\`\n\n</details>`;
+			if (this.workspaceSettingsContent) {
+				body += `\n<details><summary>Workspace Settings</summary>\n\n\`\`\`json\n${this.workspaceSettingsContent}\n\`\`\`\n\n</details>`;
+			}
+		}
+
+		if (this.screenshots.length > 0) {
+			body += '\n\n### Screenshots\n\n';
+			for (let i = 0; i < this.screenshots.length; i++) {
+				body += `<!-- Screenshot ${i + 1} will be uploaded -->\n`;
+			}
+		}
+
+		return body;
+	}
+
+	isVisible(): boolean {
+		return this.visible;
+	}
+
+	focus(): void {
+		this.wizardPanel.focus();
+	}
+
+	getPanel(): HTMLElement {
+		return this.wizardPanel;
+	}
+
+	hideFloatingBar(): void {
+		if (this.floatingBar) {
+			this.floatingBar.style.display = 'none';
 		}
 	}
 
-	if (this.screenshots.length > 0) {
-		body += '\n\n### Screenshots\n\n';
-		for (let i = 0; i < this.screenshots.length; i++) {
-			body += `<!-- Screenshot ${i + 1} will be uploaded -->\n`;
+	showFloatingBar(): void {
+		if (this.floatingBar && this.currentStep === WizardStep.Screenshots) {
+			this.floatingBar.style.display = '';
 		}
 	}
 
-	return body;
-}
-
-isVisible(): boolean {
-	return this.visible;
-}
-
-focus(): void {
-	this.wizardPanel.focus();
-}
-
-getPanel(): HTMLElement {
-	return this.wizardPanel;
-}
-
-hideFloatingBar(): void {
-	if(this.floatingBar) {
-	this.floatingBar.style.display = 'none';
-}
+	/** Update the internal model with additional data loaded asynchronously */
+	updateModel(newData: Record<string, unknown>): void {
+		this.model.update(newData);
+		// Refresh review details if we're on the review step (async data may have arrived)
+		if (this.currentStep === WizardStep.Review) {
+			this.updateReviewDetails();
+		}
 	}
 
-showFloatingBar(): void {
-	if(this.floatingBar && this.currentStep === WizardStep.Screenshots) {
-	this.floatingBar.style.display = '';
-}
+	setSettingsContent(userSettings: string, workspaceSettings?: string): void {
+		this.settingsContent = userSettings;
+		this.workspaceSettingsContent = workspaceSettings;
+		if (this.currentStep === WizardStep.Review) {
+			this.updateReviewDetails();
+		}
 	}
 
-/** Update the internal model with additional data loaded asynchronously */
-updateModel(newData: Record<string, unknown>): void {
-	this.model.update(newData);
-	// Refresh review details if we're on the review step (async data may have arrived)
-	if(this.currentStep === WizardStep.Review) {
-	this.updateReviewDetails();
-}
+	hasUnsavedChanges(): boolean {
+		if (this.submitted) {
+			return false;
+		}
+		return this.hasUserInput();
 	}
-
-setSettingsContent(userSettings: string, workspaceSettings ?: string): void {
-	this.settingsContent = userSettings;
-	this.workspaceSettingsContent = workspaceSettings;
-	if(this.currentStep === WizardStep.Review) {
-	this.updateReviewDetails();
-}
-	}
-
-setActiveThemeName(name: string): void {
-	this.activeThemeName = name;
-}
-
-hasUnsavedChanges(): boolean {
-	if (this.submitted) {
-		return false;
-	}
-	return this.hasUserInput();
-}
 
 	private hasUserInput(): boolean {
-	return !!(
-		this.hasDescriptionContent() ||
-		this.titleInput.value.trim() ||
-		this.selectedIssueType !== undefined ||
-		this.screenshots.length > 0 ||
-		this.recordings.length > 0
-	);
-}
-
-/** Mark as submitted — locks navigation and disables discard dialog */
-markAsSubmitted(): void {
-	this.submitted = true;
-}
-
-/** Show a "Close" button next to the submit button after successful submission */
-showCloseButton(): void {
-	this.backButton.style.display = 'none';
-
-	// Add close button next to the existing preview button
-	const nav = this.nextButton.parentElement;
-	if(nav && !nav.querySelector('.wizard-close-btn')) {
-	const closeBtn = append(nav, $('div.wizard-nav-btn.wizard-close-btn'));
-	closeBtn.setAttribute('role', 'button');
-	closeBtn.setAttribute('tabindex', '0');
-	const closeLbl = append(closeBtn, $('span'));
-	closeLbl.textContent = localize('closeTab', "Close");
-	this.disposables.add(addDisposableListener(closeBtn, EventType.CLICK, () => {
-		this._onDidClose.fire();
-	}));
-}
+		return !!(
+			this.hasDescriptionContent() ||
+			this.titleInput.value.trim() ||
+			this.selectedIssueType !== undefined ||
+			this.screenshots.length > 0 ||
+			this.recordings.length > 0
+		);
 	}
 
-getWizardHeight(): number {
-	return this.wizardPanel.offsetHeight;
-}
+	/** Mark as submitted — locks navigation and disables discard dialog */
+	markAsSubmitted(): void {
+		this.submitted = true;
+	}
 
-setRecordingState(state: RecordingState): void {
-	this.currentRecordingState = state;
+	/** Show a "Close" button next to the submit button after successful submission */
+	showCloseButton(): void {
+		this.backButton.element.style.display = 'none';
 
-	if(state === RecordingState.Recording) {
-	// Switch to recording mode: disable all wizard UI except stop button
-	this.wizardPanel.classList.add('wizard-recording');
-	if (this.recordBtn) {
-		this.recordBtn.classList.add('recording');
-		this.recordLabel.textContent = localize('stopRecording', "Stop recording");
-		this.recordingElapsedLabel.style.display = '';
-		this.recordingStartTime = Date.now();
-		this.recordingElapsedLabel.textContent = '0:00';
-		this.recordingElapsedTimer = setInterval(() => {
-			const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-			const mins = Math.floor(elapsed / 60);
-			const secs = elapsed % 60;
-			const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-			this.recordingElapsedLabel.textContent = timeStr;
-			if (this.captureStripRecordElapsed) {
-				this.captureStripRecordElapsed.textContent = timeStr;
+		// Add close button next to the existing preview button
+		const nav = this.nextButton.element.parentElement;
+		if (nav && !nav.querySelector('.wizard-close-btn')) {
+			const closeBtn = this.disposables.add(new Button(nav, { ...defaultButtonStyles, secondary: true }));
+			closeBtn.label = localize('closeTab', "Close");
+			closeBtn.element.classList.add('wizard-close-btn');
+			this.disposables.add(closeBtn.onDidClick(() => {
+				this._onDidClose.fire();
+			}));
+		}
+	}
+
+	getWizardHeight(): number {
+		return this.wizardPanel.offsetHeight;
+	}
+
+	setRecordingState(state: RecordingState): void {
+		this.currentRecordingState = state;
+
+		if (state === RecordingState.Recording) {
+			// Switch to recording mode: disable all wizard UI except stop button
+			this.wizardPanel.classList.add('wizard-recording');
+			if (this.recordBtn) {
+				this.recordBtn.element.classList.add('recording');
+				this.recordBtn.label = localize('stopRecording', "Stop recording");
+				this.recordingElapsedLabel.style.display = '';
+				this.recordingStartTime = Date.now();
+				this.recordingElapsedLabel.textContent = '0:00';
+				this.recordingElapsedTimer = setInterval(() => {
+					const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+					const mins = Math.floor(elapsed / 60);
+					const secs = elapsed % 60;
+					const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+					this.recordingElapsedLabel.textContent = timeStr;
+					if (this.captureStripRecordElapsed) {
+						this.captureStripRecordElapsed.textContent = timeStr;
+					}
+				}, 1000);
 			}
-		}, 1000);
+
+			// Update floating bar record button
+			if (this.captureStripRecordBtn) {
+				this.captureStripRecordBtn.element.classList.add('recording');
+				this.captureStripRecordBtn.element.title = localize('stopRecording', "Stop recording");
+				this.captureStripRecordBtn.label = `$(stop-circle) ${localize('stopRecording', "Stop recording")}`;
+				if (this.captureStripRecordElapsed) {
+					this.captureStripRecordElapsed.style.display = '';
+					this.captureStripRecordElapsed.textContent = '0:00';
+				}
+			}
+			// Dim other capture strip controls during recording
+			if (this.floatingBar) {
+				this.floatingBar.classList.add('wizard-strip-recording');
+			}
+		} else {
+			// Back to idle
+			this.wizardPanel.classList.remove('wizard-recording');
+			if (this.recordBtn) {
+				this.recordBtn.element.classList.remove('recording');
+				this.recordBtn.label = localize('recordVideo', "Record video");
+				this.recordingElapsedLabel.style.display = 'none';
+			}
+			if (this.recordingElapsedTimer !== undefined) {
+				clearInterval(this.recordingElapsedTimer);
+				this.recordingElapsedTimer = undefined;
+			}
+
+			// Update floating bar record button
+			if (this.captureStripRecordBtn) {
+				this.captureStripRecordBtn.element.classList.remove('recording');
+				this.captureStripRecordBtn.element.title = localize('recordVideo', "Record video");
+				this.captureStripRecordBtn.label = `$(record) ${localize('recordVideo', "Record video")}`;
+				if (this.captureStripRecordElapsed) {
+					this.captureStripRecordElapsed.style.display = 'none';
+				}
+			}
+			if (this.floatingBar) {
+				this.floatingBar.classList.remove('wizard-strip-recording');
+			}
+		}
 	}
 
-	// Update floating bar record button
-	if (this.captureStripRecordBtn) {
-		this.captureStripRecordBtn.classList.add('recording');
-		this.captureStripRecordBtn.title = localize('stopRecording', "Stop recording");
-		if (this.captureStripRecordLbl) {
-			this.captureStripRecordLbl.textContent = localize('stopRecording', "Stop recording");
-		}
-		if (this.captureStripRecordElapsed) {
-			this.captureStripRecordElapsed.style.display = '';
-			this.captureStripRecordElapsed.textContent = '0:00';
-		}
-	}
-	// Dim other capture strip controls during recording
-	if (this.floatingBar) {
-		this.floatingBar.classList.add('wizard-strip-recording');
-	}
-} else {
-	// Back to idle
-	this.wizardPanel.classList.remove('wizard-recording');
-	if (this.recordBtn) {
-		this.recordBtn.classList.remove('recording');
-		this.recordLabel.textContent = localize('recordVideo', "Record video");
-		this.recordingElapsedLabel.style.display = 'none';
-	}
-	if (this.recordingElapsedTimer !== undefined) {
-		clearInterval(this.recordingElapsedTimer);
-		this.recordingElapsedTimer = undefined;
+	addRecording(filePath: string, durationMs: number, thumbnailDataUrl?: string): void {
+		this.recordings.push({ filePath, durationMs, thumbnailDataUrl });
+		this.updateScreenshotThumbnails();
+		this.updateAttachmentButtons();
+		this.updateStepUI();
 	}
 
-	// Update floating bar record button
-	if (this.captureStripRecordBtn) {
-		this.captureStripRecordBtn.classList.remove('recording');
-		this.captureStripRecordBtn.title = localize('recordVideo', "Record video");
-		if (this.captureStripRecordLbl) {
-			this.captureStripRecordLbl.textContent = localize('recordVideo', "Record video");
+	dispose(): void {
+		if (this.recordingElapsedTimer !== undefined) {
+			clearInterval(this.recordingElapsedTimer);
 		}
-		if (this.captureStripRecordElapsed) {
-			this.captureStripRecordElapsed.style.display = 'none';
-		}
-	}
-	if (this.floatingBar) {
-		this.floatingBar.classList.remove('wizard-strip-recording');
-	}
-}
-	}
-
-addRecording(filePath: string, durationMs: number, thumbnailDataUrl ?: string): void {
-	this.recordings.push({ filePath, durationMs, thumbnailDataUrl });
-	this.updateScreenshotThumbnails();
-	this.updateAttachmentButtons();
-	this.updateStepUI();
-}
-
-dispose(): void {
-	if(this.recordingElapsedTimer !== undefined) {
-	clearInterval(this.recordingElapsedTimer);
-}
-this.disposables.dispose();
-this._onDidClose.dispose();
-this._onDidSubmit.dispose();
-this._onDidRequestScreenshot.dispose();
-this._onDidRequestStartRecording.dispose();
-this._onDidRequestStopRecording.dispose();
-this._onDidRequestOpenRecording.dispose();
-this._onDidRequestOpenScreenshot.dispose();
+		this.disposables.dispose();
+		this._onDidClose.dispose();
+		this._onDidSubmit.dispose();
+		this._onDidRequestScreenshot.dispose();
+		this._onDidRequestStartRecording.dispose();
+		this._onDidRequestStopRecording.dispose();
+		this._onDidRequestOpenRecording.dispose();
+		this._onDidRequestOpenScreenshot.dispose();
 	}
 }

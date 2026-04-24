@@ -32,6 +32,7 @@ import { IWorkbenchAssignmentService } from '../../../services/assignment/common
 import product from '../../../../platform/product/common/product.js';
 import { isLinuxSnap } from '../../../../base/common/platform.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
+import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 
 /**
@@ -61,6 +62,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IWorkbenchAssignmentService private readonly experimentService: IWorkbenchAssignmentService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -102,6 +104,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			data,
 			this.recordingService.isSupported,
 			this.container,
+			this.contextMenuService,
 		);
 		this.inputDisposables.add(this.wizard);
 
@@ -121,10 +124,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		}));
 
 		this.wizard.show();
-
-		// Set active theme name
-		const colorTheme = this.themeService.getColorTheme();
-		this.wizard.setActiveThemeName(colorTheme.label);
 
 		// Populate system info in background (non-blocking)
 		this.populateSystemInfo();
