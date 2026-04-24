@@ -412,11 +412,16 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
 
 				for (const file of allSettingsFiles) {
+					const isTarget = targetSettingsUri?.toString() === file.uri.toString();
+
 					if (!file.settings.claudeMdExcludes || !Array.isArray(file.settings.claudeMdExcludes)) {
+						// File has no claudeMdExcludes — only write if this is the target for disabling
+						if (isTarget) {
+							const updated = { ...file.settings, claudeMdExcludes: [instructionsUri.path] };
+							await writeSettings(file.uri, updated);
+						}
 						continue;
 					}
-
-					const isTarget = targetSettingsUri?.toString() === file.uri.toString();
 					const filtered = (file.settings.claudeMdExcludes ?? []).filter(p => p !== instructionsUri.path);
 					let shouldUpdateSettings = filtered.length !== (file.settings.claudeMdExcludes ?? []).length;
 

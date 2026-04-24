@@ -323,7 +323,8 @@ describe('ClaudeSettingsService', () => {
 
 			const second = await svc.readAllSettings();
 			expect(first).not.toBe(second);
-			expect(second[0].settings).toEqual({ updated: true });
+			const userSettings = second.find(f => f.uri.toString() === userUri.toString());
+			expect(userSettings?.settings).toEqual({ updated: true });
 		});
 	});
 });

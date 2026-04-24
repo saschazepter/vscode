@@ -302,7 +302,7 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 
 		// Icon
 		templateData.icon.className = 'hook-file-icon';
-		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(item.disabled ? Codicon.eyeClosed : hookIcon));
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(item.disabled ? Codicon.eyeClosed : Codicon.file));
 
 		// Label (filename)
 		templateData.label.textContent = item.displayName ?? formatDisplayName(item.name);
@@ -1441,7 +1441,7 @@ export class AICustomizationListWidget extends Disposable {
 
 		this.allItems = items;
 		this.filterItems();
-		this._onDidChangeItemCount.fire(items.length);
+		this._onDidChangeItemCount.fire(this.computeEffectiveItemCount(items, section));
 	}
 
 	/**
@@ -1450,6 +1450,17 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	async computeItemCountForSection(section: AICustomizationManagementSection): Promise<number> {
 		const items = await this.fetchItemsForSection(section);
+		return this.computeEffectiveItemCount(items, section);
+	}
+
+	/**
+	 * Computes the effective item count for a section.
+	 * For hooks, counts individual hooks (hookChildren) and excludes files with none.
+	 */
+	private computeEffectiveItemCount(items: readonly IAICustomizationListItem[], section: AICustomizationManagementSection): number {
+		if (section === AICustomizationManagementSection.Hooks) {
+			return items.reduce((sum, item) => sum + (item.hookChildren?.length ?? 0), 0);
+		}
 		return items.length;
 	}
 
