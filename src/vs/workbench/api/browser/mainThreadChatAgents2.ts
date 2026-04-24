@@ -746,6 +746,8 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					groupKey: item.groupKey,
 					badge: item.badge,
 					badgeTooltip: item.badgeTooltip,
+					extensionId: undefined,
+					pluginUri: undefined
 				}));
 			},
 		};
