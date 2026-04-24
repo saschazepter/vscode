@@ -8,19 +8,19 @@ import * as touch from '../../../../base/browser/touch.js';
 import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
-import { isNative } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
-import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { IMenuService, MenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { TUNNEL_ADDRESS_PREFIX } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IPreferencesService } from '../../../../workbench/services/preferences/common/preferences.js';
 import { IOutputService } from '../../../../workbench/services/output/common/output.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -35,6 +35,7 @@ import { ISessionsManagementService } from '../../../services/sessions/common/se
 import { IAgentHostSessionsProvider, isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { COPILOT_PROVIDER_ID } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
+import { Menus } from '../../../browser/menus.js';
 
 const LEGACY_STORAGE_KEY_RECENT_PROJECTS = 'sessions.recentlyPickedProjects';
 const STORAGE_KEY_RECENT_WORKSPACES = 'sessions.recentlyPickedWorkspaces';
@@ -66,8 +67,6 @@ export interface IWorkspacePickerItem {
 	readonly selection?: IWorkspaceSelection;
 	readonly browseActionIndex?: number;
 	readonly checked?: boolean;
-	/** Remote provider reference for gear menu actions. */
-	readonly remoteProvider?: IAgentHostSessionsProvider;
 	/** Command to execute when this item is selected. */
 	readonly commandId?: string;
 }
@@ -109,9 +108,11 @@ export class WorkspacePicker extends Disposable {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 		@IOutputService private readonly outputService: IOutputService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IConfigurationService _configurationService: IConfigurationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
+		@IMenuService private readonly menuService: IMenuService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -209,14 +210,7 @@ export class WorkspacePicker extends Disposable {
 					// Workspace belongs to an unavailable remote — ignore selection
 					return;
 				}
-				if (item.remoteProvider && item.browseActionIndex === undefined) {
-					if (!item.remoteProvider.remoteAddress?.startsWith(TUNNEL_ADDRESS_PREFIX)) {
-						// Disconnected SSH host — show options menu after widget hides.
-						// (Disconnected tunnels are rendered as disabled with a
-						// refresh toolbar action, so onSelect doesn't fire for them.)
-						this._showRemoteHostOptionsDelayed(item.remoteProvider);
-					}
-				} else if (item.browseActionIndex !== undefined) {
+				if (item.browseActionIndex !== undefined) {
 					this._executeBrowseAction(item.browseActionIndex);
 				} else if (item.selection) {
 					this._selectProject(item.selection);
@@ -453,107 +447,78 @@ export class WorkspacePicker extends Disposable {
 			});
 		}
 
-		if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator && remoteProviders.length) {
-			items.push({ kind: ActionListItemKind.Separator, label: '' });
-		}
+		// "Manage" submenu: dynamic remote provider entries + menu-contributed actions
 
+		// Dynamic remote provider entries
+		const remoteProviderActions: IAction[] = [];
 		for (const provider of remoteProviders) {
 			const status = provider.connectionStatus!.get();
-			const isConnected = status === RemoteAgentHostConnectionStatus.Connected;
-			const providerBrowseIndex = allBrowseActions.findIndex(a => a.providerId === provider.id);
 			const isTunnel = provider.remoteAddress?.startsWith(TUNNEL_ADDRESS_PREFIX);
-
-			const toolbarActions: IAction[] = [];
-
-			if (isTunnel) {
-				// Offline/connecting tunnels: surface a refresh button that
-				// attempts to (re)connect in case the cached status is stale.
-				if (!isConnected && providerBrowseIndex >= 0) {
-					const browseIndex = providerBrowseIndex;
-					toolbarActions.push(toAction({
-						id: `workspacePicker.remote.refresh.${provider.id}`,
-						label: localize('workspacePicker.refreshTunnel', "Attempt to Connect"),
-						class: ThemeIcon.asClassName(Codicon.refresh),
-						run: () => {
-							this.actionWidgetService.hide();
-							this._executeBrowseAction(browseIndex);
-						},
-					}));
-				}
-			} else {
-				// Gear menu only for SSH hosts, not tunnel providers
-				toolbarActions.push(toAction({
-					id: `workspacePicker.remote.gear.${provider.id}`,
-					label: localize('workspacePicker.remoteOptions', "Options"),
-					class: ThemeIcon.asClassName(Codicon.gear),
-					run: () => {
-						this.actionWidgetService.hide();
-						this._showRemoteHostOptionsDelayed(provider);
-					},
-				}));
-			}
-
-			items.push({
-				kind: ActionListItemKind.Action,
+			const action = toAction({
+				id: `workspacePicker.remote.${provider.id}`,
 				label: provider.label,
-				description: this._getStatusDescription(status),
-				hover: { content: this._getStatusHover(status, provider.remoteAddress) },
-				group: { title: '', icon: isTunnel ? Codicon.cloud : Codicon.remote },
-				disabled: !isConnected,
-				item: {
-					browseActionIndex: isConnected && providerBrowseIndex >= 0 ? providerBrowseIndex : undefined,
-					remoteProvider: provider,
+				tooltip: this._getStatusLabel(status),
+				enabled: true,
+				run: () => {
+					this.actionWidgetService.hide();
+					this._showRemoteHostOptionsDelayed(provider);
 				},
-				toolbarActions,
 			});
+			const extended = action as IAction & { icon?: ThemeIcon; hoverContent?: string };
+			extended.icon = isTunnel ? Codicon.cloud : Codicon.remote;
+			extended.hoverContent = this._getStatusHover(status, provider.remoteAddress);
+			remoteProviderActions.push(action);
 		}
 
-		// "Tunnels..." and "SSH..." entries — shown when remote agent hosts are enabled
-		if (this.configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId)) {
+		// Menu-contributed actions (e.g. Tunnels..., SSH...)
+		const menuContributedActions: IAction[] = [];
+		const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
+		for (const [, actions] of menuActions) {
+			for (const menuAction of actions) {
+				if (menuAction instanceof MenuItemAction) {
+					const icon = ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
+					menuContributedActions.push(Object.assign(menuAction, { icon }));
+				}
+			}
+		}
+
+		// Build submenu groups — each SubmenuAction becomes a visual group with
+		// automatic separators between them.
+		const manageSubmenuActions: SubmenuAction[] = [];
+		if (remoteProviderActions.length > 0) {
+			manageSubmenuActions.push(new SubmenuAction('workspacePicker.manage.remotes', '', remoteProviderActions));
+		}
+		if (menuContributedActions.length > 0) {
+			manageSubmenuActions.push(new SubmenuAction('workspacePicker.manage.menu', '', menuContributedActions));
+		}
+
+		if (manageSubmenuActions.length > 0) {
 			if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator) {
 				items.push({ kind: ActionListItemKind.Separator, label: '' });
 			}
 			items.push({
 				kind: ActionListItemKind.Action,
-				label: localize('workspacePicker.tunnels', "Tunnels..."),
-				group: { title: '', icon: Codicon.cloud },
-				item: { commandId: 'workbench.action.sessions.connectViaTunnel' },
+				label: localize('workspacePicker.manage', "Manage..."),
+				group: { title: '', icon: Codicon.settingsGear },
+				item: {},
+				submenuActions: manageSubmenuActions,
 			});
-			if (isNative) {
-				items.push({
-					kind: ActionListItemKind.Action,
-					label: localize('workspacePicker.ssh', "SSH..."),
-					group: { title: '', icon: Codicon.remote },
-					item: { commandId: 'workbench.action.sessions.connectViaSSH' },
-				});
-			}
 		}
 
 		return items;
 	}
 
-	/**
-	 * Returns a short status indicator with a colored circle icon for the description field.
-	 */
-	private _getStatusDescription(status: RemoteAgentHostConnectionStatus): MarkdownString {
-		const md = new MarkdownString(undefined, { supportThemeIcons: true });
+	private _getStatusLabel(status: RemoteAgentHostConnectionStatus): string {
 		switch (status) {
 			case RemoteAgentHostConnectionStatus.Connected:
-				md.appendText(localize('workspacePicker.statusOnline', "Online"));
-				break;
+				return localize('workspacePicker.statusOnline', "Online");
 			case RemoteAgentHostConnectionStatus.Connecting:
-				md.appendText(localize('workspacePicker.statusConnecting', "Connecting"));
-				break;
+				return localize('workspacePicker.statusConnecting', "Connecting");
 			case RemoteAgentHostConnectionStatus.Disconnected:
-				md.appendText(localize('workspacePicker.statusOffline', "Offline"));
-				break;
+				return localize('workspacePicker.statusOffline', "Offline");
 		}
-		return md;
 	}
 
-	/**
-	 * Returns detailed hover text for a remote host's connection status.
-	 */
 	private _getStatusHover(status: RemoteAgentHostConnectionStatus, address?: string): string {
 		switch (status) {
 			case RemoteAgentHostConnectionStatus.Connected:
@@ -566,8 +531,8 @@ export class WorkspacePicker extends Disposable {
 					: localize('workspacePicker.hoverConnecting', "Attempting to connect to remote agent host...");
 			case RemoteAgentHostConnectionStatus.Disconnected:
 				return address
-					? localize('workspacePicker.hoverDisconnectedAddr', "Remote agent host is disconnected. Click the gear icon for options.\n\nAddress: {0}", address)
-					: localize('workspacePicker.hoverDisconnected', "Remote agent host is disconnected. Click the gear icon for options.");
+					? localize('workspacePicker.hoverDisconnectedAddr', "Remote agent host is disconnected.\n\nAddress: {0}", address)
+					: localize('workspacePicker.hoverDisconnected', "Remote agent host is disconnected.");
 		}
 	}
 
