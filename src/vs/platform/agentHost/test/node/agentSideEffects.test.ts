@@ -770,6 +770,64 @@ suite('AgentSideEffects', () => {
 		});
 	});
 
+	// ---- onDidCustomizationsChange integration --------------------------
+
+	suite('onDidCustomizationsChange', () => {
+
+		test('republishes agent info and session customizations when agent fires onDidCustomizationsChange', async () => {
+			disposables.add(sideEffects.registerProgressListener(agent));
+			setupSession('file:///workspace');
+
+			const customization = { uri: 'file:///plugin-b', displayName: 'Plugin B' };
+			agent.customizations = [customization];
+			agent.getSessionCustomizations = async () => [{
+				customization,
+				source: SessionCustomizationSource.Host,
+				enabled: true,
+				status: CustomizationStatus.Loaded,
+			}];
+
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			agent.fireCustomizationsChange();
+			await new Promise(resolve => setTimeout(resolve, 10));
+
+			const agentInfoAction = envelopes.find(e => e.action.type === ActionType.RootAgentsChanged);
+			assert.ok(agentInfoAction && hasKey(agentInfoAction.action, { agents: true }));
+			assert.deepStrictEqual(agentInfoAction.action.agents[0]?.customizations, [customization]);
+
+			const sessionCustomizationAction = envelopes.find(e => e.action.type === ActionType.SessionCustomizationsChanged);
+			assert.ok(sessionCustomizationAction && hasKey(sessionCustomizationAction.action, { customizations: true }));
+			assert.deepStrictEqual(sessionCustomizationAction.action.customizations, [{
+				customization,
+				source: SessionCustomizationSource.Host,
+				enabled: true,
+				status: CustomizationStatus.Loaded,
+			}]);
+		});
+
+		test('does not republish when registerProgressListener is disposed', async () => {
+			const listener = sideEffects.registerProgressListener(agent);
+			setupSession('file:///workspace');
+
+			agent.customizations = [{ uri: 'file:///plugin-c', displayName: 'Plugin C' }];
+
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			listener.dispose();
+			agent.fireCustomizationsChange();
+			await new Promise(resolve => setTimeout(resolve, 10));
+
+			assert.strictEqual(
+				envelopes.filter(e => e.action.type === ActionType.SessionCustomizationsChanged).length,
+				0,
+				'should not republish session customizations after listener disposed',
+			);
+		});
+	});
+
 	// ---- handleAction: session/customizationToggled ---------------------
 
 	suite('handleAction — session/customizationToggled', () => {
