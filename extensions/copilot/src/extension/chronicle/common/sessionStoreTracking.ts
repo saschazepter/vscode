@@ -14,6 +14,7 @@ const FILE_TRACKING_TOOLS = new Set([
 	'multi_replace_string_in_file',
 	'insert_edit_into_file',
 	'create_file',
+	'create_directory',
 	'edit_notebook_file',
 	'apply_patch',
 	'read_file',
@@ -38,8 +39,9 @@ export function extractFilePath(toolName: string, toolArgs: unknown): string | u
 	if (typeof toolArgs !== 'object' || toolArgs === null) { return undefined; }
 	const args = toolArgs as Record<string, unknown>;
 
-	// VS Code tools use 'filePath', CLI tools use 'path', list_dir uses 'path'
-	const filePath = args.filePath ?? args.path;
+	// VS Code tools use 'filePath', CLI tools use 'path', list_dir uses 'path',
+	// create_directory uses 'dirPath'
+	const filePath = args.filePath ?? args.path ?? args.dirPath;
 	if (typeof filePath === 'string') { return filePath; }
 
 	// multi_replace_string_in_file stores filePath in each replacement item

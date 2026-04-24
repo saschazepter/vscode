@@ -47,6 +47,11 @@ describe('extractFilePath', () => {
 			.toBe('/src');
 	});
 
+	it('extracts dirPath from create_directory', () => {
+		expect(extractFilePath('create_directory', { dirPath: '/src/new-dir' }))
+			.toBe('/src/new-dir');
+	});
+
 	it('extracts file path from apply_patch input text', () => {
 		const input = '*** Begin Patch\n*** Update File: /src/hello.ts\n@@class Foo\n-  bar\n+  baz\n*** End Patch';
 		expect(extractFilePath('apply_patch', { input }))
