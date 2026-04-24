@@ -81,7 +81,6 @@ export class ChronicleIntent implements IIntent {
 	/** Stashed system prompt for tool-calling subcommands (tips, free-form). */
 	private _pendingSystemPrompt: string | undefined;
 
-	/** Whether the cloud sync suggestion has already been shown this session. */
 	async handleRequest(
 		conversation: Conversation,
 		request: vscode.ChatRequest,

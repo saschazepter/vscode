@@ -132,6 +132,38 @@ export class CloudSessionApiClient {
 	}
 
 	/**
+	 * Delete a session from the cloud.
+	 * Returns 'deleted' if queued for deletion (202), 'not_found' if the session
+	 * doesn't exist in the cloud (404, treated as success), or 'error' on failure.
+	 */
+	async deleteSession(sessionId: string): Promise<'deleted' | 'not_found' | 'error'> {
+		try {
+			const { url, headers } = await this._buildRequest('/agents/analytics/delete');
+			if (!url) {
+				return 'error';
+			}
+
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.cloudDeleteSession',
+				method: 'POST',
+				headers,
+				json: { session_id: sessionId },
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+
+			if (res.status === 202) {
+				return 'deleted';
+			}
+			if (res.status === 404) {
+				return 'not_found';
+			}
+			return 'error';
+		} catch {
+			return 'error';
+		}
+	}
+
+	/**
 	 * Build the full URL and auth headers for a cloud API request.
 	 */
 	private async _buildRequest(path: string): Promise<{ url: string | undefined; headers: Record<string, string> }> {

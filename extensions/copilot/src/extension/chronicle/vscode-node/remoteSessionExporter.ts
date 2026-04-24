@@ -3,9 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
+import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
@@ -93,6 +95,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/** User's session indexing preference (resolved once per repo). */
 	private readonly _indexingPreference: SessionIndexingPreference;
 
+	/** Whether the session sync suggestion notification has been shown. */
+	private _syncSuggestionShown = false;
+
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
@@ -104,6 +109,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IExperimentationService private readonly _expService: IExperimentationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IFetcherService private readonly _fetcherService: IFetcherService,
+		@ISessionStore private readonly _sessionStore: ISessionStore,
 	) {
 		super();
 
@@ -114,6 +120,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			resetTimeoutMs: 1_000,
 			maxResetTimeoutMs: 30_000,
 		});
+
+		// Register delete cloud sessions command
+		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.deleteSessions', () => this._deleteCloudSessions()));
 
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
@@ -128,6 +137,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const localEnabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled) ? localEnabledNew.read(reader) : localEnabledOld.read(reader);
 			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
 			if (!localEnabled || !cloudEnabled) {
+				// Suggest session sync when local index is on but sync is off
+				if (localEnabled && !cloudEnabled) {
+					this._suggestSessionSync();
+				}
 				return;
 			}
 
@@ -162,6 +175,102 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		this._initializingSessions.clear();
 
 		super.dispose();
+	}
+
+	// ── Session sync suggestion ──────────────────────────────────────────────────
+
+	private _suggestSessionSync(): void {
+		if (this._syncSuggestionShown) {
+			return;
+		}
+		this._syncSuggestionShown = true;
+
+		vscode.window.showInformationMessage(
+			vscode.l10n.t('Session sync is available for richer cross-device Copilot session history.'),
+			vscode.l10n.t('Enable'),
+			vscode.l10n.t('Don\'t Show Again'),
+		).then(choice => {
+			if (choice === vscode.l10n.t('Enable')) {
+				vscode.workspace.getConfiguration('chat').update('sessionSync.enabled', true, vscode.ConfigurationTarget.Global);
+			}
+		});
+	}
+
+	// ── Delete cloud sessions (Command Palette) ─────────────────────────────────
+
+	private async _deleteCloudSessions(): Promise<void> {
+		// Query local SQLite store for sessions with their first user message as label
+		const rows = this._sessionStore.executeReadOnlyFallback(
+			`SELECT s.id, s.repository, s.created_at,
+				(SELECT user_message FROM turns WHERE session_id = s.id ORDER BY turn_index LIMIT 1) as first_message
+			FROM sessions s ORDER BY s.updated_at DESC LIMIT 100`
+		) as Array<{ id: string; repository?: string; created_at?: string; first_message?: string }>;
+
+		if (rows.length === 0) {
+			vscode.window.showInformationMessage(vscode.l10n.t('No sessions found.'));
+			return;
+		}
+
+		// Build Quick Pick items
+		type SessionQuickPickItem = vscode.QuickPickItem & { sessionId: string };
+		const sessionItems: SessionQuickPickItem[] = rows.map(row => {
+			const label = row.first_message
+				? row.first_message.length > 60 ? row.first_message.substring(0, 60) + '...' : row.first_message
+				: row.id.substring(0, 8);
+			const description = [
+				row.repository,
+				row.created_at ? new Date(row.created_at).toLocaleDateString() : undefined,
+			].filter(Boolean).join(' · ');
+			return { label, description, sessionId: row.id };
+		});
+
+		const picked = await vscode.window.showQuickPick(sessionItems, {
+			title: vscode.l10n.t('Delete Cloud Session Data'),
+			placeHolder: vscode.l10n.t('Select sessions to delete from the cloud (or select all with Ctrl+A)'),
+			canPickMany: true,
+		});
+
+		if (!picked || picked.length === 0) {
+			return;
+		}
+
+		const sessionsToDelete = picked.map(p => rows.find(r => r.id === p.sessionId)!).filter(Boolean);
+
+		// Confirmation
+		const confirm = await vscode.window.showWarningMessage(
+			vscode.l10n.t('Delete {0} session(s) from the cloud? This cannot be undone.', sessionsToDelete.length),
+			{ modal: true },
+			vscode.l10n.t('Delete'),
+		);
+
+		if (confirm !== vscode.l10n.t('Delete')) {
+			return;
+		}
+
+		// Execute deletions
+		let deleted = 0;
+		let notFound = 0;
+		let errors = 0;
+
+		await vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Deleting cloud sessions...') },
+			async () => {
+				for (const session of sessionsToDelete) {
+					const result = await this._cloudClient.deleteSession(session.id);
+					switch (result) {
+						case 'deleted': deleted++; break;
+						case 'not_found': notFound++; break;
+						case 'error': errors++; break;
+					}
+				}
+			},
+		);
+
+		if (errors > 0) {
+			vscode.window.showWarningMessage(vscode.l10n.t('Deleted {0}, not found {1}, errors {2}.', deleted, notFound, errors));
+		} else {
+			vscode.window.showInformationMessage(vscode.l10n.t('{0} session(s) deleted from the cloud.', deleted) + (notFound > 0 ? ' ' + vscode.l10n.t('{0} not found in cloud (local-only or already deleted).', notFound) : ''));
+		}
 	}
 
 	// ── Span handling ────────────────────────────────────────────────────────────
