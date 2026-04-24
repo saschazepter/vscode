@@ -5,36 +5,27 @@
 
 import * as l10n from '@vscode/l10n';
 import type * as vscode from 'vscode';
-import { ChatFetchResponseType } from '../../../platform/chat/common/commonTypes';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
 import { TextDocumentSnapshot } from '../../../platform/editing/common/textDocumentSnapshot';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
 import { FileType } from '../../../platform/filesystem/common/fileTypes';
-import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
-import { IRequestLogger } from '../../../platform/requestLogger/common/requestLogger';
-import { getCurrentCapturingToken } from '../../../platform/requestLogger/node/requestLogger';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
-import { ChatResponseStreamImpl } from '../../../util/common/chatResponseStreamImpl';
 import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
 import { isString } from '../../../util/vs/base/common/types';
 import { URI } from '../../../util/vs/base/common/uri';
-import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
-import { ChatResponseNotebookEditPart, ChatResponseTextEditPart, ChatToolInvocationPart, ExtendedLanguageModelToolResult, LanguageModelTextPart, MarkdownString } from '../../../vscodeTypes';
+import { ExtendedLanguageModelToolResult, LanguageModelTextPart, MarkdownString } from '../../../vscodeTypes';
 import { isCustomizationsIndex } from '../../prompt/common/chatVariablesCollection';
-import { Conversation, Turn } from '../../prompt/common/conversation';
 import { IBuildPromptContext } from '../../prompt/common/intents';
-import { SkillSubagentToolCallingLoop } from '../../prompt/node/skillSubagentToolCallingLoop';
 import { ToolName } from '../common/toolNames';
 import { CopilotToolMode, ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
+import { IToolsService } from '../common/toolsService';
 import { formatUriForFileWidget } from '../common/toolUtils';
 
 export interface ILoadSkillParams {
 	/** The skill name. E.g., "commit", "review-pr", or "pdf" */
 	skill: string;
 }
-
-const DEFAULT_SKILL_SUBAGENT_TOOL_CALL_LIMIT = 10;
 
 /** Maximum number of related files to list in skill context */
 const MAX_RELATED_FILES = 50;
@@ -52,10 +43,10 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IRequestLogger private readonly requestLogger: IRequestLogger,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@ICustomInstructionsService private readonly customInstructionsService: ICustomInstructionsService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
+		@IToolsService private readonly toolsService: IToolsService,
 	) { }
 
 	async invoke(options: vscode.LanguageModelToolInvocationOptions<ILoadSkillParams>, token: vscode.CancellationToken) {
@@ -103,66 +94,47 @@ ${skillContent}
 	}
 
 	private async invokeFork(skillContent: string, uri: URI, options: vscode.LanguageModelToolInvocationOptions<ILoadSkillParams>, token: vscode.CancellationToken) {
-		if (!this._inputContext) {
-			throw new Error('LoadSkillTool: _inputContext is not set. Ensure resolveInput is called before invoke.');
-		}
-
 		const skillInfo = this.customInstructionsService.getSkillInfo(uri);
 		const skillLabel = skillInfo?.skillName ?? options.input.skill;
 
 		// Use the user's original message as the task for the subagent
-		const userMessage = this._inputContext.conversation?.turns[0]?.request.message;
+		const userMessage = this._inputContext?.conversation?.turns[0]?.request.message;
 		const query = userMessage ?? `Run the ${skillLabel} skill`;
 
-		const request = this._inputContext.request!;
-		const parentSessionId = this._inputContext.conversation?.sessionId ?? generateUuid();
-		const subAgentInvocationId = generateUuid();
+		// Embed skill instructions in the prompt for the subagent
+		const prompt = `You have been loaded with the following skill instructions. Follow them carefully to complete the task.
 
-		const loop = this.instantiationService.createInstance(SkillSubagentToolCallingLoop, {
-			toolCallLimit: DEFAULT_SKILL_SUBAGENT_TOOL_CALL_LIMIT,
-			conversation: new Conversation(parentSessionId, [new Turn(generateUuid(), { type: 'user', message: query })]),
-			request,
-			location: request.location,
-			promptText: query,
-			skillInstructions: skillContent,
-			subAgentInvocationId,
-			parentToolCallId: options.chatStreamToolCallId,
-		});
+<skill_instructions>
+${skillContent}
+</skill_instructions>
 
-		const stream = this._inputContext?.stream && ChatResponseStreamImpl.filter(
-			this._inputContext.stream,
-			part => part instanceof ChatToolInvocationPart || part instanceof ChatResponseTextEditPart || part instanceof ChatResponseNotebookEditPart
-		);
+Task: ${query}`;
 
-		const parentChatSessionId = getCurrentCapturingToken()?.chatSessionId;
-		const skillSubagentToken = new CapturingToken(
-			`Skill: ${skillLabel}`,
-			'skill',
-			subAgentInvocationId,
-			'skill',
-			subAgentInvocationId,
-			parentChatSessionId,
-			'skillSubagent',
-		);
+		// Delegate to the runSubagent tool which goes through the full VS Code chat
+		// pipeline (automatic instructions, hooks, model resolution, nesting depth, etc.)
+		const subagentResult = await this.toolsService.invokeTool(ToolName.CoreRunSubagent, {
+			...options,
+			input: {
+				prompt,
+				description: `Skill: ${skillLabel}`,
+			},
+		}, token);
 
-		const loopResult = await this.requestLogger.captureInvocation(skillSubagentToken, () => loop.run(stream, token));
-
-		const toolMetadata = {
-			skill: options.input.skill,
-			skillUri: uri.toString(),
-			subAgentInvocationId,
-			agentName: 'skill'
-		};
-
-		let subagentResponse = '';
-		if (loopResult.response.type === ChatFetchResponseType.Success) {
-			subagentResponse = loopResult.toolCallRounds.at(-1)?.response ?? loopResult.round.response ?? '';
-		} else {
-			subagentResponse = `The skill subagent request failed with this message:\n${loopResult.response.type}: ${loopResult.response.reason}`;
+		// Extract text from the subagent result
+		const parts: string[] = [];
+		for (const part of subagentResult.content) {
+			if (part instanceof LanguageModelTextPart) {
+				parts.push(part.value);
+			}
 		}
+		const subagentResponse = parts.join('') || 'Skill completed with no output';
 
 		const result = new ExtendedLanguageModelToolResult([new LanguageModelTextPart(subagentResponse)]);
-		result.toolMetadata = toolMetadata;
+		result.toolMetadata = {
+			skill: options.input.skill,
+			skillUri: uri.toString(),
+			agentName: 'skill'
+		};
 		result.toolResultMessage = new MarkdownString(l10n.t`Skill complete: ${skillLabel}`);
 		return result;
 	}
