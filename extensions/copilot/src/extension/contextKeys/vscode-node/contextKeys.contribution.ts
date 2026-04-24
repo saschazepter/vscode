@@ -210,7 +210,17 @@ export class ContextKeysContribution extends Disposable {
 	}
 
 	private async _updateClientByokEnabledContext() {
-		commands.executeCommand('setContext', clientByokEnabledContextKey, true);
+		try {
+			const copilotToken = await this._authenticationService.getCopilotToken();
+			// When signed in, respect enterprise BYOK policy:
+			// internal and individual users always have BYOK enabled,
+			// managed (enterprise/business) users require explicit org enablement.
+			const byokEnabled = copilotToken.isInternal || copilotToken.isIndividual || copilotToken.isClientBYOKEnabled();
+			commands.executeCommand('setContext', clientByokEnabledContextKey, byokEnabled);
+		} catch (e) {
+			// When not signed in, BYOK is available by default
+			commands.executeCommand('setContext', clientByokEnabledContextKey, true);
+		}
 	}
 
 	private _updateShowLogViewContext() {
