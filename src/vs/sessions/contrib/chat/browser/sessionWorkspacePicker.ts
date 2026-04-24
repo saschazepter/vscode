@@ -8,7 +8,8 @@ import * as touch from '../../../../base/browser/touch.js';
 import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { disposableTimeout } from '../../../../base/common/async.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -784,12 +785,11 @@ export class WorkspacePicker extends Disposable {
 		// Safety net: if the connection hasn't succeeded by the grace period,
 		// fall back. Catches the case where the provider's status flips before
 		// our autorun subscribes (so we never observe a transition).
-		const handle = setTimeout(() => {
+		disposableTimeout(() => {
 			if (connStatus.get() !== RemoteAgentHostConnectionStatus.Connected) {
 				fallback();
 			}
-		}, RESTORE_CONNECT_GRACE_MS);
-		store.add(toDisposable(() => clearTimeout(handle)));
+		}, RESTORE_CONNECT_GRACE_MS, store);
 	}
 
 	/**
