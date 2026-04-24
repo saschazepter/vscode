@@ -274,6 +274,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			}));
 		}
 
+		// Content changed — recompute scroll dimensions.
 		this.scrollable.scanDomNode();
 	}
 

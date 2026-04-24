@@ -5,6 +5,7 @@
 
 /* The DomScrollableElement wrapper fills the welcome page host */
 .ai-customization-management-editor .welcome-prompts-scrollable {
+	position: relative;
 	width: 100%;
 	height: 100%;
 }
