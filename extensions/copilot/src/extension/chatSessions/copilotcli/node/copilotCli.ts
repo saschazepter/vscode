@@ -377,7 +377,7 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 			});
 		}
 
-		return this._agentsPromise.then(infos => infos.map(i => ({ agent: this.cloneAgent(i.agent), sourceUri: i.sourceUri })));
+		return this._agentsPromise.then(infos => infos.map(i => ({ agent: this.cloneAgent(i.agent), sourceUri: i.sourceUri, extensionId: i.extensionId })));
 	}
 
 	async getAgentsImpl(): Promise<readonly CLIAgentInfo[]> {
