@@ -98,9 +98,17 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 		private readonly _rootConfigResource?: URI,
 	) {
 		super();
+		// Merge our customization schema/values into the existing root config
+		// (which already carries platform properties like permissions) rather
+		// than replacing it.
+		const existing = this._stateManager.rootState.config;
+		const ownSchema = agentHostCustomizationConfigSchema.toProtocol();
 		this._stateManager.rootState.config = {
-			schema: agentHostCustomizationConfigSchema.toProtocol(),
-			values: this._loadPersistedRootConfig(),
+			schema: {
+				type: 'object',
+				properties: { ...existing?.schema.properties, ...ownSchema.properties },
+			},
+			values: { ...existing?.values, ...this._loadPersistedRootConfig() },
 		};
 	}
 
