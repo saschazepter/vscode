@@ -13,7 +13,6 @@ import { IWorkspaceService } from '../../../platform/workspace/common/workspaceS
 import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
 import { isString } from '../../../util/vs/base/common/types';
 import { URI } from '../../../util/vs/base/common/uri';
-import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { ExtendedLanguageModelToolResult, LanguageModelTextPart, MarkdownString } from '../../../vscodeTypes';
 import { isCustomizationsIndex } from '../../prompt/common/chatVariablesCollection';
 import { IBuildPromptContext } from '../../prompt/common/intents';
@@ -42,7 +41,6 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 	private _inputContext: IBuildPromptContext | undefined;
 
 	constructor(
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWorkspaceService private readonly workspaceService: IWorkspaceService,
 		@ICustomInstructionsService private readonly customInstructionsService: ICustomInstructionsService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
