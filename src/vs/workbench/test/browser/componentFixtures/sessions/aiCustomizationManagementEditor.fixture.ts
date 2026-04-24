@@ -45,6 +45,7 @@ import { ContributionEnablementState } from '../../../../contrib/chat/common/ena
 import { AICustomizationManagementEditorInput } from '../../../../contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 import { IConfigurationService, IConfigurationValue } from '../../../../../platform/configuration/common/configuration.js';
 import { mcpAccessConfig, McpAccessValue } from '../../../../../platform/mcp/common/mcpManagement.js';
+import { McpServerType } from '../../../../../platform/mcp/common/mcpPlatformTypes.js';
 import { ChatConfiguration } from '../../../../contrib/chat/common/constants.js';
 import { IMcpWorkbenchService, IWorkbenchMcpServer, IMcpService, McpServerInstallState } from '../../../../contrib/mcp/common/mcpTypes.js';
 import { IMcpRegistry } from '../../../../contrib/mcp/common/mcpRegistryTypes.js';
@@ -200,12 +201,13 @@ function createMockHarnessService(activeHarnessId: string, descriptors: readonly
 	}();
 }
 
-function makeLocalMcpServer(id: string, label: string, scope: LocalMcpServerScope, description?: string): IWorkbenchMcpServer {
+function makeLocalMcpServer(id: string, label: string, scope: LocalMcpServerScope, description?: string, config?: IWorkbenchMcpServer['config']): IWorkbenchMcpServer {
 	return new class extends mock<IWorkbenchMcpServer>() {
 		override readonly id = id;
 		override readonly name = id;
 		override readonly label = label;
 		override readonly description = description ?? '';
+		override readonly config = config;
 		override readonly installState = McpServerInstallState.Installed;
 		override readonly local = new class extends mock<IWorkbenchLocalMcpServer>() {
 			override readonly id = id;
@@ -327,6 +329,17 @@ const agentInstructions: IAgentInstructionFile[] = [
 ];
 
 const mcpWorkspaceServers = [
+	makeLocalMcpServer(
+		'component-explorer',
+		'component-explorer',
+		LocalMcpServerScope.Workspace,
+		'Component fixtures and screenshot tooling',
+		{
+			type: McpServerType.LOCAL,
+			command: 'npm',
+			args: ['exec', '--no', '--', 'component-explorer', 'mcp', '-p', './test/componentFixtures/component-explorer.json', '--use-daemon', '-vv'],
+		}
+	),
 	makeLocalMcpServer('mcp-postgres', 'PostgreSQL', LocalMcpServerScope.Workspace, 'Database access'),
 	makeLocalMcpServer('mcp-github', 'GitHub', LocalMcpServerScope.Workspace, 'GitHub API'),
 	makeLocalMcpServer('mcp-redis', 'Redis', LocalMcpServerScope.Workspace, 'In-memory data store'),
@@ -580,7 +593,7 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 	if (options.openFirstItem) {
 		const visibleContent = [...ctx.container.querySelectorAll('.prompts-content-container, .mcp-content-container, .plugin-content-container')]
 			.find(node => node instanceof HTMLElement && node.style.display !== 'none') as HTMLElement | undefined;
-		const firstRow = visibleContent?.querySelector('.monaco-list-row') as HTMLElement | undefined;
+		const firstRow = visibleContent?.querySelector('.monaco-list-row.ai-customization-list-item, .monaco-list-row.mcp-server-item') as HTMLElement | undefined;
 		if (firstRow) {
 			firstRow.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
 			firstRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
@@ -1183,6 +1196,19 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 		}),
 	}),
 
+	// MCP server detail view in a narrow viewport — catches embedded header overflow
+	// and the single-tab configuration layout used by local workspace servers.
+	McpServerDetailNarrow: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			harnessId: SessionType.Local,
+			selectedSection: AICustomizationManagementSection.McpServers,
+			openFirstItem: true,
+			width: 550,
+			height: 400,
+		}),
+	}),
+
 	// Plugin detail view — same alignment check for the detail back button.
 	PluginDetail: defineComponentFixture({
 		labels: { kind: 'screenshot' },
@@ -1190,6 +1216,17 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 			harnessId: SessionType.Local,
 			selectedSection: AICustomizationManagementSection.Plugins,
 			openFirstItem: true,
+		}),
+	}),
+
+	PluginDetailNarrow: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			harnessId: SessionType.Local,
+			selectedSection: AICustomizationManagementSection.Plugins,
+			openFirstItem: true,
+			width: 550,
+			height: 400,
 		}),
 	}),
 });

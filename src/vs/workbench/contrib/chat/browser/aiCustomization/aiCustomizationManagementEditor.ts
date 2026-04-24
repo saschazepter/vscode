@@ -76,13 +76,11 @@ import { INotificationService } from '../../../../../platform/notification/commo
 import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { Action } from '../../../../../base/common/actions.js';
-import { McpServerEditorInput } from '../../../mcp/browser/mcpServerEditorInput.js';
-import { McpServerEditor } from '../../../mcp/browser/mcpServerEditor.js';
 import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IWorkbenchMcpServer } from '../../../mcp/common/mcpTypes.js';
-import { AgentPluginEditor } from '../agentPluginEditor/agentPluginEditor.js';
-import { AgentPluginEditorInput } from '../agentPluginEditor/agentPluginEditorInput.js';
 import { IAgentPluginItem } from '../agentPluginEditor/agentPluginItems.js';
+import { EmbeddedMcpServerDetail } from './embeddedMcpServerDetail.js';
+import { EmbeddedAgentPluginDetail } from './embeddedAgentPluginDetail.js';
 import { ICustomizationHarnessService, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
@@ -294,12 +292,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	// Embedded MCP server detail view
 	private mcpDetailContainer: HTMLElement | undefined;
-	private embeddedMcpEditor: McpServerEditor | undefined;
+	private embeddedMcpDetail: EmbeddedMcpServerDetail | undefined;
 	private readonly mcpDetailDisposables = this._register(new DisposableStore());
 
 	// Embedded plugin detail view
 	private pluginDetailContainer: HTMLElement | undefined;
-	private embeddedPluginEditor: AgentPluginEditor | undefined;
+	private embeddedPluginDetail: EmbeddedAgentPluginDetail | undefined;
 	private readonly pluginDetailDisposables = this._register(new DisposableStore());
 	/** Section to restore when navigating back from plugin detail (when opened from a non-plugin section). */
 	private pluginDetailReturnSection: AICustomizationManagementSection | undefined;
@@ -457,14 +455,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 						const padding = 24;
 						this.embeddedEditor.layout({ width: Math.max(0, width - padding), height: Math.max(0, height - editorHeaderHeight - padding) });
 					}
-					if (this.viewMode === 'mcpDetail' && this.embeddedMcpEditor) {
-						const backHeaderHeight = 40;
-						this.embeddedMcpEditor.layout(new DOM.Dimension(width, Math.max(0, height - backHeaderHeight)));
-					}
-					if (this.viewMode === 'pluginDetail' && this.embeddedPluginEditor) {
-						const backHeaderHeight = 40;
-						this.embeddedPluginEditor.layout(new DOM.Dimension(width, Math.max(0, height - backHeaderHeight)));
-					}
+					// Embedded MCP/plugin detail panes use a plain DOM widget that flows with
+					// the container; no explicit layout call is needed here.
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -1946,32 +1938,22 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.goBackFromMcpDetail();
 		}));
 
-		// Container for the MCP server editor
-		const editorContainer = DOM.append(this.mcpDetailContainer, $('.mcp-detail-editor-container'));
+		// Container for the compact MCP detail component
+		const detailBody = DOM.append(this.mcpDetailContainer, $('.mcp-detail-editor-container'));
 
-		// Create the embedded MCP server editor pane
-		this.embeddedMcpEditor = this.editorDisposables.add(this.instantiationService.createInstance(McpServerEditor, this.group));
-		this.embeddedMcpEditor.create(editorContainer);
+		this.embeddedMcpDetail = this.editorDisposables.add(this.instantiationService.createInstance(EmbeddedMcpServerDetail, detailBody));
 	}
 
 	private async showEmbeddedMcpDetail(server: IWorkbenchMcpServer): Promise<void> {
-		if (!this.embeddedMcpEditor) {
+		if (!this.embeddedMcpDetail) {
 			return;
 		}
 
 		this.viewMode = 'mcpDetail';
 		this.updateContentVisibility();
 
-		const input = this.instantiationService.createInstance(McpServerEditorInput, server);
 		this.mcpDetailDisposables.clear();
-		this.mcpDetailDisposables.add(input);
-
-		try {
-			await this.embeddedMcpEditor.setInput(input, undefined, {}, CancellationToken.None);
-		} catch {
-			this.goBackFromMcpDetail();
-			return;
-		}
+		this.embeddedMcpDetail.setInput(server);
 
 		if (this.dimension) {
 			this.layout(this.dimension);
@@ -1980,7 +1962,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private goBackFromMcpDetail(): void {
 		this.mcpDetailDisposables.clear();
-		this.embeddedMcpEditor?.clearInput();
+		this.embeddedMcpDetail?.clearInput();
 		this.viewMode = 'list';
 		this.updateContentVisibility();
 
@@ -2010,32 +1992,22 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.goBackFromPluginDetail();
 		}));
 
-		// Container for the plugin editor
-		const editorContainer = DOM.append(this.pluginDetailContainer, $('.plugin-detail-editor-container'));
+		// Container for the compact plugin detail component
+		const detailBody = DOM.append(this.pluginDetailContainer, $('.plugin-detail-editor-container'));
 
-		// Create the embedded plugin editor pane
-		this.embeddedPluginEditor = this.editorDisposables.add(this.instantiationService.createInstance(AgentPluginEditor, this.group));
-		this.embeddedPluginEditor.create(editorContainer);
+		this.embeddedPluginDetail = this.editorDisposables.add(this.instantiationService.createInstance(EmbeddedAgentPluginDetail, detailBody));
 	}
 
 	private async showEmbeddedPluginDetail(item: IAgentPluginItem): Promise<void> {
-		if (!this.embeddedPluginEditor) {
+		if (!this.embeddedPluginDetail) {
 			return;
 		}
 
 		this.viewMode = 'pluginDetail';
 		this.updateContentVisibility();
 
-		const input = new AgentPluginEditorInput(item);
 		this.pluginDetailDisposables.clear();
-		this.pluginDetailDisposables.add(input);
-
-		try {
-			await this.embeddedPluginEditor.setInput(input, undefined, {}, CancellationToken.None);
-		} catch {
-			this.goBackFromPluginDetail();
-			return;
-		}
+		this.embeddedPluginDetail.setInput(item);
 
 		if (this.dimension) {
 			this.layout(this.dimension);
@@ -2055,7 +2027,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private goBackFromPluginDetail(): void {
 		this.pluginDetailDisposables.clear();
-		this.embeddedPluginEditor?.clearInput();
+		this.embeddedPluginDetail?.clearInput();
 
 		const returnSection = this.pluginDetailReturnSection;
 		this.pluginDetailReturnSection = undefined;
