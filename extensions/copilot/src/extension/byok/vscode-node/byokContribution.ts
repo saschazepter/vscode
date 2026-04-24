@@ -72,15 +72,27 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 
 		// Update context key when language models change (e.g., model configured/removed)
 		this._register(lm.onDidChangeChatModels(() => {
-			this._updateHasByokModelsContext();
+			void this._updateHasByokModelsContext().catch(err => {
+				this._logService.error('BYOK: Failed to update BYOK models context.', err);
+			});
 		}));
 	}
 
 	async _updateHasByokModelsContext(): Promise<void> {
-		const byokVendors = new Set(this._providers.keys());
-		const models = await lm.selectChatModels();
-		const hasModels = models.some(model => byokVendors.has(model.vendor));
-		commands.executeCommand('setContext', hasByokModelsContextKey, hasModels);
+		try {
+			let hasModels = false;
+			for (const vendor of this._providers.keys()) {
+				const models = await lm.selectChatModels({ vendor });
+				if (models.length > 0) {
+					hasModels = true;
+					break;
+				}
+			}
+			commands.executeCommand('setContext', hasByokModelsContextKey, hasModels);
+		} catch (err) {
+			this._logService.error('BYOK: Failed to update BYOK models context.', err);
+			commands.executeCommand('setContext', hasByokModelsContextKey, false);
+		}
 	}
 
 	private async fetchKnownModelList(fetcherService: IFetcherService): Promise<Record<string, BYOKKnownModels>> {
