@@ -111,6 +111,10 @@ export class AgentService extends Disposable implements IAgentService {
 			getAgent: session => this._findProviderForSession(session),
 			sessionDataService: this._sessionDataService,
 			agents: this._agents,
+			onTurnComplete: session => {
+				const workingDirStr = this._stateManager.getSessionState(session)?.summary.workingDirectory;
+				this._attachGitState(URI.parse(session), workingDirStr ? URI.parse(workingDirStr) : undefined);
+			},
 		}));
 
 		// Terminal management — the terminal manager listens to the state

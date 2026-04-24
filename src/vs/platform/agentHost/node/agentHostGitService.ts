@@ -23,8 +23,8 @@ export interface IAgentHostGitService {
 	/**
 	 * Computes the {@link ISessionGitState} for the working directory by
 	 * shelling out to `git`. Returns undefined if the directory is not a
-	 * git work tree. Results are cached briefly per working directory to
-	 * absorb back-to-back `listSessions` calls.
+	 * git work tree. Called on session open and after each turn completes
+	 * so the UI always reflects current branch/remote/change state.
 	 */
 	getSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined>;
 }
@@ -114,55 +114,8 @@ export class AgentHostGitService implements IAgentHostGitService {
 		await this._runGit(repositoryRoot, ['worktree', 'remove', '--force', worktree.fsPath], { timeout: 30_000, throwOnError: true });
 	}
 
-	/**
-	 * Cached results of {@link getSessionGitState}, keyed by working
-	 * directory fsPath. Each entry carries the timestamp when it was
-	 * computed; entries older than {@link AgentHostGitService._GIT_STATE_TTL_MS}
-	 * are recomputed on the next access. The cache also coalesces concurrent
-	 * callers onto the same in-flight promise.
-	 *
-	 * The cache is bounded to {@link AgentHostGitService._GIT_STATE_CACHE_MAX}
-	 * entries. Stale entries are pruned opportunistically on each insertion.
-	 */
-	private readonly _gitStateCache = new Map<string, { computedAt: number; promise: Promise<ISessionGitState | undefined> }>();
-	private static readonly _GIT_STATE_TTL_MS = 5_000;
-	private static readonly _GIT_STATE_CACHE_MAX = 256;
-
 	async getSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
-		const key = workingDirectory.fsPath;
-		const cached = this._gitStateCache.get(key);
-		const now = Date.now();
-		if (cached && (now - cached.computedAt) < AgentHostGitService._GIT_STATE_TTL_MS) {
-			return cached.promise;
-		}
-		this._pruneGitStateCache(now);
-		const entry = { computedAt: now, promise: this._computeSessionGitState(workingDirectory) };
-		this._gitStateCache.set(key, entry);
-		// On rejection, evict so the next call retries. (Computation never throws,
-		// but be defensive.)
-		entry.promise.catch(() => {
-			if (this._gitStateCache.get(key) === entry) {
-				this._gitStateCache.delete(key);
-			}
-		});
-		return entry.promise;
-	}
-
-	private _pruneGitStateCache(now: number): void {
-		// Remove all entries past TTL.
-		for (const [key, entry] of this._gitStateCache) {
-			if (now - entry.computedAt > AgentHostGitService._GIT_STATE_TTL_MS) {
-				this._gitStateCache.delete(key);
-			}
-		}
-		// If still over the cap, evict oldest entries first.
-		if (this._gitStateCache.size >= AgentHostGitService._GIT_STATE_CACHE_MAX) {
-			const sorted = [...this._gitStateCache.entries()].sort((a, b) => a[1].computedAt - b[1].computedAt);
-			const excess = this._gitStateCache.size - AgentHostGitService._GIT_STATE_CACHE_MAX + 1;
-			for (let i = 0; i < excess; i++) {
-				this._gitStateCache.delete(sorted[i][0]);
-			}
-		}
+		return this._computeSessionGitState(workingDirectory);
 	}
 
 	private async _computeSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
