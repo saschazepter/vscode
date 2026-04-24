@@ -19,7 +19,6 @@ import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/a
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { fillInActionBarActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
-import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { SideBarVisibleContext } from '../../../../workbench/common/contextkeys.js';
@@ -313,7 +312,7 @@ export class MobileTitlebarPart extends Disposable {
 		image.src = avatarUrl;
 	}
 
-	// --- Account Panel --- //
+	// --- Account Sheet --- //
 
 	private showAccountPanel(): void {
 		if (this.isAccountMenuVisible) {
@@ -326,15 +325,14 @@ export class MobileTitlebarPart extends Disposable {
 		const panelStore = new DisposableStore();
 		this.accountPanelDisposable.value = panelStore;
 
-		const currentState = getAccountTitleBarState({
+		const badgeKey = getAccountTitleBarBadgeKey(getAccountTitleBarState({
 			isAccountLoading: this.isAccountLoading,
 			accountName: this.accountName,
 			accountProviderLabel: this.accountProviderLabel,
 			entitlement: this.chatEntitlementService.entitlement,
 			sentiment: this.chatEntitlementService.sentiment,
 			quotas: this.chatEntitlementService.quotas,
-		});
-		const badgeKey = getAccountTitleBarBadgeKey(currentState);
+		}));
 		if (badgeKey) {
 			this.dismissedBadgeKey = badgeKey;
 		}
@@ -348,84 +346,51 @@ export class MobileTitlebarPart extends Disposable {
 			}
 		});
 
-		// Backdrop — covers the screen behind the panel to catch taps outside.
-		// Appended inside the workbench container so that existing
-		// .agent-sessions-workbench .sessions-account-titlebar-panel-* CSS applies.
+		const closeSheet = () => this.accountPanelDisposable.clear();
+
+		// Full-screen sheet inside the workbench container
 		const workbenchContainer = this.element.parentElement!;
-		const backdrop = append(workbenchContainer, $('div.mobile-account-panel-backdrop'));
-		panelStore.add(toDisposable(() => backdrop.remove()));
-		panelStore.add(addDisposableListener(backdrop, EventType.CLICK, () => {
-			this.accountPanelDisposable.clear();
-		}));
+		const sheet = append(workbenchContainer, $('div.mobile-account-sheet'));
+		panelStore.add(toDisposable(() => sheet.remove()));
 
-		// Panel — positioned below the top bar, right-aligned
-		const panelContent = this.createPanelContent(panelStore);
-		panelContent.classList.add('mobile-account-panel-dropdown');
-		append(backdrop, panelContent);
-	}
+		// Header: title + close button
+		const header = append(sheet, $('div.mobile-account-sheet-header'));
+		const headerTitle = append(header, $('h2.mobile-account-sheet-title'));
+		headerTitle.textContent = localize('mobileAccount.title', "Account");
+		const closeButton = append(header, $('button.mobile-account-sheet-close', { type: 'button' })) as HTMLButtonElement;
+		closeButton.setAttribute('aria-label', localize('mobileAccount.close', "Close"));
+		append(closeButton, $('span')).classList.add(...ThemeIcon.asClassNameArray(Codicon.close));
+		panelStore.add(addDisposableListener(closeButton, EventType.CLICK, closeSheet));
 
-	private createPanelContent(panelStore: DisposableStore): HTMLElement {
-		const panel = $('div.sessions-account-titlebar-panel');
+		// Scrollable content
+		const content = append(sheet, $('div.mobile-account-sheet-content'));
 
-		// Header
-		const headerSection = append(panel, $('.sessions-account-titlebar-panel-header'));
-		const title = append(headerSection, $('div.sessions-account-titlebar-panel-title'));
-		title.textContent = this.accountName
-			? localize('signedInAsHeader', "Signed in as {0}", this.accountName)
-			: this.isAccountLoading
-				? localize('loadingAccountHeader', "Loading Account...")
-				: localize('accountMenuHeaderFallback', "Account");
-
-		// Header action buttons (settings, sign-out)
-		const headerActions = this.getHeaderActions();
-		if (headerActions.length > 0) {
-			const headerActionsContainer = append(headerSection, $('.sessions-account-titlebar-panel-header-actions'));
-			for (const action of headerActions) {
-				const button = append(headerActionsContainer, $('button.sessions-account-titlebar-panel-header-action', { type: 'button' })) as HTMLButtonElement;
-				button.disabled = !action.enabled;
-				button.setAttribute('aria-label', action.tooltip || action.label);
-				button.title = action.tooltip || action.label;
-				button.classList.add(...ThemeIcon.asClassNameArray(this.getHeaderActionIcon(action)));
-				panelStore.add(addDisposableListener(button, EventType.CLICK, async event => {
-					event.preventDefault();
-					event.stopPropagation();
-					this.accountPanelDisposable.clear();
-					await Promise.resolve(action.run());
-				}));
+		// Profile section
+		const profile = append(content, $('div.mobile-account-sheet-profile'));
+		if (this.loadedAvatarUrl) {
+			const avatar = append(profile, $('img.mobile-account-sheet-avatar', { alt: '', draggable: 'false' })) as HTMLImageElement;
+			avatar.src = this.loadedAvatarUrl;
+			avatar.referrerPolicy = 'no-referrer';
+			avatar.decoding = 'async';
+		} else {
+			const avatarPlaceholder = append(profile, $('div.mobile-account-sheet-avatar-placeholder'));
+			append(avatarPlaceholder, $('span')).classList.add(...ThemeIcon.asClassNameArray(Codicon.account));
+		}
+		const profileInfo = append(profile, $('div.mobile-account-sheet-profile-info'));
+		if (this.isAccountLoading) {
+			append(profileInfo, $('div.mobile-account-sheet-name')).textContent = localize('mobileAccount.loading', "Loading...");
+		} else if (this.accountName) {
+			append(profileInfo, $('div.mobile-account-sheet-name')).textContent = this.accountName;
+			if (this.accountProviderLabel) {
+				append(profileInfo, $('div.mobile-account-sheet-provider')).textContent = this.accountProviderLabel;
 			}
+		} else {
+			append(profileInfo, $('div.mobile-account-sheet-name')).textContent = localize('mobileAccount.signedOut', "Not signed in");
 		}
 
-		// Menu actions
-		const actions = this.getPanelActions();
-		if (actions.length > 0) {
-			const actionsSection = append(panel, $('.sessions-account-titlebar-panel-actions'));
-			let lastWasSeparator = true;
-			for (const action of actions) {
-				if (action instanceof Separator) {
-					if (!lastWasSeparator) {
-						append(actionsSection, $('.sessions-account-titlebar-panel-separator'));
-						lastWasSeparator = true;
-					}
-					continue;
-				}
-				lastWasSeparator = false;
-				const button = append(actionsSection, $('button.sessions-account-titlebar-panel-action', { type: 'button' })) as HTMLButtonElement;
-				button.disabled = !action.enabled;
-				button.setAttribute('aria-label', action.tooltip || action.label);
-				button.classList.toggle('checked', !!action.checked);
-				append(button, ...renderLabelWithIcons(action.label));
-				panelStore.add(addDisposableListener(button, EventType.CLICK, async event => {
-					event.preventDefault();
-					event.stopPropagation();
-					this.accountPanelDisposable.clear();
-					await Promise.resolve(action.run());
-				}));
-			}
-		}
-
-		// Content: copilot dashboard or summary
-		const contentSection = append(panel, $('.sessions-account-titlebar-panel-content'));
+		// Copilot status dashboard — only when signed in
 		if (!this.chatEntitlementService.sentiment.hidden && !!this.accountName) {
+			const dashboardSection = append(content, $('div.mobile-account-sheet-section'));
 			const store = new DisposableStore();
 			this.copilotDashboardStore.value = store;
 			const dashboardElement = ChatStatusDashboard.instantiateInContents(this.instantiationService, store, {
@@ -439,34 +404,35 @@ export class MobileTitlebarPart extends Disposable {
 					store.dispose();
 				}
 			}, 2000));
-			append(contentSection, dashboardElement);
-		} else if (!this.isAccountLoading) {
-			const currentState = getAccountTitleBarState({
-				isAccountLoading: this.isAccountLoading,
-				accountName: this.accountName,
-				accountProviderLabel: this.accountProviderLabel,
-				entitlement: this.chatEntitlementService.entitlement,
-				sentiment: this.chatEntitlementService.sentiment,
-				quotas: this.chatEntitlementService.quotas,
-			});
-			const summary = append(contentSection, $('.sessions-account-titlebar-panel-summary'));
-			summary.textContent = currentState.ariaLabel;
+			append(dashboardSection, dashboardElement);
 		}
 
-		return panel;
+		// Actions list
+		const actionsSection = append(content, $('div.mobile-account-sheet-actions'));
+		const allActions = this.getSheetActions();
+		for (const action of allActions) {
+			if (action instanceof Separator) {
+				append(actionsSection, $('div.mobile-account-sheet-separator'));
+				continue;
+			}
+			const row = append(actionsSection, $('button.mobile-account-sheet-action', { type: 'button' })) as HTMLButtonElement;
+			row.disabled = !action.enabled;
+			row.setAttribute('aria-label', action.tooltip || action.label);
+			const icon = this.getActionIcon(action);
+			if (icon) {
+				append(row, $('span.mobile-account-sheet-action-icon')).classList.add(...ThemeIcon.asClassNameArray(icon));
+			}
+			append(row, $('span.mobile-account-sheet-action-label')).textContent = action.label;
+			panelStore.add(addDisposableListener(row, EventType.CLICK, async event => {
+				event.preventDefault();
+				event.stopPropagation();
+				closeSheet();
+				await Promise.resolve(action.run());
+			}));
+		}
 	}
 
-	private getHeaderActions(): IAction[] {
-		const menu = this.menuService.createMenu(Menus.AccountMenu, this.contextKeyService);
-		const rawActions: IAction[] = [];
-		fillInActionBarActions(menu.getActions(), rawActions);
-		menu.dispose();
-		const settingsAction = rawActions.find(a => !(a instanceof Separator) && a.id === 'workbench.action.openSettings');
-		const signOutAction = rawActions.find(a => !(a instanceof Separator) && a.id === 'workbench.action.agenticSignOut');
-		return [settingsAction, signOutAction].filter((a): a is IAction => !!a);
-	}
-
-	private getPanelActions(): IAction[] {
+	private getSheetActions(): IAction[] {
 		const menu = this.menuService.createMenu(Menus.AccountMenu, this.contextKeyService);
 		const rawActions: IAction[] = [];
 		fillInActionBarActions(menu.getActions(), rawActions);
@@ -478,17 +444,16 @@ export class MobileTitlebarPart extends Disposable {
 			if (this.isAccountLoading && action.id === 'workbench.action.agenticSignIn') {
 				return false;
 			}
-			return action.id !== 'workbench.action.agenticSignOut'
-				&& action.id !== 'workbench.action.openSettings'
-				&& !action.id.startsWith('update.');
+			return !action.id.startsWith('update.');
 		});
 	}
 
-	private getHeaderActionIcon(action: IAction): ThemeIcon {
+	private getActionIcon(action: IAction): ThemeIcon | undefined {
 		switch (action.id) {
 			case 'workbench.action.openSettings': return Codicon.settingsGear;
 			case 'workbench.action.agenticSignOut': return Codicon.signOut;
-			default: return Codicon.circleLargeFilled;
+			case 'workbench.action.agenticSignIn': return Codicon.signIn;
+			default: return undefined;
 		}
 	}
 }
