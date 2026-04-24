@@ -247,6 +247,15 @@ export interface ISessionCapabilities {
 export interface ISessionWorkspaceBrowseAction {
 	/** Display label for the browse action. */
 	readonly label: string;
+	/** Optional description shown alongside the label in the workspace picker. */
+	readonly description?: string;
+	/**
+	 * Optional non-localized group key used to merge actions in the workspace picker.
+	 * Actions sharing the same group key are combined into a single picker entry
+	 * with a submenu. The first action's label is used as the display text for
+	 * the merged entry (e.g. "Folders").
+	 */
+	readonly group?: string;
 	/** Icon for the browse action. */
 	readonly icon: ThemeIcon;
 	/** The provider that owns this action. */
