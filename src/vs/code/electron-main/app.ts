@@ -246,10 +246,18 @@ export class CodeApplication extends Disposable {
 		// To keep repeated recordings responsive we cache the real sources and
 		// invalidate the cache whenever display topology changes.
 		let cachedScreenSources: Electron.DesktopCapturerSource[] | undefined;
-		const invalidateScreenSourceCache = () => { cachedScreenSources = undefined; };
+		const warmUpScreenSources = () => {
+			desktopCapturer.getSources({
+				types: ['screen'],
+				thumbnailSize: { width: 0, height: 0 },
+			}).then(sources => { cachedScreenSources = sources; }).catch(() => { /* best-effort */ });
+		};
+		const invalidateScreenSourceCache = () => { cachedScreenSources = undefined; warmUpScreenSources(); };
 		electronScreen.on('display-added', invalidateScreenSourceCache);
 		electronScreen.on('display-removed', invalidateScreenSourceCache);
 		electronScreen.on('display-metrics-changed', invalidateScreenSourceCache);
+		// Pre-warm the cache so the first recording doesn't block on DXGI enumeration
+		warmUpScreenSources();
 		session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
 			try {
 				const frame = request.frame;
