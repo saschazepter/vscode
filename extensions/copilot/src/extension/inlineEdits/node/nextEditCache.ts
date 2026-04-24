@@ -128,6 +128,7 @@ export class NextEditCache extends Disposable {
 		return {
 			absorbSubsequenceTyping: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsAbsorbSubsequenceTyping, this._expService),
 			reverseAgreement: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, this._expService),
+			maxImperfectAgreementLength: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsMaxImperfectAgreementLength, this._expService),
 		};
 	}
 

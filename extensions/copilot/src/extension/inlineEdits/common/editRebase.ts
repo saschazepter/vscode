@@ -30,6 +30,13 @@ export interface NesRebaseConfigs {
 	 * rebased suggestion.
 	 */
 	readonly reverseAgreement?: boolean;
+	/**
+	 * Maximum length (in characters) of an imperfect agreement that is still
+	 * accepted during a strict rebase. When the base new-text is longer than
+	 * this value and it does not start at the exact predicted offset, the
+	 * rebase is considered a miss. Defaults to {@link maxImperfectAgreementLength}.
+	 */
+	readonly maxImperfectAgreementLength: number;
 }
 
 export class EditDataWithIndex implements IEditData<EditDataWithIndex> {
@@ -45,7 +52,7 @@ export class EditDataWithIndex implements IEditData<EditDataWithIndex> {
 	}
 }
 
-export function tryRebase(originalDocument: string, editWindow: OffsetRange | undefined, originalEdits: readonly StringReplacement[], detailedEdits: AnnotatedStringReplacement<EditDataWithIndex>[][], userEditSince: StringEdit, currentDocumentContent: string, currentSelection: readonly OffsetRange[], resolution: 'strict' | 'lenient', logger: ILogger, nesConfigs: NesRebaseConfigs = {}): { rebasedEdit: StringReplacement; rebasedEditIndex: number }[] | 'outsideEditWindow' | 'rebaseFailed' | 'error' | 'inconsistentEdits' {
+export function tryRebase(originalDocument: string, editWindow: OffsetRange | undefined, originalEdits: readonly StringReplacement[], detailedEdits: AnnotatedStringReplacement<EditDataWithIndex>[][], userEditSince: StringEdit, currentDocumentContent: string, currentSelection: readonly OffsetRange[], resolution: 'strict' | 'lenient', logger: ILogger, nesConfigs: NesRebaseConfigs = { maxImperfectAgreementLength }): { rebasedEdit: StringReplacement; rebasedEditIndex: number }[] | 'outsideEditWindow' | 'rebaseFailed' | 'error' | 'inconsistentEdits' {
 	const start = Date.now();
 	try {
 		return _tryRebase(originalDocument, editWindow, originalEdits, detailedEdits, userEditSince, currentDocumentContent, currentSelection, resolution, logger, nesConfigs);
@@ -133,7 +140,7 @@ export function checkEditConsistency(original: string, edit: StringEdit, current
 	return consistent;
 }
 
-export function tryRebaseStringEdits<T extends IEditData<T>>(content: string, ours: StringEdit, base: StringEdit, resolution: 'strict' | 'lenient', nesConfigs: NesRebaseConfigs = {}): StringEdit | undefined {
+export function tryRebaseStringEdits<T extends IEditData<T>>(content: string, ours: StringEdit, base: StringEdit, resolution: 'strict' | 'lenient', nesConfigs: NesRebaseConfigs = { maxImperfectAgreementLength }): StringEdit | undefined {
 	return tryRebaseEdits(content, ours.mapData(r => new VoidEditData()), base, resolution, nesConfigs)?.toStringEdit();
 }
 
@@ -237,7 +244,7 @@ function tryRebaseEdits<T extends IEditData<T>>(content: string, ours: Annotated
 						const j = baseEdit.newText.indexOf(effectiveText, baseNewTextOffset);
 						const strictRejected = j !== -1 && resolution === 'strict' && (
 							j - baseNewTextOffset > maxAgreementOffset ||
-							(j - baseNewTextOffset > 0 && effectiveText.length > maxImperfectAgreementLength)
+							(j - baseNewTextOffset > 0 && effectiveText.length > nesConfigs.maxImperfectAgreementLength)
 						);
 
 						if (j !== -1 && !strictRejected) {
@@ -347,7 +354,7 @@ function agreementIndexOf<T extends IEditData<T>>(content: string, ourE: Annotat
 	const j = ourE.newText.indexOf(baseE.newText, ourNewTextOffset);
 	const strictRejected = j !== -1 && resolution === 'strict' && (
 		j > maxAgreementOffset ||
-		(j > 0 && baseE.newText.length > maxImperfectAgreementLength)
+		(j > 0 && baseE.newText.length > nesConfigs.maxImperfectAgreementLength)
 	);
 	if (j !== -1 && !strictRejected) {
 		return j + baseE.newText.length;
