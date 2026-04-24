@@ -280,6 +280,8 @@ export interface CLIAgentInfo {
 	readonly sourceUri: URI;
 	/** The contributing extension identifier, when the agent came from a VS Code extension. */
 	readonly extensionId?: string;
+	/** The contributing plugin URI, when the agent came from a plugin. */
+	readonly pluginUri?: URI;
 }
 
 export interface ICopilotCLIAgents {

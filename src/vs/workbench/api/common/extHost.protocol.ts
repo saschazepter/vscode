@@ -1739,6 +1739,7 @@ export interface IChatSessionCustomizationItemDto {
 	readonly description?: string;
 	readonly groupKey?: string;
 	readonly badge?: string;
+
 	readonly badgeTooltip?: string;
 	readonly enabled?: boolean;
 	readonly enablementScope?: 'none' | 'global' | 'workspace';

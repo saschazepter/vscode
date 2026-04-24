@@ -467,124 +467,11 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			providerItems = await this.addSkillDescriptionFallbacks(providerItems);
 		}
 
-		// Track which items the provider explicitly marked with `storage` BEFORE
-		// normalization (which always infers a storage value from the URI). Items
-		// with explicit storage are "VS Code items" whose disablement is managed
-		// by promptsService; items without are "API items" whose disablement is
-		// managed by the enablementHandler.
-		const providerExplicitStorageUris = new ResourceSet(
-			providerItems.filter(i => i.storage !== undefined).map(i => i.uri),
-		);
-
 		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
-
-		// Overlay disabled state when:
-		// - VS Code items (explicit `storage` from provider): checked against
-		//   promptsService. External harnesses handle disablement via the provider's
-		//   `enabled` field, so the overlay only applies to the VS Code harness.
-		const vscodeDisabledUris = this.hasNativeItemProvider
-			? new ResourceSet()  // External harness — provider reports disabled state directly
-			: this.promptsService.getDisabledPromptFiles(promptType);
-		const hasDisabled = vscodeDisabledUris.size > 0;
-		if (hasDisabled) {
-			const existingUris = new ResourceSet(normalized.map(i => i.uri));
-			for (let i = 0; i < normalized.length; i++) {
-				if (normalized[i].disabled) {
-					continue;
-				}
-				// Items are VS Code-managed when:
-				// - The provider explicitly set `storage` on them
-				const isVSCodeItem = providerExplicitStorageUris.has(normalized[i].uri);
-				const isDisabled = isVSCodeItem
-					? vscodeDisabledUris.has(normalized[i].uri)
-					: false;
-				if (isDisabled) {
-					normalized[i] = { ...normalized[i], disabled: true };
-				}
-			}
-			// Ghost entries from all disabled sets for items not in the provider's results.
-			const allDisabledUris = new ResourceSet([
-				...vscodeDisabledUris,
-			]);
-			const missing = await this.resolveMissingDisabledItems(promptType, allDisabledUris, existingUris, vscodeDisabledUris);
-			normalized.push(...missing);
-		}
-
 		if (promptType === PromptsType.skill) {
 			return this.mergeBuiltinSkills(normalized, promptType);
 		}
 		return normalized;
-	}
-
-	/**
-	 * Resolves disabled items that are missing from the provider's results.
-	 * External providers (e.g. extension-contributed harness providers) may
-	 * not include disabled items at all. This method queries discovery info
-	 * and file listings to reconstruct them so they appear in the UI.
-	 *
-	 * Ghost items need an `enablementScope` so the Enable button is visible.
-	 * Items found in `vscodeDisabledUris` are VS Code-managed and get
-	 * `enablementScope: 'workspace'`. API-managed items get `enablementScope: 'global'`.
-	 */
-	private async resolveMissingDisabledItems(
-		promptType: PromptsType,
-		disabledUris: ResourceSet,
-		existingUris: ResourceSet,
-		vscodeDisabledUris: ResourceSet,
-	): Promise<IAICustomizationListItem[]> {
-		const missingItems: ICustomizationItem[] = [];
-		const resolvedUris = new ResourceSet();
-
-		try {
-			const discovery = await this.promptsService.getDiscoveryInfo(promptType, CancellationToken.None);
-			for (const file of discovery.files) {
-				if (disabledUris.has(file.promptPath.uri) && !existingUris.has(file.promptPath.uri)) {
-					resolvedUris.add(file.promptPath.uri);
-					let name: string;
-					if (file.promptPath.name) {
-						name = file.promptPath.name;
-					} else if (promptType === PromptsType.skill) {
-						name = basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri);
-					} else if (promptType === PromptsType.hook) {
-						name = getHookFileFriendlyName(file.promptPath.uri.path, file.promptPath.storage);
-					} else {
-						name = getFriendlyName(basename(file.promptPath.uri));
-					}
-					missingItems.push({
-						uri: file.promptPath.uri,
-						type: promptType,
-						name,
-						description: file.promptPath.description,
-						storage: file.promptPath.storage,
-						enabled: false,
-						enablementScope: vscodeDisabledUris.has(file.promptPath.uri) ? 'workspace' : 'global',
-					});
-				}
-			}
-		} catch { /* discovery info not available */ }
-
-		// Fallback for disabled URIs not found in discovery info
-		for (const uri of disabledUris) {
-			if (!existingUris.has(uri) && !resolvedUris.has(uri)) {
-				let name: string;
-				if (promptType === PromptsType.skill) {
-					name = basename(dirname(uri)) || basename(uri);
-				} else if (promptType === PromptsType.hook) {
-					name = getHookFileFriendlyName(uri.path);
-				} else {
-					name = getFriendlyName(basename(uri));
-				}
-				missingItems.push({
-					uri,
-					type: promptType,
-					name,
-					enabled: false,
-					enablementScope: vscodeDisabledUris.has(uri) ? 'workspace' : 'global',
-				});
-			}
-		}
-
-		return this.itemNormalizer.normalizeItems(missingItems, promptType);
 	}
 
 	/**
@@ -662,6 +549,8 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
 				badgeTooltip: uiTooltip,
 				enablementScope: 'workspace',
+				extensionId: undefined,
+				pluginUri: undefined
 			};
 			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
 		}
@@ -703,6 +592,8 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				groupKey: 'sync-local',
 				enabled: !disabledUris.has(file.uri),
 				enablementScope: 'workspace' as const,
+				extensionId: undefined,
+				pluginUri: undefined
 			}));
 
 		return this.itemNormalizer.normalizeItems(providerItems, promptType)

@@ -357,7 +357,9 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 						chatSessionContext,
 					}, token);
 
-					if (rpcResult?.errorCallstack) {
+					// Suppress expected operational errors (rate limiting, quota exceeded) from error telemetry
+					// to avoid noise in error reporting. See https://github.com/microsoft/vscode/issues/311582
+					if (rpcResult?.errorCallstack && !rpcResult.errorDetails?.isRateLimited && !rpcResult.errorDetails?.isQuotaExceeded) {
 						type ChatAgentErrorEvent = { callstack: string; msg: string; errorName: string; agent: string; agentExtensionId: string };
 						type ChatAgentErrorClassification = {
 							owner: 'bryanchen-d';
@@ -747,6 +749,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					enabled: item.enabled,
 					enablementScope: item.enablementScope,
 					pluginUri: item.pluginUri ? URI.revive(item.pluginUri) : undefined,
+					extensionId: undefined,
 				});
 				return items.map(i => convertItem(i));
 			},

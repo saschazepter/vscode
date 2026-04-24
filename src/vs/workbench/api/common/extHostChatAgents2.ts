@@ -843,7 +843,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				enabled: item.enabled,
 				enablementScope: item.enablementScope !== undefined ? ExtHostChatAgents2._enablementScopeMap[item.enablementScope] : undefined,
 				pluginUri: item.pluginUri,
-			});
+			} satisfies IChatSessionCustomizationItemDto);
 
 			return items.map(convertItem);
 		} catch (err) {

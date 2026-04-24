@@ -74,6 +74,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					name: agent.name,
 					description: agent.description,
 					storage: agent.source.storage,
+					extensionId: agent.source.storage === PromptsStorage.extension ? agent.source.extensionId.value : undefined,
+					pluginUri: agent.source.storage === PromptsStorage.plugin ? agent.source.pluginUri : undefined
 				});
 				if (agent.source.storage === PromptsStorage.extension && !extensionInfoByUri.has(agent.uri)) {
 					extensionInfoByUri.set(agent.uri, { id: agent.source.extensionId });
@@ -99,6 +101,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					storage: skill.storage,
 					badge: uiTooltip ? localize('uiIntegrationBadge', "UI Integration") : undefined,
 					badgeTooltip: uiTooltip,
+					extensionId: skill.extension?.identifier.value,
+					pluginUri: skill.pluginUri
 				});
 			}
 		} else if (promptType === PromptsType.prompt) {
@@ -113,6 +117,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					name: command.name,
 					description: command.description,
 					storage: command.storage,
+					extensionId: command.extension?.identifier.value,
+					pluginUri: command.pluginUri
 				});
 				if (command.extension) {
 					extensionInfoByUri.set(command.uri, { id: command.extension.identifier, displayName: command.extension.displayName });
@@ -140,6 +146,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				type: promptType,
 				name: f.name || getHookFileFriendlyName(f.uri.path, f.storage),
 				storage: f.storage,
+				extensionId: f.extension?.identifier.value,
+				pluginUri: f.pluginUri
 			});
 		}
 
@@ -166,6 +174,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 						description: `${agent.name}: ${truncatedCmd || localize('hookUnset', "(unset)")}`,
 						storage: agent.source.storage,
 						groupKey: 'agents',
+						extensionId: agent.source.storage === PromptsStorage.extension ? agent.source.extensionId.value : undefined,
+						pluginUri: agent.source.storage === PromptsStorage.plugin ? agent.source.pluginUri : undefined
 					});
 				}
 			}
@@ -191,10 +201,12 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 				name: filename,
 				storage,
 				groupKey: 'agent-instructions',
+				extensionId: undefined,
+				pluginUri: undefined
 			});
 		}
 
-		for (const { uri, pattern, name, description, storage } of instructionFiles) {
+		for (const { uri, pattern, name, description, storage, extension, pluginUri } of instructionFiles) {
 			if (agentInstructionUris.has(uri)) {
 				continue;
 			}
@@ -217,6 +229,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					description,
 					storage,
 					groupKey: 'context-instructions',
+					extensionId: extension?.identifier.value,
+					pluginUri
 				});
 			} else {
 				items.push({
@@ -226,6 +240,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 					description,
 					storage,
 					groupKey: 'on-demand-instructions',
+					extensionId: extension?.identifier.value,
+					pluginUri
 				});
 			}
 		}

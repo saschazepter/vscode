@@ -7,7 +7,6 @@ import { URI } from '../../../../../base/common/uri.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import { StorageScope } from '../../../../../platform/storage/common/storage.js';
 import {
-	CustomizationHarness,
 	CustomizationHarnessServiceBase,
 	ICustomizationEnablementHandler,
 	ICustomizationHarnessService,
@@ -16,6 +15,7 @@ import {
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { BUILTIN_STORAGE } from '../../common/aiCustomizationWorkspaceService.js';
+import { SessionType } from '../../common/chatSessionsService.js';
 
 /**
  * Enablement provider backed by promptsService (StorageService).
@@ -59,7 +59,8 @@ class CustomizationHarnessService extends CustomizationHarnessServiceBase {
 		const enablementHandler = createPromptsServiceEnablementHandler(promptsService);
 		super(
 			[createVSCodeHarnessDescriptor(localExtras, enablementHandler)],
-			CustomizationHarness.VSCode,
+			SessionType.Local,
+			promptsService,
 		);
 	}
 }

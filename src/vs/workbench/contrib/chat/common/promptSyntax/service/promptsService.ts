@@ -197,7 +197,6 @@ export interface IPluginPromptPath extends IPromptPathBase {
 export type IAgentSource = {
 	readonly storage: PromptsStorage.extension;
 	readonly extensionId: ExtensionIdentifier;
-	readonly type: PromptFileSource.ExtensionContribution | PromptFileSource.ExtensionAPI;
 } | {
 	readonly storage: PromptsStorage.local | PromptsStorage.user;
 } | {
