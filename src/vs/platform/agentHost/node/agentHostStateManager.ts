@@ -11,6 +11,8 @@ import { ActionType, NotificationType, ActionEnvelope, ActionOrigin, INotificati
 import type { IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { rootReducer, sessionReducer } from '../common/state/sessionReducers.js';
 import { createRootState, createSessionState, SessionLifecycle, type RootState, type SessionState, type SessionSummary, type Turn, type URI, ROOT_STATE_URI } from '../common/state/sessionState.js';
+import { IPermissionsValue, platformRootSchema } from '../common/agentHostSchema.js';
+import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 
 /**
  * Server-side state manager for the sessions process protocol.
@@ -46,6 +48,19 @@ export class AgentHostStateManager extends Disposable {
 	) {
 		super();
 		this._rootState = createRootState();
+		// Seed the host-level configuration schema + default values so that
+		// RootConfigChanged actions can merge into it, and clients see the
+		// schema immediately upon subscribing to `agenthost:/root`. See
+		// `platformRootSchema` for the set of platform-owned properties.
+		this._rootState = {
+			...this._rootState,
+			config: {
+				schema: platformRootSchema.toProtocol(),
+				values: platformRootSchema.validateOrDefault({}, {
+					[SessionConfigKey.Permissions]: { allow: [], deny: [] } satisfies IPermissionsValue,
+				}),
+			},
+		};
 	}
 	private readonly _log = (msg: string) => this._logService.warn(`[AgentHostStateManager] ${msg}`);
 
@@ -228,7 +243,7 @@ export class AgentHostStateManager extends Disposable {
 	 * The action is applied to state and emitted with the client's origin
 	 * so the originating client can reconcile.
 	 */
-	dispatchClientAction(action: SessionAction | TerminalAction, origin: ActionOrigin): unknown {
+	dispatchClientAction(action: RootAction | SessionAction | TerminalAction, origin: ActionOrigin): unknown {
 		return this._applyAndEmit(action, origin);
 	}
 
@@ -304,8 +319,6 @@ export class AgentHostStateManager extends Disposable {
 			if (current.project !== lastNotified.project) { changes.project = current.project; }
 			if (current.model !== lastNotified.model) { changes.model = current.model; }
 			if (current.workingDirectory !== lastNotified.workingDirectory) { changes.workingDirectory = current.workingDirectory; }
-			if (current.isRead !== lastNotified.isRead) { changes.isRead = current.isRead; }
-			if (current.isDone !== lastNotified.isDone) { changes.isDone = current.isDone; }
 			if (current.diffs !== lastNotified.diffs) { changes.diffs = current.diffs; }
 
 			this._lastNotifiedSummaries.set(session, current);
