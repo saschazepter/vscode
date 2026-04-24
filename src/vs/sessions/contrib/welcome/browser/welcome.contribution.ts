@@ -117,7 +117,7 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		if (isWeb) {
 			// On web, show the walkthrough if the user is not authenticated.
 			// Auth is handled by the walkthrough's GitHub button via
-			// IAuthenticationService. Discovery runs separately after auth.
+			// IDefaultAccountService. Discovery runs separately after auth.
 			this._checkWebAuth();
 			this._watchWebAuth();
 			return;
@@ -160,6 +160,11 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 	 * sign-out from the account menu), clear the welcome completion marker
 	 * and show the sign-in walkthrough again. Without this, passive sign-out
 	 * leaves the user on a seemingly-working workbench with a stale UI.
+	 *
+	 * Also watches for passive token expiry: when the entitlement becomes
+	 * {@link ChatEntitlement.Unknown} (e.g. 401 from entitlement endpoint)
+	 * the session may still exist in storage but be unusable. In that case,
+	 * clear the marker and re-show the walkthrough.
 	 */
 	private _watchWebAuth(): void {
 		this._register(this.authenticationService.onDidChangeSessions(async e => {
@@ -177,6 +182,30 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 			this.logService.info('[sessions welcome] GitHub session removed on web, re-showing walkthrough');
 			this.storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
 			this.showWalkthrough(false);
+		}));
+
+		// Watch for passive token expiry: entitlement flips to Unknown while
+		// the welcome completion marker is still set (session exists but is
+		// unusable). Only triggers after the user has previously completed
+		// sign-in — avoids firing during initial load.
+		let wasSignedIn = false;
+		this._register(autorun(reader => {
+			this.chatEntitlementService.entitlementObs.read(reader);
+			const entitlement = this.chatEntitlementService.entitlement;
+			if (entitlement !== ChatEntitlement.Unknown) {
+				wasSignedIn = true;
+				return;
+			}
+			if (!wasSignedIn) {
+				return;
+			}
+			const isCompleted = this.storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false);
+			if (!isCompleted) {
+				return;
+			}
+			this.logService.info('[sessions welcome] Entitlement became Unknown on web (token expired), re-showing walkthrough');
+			this.storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
+			this.showWalkthrough();
 		}));
 	}
 

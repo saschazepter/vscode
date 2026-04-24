@@ -13,6 +13,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { isWeb } from '../../../../base/common/platform.js';
+import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -75,6 +76,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	constructor(
 		container: HTMLElement,
 		private readonly _isFirstLaunch: boolean,
+		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -245,7 +247,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		this.currentFocusableElements = [...providerButtons, ...this.disclaimerLinks];
 
 		if (isWeb) {
-			// Web: GitHub button uses IAuthenticationService directly
+			// Web: GitHub button uses IDefaultAccountService for sign-in
 			stepDisposables.add(addDisposableListener(githubBtn, EventType.CLICK, () => this._runSignInWeb(
 				providerButtons,
 				errorContainer,
@@ -350,10 +352,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	}
 
 	/**
-	 * Web sign-in: uses IAuthenticationService to create a GitHub session.
-	 * On production vscode.dev this triggers an OAuth popup. On localhost
-	 * the embedder's env-contributed auth provider handles the flow
-	 * (e.g. device code).
+	 * Web sign-in: uses IDefaultAccountService to create a session with the
+	 * correct scopes from product config. On production vscode.dev this
+	 * triggers an OAuth popup. On localhost the embedder's env-contributed
+	 * auth provider handles the flow (e.g. device code).
 	 */
 	private async _runSignInWeb(providerButtons: HTMLButtonElement[], error: HTMLElement, titleEl: HTMLElement, subtitleEl: HTMLElement, signInActions: HTMLElement): Promise<void> {
 		await this._fadeToProgress(providerButtons, error, titleEl, subtitleEl, signInActions);
@@ -362,7 +364,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		}
 
 		try {
-			await this.authenticationService.createSession('github', ['repo', 'user:email', 'read:user'], { activateImmediate: true });
+			await this.defaultAccountService.signIn();
 			this.complete();
 		} catch (err) {
 			this.logService.error('[sessions walkthrough] Web sign-in failed:', err);
