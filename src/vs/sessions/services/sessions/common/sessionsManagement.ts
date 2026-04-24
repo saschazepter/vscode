@@ -106,7 +106,7 @@ export interface ISessionsManagementService {
 	 * Switch to the new-session view.
 	 * Also reveals the new-session editor in the chat editor part.
 	 */
-	openNewSessionView(): void;
+	openNewSessionView(): Promise<void>;
 
 	/**
 	 * Create a new session for the given workspace.
@@ -122,7 +122,7 @@ export interface ISessionsManagementService {
 	/**
 	 * Send a request, creating a new chat in the session.
 	 */
-	sendAndCreateChat(session: ISession, options: ISendRequestOptions): Promise<void>;
+	sendAndCreateChat(session: ISession, options: ISendRequestOptions): Promise<IChat | undefined>;
 
 	/**
 	 * Send a request for an existing chat within a session.

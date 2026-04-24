@@ -91,7 +91,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 					this._saveWorkingSet(previousSession.resource);
 				}
 
-				if (session?.status.read(undefined) === SessionStatus.Untitled) {
+				if (!session || session.status.read(undefined) === SessionStatus.Untitled) {
 					return;
 				}
 

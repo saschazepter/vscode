@@ -7,6 +7,7 @@ import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -17,6 +18,9 @@ import { EditorPane } from '../../../../workbench/browser/parts/editor/editorPan
 import { EditorInputCapabilities, IEditorOpenContext, IUntypedEditorInput } from '../../../../workbench/common/editor.js';
 import { EditorInput } from '../../../../workbench/common/editor/editorInput.js';
 import { IEditorGroup } from '../../../../workbench/services/editor/common/editorGroupsService.js';
+import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
+import { IChatEditorOptions } from '../../../../workbench/contrib/chat/browser/widgetHosts/editor/chatEditor.js';
+import { ChatEditorInput } from '../../../../workbench/contrib/chat/browser/widgetHosts/editor/chatEditorInput.js';
 import { NewChatWidget } from './newChatViewPane.js';
 
 export const NEW_CHAT_EDITOR_ID = 'workbench.editor.sessions.newChat';
@@ -75,6 +79,7 @@ export class NewChatEditor extends EditorPane {
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IEditorService private readonly editorService: IEditorService,
 	) {
 		super(NewChatEditor.ID, group, telemetryService, themeService, storageService);
 	}
@@ -82,7 +87,25 @@ export class NewChatEditor extends EditorPane {
 	protected override createEditor(parent: HTMLElement): void {
 		this.container = dom.append(parent, dom.$('.sessions-new-chat-editor'));
 		this.widget = this._register(this.instantiationService.createInstance(NewChatWidget));
+		this._register(this.widget.onDidCreateChat(chat => this.replaceWithChatEditor(chat.resource)));
 		this.widget.render(this.container);
+	}
+
+	private async replaceWithChatEditor(resource: URI): Promise<void> {
+		if (!(this.input instanceof NewChatEditorInput)) {
+			return;
+		}
+
+		await this.editorService.replaceEditors([{
+			editor: this.input,
+			replacement: {
+				resource,
+				options: {
+					override: ChatEditorInput.EditorID,
+					pinned: true,
+				} satisfies IChatEditorOptions,
+			}
+		}], this.group);
 	}
 
 	override async setInput(input: NewChatEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {

@@ -369,7 +369,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		return session;
 	}
 
-	async sendAndCreateChat(session: ISession, options: ISendRequestOptions): Promise<void> {
+	async sendAndCreateChat(session: ISession, options: ISendRequestOptions): Promise<IChat | undefined> {
 		this._pendingNewSession = undefined;
 		this.isNewChatSessionContext.set(false);
 		this._isNewChatInSessionContext.set(false);
@@ -400,8 +400,11 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			if (updatedSession.sessionId !== session.sessionId && this._activeSession.get()?.sessionId === session.sessionId) {
 				this.logService.info(`[SessionsManagement] sendAndCreateChat: active session replaced: ${session.sessionId} -> ${updatedSession.sessionId}`);
 				this.setActiveSession(updatedSession);
-				setActiveChatToLast();
 			}
+			if (this._activeSession.get()?.sessionId === updatedSession.sessionId && this._activeChatObservable) {
+				this._activeChatObservable.set(updatedSession.mainChat, undefined);
+			}
+			return updatedSession.mainChat;
 		} finally {
 			chatsListener.dispose();
 		}
@@ -429,7 +432,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		}
 	}
 
-	openNewSessionView(): void {
+	async openNewSessionView(): Promise<void> {
 		if (!this.isNewChatSessionContext.get()) {
 			// Restore the pending new session if one exists, so pickers
 			// re-derive their state from the still-alive session object.
@@ -439,12 +442,16 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			this._isNewChatInSessionContext.set(false);
 		}
 
-		this.openNewChatEditor();
+		await this.editorGroupsService.applyWorkingSet('empty', { preserveFocus: true });
+		await this.openNewChatEditor();
 	}
 
-	private openNewChatEditor(): void {
-		this.commandService.executeCommand(OPEN_NEW_CHAT_EDITOR_COMMAND_ID)
-			.catch(error => this.logService.error('Failed to open new chat editor:', error));
+	private async openNewChatEditor(): Promise<void> {
+		try {
+			await this.commandService.executeCommand(OPEN_NEW_CHAT_EDITOR_COMMAND_ID);
+		} catch (error) {
+			this.logService.error('Failed to open new chat editor:', error);
+		}
 	}
 
 	openNewChatInSession(session: ISession): void {

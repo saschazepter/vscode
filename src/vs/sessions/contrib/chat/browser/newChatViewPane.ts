@@ -6,6 +6,7 @@
 import './media/chatWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Emitter } from '../../../../base/common/event.js';
 import { derived } from '../../../../base/common/observable.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -21,7 +22,7 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { localize } from '../../../../nls.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { ISession } from '../../../services/sessions/common/session.js';
+import { IChat, ISession } from '../../../services/sessions/common/session.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
@@ -37,6 +38,8 @@ export class NewChatWidget extends Disposable {
 	private readonly _workspacePicker: WorkspacePicker;
 	private readonly _newChatInput: NewChatInputWidget;
 	private _session: ISession | undefined;
+	private readonly _onDidCreateChat = this._register(new Emitter<IChat>());
+	readonly onDidCreateChat = this._onDidCreateChat.event;
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -172,8 +175,11 @@ export class NewChatWidget extends Disposable {
 			return;
 		}
 		try {
-			await this.sessionsManagementService.sendAndCreateChat(session, { query, attachedContext });
+			const chat = await this.sessionsManagementService.sendAndCreateChat(session, { query, attachedContext });
 			this._session = this.sessionsManagementService.activeSession.get();
+			if (chat) {
+				this._onDidCreateChat.fire(chat);
+			}
 		} catch (e) {
 			this.logService.error('Failed to send request:', e);
 		}
