@@ -10,6 +10,7 @@ import { IRemoteAgentHostService, parseRemoteAgentHostInput, RemoteAgentHostEntr
 import { ISSHRemoteAgentHostService, SSHAuthMethod, type ISSHAgentHostConfig, type ISSHAgentHostConnection, type ISSHResolvedConfig } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
 import { ITunnelAgentHostService, TUNNEL_ADDRESS_PREFIX, type ITunnelInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -469,13 +470,17 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.sessions.connectViaSSH',
-			title: localize2('connectViaSSH', "SSH..."),
+			title: localize2('connectViaSSH', "Connect to Remote Agent Host via SSH"),
+			shortTitle: localize2('connectViaSSHShort', "SSH..."),
 			category: SessionsCategories.Sessions,
 			f1: true,
 			icon: Codicon.remote,
-			precondition: ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
+			precondition: ContextKeyExpr.and(
+				ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
+				IsWebContext.toNegated(),
+			),
 			menu: {
-				id: Menus.WorkspacePickerManage,
+				id: Menus.SessionWorkspaceManage,
 				order: 20,
 			},
 		});
@@ -653,13 +658,14 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.sessions.connectViaTunnel',
-			title: localize2('connectViaTunnel', "Tunnels..."),
+			title: localize2('connectViaTunnel', "Connect to Remote Agent Host via Dev Tunnel"),
+			shortTitle: localize2('connectViaTunnelShort', "Tunnels..."),
 			category: SessionsCategories.Sessions,
 			f1: true,
 			icon: Codicon.cloud,
 			precondition: ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
 			menu: {
-				id: Menus.WorkspacePickerManage,
+				id: Menus.SessionWorkspaceManage,
 				order: 10,
 			},
 		});

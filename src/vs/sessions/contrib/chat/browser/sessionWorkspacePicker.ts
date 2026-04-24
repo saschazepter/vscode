@@ -472,7 +472,7 @@ export class WorkspacePicker extends Disposable {
 
 		// Menu-contributed actions (e.g. Tunnels..., SSH...)
 		const menuContributedActions: IAction[] = [];
-		const menuActions = this.menuService.getMenuActions(Menus.WorkspacePickerManage, this.contextKeyService);
+		const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
 		for (const [, actions] of menuActions) {
 			for (const menuAction of actions) {
 				const icon = 'item' in menuAction && ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
