@@ -94,11 +94,20 @@ import '../workbench/services/browserView/electron-browser/playwrightWorkbenchSe
 import '../workbench/services/process/electron-browser/processService.js';
 import '../workbench/services/power/electron-browser/powerService.js';
 
-import { registerSingleton } from '../platform/instantiation/common/extensions.js';
+import { ILocalGitService } from '../platform/git/common/localGitService.js';
+import { InstantiationType, registerSingleton } from '../platform/instantiation/common/extensions.js';
+import { registerSharedProcessRemoteService } from '../platform/ipc/electron-browser/services.js';
+import { IPluginGitService } from '../workbench/contrib/chat/common/plugins/pluginGitService.js';
+import { NativePluginGitCommandService } from '../workbench/contrib/chat/electron-browser/pluginGitCommandService.js';
 import { IUserDataInitializationService, UserDataInitializationService } from '../workbench/services/userData/browser/userDataInit.js';
 import { SyncDescriptor } from '../platform/instantiation/common/descriptors.js';
 
 registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataInitializationService, [[]], true));
+
+// Override the browser PluginGitCommandService with the native one that always
+// runs git locally via the shared process.
+registerSingleton(IPluginGitService, NativePluginGitCommandService, InstantiationType.Delayed);
+registerSharedProcessRemoteService(ILocalGitService, 'localGit');
 
 
 //#endregion
