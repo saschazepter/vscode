@@ -6,9 +6,12 @@
 import * as l10n from '@vscode/l10n';
 import type * as vscode from 'vscode';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
+import { SKILL_FILENAME } from '../../../platform/customInstructions/common/promptTypes';
 import { TextDocumentSnapshot } from '../../../platform/editing/common/textDocumentSnapshot';
+import { IExtensionsService } from '../../../platform/extensions/common/extensionsService';
 import { IFileSystemService } from '../../../platform/filesystem/common/fileSystemService';
 import { FileType } from '../../../platform/filesystem/common/fileTypes';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
 import { isString } from '../../../util/vs/base/common/types';
@@ -20,6 +23,7 @@ import { ToolName } from '../common/toolNames';
 import { CopilotToolMode, ICopilotTool, ToolRegistry } from '../common/toolsRegistry';
 import { IToolsService } from '../common/toolsService';
 import { formatUriForFileWidget } from '../common/toolUtils';
+import { sendSkillContentReadTelemetry } from '../common/skillTelemetry';
 
 export interface ISkillParams {
 	/** The skill name. E.g., "commit", "review-pr", or "pdf" */
@@ -45,6 +49,8 @@ class SkillTool implements ICopilotTool<ISkillParams> {
 		@ICustomInstructionsService private readonly customInstructionsService: ICustomInstructionsService,
 		@IFileSystemService private readonly fileSystemService: IFileSystemService,
 		@IToolsService private readonly toolsService: IToolsService,
+		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@IExtensionsService private readonly extensionsService: IExtensionsService,
 	) { }
 
 	async invoke(options: vscode.LanguageModelToolInvocationOptions<ISkillParams>, token: vscode.CancellationToken) {
@@ -54,6 +60,12 @@ class SkillTool implements ICopilotTool<ISkillParams> {
 		const document = await this.workspaceService.openTextDocument(uri);
 		const snapshot = TextDocumentSnapshot.create(document);
 		const skillContent = snapshot.getText();
+
+		// Emit skill content read telemetry
+		const skillInfo = this.customInstructionsService.getSkillInfo(uri);
+		if (skillInfo) {
+			sendSkillContentReadTelemetry(this.telemetryService, this.customInstructionsService, this.extensionsService, uri, skillInfo, skillContent);
+		}
 
 		const mode = parseSkillContext(skillContent);
 
@@ -232,7 +244,7 @@ Task: ${query}`;
 				if (!SKILL_SKIP_DIRS.has(name)) {
 					await this.listRelatedFilesRecursive(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name), files, depth + 1);
 				}
-			} else if (type === FileType.File && name.toUpperCase() !== 'SKILL.MD') {
+			} else if (type === FileType.File && name.toUpperCase() !== SKILL_FILENAME.toUpperCase()) {
 				const relativePath = extUriBiasedIgnorePathCase.relativePath(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name));
 				if (relativePath) {
 					files.push(relativePath);
