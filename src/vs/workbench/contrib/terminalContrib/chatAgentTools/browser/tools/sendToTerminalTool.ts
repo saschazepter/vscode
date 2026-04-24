@@ -18,7 +18,7 @@ import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation,
 import { URI } from '../../../../../../base/common/uri.js';
 import { ITerminalChatService, ITerminalInstance, ITerminalService } from '../../../../terminal/browser/terminal.js';
 import { getOutput } from '../outputHelpers.js';
-import { buildCommandDisplayText, normalizeCommandForExecution } from '../runInTerminalHelpers.js';
+import { buildCommandDisplayText, isMultilineCommand, normalizeCommandForExecution } from '../runInTerminalHelpers.js';
 import { RunInTerminalTool } from './runInTerminalTool.js';
 import { isSessionAutoApproveLevel } from './terminalToolAutoApprove.js';
 import { TerminalToolId } from './toolIds.js';
@@ -350,7 +350,16 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		// Register a marker before sending so we can scope output to just the response
 		const startMarker = execution.instance.registerMarker?.();
 
-		await execution.instance.sendText(normalizeCommandForExecution(args.command), true);
+		if (isMultilineCommand(args.command)) {
+			// Multiline commands (e.g. heredocs) must preserve newlines and use
+			// bracketed paste mode so the shell treats the input as a single paste
+			// rather than executing each line independently. Intentionally skip
+			// normalizeCommandForExecution here so neither newlines nor the
+			// trailing/leading whitespace `.trim()` it performs are stripped.
+			await execution.instance.sendText(args.command, true, true);
+		} else {
+			await execution.instance.sendText(normalizeCommandForExecution(args.command), true);
+		}
 
 		let recentOutput: string;
 		if (args.waitForOutput) {
@@ -359,7 +368,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 			// the response arrives asynchronously after the input.
 			recentOutput = await this._waitForIdleOutput(execution, startMarker, token);
 		} else {
-			await timeout(2000);
+			await timeout(2000, token);
 			recentOutput = getOutput(execution.instance, startMarker ?? undefined, { lastNLines: 20 });
 		}
 
@@ -393,7 +402,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 
 		try {
 			while (!cts.token.isCancellationRequested && waited < maxWaitMs) {
-				await timeout(pollIntervalMs);
+				await timeout(pollIntervalMs, cts.token);
 				waited += pollIntervalMs;
 
 				const timeSinceLastData = Date.now() - lastDataTime;

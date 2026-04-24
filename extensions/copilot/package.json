@@ -1052,6 +1052,38 @@
 				}
 			},
 			{
+				"name": "copilot_githubTextSearch",
+				"legacyToolReferenceFullNames": [
+					"githubTextSearch"
+				],
+				"toolReferenceName": "githubTextSearch",
+				"displayName": "%github.copilot.tools.githubTextSearch.name%",
+				"modelDescription": "Lexically searches a GitHub repository or organization for files containing specific keywords or code patterns. Use this when looking for exact strings, function names, or identifiers in a GitHub repo or org. Unlike the semantic search tool, this uses keyword matching rather than meaning-based search.",
+				"userDescription": "%github.copilot.tools.githubTextSearch.userDescription%",
+				"icon": "$(search)",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"scope": {
+							"type": "string",
+							"description": "The GitHub scope to search. Use 'owner/repo' to search a single repository, or an org name (no slash) to search across an entire organization."
+						},
+						"query": {
+							"type": "string",
+							"description": "The keyword search query. Supports GitHub code search syntax such as 'language:typescript', 'extension:ts', 'path:src/', etc."
+						},
+						"maxResults": {
+							"type": "number",
+							"description": "Optional. The maximum number of search results to return. Defaults to 100."
+						}
+					},
+					"required": [
+						"scope",
+						"query"
+					]
+				}
+			},
+			{
 				"name": "copilot_switchAgent",
 				"toolReferenceName": "switchAgent",
 				"displayName": "%copilot.tools.switchAgent.name%",
@@ -1271,7 +1303,8 @@
 				"icon": "$(globe)",
 				"tools": [
 					"fetch",
-					"githubRepo"
+					"githubRepo",
+					"githubTextSearch"
 				]
 			}
 		],
@@ -1440,20 +1473,6 @@
 								"description": "Make changes to existing code",
 								"examples": [
 									"Change this method to use async/await"
-								]
-							}
-						]
-					},
-					{
-						"name": "doc",
-						"when": "!config.inlineChat.enableV2",
-						"description": "%copilot.workspace.doc.description%",
-						"disambiguation": [
-							{
-								"category": "doc",
-								"description": "Add documentation comment for this symbol",
-								"examples": [
-									"Add jsdoc to this method"
 								]
 							}
 						]
@@ -4249,16 +4268,6 @@
 							"experimental"
 						]
 					},
-					"github.copilot.chat.inlineChat.selectionRatioThreshold": {
-						"type": "number",
-						"default": 0,
-						"markdownDescription": "%github.copilot.config.inlineChat.selectionRatioThreshold%",
-						"tags": [
-							"advanced",
-							"experimental",
-							"onExp"
-						]
-					},
 					"github.copilot.chat.inlineChat.reasoningEffort": {
 						"type": "string",
 						"default": "low",
@@ -4644,7 +4653,7 @@
 					},
 					"github.copilot.chat.cli.lazyLoadSessionItem.enabled": {
 						"type": "boolean",
-						"default": false,
+						"default": true,
 						"markdownDescription": "%github.copilot.config.cli.lazyLoadSessionItem.enabled%",
 						"tags": [
 							"advanced"
@@ -6423,8 +6432,9 @@
 		"watch:tsc-extension-web": "tsc --noEmit --watch --project tsconfig.worker.json",
 		"watch:tsc-simulation-workbench": "tsc --noEmit --watch --project test/simulation/workbench/tsconfig.json",
 		"typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project test/simulation/workbench/tsconfig.json && tsc --noEmit --project tsconfig.worker.json && tsc --noEmit --project src/extension/completions-core/vscode-node/extension/src/copilotPanel/webView/tsconfig.json",
+		"lint": "eslint . --max-warnings=0",
+		"lint-staged": "eslint --max-warnings=0",
 		"tsfmt": "npx tsfmt -r --verify",
-		"lint": "npx eslint .",
 		"test": "npm-run-all test:*",
 		"test:extension": "vscode-test",
 		"test:sanity": "vscode-test --sanity",
@@ -6498,10 +6508,17 @@
 		"dotenv": "^17.2.0",
 		"electron": "^39.8.5",
 		"esbuild": "0.27.2",
+		"eslint": "^9.30.0",
+		"eslint-import-resolver-typescript": "^4.4.4",
+		"eslint-plugin-header": "^3.1.1",
+		"eslint-plugin-import": "^2.32.0",
+		"eslint-plugin-jsdoc": "^51.3.4",
+		"eslint-plugin-no-only-tests": "^3.3.0",
 		"fastq": "^1.19.1",
 		"glob": "^11.1.0",
 		"js-yaml": "^4.1.1",
 		"keyv": "^5.3.2",
+		"lint-staged": "15.2.9",
 		"minimist": "^1.2.8",
 		"mobx": "^6.13.7",
 		"mobx-react-lite": "^4.1.0",
@@ -6527,6 +6544,7 @@
 		"ts-dedent": "^2.2.0",
 		"tsx": "^4.20.3",
 		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.36.0",
 		"typescript-formatter": "github:jrieken/typescript-formatter#497efb26bc40b5fa59a350e6eab17bce650a7e4b",
 		"vite-plugin-top-level-await": "^1.5.0",
 		"vite-plugin-wasm": "^3.5.0",
