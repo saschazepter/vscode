@@ -91,7 +91,7 @@ export interface ISessionRepository {
 	/** Name of the base branch. */
 	readonly baseBranchName: string | undefined;
 	/** Whether the base branch is protected (drives PR vs merge workflow). */
-	readonly baseBranchProtected: boolean | undefined;
+	readonly baseBranchProtected?: boolean;
 	/** Whether the repository has a github.com remote. */
 	readonly hasGitHubRemote?: boolean;
 	/** Upstream tracking branch name (e.g. `origin/feature`). */

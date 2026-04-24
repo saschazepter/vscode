@@ -303,8 +303,6 @@ export interface ISessionGitState {
 	readonly branchName?: string;
 	/** Base branch the work targets (e.g. `main`). */
 	readonly baseBranchName?: string;
-	/** Whether the base branch is protected (drives PR vs direct-merge workflow). */
-	readonly baseBranchProtected?: boolean;
 	/** Upstream tracking branch (e.g. `origin/feature`). */
 	readonly upstreamBranchName?: string;
 	/** Number of commits the upstream branch has ahead of the local branch. */
@@ -332,7 +330,6 @@ export function readSessionGitState(meta: SessionMeta | undefined): ISessionGitS
 		hasGitHubRemote?: boolean;
 		branchName?: string;
 		baseBranchName?: string;
-		baseBranchProtected?: boolean;
 		upstreamBranchName?: string;
 		incomingChanges?: number;
 		outgoingChanges?: number;
@@ -341,7 +338,6 @@ export function readSessionGitState(meta: SessionMeta | undefined): ISessionGitS
 	if (typeof raw['hasGitHubRemote'] === 'boolean') { result.hasGitHubRemote = raw['hasGitHubRemote']; }
 	if (typeof raw['branchName'] === 'string') { result.branchName = raw['branchName']; }
 	if (typeof raw['baseBranchName'] === 'string') { result.baseBranchName = raw['baseBranchName']; }
-	if (typeof raw['baseBranchProtected'] === 'boolean') { result.baseBranchProtected = raw['baseBranchProtected']; }
 	if (typeof raw['upstreamBranchName'] === 'string') { result.upstreamBranchName = raw['upstreamBranchName']; }
 	if (typeof raw['incomingChanges'] === 'number') { result.incomingChanges = raw['incomingChanges']; }
 	if (typeof raw['outgoingChanges'] === 'number') { result.outgoingChanges = raw['outgoingChanges']; }
