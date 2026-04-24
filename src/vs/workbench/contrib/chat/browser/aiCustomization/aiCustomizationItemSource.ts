@@ -68,7 +68,7 @@ export interface IAICustomizationListItem {
 	/** Human-readable status detail (e.g. error message or warning). */
 	readonly statusMessage?: string;
 	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
-	readonly enablementScope?: 'none' | 'global' | 'workspace' | 'application';
+	readonly enablementScope?: 'none' | 'global' | 'workspace';
 	/** Optional reference to the parent plugin item. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
 	readonly plugin?: URI;
 	/** When true, this item can be selected for syncing to a remote harness. */
