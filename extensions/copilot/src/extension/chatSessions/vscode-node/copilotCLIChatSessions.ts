@@ -138,8 +138,8 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 	 * 2. All sessions are displayed and diff computed
 	 * 3. User opens a session,
 	 * 4. This causes list of folders to change and git repo status to change
-	 * 5. A side effect of this is to remove all cached chagnes
-	 * This is done to react to cases where new repo is created or user chagnes files in workspace folder.
+	 * 5. A side effect of this is to remove all cached changes
+	 * This is done to react to cases where new repo is created or user changes files in workspace folder.
 	 * Alas this also results in recently computed changes getting wiped out again.
 	 * 6. Now VS Code automatically refreshes everything, another issue (selecting sessions causes full refresh)
 	 * 7. Now vs code will call refresh, and we return everything
