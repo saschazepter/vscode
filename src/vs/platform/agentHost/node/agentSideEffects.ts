@@ -26,6 +26,7 @@ import {
 	ToolResultContentType,
 	buildSubagentSessionUri,
 	getToolFileEdits,
+	type CustomizationRef,
 	type SessionState,
 	type ToolResultContent,
 	type URI as ProtocolURI,
@@ -77,6 +78,8 @@ export class AgentSideEffects extends Disposable {
 	/** Serializes per-session diff computations to avoid races with stale previousDiffs. */
 	private readonly _diffComputationSequencer = new SequencerByKey<string>();
 	private _lastAgentInfos: readonly AgentInfo[] = [];
+	/** Last customizations list passed to agents; compared before each {@link _applyHostCustomizationsToAgents} call to skip no-op updates. */
+	private _lastAppliedCustomizations: readonly CustomizationRef[] = [];
 	/** Per-session debounce timers for mid-turn diff computation. */
 	private readonly _debouncedDiffTimers = this._register(new DisposableMap<string>());
 	private static readonly _DIFF_DEBOUNCE_MS = 5000;
@@ -152,6 +155,10 @@ export class AgentSideEffects extends Disposable {
 
 	private _applyHostCustomizationsToAgents(): void {
 		const customizations = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.Customizations) ?? [];
+		if (equals(customizations, this._lastAppliedCustomizations)) {
+			return;
+		}
+		this._lastAppliedCustomizations = customizations;
 		for (const agent of this._options.agents.get()) {
 			agent.setHostCustomizations?.([...customizations], () => {
 				this._publishAgentInfos(this._options.agents.get());
