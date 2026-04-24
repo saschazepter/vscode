@@ -1509,6 +1509,7 @@ export default tseslint.config(
 						'fs/promises',
 						'http',
 						'https',
+						'inspector',
 						'minimist',
 						'node:module',
 						'native-keymap',
