@@ -313,6 +313,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// changes are being computed, the worktree properties are also updated with the
 		// repository state which we are passing along through the metadata
 		worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
+		this.logService.info(`[CopilotCLIChatSessionItemProvider][metadata] session=${session.id} worktreeProperties=${JSON.stringify(worktreeProperties)}`);
 
 		const sessionParentId = await this.chatSessionMetadataStore.getSessionParentId(session.id);
 
@@ -397,6 +398,8 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 				lastCheckpointRef
 			} satisfies { readonly [key: string]: unknown };
 		}
+
+		this.logService.info(`[CopilotCLIChatSessionItemProvider][metadata] session=${session.id} finalMetadata=${JSON.stringify(metadata)}`);
 
 		return {
 			resource,

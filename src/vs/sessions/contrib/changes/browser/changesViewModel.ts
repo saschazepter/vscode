@@ -11,6 +11,7 @@ import { derived, derivedOpts, IObservable, IObservableWithChange, ISettableObse
 import { isWeb } from '../../../../base/common/platform.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
@@ -117,6 +118,7 @@ export class ChangesViewModel extends Disposable {
 		@IGitService private readonly gitService: IGitService,
 		@ISessionsManagementService private readonly sessionManagementService: ISessionsManagementService,
 		@IStorageService private readonly storageService: IStorageService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -139,7 +141,9 @@ export class ChangesViewModel extends Disposable {
 		this.activeSessionHasGitRepositoryObs = derived(reader => {
 			const sessionType = this.activeSessionTypeObs.read(reader);
 			const metadata = this._activeSessionMetadataObs.read(reader);
-			return sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined;
+			const result = sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined;
+			this.logService.info(`[ChangesViewModel][activeSessionHasGitRepositoryObs] sessionType=${sessionType} repositoryPath=${metadata?.repositoryPath ?? 'undefined'} metadataKeys=${metadata ? Object.keys(metadata).join(',') : 'undefined'} -> ${result}`);
+			return result;
 		});
 
 		// Active session first checkpoint ref
@@ -216,9 +220,11 @@ export class ChangesViewModel extends Disposable {
 				// This occurs when the untitled session is committed. In order
 				// to avoid flickering of the toolbar, we keep the old metadata
 				// until the new metadata is available.
+				this.logService.info(`[ChangesViewModel][_getActiveSessionMetadata] model undefined for ${sessionResource.toString()}, keeping lastValue=${lastValue ? Object.keys(lastValue).join(',') : 'undefined'}`);
 				return lastValue;
 			}
 
+			this.logService.info(`[ChangesViewModel][_getActiveSessionMetadata] resource=${sessionResource.toString()} metadata=${JSON.stringify(model.metadata)}`);
 			return model.metadata;
 		});
 

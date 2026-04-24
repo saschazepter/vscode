@@ -95,7 +95,8 @@ class ChangesButtonBarWidget extends Disposable {
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@ITelemetryService telemetryService: ITelemetryService,
-		@IHoverService hoverService: IHoverService
+		@IHoverService hoverService: IHoverService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -145,6 +146,25 @@ class ChangesButtonBarWidget extends Disposable {
 			const sessionResource = viewModel.activeSessionResourceObs.read(reader);
 			const outgoingChanges = outgoingChangesObs.read(reader);
 			const reviewState = reviewStateObs.read(reader);
+
+			// Snoop at the actions the menu currently resolves to (after when-filtering).
+			try {
+				const menu = menuService.getMenuActions(MenuId.ChatEditingSessionChangesToolbar, contextKeyService,
+					sessionResource
+						? { arg: sessionResource }
+						: { shouldForwardArgs: true });
+				const describe = (a: IAction): unknown => {
+					const anyA = a as unknown as { actions?: IAction[] };
+					if (Array.isArray(anyA.actions)) {
+						return { submenu: a.id, label: a.label, children: anyA.actions.map(describe) };
+					}
+					return { id: a.id, label: a.label, enabled: a.enabled };
+				};
+				const summary = menu.map(([group, actions]) => ({ group, actions: actions.map(describe) }));
+				this.logService.info(`[ChangesButtonBarWidget] ChatEditingSessionChangesToolbar resolved actions: ${JSON.stringify(summary)}`);
+			} catch (err) {
+				this.logService.warn(`[ChangesButtonBarWidget] Failed to snoop menu actions: ${err instanceof Error ? err.message : String(err)}`);
+			}
 
 			reader.store.add(new MenuWorkbenchButtonBar(
 				container,

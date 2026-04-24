@@ -184,21 +184,27 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 		if (typeof sessionIdOrFolder === 'string') {
 			const properties = this._sessionWorktrees.get(sessionIdOrFolder);
 			if (properties !== undefined) {
+				this.logService.info(`[ChatSessionWorktreeService][getWorktreeProperties] session=${sessionIdOrFolder} source=memory value=${typeof properties === 'string' ? `string(${properties})` : JSON.stringify(properties)}`);
 				return typeof properties === 'string' ? undefined : properties;
 			}
 			// Fall back to metadata store (file-based)
-			return this.metadataStore.getWorktreeProperties(sessionIdOrFolder);
+			const fromStore = await this.metadataStore.getWorktreeProperties(sessionIdOrFolder);
+			this.logService.info(`[ChatSessionWorktreeService][getWorktreeProperties] session=${sessionIdOrFolder} source=metadataStore value=${JSON.stringify(fromStore)}`);
+			return fromStore;
 		} else {
 			for (const [_, value] of this._sessionWorktrees.entries()) {
 				if (typeof value === 'string') {
 					continue;
 				}
 				if (isEqual(vscode.Uri.file(value.worktreePath), sessionIdOrFolder)) {
+					this.logService.info(`[ChatSessionWorktreeService][getWorktreeProperties] folder=${sessionIdOrFolder.toString()} source=memory-by-folder value=${JSON.stringify(value)}`);
 					return value;
 				}
 			}
 			// Fall back to metadata store (file-based)
-			return this.metadataStore.getWorktreeProperties(sessionIdOrFolder);
+			const fromStore = await this.metadataStore.getWorktreeProperties(sessionIdOrFolder);
+			this.logService.info(`[ChatSessionWorktreeService][getWorktreeProperties] folder=${sessionIdOrFolder.toString()} source=metadataStore value=${JSON.stringify(fromStore)}`);
+			return fromStore;
 		}
 	}
 

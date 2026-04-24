@@ -28,6 +28,7 @@ import { IDragAndDropData } from '../../../../../base/browser/dnd.js';
 import { ListViewTargetSector } from '../../../../../base/browser/ui/list/listView.js';
 import { coalesce } from '../../../../../base/common/arrays.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { fillEditorsDragData } from '../../../../browser/dnd.js';
 import { HoverStyle, IDelayedHoverOptions } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
@@ -128,6 +129,7 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 		@IHoverService private readonly hoverService: IHoverService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 	}
@@ -418,6 +420,7 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 			// PR status icons
 			const metadata = session.metadata;
 			const hasPR = metadata?.pullRequestUrl || metadata?.pullRequestNumber;
+			this.logService.info(`[AgentSessionRenderer][getIcon] session=${session.resource.toString()} status=${session.status} providerType=${session.providerType} metadata=${metadata ? JSON.stringify({ pullRequestUrl: metadata.pullRequestUrl, pullRequestNumber: metadata.pullRequestNumber, pullRequestState: metadata.pullRequestState }) : 'undefined'} hasPR=${!!hasPR}`);
 			if (hasPR) {
 				switch (metadata?.pullRequestState) {
 					case 'merged':
