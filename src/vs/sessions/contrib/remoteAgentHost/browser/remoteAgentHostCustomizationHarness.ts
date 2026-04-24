@@ -456,8 +456,9 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	/**
 	 * Emits one {@link ICustomizationItem} per child of a per-type
 	 * sub-folder. Skills are conventionally folders containing
-	 * `SKILL.md`, but the local-sync bundler writes them as flat files;
-	 * both layouts are accepted.
+	 * `SKILL.md`, and synced bundles may preserve per-skill
+	 * subdirectories; flat skill files can still appear for legacy
+	 * bundles, so both layouts are accepted.
 	 */
 	private _collectFromTypeDir(entries: readonly { name: string; resource: URI; isDirectory: boolean }[], promptType: PromptsType, groupKey: string): ICustomizationItem[] {
 		const items: ICustomizationItem[] = [];

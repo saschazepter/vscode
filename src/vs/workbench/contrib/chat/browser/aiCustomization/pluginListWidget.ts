@@ -660,7 +660,7 @@ export class PluginListWidget extends Disposable {
 			if (itemProvider) {
 				itemProviderChangeDisposable.value = itemProvider.onDidChange(() => {
 					if (!this.browseMode) {
-						this.refresh();
+						void this.refresh();
 					}
 				});
 			} else {
