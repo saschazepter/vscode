@@ -1461,7 +1461,6 @@ export class AICustomizationListWidget extends Disposable {
 			descriptor.id,
 			itemProvider,
 			descriptor.syncProvider,
-			descriptor.enablementProvider,
 			this.promptsService,
 			this.workspaceService,
 			this.fileService,

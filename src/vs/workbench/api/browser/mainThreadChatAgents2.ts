@@ -6,7 +6,6 @@
 import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { ResourceSet } from '../../../base/common/map.js';
 import { IMarkdownString } from '../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap, IDisposable } from '../../../base/common/lifecycle.js';
 import { autorun } from '../../../base/common/observable.js';
@@ -47,7 +46,7 @@ import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
 import { ExtHostChatAgentsShape2, ExtHostContext, IChatAgentInvokeResult, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatNotebookEditDto, IChatParticipantMetadata, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IDynamicChatAgentProps, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IPluginDto, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from '../common/extHost.protocol.js';
 import { NotebookDto } from './mainThreadNotebookDto.js';
 import { getChatSessionType, isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
-import { ICustomizationEnablementProvider, ICustomizationHarnessService, ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor } from '../../contrib/chat/common/customizationHarnessService.js';
+import { ICustomizationEnablementHandler, ICustomizationHarnessService, ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor } from '../../contrib/chat/common/customizationHarnessService.js';
 import { AICustomizationManagementSection, BUILTIN_STORAGE } from '../../contrib/chat/common/aiCustomizationWorkspaceService.js';
 import { IAgentPlugin, IAgentPluginService } from '../../contrib/chat/common/plugins/agentPluginService.js';
 import { IWorkbenchEnvironmentService } from '../../services/environment/common/environmentService.js';
@@ -778,22 +777,13 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 
 		// Build an enablement provider when the extension implements handleCustomizationEnablement.
 		// This delegates disable/enable to the extension instead of VS Code's StorageService.
-		let enablementProvider: ICustomizationEnablementProvider | undefined;
+		let enablementHandler: ICustomizationEnablementHandler | undefined;
 		if (hasEnablementHandler) {
 			const proxy = this._proxy;
 			const providerHandle = handle;
-			enablementProvider = {
-				// The extension reports enabled state via the itemProvider — the
-				// enablement provider's onDidChange is driven by the item provider's
-				// onDidChange, so we reuse the same emitter.
-				onDidChange: emitter.event,
-				getDisabledPromptFiles: (): ResourceSet => {
-					// Extension reports disabled state on items directly via `enabled: false`.
-					// No separate disabled set needed.
-					return new ResourceSet();
-				},
-				setEnabled: (uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void => {
-					proxy.$setCustomizationEnabled(providerHandle, uri.toJSON(), type, enabled, scope);
+			enablementHandler = {
+				handleCustomizationEnablement: (uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void => {
+					proxy.$handleCustomizationEnablement(providerHandle, uri.toJSON(), type, enabled, scope);
 				},
 			};
 		}
@@ -809,7 +799,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 				sources: [PromptsStorage.local, PromptsStorage.user, PromptsStorage.plugin, PromptsStorage.extension, BUILTIN_STORAGE],
 			}),
 			itemProvider,
-			enablementProvider,
+			enablementHandler,
 		};
 
 		const registration = this._customizationHarnessService.registerExternalHarness(descriptor);

@@ -796,7 +796,7 @@ registerAction2(class extends Action2 {
 		if (plugin) {
 			const enablementProvider = harnessService.getActiveEnablementProvider();
 			if (enablementProvider) {
-				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, false, 'global');
+				enablementProvider.handleCustomizationEnablement(plugin.uri, plugin.type as PromptsType, false, 'global');
 			}
 			return;
 		}
@@ -807,10 +807,10 @@ registerAction2(class extends Action2 {
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		const descriptor = harnessService.getActiveDescriptor();
 		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.setEnabled(uri, promptType, false, 'global');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'global');
 		} else if (enablementProvider && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.setEnabled(uri, promptType, false, 'global');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'global');
 		} else {
 			const namespace = descriptor.id;
 			const storage = extractStorage(context);
@@ -843,10 +843,10 @@ registerAction2(class extends Action2 {
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		const descriptor = harnessService.getActiveDescriptor();
 		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'workspace');
 		} else if (enablementProvider && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.setEnabled(uri, promptType, false, 'workspace');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'workspace');
 		} else {
 			const namespace = descriptor.id;
 			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
@@ -880,7 +880,7 @@ registerAction2(class extends Action2 {
 		if (plugin) {
 			const enablementProvider = harnessService.getActiveEnablementProvider();
 			if (enablementProvider) {
-				enablementProvider.setEnabled(plugin.uri, plugin.type as PromptsType, true, 'global');
+				enablementProvider.handleCustomizationEnablement(plugin.uri, plugin.type as PromptsType, true, 'global');
 			}
 			return;
 		}
@@ -891,10 +891,10 @@ registerAction2(class extends Action2 {
 		const enablementProvider = harnessService.getActiveEnablementProvider();
 		const descriptor = harnessService.getActiveDescriptor();
 		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.setEnabled(uri, promptType, true, 'global');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, true, 'global');
 		} else if (enablementProvider && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.setEnabled(uri, promptType, true, 'global');
+			enablementProvider.handleCustomizationEnablement(uri, promptType, true, 'global');
 		} else {
 			const namespace = descriptor.id;
 			// Remove from both scopes to fully re-enable

@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
-import { ResourceSet } from '../../../../base/common/map.js';
 import { IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { Event } from '../../../../base/common/event.js';
@@ -143,7 +142,7 @@ export interface IHarnessDescriptor {
 	 * When set, this harness manages its own enablement state. When absent,
 	 * the management UI falls back to promptsService (StorageService).
 	 */
-	readonly enablementProvider?: ICustomizationEnablementProvider;
+	readonly enablementHandler?: ICustomizationEnablementHandler;
 }
 
 /**
@@ -177,28 +176,19 @@ export interface ICustomizationItem {
 }
 
 /**
- * Provider interface for per-harness enablement state.
+ * Handler interface for per-harness enablement state.
  *
- * Each harness can supply its own enablement provider to control where
+ * Each harness can supply its own enablement handler to control where
  * disabled state is stored (e.g. StorageService for VS Code, settings.json
- * for CLI). When a harness does not supply an enablement provider, the
+ * for CLI). When a harness does not supply an enablement handler, the
  * management UI falls back to the core promptsService storage.
  */
-export interface ICustomizationEnablementProvider {
-	/** Fires when any enablement state changes. */
-	readonly onDidChange: Event<void>;
-
-	/**
-	 * Returns the merged set of disabled URIs for a given prompt type.
-	 * Used by the item source to overlay disabled state onto provider items.
-	 */
-	getDisabledPromptFiles(type: PromptsType): ResourceSet;
-
+export interface ICustomizationEnablementHandler {
 	/**
 	 * Enables or disables a single customization item.
-	 * The provider is expected to persist the change and fire {@link onDidChange}.
+	 * The handler is expected to persist the change and fire {@link ICustomizationItemProvider.onDidChange}.
 	 */
-	setEnabled(uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void;
+	handleCustomizationEnablement(uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void;
 }
 
 /**
@@ -299,7 +289,7 @@ export interface ICustomizationHarnessService {
 	 * `undefined` when the harness has no custom enablement provider
 	 * (in which case the caller should fall back to promptsService).
 	 */
-	getActiveEnablementProvider(): ICustomizationEnablementProvider | undefined;
+	getActiveEnablementProvider(): ICustomizationEnablementHandler | undefined;
 }
 
 /**
@@ -411,7 +401,7 @@ function buildAllSources(extras: readonly string[]): readonly string[] {
  * Creates a "VS Code" harness descriptor that shows all storage sources
  * with no user-root restrictions.
  */
-export function createVSCodeHarnessDescriptor(extras: readonly string[], enablementProvider?: ICustomizationEnablementProvider): IHarnessDescriptor {
+export function createVSCodeHarnessDescriptor(extras: readonly string[], enablementProvider?: ICustomizationEnablementHandler): IHarnessDescriptor {
 	const filter: IStorageSourceFilter = { sources: buildAllSources(extras) };
 	return {
 		id: CustomizationHarness.VSCode,
@@ -424,7 +414,7 @@ export function createVSCodeHarnessDescriptor(extras: readonly string[], enablem
 			}],
 		]),
 		getStorageSourceFilter: () => filter,
-		enablementProvider,
+		enablementHandler: enablementProvider,
 	};
 }
 
@@ -440,7 +430,7 @@ interface IRestrictedHarnessOptions {
 	readonly sectionOverrides?: ReadonlyMap<string, ISectionOverride>;
 	readonly requiredAgentId?: string;
 	readonly instructionFileFilter?: readonly string[];
-	readonly enablementProvider?: ICustomizationEnablementProvider;
+	readonly enablementProvider?: ICustomizationEnablementHandler;
 }
 
 function createRestrictedHarnessDescriptor(
@@ -464,7 +454,7 @@ function createRestrictedHarnessDescriptor(
 		sectionOverrides: options?.sectionOverrides,
 		requiredAgentId: options?.requiredAgentId,
 		instructionFileFilter: options?.instructionFileFilter,
-		enablementProvider: options?.enablementProvider,
+		enablementHandler: options?.enablementProvider,
 		getStorageSourceFilter(type: PromptsType): IStorageSourceFilter {
 			if (type === PromptsType.hook) {
 				return HOOKS_FILTER;
@@ -480,7 +470,7 @@ function createRestrictedHarnessDescriptor(
 /**
  * Creates a "Copilot CLI" harness descriptor.
  */
-export function createCliHarnessDescriptor(cliUserRoots: readonly URI[], extras: readonly string[], enablementProvider?: ICustomizationEnablementProvider): IHarnessDescriptor {
+export function createCliHarnessDescriptor(cliUserRoots: readonly URI[], extras: readonly string[], enablementProvider?: ICustomizationEnablementHandler): IHarnessDescriptor {
 	return createRestrictedHarnessDescriptor(
 		CustomizationHarness.CLI,
 		localize('harness.cli', "Copilot CLI"),
@@ -623,8 +613,8 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		return all.find(h => h.id === activeId) ?? all[0];
 	}
 
-	getActiveEnablementProvider(): ICustomizationEnablementProvider | undefined {
-		return this.getActiveDescriptor().enablementProvider;
+	getActiveEnablementProvider(): ICustomizationEnablementHandler | undefined {
+		return this.getActiveDescriptor().enablementHandler;
 	}
 }
 

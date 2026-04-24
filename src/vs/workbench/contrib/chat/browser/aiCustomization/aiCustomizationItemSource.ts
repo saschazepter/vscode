@@ -21,7 +21,7 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IAICustomizationWorkspaceService } from '../../common/aiCustomizationWorkspaceService.js';
-import { ICustomizationSyncProvider, ICustomizationItem, ICustomizationItemProvider, ICustomizationEnablementProvider } from '../../common/customizationHarnessService.js';
+import { ICustomizationSyncProvider, ICustomizationItem, ICustomizationItemProvider } from '../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
 import { formatHookCommandLabel, getEffectiveCommandFieldKey } from '../../common/promptSyntax/hookSchema.js';
@@ -346,7 +346,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		private readonly harnessId: string,
 		private readonly itemProvider: ICustomizationItemProvider | undefined,
 		private readonly syncProvider: ICustomizationSyncProvider | undefined,
-		private readonly enablementProvider: ICustomizationEnablementProvider | undefined,
 		private readonly promptsService: IPromptsService,
 		private readonly workspaceService: IAICustomizationWorkspaceService,
 		private readonly fileService: IFileService,
@@ -371,7 +370,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		this.onDidChange = Event.any(
 			this.itemProvider?.onDidChange ?? Event.None,
 			this.syncProvider?.onDidChange ?? Event.None,
-			this.enablementProvider?.onDidChange ?? Event.None,
 			promptServiceEvents,
 		);
 	}
@@ -429,13 +427,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		//   promptsService. On external harnesses (with itemProvider) the namespace
 		//   isolates per-harness state. On the VS Code harness (no itemProvider) no
 		//   namespace is needed.
-		const apiDisabledUris = this.enablementProvider
-			? this.enablementProvider.getDisabledPromptFiles(promptType)
-			: undefined;
 		const vscodeDisabledUris = this.hasNativeItemProvider
 			? this.promptsService.getDisabledPromptFiles(promptType, this.harnessId)
 			: this.promptsService.getDisabledPromptFiles(promptType);
-		const hasDisabled = (apiDisabledUris && apiDisabledUris.size > 0) || vscodeDisabledUris.size > 0;
+		const hasDisabled = vscodeDisabledUris.size > 0;
 		if (hasDisabled) {
 			const existingUris = new ResourceSet(normalized.map(i => i.uri));
 			for (let i = 0; i < normalized.length; i++) {
@@ -450,14 +445,13 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 					|| normalized[i].enablementScope === 'application';
 				const isDisabled = isVSCodeItem
 					? vscodeDisabledUris.has(normalized[i].uri)
-					: (apiDisabledUris?.has(normalized[i].uri) ?? false);
+					: false;
 				if (isDisabled) {
 					normalized[i] = { ...normalized[i], disabled: true };
 				}
 			}
 			// Ghost entries from all disabled sets for items not in the provider's results.
 			const allDisabledUris = new ResourceSet([
-				...(apiDisabledUris ?? []),
 				...vscodeDisabledUris,
 			]);
 			const missing = await this.resolveMissingDisabledItems(promptType, allDisabledUris, existingUris, vscodeDisabledUris);

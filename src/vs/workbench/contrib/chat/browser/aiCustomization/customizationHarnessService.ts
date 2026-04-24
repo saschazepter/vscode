@@ -3,15 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event } from '../../../../../base/common/event.js';
-import { ResourceSet } from '../../../../../base/common/map.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import { StorageScope } from '../../../../../platform/storage/common/storage.js';
 import {
 	CustomizationHarness,
 	CustomizationHarnessServiceBase,
-	ICustomizationEnablementProvider,
+	ICustomizationEnablementHandler,
 	ICustomizationHarnessService,
 	createVSCodeHarnessDescriptor,
 } from '../../common/customizationHarnessService.js';
@@ -23,19 +21,9 @@ import { BUILTIN_STORAGE } from '../../common/aiCustomizationWorkspaceService.js
  * Enablement provider backed by promptsService (StorageService).
  * Used by the VS Code (Local) harness to manage disabled customizations.
  */
-function createPromptsServiceEnablementProvider(promptsService: IPromptsService): ICustomizationEnablementProvider {
+function createPromptsServiceEnablementHandler(promptsService: IPromptsService): ICustomizationEnablementHandler {
 	return {
-		onDidChange: Event.any(
-			promptsService.onDidChangeCustomAgents,
-			promptsService.onDidChangeSlashCommands,
-			promptsService.onDidChangeSkills,
-			promptsService.onDidChangeHooks,
-			promptsService.onDidChangeInstructions,
-		),
-		getDisabledPromptFiles(type: PromptsType): ResourceSet {
-			return promptsService.getDisabledPromptFiles(type);
-		},
-		setEnabled(uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void {
+		handleCustomizationEnablement(uri: URI, type: PromptsType, enabled: boolean, scope: 'global' | 'workspace'): void {
 			const storageScope = scope === 'workspace' ? StorageScope.WORKSPACE : StorageScope.PROFILE;
 			const disabled = promptsService.getDisabledPromptFilesForScope(type, storageScope);
 			if (enabled) {
@@ -68,9 +56,9 @@ class CustomizationHarnessService extends CustomizationHarnessServiceBase {
 		@IPromptsService promptsService: IPromptsService,
 	) {
 		const localExtras = [PromptsStorage.extension, BUILTIN_STORAGE];
-		const enablementProvider = createPromptsServiceEnablementProvider(promptsService);
+		const enablementHandler = createPromptsServiceEnablementHandler(promptsService);
 		super(
-			[createVSCodeHarnessDescriptor(localExtras, enablementProvider)],
+			[createVSCodeHarnessDescriptor(localExtras, enablementHandler)],
 			CustomizationHarness.VSCode,
 		);
 	}
