@@ -88,7 +88,8 @@ export class AgentHostSessionAdapter implements ISession {
 	readonly agentProvider: string;
 
 	// Retained so we can rebuild `workspace` when only `_meta` changes via
-	// a SessionSummaryChanged notification (without a full list refresh).
+	// a `SessionMetaChanged` action dispatched on session open (without a full
+	// list refresh). See `_applySessionMetaFromState` / `setMeta`.
 	private _project: IAgentSessionMetadata['project'];
 	private _workingDirectory: URI | undefined;
 	private _meta: IAgentSessionMetadata['_meta'];

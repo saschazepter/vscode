@@ -318,14 +318,35 @@ export interface ISessionGitState {
 /**
  * Reads the well-known git-state payload from {@link SessionMeta}, if
  * present. Returns `undefined` when the meta bag is absent or the value at
- * the git key is the wrong shape.
+ * the git key is not a plain object (e.g. an array or a primitive).
+ * Individual fields with wrong types are silently dropped so partial state
+ * still propagates.
  */
 export function readSessionGitState(meta: SessionMeta | undefined): ISessionGitState | undefined {
 	const value = meta?.[SESSION_META_GIT_KEY];
-	if (!value || typeof value !== 'object') {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return undefined;
 	}
-	return value as ISessionGitState;
+	const raw = value as Record<string, unknown>;
+	const result: {
+		hasGitHubRemote?: boolean;
+		branchName?: string;
+		baseBranchName?: string;
+		baseBranchProtected?: boolean;
+		upstreamBranchName?: string;
+		incomingChanges?: number;
+		outgoingChanges?: number;
+		uncommittedChanges?: number;
+	} = {};
+	if (typeof raw['hasGitHubRemote'] === 'boolean') { result.hasGitHubRemote = raw['hasGitHubRemote']; }
+	if (typeof raw['branchName'] === 'string') { result.branchName = raw['branchName']; }
+	if (typeof raw['baseBranchName'] === 'string') { result.baseBranchName = raw['baseBranchName']; }
+	if (typeof raw['baseBranchProtected'] === 'boolean') { result.baseBranchProtected = raw['baseBranchProtected']; }
+	if (typeof raw['upstreamBranchName'] === 'string') { result.upstreamBranchName = raw['upstreamBranchName']; }
+	if (typeof raw['incomingChanges'] === 'number') { result.incomingChanges = raw['incomingChanges']; }
+	if (typeof raw['outgoingChanges'] === 'number') { result.outgoingChanges = raw['outgoingChanges']; }
+	if (typeof raw['uncommittedChanges'] === 'number') { result.uncommittedChanges = raw['uncommittedChanges']; }
+	return result;
 }
 
 /**

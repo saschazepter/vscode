@@ -7,8 +7,9 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { localize } from '../../../../nls.js';
+import { localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { ILocalizedString } from '../../../../platform/action/common/action.js';
 import { ContextKeyExpr, ContextKeyExpression, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
@@ -74,7 +75,7 @@ registerWorkbenchContribution2(IsAgentHostSessionContextContribution.ID, IsAgent
 
 interface IAgentHostSkillButtonSpec {
 	readonly id: string;
-	readonly title: string;
+	readonly title: ILocalizedString;
 	readonly skill: string;
 	readonly icon: ThemeIcon;
 	readonly group: string;
@@ -87,7 +88,7 @@ const AGENT_HOST_SKILL_BUTTON_ID_PREFIX = 'workbench.action.agentSessions.runSki
 const AGENT_HOST_SKILL_BUTTONS: readonly IAgentHostSkillButtonSpec[] = [
 	{
 		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}merge`,
-		title: localize('agentSessions.runSkill.merge', "Merge Changes"),
+		title: localize2('agentSessions.runSkill.merge', "Merge Changes"),
 		skill: 'merge',
 		icon: Codicon.gitMerge,
 		group: 'merge',
@@ -101,7 +102,7 @@ const AGENT_HOST_SKILL_BUTTONS: readonly IAgentHostSkillButtonSpec[] = [
 	},
 	{
 		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}createPR`,
-		title: localize('agentSessions.runSkill.createPR', "Create Pull Request"),
+		title: localize2('agentSessions.runSkill.createPR', "Create Pull Request"),
 		skill: 'create-pr',
 		icon: Codicon.gitPullRequestCreate,
 		group: 'pull_request',
@@ -115,7 +116,7 @@ const AGENT_HOST_SKILL_BUTTONS: readonly IAgentHostSkillButtonSpec[] = [
 	},
 	{
 		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}createDraftPR`,
-		title: localize('agentSessions.runSkill.createDraftPR', "Create Draft Pull Request"),
+		title: localize2('agentSessions.runSkill.createDraftPR', "Create Draft Pull Request"),
 		skill: 'create-draft-pr',
 		icon: Codicon.gitPullRequestDraft,
 		group: 'pull_request',
@@ -129,7 +130,7 @@ const AGENT_HOST_SKILL_BUTTONS: readonly IAgentHostSkillButtonSpec[] = [
 	},
 	{
 		id: `${AGENT_HOST_SKILL_BUTTON_ID_PREFIX}updatePR`,
-		title: localize('agentSessions.runSkill.updatePR', "Sync Pull Request"),
+		title: localize2('agentSessions.runSkill.updatePR', "Sync Pull Request"),
 		skill: 'update-pr',
 		icon: Codicon.repoPush,
 		group: 'pull_request',
@@ -165,7 +166,7 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 		constructor() {
 			super({
 				id: spec.id,
-				title: { value: spec.title, original: spec.title },
+				title: spec.title,
 				icon: spec.icon,
 				f1: false,
 				menu: {

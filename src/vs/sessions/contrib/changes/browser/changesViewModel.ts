@@ -139,7 +139,13 @@ export class ChangesViewModel extends Disposable {
 		this.activeSessionHasGitRepositoryObs = derived(reader => {
 			const sessionType = this.activeSessionTypeObs.read(reader);
 			const metadata = this._activeSessionMetadataObs.read(reader);
-			return sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined;
+			if (sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined) {
+				return true;
+			}
+			// Agent-host sessions don't set repositoryPath in metadata; check workspace instead.
+			const activeSession = this.sessionManagementService.activeSession.read(reader);
+			const workspace = activeSession?.workspace.read(reader);
+			return workspace !== undefined && workspace.repositories.length > 0;
 		});
 
 		// Active session first checkpoint ref
@@ -402,12 +408,13 @@ export class ChangesViewModel extends Disposable {
 				(gitHubInfo.pullRequest.icon?.id === Codicon.gitPullRequestDraft.id ||
 					gitHubInfo.pullRequest.icon?.id === Codicon.gitPullRequest.id);
 
-			// Repository state
-			const hasGitHubRemote = (sessionMetadata?.hasGitHubRemote as boolean | undefined) === true;
-			const upstreamBranchName = sessionMetadata?.upstreamBranchName as string | undefined;
-			const incomingChanges = (sessionMetadata?.incomingChanges as number | undefined) ?? 0;
-			const outgoingChanges = (sessionMetadata?.outgoingChanges as number | undefined) ?? 0;
-			const uncommittedChanges = (sessionMetadata?.uncommittedChanges as number | undefined) ?? 0;
+			// Repository state — fall back to workspace repository fields for agent-host
+			// sessions, which populate git state there rather than in metadata.
+			const hasGitHubRemote = (sessionMetadata?.hasGitHubRemote as boolean | undefined) ?? workspaceRepository?.hasGitHubRemote ?? false;
+			const upstreamBranchName = (sessionMetadata?.upstreamBranchName as string | undefined) ?? workspaceRepository?.upstreamBranchName;
+			const incomingChanges = (sessionMetadata?.incomingChanges as number | undefined) ?? workspaceRepository?.incomingChanges ?? 0;
+			const outgoingChanges = (sessionMetadata?.outgoingChanges as number | undefined) ?? workspaceRepository?.outgoingChanges ?? 0;
+			const uncommittedChanges = (sessionMetadata?.uncommittedChanges as number | undefined) ?? workspaceRepository?.uncommittedChanges ?? 0;
 
 			return {
 				isolationMode,

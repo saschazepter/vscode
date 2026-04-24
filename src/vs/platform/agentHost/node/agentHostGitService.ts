@@ -120,9 +120,13 @@ export class AgentHostGitService implements IAgentHostGitService {
 	 * computed; entries older than {@link AgentHostGitService._GIT_STATE_TTL_MS}
 	 * are recomputed on the next access. The cache also coalesces concurrent
 	 * callers onto the same in-flight promise.
+	 *
+	 * The cache is bounded to {@link AgentHostGitService._GIT_STATE_CACHE_MAX}
+	 * entries. Stale entries are pruned opportunistically on each insertion.
 	 */
 	private readonly _gitStateCache = new Map<string, { computedAt: number; promise: Promise<ISessionGitState | undefined> }>();
 	private static readonly _GIT_STATE_TTL_MS = 5_000;
+	private static readonly _GIT_STATE_CACHE_MAX = 256;
 
 	async getSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
 		const key = workingDirectory.fsPath;
@@ -131,6 +135,7 @@ export class AgentHostGitService implements IAgentHostGitService {
 		if (cached && (now - cached.computedAt) < AgentHostGitService._GIT_STATE_TTL_MS) {
 			return cached.promise;
 		}
+		this._pruneGitStateCache(now);
 		const entry = { computedAt: now, promise: this._computeSessionGitState(workingDirectory) };
 		this._gitStateCache.set(key, entry);
 		// On rejection, evict so the next call retries. (Computation never throws,
@@ -141,6 +146,23 @@ export class AgentHostGitService implements IAgentHostGitService {
 			}
 		});
 		return entry.promise;
+	}
+
+	private _pruneGitStateCache(now: number): void {
+		// Remove all entries past TTL.
+		for (const [key, entry] of this._gitStateCache) {
+			if (now - entry.computedAt > AgentHostGitService._GIT_STATE_TTL_MS) {
+				this._gitStateCache.delete(key);
+			}
+		}
+		// If still over the cap, evict oldest entries first.
+		if (this._gitStateCache.size >= AgentHostGitService._GIT_STATE_CACHE_MAX) {
+			const sorted = [...this._gitStateCache.entries()].sort((a, b) => a[1].computedAt - b[1].computedAt);
+			const excess = this._gitStateCache.size - AgentHostGitService._GIT_STATE_CACHE_MAX + 1;
+			for (let i = 0; i < excess; i++) {
+				this._gitStateCache.delete(sorted[i][0]);
+			}
+		}
 	}
 
 	private async _computeSessionGitState(workingDirectory: URI): Promise<ISessionGitState | undefined> {
