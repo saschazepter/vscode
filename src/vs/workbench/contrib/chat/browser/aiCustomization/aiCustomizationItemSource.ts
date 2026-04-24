@@ -468,6 +468,36 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		}
 
 		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
+
+		// Overlay disabled state for VS Code harness items.
+		// External harnesses report disabled state via the provider's `enabled` field.
+		if (!this.hasNativeItemProvider) {
+			const disabledUris = this.promptsService.getDisabledPromptFiles(promptType);
+			if (disabledUris.size > 0) {
+				const existingUris = new ResourceSet(normalized.map(i => i.uri));
+				for (let i = 0; i < normalized.length; i++) {
+					if (!normalized[i].disabled && disabledUris.has(normalized[i].uri)) {
+						normalized[i] = { ...normalized[i], disabled: true };
+					}
+				}
+				// Ghost entries for disabled items not in the provider's results
+				for (const disabledUri of disabledUris) {
+					if (!existingUris.has(disabledUri)) {
+						const name = basename(disabledUri);
+						normalized.push({
+							id: disabledUri.toString(),
+							uri: disabledUri,
+							name,
+							filename: name,
+							promptType,
+							disabled: true,
+							enablementScope: 'workspace',
+						});
+					}
+				}
+			}
+		}
+
 		if (promptType === PromptsType.skill) {
 			return this.mergeBuiltinSkills(normalized, promptType);
 		}

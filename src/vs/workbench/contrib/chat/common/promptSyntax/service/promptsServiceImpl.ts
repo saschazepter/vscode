@@ -780,6 +780,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const allAgentFiles = await this.listPromptFiles(PromptsType.agent, token);
 		const useChatHooks = this.configurationService.getValue(PromptsConfig.USE_CHAT_HOOKS);
 		const isWorkspaceTrusted = this.workspaceTrustService.isWorkspaceTrusted();
+		const disabledAgents = this.getDisabledPromptFiles(PromptsType.agent);
 
 		// Get user home for tilde expansion in hook cwd paths
 		const userHomeUri = await this.pathService.userHome();
@@ -810,6 +811,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 					source: IAgentSource.fromPromptPath(promptPath)
 				};
 				const agent = CustomAgent.fromParsedPromptFile(ast, extra);
+
+				// Disabled agents are fully parsed but marked as skipped so
+				// agentsFromDiscoveryInfo can filter them out (or include
+				// them when includeDisabled is set).
+				if (disabledAgents.has(uri)) {
+					return { status: 'skipped', skipReason: 'disabled', promptPath: this.withPromptPathMetadata(promptPath, agent.name, agent.description), agent };
+				}
+
 				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, agent.name, agent.description), agent };
 			} catch (e) {
 				const error = e instanceof Error ? e : new Error(String(e));

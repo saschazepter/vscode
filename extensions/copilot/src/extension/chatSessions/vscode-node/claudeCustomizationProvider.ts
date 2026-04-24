@@ -135,25 +135,6 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			}
 		}
 
-		// Extension-contributed agents (owned by VS Code) — disableable from Claude harness
-		const vscodeDisabledAgents = this._getDisabledUriSet(allSettings, VSCodeDisabledSettingsKey.Agents);
-		for (const agent of await this.promptsService.getCustomAgents(token)) {
-			if (agent.extensionId && !sdkAgentNames.has(agent.name.toLowerCase())) {
-				const uriStr = agent.uri.toString();
-				if (!items.some(i => i.uri.toString() === uriStr)) {
-					items.push({
-						uri: agent.uri,
-						type: vscode.ChatSessionCustomizationType.Agent,
-						name: agent.name,
-						description: agent.description,
-						vscodeOwned: true,
-						enabled: !vscodeDisabledAgents.has(uriStr),
-						enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
-					});
-				}
-			}
-		}
-
 		const agentItems = items.filter(i => i.type === vscode.ChatSessionCustomizationType.Agent);
 		this.logService.debug(`[ClaudeCustomizationProvider] agents (${agentItems.length}): ${agentItems.map(a => a.name).join(', ') || '(none)'}${sdkAgents.length ? ' [sdk]' : ' [files-only, no session]'}`);
 
