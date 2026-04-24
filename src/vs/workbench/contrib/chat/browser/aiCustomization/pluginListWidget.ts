@@ -997,6 +997,9 @@ export class PluginListWidget extends Disposable {
 		const remoteGroups = new Map<string, IPluginRemoteItemEntry[]>();
 		for (const item of this.remoteItems) {
 			const key = item.groupKey ?? 'remote-host';
+			if (key === 'remote-client') {
+				continue; // client-synced items are already shown in "Enabled Locally"
+			}
 			let group = remoteGroups.get(key);
 			if (!group) {
 				group = [];
