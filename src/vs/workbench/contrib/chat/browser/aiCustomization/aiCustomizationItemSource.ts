@@ -437,12 +437,9 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				if (normalized[i].disabled) {
 					continue;
 				}
-				// Items are VS Code-managed when either:
-				// - The provider explicitly set `storage` on them, or
-				// - The provider set `enablementScope: 'application'`, signaling
-				//   that VS Code should own disablement.
-				const isVSCodeItem = providerExplicitStorageUris.has(normalized[i].uri)
-					|| normalized[i].enablementScope === 'application';
+				// Items are VS Code-managed when:
+				// - The provider explicitly set `storage` on them
+				const isVSCodeItem = providerExplicitStorageUris.has(normalized[i].uri);
 				const isDisabled = isVSCodeItem
 					? vscodeDisabledUris.has(normalized[i].uri)
 					: false;
@@ -597,7 +594,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				enabled: !disabledPromptFiles.has(p.uri),
 				badge: uiTooltip ? uiIntegrationBadge : undefined,
 				badgeTooltip: uiTooltip,
-				enablementScope: this.hasNativeItemProvider ? 'application' : 'workspace',
+				enablementScope: 'workspace',
 			};
 			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
 		}
