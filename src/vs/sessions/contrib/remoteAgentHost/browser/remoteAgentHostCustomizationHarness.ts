@@ -284,8 +284,6 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	private toBadge(customization: CustomizationRef, source: SessionCustomizationSource | undefined): { badge?: string; badgeTooltip?: string; groupKey?: string } {
 		if (source === SessionCustomizationSource.Client) {
 			return {
-				badge: localize('remoteAgentHost.syncedBadge', "Synced"),
-				badgeTooltip: localize('remoteAgentHost.syncedBadgeTooltip', "This plugin is being synced from the connected client into the active remote session."),
 				groupKey: REMOTE_CLIENT_GROUP,
 			};
 		}
