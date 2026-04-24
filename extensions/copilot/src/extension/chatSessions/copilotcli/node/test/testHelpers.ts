@@ -66,7 +66,7 @@ export class MockSkillLocations implements ICopilotCLISkills {
 
 export class MockCliSdkSessionManager {
 	public sessions = new Map<string, MockCliSdkSession>();
-	constructor(_opts: {}) { }
+	constructor(public readonly opts: {}) { }
 	createSession(_options: SessionOptions & { sessionId?: string }) {
 		const id = _options.sessionId ?? `sess_${generateUuid()}`;
 		const s = new MockCliSdkSession(id, new Date());
@@ -94,6 +94,9 @@ export class MockCliSdkSessionManager {
 		const s = new MockCliSdkSession(newId, source?.startTime ?? new Date());
 		this.sessions.set(newId, s);
 		return Promise.resolve({ sessionId: newId });
+	}
+	async loadDeferredRepoHooks(session: unknown) {
+		//
 	}
 }
 
