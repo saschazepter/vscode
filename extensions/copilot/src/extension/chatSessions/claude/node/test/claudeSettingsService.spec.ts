@@ -172,9 +172,26 @@ describe('ClaudeSettingsService', () => {
 
 			const results = await service.readAllSettings();
 			expect(results).toHaveLength(3);
-			expect(results[0].settings).toEqual({ permissions: { allow: ['Read'] } });
+			expect(results[0].settings).toEqual({ env: { DEBUG: '1' } });
 			expect(results[1].settings).toEqual({ permissions: { deny: ['Write'] } });
-			expect(results[2].settings).toEqual({ env: { DEBUG: '1' } });
+			expect(results[2].settings).toEqual({ permissions: { allow: ['Read'] } });
+		});
+
+		it('returns in priority order: workspaceLocal > workspace > user', async () => {
+			const userUri = URI.file('/home/user/.claude/settings.json');
+			const wsUri = URI.file('/workspace/.claude/settings.json');
+			const wsLocalUri = URI.file('/workspace/.claude/settings.local.json');
+
+			mockFileSystemService.setFile(userUri, JSON.stringify({ source: 'user' }));
+			mockFileSystemService.setFile(wsUri, JSON.stringify({ source: 'workspace' }));
+			mockFileSystemService.setFile(wsLocalUri, JSON.stringify({ source: 'workspaceLocal' }));
+
+			const results = await service.readAllSettings();
+			expect(results.map(r => r.type)).toEqual([
+				ClaudeSettingsLocationType.WorkspaceLocal,
+				ClaudeSettingsLocationType.Workspace,
+				ClaudeSettingsLocationType.User,
+			]);
 		});
 
 		it('returns empty objects for missing files', async () => {

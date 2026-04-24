@@ -128,11 +128,20 @@ export class ClaudeSettingsService extends Disposable implements IClaudeSettings
 			this._settingsUris.map(uri => this.readSettingsFile(uri))
 		);
 
-		this._settingsCache = settingsFiles.map((settings, index) => ({
+		const allFiles = settingsFiles.map((settings, index) => ({
 			type: Object.values(ClaudeSettingsLocationType)[index],
 			settings,
 			uri: this._settingsUris[index],
 		}));
+
+		// Return in priority order: workspaceLocal > workspace > user
+		// Using Record ensures a compile error if a new ClaudeSettingsLocationType is added
+		const priority: Record<ClaudeSettingsLocationType, number> = {
+			[ClaudeSettingsLocationType.WorkspaceLocal]: 0,
+			[ClaudeSettingsLocationType.Workspace]: 1,
+			[ClaudeSettingsLocationType.User]: 2,
+		};
+		this._settingsCache = allFiles.sort((a, b) => priority[a.type] - priority[b.type]);
 
 		return this._settingsCache;
 	}

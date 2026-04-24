@@ -204,15 +204,14 @@ describe('ClaudeCustomizationProvider', () => {
 			expect(ClaudeCustomizationProvider.metadata.iconId).toBe('claude');
 		});
 
-		it('supports Agent, Skill, Instructions, Hook, and Plugins types', () => {
+		it('supports Agent, Skill, Instructions, and Hook types', () => {
 			const supported = ClaudeCustomizationProvider.metadata.supportedTypes;
 			expect(supported).toBeDefined();
-			expect(supported).toHaveLength(5);
+			expect(supported).toHaveLength(4);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Agent);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Skill);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Instructions);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Hook);
-			expect(supported).toContain(FakeChatSessionCustomizationType.Plugins);
 		});
 
 		it('only returns items whose type is in supportedTypes', async () => {
@@ -394,6 +393,68 @@ describe('ClaudeCustomizationProvider', () => {
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
 			expect(skillItems).toHaveLength(1);
+		});
+
+		it('marks skill as disabled when skillOverrides has off', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, { skillOverrides: { 'my-skill': 'off' } });
+			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/my-skill/SKILL.md'), 'my-skill')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems).toHaveLength(1);
+			expect(skillItems[0].enabled).toBe(false);
+		});
+
+		it('marks skill as enabled when skillOverrides has on or name-only', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, { skillOverrides: { 'skill-a': 'on', 'skill-b': 'name-only' } });
+			mockPromptsService.setSkills([
+				mockSkill(URI.file('/workspace/.claude/skills/skill-a/SKILL.md'), 'skill-a'),
+				mockSkill(URI.file('/workspace/.claude/skills/skill-b/SKILL.md'), 'skill-b'),
+			]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems).toHaveLength(2);
+			expect(skillItems[0].enabled).toBe(true);
+			expect(skillItems[1].enabled).toBe(true);
+		});
+
+		it('defaults skill to enabled when no override exists', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/my-skill/SKILL.md'), 'my-skill')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enabled).toBe(true);
+		});
+
+		it('uses higher-priority settings file for skillOverrides (first-writer-wins)', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsLocalUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.local.json');
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsLocalUri, wsUri]);
+			mockClaudeSettingsService.setFile(wsLocalUri, { skillOverrides: { 'my-skill': 'off' } });
+			mockClaudeSettingsService.setFile(wsUri, { skillOverrides: { 'my-skill': 'on' } });
+			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/my-skill/SKILL.md'), 'my-skill')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enabled).toBe(false);
+		});
+
+		it('sets enablementScope to Workspace for skills', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/my-skill/SKILL.md'), 'my-skill')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
 		});
 	});
 
@@ -668,6 +729,202 @@ describe('ClaudeCustomizationProvider', () => {
 
 			mockClaudeSettingsService.fireChanged();
 			expect(fired).toBe(true);
+		});
+	});
+
+	describe('skill enablement', () => {
+		it('disables a skill by writing skillOverrides off to workspace settings', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, {});
+
+			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written).toBeDefined();
+			expect(written!.skillOverrides).toEqual({ 'my-skill': 'off' });
+		});
+
+		it('enables a skill by removing its skillOverrides entry', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, { skillOverrides: { 'my-skill': 'off' } });
+
+			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written).toBeDefined();
+			expect(written!.skillOverrides).toBeUndefined();
+		});
+
+		it('preserves other skill overrides when toggling one', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, { skillOverrides: { 'my-skill': 'off', 'other-skill': 'off' } });
+
+			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written!.skillOverrides).toEqual({ 'other-skill': 'off' });
+		});
+
+		it('fires onDidChange after toggling a skill', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, {});
+
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
+			await provider.handleCustomizationEnablement(
+				skillUri, FakeChatSessionCustomizationType.Skill as any,
+				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			expect(fired).toBe(true);
+		});
+	});
+
+	describe('instructions enablement', () => {
+		it('marks instruction as disabled when claudeMdExcludes matches', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			mockFileSystemService.setFile(claudeMdUri, '# Instructions');
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, { claudeMdExcludes: ['/workspace/CLAUDE.md'] });
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instructionItems).toHaveLength(1);
+			expect(instructionItems[0].enabled).toBe(false);
+		});
+
+		it('marks instruction as enabled when not excluded', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			mockFileSystemService.setFile(claudeMdUri, '# Instructions');
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instructionItems[0].enabled).toBe(true);
+		});
+
+		it('sets enablementScope to Workspace when excluded by exact path', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			mockFileSystemService.setFile(claudeMdUri, '# Instructions');
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, { claudeMdExcludes: ['/workspace/CLAUDE.md'] });
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instructionItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
+		});
+
+		it('sets enablementScope to None when excluded by glob pattern only', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			mockFileSystemService.setFile(claudeMdUri, '# Instructions');
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, { claudeMdExcludes: ['**/CLAUDE.md'] });
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instructionItems[0].enabled).toBe(false);
+			expect(instructionItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+		});
+
+		it('disables an instruction by adding to claudeMdExcludes', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, {});
+
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			await provider.handleCustomizationEnablement(
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
+				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written).toBeDefined();
+			expect(written!.claudeMdExcludes).toContain('/workspace/CLAUDE.md');
+		});
+
+		it('enables an instruction by removing from claudeMdExcludes', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, { claudeMdExcludes: ['/workspace/CLAUDE.md'] });
+
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			await provider.handleCustomizationEnablement(
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
+				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written).toBeDefined();
+			expect(written!.claudeMdExcludes).toBeUndefined();
+		});
+
+		it('preserves other excludes when toggling one instruction', async () => {
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([wsUri]);
+			mockClaudeSettingsService.setFile(wsUri, {
+				claudeMdExcludes: ['/workspace/CLAUDE.md', '/workspace/CLAUDE.local.md']
+			});
+
+			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
+			await provider.handleCustomizationEnablement(
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
+				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
+			expect(written!.claudeMdExcludes).toEqual(['/workspace/CLAUDE.local.md']);
+		});
+	});
+
+	describe('hook descriptions', () => {
+		it('shows prompt text for prompt-type hooks', async () => {
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { PostToolUse: [{ matcher: '*', hooks: [{ type: 'prompt', prompt: 'Review the output' }] }] }
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems[0].description).toBe('Review the output');
+		});
+
+		it('shows URL for http-type hooks', async () => {
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { Stop: [{ matcher: '*', hooks: [{ type: 'http', url: 'https://example.com/hook' }] }] }
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems[0].description).toBe('https://example.com/hook');
 		});
 	});
 });

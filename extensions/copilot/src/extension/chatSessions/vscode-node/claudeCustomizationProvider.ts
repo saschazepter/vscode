@@ -110,10 +110,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		const agentItems = items.filter(i => i.type === vscode.ChatSessionCustomizationType.Agent);
 		this.logService.debug(`[ClaudeCustomizationProvider] agents (${agentItems.length}): ${agentItems.map(a => a.name).join(', ') || '(none)'}${sdkAgents.length ? ' [sdk]' : ' [files-only, no session]'}`);
 
-		// Instructions from hard-coded CLAUDE.md paths (checked for existence)
 		const settingsFiles = await this.claudeSettingsService.readAllSettings();
 
-		// Collect claudeMdExcludes from all files
+		// Instructions from hard-coded CLAUDE.md paths (checked for existence)
 		const instructionItems = await this.discoverInstructions(settingsFiles);
 		items.push(...instructionItems);
 		this.logService.debug(`[ClaudeCustomizationProvider] instructions (${instructionItems.length}): ${instructionItems.map(i => i.name).join(', ') || '(none)'}`);
@@ -175,14 +174,12 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			if (await this.fileExists(uri)) {
 				const name = basename(uri).replace(/\.md$/i, '');
 				const excluded = settingsFiles.some(s => s.settings.claudeMdExcludes?.some(pattern => this._matchesExclude(uri, pattern)));
-				const localSettings = settingsFiles.find(s => s.type === ClaudeSettingsLocationType.WorkspaceLocal);
-				const excludedByLocal = localSettings?.settings.claudeMdExcludes?.some(pattern => this._matchesExclude(uri, pattern));
 				const excludedByKnownPattern = excluded && settingsFiles.some(s => s.settings.claudeMdExcludes?.includes(uri.path));
 				items.push({
 					uri,
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
-					enablementScope: !excludedByKnownPattern || excludedByLocal
+					enablementScope: !excludedByKnownPattern
 						? vscode.ChatSessionCustomizationEnablementScope.None :
 						vscode.ChatSessionCustomizationEnablementScope.Workspace,
 					enabled: !excluded,
@@ -233,9 +230,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								name: `${eventId}${matcherLabel}`,
 								description,
 								enabled: settingsFile.settings.disableAllHooks !== true,
-								enablementScope: settingsFile.type === ClaudeSettingsLocationType.User
-									? vscode.ChatSessionCustomizationEnablementScope.Global
-									: vscode.ChatSessionCustomizationEnablementScope.Workspace,
+								enablementScope: vscode.ChatSessionCustomizationEnablementScope.Workspace,
 							});
 						}
 					}
