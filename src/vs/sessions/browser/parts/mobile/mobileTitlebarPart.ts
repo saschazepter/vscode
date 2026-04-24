@@ -348,8 +348,11 @@ export class MobileTitlebarPart extends Disposable {
 			}
 		});
 
-		// Backdrop — covers the screen behind the panel to catch taps outside
-		const backdrop = append(this.element.ownerDocument.body, $('div.mobile-account-panel-backdrop'));
+		// Backdrop — covers the screen behind the panel to catch taps outside.
+		// Appended inside the workbench container so that existing
+		// .agent-sessions-workbench .sessions-account-titlebar-panel-* CSS applies.
+		const workbenchContainer = this.element.parentElement!;
+		const backdrop = append(workbenchContainer, $('div.mobile-account-panel-backdrop'));
 		panelStore.add(toDisposable(() => backdrop.remove()));
 		panelStore.add(addDisposableListener(backdrop, EventType.CLICK, () => {
 			this.accountPanelDisposable.clear();
