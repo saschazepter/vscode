@@ -121,7 +121,7 @@ export class RemoteAgentPluginController extends Disposable {
 		private readonly _connection: IAgentConnection,
 		@IFileDialogService private readonly _fileDialogService: IFileDialogService,
 		@INotificationService private readonly _notificationService: INotificationService,
-		@IAICustomizationWorkspaceService private readonly _workspaceService: IAICustomizationWorkspaceService,
+		@IAICustomizationWorkspaceService _workspaceService: IAICustomizationWorkspaceService,
 	) {
 		super();
 
@@ -131,14 +131,7 @@ export class RemoteAgentPluginController extends Disposable {
 				label: localize('remoteAgentHost.addPlugin', "Add Remote Plugin"),
 				tooltip: localize('remoteAgentHost.addPluginTooltip', "Add a plugin folder that already exists on this remote agent host."),
 				icon: Codicon.add,
-				run: () => this.addPluginForHost(),
-			},
-			{
-				id: 'remoteAgentHost.addWorkspacePlugin',
-				label: localize('remoteAgentHost.addWorkspacePlugin', "Add Workspace Plugin"),
-				tooltip: localize('remoteAgentHost.addWorkspacePluginTooltip', "Add a plugin folder for the active remote workspace only."),
-				icon: Codicon.folder,
-				run: () => this.addPluginForWorkspace(),
+				run: () => this.addConfiguredPlugin(),
 			},
 		];
 	}
@@ -166,18 +159,6 @@ export class RemoteAgentPluginController extends Disposable {
 		});
 	}
 
-	private getWorkspaceScope(): { kind: CustomizationScopeKind.Workspace; workspace: string } | undefined {
-		const projectRoot = this._workspaceService.getActiveProjectRoot();
-		if (!projectRoot || projectRoot.scheme !== AGENT_HOST_SCHEME || projectRoot.authority !== this._connectionAuthority) {
-			return undefined;
-		}
-
-		return {
-			kind: CustomizationScopeKind.Workspace,
-			workspace: fromAgentHostUri(projectRoot).toString(),
-		};
-	}
-
 	private async pickRemotePluginFolder(title: string): Promise<URI | undefined> {
 		try {
 			const selected = await this._fileDialogService.showOpenDialog({
@@ -194,27 +175,7 @@ export class RemoteAgentPluginController extends Disposable {
 		}
 	}
 
-	private async addPluginForHost(): Promise<void> {
-		await this.addConfiguredPlugin({
-			kind: CustomizationScopeKind.Host,
-		});
-	}
-
-	private async addPluginForWorkspace(): Promise<void> {
-		const scope = this.getWorkspaceScope();
-		if (!scope) {
-			this._notificationService.warn(localize(
-				'remoteAgentHost.workspacePluginRequiresRemoteWorkspace',
-				"Open or focus a session on {0} to add a workspace-scoped remote plugin.",
-				this._hostLabel,
-			));
-			return;
-		}
-
-		await this.addConfiguredPlugin(scope);
-	}
-
-	private async addConfiguredPlugin(scope: { kind: CustomizationScopeKind.Host } | { kind: CustomizationScopeKind.Workspace; workspace: string }): Promise<void> {
+	private async addConfiguredPlugin(): Promise<void> {
 		const selected = await this.pickRemotePluginFolder(localize('remoteAgentHost.selectPluginFolder', "Select Plugin Folder on {0}", this._hostLabel));
 		if (!selected) {
 			return;
@@ -224,7 +185,6 @@ export class RemoteAgentPluginController extends Disposable {
 		const newCustomization: CustomizationRef = {
 			uri: original.toString(),
 			displayName: basename(original) || original.path,
-			scope,
 		};
 
 		const current = this.getConfiguredCustomizations();
