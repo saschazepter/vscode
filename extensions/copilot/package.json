@@ -4129,6 +4129,15 @@
 							"onExp"
 						]
 					},
+					"github.copilot.chat.localIndex.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.localIndex.enabled%",
+						"tags": [
+							"experimental",
+							"onExp"
+						]
+					},
 					"github.copilot.chat.workspace.maxLocalIndexSize": {
 						"type": "number",
 						"default": 100000,
