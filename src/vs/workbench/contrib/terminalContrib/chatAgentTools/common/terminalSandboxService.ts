@@ -72,6 +72,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private _remoteEnvDetails: IRemoteAgentEnvironment | null = null;
 	private _appRoot: string;
 	private _commandReadAllowKeywords: readonly string[] = [];
+	private _commandCwd: URI | undefined;
 	private _os: OperatingSystem = OS;
 	private _defaultWritePaths: string[] = ['~/.npm'];
 	private static readonly _sandboxTempDirName = 'tmp';
@@ -146,11 +147,12 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		return this._os;
 	}
 
-	public async wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string, commandKeywords?: readonly string[]): Promise<ITerminalSandboxWrapResult> {
+	public async wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string, commandKeywords?: readonly string[], cwd?: URI): Promise<ITerminalSandboxWrapResult> {
 		const normalizedCommandKeywords = this._normalizeCommandKeywords(commandKeywords ?? []);
-		const shouldRefreshConfig = this._commandReadAllowKeywords.length === 0 || this._needsForceUpdateConfigFile || !this._areCommandKeywordsEqual(this._commandReadAllowKeywords, normalizedCommandKeywords);
+		const shouldRefreshConfig = this._commandReadAllowKeywords.length === 0 || this._needsForceUpdateConfigFile || !this._areCommandKeywordsEqual(this._commandReadAllowKeywords, normalizedCommandKeywords) || this._commandCwd?.toString() !== cwd?.toString();
 		if (shouldRefreshConfig) {
 			this._commandReadAllowKeywords = normalizedCommandKeywords;
+			this._commandCwd = cwd;
 			await this.getSandboxConfigPath(true);
 		}
 
@@ -189,7 +191,11 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
 		// Quote shell arguments so the wrapped command cannot break out of the outer shell.
-		const wrappedCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(command)}`;
+		const commandToRunInSandbox = this._getSandboxCommandWithPreservedCwd(command, cwd);
+		const sandboxRuntimeCommand = `PATH="$PATH:${dirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(commandToRunInSandbox)}`;
+		const wrappedCommand = this._os === OperatingSystem.Linux && cwd?.path && cwd.path !== this._tempDir.path
+			? `cd ${this._quoteShellArgument(this._tempDir.path)}; ${sandboxRuntimeCommand}`
+			: sandboxRuntimeCommand;
 		if (this._remoteEnvDetails) {
 			return {
 				command: wrappedCommand,
@@ -404,6 +410,13 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 
 	private _quoteShellArgument(value: string): string {
 		return `'${value.replace(/'/g, `'\\''`)}'`;
+	}
+
+	private _getSandboxCommandWithPreservedCwd(command: string, cwd: URI | undefined): string {
+		if (this._os !== OperatingSystem.Linux || !cwd?.path || cwd.path === this._tempDir?.path) {
+			return command;
+		}
+		return `cd ${this._quoteShellArgument(cwd.path)} && ${command}`;
 	}
 
 	private _wrapUnsandboxedCommand(command: string, shell?: string): string {

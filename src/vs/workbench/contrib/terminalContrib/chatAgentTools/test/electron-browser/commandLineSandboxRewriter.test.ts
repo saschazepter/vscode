@@ -5,6 +5,7 @@
 
 import { strictEqual, deepStrictEqual } from 'assert';
 import { OperatingSystem } from '../../../../../../base/common/platform.js';
+import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import type { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
@@ -88,8 +89,8 @@ suite('CommandLineSandboxRewriter', () => {
 	test('wraps command when sandbox is enabled and config exists', async () => {
 		const calls: string[] = [];
 		stubSandboxService({
-			wrapCommand: async (command, _requestUnsandboxedExecution, _shell, commandKeywords) => {
-				calls.push(`wrapCommand:${commandKeywords?.join(',') ?? ''}`);
+			wrapCommand: async (command, _requestUnsandboxedExecution, _shell, commandKeywords, cwd) => {
+				calls.push(`wrapCommand:${commandKeywords?.join(',') ?? ''}:${cwd?.path ?? ''}`);
 				return {
 					command: `wrapped:${command}`,
 					isSandboxWrapped: true,
@@ -102,10 +103,13 @@ suite('CommandLineSandboxRewriter', () => {
 		});
 
 		const rewriter = store.add(instantiationService.createInstance(CommandLineSandboxRewriter, stubTreeSitterCommandParser(['node'])));
-		const result = await rewriter.rewrite(createRewriteOptions('echo hello'));
+		const result = await rewriter.rewrite({
+			...createRewriteOptions('echo hello'),
+			cwd: URI.file('/workspace')
+		});
 		strictEqual(result?.rewritten, 'wrapped:echo hello');
 		strictEqual(result?.reasoning, 'Wrapped command for sandbox execution');
-		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'wrapCommand:node']);
+		deepStrictEqual(calls, ['checkForSandboxingPrereqs', 'wrapCommand:node:/workspace']);
 	});
 
 	test('wraps command and forwards sandbox bypass flag when explicitly requested', async () => {
