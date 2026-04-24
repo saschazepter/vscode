@@ -722,10 +722,11 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * When restoring a workspace whose provider is currently Connecting, watch
-	 * for the connection to fail (Disconnected). On failure, clears the
-	 * selection and fires `onDidSelectWorkspace(undefined)` so the view pane
-	 * calls `unsetNewSession()`. Has no effect if the user has already made an
+	 * When restoring a workspace whose provider is currently Connecting (or not
+	 * yet connected), watch for the connection to fail (Disconnected after a
+	 * Connecting transition). On failure, clears the selection and fires
+	 * `onDidSelectWorkspace(undefined)` so the view pane calls
+	 * `unsetNewSession()`. Has no effect if the user has already made an
 	 * explicit pick (`_userHasPicked = true`).
 	 */
 	private _watchForConnectionFailure(selection: IWorkspaceSelection): void {
@@ -734,16 +735,22 @@ export class WorkspacePicker extends Disposable {
 			return;
 		}
 		const connStatus = provider.connectionStatus;
-		// Only watch during the initial connecting phase. If already Disconnected
-		// we leave the selection as-is (the user's prior pick is honored).
-		if (connStatus.get() !== RemoteAgentHostConnectionStatus.Connecting) {
+		// If already connected, nothing to watch.
+		if (connStatus.get() === RemoteAgentHostConnectionStatus.Connected) {
 			return;
 		}
+		// Track whether a connection attempt ever started. Remote providers
+		// register initially as Disconnected and transition through Connecting
+		// before settling. We only fall back if a connection was actually
+		// attempted and then failed (Connecting → Disconnected).
+		let sawConnecting = connStatus.get() === RemoteAgentHostConnectionStatus.Connecting;
 		this._connectionStatusWatch.value = autorun(reader => {
 			const status = connStatus.read(reader);
 			if (status === RemoteAgentHostConnectionStatus.Connected) {
 				this._connectionStatusWatch.clear();
-			} else if (status === RemoteAgentHostConnectionStatus.Disconnected) {
+			} else if (status === RemoteAgentHostConnectionStatus.Connecting) {
+				sawConnecting = true;
+			} else if (status === RemoteAgentHostConnectionStatus.Disconnected && sawConnecting) {
 				this._connectionStatusWatch.clear();
 				if (!this._userHasPicked) {
 					this._selectedWorkspace = undefined;

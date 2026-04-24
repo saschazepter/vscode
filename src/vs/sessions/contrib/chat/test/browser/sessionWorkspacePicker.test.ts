@@ -195,10 +195,10 @@ suite('WorkspacePicker - Connection Status', () => {
 	});
 
 	test('restore picks checked entry while remote is connecting (no fallback flicker)', () => {
-		// SSH remote: provider registers in Connecting state. We restore the
-		// checked entry immediately rather than falling back to a different
-		// workspace and swapping later.
-		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connecting);
+		// SSH remote: provider registers in Disconnected state and immediately
+		// starts connecting. We restore the checked entry immediately rather than
+		// falling back to a different workspace and swapping later.
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
 		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
 		const localProvider = createMockProvider('local-1');
 
@@ -213,16 +213,20 @@ suite('WorkspacePicker - Connection Status', () => {
 
 		assertSelectedProvider(picker, 'agenthost-remote-1');
 
+		// Connection attempt starts (no fallback while connecting).
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Connecting, undefined);
+		assertSelectedProvider(picker, 'agenthost-remote-1');
+
 		// After connection completes, selection is unchanged.
 		remoteStatus.set(RemoteAgentHostConnectionStatus.Connected, undefined);
 		assertSelectedProvider(picker, 'agenthost-remote-1');
 	});
 
 	test('connecting provider that fails falls back to no selection', () => {
-		// When a checked SSH workspace is restored, the provider starts in Connecting.
-		// If the SSH tunnel fails (Disconnected), the picker must clear the selection
-		// and fire onDidSelectWorkspace(undefined) so the view pane can call unsetNewSession().
-		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connecting);
+		// Real SSH remote lifecycle: starts Disconnected, transitions Connecting,
+		// then fails back to Disconnected. The picker must clear the selection
+		// and fire onDidSelectWorkspace(undefined) so the view pane calls unsetNewSession().
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Disconnected);
 		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
 
 		const storage = disposables.add(new TestStorageService());
@@ -237,6 +241,10 @@ suite('WorkspacePicker - Connection Status', () => {
 
 		const events: Array<IWorkspaceSelection | undefined> = [];
 		disposables.add(picker.onDidSelectWorkspace(e => events.push(e)));
+
+		// SSH tunnel begins.
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Connecting, undefined);
+		assertSelectedProvider(picker, 'agenthost-remote-1', 'Selection preserved while connecting');
 
 		// SSH tunnel fails.
 		remoteStatus.set(RemoteAgentHostConnectionStatus.Disconnected, undefined);
