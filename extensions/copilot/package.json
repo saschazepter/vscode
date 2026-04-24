@@ -4018,6 +4018,15 @@
 						"tags": [
 							"experimental"
 						]
+					},
+					"github.copilot.chat.localIndex.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.localIndex.enabled%",
+						"tags": [
+							"experimental",
+							"onExp"
+						]
 					}
 				}
 			},
@@ -4125,15 +4134,6 @@
 						"markdownDescription": "%github.copilot.config.projectLabels.inline%",
 						"tags": [
 							"advanced",
-							"experimental",
-							"onExp"
-						]
-					},
-					"github.copilot.chat.localIndex.enabled": {
-						"type": "boolean",
-						"default": false,
-						"markdownDescription": "%github.copilot.config.localIndex.enabled%",
-						"tags": [
 							"experimental",
 							"onExp"
 						]
