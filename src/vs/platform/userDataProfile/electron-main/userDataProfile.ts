@@ -16,8 +16,6 @@ import { IUserDataProfilesService, WillCreateProfileEvent, WillRemoveProfileEven
 import { UserDataProfilesService } from '../node/userDataProfile.js';
 import { IAnyWorkspaceIdentifier, IEmptyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IStateService } from '../../state/node/state.js';
-import { env } from '../../../base/common/process.js';
-import { join } from '../../../base/common/path.js';
 import { URI } from '../../../base/common/uri.js';
 
 export const IUserDataProfilesMainService = refineServiceDecorator<IUserDataProfilesService, IUserDataProfilesMainService>(IUserDataProfilesService);
