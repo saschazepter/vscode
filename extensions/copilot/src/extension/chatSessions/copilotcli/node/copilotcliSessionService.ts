@@ -1301,9 +1301,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		// Note: we can't rely on `getBackgroundTasks()` here because the public
 		// task list only includes *detached* shells and background agents, not
 		// plain `mode: "async"` shells (they're tracked internally by
-		// `shellContext.currentExecutions`). A status-based window matches the
-		// existing `sessionTerminators` 5-minute lifetime and covers every
+		// `shellContext.currentExecutions`). A status-based window covers every
 		// async-completion path the SDK emits.
+		const KEEP_ALIVE_TIMEOUT_MS = 5 * 60 * 1000;
 		let hasKeepAliveRef = false;
 		const releaseKeepAlive = () => {
 			if (hasKeepAliveRef) {
@@ -1316,16 +1316,12 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		session.add(toDisposable(releaseKeepAlive));
 		session.add(session.onDidChangeStatus(() => {
 			const status = session.status;
-			if (session.permissionRequested) {
-				keepAliveTimer.clear();
-				return;
-			}
 			if (status === undefined || status === ChatSessionStatus.Completed || status === ChatSessionStatus.Failed) {
 				if (!hasKeepAliveRef) {
 					refCountedSession.acquire();
 					hasKeepAliveRef = true;
 				}
-				keepAliveTimer.value = disposableTimeout(releaseKeepAlive, SESSION_SHUTDOWN_TIMEOUT_MS);
+				keepAliveTimer.value = disposableTimeout(releaseKeepAlive, KEEP_ALIVE_TIMEOUT_MS);
 			} else {
 				// Session is busy again (new turn started); hold the ref and
 				// cancel the release timer.
