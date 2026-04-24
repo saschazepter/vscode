@@ -120,8 +120,8 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 	const executionSubagentEnabled = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.ExecutionSubagentToolEnabled, experimentationService);
 	allowTools[ToolName.ExecutionSubagent] = isGptOrAnthropic && executionSubagentEnabled;
 
-	const loadSkillToolEnabled = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.LoadSkillToolEnabled, experimentationService);
-	allowTools[ToolName.LoadSkill] = loadSkillToolEnabled;
+	const skillToolEnabled = configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SkillToolEnabled, experimentationService);
+	allowTools[ToolName.Skill] = skillToolEnabled;
 
 	allowTools[CUSTOM_TOOL_SEARCH_NAME] = !!model.supportsToolSearch;
 

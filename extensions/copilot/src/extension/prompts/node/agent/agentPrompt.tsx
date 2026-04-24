@@ -543,11 +543,11 @@ class SkillAdherenceReminder extends PromptElement<SkillAdherenceReminderProps> 
 			return undefined;
 		}
 
-		const loadSkillEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.LoadSkillToolEnabled, this.experimentationService);
+		const skillToolEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SkillToolEnabled, this.experimentationService);
 
-		if (loadSkillEnabled) {
+		if (skillToolEnabled) {
 			return <Tag name='additional_skills_reminder'>
-				Always check if any skills apply to the user's request. If so, use the {ToolName.LoadSkill} tool to invoke the skill by name. Multiple skill files may be needed for a single request. These files contain best practices built from testing that are needed for high-quality outputs.<br />
+				Always check if any skills apply to the user's request. If so, use the {ToolName.Skill} tool to invoke the skill by name. Multiple skill files may be needed for a single request. These files contain best practices built from testing that are needed for high-quality outputs.<br />
 			</Tag>;
 		}
 

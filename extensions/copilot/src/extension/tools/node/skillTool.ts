@@ -21,7 +21,7 @@ import { CopilotToolMode, ICopilotTool, ToolRegistry } from '../common/toolsRegi
 import { IToolsService } from '../common/toolsService';
 import { formatUriForFileWidget } from '../common/toolUtils';
 
-export interface ILoadSkillParams {
+export interface ISkillParams {
 	/** The skill name. E.g., "commit", "review-pr", or "pdf" */
 	skill: string;
 }
@@ -35,8 +35,8 @@ const SKILL_SKIP_DIRS = new Set([
 	'coverage', '__pycache__', 'target', 'bin', 'obj', '.venv', 'venv',
 ]);
 
-class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
-	public static readonly toolName = ToolName.LoadSkill;
+class SkillTool implements ICopilotTool<ISkillParams> {
+	public static readonly toolName = ToolName.Skill;
 	public static readonly nonDeferred = true;
 	private _inputContext: IBuildPromptContext | undefined;
 
@@ -47,7 +47,7 @@ class LoadSkillTool implements ICopilotTool<ILoadSkillParams> {
 		@IToolsService private readonly toolsService: IToolsService,
 	) { }
 
-	async invoke(options: vscode.LanguageModelToolInvocationOptions<ILoadSkillParams>, token: vscode.CancellationToken) {
+	async invoke(options: vscode.LanguageModelToolInvocationOptions<ISkillParams>, token: vscode.CancellationToken) {
 		const uri = this.resolveSkillUri(options.input.skill);
 
 		// Read the skill file content
@@ -91,7 +91,7 @@ ${skillContent}
 		return result;
 	}
 
-	private async invokeFork(skillContent: string, uri: URI, options: vscode.LanguageModelToolInvocationOptions<ILoadSkillParams>, token: vscode.CancellationToken) {
+	private async invokeFork(skillContent: string, uri: URI, options: vscode.LanguageModelToolInvocationOptions<ISkillParams>, token: vscode.CancellationToken) {
 		const skillInfo = this.customInstructionsService.getSkillInfo(uri);
 		const skillLabel = skillInfo?.skillName ?? options.input.skill;
 
@@ -137,7 +137,7 @@ Task: ${query}`;
 		return result;
 	}
 
-	async prepareInvocation(options: vscode.LanguageModelToolInvocationPrepareOptions<ILoadSkillParams>, _token: vscode.CancellationToken): Promise<vscode.PreparedToolInvocation | undefined> {
+	async prepareInvocation(options: vscode.LanguageModelToolInvocationPrepareOptions<ISkillParams>, _token: vscode.CancellationToken): Promise<vscode.PreparedToolInvocation | undefined> {
 		let uri: URI;
 		try {
 			uri = this.resolveSkillUri(options.input.skill);
@@ -169,7 +169,7 @@ Task: ${query}`;
 		};
 	}
 
-	async resolveInput(input: ILoadSkillParams, promptContext: IBuildPromptContext, _mode: CopilotToolMode): Promise<ILoadSkillParams> {
+	async resolveInput(input: ISkillParams, promptContext: IBuildPromptContext, _mode: CopilotToolMode): Promise<ISkillParams> {
 		this._inputContext = promptContext;
 		return input;
 	}
@@ -242,7 +242,7 @@ Task: ${query}`;
 	}
 }
 
-ToolRegistry.registerTool(LoadSkillTool);
+ToolRegistry.registerTool(SkillTool);
 
 /**
  * Parse the `context` field from SKILL.md YAML frontmatter.

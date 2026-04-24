@@ -342,7 +342,7 @@ export class ComputeAutomaticInstructions {
 	private async _getCustomizationsIndex(instructionFiles: readonly IInstructionFile[], _existingVariables: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, debugInfo: InstructionsCollectionDebugInfo, token: CancellationToken): Promise<IPromptTextVariableEntry | undefined> {
 		const readTool = this._getTool('readFile');
 		const runSubagentTool = this._getTool(VSCodeToolReference.runSubagent);
-		const loadSkillTool = this._getTool('loadSkill');
+		const skillTool = this._getTool('skill');
 		const currentSessionType = this._currentSessionType;
 
 		const remoteEnv = await this._remoteAgentService.getEnvironment();
@@ -425,16 +425,16 @@ export class ComputeAutomaticInstructions {
 				}
 
 				const useSkillAdherencePrompt = this._configurationService.getValue(PromptsConfig.USE_SKILL_ADHERENCE_PROMPT);
-				// When the load_skill tool is available, direct the model to use it by name
+				// When the skill tool is available, direct the model to use it by name
 				// instead of reading SKILL.md files directly. This keeps file paths out of
 				// the listing and routes through the proper skill loading pipeline.
-				const skillLoadTool = loadSkillTool ?? readTool;
+				const skillLoadTool = skillTool ?? readTool;
 				entries.push('<skills>');
 				if (useSkillAdherencePrompt) {
 					// Stronger skill adherence prompt for experimental feature
 					entries.push('Skills provide specialized capabilities, domain knowledge, and refined workflows for producing high-quality outputs. Each skill folder contains tested instructions for specific domains like testing strategies, API design, or performance optimization. Multiple skills can be combined when a task spans different domains.');
-					if (loadSkillTool) {
-						entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST invoke it IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${loadSkillTool.variable} with the skill name to load the relevant skill(s).`);
+					if (skillTool) {
+						entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST invoke it IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${skillTool.variable} with the skill name to load the relevant skill(s).`);
 					} else {
 						entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST load and read the SKILL.md file IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${readTool.variable} to load the relevant skill(s).`);
 					}
@@ -449,9 +449,9 @@ export class ComputeAutomaticInstructions {
 					entries.push(`- "Add a discount code field to checkout" -> Load both the checkout-flow and form-validation skills FIRST`);
 					entries.push('Available skills:');
 				} else {
-					if (loadSkillTool) {
+					if (skillTool) {
 						entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
-						entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${loadSkillTool.variable} tool with the skill name to load it.`);
+						entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${skillTool.variable} tool with the skill name to load it.`);
 					} else {
 						entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
 						entries.push('Each skill comes with a description of the topic and a file path that contains the detailed instructions.');
@@ -567,7 +567,7 @@ export class ComputeAutomaticInstructions {
 		};
 		collectToolReference(readTool);
 		collectToolReference(runSubagentTool);
-		collectToolReference(loadSkillTool);
+		collectToolReference(skillTool);
 		return toPromptTextVariableEntry(content, true, toolReferences);
 	}
 
