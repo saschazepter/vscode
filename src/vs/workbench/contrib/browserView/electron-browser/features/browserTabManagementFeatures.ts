@@ -78,6 +78,7 @@ class BrowserTabQuickPick extends Disposable {
 		@IEditorGroupsService private readonly _editorGroupsService: IEditorGroupsService,
 		@IQuickInputService quickInputService: IQuickInputService,
 		@ITelemetryService telemetryService: ITelemetryService,
+		@IBrowserViewWorkbenchService private readonly _browserViewService: IBrowserViewWorkbenchService,
 	) {
 		super();
 
@@ -88,25 +89,12 @@ class BrowserTabQuickPick extends Disposable {
 		this._quickPick.buttons = [closeAllButtonItem];
 
 		this._register(this._quickPick.onDidTriggerItemButton(async ({ item }) => {
-			if (!item.editor) {
-				return;
-			}
-			const group = this._editorGroupsService.getGroup(item.groupId);
-			if (group) {
-				await group.closeEditor(item.editor, {
-					preserveFocus: true // Don't shift focus so the quickpick doesn't close
-				});
-			}
+			item.editor?.dispose();
 		}));
 
 		this._register(this._quickPick.onDidTriggerButton(async () => {
-			for (const group of this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE)) {
-				const browserEditors = group.editors.filter((e): e is BrowserEditorInput => e instanceof BrowserEditorInput);
-				if (browserEditors.length > 0) {
-					await group.closeEditors(browserEditors, {
-						preserveFocus: true // Don't shift focus so the quickpick doesn't close
-					});
-				}
+			for (const editor of this._browserViewService.getKnownBrowserViews().values()) {
+				editor.dispose();
 			}
 		}));
 
@@ -157,34 +145,57 @@ class BrowserTabQuickPick extends Disposable {
 		const groupsWithBrowserEditors = groups
 			.map(group => ({ group, browserEditors: group.editors.filter((e): e is BrowserEditorInput => e instanceof BrowserEditorInput) }))
 			.filter(({ browserEditors }) => browserEditors.length > 0);
-		const multipleGroups = groupsWithBrowserEditors.length > 1;
 
-		// Build a map of group ID to aria label for screen readers
-		const mapGroupIdToGroupAriaLabel = new Map<GroupIdentifier, string>();
-		for (const { group } of groupsWithBrowserEditors) {
-			mapGroupIdToGroupAriaLabel.set(group.id, group.ariaLabel);
+		// Track which view IDs appear in at least one editor group
+		const viewsInGroups = new Set<string>();
+		for (const { browserEditors } of groupsWithBrowserEditors) {
+			for (const editor of browserEditors) {
+				viewsInGroups.add(editor.id);
+			}
 		}
 
+		// Background views: known but not open in any editor group
+		const backgroundEditors = [...this._browserViewService.getKnownBrowserViews().values()].filter(e => !viewsInGroups.has(e.id));
+		const backgroundLabel = localize('browser.backgroundGroup', "Background");
+
+		// Build sections: each editor group + optional background
+		type Section = { label: string; ariaLabel: string; groupId: number; editors: BrowserEditorInput[]; isPinned?: (e: BrowserEditorInput) => boolean };
+		const sections: Section[] = groupsWithBrowserEditors.map(({ group, browserEditors }) => ({
+			label: group.label,
+			ariaLabel: group.ariaLabel,
+			groupId: group.id,
+			editors: browserEditors,
+			isPinned: e => group.isPinned(e),
+		}));
+		if (backgroundEditors.length > 0) {
+			sections.push({ label: backgroundLabel, ariaLabel: backgroundLabel, groupId: ACTIVE_GROUP, editors: backgroundEditors });
+		}
+		for (const { group } of groupsWithBrowserEditors) {
+			this._itemListeners.add(group.onDidModelChange(() => this._buildItems()));
+		}
+		this._itemListeners.add(this._browserViewService.onDidChangeBrowserViews(() => this._buildItems()));
+
+		const hasMultipleSections = sections.length > 1;
 		let newActivePick: IBrowserQuickPickItem | undefined;
 
-		for (const { group, browserEditors } of groupsWithBrowserEditors) {
-			if (multipleGroups) {
-				picks.push({ type: 'separator', label: group.label });
+		for (const section of sections) {
+			if (hasMultipleSections) {
+				picks.push({ type: 'separator', label: section.label });
 			}
-			for (const editor of browserEditors) {
+			for (const editor of section.editors) {
 				const icon = editor.getIcon();
 				const description = editor.getDescription();
 				const nameAndDescription = description ? `${editor.getName()} ${description}` : editor.getName();
 				const pick: IBrowserQuickPickItem = {
-					groupId: group.id,
+					groupId: section.groupId,
 					editor,
 					label: editor.getName(),
-					ariaLabel: multipleGroups
-						? localize('browserEntryAriaLabelWithGroup', "{0}, {1}", nameAndDescription, mapGroupIdToGroupAriaLabel.get(group.id))
+					ariaLabel: hasMultipleSections
+						? localize('browserEntryAriaLabelWithGroup', "{0}, {1}", nameAndDescription, section.ariaLabel)
 						: nameAndDescription,
 					description,
 					buttons: [closeButtonItem],
-					italic: !group.isPinned(editor),
+					italic: section.isPinned ? !section.isPinned(editor) : undefined,
 				};
 				if (icon instanceof URI) {
 					pick.iconPath = { dark: icon };
@@ -199,7 +210,6 @@ class BrowserTabQuickPick extends Disposable {
 
 				this._itemListeners.add(editor.onDidChangeLabel(() => this._buildItems()));
 			}
-			this._itemListeners.add(group.onDidModelChange(() => this._buildItems()));
 		}
 
 		picks.push({ type: 'separator' });
