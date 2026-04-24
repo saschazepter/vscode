@@ -199,6 +199,15 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	}
 	private _lastUsedModel: string | undefined;
 	private _permissionLevel: string | undefined;
+	/**
+	 * True while we are inside `_handleRequestImplInner` for an
+	 * `isSystemInitiated` request (the SDK's auto-injected follow-up turn
+	 * triggered by a `system.notification`). The interactive confirmation
+	 * widget rendered by `handleShellPermission` does not surface in this
+	 * mode (no usable `toolInvocationToken` for system-initiated requests),
+	 * so we auto-approve shell permissions to avoid hanging the SDK turn.
+	 */
+	private _isInSystemInitiatedTurn = false;
 	private _pendingPrompt: string | undefined;
 	private _bridgeProcessor: CopilotCliBridgeSpanProcessor | undefined;
 	private readonly _todoSqlQuery = new TodoSqlQuery();
@@ -599,6 +608,27 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					return;
 				}
 
+				// During a system-initiated follow-up turn (triggered by a shell
+				// completion `system.notification`), auto-approve `shell`
+				// permissions to keep chained async-shell flows working.
+				//
+				// The actual gap is: when our extension calls
+				// `toolsService.invokeTool('CoreTerminalConfirmationTool',
+				// { toolInvocationToken })` during a system-initiated chat
+				// request, the inline confirmation widget doesn't render in
+				// the response (or doesn't take user input back). The
+				// `invokeTool` call never resolves, so `respondToPermission`
+				// is never called and the SDK turn hangs forever.
+				//
+				// TODO: Until the chat platform supports interactive permission
+				// widgets inside system-initiated requests, we auto-approve
+				// here so the chained scenario from issue #309290 works.
+				if (this._isInSystemInitiatedTurn && permissionRequest.kind === 'shell') {
+					this.logService.info(`[anthony] permission auto-approved during system-initiated turn: kind=${permissionRequest.kind}`);
+					this._sdkSession.respondToPermission(requestId, { kind: 'approved' });
+					return;
+				}
+
 				// Resolve tool call data for the permission request.
 				const toolData = permissionRequest.toolCallId ? toolCalls.get(permissionRequest.toolCallId) : undefined;
 				const pendingData = permissionRequest.toolCallId ? pendingToolInvocations.get(permissionRequest.toolCallId) : undefined;
@@ -921,9 +951,14 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					// to complete (next `session.idle`) so the listeners above
 					// can stream `assistant.message_delta` / `tool.execution_*`
 					// events into this fresh chat response.
-					this.logService.info(`[anthony] system-initiated handler: awaiting next turn_end for session ${this.sessionId}`);
-					await this._awaitNextSessionIdle(token);
-					this.logService.info(`[anthony] system-initiated handler: turn_end resolved for session ${this.sessionId}`);
+					this.logService.info(`[anthony] system-initiated handler: awaiting next session.idle for session ${this.sessionId}`);
+					this._isInSystemInitiatedTurn = true;
+					try {
+						await this._awaitNextSessionIdle(token);
+					} finally {
+						this._isInSystemInitiatedTurn = false;
+					}
+					this.logService.info(`[anthony] system-initiated handler: session.idle resolved for session ${this.sessionId}`);
 				} else {
 					await this.sendRequestInternal(input, attachments, false, logStartTime);
 				}
@@ -1030,14 +1065,22 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			});
 	}
 	/**
-	 * Wait for the SDK to finish its current (or imminent) follow-up turn.
+	 * Wait for the SDK to finish all turns triggered by a system notification.
 	 *
 	 * Used when handling a system-initiated request: the SDK has already
-	 * received a `system.notification`, will run its own follow-up turn (via
-	 * `send({mode:'immediate', source:'system'})`), and we just need to keep
-	 * our chat response open so listeners stream `assistant.message_delta` /
-	 * `tool.execution_*` events into it. Resolves on the next
-	 * `assistant.turn_end`, on cancellation, or after a safety timeout.
+	 * received a `system.notification` and will run one or more follow-up
+	 * turns (the model may emit further tool calls — including new async
+	 * shell launches — that require additional turns before the SDK is
+	 * actually done). We must keep our chat response open until the SDK
+	 * itself signals it has nothing left to process, which is `session.idle`.
+	 *
+	 * Waiting on `assistant.turn_end` is incorrect — the SDK emits one
+	 * `turn_end` per turn and may immediately start another, so resolving
+	 * on the first `turn_end` would let `_isInSystemInitiatedTurn` clear
+	 * before later in-flight tool permissions fire and would close the
+	 * response stream prematurely.
+	 *
+	 * Resolves on `session.idle`, on cancellation, or after a safety timeout.
 	 */
 	private async _awaitNextSessionIdle(token: vscode.CancellationToken): Promise<void> {
 		if (token.isCancellationRequested) {
@@ -1047,7 +1090,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		const disposables = new DisposableStore();
 		try {
 			await new Promise<void>(resolve => {
-				const off = this._sdkSession.on('assistant.turn_end', () => resolve());
+				const off = this._sdkSession.on('session.idle', () => resolve());
 				disposables.add(toDisposable(off));
 				disposables.add(token.onCancellationRequested(() => resolve()));
 				const timer = setTimeout(() => resolve(), SAFETY_TIMEOUT_MS);
