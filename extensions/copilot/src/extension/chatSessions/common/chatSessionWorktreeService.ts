@@ -59,6 +59,10 @@ export const IChatSessionWorktreeService = createServiceIdentifier<IChatSessionW
 
 export interface IChatSessionWorktreeService {
 	readonly _serviceBrand: undefined;
+	/**
+	 * Triggered when the set of changes in a session worktree has changed.
+	 */
+	onDidChangeWorktreeChanges: vscode.Event<{ sessionId: string }>;
 
 	createWorktree(repositoryPath: vscode.Uri, stream?: vscode.ChatResponseStream, baseBranch?: string, branchName?: string): Promise<ChatSessionWorktreeProperties | undefined>;
 

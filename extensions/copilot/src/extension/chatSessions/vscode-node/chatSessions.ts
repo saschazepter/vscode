@@ -198,7 +198,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 			));
 
 		const copilotcliChatSessionContentProvider = copilotcliAgentInstaService.createInstance(CopilotCLIChatSessionContentProvider);
-		this._register(copilotcliAgentInstaService.createInstance(ChatSessionRepositoryTracker, copilotcliChatSessionContentProvider));
+		this._register(copilotcliAgentInstaService.createInstance(ChatSessionRepositoryTracker, undefined));
 		const promptResolver = copilotcliAgentInstaService.createInstance(CopilotCLIPromptResolver);
 		const gitService = copilotcliAgentInstaService.invokeFunction(accessor => accessor.get(IGitService));
 		const sessionTracker = copilotcliAgentInstaService.invokeFunction(accessor => accessor.get(ICopilotCLISessionTracker));

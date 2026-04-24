@@ -55,6 +55,7 @@ import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { convertReferenceToVariable } from '../copilotcli/vscode-node/copilotCLIPromptReferences';
+import { clearChangesCacheForAffectedSessions } from './chatSessionRepositoryTracker';
 
 const REPOSITORY_OPTION_ID = 'repository';
 
@@ -170,6 +171,33 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 
 	private readonly _onDidCommitChatSessionItem = this._register(new Emitter<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }>());
 	public readonly onDidCommitChatSessionItem: Event<{ original: vscode.ChatSessionItem; modified: vscode.ChatSessionItem }> = this._onDidCommitChatSessionItem.event;
+	/**
+	 * This is yet another layer of caching, it's a temporary and dirty solution.
+	 * We have caching in another layer.
+	 * However here's what happens:
+	 * 1. User opens opens vscode/agents app
+	 * 2. All sessions are displayed and diff computed
+	 * 3. User opens a session,
+	 * 4. This causes list of folders to change and git repo status to change
+	 * 5. A side effect of this is to remove all cached chagnes
+	 * This is done to react to cases where new repo is created or user chagnes files in workspace folder.
+	 * Alas this also results in recently computed changes getting wiped out again.
+	 * 6. Now VS Code automatically refreshes everything, another issue (selecting sessions causes full refresh)
+	 * 7. Now vs code will call refresh, and we return everything
+	 * 8. The list of changes are not returned as they were cleared
+	 * 9. Now the sessions list contains the sessions but some sessions will be missing diff info.
+	 * This is easily visible if you more a lot of workspace sessions that share the same folder (hence same diff).
+	 * 10. VS Code calls the resolveChatSessionItem for each session item.
+	 * 11. Now they appear
+	 *
+	 * End result = clicking on a chat session item causes a number of sesion items to lose their diff info and then regain it when resolveChatSessionItem is called. This is a bad UX as the user sees the diff info disappear and then reappear.
+	 * I.e. there's a flash of missing diff info which is jarring.
+	 *
+	 * Temporary solution:
+	 * - Cache the changes here again, and return that.
+	 * - When resolve is called we return the latest information.
+	 */
+	private readonly cachedChanges = new Map<string, vscode.ChatSessionChangedFile[]>();
 
 	public resolveChatSessionItem?: (item: vscode.ChatSessionItem, token: vscode.CancellationToken) => Promise<vscode.ChatSessionItem | undefined>;
 
@@ -199,7 +227,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 			this.resolveChatSessionItem = async (item: vscode.ChatSessionItem, token: vscode.CancellationToken): Promise<vscode.ChatSessionItem | undefined> => {
 				const sessionId = SessionIdForCLI.parse(item.resource);
 				const session = await this.copilotcliSessionService.getSessionItem(sessionId, token);
-				if (!session || token.isCancellationRequested || Array.isArray(item.changes)) {
+				if (!session || token.isCancellationRequested) {
 					return undefined;
 				}
 				return this.toChatSessionItem(session, { includeChanges: true }, token);
@@ -299,10 +327,10 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// `buildChanges` runs `git diff` and is the slow leg of populating an item. Skip it on the
 		// eager pass and let `resolveChatSessionItem` fill it in lazily for visible items.
 		// But if computing changes is easy (cached or the like), then include them right away to avoid a second update pass.
-		let changes: vscode.ChatSessionChangedFile[] | undefined;
+		let changes: vscode.ChatSessionChangedFile[] | undefined = this.cachedChanges.get(session.id);
 		if (!token.isCancellationRequested && (options?.includeChanges || (await this.hasCachedChanges(session.id, worktreeProperties)))) {
 			changes = await this.buildChanges(session.id, worktreeProperties, workingDirectory, token);
-
+			this.cachedChanges.set(session.id, changes);
 			// We need to get an updated version of worktree properties here because when the
 			// changes are being computed, the worktree properties are also updated with the
 			// repository state which we are passing along through the metadata
@@ -1656,6 +1684,9 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				// is used if worktree isolation is enabled, and auto-commit is disabled or workspace
 				// isolation is enabled.
 				await this.copilotCLIWorktreeCheckpointService.handleRequestCompleted(session.sessionId, request.id);
+				if (workingDirectory) {
+					void clearChangesCacheForAffectedSessions(workingDirectory, [session.sessionId], this.logService, this.chatSessionMetadataStore, this.workspaceFolderService, this.copilotCLIWorktreeManagerService, this.sessionItemProvider).catch(ex => this.logService.error(ex, 'Failed to clear changes cache after request completion'));
+				}
 			}
 
 			void this.handlePullRequestCreated(session).catch(ex => this.logService.error(ex, 'Failed to handle pull request creation'));
