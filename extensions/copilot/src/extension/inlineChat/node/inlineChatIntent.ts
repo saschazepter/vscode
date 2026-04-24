@@ -56,9 +56,6 @@ interface IInlineChatEditResult {
 	errorMessage?: string;
 }
 
-interface IInlineChatEditStrategy {
-	executeEdit(endpoint: IChatEndpoint, conversation: Conversation, request: vscode.ChatRequest, stream: vscode.ChatResponseStream, token: CancellationToken, documentContext: IDocumentContext, chatTelemetry: ChatTelemetryBuilder): Promise<IInlineChatEditResult>;
-}
 
 export class InlineChatIntent implements IIntent {
 
@@ -202,9 +199,9 @@ export class InlineChatIntent implements IIntent {
 
 		let result: IInlineChatEditResult;
 		try {
-			const strategy: IInlineChatEditStrategy = this._instantiationService.createInstance(InlineChatEditToolsStrategy, this);
+			const inlineToolLoop = this._instantiationService.createInstance(InlineChatToolCalling, this);
 
-			result = await strategy.executeEdit(endpoint, conversation, request, stream, token, documentContext, chatTelemetry);
+			result = await inlineToolLoop.run(endpoint, conversation, request, stream, token, documentContext, chatTelemetry);
 		} catch (err) {
 			this._logService.error(err, 'InlineChatIntent: prompt rendering failed');
 			return {
@@ -266,11 +263,7 @@ export class InlineChatIntent implements IIntent {
 	}
 }
 
-class InlineChatEditToolsStrategy implements IInlineChatEditStrategy {
-
-	readonly id = InlineChatIntent.ID;
-	readonly locations = [ChatLocation.Editor];
-	readonly description = '';
+class InlineChatToolCalling {
 
 	constructor(
 		private readonly _intent: InlineChatIntent,
@@ -281,7 +274,7 @@ class InlineChatEditToolsStrategy implements IInlineChatEditStrategy {
 		@IExperimentationService private readonly _experimentationService: IExperimentationService,
 	) { }
 
-	async executeEdit(endpoint: IChatEndpoint, conversation: Conversation, request: vscode.ChatRequest, stream: vscode.ChatResponseStream, token: CancellationToken, documentContext: IDocumentContext, chatTelemetry: ChatTelemetryBuilder): Promise<IInlineChatEditResult> {
+	async run(endpoint: IChatEndpoint, conversation: Conversation, request: vscode.ChatRequest, stream: vscode.ChatResponseStream, token: CancellationToken, documentContext: IDocumentContext, chatTelemetry: ChatTelemetryBuilder): Promise<IInlineChatEditResult> {
 		assertType(request.location2 instanceof ChatRequestEditorData);
 		assertType(documentContext);
 
