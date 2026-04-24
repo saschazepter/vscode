@@ -378,8 +378,12 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			const trimmed = output.trim();
 			// macOS: "# List of acceptable shells for chpass(1)."
 			// Linux: "# /etc/shells: valid login shells"
+			// On headless Linux CI, Electron/Chromium may emit DBus stderr lines
+			// before the actual command output, so check the *last* line rather
+			// than requiring the whole trimmed buffer to start with '#'.
+			const lastLine = trimmed.split('\n').pop() ?? '';
 			assert.ok(
-				trimmed.startsWith('#'),
+				lastLine.startsWith('#'),
 				`Expected a comment line from /etc/shells, got: ${trimmed}`
 			);
 		});
@@ -399,7 +403,12 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			const marker = `SANDBOX_TMPDIR_${Date.now()}`;
 			const output = await invokeRunInTerminal(`echo "${marker}" > "$TMPDIR/${marker}.tmp" && cat "$TMPDIR/${marker}.tmp" && rm "$TMPDIR/${marker}.tmp"`);
 
-			assert.strictEqual(output.trim(), marker);
+			// On headless Linux CI, Electron/Chromium may emit DBus stderr lines
+			// before the actual command output, so check the *last* line rather
+			// than requiring the entire trimmed output to equal the marker.
+			const trimmed = output.trim();
+			const lastLine = trimmed.split('\n').pop() ?? '';
+			assert.strictEqual(lastLine, marker, `Unexpected output: ${JSON.stringify(trimmed)}`);
 		});
 
 		test('non-allowlisted domains trigger unsandboxed confirmation flow', async function () {
