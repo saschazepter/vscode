@@ -182,14 +182,6 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 			return join(vscodePortable, 'agent-plugins');
 		}
 
-		// When extensions directory is explicitly overridden, co-locate
-		// agent plugins as a sibling so that --extensions-dir and
-		// --transient automatically include agent plugins.
-		const cliExtensionsDir = this.args['extensions-dir'];
-		if (cliExtensionsDir) {
-			return join(dirname(resolve(cliExtensionsDir)), 'agent-plugins');
-		}
-
 		return joinPath(this.userHome, this.productService.dataFolderName, 'agent-plugins').fsPath;
 	}
 
