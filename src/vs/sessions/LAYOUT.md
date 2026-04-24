@@ -42,6 +42,7 @@ editor opens or restores that target the main editor part.
 | Titlebar | `Parts.TITLEBAR_PART` | Top of right section | Always visible | — |
 | Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
+| Chat Editor | `AgenticParts.CHAT_EDITOR_PART` | Top-right section, between Chat Bar and Editor; explicit opens reveal it and it hides again when its last editor closes | Hidden | — |
 | Editor | `Parts.EDITOR_PART` | Top-right section, in the grid but hidden by default; explicit opens or restores that target the main editor part can reveal it while modal editors still open via `MODAL_GROUP` into `ModalEditorPart` overlay | Hidden | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
 | Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
@@ -154,20 +155,21 @@ The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 
 ### 4.1 Grid Tree
 
-The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 4.3).
-
 ```
-Orientation: HORIZONTAL (root)
-├── Sidebar (leaf, size: 300px default)
-└── Right Section (branch, VERTICAL, size: remaining width)
-    ├── Titlebar (leaf, size: titleBarHeight)
-    ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
-    │   ├── Chat Bar (leaf, size: remaining width)
-    │   └── Auxiliary Bar (leaf, size: 300px default)
-    └── Panel (leaf, size: 300px default, hidden by default)
+Orientation: VERTICAL (root)
+├── Titlebar (leaf, size: titleBarHeight)
+└── Content Section (branch, HORIZONTAL, size: remaining height)
+    ├── Sidebar (leaf, size: 300px default)
+    └── Right Section (branch, VERTICAL, size: remaining width)
+        ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
+        │   ├── Chat Bar (leaf, size: remaining width)
+        │   ├── Chat Editor (leaf, size: 420px default, hidden by default)
+        │   ├── Editor (leaf, size: 600px default, hidden by default)
+        │   └── Auxiliary Bar (leaf, size: 300px default)
+        └── Panel (leaf, size: 300px default, hidden by default)
 ```
 
-This structure places the sidebar at the root level spanning the full window height. The titlebar, chat bar, auxiliary bar, and panel are all within the right section.
+This structure places the titlebar above the content area, the sidebar on the left, and the chat editor and main editor inline with the chat bar and auxiliary bar in the top-right branch. Both editor parts are hidden until explicitly targeted, and the chat editor part re-hides when its last editor closes.
 
 ### 4.2 Default Sizes
 
@@ -176,6 +178,8 @@ This structure places the sidebar at the root level spanning the full window hei
 | Sidebar | 300px width |
 | Auxiliary Bar | 380px width |
 | Chat Bar | Remaining space |
+| Chat Editor | 420px width |
+| Editor | 600px width |
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
 
@@ -185,7 +189,7 @@ The sessions auxiliary bar can generally be resized down to 270px. When the main
 
 ### 4.3 Editor Modal
 
-The main editor part is created hidden (`display:none`) and remains hidden for the default sessions experience. Flows that explicitly open or restore an editor into the main editor part can reveal it, and modal editor opens do not change the visibility of an already visible main editor. Editors without an explicit main-part target still open in the `ModalEditorPart` overlay via the standard `createModalEditorPart()` mechanism.
+The main editor part and chat editor part are both created hidden (`display:none`) and remain hidden for the default sessions experience. Flows that explicitly open or restore an editor into either inline editor part can reveal it, and each part hides again when its last editor closes. Editors without an explicit target still open in the `ModalEditorPart` overlay via the standard `createModalEditorPart()` mechanism.
 
 #### How It Works
 
@@ -256,6 +260,9 @@ setPartHidden(hidden: boolean, part: Parts): void
   - If the panel is maximized when hiding, it exits maximized state first
 - **Editor Part:**
     - The main editor part is hidden by default but can be shown for explicit editor workflows that target the main editor part
+    - **Chat Editor Part:**
+        - The chat editor part is hidden by default and is only shown for explicit editor workflows that target the chat editor part
+        - Entering the new-session view closes all chat editor groups and leaves the part hidden
     - Modal editor opens do not change the current main editor visibility state
     - The sessions **Maximize Editor** action temporarily hides the panel when the visible panel is the terminal view, and the matching **Restore Editor** action reopens that terminal panel if maximize hid it
   - All editors open via `MODAL_GROUP` into the `ModalEditorPart` overlay, which manages its own lifecycle
@@ -661,6 +668,10 @@ interface IPartVisibilityState {
 ---
 
 ## Revision History
+
+| Date | Change |
+|------|--------|
+| 2026-04-24 | Documented the hidden-by-default chat editor part and clarified that entering the new-session view closes chat editor groups without reopening the part. |
 
 | Date | Change |
 |------|--------|

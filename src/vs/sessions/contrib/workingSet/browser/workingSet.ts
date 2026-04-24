@@ -80,7 +80,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 
 		this._register(autorun(reader => {
 			const _useModalConfig = this._useModalConfigObs.read(reader);
-			if (_useModalConfig === 'all') {
+			if (_useModalConfig === 'all' || _useModalConfig === 'some') {
 				return;
 			}
 

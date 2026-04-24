@@ -232,8 +232,8 @@ Coordinates active session tracking, provider selection, and user workflows. Sit
 | `activeSession: IObservable<IActiveSession \| undefined>` | The currently active session (extends `ISession` with `activeChat: IObservable<IChat>`) |
 | `activeProviderId: IObservable<string \| undefined>` | Auto-selects when one provider exists, persists to storage |
 | `setActiveProvider(providerId)` | Set the active sessions provider by ID |
-| `openSession(sessionResource, options?)` | Select an existing session as active |
-| `openChat(session, chatUri)` | Open a specific chat within a session |
+| `openSession(sessionResource, options?)` | Select an existing session as active and mirror its foreground chat into both the Chat Pane and the chat editor part |
+| `openChat(session, chatUri)` | Open a specific chat within a session in both the Chat Pane and the chat editor part |
 | `openNewSessionView()` | Switch to the new-session view |
 
 #### Session Creation & Send

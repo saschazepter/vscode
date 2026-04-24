@@ -950,6 +950,11 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			if (part === this.editorGroupService.mainPart && this.partVisibility.editor && this.areAllGroupsEmpty(part)) {
 				this.setEditorHidden(true);
 			}
+
+			const chatEditorPart = this.getChatEditorPart();
+			if (part === chatEditorPart && this.partVisibility.chatEditor && this.areAllGroupsEmpty(part)) {
+				this.setChatEditorHidden(true);
+			}
 		}));
 
 		// Initialize layout state (must be done before createWorkbenchLayout)
@@ -963,11 +968,16 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.partVisibility.panel = visDefaults.panel;
 		this.partVisibility.chatBar = visDefaults.chatBar;
 		this.partVisibility.editor = visDefaults.editor;
-		this.partVisibility.chatEditor = this.shouldShowChatEditorPart();
+		this.partVisibility.chatEditor = false;
 	}
 
 	private shouldShowChatEditorPart(): boolean {
-		return this.layoutPolicy.viewportClass.get() !== 'phone';
+		if (this.layoutPolicy.viewportClass.get() === 'phone') {
+			return false;
+		}
+
+		const chatEditorPart = this.getChatEditorPart();
+		return !!chatEditorPart && !this.areAllGroupsEmpty(chatEditorPart);
 	}
 
 	private areAllGroupsEmpty(part: IEditorPart): boolean {
@@ -1286,7 +1296,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 				if (this.partVisibility.panel !== defaults.panel) {
 					this.setPanelHidden(!defaults.panel);
 				}
-				this.setChatEditorHidden(false);
+				this.setChatEditorHidden(!this.shouldShowChatEditorPart());
 			}
 
 			// Re-run updateStyles() on pane composite parts so that

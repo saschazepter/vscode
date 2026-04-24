@@ -8,14 +8,15 @@ import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../.
 import { ResourceMap } from '../../../../base/common/map.js';
 import { IObservable, ISettableObservable, autorun, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { ChatViewId, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ACTIVE_GROUP, PreferredGroup } from '../../../../workbench/services/editor/common/editorService.js';
 import { IEditorGroupsService, IEditorPart, IModalEditorPart } from '../../../../workbench/services/editor/common/editorGroupsService.js';
+import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ActiveSessionProviderIdContext, ActiveSessionTypeContext, IsActiveSessionArchivedContext, IsActiveSessionBackgroundProviderContext, IsNewChatInSessionContext, IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { ActiveSessionSupportsMultiChatContext, IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../common/sessionsManagement.js';
@@ -26,7 +27,6 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 
 const ACTIVE_SESSION_STATES_KEY = 'agentSessions.activeSessionStates';
 const ACTIVE_PROVIDER_KEY = 'sessions.activeProviderId';
-const OPEN_NEW_CHAT_EDITOR_COMMAND_ID = 'workbench.action.sessions.openNewChatEditor';
 
 /**
  * Persisted state for a session.
@@ -80,9 +80,9 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+		@IViewsService private readonly viewsService: IViewsService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
-		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -265,6 +265,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 
 		this._isNewChatInSessionContext.set(false);
 		await this.chatWidgetService.openSession(chatUri, this.getChatEditorTarget(), { pinned: true });
+		await this.loadSessionInChatPane(chatUri);
 	}
 
 	async openSession(sessionResource: URI, options?: { preserveFocus?: boolean; openChats?: boolean }): Promise<void> {
@@ -318,7 +319,13 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 
 		if (foregroundChat) {
 			await this.chatWidgetService.openSession(foregroundChat.resource, target, { pinned: true, preserveFocus: options?.preserveFocus, revealIfOpened: false });
+			await this.loadSessionInChatPane(foregroundChat.resource);
 		}
+	}
+
+	private async loadSessionInChatPane(sessionResource: URI): Promise<void> {
+		const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, false);
+		await chatView?.loadSession(sessionResource);
 	}
 
 	private getChatEditorTarget(): PreferredGroup {
@@ -472,16 +479,6 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		const clearedChatEditors = await this.closeChatEditorPartEditors();
 		if (!clearedChatEditors) {
 			return;
-		}
-
-		await this.openNewChatEditor();
-	}
-
-	private async openNewChatEditor(): Promise<void> {
-		try {
-			await this.commandService.executeCommand(OPEN_NEW_CHAT_EDITOR_COMMAND_ID);
-		} catch (error) {
-			this.logService.error('Failed to open new chat editor:', error);
 		}
 	}
 
