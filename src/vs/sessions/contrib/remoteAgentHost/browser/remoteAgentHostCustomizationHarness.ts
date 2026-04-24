@@ -389,12 +389,12 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 			const isBundleItem = isSyntheticBundle(sessionCustomization.customization);
 			const isClientSynced = sessionCustomization.source === SessionCustomizationSource.Client;
 
-			// Don't show client-synced items as standalone plugin entries —
-			// the local "Enabled Locally" section already lists what's being
-			// synced. Same for the synthetic bundle (an implementation detail).
-			// Both are still expanded below so individual user skills/agents/etc.
-			// appear in their per-type tabs.
-			if (!isBundleItem && !isClientSynced) {
+			// Always show session customizations as distinct plugin entries —
+			// client-synced items appear in the "Client" group, host-owned in
+			// the "Remote" group. The synthetic bundle is an implementation
+			// detail and is not shown as a standalone entry, but is still
+			// expanded below so individual user files appear in per-type tabs.
+			if (!isBundleItem) {
 				const item = this.toItem(sessionCustomization.customization, sessionCustomization);
 				items.set(
 					customizationItemKey(sessionCustomization.customization, sessionCustomization.source),
@@ -405,7 +405,7 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 			// Always expand plugin contents so individual files are visible.
 			const childGroupKey = isClientSynced ? REMOTE_CLIENT_GROUP : REMOTE_HOST_GROUP;
 			plugins.push({
-				item: isBundleItem || isClientSynced
+				item: isBundleItem
 					? { uri: this.toRemoteUri(sessionCustomization.customization), type: 'plugin', name: '', storage: PromptsStorage.plugin, groupKey: childGroupKey }
 					: this.toItem(sessionCustomization.customization, sessionCustomization),
 				nonce: sessionCustomization.customization.nonce,
