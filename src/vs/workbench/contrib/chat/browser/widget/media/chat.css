@@ -1487,12 +1487,17 @@ have to be updated for changes to the rules above, or to support more deeply nes
 /* Truncate the chat input placeholder with an ellipsis in narrow views
 	instead of letting it overflow off the right edge of the input.
 	The placeholder is rendered as a Monaco contentText decoration with
-	class prefix "ced-chat-session-detail" inside the view-line spans. */
+	class prefix "ced-chat-session-detail" inside the view-line spans.
+	The :not(:has([class^="mtk"])) guard limits truncation to lines
+	that contain only placeholder decorations (no real syntax tokens),
+	so a typed "@agent " prefix with a trailing description decoration
+	is not recolored or clipped. */
 .chat-editor-container {
+	/* enables 100cqi for placeholder truncation below */
 	container-type: inline-size;
 }
 
-.chat-editor-container .monaco-editor .view-line:has([class*="ced-chat-session-detail"]) {
+.chat-editor-container .monaco-editor .view-line:has([class*="ced-chat-session-detail"]):not(:has([class^="mtk"])) {
 	max-width: 100cqi;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1500,17 +1505,13 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	color: var(--vscode-input-placeholderForeground);
 }
 
-.chat-editor-container .monaco-editor .view-line:has([class*="ced-chat-session-detail"]) > span {
+.chat-editor-container .monaco-editor .view-line:has([class*="ced-chat-session-detail"]):not(:has([class^="mtk"])) > span {
 	display: inline-block;
 	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	vertical-align: bottom;
-}
-
-.chat-editor-container .monaco-editor .view-line [class*="ced-chat-session-detail"] {
-	display: inline;
 }
 
 .interactive-session .chat-editor-container .monaco-editor .chat-prompt-spinner {
