@@ -5,7 +5,7 @@
 
 import './media/chatWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
-import { Disposable, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { derived } from '../../../../base/common/observable.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -155,13 +155,19 @@ class NewChatWidget extends Disposable {
 		// If so, wait for them before creating the session — otherwise createNewSession
 		// throws and the new chat view is left without an active session, which hides
 		// agent-host-specific UI (model picker etc.) until the user re-picks the workspace.
+		// If the connection fails, the picker fires onDidSelectWorkspace(undefined) which
+		// clears the pending wait via _onWorkspaceSelected.
 		if (provider && !sessionTypeId && provider.getSessionTypes(repoUri).length === 0 && provider.onDidChangeSessionTypes) {
-			this._pendingSessionTypeWait.value = provider.onDidChangeSessionTypes(() => {
+			const pendingStore = new DisposableStore();
+			this._pendingSessionTypeWait.value = pendingStore;
+
+			pendingStore.add(provider.onDidChangeSessionTypes(() => {
 				if (provider.getSessionTypes(repoUri).length > 0) {
 					this._pendingSessionTypeWait.clear();
 					this._createNewSession(selection, sessionTypeId);
 				}
-			});
+			}));
+
 			return;
 		}
 

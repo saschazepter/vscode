@@ -8,9 +8,10 @@ import * as touch from '../../../../base/browser/touch.js';
 import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
@@ -93,6 +94,13 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private _userHasPicked = false;
 
+	/**
+	 * Watches the connection status of a restored remote workspace. Cleared when
+	 * the user explicitly picks, when the connection succeeds, or when it fails
+	 * and we fall back.
+	 */
+	private readonly _connectionStatusWatch = this._register(new MutableDisposable());
+
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 
@@ -126,6 +134,9 @@ export class WorkspacePicker extends Disposable {
 
 		// Restore selected workspace from storage
 		this._selectedWorkspace = this._restoreSelectedWorkspace();
+		if (this._selectedWorkspace) {
+			this._watchForConnectionFailure(this._selectedWorkspace);
+		}
 
 		// React to provider registrations/removals: re-validate the current
 		// selection, and if the user hasn't explicitly picked yet, re-restore
@@ -146,6 +157,7 @@ export class WorkspacePicker extends Disposable {
 					this._updateTriggerLabel();
 					this._onDidChangeSelection.fire();
 					this._onDidSelectWorkspace.fire(restored);
+					this._watchForConnectionFailure(restored);
 				}
 			}
 		}));
@@ -260,6 +272,7 @@ export class WorkspacePicker extends Disposable {
 	clearSelection(): void {
 		this.actionWidgetService.hide();
 		this._userHasPicked = true;
+		this._connectionStatusWatch.clear();
 		this._selectedWorkspace = undefined;
 		// Clear checked state from all recents
 		const recents = this._getStoredRecentWorkspaces();
@@ -280,6 +293,7 @@ export class WorkspacePicker extends Disposable {
 
 	private _selectProject(selection: IWorkspaceSelection, fireEvent = true): void {
 		this._userHasPicked = true;
+		this._connectionStatusWatch.clear();
 		this._selectedWorkspace = selection;
 		this._persistSelectedWorkspace(selection);
 		this._updateTriggerLabel();
@@ -705,6 +719,40 @@ export class WorkspacePicker extends Disposable {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/**
+	 * When restoring a workspace whose provider is currently Connecting, watch
+	 * for the connection to fail (Disconnected). On failure, clears the
+	 * selection and fires `onDidSelectWorkspace(undefined)` so the view pane
+	 * calls `unsetNewSession()`. Has no effect if the user has already made an
+	 * explicit pick (`_userHasPicked = true`).
+	 */
+	private _watchForConnectionFailure(selection: IWorkspaceSelection): void {
+		const provider = this.sessionsProvidersService.getProvider(selection.providerId);
+		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
+			return;
+		}
+		const connStatus = provider.connectionStatus;
+		// Only watch during the initial connecting phase. If already Disconnected
+		// we leave the selection as-is (the user's prior pick is honored).
+		if (connStatus.get() !== RemoteAgentHostConnectionStatus.Connecting) {
+			return;
+		}
+		this._connectionStatusWatch.value = autorun(reader => {
+			const status = connStatus.read(reader);
+			if (status === RemoteAgentHostConnectionStatus.Connected) {
+				this._connectionStatusWatch.clear();
+			} else if (status === RemoteAgentHostConnectionStatus.Disconnected) {
+				this._connectionStatusWatch.clear();
+				if (!this._userHasPicked) {
+					this._selectedWorkspace = undefined;
+					this._updateTriggerLabel();
+					this._onDidChangeSelection.fire();
+					this._onDidSelectWorkspace.fire(undefined);
+				}
+			}
+		});
 	}
 
 	/**

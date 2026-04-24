@@ -218,6 +218,33 @@ suite('WorkspacePicker - Connection Status', () => {
 		assertSelectedProvider(picker, 'agenthost-remote-1');
 	});
 
+	test('connecting provider that fails falls back to no selection', () => {
+		// When a checked SSH workspace is restored, the provider starts in Connecting.
+		// If the SSH tunnel fails (Disconnected), the picker must clear the selection
+		// and fire onDidSelectWorkspace(undefined) so the view pane can call unsetNewSession().
+		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connecting);
+		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
+
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: URI.file('/remote/project'), providerId: 'agenthost-remote-1', checked: true },
+		]);
+
+		providersService.setProviders([remoteProvider]);
+		const picker = createTestPicker(disposables, providersService, storage);
+
+		assertSelectedProvider(picker, 'agenthost-remote-1', 'Selection is restored while connecting');
+
+		const events: Array<IWorkspaceSelection | undefined> = [];
+		disposables.add(picker.onDidSelectWorkspace(e => events.push(e)));
+
+		// SSH tunnel fails.
+		remoteStatus.set(RemoteAgentHostConnectionStatus.Disconnected, undefined);
+
+		assertSelectedProvider(picker, undefined, 'Selection cleared after connection failure');
+		assert.deepStrictEqual(events, [undefined], 'onDidSelectWorkspace fired with undefined');
+	});
+
 	test('restore picks connected remote provider', () => {
 		const remoteStatus = observableValue<RemoteAgentHostConnectionStatus>('status', RemoteAgentHostConnectionStatus.Connected);
 		const remoteProvider = createMockProvider('agenthost-remote-1', { connectionStatus: remoteStatus });
