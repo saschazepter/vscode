@@ -182,7 +182,9 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 			return join(vscodePortable, 'agent-plugins');
 		}
 
-		return joinPath(this.userHome, this.productService.dataFolderName, 'agent-plugins').fsPath;
+		// Use the parent folder of extensions so that --extensions-dir
+		// (including --transient) automatically co-locates agent plugins.
+		return join(dirname(this.extensionsPath), 'agent-plugins');
 	}
 
 	@memoize
