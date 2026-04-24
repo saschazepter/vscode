@@ -342,6 +342,7 @@ export class ComputeAutomaticInstructions {
 	private async _getCustomizationsIndex(instructionFiles: readonly IInstructionFile[], _existingVariables: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, debugInfo: InstructionsCollectionDebugInfo, token: CancellationToken): Promise<IPromptTextVariableEntry | undefined> {
 		const readTool = this._getTool('readFile');
 		const runSubagentTool = this._getTool(VSCodeToolReference.runSubagent);
+		const loadSkillTool = this._getTool('loadSkill');
 		const currentSessionType = this._currentSessionType;
 
 		const remoteEnv = await this._remoteAgentService.getEnvironment();
@@ -424,25 +425,38 @@ export class ComputeAutomaticInstructions {
 				}
 
 				const useSkillAdherencePrompt = this._configurationService.getValue(PromptsConfig.USE_SKILL_ADHERENCE_PROMPT);
+				// When the load_skill tool is available, direct the model to use it by name
+				// instead of reading SKILL.md files directly. This keeps file paths out of
+				// the listing and routes through the proper skill loading pipeline.
+				const skillLoadTool = loadSkillTool ?? readTool;
 				entries.push('<skills>');
 				if (useSkillAdherencePrompt) {
 					// Stronger skill adherence prompt for experimental feature
 					entries.push('Skills provide specialized capabilities, domain knowledge, and refined workflows for producing high-quality outputs. Each skill folder contains tested instructions for specific domains like testing strategies, API design, or performance optimization. Multiple skills can be combined when a task spans different domains.');
-					entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST load and read the SKILL.md file IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${readTool.variable} to load the relevant skill(s).`);
-					entries.push('NEVER just mention or reference a skill in your response without actually reading it first. If a skill is relevant, load it before proceeding.');
+					if (loadSkillTool) {
+						entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST invoke it IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${loadSkillTool.variable} with the skill name to load the relevant skill(s).`);
+					} else {
+						entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST load and read the SKILL.md file IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${readTool.variable} to load the relevant skill(s).`);
+					}
+					entries.push('NEVER just mention or reference a skill in your response without actually loading it first. If a skill is relevant, load it before proceeding.');
 					entries.push('How to determine if a skill applies:');
 					entries.push('1. Review the available skills below and match their descriptions against the user\'s request');
 					entries.push('2. If any skill\'s domain overlaps with the task, load that skill immediately');
 					entries.push('3. When multiple skills apply (e.g., a flowchart in documentation), load all relevant skills');
 					entries.push('Examples:');
-					entries.push(`- "Help me write unit tests for this module" -> Load the testing skill via ${readTool.variable} FIRST, then proceed`);
-					entries.push(`- "Optimize this slow function" -> Load the performance-profiling skill via ${readTool.variable} FIRST, then proceed`);
+					entries.push(`- "Help me write unit tests for this module" -> Load the testing skill via ${skillLoadTool.variable} FIRST, then proceed`);
+					entries.push(`- "Optimize this slow function" -> Load the performance-profiling skill via ${skillLoadTool.variable} FIRST, then proceed`);
 					entries.push(`- "Add a discount code field to checkout" -> Load both the checkout-flow and form-validation skills FIRST`);
 					entries.push('Available skills:');
 				} else {
-					entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
-					entries.push('Each skill comes with a description of the topic and a file path that contains the detailed instructions.');
-					entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${readTool.variable} tool to acquire the full instructions from the file URI.`);
+					if (loadSkillTool) {
+						entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
+						entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${loadSkillTool.variable} tool with the skill name to load it.`);
+					} else {
+						entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
+						entries.push('Each skill comes with a description of the topic and a file path that contains the detailed instructions.');
+						entries.push(`When a user asks you to perform a task that falls within the domain of a skill, use the ${readTool.variable} tool to acquire the full instructions from the file URI.`);
+					}
 				}
 				const SKILL_DESCRIPTION_CHAR_BUDGET = 15000;
 				const TRUNCATED_NAMES_CHAR_BUDGET = 5000;
@@ -454,7 +468,8 @@ export class ComputeAutomaticInstructions {
 					if (skill.description) {
 						skillEntry.push(`<description>${skill.description}</description>`);
 					}
-					skillEntry.push(`<file>${filePath(skill.uri)}</file>`, `</skill>`);
+					skillEntry.push(`<file>${filePath(skill.uri)}</file>`);
+					skillEntry.push(`</skill>`);
 					const entryLength = skillEntry.join('\n').length + 1; // +1 for joining newline
 					if (skillCharCount + entryLength > SKILL_DESCRIPTION_CHAR_BUDGET) {
 						truncatedAtIndex = i;
@@ -552,6 +567,7 @@ export class ComputeAutomaticInstructions {
 		};
 		collectToolReference(readTool);
 		collectToolReference(runSubagentTool);
+		collectToolReference(loadSkillTool);
 		return toPromptTextVariableEntry(content, true, toolReferences);
 	}
 
