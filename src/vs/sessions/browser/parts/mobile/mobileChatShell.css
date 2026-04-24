@@ -107,6 +107,7 @@
 
 .mobile-top-bar.show-actions .mobile-top-bar-actions {
 	display: flex;
+	flex-direction: column;
 }
 
 /* ---- Phone Layout: Full-screen chat ---- */
