@@ -11,7 +11,7 @@ import { env } from '../../../base/common/process.js';
 import { joinPath } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 import { NativeParsedArgs } from './argv.js';
-import { ExtensionKind, IExtensionHostDebugParams, INativeEnvironmentService } from './environment.js';
+import { ExtensionKind, getAgentPluginsPath, IExtensionHostDebugParams, INativeEnvironmentService } from './environment.js';
 import { IProductService } from '../../product/common/productService.js';
 
 export const EXTENSION_IDENTIFIER_WITH_LOG_REGEX = /^([^.]+\..+)[:=](.+)$/;
@@ -62,7 +62,7 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 	get cacheHome(): URI { return URI.file(this.userDataPath); }
 
 	@memoize
-	get agentPluginsHome(): URI { return URI.file(this.agentPluginsPath); }
+	get agentPluginsHome(): URI { return URI.file(getAgentPluginsPath(this.args, this.userHome, this.productService.dataFolderName)); }
 
 	@memoize
 	get stateResource(): URI { return joinPath(this.appSettingsHome, 'globalStorage', 'storage.json'); }
@@ -163,26 +163,6 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 		}
 
 		return joinPath(this.userHome, this.productService.sharedDataFolderName);
-	}
-
-	@memoize
-	get agentPluginsPath(): string {
-		const cliAgentPluginsDir = this.args['agent-plugins-dir'];
-		if (cliAgentPluginsDir) {
-			return resolve(cliAgentPluginsDir);
-		}
-
-		const vscodeAgentPlugins = env['VSCODE_AGENT_PLUGINS'];
-		if (vscodeAgentPlugins) {
-			return vscodeAgentPlugins;
-		}
-
-		const vscodePortable = env['VSCODE_PORTABLE'];
-		if (vscodePortable) {
-			return join(vscodePortable, 'agent-plugins');
-		}
-
-		return joinPath(this.userHome, this.productService.dataFolderName, 'agent-plugins').fsPath;
 	}
 
 	@memoize

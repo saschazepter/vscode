@@ -15,6 +15,7 @@ import product from '../../../product/common/product.js';
 import { UserDataProfilesMainService } from '../../electron-main/userDataProfile.js';
 import { SaveStrategy, StateService } from '../../../state/node/stateService.js';
 import { UriIdentityService } from '../../../uriIdentity/common/uriIdentityService.js';
+import { IProductService } from '../../../product/common/productService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
@@ -27,6 +28,7 @@ class TestEnvironmentService extends AbstractNativeEnvironmentService {
 	override get extensionsPath() { return joinPath(this.userRoamingDataHome, 'extensions.json').path; }
 	override get stateResource() { return joinPath(this.userRoamingDataHome, 'state.json'); }
 	override get cacheHome() { return joinPath(this.userRoamingDataHome, 'cache'); }
+	override get agentPluginsHome() { return joinPath(this._appSettingsHome, 'agent-plugins'); }
 }
 
 suite('UserDataProfileMainService', () => {
@@ -44,7 +46,8 @@ suite('UserDataProfileMainService', () => {
 		environmentService = new TestEnvironmentService(joinPath(ROOT, 'User'));
 		stateService = disposables.add(new StateService(SaveStrategy.DELAYED, environmentService, logService, fileService));
 
-		testObject = disposables.add(new UserDataProfilesMainService(stateService, disposables.add(new UriIdentityService(fileService)), environmentService, fileService, logService));
+		const productService: IProductService = { _serviceBrand: undefined, ...product };
+		testObject = disposables.add(new UserDataProfilesMainService(stateService, disposables.add(new UriIdentityService(fileService)), environmentService, fileService, logService, productService));
 		await stateService.init();
 	});
 

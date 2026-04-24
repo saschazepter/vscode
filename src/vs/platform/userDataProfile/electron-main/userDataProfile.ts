@@ -6,15 +6,19 @@
 import { Event } from '../../../base/common/event.js';
 import { INodeProcess } from '../../../base/common/platform.js';
 import { joinPath } from '../../../base/common/resources.js';
-import { INativeEnvironmentService } from '../../environment/common/environment.js';
+import { getAgentPluginsPath, INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { refineServiceDecorator } from '../../instantiation/common/instantiation.js';
 import { ILogService } from '../../log/common/log.js';
+import { IProductService } from '../../product/common/productService.js';
 import { IUriIdentityService } from '../../uriIdentity/common/uriIdentity.js';
 import { IUserDataProfilesService, WillCreateProfileEvent, WillRemoveProfileEvent, IUserDataProfile } from '../common/userDataProfile.js';
 import { UserDataProfilesService } from '../node/userDataProfile.js';
 import { IAnyWorkspaceIdentifier, IEmptyWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IStateService } from '../../state/node/state.js';
+import { env } from '../../../base/common/process.js';
+import { join } from '../../../base/common/path.js';
+import { URI } from '../../../base/common/uri.js';
 
 export const IUserDataProfilesMainService = refineServiceDecorator<IUserDataProfilesService, IUserDataProfilesMainService>(IUserDataProfilesService);
 export interface IUserDataProfilesMainService extends IUserDataProfilesService {
@@ -33,6 +37,7 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 		@INativeEnvironmentService environmentService: INativeEnvironmentService,
 		@IFileService fileService: IFileService,
 		@ILogService logService: ILogService,
+		@IProductService private readonly productService: IProductService,
 	) {
 		super(stateService, uriIdentityService, environmentService, fileService, logService);
 	}
@@ -46,11 +51,13 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 		if (!hostUserRoamingDataHome) {
 			return defaultProfile;
 		}
+		const hostAgentPluginsHome = getHostAgentPluginsPath(this.nativeEnvironmentService, this.productService);
 		return {
 			...defaultProfile,
 			keybindingsResource: joinPath(hostUserRoamingDataHome, 'keybindings.json'),
 			promptsHome: joinPath(hostUserRoamingDataHome, 'prompts'),
 			mcpResource: joinPath(hostUserRoamingDataHome, 'mcp.json'),
+			agentPluginsHome: hostAgentPluginsHome ? URI.file(hostAgentPluginsHome) : defaultProfile.agentPluginsHome
 		};
 	}
 
@@ -61,5 +68,27 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 		}
 		return emptyWindows;
 	}
+}
 
+function getHostAgentPluginsPath(environmentService: INativeEnvironmentService, productService: IProductService): string | undefined {
+	if (!(process as INodeProcess).isEmbeddedApp) {
+		return undefined;
+	}
+	if (!environmentService.isBuilt) {
+		return undefined;
+	}
+
+	const quality = productService.quality;
+	let hostDataFolderName: string;
+	if (quality === 'stable') {
+		hostDataFolderName = '.vscode';
+	} else if (quality === 'insider') {
+		hostDataFolderName = '.vscode-insiders';
+	} else if (quality === 'exploration') {
+		hostDataFolderName = '.vscode-exploration';
+	} else {
+		return undefined;
+	}
+
+	return getAgentPluginsPath(environmentService.args, environmentService.userHome, hostDataFolderName);
 }
