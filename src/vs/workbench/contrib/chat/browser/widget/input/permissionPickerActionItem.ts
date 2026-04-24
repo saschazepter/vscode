@@ -275,7 +275,11 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 				class: undefined,
 				enabled: true,
 				run: async () => {
-					await openerService.open(URI.parse('https://code.visualstudio.com/docs/copilot/agents/agent-tools#_permission-levels'));
+					const ext = delegate.getExtensionPermissions?.();
+					const url = ext?.sessionType === 'claude-code'
+						? 'https://code.claude.com/docs/en/permission-modes#available-modes'
+						: 'https://code.visualstudio.com/docs/copilot/agents/agent-tools#_permission-levels';
+					await openerService.open(URI.parse(url));
 				}
 			}],
 			reporter: { id: 'ChatPermissionPicker', name: 'ChatPermissionPicker', includeOptions: true },
