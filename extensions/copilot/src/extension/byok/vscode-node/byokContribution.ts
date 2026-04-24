@@ -39,7 +39,7 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 		this._byokStorageService = new BYOKStorageService(extensionContext);
 		void this._registerProviders().catch(err => {
 			this._byokProvidersRegistered = false;
-			this._logService.error('BYOK: Failed to register providers.', err);
+			this._logService.error(err instanceof Error ? err : String(err), 'BYOK: Failed to register providers.');
 		});
 	}
 
@@ -50,11 +50,14 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 
 		this._byokProvidersRegistered = true;
 		const instantiationService = this._instantiationService;
-		// Update known models list from CDN so all providers have the same list
-		const knownModels = await this.fetchKnownModelList(this._fetcherService);
+
+		// Fetch known models from CDN for model metadata (capabilities, token limits).
+		// Uses a timeout to avoid blocking provider registration in air-gapped/offline environments.
+		const knownModels = await this._fetchKnownModelListWithTimeout(this._fetcherService);
 		if (this._store.isDisposed) {
 			return;
 		}
+
 		this._providers.set(OllamaLMProvider.providerName.toLowerCase(), instantiationService.createInstance(OllamaLMProvider, this._byokStorageService));
 		this._providers.set(AnthropicLMProvider.providerName.toLowerCase(), instantiationService.createInstance(AnthropicLMProvider, knownModels[AnthropicLMProvider.providerName], this._byokStorageService));
 		this._providers.set(GeminiNativeBYOKLMProvider.providerName.toLowerCase(), instantiationService.createInstance(GeminiNativeBYOKLMProvider, knownModels[GeminiNativeBYOKLMProvider.providerName], this._byokStorageService));
@@ -73,7 +76,7 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 		// Update context key when language models change (e.g., model configured/removed)
 		this._register(lm.onDidChangeChatModels(() => {
 			void this._updateHasByokModelsContext().catch(err => {
-				this._logService.error('BYOK: Failed to update BYOK models context.', err);
+				this._logService.error(err instanceof Error ? err : String(err), 'BYOK: Failed to update BYOK models context.');
 			});
 		}));
 	}
@@ -90,9 +93,20 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 			}
 			commands.executeCommand('setContext', hasByokModelsContextKey, hasModels);
 		} catch (err) {
-			this._logService.error('BYOK: Failed to update BYOK models context.', err);
+			this._logService.error(err instanceof Error ? err : String(err), 'BYOK: Failed to update BYOK models context.');
 			commands.executeCommand('setContext', hasByokModelsContextKey, false);
 		}
+	}
+
+	private async _fetchKnownModelListWithTimeout(fetcherService: IFetcherService): Promise<Record<string, BYOKKnownModels>> {
+		const CDN_FETCH_TIMEOUT_MS = 5000;
+		return Promise.race([
+			this.fetchKnownModelList(fetcherService),
+			new Promise<Record<string, BYOKKnownModels>>(resolve => setTimeout(() => {
+				this._logService.warn('BYOK: CDN fetch timed out. Registering providers with empty known models list.');
+				resolve({});
+			}, CDN_FETCH_TIMEOUT_MS))
+		]);
 	}
 
 	private async fetchKnownModelList(fetcherService: IFetcherService): Promise<Record<string, BYOKKnownModels>> {
