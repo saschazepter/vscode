@@ -8,7 +8,6 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { IAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { ISessionOpenerParticipant, ISessionOpenOptions, sessionOpenerRegistry } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsOpener.js';
-import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 
 /**
@@ -22,16 +21,13 @@ class SessionsOpenerParticipant implements ISessionOpenerParticipant {
 
 	async handleOpenSession(accessor: ServicesAccessor, session: IAgentSession, openOptions?: ISessionOpenOptions): Promise<boolean> {
 		const sessionsManagementService = accessor.get(ISessionsManagementService);
-		const editorGroupsService = accessor.get(IEditorGroupsService);
 		const target = sessionsManagementService.getSession(session.resource);
 		if (!target) {
 			return false;
 		}
 
-		const hasWorkingSet = editorGroupsService.getWorkingSets().some(workingSet => workingSet.name === `session-working-set:${session.resource.toString()}`);
 		await sessionsManagementService.openSession(session.resource, {
-			preserveFocus: openOptions?.editorOptions?.preserveFocus,
-			openChats: !hasWorkingSet
+			preserveFocus: openOptions?.editorOptions?.preserveFocus
 		});
 		return true;
 	}

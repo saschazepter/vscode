@@ -176,6 +176,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 
 	private onDidChangeSessionsFromSessionsProviders(e: ISessionChangeEvent): void {
 		this._onDidChangeSessions.fire(e);
+
 		const currentActive = this._activeSession.get();
 
 		// Clear stale pending session if the provider removed it
@@ -278,6 +279,11 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this.setActiveSession(sessionData);
 
 		if (options?.openChats !== false) {
+			const clearedChatEditors = await this.closeChatEditorPartEditors();
+			if (!clearedChatEditors) {
+				return;
+			}
+
 			await this.openActiveSessionChats({ preserveFocus: options?.preserveFocus });
 		}
 	}
@@ -307,22 +313,43 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		const foregroundChat = activeChatToOpen ?? chats.at(-1);
 
 		for (const chat of backgroundChats) {
-			await this.chatWidgetService.openSession(chat.resource, target, { pinned: true, preserveFocus: true });
+			await this.chatWidgetService.openSession(chat.resource, target, { pinned: true, preserveFocus: true, revealIfOpened: false });
 		}
 
 		if (foregroundChat) {
-			await this.chatWidgetService.openSession(foregroundChat.resource, target, { pinned: true, preserveFocus: options?.preserveFocus });
+			await this.chatWidgetService.openSession(foregroundChat.resource, target, { pinned: true, preserveFocus: options?.preserveFocus, revealIfOpened: false });
 		}
 	}
 
 	private getChatEditorTarget(): PreferredGroup {
-		const chatEditorPart = this.editorGroupsService.parts.find(part =>
+		const chatEditorPart = this.getChatEditorPart();
+
+		return chatEditorPart?.activeGroup ?? ACTIVE_GROUP;
+	}
+
+	private getChatEditorPart(): IEditorPart | undefined {
+		return this.editorGroupsService.parts.find(part =>
 			part !== this.editorGroupsService.mainPart &&
 			part.windowId === this.editorGroupsService.mainPart.windowId &&
 			!this.isModalEditorPart(part)
 		);
+	}
 
-		return chatEditorPart?.activeGroup ?? ACTIVE_GROUP;
+	private async closeChatEditorPartEditors(): Promise<boolean> {
+		const chatEditorPart = this.getChatEditorPart();
+		if (!chatEditorPart) {
+			return true;
+		}
+
+		for (const group of chatEditorPart.groups) {
+			const closed = await group.closeAllEditors();
+			if (!closed) {
+				this.logService.warn('[SessionsManagement] Failed to close all chat editors before switching sessions');
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private isModalEditorPart(part: IEditorPart): part is IModalEditorPart {
@@ -442,7 +469,11 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			this._isNewChatInSessionContext.set(false);
 		}
 
-		await this.editorGroupsService.applyWorkingSet('empty', { preserveFocus: true });
+		const clearedChatEditors = await this.closeChatEditorPartEditors();
+		if (!clearedChatEditors) {
+			return;
+		}
+
 		await this.openNewChatEditor();
 	}
 
