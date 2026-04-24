@@ -23,6 +23,7 @@ import { CopilotCLISessionType } from '../../../services/sessions/common/session
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { resolveRemoteAuthority } from '../browser/openInVSCodeUtils.js';
+import { DebugAgentHostInDevToolsAction } from '../../../../workbench/contrib/chat/electron-browser/actions/debugAgentHostAction.js';
 
 /**
  * Desktop version of the "Open in VS Code" action.
@@ -89,3 +90,5 @@ registerAction2(class OpenSessionWorktreeInVSCodeAction extends Action2 {
 		await nativeHostService.launchSiblingApp(args);
 	}
 });
+
+registerAction2(DebugAgentHostInDevToolsAction);

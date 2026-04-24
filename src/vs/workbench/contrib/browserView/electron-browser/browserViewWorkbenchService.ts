@@ -71,7 +71,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			this._createModel(e.info.id, e.info.owner, e.info.state);
 
 			const editor = this._known.get(e.info.id);
-			if (editor) {
+			if (editor && e.openOptions) {
 				this._openEditorForCreatedView(editor, e.openOptions);
 			}
 		}));
@@ -179,6 +179,9 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			targetGroup = AUX_WINDOW_GROUP;
 		} else if (opts.parentViewId) {
 			targetGroup = this._findEditorGroupForView(opts.parentViewId);
+			if (targetGroup === undefined) {
+				return; // If the parent isn't open, don't open the child either
+			}
 		}
 
 		void this.editorService.openEditor(view, {
