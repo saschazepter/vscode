@@ -141,13 +141,29 @@ export class AgentHostGitService implements IAgentHostGitService {
 		const hasGitHubRemote = parseHasGitHubRemote(remotesOutput);
 		const baseBranchName = parseDefaultBranchRef(defaultBranchRef);
 
+		// `git status -b --porcelain=v2` only emits ahead/behind counts when the
+		// branch has an upstream tracking ref. For agent-host worktrees the
+		// branch is typically created locally with no upstream, so the user can
+		// have committed work that we'd otherwise report as 0 outgoing changes
+		// and the "Create PR" button would never appear. Fall back to counting
+		// commits relative to the base branch — that matches what the user
+		// actually cares about for "is there work to PR?".
+		let outgoingChanges = status.outgoingChanges;
+		if (outgoingChanges === undefined && baseBranchName && status.branchName && status.branchName !== baseBranchName) {
+			const ahead = await this._runGit(workingDirectory, ['rev-list', '--count', `${baseBranchName}..HEAD`]);
+			const parsed = ahead === undefined ? NaN : Number(ahead.trim());
+			if (Number.isFinite(parsed)) {
+				outgoingChanges = parsed;
+			}
+		}
+
 		const result: ISessionGitState = {
 			hasGitHubRemote,
 			branchName: status.branchName,
 			baseBranchName,
 			upstreamBranchName: status.upstreamBranchName,
 			incomingChanges: status.incomingChanges,
-			outgoingChanges: status.outgoingChanges,
+			outgoingChanges,
 			uncommittedChanges: status.uncommittedChanges,
 		};
 		// Strip undefined fields so the resulting object is the same regardless

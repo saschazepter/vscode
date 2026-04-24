@@ -86,4 +86,42 @@ suite('AgentHostGitService - getSessionGitState (real git)', () => {
 		assert.strictEqual(result.uncommittedChanges, 2);
 		assert.strictEqual(result.hasGitHubRemote, false);
 	});
+
+	(hasGit ? test : test.skip)('reports outgoingChanges relative to base branch when local branch has no upstream', async () => {
+		// Create a bare "remote" repo and set up the working repo so that
+		// `refs/remotes/origin/HEAD` exists (required for baseBranchName parsing).
+		const remoteDir = mkdtempSync(join(tmpdir(), 'agent-host-remote-'));
+		const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+		try {
+			cp.execFileSync('git', ['init', '-q', '--bare', '-b', 'main'], { cwd: remoteDir, env, stdio: 'pipe' });
+			tmpRoot = mkdtempSync(join(tmpdir(), 'agent-host-git-'));
+			const run = (...args: string[]) => cp.execFileSync('git', args, { cwd: tmpRoot!, env, stdio: 'pipe' });
+			run('init', '-q', '-b', 'main');
+			run('commit', '-q', '--allow-empty', '-m', 'initial');
+			run('remote', 'add', 'origin', `https://github.com/owner/repo.git`);
+			// Use a separate "upload" remote pointing at the bare repo to populate
+			// the origin/main remote-tracking ref without changing the GitHub URL
+			// we're testing for hasGitHubRemote detection.
+			run('remote', 'add', 'tmp', remoteDir);
+			run('push', '-q', 'tmp', 'main:main');
+			// Create the origin/main ref locally without any network round-trip.
+			run('update-ref', 'refs/remotes/origin/main', 'refs/heads/main');
+			run('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+
+			// Branch off and add two commits without setting an upstream.
+			run('checkout', '-q', '-b', 'feature', '--no-track');
+			run('commit', '-q', '--allow-empty', '-m', 'one');
+			run('commit', '-q', '--allow-empty', '-m', 'two');
+
+			const result = await svc!.getSessionGitState(URI.file(tmpRoot!));
+			assert.ok(result, 'expected git state');
+			assert.strictEqual(result.branchName, 'feature');
+			assert.strictEqual(result.baseBranchName, 'main');
+			assert.strictEqual(result.upstreamBranchName, undefined);
+			assert.strictEqual(result.outgoingChanges, 2);
+			assert.strictEqual(result.uncommittedChanges, 0);
+		} finally {
+			rmSync(remoteDir, { recursive: true, force: true });
+		}
+	});
 });
