@@ -138,10 +138,10 @@ export class PromptValidator {
 		// Validate context: fork — requires the skill tool to be enabled
 		const contextAttribute = promptAST.header?.getAttribute(PromptHeaderAttributes.context);
 		if (contextAttribute && contextAttribute.value.type === 'scalar' && contextAttribute.value.value.trim() === 'fork') {
-			const skillToolEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.skill.enabled');
+			const skillToolEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.skillTool.enabled');
 			if (!skillToolEnabled) {
 				report(toMarker(
-					localize('promptValidator.contextForkNotSupported', "The 'context: fork' attribute requires the skill tool to be enabled (github.copilot.chat.skill.enabled)."),
+					localize('promptValidator.contextForkNotSupported', "The 'context: fork' attribute requires the skill tool to be enabled (github.copilot.chat.skillTool.enabled)."),
 					contextAttribute.value.range,
 					MarkerSeverity.Warning
 				));
