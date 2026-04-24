@@ -743,7 +743,6 @@ export class AgentSideEffects extends Disposable {
 				agent.setClientTools(URI.parse(action.session), clientId, action.activeClient?.tools ?? []);
 
 				const refs = action.activeClient?.customizations ?? [];
-				this._publishSessionCustomizationsSoon(agent, action.session);
 				agent.setClientCustomizations(
 					clientId,
 					refs,
