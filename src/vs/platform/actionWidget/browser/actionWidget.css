@@ -396,7 +396,7 @@
 	padding: 4px 8px;
 	line-height: 1.4em;
 	font-size: 12px;
-	max-width: var(--vscode-hover-maxWidth, 500px);
+	max-width: 300px;
 	word-wrap: break-word;
 }
 
