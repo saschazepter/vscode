@@ -1339,7 +1339,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.acceptInput().catch(e => this.logService.error(`[Handoff] Failed to submit delegated handoff to '@${agentId}'`, e));
 		} else if (handoff.agent) {
 			// Regular handoff to specified agent
-			this._switchToAgentByName(handoff.agent);
+			const switched = await this._switchToAgentByName(handoff.agent);
+			if (!switched) {
+				return;
+			}
 			// Switch to the specified model if provided
 			if (handoff.model) {
 				this.input.switchModelByQualifiedName([handoff.model]);
@@ -1350,7 +1353,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 			// Auto-submit if send flag is true
 			if (handoff.send) {
-				this.acceptInput();
+				this.acceptInput().catch(e => this.logService.error(`[Handoff] Failed to submit handoff to '${handoff.agent}'`, e));
 			}
 		}
 	}
@@ -2824,27 +2827,32 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.agentInInput.set(!!currentAgent);
 	}
 
-	private async _switchToAgentByName(agentName: string): Promise<void> {
+	private async _switchToAgentByName(agentName: string): Promise<boolean> {
 		const currentAgent = this.input.currentModeObs.get();
 
-		// switch to appropriate agent if needed
-		if (agentName !== currentAgent.name.get()) {
-			// Find the mode object to get its kind
-			const agent = this.chatModeService.findModeByName(agentName);
-			if (agent) {
-				if (currentAgent.kind !== agent.kind) {
-					const chatModeCheck = await this.instantiationService.invokeFunction(handleModeSwitch, currentAgent.kind, agent.kind, this.viewModel?.model.getRequests().length ?? 0, this.viewModel?.model);
-					if (!chatModeCheck) {
-						return;
-					}
+		// already on the target agent
+		if (agentName === currentAgent.name.get()) {
+			return true;
+		}
 
-					if (chatModeCheck.needToClearSession) {
-						await this.clear();
-					}
-				}
-				this.input.setChatMode(agent.id);
+		// Find the mode object to get its kind
+		const agent = this.chatModeService.findModeByName(agentName);
+		if (!agent) {
+			return false;
+		}
+
+		if (currentAgent.kind !== agent.kind) {
+			const chatModeCheck = await this.instantiationService.invokeFunction(handleModeSwitch, currentAgent.kind, agent.kind, this.viewModel?.model.getRequests().length ?? 0, this.viewModel?.model);
+			if (!chatModeCheck) {
+				return false;
+			}
+
+			if (chatModeCheck.needToClearSession) {
+				await this.clear();
 			}
 		}
+		this.input.setChatMode(agent.id);
+		return true;
 	}
 
 	private async _applyPromptMetadata({ agent, tools, model }: PromptHeader, requestInput: IChatRequestInputOptions): Promise<void> {
@@ -2854,7 +2862,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 		// switch to appropriate agent if needed
 		if (agent) {
-			this._switchToAgentByName(agent);
+			const switched = await this._switchToAgentByName(agent);
+			if (!switched) {
+				return;
+			}
 		}
 
 		// if not tools to enable are present, we are done
