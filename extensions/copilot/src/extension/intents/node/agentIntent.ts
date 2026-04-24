@@ -210,7 +210,7 @@ export class AgentIntent extends EditCodeIntent {
 			}
 			const monitor = this._backgroundProgressMonitors.get(sessionId);
 			if (monitor) {
-				monitor.stop();
+				monitor.complete();
 				this._backgroundProgressMonitors.delete(sessionId);
 			}
 		});
@@ -229,11 +229,13 @@ export class AgentIntent extends EditCodeIntent {
 		sessionId: string,
 		logService: ILogService,
 		telemetryService: ITelemetryService,
+		instantiationService: IInstantiationService,
+		toolsService: IToolsService,
 		setTodos: SetTodosFn,
 	): BackgroundProgressMonitor {
 		let monitor = this._backgroundProgressMonitors.get(sessionId);
 		if (!monitor) {
-			monitor = new BackgroundProgressMonitor(logService, telemetryService, setTodos);
+			monitor = new BackgroundProgressMonitor(logService, telemetryService, instantiationService, toolsService, setTodos);
 			this._backgroundProgressMonitors.set(sessionId, monitor);
 		}
 		return monitor;
@@ -431,15 +433,15 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 
 	/**
 	 * Called after the tool-calling loop finishes. Feeds the final rounds to
-	 * the background progress monitor and marks all steps as completed.
+	 * the background progress monitor so it can trigger a last check if needed.
+	 * Does NOT mark steps as completed — that only happens when the session ends,
+	 * since the user may send follow-up messages that continue the same plan.
 	 */
 	onToolCallingComplete(toolCallRounds: IToolCallRound[]): void {
 		const monitor = this._backgroundProgressMonitor;
 		if (monitor?.isMonitoring) {
 			// Feed any remaining rounds so the last check covers all work
 			monitor.feedRounds(toolCallRounds.length);
-			// Mark everything completed
-			monitor.complete();
 		}
 	}
 
@@ -1129,7 +1131,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 				this.logService.error(err, '[BackgroundProgressMonitor] Failed to set todos via tool invocation');
 			});
 		};
-		return this.intent.getOrCreateBackgroundProgressMonitor(sessionId, this.logService, this.telemetryService, setTodos);
+		return this.intent.getOrCreateBackgroundProgressMonitor(sessionId, this.logService, this.telemetryService, this.instantiationService, this.toolsService, setTodos);
 	}
 
 	/**
