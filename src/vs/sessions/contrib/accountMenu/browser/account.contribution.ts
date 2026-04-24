@@ -10,7 +10,7 @@ import '../../../../workbench/contrib/chat/browser/chatStatus/media/chatStatus.c
 import Severity from '../../../../base/common/severity.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, MenuRegistry, registerAction2, IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
+import { Action2, MenuRegistry, registerAction2, IMenuService } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -46,7 +46,7 @@ import { IAuthenticationUsageService } from '../../../../workbench/services/auth
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 
 // --- Account Menu Items --- //
-const AccountMenu = new MenuId('SessionsAccountMenu');
+const AccountMenu = Menus.AccountMenu;
 const SessionsTitleBarAccountWidgetAction = 'sessions.action.titleBarAccountWidget';
 const SessionsTitleBarUpdateWidgetAction = 'sessions.action.titleBarUpdateWidget';
 const SESSIONS_ACCOUNT_TITLEBAR_PANEL_WIDTH = 280;
