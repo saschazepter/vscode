@@ -7,6 +7,25 @@
  * Helpers for extracting file paths and refs from tool calls.
  */
 
+import type { ICompletedSpanData } from '../../../platform/otel/common/otelService';
+import { GenAiAttr } from '../../../platform/otel/common/genAiAttributes';
+
+/**
+ * Extract a meaningful agent name from an invoke_agent span.
+ * Reads `gen_ai.agent.name` first; falls back to parsing the span name
+ * (e.g. `"invoke_agent copilot"` → `"copilot"`).
+ * @internal Exported for testing.
+ */
+export function extractAgentName(span: Pick<ICompletedSpanData, 'name' | 'attributes'>): string {
+	const fromAttr = span.attributes[GenAiAttr.AGENT_NAME] as string | undefined;
+	if (fromAttr) {
+		return fromAttr;
+	}
+	// Fall back to parsing from span name (e.g. "invoke_agent copilot" → "copilot")
+	const fromName = span.name.replace(/^invoke_agent\s*/, '').trim();
+	return fromName || 'unknown';
+}
+
 /** Tools whose arguments contain a file path being modified. */
 const FILE_TRACKING_TOOLS = new Set(['apply_patch', 'str_replace_editor', 'create_file', 'create']);
 

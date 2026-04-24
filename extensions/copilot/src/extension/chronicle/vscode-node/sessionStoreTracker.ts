@@ -18,6 +18,7 @@ import {
 	extractRefsFromMcpTool,
 	extractRefsFromTerminal,
 	extractRepoFromMcpTool,
+	extractAgentName,
 	isGitHubMcpTool,
 } from '../common/sessionStoreTracking';
 
@@ -186,7 +187,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	private _initSession(sessionId: string, span: ICompletedSpanData): void {
 		this._initializedSessions.add(sessionId);
 
-		const sessionSource = (span.attributes[GenAiAttr.AGENT_NAME] as string | undefined) ?? 'unknown';
+		const sessionSource = extractAgentName(span);
 		this._bufferSessionUpsert({ id: sessionId, host_type: 'vscode', agent_name: sessionSource });
 
 		// Track the source of the very first session for firstWrite telemetry
@@ -201,11 +202,17 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	}
 
 	private _backfillFromSpanAttributes(sessionId: string, span: ICompletedSpanData): void {
+		const operationName = span.attributes[GenAiAttr.OPERATION_NAME] as string | undefined;
 		const branch = span.attributes[CopilotChatAttr.REPO_HEAD_BRANCH_NAME] as string | undefined;
 		const remoteUrl = span.attributes[CopilotChatAttr.REPO_REMOTE_URL] as string | undefined;
 		const userRequest = span.attributes[CopilotChatAttr.USER_REQUEST] as string | undefined;
 
-		if (branch || remoteUrl || userRequest) {
+		// Backfill agent_name from subsequent invoke_agent spans in case _initSession had no value
+		const agentName = operationName === GenAiOperationName.INVOKE_AGENT
+			? extractAgentName(span)
+			: undefined;
+
+		if (branch || remoteUrl || userRequest || agentName) {
 			const summary = userRequest
 				? (userRequest.length > 100 ? userRequest.slice(0, 100).trim() + '...' : userRequest)
 				: undefined;
@@ -215,6 +222,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 				...(branch ? { branch } : {}),
 				...(remoteUrl ? { repository: remoteUrl } : {}),
 				...(summary ? { summary } : {}),
+				...(agentName ? { agent_name: agentName } : {}),
 			});
 		}
 	}
@@ -356,6 +364,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 				...(session.host_type ? { host_type: session.host_type } : {}),
 				...(session.branch ? { branch: session.branch } : {}),
 				...(session.summary ? { summary: session.summary } : {}),
+				...(session.agent_name ? { agent_name: session.agent_name } : {}),
 			});
 		} else {
 			this._buffer.sessions.set(session.id, { ...session });
