@@ -250,9 +250,10 @@ export interface ISessionWorkspaceBrowseAction {
 	/** Optional description shown alongside the label in the workspace picker. */
 	readonly description?: string;
 	/**
-	 * Optional group identifier. Actions sharing the same group are merged
-	 * into a single picker entry with a submenu. The group value is also
-	 * used as the display label for that merged entry (e.g. "Folders").
+	 * Optional non-localized group key used to merge actions in the workspace picker.
+	 * Actions sharing the same group key are combined into a single picker entry
+	 * with a submenu. The first action's label is used as the display text for
+	 * the merged entry (e.g. "Folders").
 	 */
 	readonly group?: string;
 	/** Icon for the browse action. */

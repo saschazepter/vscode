@@ -396,7 +396,7 @@ export class WorkspacePicker extends Disposable {
 			entry.actions.push({ action, index: i });
 		});
 
-		for (const [, { label, icon, actions }] of browseByGroup) {
+		for (const [groupKey, { label, icon, actions }] of browseByGroup) {
 			if (actions.length === 1) {
 				// Single provider for this group — show directly
 				const { action, index } = actions[0];
@@ -433,7 +433,7 @@ export class WorkspacePicker extends Disposable {
 					label: localize('workspacePicker.browseSelectAction', "Select {0}...", label),
 					group: { title: '', icon },
 					item: {},
-					submenuActions: [new SubmenuAction(`workspacePicker.browse.group.${label}`, '', submenuActions)],
+					submenuActions: [new SubmenuAction(`workspacePicker.browse.group.${groupKey}`, '', submenuActions)],
 				});
 			}
 		}

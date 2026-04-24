@@ -649,7 +649,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				this._onDidChangeTitle.fire(event.data.title);
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('user.message', (event) => {
-				sdkRequestId = event.id;
+				sdkRequestId = sdkRequestId ?? event.id;
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('assistant.usage', (event) => {
 				if (this._stream && typeof event.data.outputTokens === 'number' && typeof event.data.inputTokens === 'number') {
