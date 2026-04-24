@@ -21,7 +21,7 @@ import { AgentSession } from '../../common/agentService.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js';
-import { SessionActiveClient, ResponsePartKind, SessionLifecycle, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, type CustomizationRef, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart } from '../../common/state/sessionState.js';
+import { SessionActiveClient, ResponsePartKind, SessionLifecycle, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
 import { MockAgent } from './mockAgent.js';
@@ -131,11 +131,6 @@ suite('AgentService (node dispatcher)', () => {
 				const rootConfigResource = joinPath(tempDir, 'agent-host-config.json');
 				const svc = disposables.add(new AgentService(new NullLogService(), fileService, createNullSessionDataService(), { _serviceBrand: undefined } as IProductService, rootConfigResource));
 				const agent = new MockAgent('copilot');
-				const hostCustomizationCalls: CustomizationRef[][] = [];
-				agent.setHostCustomizations = customizations => {
-					hostCustomizationCalls.push([...customizations]);
-					agent.customizations = [...customizations];
-				};
 				disposables.add(toDisposable(() => agent.dispose()));
 				svc.registerProvider(agent);
 
@@ -147,18 +142,16 @@ suite('AgentService (node dispatcher)', () => {
 
 				let persisted = false;
 				for (let attempt = 0; attempt < 20; attempt++) {
-					if (hostCustomizationCalls.length > 1) {
-						try {
-							const parsed = JSON.parse(readFileSync(rootConfigResource.fsPath, 'utf8'));
-							assert.deepStrictEqual(
-								parsed.customizations,
-								[customization],
-							);
-							persisted = true;
-							break;
-						} catch {
-							// Wait for the serialized root-config write to complete.
-						}
+					try {
+						const parsed = JSON.parse(readFileSync(rootConfigResource.fsPath, 'utf8'));
+						assert.deepStrictEqual(
+							parsed.customizations,
+							[customization],
+						);
+						persisted = true;
+						break;
+					} catch {
+						// Wait for the serialized root-config write to complete.
 					}
 					if (attempt === 19) {
 						break;
@@ -166,7 +159,6 @@ suite('AgentService (node dispatcher)', () => {
 					await new Promise(resolve => setTimeout(resolve, 5));
 				}
 
-				assert.deepStrictEqual(hostCustomizationCalls.at(-1), [customization]);
 				assert.ok(persisted, 'should persist the root config change');
 			} finally {
 				rmSync(tempDir.fsPath, { recursive: true, force: true });

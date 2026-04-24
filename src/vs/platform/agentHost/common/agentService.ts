@@ -483,16 +483,11 @@ export interface IAgent {
 	getProtectedResources(): ProtectedResourceMetadata[];
 
 	/**
-	 * Updates the host-owned customization refs available to this agent.
-	 *
-	 * The list is a full replacement of the remote agent host's configured
-	 * plugins after scope resolution and persistence have been applied.
-	 *
-	 * Implementations can invoke `progress` whenever session-visible status
-	 * for the host customizations changes so callers can republish
-	 * `SessionCustomization` state.
+	 * Fires when the agent's host-owned customizations change
+	 * (loading state, resolution results, etc.), so infrastructure
+	 * can republish {@link AgentInfo} and session customization state.
 	 */
-	setHostCustomizations?(customizations: CustomizationRef[], progress?: () => void): void;
+	readonly onDidCustomizationsChange?: Event<void>;
 
 	/**
 	 * Returns the host-owned customization refs this agent currently exposes.

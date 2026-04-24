@@ -735,9 +735,7 @@ suite('AgentSideEffects', () => {
 		test('republishes agent and session customizations for existing sessions', async () => {
 			setupSession('file:///workspace');
 			const customization = { uri: 'file:///plugin-a', displayName: 'Plugin A' };
-			agent.setHostCustomizations = customizations => {
-				agent.customizations = [...customizations];
-			};
+			agent.customizations = [customization];
 			agent.getSessionCustomizations = async () => [{
 				customization,
 				source: SessionCustomizationSource.Host,

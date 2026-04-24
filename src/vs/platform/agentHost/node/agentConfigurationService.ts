@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
+import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { dirname } from '../../../base/common/path.js';
 import { hasKey } from '../../../base/common/types.js';
@@ -35,6 +36,13 @@ export const IAgentConfigurationService = createDecorator<IAgentConfigurationSer
  */
 export interface IAgentConfigurationService {
 	readonly _serviceBrand: undefined;
+
+	/**
+	 * Fires whenever a {@link ActionType.RootConfigChanged} action is
+	 * processed by the state manager, signalling that callers should
+	 * re-read any root config values they depend on.
+	 */
+	readonly onDidRootConfigChange: Event<void>;
 
 	/**
 	 * Returns the effective value of `key` for `session`, walking the
@@ -92,6 +100,9 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 	declare readonly _serviceBrand: undefined;
 	private _rootConfigWrite = Promise.resolve();
 
+	private readonly _onDidRootConfigChange = this._register(new Emitter<void>());
+	readonly onDidRootConfigChange: Event<void> = this._onDidRootConfigChange.event;
+
 	constructor(
 		private readonly _stateManager: AgentHostStateManager,
 		@ILogService private readonly _logService: ILogService,
@@ -110,6 +121,12 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 			},
 			values: { ...existing?.values, ...this._loadPersistedRootConfig() },
 		};
+
+		this._register(this._stateManager.onDidEmitEnvelope(envelope => {
+			if (envelope.action.type === ActionType.RootConfigChanged) {
+				this._onDidRootConfigChange.fire();
+			}
+		}));
 	}
 
 	getEffectiveValue<D extends SchemaDefinition, K extends keyof D & string>(

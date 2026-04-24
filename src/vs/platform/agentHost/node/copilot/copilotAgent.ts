@@ -7,7 +7,7 @@ import { CopilotClient, ResumeSessionConfig, type CopilotClientOptions, type Ses
 import { rgPath } from '@vscode/ripgrep';
 import * as fs from 'fs/promises';
 import { Limiter, SequencerByKey } from '../../../../base/common/async.js';
-import { Emitter } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
@@ -22,7 +22,7 @@ import { IParsedPlugin, parsePlugin } from '../../../agentPlugins/common/pluginP
 import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
-import { customizationMatchesDirectory } from '../../common/agentHostCustomizationConfig.js';
+import { customizationMatchesDirectory, AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentDeltaEvent, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { AutoApproveLevel, ISchemaProperty, createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
@@ -33,6 +33,7 @@ import { ProtectedResourceMetadata, SessionCustomizationSource, type ConfigSchem
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { CustomizationStatus, CustomizationRef, SessionInputResponseKind, type PendingMessage, type SessionInputAnswer, type ToolCallResult, type PolicyState } from '../../common/state/sessionState.js';
 import { IAgentHostGitService } from '../agentHostGitService.js';
+import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 import { CopilotAgentSession, SessionWrapperFactory, type IActiveClientSnapshot } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
@@ -179,6 +180,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private readonly _sessionSequencer = new SequencerByKey<string>();
 	private _shutdownPromise: Promise<void> | undefined;
 	private readonly _plugins: PluginController;
+	readonly onDidCustomizationsChange: Event<void>;
 	/** Per-session active client state for tools + plugin snapshot tracking. */
 	private readonly _activeClients = new ResourceMap<ActiveClient>();
 
@@ -191,7 +193,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 		@IAgentHostTerminalManager private readonly _terminalManager: IAgentHostTerminalManager,
 	) {
 		super();
-		this._plugins = this._instantiationService.createInstance(PluginController);
+		this._plugins = this._register(this._instantiationService.createInstance(PluginController));
+		this.onDidCustomizationsChange = this._plugins.onDidChange;
 	}
 
 	protected _createCopilotClient(options: CopilotClientOptions): ICopilotClient {
@@ -226,10 +229,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const entry = this._sessions.get(AgentSession.id(session));
 		const metadata = entry ? undefined : await this._readSessionMetadata(session);
 		return this._plugins.getSessionCustomizations(entry?.customizationDirectory ?? metadata?.customizationDirectory ?? metadata?.workingDirectory);
-	}
-
-	setHostCustomizations(customizations: CustomizationRef[], progress?: () => void): void {
-		this._plugins.setHostCustomizations(customizations, progress);
 	}
 
 	async authenticate(resource: string, token: string): Promise<boolean> {
@@ -1216,7 +1215,10 @@ interface IResolvedCustomization {
 	readonly plugin?: IParsedPlugin;
 }
 
-class PluginController {
+class PluginController extends Disposable {
+	private readonly _onDidChange = this._register(new Emitter<void>());
+	readonly onDidChange = this._onDidChange.event;
+
 	private readonly _enablement = new Map<string, boolean>();
 	private _clientCustomizations: readonly IResolvedCustomization[] = [];
 	private _hostCustomizations: readonly IResolvedCustomization[] = [];
@@ -1224,12 +1226,22 @@ class PluginController {
 	private _hostSync: Promise<readonly IResolvedCustomization[]> = Promise.resolve([]);
 	private _clientRevision = 0;
 	private _hostRevision = 0;
+	private _lastAppliedRefs: readonly CustomizationRef[] = [];
 
 	constructor(
 		@IAgentPluginManager private readonly _pluginManager: IAgentPluginManager,
 		@ILogService private readonly _logService: ILogService,
 		@IFileService private readonly _fileService: IFileService,
-	) { }
+		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
+	) {
+		super();
+
+		// Seed from current root config and subscribe to future changes.
+		this._applyHostCustomizations();
+		this._register(this._configurationService.onDidRootConfigChange(() => {
+			this._applyHostCustomizations();
+		}));
+	}
 
 	public getConfiguredHostCustomizations(): readonly CustomizationRef[] {
 		return this._hostCustomizations.map(item => item.customization.customization);
@@ -1276,7 +1288,18 @@ class PluginController {
 		this._enablement.set(pluginProtocolUri, enabled);
 	}
 
-	public setHostCustomizations(customizations: CustomizationRef[], progress?: () => void): void {
+	/**
+	 * Reads the current host customizations from the root config and
+	 * resolves them. Skips the update when the configured refs have not
+	 * changed since the last application.
+	 */
+	private _applyHostCustomizations(): void {
+		const customizations = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.Customizations) ?? [];
+		if (equals(customizations, this._lastAppliedRefs)) {
+			return;
+		}
+		this._lastAppliedRefs = customizations;
+
 		const revision = ++this._hostRevision;
 		this._hostCustomizations = customizations.map(customization => ({
 			customization: {
@@ -1286,7 +1309,7 @@ class PluginController {
 				status: CustomizationStatus.Loading,
 			},
 		}));
-		progress?.();
+		this._onDidChange.fire();
 		this._hostSync = Promise.all(customizations.map(customization => this._resolveConfiguredCustomization(customization, SessionCustomizationSource.Host))).then(resolved => {
 			if (revision === this._hostRevision) {
 				this._hostCustomizations = resolved;
@@ -1294,7 +1317,7 @@ class PluginController {
 			return resolved;
 		}).finally(() => {
 			if (revision === this._hostRevision) {
-				progress?.();
+				this._onDidChange.fire();
 			}
 		});
 	}

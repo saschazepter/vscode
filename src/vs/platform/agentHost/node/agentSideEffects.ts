@@ -12,7 +12,6 @@ import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
 import { IInstantiationService } from '../../instantiation/common/instantiation.js';
-import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../common/agentHostCustomizationConfig.js';
 import { IAgent, IAgentAttachment, IAgentProgressEvent, type IAgentToolCompleteEvent, type IAgentToolReadyEvent } from '../common/agentService.js';
 import { IDiffComputeService } from '../common/diffComputeService.js';
 import { ISessionDataService } from '../common/sessionDataService.js';
@@ -26,13 +25,11 @@ import {
 	ToolResultContentType,
 	buildSubagentSessionUri,
 	getToolFileEdits,
-	type CustomizationRef,
 	type SessionState,
 	type ToolResultContent,
 	type URI as ProtocolURI,
 } from '../common/state/sessionState.js';
 import { AgentEventMapper } from './agentEventMapper.js';
-import { IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
 import { NodeWorkerDiffComputeService } from './diffComputeService.js';
 import { computeSessionDiffs, type IIncrementalDiffOptions } from './sessionDiffAggregator.js';
@@ -78,8 +75,6 @@ export class AgentSideEffects extends Disposable {
 	/** Serializes per-session diff computations to avoid races with stale previousDiffs. */
 	private readonly _diffComputationSequencer = new SequencerByKey<string>();
 	private _lastAgentInfos: readonly AgentInfo[] = [];
-	/** Last customizations list passed to agents; compared before each {@link _applyHostCustomizationsToAgents} call to skip no-op updates. */
-	private _lastAppliedCustomizations: readonly CustomizationRef[] = [];
 	/** Per-session debounce timers for mid-turn diff computation. */
 	private readonly _debouncedDiffTimers = this._register(new DisposableMap<string>());
 	private static readonly _DIFF_DEBOUNCE_MS = 5000;
@@ -110,7 +105,6 @@ export class AgentSideEffects extends Disposable {
 		private readonly _options: IAgentSideEffectsOptions,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
-		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
 	) {
 		super();
 		this._diffComputeService = this._register(new NodeWorkerDiffComputeService(this._logService));
@@ -151,20 +145,6 @@ export class AgentSideEffects extends Disposable {
 		}
 		this._lastAgentInfos = infos;
 		this._stateManager.dispatchServerAction({ type: ActionType.RootAgentsChanged, agents: infos });
-	}
-
-	private _applyHostCustomizationsToAgents(): void {
-		const customizations = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.Customizations) ?? [];
-		if (equals(customizations, this._lastAppliedCustomizations)) {
-			return;
-		}
-		this._lastAppliedCustomizations = customizations;
-		for (const agent of this._options.agents.get()) {
-			agent.setHostCustomizations?.([...customizations], () => {
-				this._publishAgentInfos(this._options.agents.get());
-				this._publishSessionCustomizationsForAgent(agent);
-			});
-		}
 	}
 
 	private async _publishSessionCustomizations(agent: IAgent, session: ProtocolURI): Promise<void> {
@@ -233,6 +213,12 @@ export class AgentSideEffects extends Disposable {
 		disposables.add(agent.onDidSessionProgress(e => {
 			this._handleAgentProgress(agent, agentMapper, e);
 		}));
+		if (agent.onDidCustomizationsChange) {
+			disposables.add(agent.onDidCustomizationsChange(() => {
+				this._publishAgentInfos(this._options.agents.get());
+				this._publishSessionCustomizationsForAgent(agent);
+			}));
+		}
 		return disposables;
 	}
 
@@ -764,7 +750,10 @@ export class AgentSideEffects extends Disposable {
 				break;
 			}
 			case ActionType.RootConfigChanged: {
-				this._applyHostCustomizationsToAgents();
+				// Host customizations are self-managed by each agent's
+				// PluginController via IAgentConfigurationService.onDidRootConfigChange.
+				// Republish agent infos for non-customization schema changes
+				// (e.g. permissions) and session customizations as a catchall.
 				this._publishAgentInfos(this._options.agents.get());
 				this._publishAllSessionCustomizations();
 				break;

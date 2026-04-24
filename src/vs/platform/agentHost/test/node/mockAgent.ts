@@ -46,7 +46,8 @@ export class MockAgent implements IAgent {
 	readonly setCustomizationEnabledCalls: { uri: string; enabled: boolean }[] = [];
 	/** Configurable return value for getCustomizations. */
 	customizations: CustomizationRef[] = [];
-	setHostCustomizations?: (customizations: CustomizationRef[], progress?: () => void) => void;
+	private readonly _onDidCustomizationsChange = new Emitter<void>();
+	readonly onDidCustomizationsChange = this._onDidCustomizationsChange.event;
 	getSessionCustomizations?: (session: URI) => Promise<readonly SessionCustomization[]>;
 
 	/** Configurable return value for getSessionMessages. */
@@ -163,8 +164,13 @@ export class MockAgent implements IAgent {
 		this._onDidSessionProgress.fire(event);
 	}
 
+	fireCustomizationsChange(): void {
+		this._onDidCustomizationsChange.fire();
+	}
+
 	dispose(): void {
 		this._onDidSessionProgress.dispose();
+		this._onDidCustomizationsChange.dispose();
 	}
 }
 
