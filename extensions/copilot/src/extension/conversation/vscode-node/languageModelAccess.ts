@@ -42,7 +42,7 @@ import { IExtensionContribution } from '../../common/contributions';
 import { PromptRenderer } from '../../prompts/node/base/promptRenderer';
 import { isImageDataPart } from '../common/languageModelChatMessageHelpers';
 import { LanguageModelAccessPrompt } from './languageModelAccessPrompt';
-import { getModelCapabilitiesDescription } from '../common/languageModelAccess';
+import { formatTokenPricingTooltip, getModelCapabilitiesDescription } from '../common/languageModelAccess';
 
 /**
  * Markers in the autoModelHint experiment variable that indicate the auto model
@@ -248,6 +248,11 @@ export class LanguageModelAccess extends Disposable implements IExtensionContrib
 				modelDetail = customModel.owner_name;
 				modelTooltip = vscode.l10n.t('{0} is contributed by {1} using {2}.', sanitizedModelName, customModel.owner_name, customModel.key_name);
 				modelCategory = { label: vscode.l10n.t("Custom Models"), order: 2 };
+			}
+
+			if (endpoint.tokenPricing && !(endpoint instanceof AutoChatEndpoint)) {
+				const pricingTooltip = formatTokenPricingTooltip(endpoint.tokenPricing);
+				modelTooltip = modelTooltip ? `${modelTooltip}\n\n${pricingTooltip}` : pricingTooltip;
 			}
 
 			const session = this._authenticationService.anyGitHubSession;

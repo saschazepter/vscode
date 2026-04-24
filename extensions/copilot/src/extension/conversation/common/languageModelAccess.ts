@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 
-import { IChatEndpoint } from '../../../platform/networking/common/networking';
+import { IChatEndpoint, IChatEndpointTokenPricing } from '../../../platform/networking/common/networking';
 import * as l10n from '@vscode/l10n';
 import type { LanguageModelChatInformation } from 'vscode';
 
@@ -71,4 +71,25 @@ export function getModelCapabilitiesDescription(endpoint: IChatEndpoint | Langua
 	}
 
 	return undefined;
+}
+
+function formatAicPrice(price: number): string {
+	if (price < 0.01) {
+		return price.toExponential(2);
+	}
+	// Remove unnecessary trailing zeros
+	return price.toFixed(4).replace(/\.?0+$/, '');
+}
+
+/**
+ * Formats normalized token pricing (AICs per million tokens) into a
+ * human-readable tooltip string.
+ */
+export function formatTokenPricingTooltip(pricing: IChatEndpointTokenPricing): string {
+	return l10n.t(
+		'Pricing (AICs / 1M tokens)\n\n  Input: {0}  · Output: {1}  · Cache read: {2}',
+		formatAicPrice(pricing.inputPrice),
+		formatAicPrice(pricing.outputPrice),
+		formatAicPrice(pricing.cacheReadTokenPrice),
+	);
 }

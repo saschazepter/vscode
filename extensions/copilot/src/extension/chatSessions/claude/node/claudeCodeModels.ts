@@ -8,6 +8,7 @@ import type * as vscode from 'vscode';
 import { IEndpointProvider } from '../../../../platform/endpoint/common/endpointProvider';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
+import { formatTokenPricingTooltip, getModelCapabilitiesDescription } from '../../../conversation/common/languageModelAccess';
 import { createServiceIdentifier } from '../../../../util/common/services';
 import { Emitter } from '../../../../util/vs/base/common/event';
 import { Disposable } from '../../../../util/vs/base/common/lifecycle';
@@ -87,6 +88,11 @@ export class ClaudeCodeModels extends Disposable implements IClaudeCodeModels {
 		const endpoints = await this._getEndpoints();
 		return endpoints.map(endpoint => {
 			const multiplier = endpoint.multiplier === undefined ? undefined : `${endpoint.multiplier}x`;
+			let tooltip: string | undefined = getModelCapabilitiesDescription(endpoint);
+			if (endpoint.tokenPricing) {
+				const pricingTooltip = formatTokenPricingTooltip(endpoint.tokenPricing);
+				tooltip = tooltip ? `${tooltip}\n\n${pricingTooltip}` : pricingTooltip;
+			}
 			return {
 				id: endpoint.model,
 				name: endpoint.name,
@@ -96,6 +102,7 @@ export class ClaudeCodeModels extends Disposable implements IClaudeCodeModels {
 				maxOutputTokens: endpoint.maxOutputTokens,
 				multiplier,
 				multiplierNumeric: endpoint.multiplier,
+				tooltip,
 				isUserSelectable: true,
 				configurationSchema: buildConfigurationSchema(endpoint),
 				capabilities: {
