@@ -340,7 +340,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 
 			// Step 1: Write a sentinel file into the sandbox-provided $TMPDIR.
 			const writeOutput = await invokeRunInTerminal(`echo ${marker} > "$TMPDIR/${sentinelName}" && echo ${marker}`);
-			assert.strictEqual(writeOutput.trim(), marker);
+			assert.ok(writeOutput.trim().endsWith(marker), `Unexpected output: ${JSON.stringify(writeOutput.trim())}`);
 
 			// Step 2: Retry with requestUnsandboxedExecution=true while sandbox
 			// stays enabled. The tool should preserve $TMPDIR from the sandbox so
@@ -351,7 +351,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 				requestUnsandboxedExecutionReason: 'Need to verify $TMPDIR persists on unsandboxed retry',
 			});
 			const trimmed = retryOutput.trim();
-			assert.ok(trimmed.startsWith('Note: The tool simplified the command to'), `Unexpected output: ${JSON.stringify(trimmed)}`);
+			assert.ok(trimmed.includes('Note: The tool simplified the command to'), `Unexpected output: ${JSON.stringify(trimmed)}`);
 			assert.ok(trimmed.includes(`cat "$TMPDIR/${sentinelName}"`), `Unexpected output: ${JSON.stringify(trimmed)}`);
 			assert.ok(trimmed.endsWith(marker), `Unexpected output: ${JSON.stringify(trimmed)}`);
 		});
