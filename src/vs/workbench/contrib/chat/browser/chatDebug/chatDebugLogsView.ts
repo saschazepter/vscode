@@ -23,7 +23,7 @@ import { ServiceCollection } from '../../../../../platform/instantiation/common/
 import { WorkbenchList, WorkbenchObjectTree } from '../../../../../platform/list/browser/listService.js';
 import { defaultBreadcrumbsWidgetStyles, defaultButtonStyles, defaultProgressBarStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { FilterWidget } from '../../../../browser/parts/views/viewFilter.js';
-import { IChatDebugEvent, IChatDebugService } from '../../common/chatDebugService.js';
+import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugGenericEvent, IChatDebugService } from '../../common/chatDebugService.js';
 import { debugEventMatchesText } from '../../common/chatDebugEvents.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
@@ -541,17 +541,74 @@ export class ChatDebugLogsView extends Disposable {
 			}
 		}
 
-		const toTreeElement = (event: IChatDebugEvent): IObjectTreeElement<IChatDebugEvent> => {
+		const toTreeElement = (event: IChatDebugEvent, collapsed?: boolean): IObjectTreeElement<IChatDebugEvent> => {
 			const children = event.id ? idToChildren.get(event.id) : undefined;
 			return {
 				element: event,
-				children: children?.map(toTreeElement),
+				children: children?.map(c => toTreeElement(c)),
 				collapsible: (children?.length ?? 0) > 0,
-				collapsed: false,
+				collapsed: collapsed ?? false,
 			};
 		};
 
-		return roots.map(toTreeElement);
+		// Consolidate top-level discovery/customization events under a
+		// single synthetic group node so they don't flood the root list.
+		return this.consolidateDiscoveryRoots(roots, toTreeElement);
+	}
+
+	/**
+	 * Groups consecutive top-level discovery/customization generic events
+	 * under a single synthetic parent node. Non-discovery roots are
+	 * emitted as-is.
+	 */
+	private consolidateDiscoveryRoots(
+		roots: IChatDebugEvent[],
+		toTreeElement: (event: IChatDebugEvent, collapsed?: boolean) => IObjectTreeElement<IChatDebugEvent>,
+	): IObjectTreeElement<IChatDebugEvent>[] {
+		const result: IObjectTreeElement<IChatDebugEvent>[] = [];
+		let discoveryBatch: IChatDebugEvent[] = [];
+
+		const flushBatch = () => {
+			if (discoveryBatch.length === 0) {
+				return;
+			}
+			if (discoveryBatch.length === 1) {
+				// A single discovery event doesn't need grouping
+				result.push(toTreeElement(discoveryBatch[0]));
+			} else {
+				// Create a synthetic group node using the earliest event's
+				// metadata and a summary as the name.
+				const first = discoveryBatch[0];
+				const groupEvent: IChatDebugGenericEvent = {
+					id: `_discovery_group_${first.id ?? first.created.getTime()}`,
+					sessionResource: first.sessionResource,
+					created: first.created,
+					kind: 'generic',
+					name: localize('chatDebug.discoveryGroup', "Discovered Customizations"),
+					details: localize('chatDebug.discoveryGroupDetails', "{0} items", discoveryBatch.length),
+					level: ChatDebugLogLevel.Info,
+					category: 'discovery',
+				};
+				result.push({
+					element: groupEvent,
+					children: discoveryBatch.map(e => toTreeElement(e)),
+					collapsible: true,
+					collapsed: true,
+				});
+			}
+			discoveryBatch = [];
+		};
+
+		for (const root of roots) {
+			if (root.kind === 'generic' && (root.category === 'discovery' || root.category === 'customization')) {
+				discoveryBatch.push(root);
+			} else {
+				flushBatch();
+				result.push(toTreeElement(root));
+			}
+		}
+		flushBatch();
+		return result;
 	}
 
 	private updateShowMore(totalFiltered: number): void {

@@ -45,10 +45,10 @@ export function getEventCreatedText(element: IChatDebugEvent): string {
 /** Returns the display name for a debug event. */
 export function getEventNameText(element: IChatDebugEvent): string {
 	switch (element.kind) {
-		case 'toolCall': return safeStr(element.toolName, localize('chatDebug.unknownEvent', "(unknown)"));
-		case 'modelTurn': return safeStr(element.model) || localize('chatDebug.modelTurn', "Model Turn");
+		case 'toolCall': return localize('chatDebug.toolPrefix', "Tool: {0}", safeStr(element.toolName, localize('chatDebug.unknownEvent', "(unknown)")));
+		case 'modelTurn': return localize('chatDebug.modelPrefix', "Model: {0}", safeStr(element.model) || localize('chatDebug.modelTurn', "Model Turn"));
 		case 'generic': return safeStr(element.name, localize('chatDebug.unknownEvent', "(unknown)"));
-		case 'subagentInvocation': return safeStr(element.agentName, localize('chatDebug.unknownEvent', "(unknown)"));
+		case 'subagentInvocation': return localize('chatDebug.subagentPrefix', "Subagent: {0}", safeStr(element.agentName, localize('chatDebug.unknownEvent', "(unknown)")));
 		case 'userMessage': return localize('chatDebug.userMessage', "User Message");
 		case 'agentResponse': return localize('chatDebug.agentResponse', "Agent Response");
 	}
@@ -57,16 +57,46 @@ export function getEventNameText(element: IChatDebugEvent): string {
 /** Returns the details text for a debug event. */
 export function getEventDetailsText(element: IChatDebugEvent): string {
 	switch (element.kind) {
-		case 'toolCall': return safeStr(element.result);
-		case 'modelTurn': return [
-			safeStr(element.requestName),
-			element.totalTokens !== undefined ? localize('chatDebug.tokens', "{0} tokens", numberFormatter.value.format(element.totalTokens)) : '',
-		].filter(Boolean).join(' \u00b7 ');
+		case 'toolCall': {
+			const parts: string[] = [];
+			if (element.result) { parts.push(element.result); }
+			if (element.durationInMillis !== undefined) { parts.push(formatDuration(element.durationInMillis)); }
+			return parts.join(' \u00b7 ');
+		}
+		case 'modelTurn': {
+			const parts: string[] = [];
+			if (element.requestName) { parts.push(element.requestName); }
+			if (element.totalTokens !== undefined) { parts.push(localize('chatDebug.tokens', "{0} tokens", numberFormatter.value.format(element.totalTokens))); }
+			if (element.durationInMillis !== undefined) { parts.push(formatDuration(element.durationInMillis)); }
+			return parts.join(' \u00b7 ');
+		}
 		case 'generic': return safeStr(element.details);
-		case 'subagentInvocation': return safeStr(element.description) || safeStr(element.status);
+		case 'subagentInvocation': {
+			const parts: string[] = [];
+			if (element.description) { parts.push(element.description); }
+			if (element.status) { parts.push(element.status); }
+			if (element.durationInMillis !== undefined) { parts.push(formatDuration(element.durationInMillis)); }
+			return parts.join(' \u00b7 ');
+		}
 		case 'userMessage': return safeStr(element.message);
-		case 'agentResponse': return safeStr(element.message);
+		case 'agentResponse': return truncateText(safeStr(element.message), 120);
 	}
+}
+
+/** Format a duration in milliseconds to a human-readable string. */
+function formatDuration(ms: number): string {
+	if (ms < 1000) {
+		return localize('chatDebug.durationMs', "{0}ms", numberFormatter.value.format(ms));
+	}
+	return localize('chatDebug.durationS', "{0}s", (ms / 1000).toFixed(1));
+}
+
+/** Truncate text to a maximum length, appending ellipsis if needed. */
+function truncateText(text: string, maxLength: number): string {
+	if (text.length <= maxLength) {
+		return text;
+	}
+	return text.slice(0, maxLength) + '\u2026';
 }
 
 function renderEventToTemplate(element: IChatDebugEvent, templateData: IChatDebugEventTemplate): void {

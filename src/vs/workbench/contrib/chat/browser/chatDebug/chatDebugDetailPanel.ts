@@ -25,7 +25,7 @@ import { IChatDebugEvent, IChatDebugService } from '../../common/chatDebugServic
 import { formatEventDetail } from './chatDebugEventDetailRenderer.js';
 import { renderCustomizationDiscoveryContent, fileListToPlainText, renderCustomizationSummaryContent, customizationSummaryToPlainText } from './chatCustomizationDiscoveryRenderer.js';
 import { renderUserMessageContent, renderAgentResponseContent, messageEventToPlainText, renderResolvedMessageContent, resolvedMessageToPlainText } from './chatDebugMessageContentRenderer.js';
-import { renderToolCallContent, toolCallContentToPlainText } from './chatDebugToolCallContentRenderer.js';
+import { renderToolCallContent, toolCallContentToPlainText, tokenizeContent, renderSection } from './chatDebugToolCallContentRenderer.js';
 import { renderModelTurnContent, modelTurnContentToPlainText } from './chatDebugModelTurnContentRenderer.js';
 import { renderHookContent, hookContentToPlainText } from './chatDebugHookContentRenderer.js';
 
@@ -153,7 +153,9 @@ export class ChatDebugDetailPanel extends Disposable {
 		fullScreenButton.icon = Codicon.goToFile;
 		this.firstFocusableElement = fullScreenButton.element;
 		this.detailDisposables.add(fullScreenButton.onDidClick(() => {
-			this.editorService.openEditor({ contents: this.currentDetailText, resource: undefined } satisfies IUntitledTextResourceEditorInput);
+			// Detect JSON content to set the appropriate language mode
+			const languageId = this.detectLanguageId(this.currentDetailText);
+			this.editorService.openEditor({ contents: this.currentDetailText, languageId, resource: undefined } satisfies IUntitledTextResourceEditorInput);
 		}));
 
 		const copyButton = this.detailDisposables.add(new Button(header, { ariaLabel: localize('chatDebug.copyToClipboard', "Copy"), title: localize('chatDebug.copyToClipboard', "Copy") }));
@@ -242,14 +244,36 @@ export class ChatDebugDetailPanel extends Disposable {
 			this.detailDisposables.add(contentDisposables);
 			this.contentContainer.appendChild(contentEl);
 		} else {
-			const pre = DOM.append(this.contentContainer, $('pre'));
-			pre.tabIndex = 0;
 			if (resolved) {
 				this.currentDetailText = resolved.value;
 			} else {
 				this.currentDetailText = formatEventDetail(event);
 			}
-			pre.textContent = this.currentDetailText;
+
+			// Try to render structured sections for the fallback content.
+			// If the content contains JSON, pretty-print and syntax-highlight it.
+			const sectionsContainer = DOM.append(this.contentContainer, $('div.chat-debug-message-content'));
+			sectionsContainer.tabIndex = 0;
+
+			// Add a title showing the event kind
+			const title = event.kind === 'generic' ? (event.name || event.category || 'Details') : event.kind;
+			DOM.append(sectionsContainer, $('div.chat-debug-message-content-title', undefined, title));
+
+			const { plainText, tokenizedHtml } = await tokenizeContent(this.currentDetailText, this.languageService);
+			if (this.currentDetailEventId !== event.id) {
+				return;
+			}
+			this.currentDetailText = plainText;
+			renderSection(
+				sectionsContainer,
+				localize('chatDebug.detailContent', "Content"),
+				plainText,
+				tokenizedHtml,
+				this.detailDisposables,
+				false,
+				this.clipboardService,
+				this.scrollable,
+			);
 		}
 
 		// Compute height from the parent container and set explicit
@@ -301,5 +325,22 @@ export class ChatDebugDetailPanel extends Disposable {
 		DOM.clearNode(this.contentContainer);
 		this.detailDisposables.clear();
 		this._onDidHide.fire();
+	}
+
+	/**
+	 * Detect the best language ID for the detail text content.
+	 * Returns 'json' if the text looks like JSON, otherwise undefined.
+	 */
+	private detectLanguageId(text: string): string | undefined {
+		const trimmed = text.trimStart();
+		if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && this.languageService.isRegisteredLanguageId('json')) {
+			try {
+				JSON.parse(trimmed);
+				return 'json';
+			} catch {
+				// not valid JSON
+			}
+		}
+		return undefined;
 	}
 }
