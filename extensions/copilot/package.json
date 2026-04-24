@@ -128,6 +128,7 @@
 		"chatReferenceBinaryData",
 		"languageModelSystem",
 		"languageModelCapabilities",
+		"languageModelPricing",
 		"inlineCompletionsAdditions",
 		"chatStatusItem",
 		"chatInputNotification",

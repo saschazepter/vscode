@@ -77,14 +77,13 @@ function formatAicPrice(price: number): string {
 }
 
 /**
- * Formats normalized token pricing (AICs per million tokens) into a
- * human-readable tooltip string.
+ * Formats a compact pricing label for display in the model management column.
+ * Shows input and output AICs per million tokens.
  */
-export function formatTokenPricingTooltip(pricing: IChatEndpointTokenPricing): string {
+export function formatPricingLabel(pricing: IChatEndpointTokenPricing): string {
 	return l10n.t(
-		'Pricing (AICs / 1M tokens)\n\n  Input: {0}  · Output: {1}  · Cache read: {2}',
+		'In: {0} · Out: {1} AICs/1M tokens',
 		formatAicPrice(pricing.inputPrice),
 		formatAicPrice(pricing.outputPrice),
-		formatAicPrice(pricing.cacheReadTokenPrice),
 	);
 }
