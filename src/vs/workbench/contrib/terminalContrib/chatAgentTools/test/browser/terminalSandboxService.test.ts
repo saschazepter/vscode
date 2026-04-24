@@ -626,9 +626,10 @@ suite('TerminalSandboxService - network domains', () => {
 		await sandboxService.getSandboxConfigPath();
 
 		const wrapResult = await sandboxService.wrapCommand('head -1 /etc/shells', false, 'bash', undefined, URI.file('/workspace-one'));
+		const expectedWrappedCwd = String.raw`-c 'cd '\''/workspace-one'\'' && head -1 /etc/shells'`;
 
 		ok(wrapResult.command.startsWith(`cd '${sandboxService.getTempDir()?.path}'; `), 'Sandbox runtime should start from the sandbox temp dir on Linux');
-		ok(wrapResult.command.includes(`-c 'cd '\''/workspace-one'\'' && head -1 /etc/shells'`), 'Sandboxed command should restore the original cwd before running the user command');
+		ok(wrapResult.command.includes(expectedWrappedCwd), `Sandboxed command should restore the original cwd before running the user command. Actual: ${wrapResult.command}`);
 		strictEqual(wrapResult.isSandboxWrapped, true, 'Command should remain sandbox wrapped');
 	});
 
