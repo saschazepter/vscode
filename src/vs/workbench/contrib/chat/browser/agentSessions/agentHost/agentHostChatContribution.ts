@@ -26,7 +26,7 @@ import { ICustomizationHarnessService } from '../../../common/customizationHarne
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
-import { AgentCustomizationDisableProvider } from './agentCustomizationDisableProvider.js';
+import { AgentCustomizationSyncProvider } from './agentCustomizationSyncProvider.js';
 import { LocalAgentHostCustomizationItemProvider, resolveCustomizationRefs } from './agentHostLocalCustomizations.js';
 import { authenticateProtectedResources, AgentHostAuthTokenCache, resolveAuthenticationInteractively } from './agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from './agentHostLanguageModelProvider.js';
@@ -167,8 +167,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		store.add(this._chatSessionsService.registerChatSessionItemController(sessionType, listController));
 
 		// Customization disable provider + item provider + bundler + observable
-		const disableProvider = store.add(new AgentCustomizationDisableProvider(sessionType, this._storageService));
-		const itemProvider = store.add(new LocalAgentHostCustomizationItemProvider(this._promptsService, disableProvider));
+		const syncProvider = store.add(new AgentCustomizationSyncProvider(sessionType, this._storageService));
+		const itemProvider = store.add(new LocalAgentHostCustomizationItemProvider(this._promptsService, syncProvider));
 		const bundler = store.add(this._instantiationService.createInstance(SyncedCustomizationBundler, sessionType));
 		// Distinguish from the extension-host Copilot CLI harness, which
 		// registers under the same `Copilot CLI` displayName via the chat
@@ -184,16 +184,16 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			hiddenSections: [],
 			hideGenerateButton: true,
 			getStorageSourceFilter: () => ({ sources: [PromptsStorage.local, PromptsStorage.user, PromptsStorage.plugin] }),
-			disableProvider,
+			syncProvider,
 			itemProvider,
 		}));
 
 		const customizations = observableValue<CustomizationRef[]>('agentCustomizations', []);
 		const updateCustomizations = async () => {
-			const refs = await resolveCustomizationRefs(this._promptsService, disableProvider, this._agentPluginService, bundler);
+			const refs = await resolveCustomizationRefs(this._promptsService, syncProvider, this._agentPluginService, bundler);
 			customizations.set(refs, undefined);
 		};
-		store.add(disableProvider.onDidChange(() => updateCustomizations()));
+		store.add(syncProvider.onDidChange(() => updateCustomizations()));
 		store.add(Event.any(
 			this._promptsService.onDidChangeCustomAgents,
 			this._promptsService.onDidChangeSlashCommands,

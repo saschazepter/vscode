@@ -142,7 +142,7 @@ export interface IHarnessDescriptor {
 	 * local customizations are synced by default. The UI shows disable
 	 * affordances when this harness is active.
 	 */
-	readonly disableProvider?: ICustomizationDisableProvider;
+	readonly syncProvider?: ICustomizationSyncProvider;
 	/**
 	 * Optional plugin-management actions shown in the Plugins section toolbar.
 	 * Harnesses can use these to replace the default local install/create
@@ -208,7 +208,7 @@ export interface ICustomizationItemProvider {
  * can disable individual items. The persisted set captures only the
  * user's opt-outs.
  */
-export interface ICustomizationDisableProvider {
+export interface ICustomizationSyncProvider {
 	readonly onDidChange: Event<void>;
 	isDisabled(uri: URI): boolean;
 	setDisabled(uri: URI, disabled: boolean): void;

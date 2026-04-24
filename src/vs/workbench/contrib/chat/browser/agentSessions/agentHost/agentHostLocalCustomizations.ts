@@ -12,7 +12,7 @@ import { type URI as ProtocolURI } from '../../../../../../platform/agentHost/co
 import { type CustomizationRef } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { IPromptPath, IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
-import { type ICustomizationDisableProvider, type ICustomizationItem, type ICustomizationItemProvider } from '../../../common/customizationHarnessService.js';
+import { type ICustomizationSyncProvider, type ICustomizationItem, type ICustomizationItemProvider } from '../../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { getFriendlyName } from '../../aiCustomization/aiCustomizationItemSource.js';
 import type { SyncedCustomizationBundler } from './syncedCustomizationBundler.js';
@@ -59,7 +59,7 @@ export interface ILocalCustomizationFile {
  */
 export async function enumerateLocalCustomizationsForHarness(
 	promptsService: IPromptsService,
-	disableProvider: ICustomizationDisableProvider,
+	syncProvider: ICustomizationSyncProvider,
 	token: CancellationToken,
 ): Promise<readonly ILocalCustomizationFile[]> {
 	const result: ILocalCustomizationFile[] = [];
@@ -74,7 +74,7 @@ export async function enumerateLocalCustomizationsForHarness(
 					uri: file.uri,
 					type,
 					storage,
-					disabled: disableProvider.isDisabled(file.uri),
+					disabled: syncProvider.isDisabled(file.uri),
 				});
 			}
 		}
@@ -87,7 +87,7 @@ export async function enumerateLocalCustomizationsForHarness(
  * harness's local customizations as items in the AI Customization view.
  *
  * Each enumerated file is emitted as an {@link ICustomizationItem} with
- * `enabled = !disableProvider.isDisabled(uri)`, so the standard disable
+ * `enabled = !syncProvider.isDisabled(uri)`, so the standard disable
  * affordance in the list widget reflects (and toggles) the
  * per-harness opt-out.
  */
@@ -97,10 +97,10 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
 
 	constructor(
 		private readonly _promptsService: IPromptsService,
-		private readonly _disableProvider: ICustomizationDisableProvider,
+		private readonly _syncProvider: ICustomizationSyncProvider,
 	) {
 		super();
-		this._register(this._disableProvider.onDidChange(() => this._onDidChange.fire()));
+		this._register(this._syncProvider.onDidChange(() => this._onDidChange.fire()));
 		this._register(Event.any(
 			this._promptsService.onDidChangeCustomAgents,
 			this._promptsService.onDidChangeSlashCommands,
@@ -110,7 +110,7 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
 	}
 
 	async provideChatSessionCustomizations(token: CancellationToken): Promise<ICustomizationItem[]> {
-		const enumerated = await enumerateLocalCustomizationsForHarness(this._promptsService, this._disableProvider, token);
+		const enumerated = await enumerateLocalCustomizationsForHarness(this._promptsService, this._syncProvider, token);
 		if (token.isCancellationRequested) {
 			return [];
 		}
@@ -136,11 +136,11 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
  */
 export async function resolveCustomizationRefs(
 	promptsService: IPromptsService,
-	disableProvider: ICustomizationDisableProvider,
+	syncProvider: ICustomizationSyncProvider,
 	agentPluginService: IAgentPluginService,
 	bundler: SyncedCustomizationBundler,
 ): Promise<CustomizationRef[]> {
-	const enumerated = await enumerateLocalCustomizationsForHarness(promptsService, disableProvider, CancellationToken.None);
+	const enumerated = await enumerateLocalCustomizationsForHarness(promptsService, syncProvider, CancellationToken.None);
 	const enabled = enumerated.filter(e => !e.disabled);
 	if (enabled.length === 0) {
 		return [];
@@ -156,7 +156,7 @@ export async function resolveCustomizationRefs(
 			if (!plugin) {
 				continue;
 			}
-			if (disableProvider.isDisabled(plugin.uri)) {
+			if (syncProvider.isDisabled(plugin.uri)) {
 				continue;
 			}
 			const key = plugin.uri.toString();

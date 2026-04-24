@@ -26,7 +26,7 @@ import product from '../../../../platform/product/common/product.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { AgentCustomizationDisableProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationDisableProvider.js';
+import { AgentCustomizationSyncProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationSyncProvider.js';
 import { authenticateProtectedResources, AgentHostAuthTokenCache, resolveAuthenticationInteractively } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostLanguageModelProvider.js';
 import { AgentHostSessionHandler } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.js';
@@ -448,8 +448,8 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 			this._customizationWorkspaceService,
 		));
 		const itemProvider = agentStore.add(new RemoteAgentCustomizationItemProvider(agent, loggedConnection, sanitized, pluginController, this._fileService, this._logService));
-		const disableProvider = agentStore.add(new AgentCustomizationDisableProvider(sessionType, this._storageService));
-		const harnessDescriptor = createRemoteAgentHarnessDescriptor(sessionType, displayName, pluginController, itemProvider, disableProvider);
+		const syncProvider = agentStore.add(new AgentCustomizationSyncProvider(sessionType, this._storageService));
+		const harnessDescriptor = createRemoteAgentHarnessDescriptor(sessionType, displayName, pluginController, itemProvider, syncProvider);
 		agentStore.add(this._customizationHarnessService.registerExternalHarness(harnessDescriptor));
 
 		// Bundler for packaging individual files into a virtual Open Plugin
@@ -458,10 +458,10 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		// Agent-level customizations observable
 		const customizations = observableValue<CustomizationRef[]>('agentCustomizations', []);
 		const updateCustomizations = async () => {
-			const refs = await resolveCustomizationRefs(this._promptsService, disableProvider, this._agentPluginService, bundler);
+			const refs = await resolveCustomizationRefs(this._promptsService, syncProvider, this._agentPluginService, bundler);
 			customizations.set(refs, undefined);
 		};
-		agentStore.add(disableProvider.onDidChange(() => updateCustomizations()));
+		agentStore.add(syncProvider.onDidChange(() => updateCustomizations()));
 		agentStore.add(Event.any(
 			this._promptsService.onDidChangeCustomAgents,
 			this._promptsService.onDidChangeSlashCommands,

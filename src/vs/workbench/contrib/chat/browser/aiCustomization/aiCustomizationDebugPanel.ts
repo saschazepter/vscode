@@ -56,7 +56,7 @@ export async function generateCustomizationDebugReport(
 		lines.push(`  id: ${activeDescriptor.id}`);
 		lines.push(`  label: ${activeDescriptor.label}`);
 		lines.push(`  hasItemProvider: ${!!activeDescriptor.itemProvider}`);
-		lines.push(`  hasDisableProvider: ${!!activeDescriptor.disableProvider}`);
+		lines.push(`  hasDisableProvider: ${!!activeDescriptor.syncProvider}`);
 		lines.push(`  hiddenSections: ${activeDescriptor.hiddenSections ? `[${activeDescriptor.hiddenSections.join(', ')}]` : '(none)'}`);
 		lines.push(`  workspaceSubpaths: ${activeDescriptor.workspaceSubpaths ? `[${activeDescriptor.workspaceSubpaths.join(', ')}]` : '(none)'}`);
 		lines.push(`  hideGenerateButton: ${activeDescriptor.hideGenerateButton ?? false}`);
@@ -320,7 +320,7 @@ function appendAllHarnesses(lines: string[], harnessService: ICustomizationHarne
 		const isActive = h.id === activeId ? ' (ACTIVE)' : '';
 		lines.push(`  [${h.id}]${isActive} "${h.label}"`);
 		lines.push(`    hasItemProvider: ${!!h.itemProvider}`);
-		lines.push(`    hasDisableProvider: ${!!h.disableProvider}`);
+		lines.push(`    hasDisableProvider: ${!!h.syncProvider}`);
 		lines.push(`    hiddenSections: ${h.hiddenSections ? `[${h.hiddenSections.join(', ')}]` : '(none)'}`);
 		lines.push(`    hideGenerateButton: ${h.hideGenerateButton ?? false}`);
 		lines.push(`    pluginActions: ${h.pluginActions?.length ?? 0}`);

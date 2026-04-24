@@ -7,7 +7,7 @@ import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
-import { type ICustomizationDisableProvider } from '../../../common/customizationHarnessService.js';
+import { type ICustomizationSyncProvider } from '../../../common/customizationHarnessService.js';
 
 const SYNC_STORAGE_KEY_PREFIX = 'customizationSync.disabled.';
 
@@ -18,7 +18,7 @@ const SYNC_STORAGE_KEY_PREFIX = 'customizationSync.disabled.';
  * Auto-sync semantics: every local customization is synced by default.
  * The persisted set captures only the user's opt-outs.
  */
-export class AgentCustomizationDisableProvider extends Disposable implements ICustomizationDisableProvider {
+export class AgentCustomizationSyncProvider extends Disposable implements ICustomizationSyncProvider {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
