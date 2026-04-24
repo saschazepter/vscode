@@ -70,7 +70,7 @@ export interface IAICustomizationListItem {
 	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
 	readonly enablementScope?: 'none' | 'global' | 'workspace' | 'application';
 	/** Optional reference to the parent plugin item. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
-	readonly plugin?: ICustomizationItem;
+	readonly plugin?: URI;
 	/** When true, this item can be selected for syncing to a remote harness. */
 	readonly syncable?: boolean;
 	/** When true, this syncable item is currently selected for syncing. */
@@ -253,7 +253,7 @@ export class AICustomizationItemNormalizer {
 			status: item.status,
 			statusMessage: item.statusMessage,
 			enablementScope: item.enablementScope,
-			plugin: item.plugin,
+			plugin: item.pluginUri,
 			hookChildren: item.hookChildren,
 		};
 	}
@@ -413,7 +413,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		// normalization (which always infers a storage value from the URI). Items
 		// with explicit storage are "VS Code items" whose disablement is managed
 		// by promptsService; items without are "API items" whose disablement is
-		// managed by the enablementProvider.
+		// managed by the enablementHandler.
 		const providerExplicitStorageUris = new ResourceSet(
 			providerItems.filter(i => i.storage !== undefined).map(i => i.uri),
 		);
@@ -422,7 +422,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		// Overlay disabled state from two sources:
 		// - API items (no explicit `storage` from provider): checked against
-		//   enablementProvider's disabled set. The extension fully owns disablement.
+		//   enablementHandler's disabled set. The extension fully owns disablement.
 		// - VS Code items (explicit `storage` from provider): checked against
 		//   promptsService. On external harnesses (with itemProvider) the namespace
 		//   isolates per-harness state. On the VS Code harness (no itemProvider) no

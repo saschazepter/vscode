@@ -162,7 +162,7 @@ suite('aiCustomizationDisablement', () => {
 
 	suite('disabled state overlay - API items', () => {
 
-		test('disabled via enablementProvider shows as disabled', async () => {
+		test('disabled via enablementHandler shows as disabled', async () => {
 			const eh = createMockEnablementHandler();
 			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
 
@@ -178,7 +178,7 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(result[0].disabled, true);
 		});
 
-		test('not in enablementProvider disabled set shows as enabled', async () => {
+		test('not in enablementHandler disabled set shows as enabled', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
@@ -247,7 +247,7 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(result[0].disabled, false);
 		});
 
-		test('NOT affected by enablementProvider disabled state', async () => {
+		test('NOT affected by enablementHandler disabled state', async () => {
 			const eh = createMockEnablementHandler();
 			eh.handleCustomizationEnablement(skillUri, PromptsType.skill, false, 'global');
 
@@ -456,7 +456,7 @@ suite('aiCustomizationDisablement', () => {
 	suite('ghost entries for disabled items not in provider results', () => {
 
 		test('VS Code harness: disabled agent ghost entry has enablementScope and shows Enable button', async () => {
-			// Simulate: local agent was disabled via enablementProvider → promptsService
+			// Simulate: local agent was disabled via enablementHandler → promptsService
 			// but the promptsServiceItemProvider no longer returns it (getCustomAgents filters it out).
 			const ps = createMockPromptsService();
 			const disabled = new ResourceSet();
@@ -543,14 +543,14 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(keys.disableButtonVisible, true);
 		});
 
-		test('application-scoped item uses vscodeDisabledUris (not enablementProvider)', async () => {
+		test('application-scoped item uses vscodeDisabledUris (not enablementHandler)', async () => {
 			// Disable via promptsService (namespaced) — this is VS Code-managed disablement
 			const ps = createMockPromptsService();
 			const disabled = new ResourceSet();
 			disabled.add(agentUri);
 			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
 
-			// Enable in enablementProvider — should NOT matter for application-scoped items
+			// Enable in enablementHandler — should NOT matter for application-scoped items
 			const eh = createMockEnablementHandler();
 
 			const source = createItemSource({
@@ -564,11 +564,11 @@ suite('aiCustomizationDisablement', () => {
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
-			assert.strictEqual(result[0].disabled, true, 'should be disabled via promptsService, not enablementProvider');
+			assert.strictEqual(result[0].disabled, true, 'should be disabled via promptsService, not enablementHandler');
 		});
 
-		test('application-scoped item NOT disabled by enablementProvider', async () => {
-			// Disable via enablementProvider — should NOT affect application-scoped items
+		test('application-scoped item NOT disabled by enablementHandler', async () => {
+			// Disable via enablementHandler — should NOT affect application-scoped items
 			const eh = createMockEnablementHandler();
 			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
 
@@ -582,7 +582,7 @@ suite('aiCustomizationDisablement', () => {
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
-			assert.strictEqual(result[0].disabled, false, 'enablementProvider should not affect application-scoped items');
+			assert.strictEqual(result[0].disabled, false, 'enablementHandler should not affect application-scoped items');
 		});
 
 		test('disabled application-scoped item shows Enable button', async () => {

@@ -171,8 +171,8 @@ export interface ICustomizationItem {
 	readonly badge?: string;
 	/** Tooltip shown when hovering the badge. */
 	readonly badgeTooltip?: string;
-	/** Optional reference to the parent plugin. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
-	readonly plugin?: ICustomizationItem;
+	/** Optional URI of the parent plugin. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
+	readonly pluginUri?: URI;
 }
 
 /**
@@ -285,11 +285,11 @@ export interface ICustomizationHarnessService {
 	registerExternalHarness(descriptor: IHarnessDescriptor): IDisposable;
 
 	/**
-	 * Returns the enablement provider of the currently active harness, or
-	 * `undefined` when the harness has no custom enablement provider
+	 * Returns the enablement handler of the currently active harness, or
+	 * `undefined` when the harness has no custom enablement handler
 	 * (in which case the caller should fall back to promptsService).
 	 */
-	getActiveEnablementProvider(): ICustomizationEnablementHandler | undefined;
+	getActiveEnablementHandler(): ICustomizationEnablementHandler | undefined;
 }
 
 /**
@@ -401,7 +401,7 @@ function buildAllSources(extras: readonly string[]): readonly string[] {
  * Creates a "VS Code" harness descriptor that shows all storage sources
  * with no user-root restrictions.
  */
-export function createVSCodeHarnessDescriptor(extras: readonly string[], enablementProvider?: ICustomizationEnablementHandler): IHarnessDescriptor {
+export function createVSCodeHarnessDescriptor(extras: readonly string[], enablementHandler?: ICustomizationEnablementHandler): IHarnessDescriptor {
 	const filter: IStorageSourceFilter = { sources: buildAllSources(extras) };
 	return {
 		id: CustomizationHarness.VSCode,
@@ -414,7 +414,7 @@ export function createVSCodeHarnessDescriptor(extras: readonly string[], enablem
 			}],
 		]),
 		getStorageSourceFilter: () => filter,
-		enablementHandler: enablementProvider,
+		enablementHandler,
 	};
 }
 
@@ -430,7 +430,7 @@ interface IRestrictedHarnessOptions {
 	readonly sectionOverrides?: ReadonlyMap<string, ISectionOverride>;
 	readonly requiredAgentId?: string;
 	readonly instructionFileFilter?: readonly string[];
-	readonly enablementProvider?: ICustomizationEnablementHandler;
+	readonly enablementHandler?: ICustomizationEnablementHandler;
 }
 
 function createRestrictedHarnessDescriptor(
@@ -454,7 +454,7 @@ function createRestrictedHarnessDescriptor(
 		sectionOverrides: options?.sectionOverrides,
 		requiredAgentId: options?.requiredAgentId,
 		instructionFileFilter: options?.instructionFileFilter,
-		enablementHandler: options?.enablementProvider,
+		enablementHandler: options?.enablementHandler,
 		getStorageSourceFilter(type: PromptsType): IStorageSourceFilter {
 			if (type === PromptsType.hook) {
 				return HOOKS_FILTER;
@@ -470,7 +470,7 @@ function createRestrictedHarnessDescriptor(
 /**
  * Creates a "Copilot CLI" harness descriptor.
  */
-export function createCliHarnessDescriptor(cliUserRoots: readonly URI[], extras: readonly string[], enablementProvider?: ICustomizationEnablementHandler): IHarnessDescriptor {
+export function createCliHarnessDescriptor(cliUserRoots: readonly URI[], extras: readonly string[], enablementHandler?: ICustomizationEnablementHandler): IHarnessDescriptor {
 	return createRestrictedHarnessDescriptor(
 		CustomizationHarness.CLI,
 		localize('harness.cli', "Copilot CLI"),
@@ -486,7 +486,7 @@ export function createCliHarnessDescriptor(cliUserRoots: readonly URI[], extras:
 					rootFileShortcuts: [AGENT_MD_FILENAME],
 				}],
 			]),
-			enablementProvider,
+			enablementHandler,
 		},
 	);
 }
@@ -613,7 +613,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		return all.find(h => h.id === activeId) ?? all[0];
 	}
 
-	getActiveEnablementProvider(): ICustomizationEnablementHandler | undefined {
+	getActiveEnablementHandler(): ICustomizationEnablementHandler | undefined {
 		return this.getActiveDescriptor().enablementHandler;
 	}
 }

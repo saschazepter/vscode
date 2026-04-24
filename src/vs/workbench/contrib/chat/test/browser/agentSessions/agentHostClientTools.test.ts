@@ -397,7 +397,7 @@ suite('AgentHostClientTools', () => {
 			instantiationService.stub(IStorageService, disposables.add(new InMemoryStorageService()));
 			instantiationService.stub(ICustomizationHarnessService, {
 				registerExternalHarness: () => toDisposable(() => { }),
-				getActiveEnablementProvider: () => undefined,
+				getActiveEnablementHandler: () => undefined,
 			});
 			instantiationService.stub(IAgentPluginService, {
 				plugins: observableValue('plugins', []),

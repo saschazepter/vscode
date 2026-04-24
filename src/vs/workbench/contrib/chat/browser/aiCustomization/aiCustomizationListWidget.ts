@@ -328,7 +328,7 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 			storage: item.storage,
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
-			plugin: item.plugin ? { uri: item.plugin.uri.toString(), type: item.plugin.type, name: item.plugin.name } : undefined,
+			plugin: item.plugin?.toString(),
 			providerEnablementScope: item.enablementScope,
 		};
 
@@ -668,7 +668,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			storage: element.storage,
 			pluginUri: element.pluginUri?.toString(),
 			itemId: element.id,
-			plugin: element.plugin ? { uri: element.plugin.uri.toString(), type: element.plugin.type, name: element.plugin.name } : undefined,
+			plugin: element.plugin?.toString(),
 			providerEnablementScope: element.enablementScope,
 		};
 
@@ -1043,7 +1043,7 @@ export class AICustomizationListWidget extends Disposable {
 			storage: item.storage,
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
-			plugin: item.plugin ? { uri: item.plugin.uri.toString(), type: item.plugin.type, name: item.plugin.name } : undefined,
+			plugin: item.plugin?.toString(),
 			providerEnablementScope: item.enablementScope,
 		};
 

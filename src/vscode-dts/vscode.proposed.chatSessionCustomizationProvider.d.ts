@@ -135,21 +135,19 @@ declare module 'vscode' {
 		 * omitted — the item cannot be toggled unless the provider explicitly
 		 * sets a scope.
 		 *
-		 * Ignored when {@link plugin} is set — plugin items always use global-scope
+		 * Ignored when {@link pluginUri} is set — plugin items always use global-scope
 		 * enablement targeting the plugin itself.
 		 */
 		readonly enablementScope?: ChatSessionCustomizationEnablementScope;
 
 		/**
-		 * Optional reference to the parent plugin of this customization item.
+		 * Optional URI of the parent plugin of this customization item.
 		 *
 		 * When set, all enable/disable actions for this item target the plugin
 		 * instead of the individual item, and the item's own
-		 * {@link enablementScope} is ignored. The plugin item is itself a
-		 * {@link ChatSessionCustomizationItem} so it can be passed directly to
-		 * {@link ChatSessionCustomizationEnablementHandler.handleCustomizationEnablement}.
+		 * {@link enablementScope} is ignored.
 		 */
-		readonly plugin?: ChatSessionCustomizationItem;
+		readonly pluginUri?: Uri;
 	}
 
 	/**

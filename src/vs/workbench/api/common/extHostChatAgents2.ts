@@ -832,7 +832,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				return undefined;
 			}
 
-			const convertItem = (item: vscode.ChatSessionCustomizationItem, depth = 0): IChatSessionCustomizationItemDto => ({
+			const convertItem = (item: vscode.ChatSessionCustomizationItem): IChatSessionCustomizationItemDto => ({
 				uri: item.uri,
 				type: typeConvert.ChatSessionCustomizationType.from(item.type),
 				name: item.name,
@@ -842,7 +842,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				badgeTooltip: item.badgeTooltip,
 				enabled: item.enabled,
 				enablementScope: item.enablementScope !== undefined ? ExtHostChatAgents2._enablementScopeMap[item.enablementScope] : undefined,
-				plugin: item.plugin && depth < 1 ? convertItem(item.plugin, depth + 1) : undefined,
+				pluginUri: item.pluginUri,
 			});
 
 			return items.map(convertItem);

@@ -182,24 +182,17 @@ function extractPluginUri(context: AICustomizationContext): URI | undefined {
 }
 
 /**
- * Extracts the serialized plugin info from context, if present.
+ * Extracts the serialized plugin URI from context, if present.
  */
-function extractPlugin(context: AICustomizationContext): { uri: URI; type: string; name: string } | undefined {
+function extractPlugin(context: AICustomizationContext): URI | undefined {
 	if (URI.isUri(context) || typeof context === 'string') {
 		return undefined;
 	}
 	const raw = context.plugin;
-	if (!raw || typeof raw !== 'object') {
+	if (!raw || typeof raw !== 'string') {
 		return undefined;
 	}
-	const plugin = raw as Record<string, unknown>;
-	const uri = typeof plugin.uri === 'string' ? URI.parse(plugin.uri) : undefined;
-	const type = typeof plugin.type === 'string' ? plugin.type : undefined;
-	const name = typeof plugin.name === 'string' ? plugin.name : undefined;
-	if (!uri || !type || !name) {
-		return undefined;
-	}
-	return { uri, type, name };
+	return URI.parse(raw);
 }
 
 /**
@@ -794,23 +787,23 @@ registerAction2(class extends Action2 {
 		// When this item has a parent plugin, disable the plugin instead
 		const plugin = extractPlugin(context);
 		if (plugin) {
-			const enablementProvider = harnessService.getActiveEnablementProvider();
-			if (enablementProvider) {
-				enablementProvider.handleCustomizationEnablement(plugin.uri, plugin.type as PromptsType, false, 'global');
+			const enablementHandler = harnessService.getActiveEnablementHandler();
+			if (enablementHandler) {
+				enablementHandler.handleCustomizationEnablement(plugin, 'plugins' as PromptsType, false, 'global');
 			}
 			return;
 		}
 
 		// Provider-managed items: delegate to the harness's enablement provider.
 		// VS Code items on external harnesses: persist via promptsService with harness namespace.
-		// VS Code items on the VS Code harness: persist via enablementProvider (no namespace).
-		const enablementProvider = harnessService.getActiveEnablementProvider();
+		// VS Code items on the VS Code harness: persist via enablementHandler (no namespace).
+		const enablementHandler = harnessService.getActiveEnablementHandler();
 		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'global');
-		} else if (enablementProvider && !descriptor.itemProvider) {
+		if (enablementHandler && hasProviderEnablement(context)) {
+			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'global');
+		} else if (enablementHandler && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'global');
+			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'global');
 		} else {
 			const namespace = descriptor.id;
 			const storage = extractStorage(context);
@@ -840,13 +833,13 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		const enablementProvider = harnessService.getActiveEnablementProvider();
+		const enablementHandler = harnessService.getActiveEnablementHandler();
 		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'workspace');
-		} else if (enablementProvider && !descriptor.itemProvider) {
+		if (enablementHandler && hasProviderEnablement(context)) {
+			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'workspace');
+		} else if (enablementHandler && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.handleCustomizationEnablement(uri, promptType, false, 'workspace');
+			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'workspace');
 		} else {
 			const namespace = descriptor.id;
 			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
@@ -878,23 +871,23 @@ registerAction2(class extends Action2 {
 		// When this item has a parent plugin, enable the plugin instead
 		const plugin = extractPlugin(context);
 		if (plugin) {
-			const enablementProvider = harnessService.getActiveEnablementProvider();
-			if (enablementProvider) {
-				enablementProvider.handleCustomizationEnablement(plugin.uri, plugin.type as PromptsType, true, 'global');
+			const enablementHandler = harnessService.getActiveEnablementHandler();
+			if (enablementHandler) {
+				enablementHandler.handleCustomizationEnablement(plugin, 'plugins' as PromptsType, true, 'global');
 			}
 			return;
 		}
 
 		// Provider-managed items: delegate to the harness's enablement provider.
 		// VS Code items on external harnesses: persist via promptsService with harness namespace.
-		// VS Code items on the VS Code harness: persist via enablementProvider (no namespace).
-		const enablementProvider = harnessService.getActiveEnablementProvider();
+		// VS Code items on the VS Code harness: persist via enablementHandler (no namespace).
+		const enablementHandler = harnessService.getActiveEnablementHandler();
 		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementProvider && hasProviderEnablement(context)) {
-			enablementProvider.handleCustomizationEnablement(uri, promptType, true, 'global');
-		} else if (enablementProvider && !descriptor.itemProvider) {
+		if (enablementHandler && hasProviderEnablement(context)) {
+			enablementHandler.handleCustomizationEnablement(uri, promptType, true, 'global');
+		} else if (enablementHandler && !descriptor.itemProvider) {
 			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementProvider.handleCustomizationEnablement(uri, promptType, true, 'global');
+			enablementHandler.handleCustomizationEnablement(uri, promptType, true, 'global');
 		} else {
 			const namespace = descriptor.id;
 			// Remove from both scopes to fully re-enable

@@ -736,7 +736,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 				if (!items) {
 					return undefined;
 				}
-				const convertItem = (item: IChatSessionCustomizationItemDto, depth = 0): ICustomizationItem => ({
+				const convertItem = (item: IChatSessionCustomizationItemDto): ICustomizationItem => ({
 					uri: URI.revive(item.uri),
 					type: item.type,
 					name: item.name,
@@ -746,7 +746,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 					badgeTooltip: item.badgeTooltip,
 					enabled: item.enabled,
 					enablementScope: item.enablementScope,
-					plugin: item.plugin && depth < 1 ? convertItem(item.plugin, depth + 1) : undefined,
+					pluginUri: item.pluginUri ? URI.revive(item.pluginUri) : undefined,
 				});
 				return items.map(i => convertItem(i));
 			},

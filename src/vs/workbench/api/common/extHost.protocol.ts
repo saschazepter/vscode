@@ -1742,7 +1742,7 @@ export interface IChatSessionCustomizationItemDto {
 	readonly badgeTooltip?: string;
 	readonly enabled?: boolean;
 	readonly enablementScope?: 'none' | 'global' | 'workspace' | 'application';
-	readonly plugin?: IChatSessionCustomizationItemDto;
+	readonly pluginUri?: UriComponents;
 }
 export interface IChatParticipantMetadata {
 	participant: string;
