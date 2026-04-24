@@ -10,7 +10,6 @@ import { IRemoteAgentHostService, parseRemoteAgentHostInput, RemoteAgentHostEntr
 import { ISSHRemoteAgentHostService, SSHAuthMethod, type ISSHAgentHostConfig, type ISSHAgentHostConnection, type ISSHResolvedConfig } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
 import { ITunnelAgentHostService, TUNNEL_ADDRESS_PREFIX, type ITunnelInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
-import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -475,10 +474,7 @@ registerAction2(class extends Action2 {
 			category: SessionsCategories.Sessions,
 			f1: true,
 			icon: Codicon.remote,
-			precondition: ContextKeyExpr.and(
-				ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
-				IsWebContext.toNegated(),
-			),
+			precondition: ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
 			menu: {
 				id: Menus.SessionWorkspaceManage,
 				order: 20,

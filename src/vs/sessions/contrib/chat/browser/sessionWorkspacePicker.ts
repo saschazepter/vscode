@@ -14,7 +14,7 @@ import { basename } from '../../../../base/common/resources.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
-import { IMenuService } from '../../../../platform/actions/common/actions.js';
+import { IMenuService, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { TUNNEL_ADDRESS_PREFIX } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
@@ -475,8 +475,10 @@ export class WorkspacePicker extends Disposable {
 		const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
 		for (const [, actions] of menuActions) {
 			for (const menuAction of actions) {
-				const icon = 'item' in menuAction && ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
-				menuContributedActions.push(Object.assign(menuAction, { icon }));
+				if (menuAction instanceof MenuItemAction) {
+					const icon = ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
+					menuContributedActions.push(Object.assign(menuAction, { icon }));
+				}
 			}
 		}
 
