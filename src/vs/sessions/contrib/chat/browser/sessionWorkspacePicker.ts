@@ -448,7 +448,6 @@ export class WorkspacePicker extends Disposable {
 		}
 
 		// "Manage" submenu: dynamic remote provider entries + menu-contributed actions
-		const manageActions: IAction[] = [];
 
 		// Dynamic remote provider entries
 		const remoteProviderActions: IAction[] = [];
