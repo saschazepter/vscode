@@ -389,7 +389,7 @@
 	border-radius: 5px;
 	box-shadow: 0 2px 8px var(--vscode-widget-shadow);
 	z-index: 50;
-	width: fit-content;
+	width: max-content;
 }
 
 .action-list-submenu-hover-header {
