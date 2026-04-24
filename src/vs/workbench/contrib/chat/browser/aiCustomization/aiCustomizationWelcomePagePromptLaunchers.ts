@@ -106,11 +106,10 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 		scrollableNode.classList.add('welcome-prompts-scrollable');
 		parent.appendChild(scrollableNode);
 
-		// Re-scan whenever the wrapper or the content changes size so the
-		// scrollbar reflects the current overflow state.
+		// Re-scan whenever the wrapper changes size so the scrollbar reflects
+		// the current overflow state. rebuildCards() scans after content changes.
 		const resizeObserver = this._register(new DOM.DisposableResizeObserver(() => this.scrollable.scanDomNode()));
 		this._register(resizeObserver.observe(scrollableNode));
-		this._register(resizeObserver.observe(this.container));
 
 		const welcomeInner = DOM.append(this.container, $('.welcome-prompts-inner'));
 
