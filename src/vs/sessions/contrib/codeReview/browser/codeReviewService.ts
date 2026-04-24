@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, IObservable, observableValue, transaction } from '../../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { IRange, Range } from '../../../../editor/common/core/range.js';
@@ -324,22 +324,12 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 		this._register(autorun(reader => {
 			const activeSession = this._sessionsManagementService.activeSession.read(reader);
-			if (activeSession) {
-				this._ensurePRReviewInitialized(activeSession.resource);
+			if (!activeSession) {
+				return;
 			}
-		}));
 
-		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
-			const archived = e.changed.filter(s => s.isArchived.get());
-			const nonArchived = e.changed.filter(s => !s.isArchived.get());
-			// Initialize PR review for new/changed sessions
-			for (const session of [...e.added, ...nonArchived]) {
-				this._ensurePRReviewInitialized(session.resource);
-			}
-			// Dispose PR review for removed and archived sessions
-			for (const session of [...e.removed, ...archived]) {
-				this._disposePRReview(session.resource);
-			}
+			// Start polling the pull request model for the active session
+			reader.store.add(this._ensurePRReviewInitialized(activeSession.resource));
 		}));
 	}
 
@@ -542,18 +532,22 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 	private _registerSessionListeners(): void {
 		// Clean up when sessions change (archived/removed sessions, stale review versions)
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
-			// Clean up reviews for removed/archived sessions
-			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
+			let changed = false;
+			const removedOrArchivedSessions = [...e.removed, ...e.changed.filter(s => s.isArchived.get())];
+
+			// Clean up PR review and regular reviews for removed/archived sessions
+			for (const session of removedOrArchivedSessions) {
+				this._disposePRReview(session.resource);
+
 				const key = session.resource.toString();
 				const data = this._reviewsBySession.get(key);
 				if (data) {
 					data.state.set({ kind: CodeReviewStateKind.Idle }, undefined);
-					this._saveToStorage();
+					changed = true;
 				}
 			}
 
 			// Check for stale review versions when sessions change
-			let changed = false;
 			for (const [key, data] of this._reviewsBySession) {
 				const state = data.state.get();
 				if (state.kind !== CodeReviewStateKind.Result) {
@@ -652,16 +646,16 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		return data;
 	}
 
-	private _ensurePRReviewInitialized(sessionResource: URI): void {
+	private _ensurePRReviewInitialized(sessionResource: URI): IDisposable {
 		const data = this._getOrCreatePRReviewData(sessionResource);
 		if (data.initialized) {
-			return;
+			return Disposable.None;
 		}
 
 		const session = this._sessionsManagementService.getSession(sessionResource);
 		const gitHubInfo = session?.gitHubInfo.get();
 		if (!gitHubInfo?.pullRequest) {
-			return;
+			return Disposable.None;
 		}
 
 		data.initialized = true;
@@ -709,6 +703,10 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
 		});
 		prModel.startPolling();
+
+		return toDisposable(() => {
+			prModel.stopPolling();
+		});
 	}
 
 	private _disposePRReview(sessionResource: URI): void {
