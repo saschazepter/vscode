@@ -109,8 +109,33 @@ suite('SyncedCustomizationBundler', () => {
 		const agentContent = await fileService.readFile(URI.from({ scheme: SYNCED_CUSTOMIZATION_SCHEME, path: '/test-agent/agents/my-agent.md' }));
 		assert.strictEqual(agentContent.value.toString(), 'agent content');
 
+		// Non-SKILL.md skill files are written flat
 		const skillContent = await fileService.readFile(URI.from({ scheme: SYNCED_CUSTOMIZATION_SCHEME, path: '/test-agent/skills/my-skill.md' }));
 		assert.strictEqual(skillContent.value.toString(), 'skill content');
+	});
+
+	test('bundles SKILL.md files into per-skill subdirectories', async () => {
+		const bundler = createBundler();
+		const skillA = await seedFile('/skills/skill-a/SKILL.md', 'skill A content');
+		const skillB = await seedFile('/skills/skill-b/SKILL.md', 'skill B content');
+		const skillC = await seedFile('/skills/my-cool-skill/SKILL.md', 'skill C content');
+
+		const result = await bundler.bundle([
+			{ uri: skillA, type: PromptsType.skill },
+			{ uri: skillB, type: PromptsType.skill },
+			{ uri: skillC, type: PromptsType.skill },
+		]);
+		assert.ok(result);
+
+		// Each SKILL.md should be in its own subdirectory (named after the parent folder)
+		const contentA = await fileService.readFile(URI.from({ scheme: SYNCED_CUSTOMIZATION_SCHEME, path: '/test-agent/skills/skill-a/SKILL.md' }));
+		assert.strictEqual(contentA.value.toString(), 'skill A content');
+
+		const contentB = await fileService.readFile(URI.from({ scheme: SYNCED_CUSTOMIZATION_SCHEME, path: '/test-agent/skills/skill-b/SKILL.md' }));
+		assert.strictEqual(contentB.value.toString(), 'skill B content');
+
+		const contentC = await fileService.readFile(URI.from({ scheme: SYNCED_CUSTOMIZATION_SCHEME, path: '/test-agent/skills/my-cool-skill/SKILL.md' }));
+		assert.strictEqual(contentC.value.toString(), 'skill C content');
 	});
 
 	test('writes plugin manifest', async () => {
