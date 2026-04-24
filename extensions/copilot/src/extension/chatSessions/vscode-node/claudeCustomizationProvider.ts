@@ -47,16 +47,6 @@ const HOOK_EVENT_IDS = [
 	'PreCompact', 'SessionStart', 'SessionEnd', 'Notification',
 ] as const;
 
-interface HookConfig {
-	readonly type: string;
-	readonly command: string;
-}
-
-interface MatcherConfig {
-	readonly matcher: string;
-	readonly hooks: HookConfig[];
-}
-
 export class ClaudeCustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
@@ -318,43 +308,64 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			? ClaudeSettingsLocationType.Workspace
 			: ClaudeSettingsLocationType.User;
 
-		const settingsUri = this.claudeSettingsService.getUri(location, uri);
-		const settings = { ...await this.claudeSettingsService.readSettingsFile(settingsUri) };
+		const allSettingsFiles = await this.claudeSettingsService.readAllSettings();
+
+		const writeSettings = async (settingsUri: URI, settings: Parameters<IClaudeSettingsService['writeSettingsFile']>[1]): Promise<void> => {
+			try {
+				await this.claudeSettingsService.writeSettingsFile(settingsUri, settings);
+			} catch (err) {
+				void vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Claude settings: {0}', err instanceof Error ? err.message : String(err)));
+			}
+		};
 
 		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
-			// skillOverrides: Record<string, 'on' | 'name-only' | 'user-invocable-only' | 'off'>
-			const folderName = basename(dirname(URI.from(uri))) || basename(URI.from(uri));
-			const overrides = { ...settings.skillOverrides ?? {} };
-			if (enabled) {
-				delete overrides[folderName];
-			} else {
-				overrides[folderName] = 'off';
+			const skillName = basename(dirname(uri));
+			const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
+
+			for (const file of allSettingsFiles) {
+				const isTarget = targetSettingsUri?.toString() === file.uri.toString();
+				const skillOverrides = { ...file.settings.skillOverrides ?? {} };
+				let shouldUpdateSettings = skillName in skillOverrides;
+
+				delete skillOverrides[skillName];
+				if (isTarget) {
+					skillOverrides[skillName] = 'off';
+					shouldUpdateSettings = true;
+				}
+
+				if (shouldUpdateSettings) {
+					const updated = { ...file.settings, skillOverrides: Object.keys(skillOverrides).length > 0 ? skillOverrides : undefined };
+					await writeSettings(file.uri, updated);
+				}
 			}
-			settings.skillOverrides = Object.keys(overrides).length > 0 ? overrides : undefined;
 		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id) {
-			// claudeMdExcludes: string[] of absolute paths or glob patterns
-			const targetUri = URI.from(uri);
-			const currentExcludes = [...(settings.claudeMdExcludes ?? [])];
-			if (enabled) {
-				settings.claudeMdExcludes = currentExcludes.filter(p => !this._matchesExclude(targetUri, p));
-			} else {
-				if (!currentExcludes.some(p => this._matchesExclude(targetUri, p))) {
-					currentExcludes.push(targetUri.path);
-					settings.claudeMdExcludes = currentExcludes;
+			const instructionsUri = uri;
+			const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
+
+			for (const file of allSettingsFiles) {
+				const isTarget = targetSettingsUri?.toString() === file.uri.toString();
+				const filtered = (file.settings.claudeMdExcludes ?? []).filter(p => p !== instructionsUri.path);
+				let shouldUpdateSettings = filtered.length !== (file.settings.claudeMdExcludes ?? []).length;
+
+				const newExcludes = [...filtered];
+				if (isTarget && !newExcludes.includes(instructionsUri.path)) {
+					newExcludes.push(instructionsUri.path);
+					shouldUpdateSettings = true;
+				}
+
+				if (shouldUpdateSettings) {
+					const updated = { ...file.settings, claudeMdExcludes: newExcludes.length > 0 ? newExcludes : undefined };
+					await writeSettings(file.uri, updated);
 				}
 			}
 		} else {
 			this.logService.warn(`[ClaudeCustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
+			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', type.id));
 			return;
 		}
 
-		try {
-			await this.claudeSettingsService.writeSettingsFile(settingsUri, settings);
-			this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${location}`);
-			this._onDidChange.fire();
-		} catch (err) {
-			vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Claude settings: {0}', err instanceof Error ? err.message : String(err)));
-		}
+		this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${location}`);
+		this._onDidChange.fire();
 	}
 }
 
