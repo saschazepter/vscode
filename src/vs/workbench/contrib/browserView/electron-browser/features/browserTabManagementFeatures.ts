@@ -83,18 +83,18 @@ class BrowserTabQuickPick extends Disposable {
 		super();
 
 		this._quickPick = this._register(quickInputService.createQuickPick<IBrowserQuickPickItem>({ useSeparators: true }));
-		this._quickPick.placeholder = localize('browser.quickOpenPlaceholder', "Select a browser tab or enter a URL");
+		this._quickPick.placeholder = localize('browser.quickOpenPlaceholder', "Select a browser tab");
 		this._quickPick.matchOnDescription = true;
 		this._quickPick.sortByLabel = false;
 		this._quickPick.buttons = [closeAllButtonItem];
 
 		this._register(this._quickPick.onDidTriggerItemButton(async ({ item }) => {
-			item.editor?.dispose();
+			item.editor?.dispose(true);
 		}));
 
 		this._register(this._quickPick.onDidTriggerButton(async () => {
 			for (const editor of this._browserViewService.getKnownBrowserViews().values()) {
-				editor.dispose();
+				editor.dispose(true);
 			}
 		}));
 
@@ -225,7 +225,6 @@ class BrowserTabQuickPick extends Disposable {
 
 class QuickOpenBrowserAction extends Action2 {
 	constructor() {
-		const neverShowInTitleBar = ContextKeyExpr.equals('config.workbench.browser.showInTitleBar', false);
 		super({
 			id: BrowserViewCommandId.QuickOpen,
 			title: localize2('browser.quickOpenAction', "Quick Open Browser Tab..."),
@@ -239,12 +238,6 @@ class QuickOpenBrowserAction extends Action2 {
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
 				when: BROWSER_EDITOR_ACTIVE
 			},
-			menu: {
-				id: MenuId.TitleBar,
-				group: 'navigation',
-				order: 10,
-				when: ContextKeyExpr.and(CONTEXT_BROWSER_EDITOR_OPEN, neverShowInTitleBar.negate()),
-			}
 		});
 	}
 
@@ -274,16 +267,6 @@ class OpenIntegratedBrowserAction extends Action2 {
 			category: BrowserActionCategory,
 			icon: Codicon.globe,
 			f1: true,
-			menu: {
-				id: MenuId.TitleBar,
-				group: 'navigation',
-				order: 10,
-				when: ContextKeyExpr.and(
-					// This is a hack to work around `true` just testing for truthiness of the key. It works since `1 == true` in JS.
-					ContextKeyExpr.equals('config.workbench.browser.showInTitleBar', 1),
-					CONTEXT_BROWSER_EDITOR_OPEN.negate()
-				)
-			}
 		});
 	}
 
@@ -420,18 +403,30 @@ class CloseAllBrowserTabsInGroupAction extends Action2 {
 	}
 }
 
-class OpenBrowserFromViewMenuAction extends Action2 {
-	static readonly ID = 'workbench.action.browser.openFromViewMenu';
-
+class OpenOrListBrowsersAction extends Action2 {
 	constructor() {
 		super({
-			id: OpenBrowserFromViewMenuAction.ID,
-			title: localize2('browser.openFromViewMenuAction', "Browser"),
+			id: BrowserViewCommandId.OpenOrList,
+			title: localize2('browser.openOrListAction', "Browser"),
+			icon: Codicon.globe,
 			f1: false,
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.Slash,
 			},
+			menu: {
+				id: MenuId.TitleBar,
+				group: 'navigation',
+				order: 10,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.workbench.browser.showInTitleBar', false).negate(),
+					ContextKeyExpr.or(
+						CONTEXT_BROWSER_EDITOR_OPEN,
+						// This is a hack to work around `true` just testing for truthiness of the key. It works since `1 == true` in JS.
+						ContextKeyExpr.equals('config.workbench.browser.showInTitleBar', 1)
+					)
+				),
+			}
 		});
 	}
 
@@ -454,7 +449,7 @@ class OpenBrowserFromViewMenuAction extends Action2 {
 MenuRegistry.appendMenuItem(MenuId.MenubarViewMenu, {
 	group: '4_auxbar',
 	command: {
-		id: OpenBrowserFromViewMenuAction.ID,
+		id: BrowserViewCommandId.OpenOrList,
 		title: localize({ key: 'miOpenBrowser', comment: ['&& denotes a mnemonic'] }, "&&Browser")
 	},
 	order: 2
@@ -465,7 +460,7 @@ MenuRegistry.appendMenuItem(MenuId.EditorTitleContext, { command: { id: BrowserV
 
 registerAction2(QuickOpenBrowserAction);
 registerAction2(OpenIntegratedBrowserAction);
-registerAction2(OpenBrowserFromViewMenuAction);
+registerAction2(OpenOrListBrowsersAction);
 registerAction2(NewTabAction);
 registerAction2(CloseAllBrowserTabsAction);
 registerAction2(CloseAllBrowserTabsInGroupAction);
