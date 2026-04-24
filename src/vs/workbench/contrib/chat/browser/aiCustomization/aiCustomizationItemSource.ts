@@ -420,9 +420,7 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		const normalized = this.itemNormalizer.normalizeItems(providerItems, promptType);
 
-		// Overlay disabled state from two sources:
-		// - API items (no explicit `storage` from provider): checked against
-		//   enablementHandler's disabled set. The extension fully owns disablement.
+		// Overlay disabled state when:
 		// - VS Code items (explicit `storage` from provider): checked against
 		//   promptsService. On external harnesses (with itemProvider) the namespace
 		//   isolates per-harness state. On the VS Code harness (no itemProvider) no
