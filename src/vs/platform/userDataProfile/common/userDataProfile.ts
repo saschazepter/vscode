@@ -54,6 +54,7 @@ export interface IUserDataProfile {
 	readonly promptsHome: URI;
 	readonly extensionsResource: URI;
 	readonly mcpResource: URI;
+	readonly agentPluginsHome: URI;
 	readonly cacheHome: URI;
 	readonly useDefaultFlags?: UseDefaultProfileFlags;
 	readonly isTransient?: boolean;
@@ -154,6 +155,7 @@ export function reviveProfile(profile: UriDto<IUserDataProfile>, scheme: string)
 		promptsHome: URI.revive(profile.promptsHome).with({ scheme }),
 		extensionsResource: URI.revive(profile.extensionsResource).with({ scheme }),
 		mcpResource: URI.revive(profile.mcpResource).with({ scheme }),
+		agentPluginsHome: URI.revive(profile.agentPluginsHome),
 		cacheHome: URI.revive(profile.cacheHome).with({ scheme }),
 		useDefaultFlags: profile.useDefaultFlags,
 		isTransient: profile.isTransient,
@@ -161,7 +163,7 @@ export function reviveProfile(profile: UriDto<IUserDataProfile>, scheme: string)
 	};
 }
 
-export function toUserDataProfile(id: string, name: string, location: URI, profilesCacheHome: URI, options?: IUserDataProfileOptions, defaultProfile?: IUserDataProfile): IUserDataProfile {
+export function toUserDataProfile(id: string, name: string, location: URI, profilesCacheHome: URI, agentPluginsHome: URI, options?: IUserDataProfileOptions, defaultProfile?: IUserDataProfile): IUserDataProfile {
 	return {
 		id,
 		name,
@@ -176,6 +178,7 @@ export function toUserDataProfile(id: string, name: string, location: URI, profi
 		promptsHome: defaultProfile && options?.useDefaultFlags?.prompts ? defaultProfile.promptsHome : joinPath(location, 'prompts'),
 		extensionsResource: defaultProfile && options?.useDefaultFlags?.extensions ? defaultProfile.extensionsResource : joinPath(location, 'extensions.json'),
 		mcpResource: defaultProfile && options?.useDefaultFlags?.mcp ? defaultProfile.mcpResource : joinPath(location, 'mcp.json'),
+		agentPluginsHome,
 		cacheHome: joinPath(profilesCacheHome, id),
 		useDefaultFlags: options?.useDefaultFlags,
 		isTransient: options?.transient,
@@ -210,6 +213,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 
 	readonly profilesHome: URI;
 	private readonly profilesCacheHome: URI;
+	private readonly agentPluginsHome: URI;
 
 	get defaultProfile(): IUserDataProfile { return this.profiles[0]; }
 	get profiles(): IUserDataProfile[] { return [...this.profilesObject.profiles, ...this.transientProfilesObject.profiles]; }
@@ -242,6 +246,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 		super();
 		this.profilesHome = joinPath(this.environmentService.userRoamingDataHome, 'profiles');
 		this.profilesCacheHome = joinPath(this.environmentService.cacheHome, 'CachedProfilesData');
+		this.agentPluginsHome = this.environmentService.agentPluginsHome;
 	}
 
 	init(): void {
@@ -265,6 +270,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 						storedProfile.name,
 						storedProfile.location,
 						this.profilesCacheHome,
+						this.agentPluginsHome,
 						{
 							icon: storedProfile.icon,
 							useDefaultFlags: storedProfile.useDefaultFlags,
@@ -326,7 +332,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 	}
 
 	protected createDefaultProfile() {
-		const defaultProfile = toUserDataProfile('__default__profile__', localize('defaultProfile', "Default"), this.environmentService.userRoamingDataHome, this.profilesCacheHome);
+		const defaultProfile = toUserDataProfile('__default__profile__', localize('defaultProfile', "Default"), this.environmentService.userRoamingDataHome, this.profilesCacheHome, this.agentPluginsHome);
 		return { ...defaultProfile, extensionsResource: this.getDefaultProfileExtensionsLocation() ?? defaultProfile.extensionsResource, isDefault: true };
 	}
 
@@ -377,6 +383,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 						name,
 						this.uriIdentityService.extUri.joinPath(this.profilesHome, id),
 						this.profilesCacheHome,
+						this.agentPluginsHome,
 						options,
 						this.defaultProfile);
 					await this.fileService.createFolder(profile.location);
@@ -411,7 +418,7 @@ export class UserDataProfilesService extends Disposable implements IUserDataProf
 
 			if (profile.id === existing.id) {
 				if (!existing.isDefault) {
-					profileToUpdate = toUserDataProfile(existing.id, options.name ?? existing.name, existing.location, this.profilesCacheHome, {
+					profileToUpdate = toUserDataProfile(existing.id, options.name ?? existing.name, existing.location, this.profilesCacheHome, this.agentPluginsHome, {
 						icon: options.icon === null ? undefined : options.icon ?? existing.icon,
 						transient: options.transient ?? existing.isTransient,
 						useDefaultFlags: options.useDefaultFlags ?? existing.useDefaultFlags,

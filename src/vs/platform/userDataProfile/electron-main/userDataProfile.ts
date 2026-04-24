@@ -51,6 +51,7 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 			keybindingsResource: joinPath(hostUserRoamingDataHome, 'keybindings.json'),
 			promptsHome: joinPath(hostUserRoamingDataHome, 'prompts'),
 			mcpResource: joinPath(hostUserRoamingDataHome, 'mcp.json'),
+			agentPluginsHome: this.environmentService.agentPluginsHome,
 		};
 	}
 

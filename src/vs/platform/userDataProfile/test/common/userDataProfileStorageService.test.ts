@@ -48,7 +48,7 @@ export class TestUserDataProfileStorageService extends AbstractUserDataProfileSt
 suite('ProfileStorageService', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
-	const profile = toUserDataProfile('test', 'test', URI.file('foo'), URI.file('cache'));
+	const profile = toUserDataProfile('test', 'test', URI.file('foo'), URI.file('cache'), URI.file('/test'));
 	let testObject: TestUserDataProfileStorageService;
 	let storage: Storage;
 

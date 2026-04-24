@@ -63,6 +63,7 @@ suite('StorageMainService', function () {
 		promptsHome: joinPath(inMemoryProfileRoot, 'promptsHome'),
 		extensionsResource: joinPath(inMemoryProfileRoot, 'extensionsResource'),
 		cacheHome: joinPath(inMemoryProfileRoot, 'cache'),
+		agentPluginsHome: joinPath(inMemoryProfileRoot, 'agentPluginsHome'),
 	};
 
 	class TestStorageMainService extends StorageMainService {

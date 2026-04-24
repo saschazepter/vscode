@@ -58,6 +58,7 @@ export interface IEnvironmentService {
 	workspaceStorageHome: URI;
 	localHistoryHome: URI;
 	cacheHome: URI;
+	agentPluginsHome: URI;
 	appSharedDataHome: URI;
 
 	// --- settings sync
