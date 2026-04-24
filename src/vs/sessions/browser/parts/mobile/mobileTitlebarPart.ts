@@ -15,7 +15,7 @@ import { IContextKeyService } from '../../../../platform/contextkey/common/conte
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
-import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
+import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { Menus } from '../../menus.js';
 
 /**
@@ -110,20 +110,20 @@ export class MobileTitlebarPart extends Disposable {
 			toolbarOptions: { primaryGroup: () => true },
 		}));
 
-		// Switch between title and toolbar based on welcome visibility
-		// AND whether the toolbar has anything to show. The latter is
-		// important because on desktop/electron or when no agent hosts
-		// are configured the toolbar can be empty even on the welcome
-		// screen — in that case we keep the title visible.
-		const welcomeKeySet = new Set([SessionsWelcomeVisibleContext.key]);
+		// Switch between title and toolbar based on whether a new (empty)
+		// chat session is active AND whether the toolbar has anything to
+		// show. The latter is important because on desktop/electron or
+		// when no agent hosts are configured the toolbar can be empty —
+		// in that case we keep the title visible.
+		const newChatKeySet = new Set([IsNewChatSessionContext.key]);
 		const updateCenterMode = () => {
-			const welcomeVisible = !!SessionsWelcomeVisibleContext.getValue(contextKeyService);
+			const isNewChat = !!IsNewChatSessionContext.getValue(contextKeyService);
 			const hasActions = toolbar.getItemsLength() > 0;
-			this.element.classList.toggle('show-actions', welcomeVisible && hasActions);
+			this.element.classList.toggle('show-actions', isNewChat && hasActions);
 		};
 		updateCenterMode();
 		this._register(contextKeyService.onDidChangeContext(e => {
-			if (e.affectsSome(welcomeKeySet)) {
+			if (e.affectsSome(newChatKeySet)) {
 				updateCenterMode();
 			}
 		}));

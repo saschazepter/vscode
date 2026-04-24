@@ -12,7 +12,7 @@ import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
+import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentHostFilterService } from '../common/agentHostFilter.js';
 import { HostFilterActionViewItem } from './hostFilterActionViewItem.js';
@@ -50,8 +50,9 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 			}, {
 				// On phone/mobile layouts the desktop titlebar is replaced
 				// by the MobileTitlebarPart. Surface the host picker in its
-				// center slot while the welcome (home/empty) screen is
-				// visible, so users can still switch hosts and connect.
+				// center slot while a new (empty) chat session is active,
+				// so users can still switch hosts and connect from the
+				// home screen.
 				id: Menus.MobileTitleBarCenter,
 				group: 'navigation',
 				order: 0,
@@ -59,7 +60,7 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 					IsWebContext,
 					IsAuxiliaryWindowContext.toNegated(),
 					HasAgentHostsContext,
-					SessionsWelcomeVisibleContext,
+					IsNewChatSessionContext,
 				),
 			}],
 		});
