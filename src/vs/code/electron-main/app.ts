@@ -238,30 +238,20 @@ export class CodeApplication extends Disposable {
 		// Allow getDisplayMedia() calls from the core window (e.g. issue reporter recording).
 		// Auto-select the screen containing the requesting VS Code window.
 		//
-		// Why we construct source IDs manually instead of using desktopCapturer.getSources():
-		// desktopCapturer.getSources() triggers DXGI adapter enumeration on Windows which
-		// blocks the main process for 1-3 seconds, causing visible UI lag. Instead we
-		// construct the source ID directly from electronScreen.getAllDisplays() data, which
-		// shares the same underlying Chromium display::Screen as the capturer. The format is:
-		//   macOS:         screen:<CGDirectDisplayID>:0  (display.id IS the CGDirectDisplayID)
-		//   Windows/Linux: screen:<0-based-index>:0      (sequential enumeration order)
+		// We use desktopCapturer.getSources() as the source of truth for display
+		// selection. A previous synthetic "screen:<index>:0" fast path turned out
+		// to be unreliable on Windows multi-display setups because the internal
+		// capturer ordering did not consistently match electron.screen.getAllDisplays().
 		//
-		// Fallback: if the fast path fails (e.g. source ID format changes in a future
-		// Electron version), the recording service retries once. The handler sees that
-		// the fast path was already tried and falls back to desktopCapturer.getSources().
-		// The fallback result is cached so subsequent recordings are instant again.
-		// Cache is invalidated on display add/remove/metrics-change.
-		let usedFastPath = false;
-		let fallbackSourceCache: Electron.DesktopCapturerSource[] | undefined;
-		const invalidateFallbackCache = () => { fallbackSourceCache = undefined; };
-		electronScreen.on('display-added', invalidateFallbackCache);
-		electronScreen.on('display-removed', invalidateFallbackCache);
-		electronScreen.on('display-metrics-changed', invalidateFallbackCache);
+		// To keep repeated recordings responsive we cache the real sources and
+		// invalidate the cache whenever display topology changes.
+		let cachedScreenSources: Electron.DesktopCapturerSource[] | undefined;
+		const invalidateScreenSourceCache = () => { cachedScreenSources = undefined; };
+		electronScreen.on('display-added', invalidateScreenSourceCache);
+		electronScreen.on('display-removed', invalidateScreenSourceCache);
+		electronScreen.on('display-metrics-changed', invalidateScreenSourceCache);
 		session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
 			try {
-				const shouldFallback = usedFastPath;
-				usedFastPath = false;
-
 				const frame = request.frame;
 				const win = frame ? BrowserWindow.getAllWindows().find(w => w.webContents.mainFrame === frame) : undefined;
 
@@ -275,31 +265,24 @@ export class CodeApplication extends Disposable {
 					});
 				}
 
-				if (shouldFallback) {
-					// Fast path failed -- use desktopCapturer.getSources()
-					// (slow on first call due to DXGI enumeration, cached for subsequent calls)
-					if (!fallbackSourceCache) {
-						fallbackSourceCache = await desktopCapturer.getSources({ types: ['screen'] });
-					}
-					const match = fallbackSourceCache.find(s => s.display_id === String(targetDisplay.id));
-					callback({ video: match ?? fallbackSourceCache[0] });
-					return;
+				if (!cachedScreenSources) {
+					cachedScreenSources = await desktopCapturer.getSources({
+						types: ['screen'],
+						thumbnailSize: { width: 0, height: 0 },
+					});
 				}
 
-				// Fast path: construct source ID from electron.screen (instant, no DXGI)
-				usedFastPath = true;
-				const displayIndex = displays.findIndex(d => d.id === targetDisplay.id);
-				const screenId = isMacintosh
-					? targetDisplay.id
-					: (displayIndex >= 0 ? displayIndex : 0);
-				const source: Electron.DesktopCapturerSource = {
-					id: `screen:${screenId}:0`,
-					name: targetDisplay.label || `Screen ${displayIndex + 1}`,
-					display_id: String(targetDisplay.id),
-					thumbnail: undefined!,
-					appIcon: undefined!,
-				};
-				callback({ video: source });
+				let match = cachedScreenSources.find(s => s.display_id === String(targetDisplay.id));
+				if (!match) {
+					// Cache may be stale even without a topology event
+					cachedScreenSources = await desktopCapturer.getSources({
+						types: ['screen'],
+						thumbnailSize: { width: 0, height: 0 },
+					});
+					match = cachedScreenSources.find(s => s.display_id === String(targetDisplay.id));
+				}
+
+				callback({ video: match ?? cachedScreenSources[0] });
 			} catch {
 				callback({});
 			}

@@ -739,7 +739,7 @@ export class IssueReporterOverlay {
 			this.nextButton.element.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
 			this.nextButton.enabled = true;
 		} else if (this.currentStep === WizardStep.Attachments) {
-			this.nextButton.label = this.screenshots.length === 0
+			this.nextButton.label = this.getTotalAttachments() === 0
 				? localize('skip', "Skip")
 				: localize('next', "Next");
 			this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);

@@ -67,26 +67,17 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 
 		this.cleanup();
 
-		// Use getDisplayMedia -- on Electron desktop the main process handler
-		// auto-selects the screen. If the fast source-ID construction fails,
-		// retry once to trigger the slow-but-reliable desktopCapturer fallback.
-		let retried = false;
-		for (; ;) {
-			try {
-				this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
-					video: true,
-					audio: false,
-				});
-				break;
-			} catch (err) {
-				if (!retried) {
-					this.logService.warn('[RecordingService] Fast screen capture failed, retrying with fallback:', err);
-					retried = true;
-					continue;
-				}
-				this.logService.error('[RecordingService] Failed to get display media:', err);
-				throw new Error('Failed to start recording. The user may have cancelled the source picker.');
-			}
+		// Use getDisplayMedia — on Electron desktop the main process handler
+		// auto-selects the screen containing the VS Code window via
+		// desktopCapturer.getSources() (cached for subsequent recordings).
+		try {
+			this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
+				video: true,
+				audio: false,
+			});
+		} catch (err) {
+			this.logService.error('[RecordingService] Failed to get display media:', err);
+			throw new Error('Failed to start recording. The user may have cancelled the source picker.');
 		}
 
 		// Select mime type: prefer caller's choice, fall back to best available
