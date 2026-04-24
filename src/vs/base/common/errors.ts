@@ -298,6 +298,7 @@ export class ExpectedError extends Error {
 }
 
 const noTelemetryFlag = '__vscodeNoTelemetry';
+type ErrorWithNoTelemetryFlag = Error & { [noTelemetryFlag]?: boolean };
 
 /**
  * Error that when thrown won't be logged in telemetry as an unhandled error.
@@ -308,8 +309,7 @@ export class ErrorNoTelemetry extends Error {
 	constructor(msg?: string) {
 		super(msg);
 		this.name = 'CodeExpectedError';
-		// eslint-disable-next-line local/code-no-any-casts
-		(<any>this)[noTelemetryFlag] = true;
+		(<ErrorWithNoTelemetryFlag>this)[noTelemetryFlag] = true;
 	}
 
 	public static fromError(err: Error): ErrorNoTelemetry {
@@ -324,8 +324,7 @@ export class ErrorNoTelemetry extends Error {
 	}
 
 	public static isErrorNoTelemetry(err: Error): err is ErrorNoTelemetry {
-		// eslint-disable-next-line local/code-no-any-casts
-		return err.name === 'CodeExpectedError' || (<any>err)?.[noTelemetryFlag] === true;
+		return err.name === 'CodeExpectedError' || (<ErrorWithNoTelemetryFlag>err)?.[noTelemetryFlag] === true;
 	}
 }
 
@@ -340,8 +339,7 @@ export class ErrorNoTelemetry extends Error {
  * code that some IPC channels carry through `Error#name`).
  */
 export function markAsErrorNoTelemetry<T extends Error>(error: T): T {
-	// eslint-disable-next-line local/code-no-any-casts
-	(<any>error)[noTelemetryFlag] = true;
+	(<ErrorWithNoTelemetryFlag>error)[noTelemetryFlag] = true;
 	return error;
 }
 
