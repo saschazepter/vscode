@@ -106,7 +106,9 @@ export class PlanAgentProvider extends Disposable implements vscode.ChatCustomAg
 		return fileUri;
 	}
 
-	static buildAgentBody(exploreAgentEnabled: boolean, searchSubagentEnabled: boolean): string {
+	static buildAgentBody(): string;
+	static buildAgentBody(exploreAgentEnabled: boolean, searchSubagentEnabled: boolean): string;
+	static buildAgentBody(exploreAgentEnabled = false, searchSubagentEnabled = false): string {
 		let discoverySection: string;
 		if (exploreAgentEnabled) {
 			discoverySection = `## 1. Discovery
