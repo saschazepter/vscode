@@ -56,16 +56,6 @@ async function main() {
 			return;
 		}
 
-		// Serve the OAuth callback page (same as vscode.dev/redirect)
-		if (url.pathname === '/callback') {
-			const callbackHtmlPath = path.join(APP_ROOT, 'src/vs/code/browser/workbench/callback.html');
-			if (fs.existsSync(callbackHtmlPath)) {
-				res.writeHead(200, { 'Content-Type': 'text/html' });
-				fs.createReadStream(callbackHtmlPath).pipe(res);
-				return;
-			}
-		}
-
 		// Serve static files from the repo root (out/, src/, node_modules/, etc.)
 		const filePath = path.join(APP_ROOT, url.pathname);
 		if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
@@ -148,55 +138,6 @@ ${importMapJson}
 <body aria-label="">
 	<script type="module">
 		import { create, URI } from '${fileRoot}/vs/sessions/${useMock ? 'test/sessions.web.test.internal' : 'sessions.web.main.internal'}.js';
-
-		// Minimal URL callback provider for OAuth redirect handling.
-		// Mirrors LocalStorageURLCallbackProvider from vs/code/browser/workbench.
-		const callbackProvider = (() => {
-			let reqId = 0;
-			const pendingCallbacks = new Set();
-			const listeners = [];
-			let storageListener = null;
-
-			function checkCallbacks() {
-				for (const id of pendingCallbacks) {
-					const key = 'vscode-web.url-callbacks[' + id + ']';
-					const result = localStorage.getItem(key);
-					if (result !== null) {
-						try {
-							const uri = JSON.parse(result);
-							for (const fn of listeners) fn(URI.revive(uri));
-						} catch (e) { console.error(e); }
-						pendingCallbacks.delete(id);
-						localStorage.removeItem(key);
-					}
-				}
-				if (pendingCallbacks.size === 0 && storageListener) {
-					window.removeEventListener('storage', storageListener);
-					storageListener = null;
-				}
-			}
-
-			return {
-				onCallback(fn) { listeners.push(fn); return { dispose() { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; },
-				create(options) {
-					const id = ++reqId;
-					const qp = ['vscode-reqid=' + id];
-					for (const k of ['scheme','authority','path','query','fragment']) {
-						if (options[k]) qp.push('vscode-' + k + '=' + encodeURIComponent(options[k]));
-					}
-					if (!(options.authority === 'vscode.github-authentication' && options.path === '/dummy')) {
-						localStorage.removeItem('vscode-web.url-callbacks[' + id + ']');
-						pendingCallbacks.add(id);
-						if (!storageListener) {
-							storageListener = () => checkCallbacks();
-							window.addEventListener('storage', storageListener);
-						}
-					}
-					return URI.parse(window.location.href).with({ path: '/callback', query: qp.join('&') });
-				}
-			};
-		})();
-
 		create(document.body, {
 			productConfiguration: {
 				nameShort: 'Sessions (Web)',
@@ -204,7 +145,6 @@ ${importMapJson}
 				enableTelemetry: false,
 			},
 			${additionalBuiltinExtensions}
-			urlCallbackProvider: callbackProvider,
 			workspaceProvider: {
 				workspace: ${useMock
 			? `{ folderUri: URI.parse('mock-fs://mock-repo/mock-repo') }`
