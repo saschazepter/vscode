@@ -230,10 +230,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		// chat request via `vscode.chat.sendSystemInitiatedRequest` so the
 		// notification surfaces as a UI bubble and the SDK's auto-injected
 		// follow-up turn streams into a fresh chat response (issue #309290).
-		// notification surfaces as a UI bubble and the SDK's auto-injected
-		// follow-up turn streams into a fresh chat response (issue #309290).
 		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
 			try {
+				// Skip mid-turn: SDK already injects the notification inline; forwarding would duplicate it.
+				if (this._status === ChatSessionStatus.InProgress) {
+					return;
+				}
 				const notification = this._buildSystemNotification(event);
 				if (notification) {
 					this._onDidReceiveSystemNotification.fire(notification);
