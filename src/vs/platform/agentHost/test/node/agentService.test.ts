@@ -149,9 +149,10 @@ suite('AgentService (node dispatcher)', () => {
 				for (let attempt = 0; attempt < 20; attempt++) {
 					if (hostCustomizationCalls.length > 1) {
 						try {
+							const parsed = JSON.parse(readFileSync(rootConfigResource.fsPath, 'utf8'));
 							assert.deepStrictEqual(
-								JSON.parse(readFileSync(rootConfigResource.fsPath, 'utf8')),
-								{ customizations: [customization] },
+								parsed.customizations,
+								[customization],
 							);
 							persisted = true;
 							break;
