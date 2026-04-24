@@ -60,7 +60,10 @@ export const IChatSessionWorktreeService = createServiceIdentifier<IChatSessionW
 export interface IChatSessionWorktreeService {
 	readonly _serviceBrand: undefined;
 	/**
-	 * Triggered when the set of changes in a session worktree has changed.
+	 * Triggered when cached worktree changes for a session are invalidated and should be refreshed.
+	 *
+	 * This event does not guarantee that the underlying set of changes was updated directly; callers
+	 * should re-query {@link getWorktreeChanges} when it fires.
 	 */
 	onDidChangeWorktreeChanges: vscode.Event<{ sessionId: string }>;
 
