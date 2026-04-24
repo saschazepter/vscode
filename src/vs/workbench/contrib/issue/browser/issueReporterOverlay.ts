@@ -282,7 +282,6 @@ export class IssueReporterOverlay {
 	private captureStripCaptureBtn: HTMLElement | undefined;
 	private captureStripDelayBtn: HTMLElement | undefined;
 	private captureStripRecordBtn: Button | undefined;
-	private captureStripRecordElapsed: HTMLElement | undefined;
 
 	private createFloatingCaptureBar(): void {
 		const targetWindow = getWindow(this.container);
@@ -392,8 +391,6 @@ export class IssueReporterOverlay {
 			this.captureStripRecordBtn = this.disposables.add(new Button(this.floatingBar, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
 			this.captureStripRecordBtn.label = `$(record) ${localize('recordVideo', "Record video")}`;
 			this.captureStripRecordBtn.element.classList.add('wizard-record-btn');
-			this.captureStripRecordElapsed = append(this.captureStripRecordBtn.element, $('span.wizard-recording-elapsed'));
-			this.captureStripRecordElapsed.style.display = 'none';
 			this.disposables.add(this.captureStripRecordBtn.onDidClick(() => {
 				if (this.currentRecordingState === RecordingState.Recording) {
 					this._onDidRequestStopRecording.fire();
@@ -404,9 +401,6 @@ export class IssueReporterOverlay {
 		}
 
 		body.appendChild(this.floatingBar);
-
-		// Only visible on step 3
-		this.floatingBar.style.display = this.currentStep === WizardStep.Attachments ? '' : 'none';
 
 		// Dragging (clamped to window bounds)
 		let dragStartX = 0;
@@ -455,14 +449,8 @@ export class IssueReporterOverlay {
 		if (!this.floatingBar) {
 			return;
 		}
-		const shouldShow = this.currentStep === WizardStep.Attachments;
-		this.floatingBar.style.display = shouldShow ? '' : 'none';
-		if (shouldShow) {
-			// Reset to default position
-			this.floatingBar.style.left = '';
-			this.floatingBar.style.top = '';
-			this.floatingBar.style.right = '';
-		}
+		// Show on all steps so the user can capture screenshots of the wizard itself
+		this.floatingBar.style.display = '';
 	}
 
 	// ── Step 1: Describe (category + description + title) ──
@@ -749,6 +737,7 @@ export class IssueReporterOverlay {
 		if (this.currentStep === WizardStep.Review) {
 			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
 			this.nextButton.element.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
+			this.nextButton.enabled = true;
 		} else if (this.currentStep === WizardStep.Attachments) {
 			this.nextButton.label = this.screenshots.length === 0
 				? localize('skip', "Skip")
@@ -761,6 +750,8 @@ export class IssueReporterOverlay {
 
 		// Show/hide capture strip (only on attachments step)
 		this.updateCaptureStripVisibility();
+		// Reflect recording state on next button
+		this.updateNextButtonForRecording();
 	}
 
 	private updateReviewDetails(): void {
@@ -1137,8 +1128,8 @@ export class IssueReporterOverlay {
 		const maxMsg = localize('maxAttachmentsReached', "Max attachments reached");
 		const wouldReachMax = this.getTotalAttachments() >= MAX_ATTACHMENTS - 1;
 
-		// Screenshot disabled when: at max, OR recording will fill the last slot
-		const screenshotDisabled = atMax || (wouldReachMax && this.currentRecordingState === RecordingState.Recording);
+		// Screenshot disabled when: at max, OR recording will fill the last slot, OR delayed screenshot pending
+		const screenshotDisabled = atMax || (wouldReachMax && this.currentRecordingState === RecordingState.Recording) || this.delayedScreenshotPending;
 		// Record disabled when: at max, OR delayed screenshot will fill the last slot
 		const recordDisabled = atMax || (wouldReachMax && this.delayedScreenshotPending);
 
@@ -1157,11 +1148,12 @@ export class IssueReporterOverlay {
 		}
 
 		// Floating bar buttons
-		if (this.captureStripCaptureBtn && !this.delayedScreenshotPending) {
+		if (this.captureStripCaptureBtn) {
 			this.captureStripCaptureBtn.classList.toggle('disabled', screenshotDisabled);
 			this.captureStripCaptureBtn.title = screenshotDisabled ? maxMsg : '';
 		}
 		if (this.captureStripDelayBtn) {
+			// Delay dropdown also disabled while countdown is running
 			this.captureStripDelayBtn.classList.toggle('disabled', screenshotDisabled);
 			this.captureStripDelayBtn.title = screenshotDisabled ? maxMsg : '';
 		}
@@ -1171,6 +1163,20 @@ export class IssueReporterOverlay {
 				this.captureStripRecordBtn.element.title = recordDisabled ? maxMsg : localize('recordVideo', "Record video");
 			}
 		}
+
+		// Disable "Preview on GitHub" while recording
+		this.updateNextButtonForRecording();
+	}
+
+	private updateNextButtonForRecording(): void {
+		if (this.currentStep !== WizardStep.Review) {
+			return;
+		}
+		const recording = this.currentRecordingState === RecordingState.Recording;
+		this.nextButton.enabled = !recording;
+		this.nextButton.element.title = recording
+			? localize('recordingActive', "Recording active")
+			: localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", isMacintosh ? '\u2318' : 'Ctrl');
 	}
 
 	private updateScreenshotThumbnails(): void {
@@ -1319,6 +1325,10 @@ export class IssueReporterOverlay {
 		return this.wizardPanel;
 	}
 
+	get recordingState(): RecordingState {
+		return this.currentRecordingState;
+	}
+
 	hideFloatingBar(): void {
 		if (this.floatingBar) {
 			this.floatingBar.style.display = 'none';
@@ -1326,7 +1336,7 @@ export class IssueReporterOverlay {
 	}
 
 	showFloatingBar(): void {
-		if (this.floatingBar && this.currentStep === WizardStep.Attachments) {
+		if (this.floatingBar) {
 			this.floatingBar.style.display = '';
 		}
 	}
@@ -1399,43 +1409,38 @@ export class IssueReporterOverlay {
 		this.currentRecordingState = state;
 
 		if (state === RecordingState.Recording) {
-			// Switch to recording mode: disable all wizard UI except stop button
-			this.wizardPanel.classList.add('wizard-recording');
+			this.recordingStartTime = Date.now();
+
+			const formatTime = () => {
+				const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+				const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+				const secs = (elapsed % 60).toString().padStart(2, '0');
+				return `${mins}:${secs}`;
+			};
+
 			if (this.recordBtn) {
 				this.recordBtn.element.classList.add('recording');
-				this.recordBtn.label = localize('stopRecording', "Stop recording");
-				this.recordingElapsedLabel.style.display = '';
-				this.recordingStartTime = Date.now();
-				this.recordingElapsedLabel.textContent = '0:00';
-				this.recordingElapsedTimer = setInterval(() => {
-					const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-					const mins = Math.floor(elapsed / 60);
-					const secs = elapsed % 60;
-					const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-					this.recordingElapsedLabel.textContent = timeStr;
-					if (this.captureStripRecordElapsed) {
-						this.captureStripRecordElapsed.textContent = timeStr;
-					}
-				}, 1000);
+				this.recordBtn.label = `$(stop-circle) ${formatTime()}`;
+				this.recordingElapsedLabel.style.display = 'none'; // label itself carries the timer now
 			}
 
-			// Update floating bar record button
 			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.element.classList.add('recording');
 				this.captureStripRecordBtn.element.title = localize('stopRecording', "Stop recording");
-				this.captureStripRecordBtn.label = `$(stop-circle) ${localize('stopRecording', "Stop recording")}`;
-				if (this.captureStripRecordElapsed) {
-					this.captureStripRecordElapsed.style.display = '';
-					this.captureStripRecordElapsed.textContent = '0:00';
+				this.captureStripRecordBtn.label = `$(stop-circle) ${formatTime()}`;
+			}
+
+			this.recordingElapsedTimer = setInterval(() => {
+				const timeStr = formatTime();
+				if (this.recordBtn) {
+					this.recordBtn.label = `$(stop-circle) ${timeStr}`;
 				}
-			}
-			// Dim other capture strip controls during recording
-			if (this.floatingBar) {
-				this.floatingBar.classList.add('wizard-strip-recording');
-			}
+				if (this.captureStripRecordBtn) {
+					this.captureStripRecordBtn.label = `$(stop-circle) ${timeStr}`;
+				}
+			}, 1000);
 		} else {
 			// Back to idle
-			this.wizardPanel.classList.remove('wizard-recording');
 			if (this.recordBtn) {
 				this.recordBtn.element.classList.remove('recording');
 				this.recordBtn.label = localize('recordVideo', "Record video");
@@ -1446,17 +1451,10 @@ export class IssueReporterOverlay {
 				this.recordingElapsedTimer = undefined;
 			}
 
-			// Update floating bar record button
 			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.element.classList.remove('recording');
 				this.captureStripRecordBtn.element.title = localize('recordVideo', "Record video");
 				this.captureStripRecordBtn.label = `$(record) ${localize('recordVideo', "Record video")}`;
-				if (this.captureStripRecordElapsed) {
-					this.captureStripRecordElapsed.style.display = 'none';
-				}
-			}
-			if (this.floatingBar) {
-				this.floatingBar.classList.remove('wizard-strip-recording');
 			}
 		}
 

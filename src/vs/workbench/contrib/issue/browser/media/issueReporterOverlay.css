@@ -191,11 +191,8 @@
 	align-items: center;
 }
 
-/* Dim screenshot button during recording (keep drag handle interactive) */
-.wizard-floating-bar.wizard-strip-recording .wizard-segmented-btn {
-	opacity: 0.3;
-	pointer-events: none;
-}
+/* Dim screenshot button in floating bar during recording (keep drag handle interactive) */
+/* Only dimmed via JS disabled class at N-1 attachments */
 
 /* Disabled state for segmented buttons when max attachments reached */
 .wizard-segmented-main.disabled,
@@ -1182,6 +1179,8 @@
 	border-color: #c33 !important;
 	color: #fff !important;
 	animation: recording-pulse 1.5s ease-in-out infinite;
+	font-variant-numeric: tabular-nums;
+	min-width: 110px;
 }
 
 .wizard-record-btn.recording .wizard-record-icon {
@@ -1209,45 +1208,6 @@
 	50% {
 		opacity: 0.7;
 	}
-}
-
-/* When recording, dim everything except the record button */
-.wizard-recording .wizard-toolbar {
-	pointer-events: none;
-}
-
-.wizard-recording .wizard-toolbar .wizard-progress-area {
-	opacity: 0.3;
-}
-
-.wizard-recording .wizard-nav {
-	pointer-events: none;
-	opacity: 0.3;
-}
-
-/* Dim step content individually so the actions row stays full opacity */
-.wizard-recording .wizard-step .wizard-heading,
-.wizard-recording .wizard-step .wizard-subtitle,
-.wizard-recording .wizard-step .wizard-textarea,
-.wizard-recording .wizard-step .wizard-screenshots,
-.wizard-recording .wizard-step .wizard-field,
-.wizard-recording .wizard-step .wizard-review-details,
-.wizard-recording .wizard-step .wizard-type-buttons {
-	pointer-events: none;
-	opacity: 0.3;
-}
-
-/* Dim screenshot actions children individually, not the container */
-.wizard-recording .wizard-screenshot-actions .wizard-delay-group,
-.wizard-recording .wizard-screenshot-actions .wizard-capture-btn {
-	pointer-events: none;
-	opacity: 0.3;
-}
-
-/* Record button stays bright and clickable */
-.wizard-recording .wizard-screenshot-actions .wizard-record-btn {
-	pointer-events: auto;
-	opacity: 1;
 }
 
 /* -- Recording card -- */
