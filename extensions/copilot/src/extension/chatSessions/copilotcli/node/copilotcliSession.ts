@@ -245,6 +245,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		this._missionControlApiClient = this.instantiationService.createInstance(MissionControlApiClient);
 		this.add(toDisposable(() => this._todoSqlQuery.dispose()));
 
+		// [anthony] Session-lifetime wildcard trace so we can see every SDK event
+		// even after per-request listeners in _handleRequestImplInner are disposed.
+		this.add(toDisposable(this._sdkSession.on('*', (event: { type: string }) => {
+			this.logService.info(`[anthony] SDK event: type=${event.type} status=${this._status} session=${this.sessionId}`);
+		})));
+
 		// Forward SDK system notifications (async/detached shell completions,
 		// background agent completions, etc.) to consumers as a typed event.
 		// The chat sessions provider uses this to inject a system-initiated
@@ -253,13 +259,18 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		// follow-up turn streams into a fresh chat response (issue #309290).
 		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
 			try {
+				this.logService.info(`[anthony] system.notification received: kind=${event?.data?.kind} status=${this._status} session=${this.sessionId}`);
 				// Skip mid-turn: SDK already injects the notification inline; forwarding would duplicate it.
 				if (this._status === ChatSessionStatus.InProgress) {
+					this.logService.info(`[anthony] system.notification SKIPPED (mid-turn) kind=${event?.data?.kind}`);
 					return;
 				}
 				const notification = this._buildSystemNotification(event);
 				if (notification) {
+					this.logService.info(`[anthony] system.notification FORWARDING label="${notification.label}" message="${notification.message.slice(0, 80)}"`);
 					this._onDidReceiveSystemNotification.fire(notification);
+				} else {
+					this.logService.info(`[anthony] system.notification DROPPED (unhandled kind=${event?.data?.kind})`);
 				}
 			} catch (err) {
 				this.logService.error(err, `[CopilotCLISession] Failed to translate system.notification for session ${this.sessionId}`);
@@ -360,6 +371,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		const handled = this._requestLogger.captureInvocation(capturingToken, async () => {
 			await this.updateModel(model?.model, model?.reasoningEffort, authInfo, token);
 
+			this.logService.info(`[anthony] handleRequest entry: id=${request.id} isSystemInitiated=${!!request.isSystemInitiated} status=${this._status} session=${this.sessionId}`);
 			if (request.isSystemInitiated) {
 				// System-initiated requests are triggered by `system.notification`
 				// events. The SDK has already received the notification and queued
@@ -909,7 +921,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					// to complete (next `session.idle`) so the listeners above
 					// can stream `assistant.message_delta` / `tool.execution_*`
 					// events into this fresh chat response.
+					this.logService.info(`[anthony] system-initiated handler: awaiting next turn_end for session ${this.sessionId}`);
 					await this._awaitNextSessionIdle(token);
+					this.logService.info(`[anthony] system-initiated handler: turn_end resolved for session ${this.sessionId}`);
 				} else {
 					await this.sendRequestInternal(input, attachments, false, logStartTime);
 				}
