@@ -642,7 +642,6 @@ export namespace ConfigKey {
 		export const NotebookAlternativeDocumentFormat = defineAndMigrateExpSetting<AlternativeNotebookFormat>('chat.advanced.notebook.alternativeFormat', 'chat.notebook.alternativeFormat', AlternativeNotebookFormat.xml);
 		export const UseAlternativeNESNotebookFormat = defineAndMigrateExpSetting<boolean>('chat.advanced.notebook.alternativeNESFormat.enabled', 'chat.notebook.alternativeNESFormat.enabled', false);
 
-		export const InlineChatSelectionRatioThreshold = defineSetting<number>('chat.inlineChat.selectionRatioThreshold', ConfigType.ExperimentBased, 0);
 		export const InlineChatReasoningEffort = defineSetting<string>('chat.inlineChat.reasoningEffort', ConfigType.ExperimentBased, 'low');
 		export const InlineChatEnableThinking = defineSetting<boolean>('chat.inlineChat.enableThinking', ConfigType.ExperimentBased, false);
 
@@ -875,9 +874,6 @@ export namespace ConfigKey {
 		/** Enable WebSocket transport for Responses API requests. When enabled, uses a persistent WebSocket connection per conversation instead of individual HTTP requests. */
 		export const ResponsesApiWebSocketEnabled = defineTeamInternalSetting<boolean>('chat.advanced.responsesApi.webSocket.enabled', ConfigType.ExperimentBased, false);
 		export const DebugSimulateWebSocketResponse = defineTeamInternalSetting<string>('chat.advanced.debug.simulateWebSocketResponse', ConfigType.Simple, '');
-
-		/** @deprecated Use Advanced.LocalIndexEnabled instead */
-		export const SessionSearchLocalIndexEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', ConfigType.ExperimentBased, false, vBoolean());
 	}
 
 	/**
@@ -1028,8 +1024,8 @@ export namespace ConfigKey {
 	export const MemoryToolEnabled = defineSetting<boolean>('chat.tools.memory.enabled', ConfigType.ExperimentBased, true);
 	export const ViewImageToolEnabled = defineSetting<boolean>('chat.tools.viewImage.enabled', ConfigType.ExperimentBased, true);
 
-	/** Enable local session tracking and /chronicle commands. */
-	export const LocalIndexEnabled = defineAndMigrateExpSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', 'chat.localIndex.enabled', false);
+	/** Enable local session search index — tracks sessions locally and enables chronicle commands.*/
+	export const LocalIndexEnabled = defineSetting<boolean>('chat.localIndex.enabled', ConfigType.ExperimentBased, false);
 }
 
 export function getAllConfigKeys(): string[] {
