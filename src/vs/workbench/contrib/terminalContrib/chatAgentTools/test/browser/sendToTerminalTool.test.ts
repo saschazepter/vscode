@@ -517,4 +517,21 @@ suite('SendToTerminalTool', () => {
 		assert.strictEqual(foregroundSent.length, 1);
 		assert.strictEqual(foregroundSent[0].text, 'echo hello', 'foreground single-line command should be trimmed');
 	});
+
+	test('line continuation commands are normalized, not treated as multiline', async () => {
+		const mockExecution = createMockExecution('output');
+		RunInTerminalTool.getExecution = () => mockExecution;
+
+		const continuationCommand = 'echo hello \\\n  world';
+		await tool.invoke(
+			createInvocation(KNOWN_TERMINAL_ID, continuationCommand),
+			async () => 0,
+			{ report: () => { } },
+			CancellationToken.None,
+		);
+
+		assert.strictEqual(mockExecution.sentTexts.length, 1);
+		assert.strictEqual(mockExecution.sentTexts[0].text, 'echo hello \\   world', 'line continuation should be normalized to single line');
+		assert.strictEqual(mockExecution.sentTexts[0].forceBracketedPasteMode, undefined, 'line continuation should not force bracketed paste mode');
+	});
 });

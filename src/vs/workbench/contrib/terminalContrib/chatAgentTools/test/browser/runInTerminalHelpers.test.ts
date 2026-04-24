@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ok, strictEqual } from 'assert';
-import { generateAutoApproveActions, TRUNCATION_MESSAGE, dedupeRules, isPowerShell, truncateOutputKeepingTail, extractCdPrefix, normalizeTerminalCommandForDisplay, normalizeCommandForExecution } from '../../browser/runInTerminalHelpers.js';
+import { generateAutoApproveActions, TRUNCATION_MESSAGE, dedupeRules, isPowerShell, truncateOutputKeepingTail, extractCdPrefix, normalizeTerminalCommandForDisplay, normalizeCommandForExecution, isMultilineCommand } from '../../browser/runInTerminalHelpers.js';
 import { OperatingSystem } from '../../../../../../base/common/platform.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ConfigurationTarget } from '../../../../../../platform/configuration/common/configuration.js';
@@ -534,6 +534,38 @@ suite('normalizeCommandForExecution', () => {
 
 	test('should handle single-line command', () => {
 		strictEqual(normalizeCommandForExecution('ls -la'), 'ls -la');
+	});
+});
+
+suite('isMultilineCommand', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('should return true for heredoc', () => {
+		strictEqual(isMultilineCommand('cat > file.txt << \'EOF\'\nhello world\nEOF'), true);
+	});
+
+	test('should return true for multi-statement with \\n', () => {
+		strictEqual(isMultilineCommand('echo hello\necho world'), true);
+	});
+
+	test('should return true for multi-statement with \\r\\n', () => {
+		strictEqual(isMultilineCommand('echo hello\r\necho world'), true);
+	});
+
+	test('should return false for single-line command', () => {
+		strictEqual(isMultilineCommand('ls -la'), false);
+	});
+
+	test('should return false for line continuation with backslash-newline', () => {
+		strictEqual(isMultilineCommand('echo hello \\\n  world'), false);
+	});
+
+	test('should return false for line continuation with backslash-crlf', () => {
+		strictEqual(isMultilineCommand('echo hello \\\r\n  world'), false);
+	});
+
+	test('should return true when continuation and bare newline are mixed', () => {
+		strictEqual(isMultilineCommand('echo hello \\\n  world\necho done'), true);
 	});
 });
 
