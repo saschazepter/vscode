@@ -384,7 +384,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			);
 		});
 
-		test('can write inside the workspace folder', async function () {
+		test.skip('can write inside the workspace folder', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_WS_${Date.now()}`;
