@@ -57,7 +57,7 @@ export interface IClaudeSettingsService {
 	getUris(location?: ClaudeSettingsLocationType): URI[];
 
 	/**
-	 * Returns a single URI for a settings location given a URI that can be used to identify a workspace folder.
+	 * Returns the settings URI for the given location and a URI that belongs to a workspace folder.
 	 */
-	getUri(location: ClaudeSettingsLocationType, uri: URI): URI;
+	getUri(location: ClaudeSettingsLocationType, workspaceUri: URI): URI;
 }

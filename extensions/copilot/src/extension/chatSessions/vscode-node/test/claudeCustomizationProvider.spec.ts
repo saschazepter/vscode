@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { AgentInfo } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentInfo, Settings as ClaudeSettings } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { INativeEnvService } from '../../../../platform/env/common/envService';
@@ -15,6 +15,7 @@ import { Emitter, Event } from '../../../../util/vs/base/common/event';
 import { DisposableStore } from '../../../../util/vs/base/common/lifecycle';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { IClaudeRuntimeDataService } from '../../claude/common/claudeRuntimeDataService';
+import { ClaudeSettingsFile, ClaudeSettingsLocationType, IClaudeSettingsService } from '../../claude/common/claudeSettingsService';
 import { ClaudeCustomizationProvider } from '../claudeCustomizationProvider';
 import { MockPromptsService } from '../../../../platform/promptFiles/test/common/mockPromptsService';
 
@@ -32,8 +33,16 @@ class FakeChatSessionCustomizationType {
 	static readonly Instructions = new FakeChatSessionCustomizationType('instructions');
 	static readonly Prompt = new FakeChatSessionCustomizationType('prompt');
 	static readonly Hook = new FakeChatSessionCustomizationType('hook');
+	static readonly Plugins = new FakeChatSessionCustomizationType('plugins');
 	constructor(readonly id: string) { }
 }
+
+const FakeChatSessionCustomizationEnablementScope = {
+	None: 0,
+	Global: 1,
+	Workspace: 2,
+	ManagedByApplication: 3,
+} as const;
 
 class MockRuntimeDataService extends mock<IClaudeRuntimeDataService>() {
 	private readonly _onDidChange = new Emitter<void>();
@@ -75,6 +84,70 @@ class MockFileSystemService extends mock<IFileSystemService>() {
 	}
 }
 
+class MockClaudeSettingsService extends mock<IClaudeSettingsService>() {
+	private readonly _onDidChange = new Emitter<void>();
+	override readonly onDidChange = this._onDidChange.event;
+	private readonly _files = new Map<string, ClaudeSettings>();
+	private readonly _writtenFiles = new Map<string, ClaudeSettings>();
+	private _settingsUris: URI[] = [];
+
+	setSettingsUris(uris: URI[]) { this._settingsUris = uris; }
+
+	setFile(uri: URI, settings: ClaudeSettings) {
+		this._files.set(uri.toString(), settings);
+	}
+
+	getWrittenFile(uri: URI): ClaudeSettings | undefined {
+		return this._writtenFiles.get(uri.toString());
+	}
+
+	override getUris(location?: ClaudeSettingsLocationType): URI[] {
+		return this._settingsUris.filter(u => {
+			if (!location) {
+				return true;
+			}
+			if (location === ClaudeSettingsLocationType.User) {
+				return u.path.includes('/home/user/');
+			}
+			if (location === ClaudeSettingsLocationType.WorkspaceLocal) {
+				return u.path.endsWith('.local.json');
+			}
+			return u.path.includes('/workspace/') && !u.path.endsWith('.local.json');
+		});
+	}
+
+	override getUri(location: ClaudeSettingsLocationType, _uri: URI): URI {
+		const uris = this.getUris(location);
+		return uris[0];
+	}
+
+	override async readSettingsFile(uri: URI): Promise<ClaudeSettings> {
+		return this._files.get(uri.toString()) ?? {};
+	}
+
+	override async readAllSettings(): Promise<Readonly<ClaudeSettingsFile[]>> {
+		return this._settingsUris.map(uri => {
+			let type: ClaudeSettingsLocationType;
+			if (uri.path.includes('/home/user/')) {
+				type = ClaudeSettingsLocationType.User;
+			} else if (uri.path.endsWith('.local.json')) {
+				type = ClaudeSettingsLocationType.WorkspaceLocal;
+			} else {
+				type = ClaudeSettingsLocationType.Workspace;
+			}
+			return { type, settings: this._files.get(uri.toString()) ?? {}, uri };
+		});
+	}
+
+	override async writeSettingsFile(uri: URI, settings: ClaudeSettings): Promise<void> {
+		this._files.set(uri.toString(), settings);
+		this._writtenFiles.set(uri.toString(), settings);
+	}
+
+	fireChanged() { this._onDidChange.fire(); }
+	dispose() { this._onDidChange.dispose(); }
+}
+
 class MockEnvService extends mock<INativeEnvService>() {
 	override userHome = URI.file('/home/user');
 }
@@ -82,29 +155,36 @@ class MockEnvService extends mock<INativeEnvService>() {
 class TestLogService extends mock<ILogService>() {
 	override trace() { }
 	override debug() { }
+	override warn() { }
 }
 
 describe('ClaudeCustomizationProvider', () => {
 	let disposables: DisposableStore;
 	let mockRuntimeDataService: MockRuntimeDataService;
 	let mockPromptsService: MockPromptsService;
+	let mockClaudeSettingsService: MockClaudeSettingsService;
 	let mockWorkspaceService: MockWorkspaceService;
 	let mockFileSystemService: MockFileSystemService;
 	let provider: ClaudeCustomizationProvider;
 
 	let originalChatSessionCustomizationType: unknown;
+	let originalChatSessionCustomizationEnablementScope: unknown;
 
 	beforeEach(() => {
 		originalChatSessionCustomizationType = (vscode as Record<string, unknown>).ChatSessionCustomizationType;
+		originalChatSessionCustomizationEnablementScope = (vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope;
 		(vscode as Record<string, unknown>).ChatSessionCustomizationType = FakeChatSessionCustomizationType;
+		(vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope = FakeChatSessionCustomizationEnablementScope;
 		disposables = new DisposableStore();
 		mockRuntimeDataService = disposables.add(new MockRuntimeDataService());
 		mockPromptsService = disposables.add(new MockPromptsService());
+		mockClaudeSettingsService = disposables.add(new MockClaudeSettingsService());
 		mockWorkspaceService = new MockWorkspaceService();
 		mockFileSystemService = new MockFileSystemService();
 		provider = disposables.add(new ClaudeCustomizationProvider(
 			mockPromptsService,
 			mockRuntimeDataService,
+			mockClaudeSettingsService,
 			mockWorkspaceService,
 			mockFileSystemService,
 			new MockEnvService(),
@@ -115,6 +195,7 @@ describe('ClaudeCustomizationProvider', () => {
 	afterEach(() => {
 		disposables.dispose();
 		(vscode as Record<string, unknown>).ChatSessionCustomizationType = originalChatSessionCustomizationType;
+		(vscode as Record<string, unknown>).ChatSessionCustomizationEnablementScope = originalChatSessionCustomizationEnablementScope;
 	});
 
 	describe('metadata', () => {
@@ -123,14 +204,15 @@ describe('ClaudeCustomizationProvider', () => {
 			expect(ClaudeCustomizationProvider.metadata.iconId).toBe('claude');
 		});
 
-		it('supports Agent, Skill, Instructions, and Hook types', () => {
+		it('supports Agent, Skill, Instructions, Hook, and Plugins types', () => {
 			const supported = ClaudeCustomizationProvider.metadata.supportedTypes;
 			expect(supported).toBeDefined();
-			expect(supported).toHaveLength(4);
+			expect(supported).toHaveLength(5);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Agent);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Skill);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Instructions);
 			expect(supported).toContain(FakeChatSessionCustomizationType.Hook);
+			expect(supported).toContain(FakeChatSessionCustomizationType.Plugins);
 		});
 
 		it('only returns items whose type is in supportedTypes', async () => {
@@ -321,10 +403,11 @@ describe('ClaudeCustomizationProvider', () => {
 			mockRuntimeDataService.setAgents([{ name: 'Explore', description: 'Agent' }]);
 			mockFileSystemService.setFile(URI.joinPath(URI.file('/workspace'), 'CLAUDE.md'), '# Instructions');
 			mockPromptsService.setSkills([mockSkill(URI.file('/workspace/.claude/skills/s/SKILL.md'), 's')]);
-			mockFileSystemService.setFile(
-				URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json'),
-				JSON.stringify({ hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] } })
-			);
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] }
+			});
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			expect(items.filter(i => i.type === FakeChatSessionCustomizationType.Agent)).toHaveLength(1);
@@ -335,17 +418,18 @@ describe('ClaudeCustomizationProvider', () => {
 	});
 
 	describe('hook discovery', () => {
-		it('discovers hooks from workspace .claude/settings.json', async () => {
+		it('discovers hooks from workspace settings', async () => {
 			const workspaceFolder = URI.file('/workspace');
 			mockWorkspaceService.setFolders([workspaceFolder]);
 			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
-			mockFileSystemService.setFile(settingsUri, JSON.stringify({
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
 				hooks: {
 					PreToolUse: [
 						{ matcher: 'Bash', hooks: [{ type: 'command', command: './scripts/pre-bash.sh' }] }
 					]
 				}
-			}));
+			});
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
@@ -358,16 +442,15 @@ describe('ClaudeCustomizationProvider', () => {
 		it('uses wildcard label for * matcher', async () => {
 			const workspaceFolder = URI.file('/workspace');
 			mockWorkspaceService.setFolders([workspaceFolder]);
-			mockFileSystemService.setFile(
-				URI.joinPath(workspaceFolder, '.claude', 'settings.json'),
-				JSON.stringify({
-					hooks: {
-						SessionStart: [
-							{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }
-						]
-					}
-				})
-			);
+			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: {
+					SessionStart: [
+						{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }
+					]
+				}
+			});
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
@@ -375,15 +458,16 @@ describe('ClaudeCustomizationProvider', () => {
 			expect(hookItems[0].name).toBe('SessionStart');
 		});
 
-		it('discovers hooks from user home .claude/settings.json', async () => {
+		it('discovers hooks from user home settings', async () => {
 			const userSettingsUri = URI.joinPath(URI.file('/home/user'), '.claude', 'settings.json');
-			mockFileSystemService.setFile(userSettingsUri, JSON.stringify({
+			mockClaudeSettingsService.setSettingsUris([userSettingsUri]);
+			mockClaudeSettingsService.setFile(userSettingsUri, {
 				hooks: {
 					PostToolUse: [
 						{ matcher: 'Edit', hooks: [{ type: 'command', command: './lint.sh' }] }
 					]
 				}
-			}));
+			});
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
@@ -394,43 +478,154 @@ describe('ClaudeCustomizationProvider', () => {
 		it('discovers multiple hooks across event types', async () => {
 			const workspaceFolder = URI.file('/workspace');
 			mockWorkspaceService.setFolders([workspaceFolder]);
-			mockFileSystemService.setFile(
-				URI.joinPath(workspaceFolder, '.claude', 'settings.json'),
-				JSON.stringify({
-					hooks: {
-						PreToolUse: [
-							{ matcher: 'Bash', hooks: [{ type: 'command', command: './a.sh' }] },
-							{ matcher: 'Edit', hooks: [{ type: 'command', command: './b.sh' }, { type: 'command', command: './c.sh' }] },
-						],
-						SessionStart: [
-							{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }
-						]
-					}
-				})
-			);
+			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: {
+					PreToolUse: [
+						{ matcher: 'Bash', hooks: [{ type: 'command', command: './a.sh' }] },
+						{ matcher: 'Edit', hooks: [{ type: 'command', command: './b.sh' }, { type: 'command', command: './c.sh' }] },
+					],
+					SessionStart: [
+						{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }
+					]
+				}
+			});
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
 			expect(hookItems).toHaveLength(4);
 		});
 
-		it('gracefully handles missing settings files', async () => {
+		it('reports hooks as enabled when disableAllHooks is not set', async () => {
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] }
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems[0].enabled).toBe(true);
+		});
+
+		it('reports hooks as disabled when disableAllHooks is true', async () => {
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				disableAllHooks: true,
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] }
+			});
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems[0].enabled).toBe(false);
+		});
+
+		it('gracefully handles no settings files', async () => {
 			mockWorkspaceService.setFolders([URI.file('/workspace')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			expect(items).toEqual([]);
 		});
+	});
 
-		it('gracefully handles invalid JSON in settings', async () => {
+	describe('hook enablement', () => {
+		it('disables hooks by setting disableAllHooks to true', async () => {
 			const workspaceFolder = URI.file('/workspace');
 			mockWorkspaceService.setFolders([workspaceFolder]);
-			mockFileSystemService.setFile(
-				URI.joinPath(workspaceFolder, '.claude', 'settings.json'),
-				'not valid json {'
-			);
+			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: './check.sh' }] }] }
+			});
 
-			const items = await provider.provideChatSessionCustomizations(undefined!);
-			expect(items).toEqual([]);
+			await provider.handleCustomizationEnablement(
+				settingsUri, FakeChatSessionCustomizationType.Hook as any,
+				false, 2 /* Workspace */, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
+			expect(written).toBeDefined();
+			expect(written!.disableAllHooks).toBe(true);
+		});
+
+		it('enables hooks by removing disableAllHooks', async () => {
+			const workspaceFolder = URI.file('/workspace');
+			mockWorkspaceService.setFolders([workspaceFolder]);
+			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				disableAllHooks: true,
+				hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: './check.sh' }] }] }
+			});
+
+			await provider.handleCustomizationEnablement(
+				settingsUri, FakeChatSessionCustomizationType.Hook as any,
+				true, 2 /* Workspace */, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
+			expect(written).toBeDefined();
+			expect(written!.disableAllHooks).toBeUndefined();
+		});
+
+		it('preserves other settings when toggling hooks', async () => {
+			const workspaceFolder = URI.file('/workspace');
+			mockWorkspaceService.setFolders([workspaceFolder]);
+			const settingsUri = URI.joinPath(workspaceFolder, '.claude', 'settings.json');
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				permissions: { allow: ['Read'] },
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] }
+			});
+
+			await provider.handleCustomizationEnablement(
+				settingsUri, FakeChatSessionCustomizationType.Hook as any,
+				false, 2 /* Workspace */, undefined!);
+
+			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
+			expect(written!.permissions).toEqual({ allow: ['Read'] });
+			expect(written!.hooks).toBeDefined();
+		});
+
+		it('only modifies the settings file matching the hook URI', async () => {
+			const userUri = URI.joinPath(URI.file('/home/user'), '.claude', 'settings.json');
+			const wsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([userUri, wsUri]);
+			mockClaudeSettingsService.setFile(userUri, {
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './user-init.sh' }] }] }
+			});
+			mockClaudeSettingsService.setFile(wsUri, {
+				hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: './ws-check.sh' }] }] }
+			});
+
+			// Disable hooks in the workspace file only
+			await provider.handleCustomizationEnablement(
+				wsUri, FakeChatSessionCustomizationType.Hook as any,
+				false, 2 /* Workspace */, undefined!);
+
+			expect(mockClaudeSettingsService.getWrittenFile(wsUri)!.disableAllHooks).toBe(true);
+			expect(mockClaudeSettingsService.getWrittenFile(userUri)).toBeUndefined();
+		});
+
+		it('fires onDidChange after toggling hooks', async () => {
+			const settingsUri = URI.joinPath(URI.file('/workspace'), '.claude', 'settings.json');
+			mockWorkspaceService.setFolders([URI.file('/workspace')]);
+			mockClaudeSettingsService.setSettingsUris([settingsUri]);
+			mockClaudeSettingsService.setFile(settingsUri, {
+				hooks: { SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: './init.sh' }] }] }
+			});
+
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			await provider.handleCustomizationEnablement(
+				settingsUri, FakeChatSessionCustomizationType.Hook as any,
+				false, 2 /* Workspace */, undefined!);
+
+			expect(fired).toBe(true);
 		});
 	});
 
@@ -464,6 +659,14 @@ describe('ClaudeCustomizationProvider', () => {
 			disposables.add(provider.onDidChange(() => { fired = true; }));
 
 			mockWorkspaceService.fireWorkspaceFoldersChanged();
+			expect(fired).toBe(true);
+		});
+
+		it('fires when claude settings change', () => {
+			let fired = false;
+			disposables.add(provider.onDidChange(() => { fired = true; }));
+
+			mockClaudeSettingsService.fireChanged();
 			expect(fired).toBe(true);
 		});
 	});

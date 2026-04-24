@@ -17,6 +17,7 @@ import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataSer
 import { ClaudeSettingsFile, ClaudeSettingsLocationType, IClaudeSettingsService } from '../claude/common/claudeSettingsService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { IPromptsService } from '../../../platform/promptFiles/common/promptsService';
+import { HOOK_EVENTS } from '@anthropic-ai/claude-agent-sdk';
 
 // TODO: Consider reporting Claude slash commands (from Query.supportedCommands()) when appropriate
 // TODO: Report MCP servers when ChatSessionCustomizationType.Mcp is available (use Query.mcpServerStatus())
@@ -35,16 +36,6 @@ const WORKSPACE_INSTRUCTION_PATHS = [
 
 const HOME_INSTRUCTION_PATHS = [
 	['.claude', 'CLAUDE.md'] as const,
-] as const;
-
-/**
- * Hook event IDs that Claude supports, matching the HookEvent types from
- * the Claude Agent SDK. Used to discover hooks from .claude/settings.json.
- */
-const HOOK_EVENT_IDS = [
-	'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest',
-	'UserPromptSubmit', 'Stop', 'SubagentStart', 'SubagentStop',
-	'PreCompact', 'SessionStart', 'SessionEnd', 'Notification',
 ] as const;
 
 export class ClaudeCustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
@@ -138,13 +129,14 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		const skillItems: vscode.ChatSessionCustomizationItem[] = [];
 		for (const skill of await this.promptsService.getSkills(token)) {
 			if (this.isClaudePath(skill.uri)) {
-				const folderName = basename(dirname(skill.uri));
-				const override = skillOverrides[folderName];
+				const skillName = basename(dirname(skill.uri));
+				const override = skillOverrides[skillName];
 				const item: vscode.ChatSessionCustomizationItem = {
 					uri: skill.uri,
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
 					enabled: override !== 'off',
+					enablementScope: vscode.ChatSessionCustomizationEnablementScope.Workspace
 				};
 				skillItems.push(item);
 			}
@@ -153,8 +145,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this.logService.debug(`[ClaudeCustomizationProvider] skills (${skillItems.length}): ${skillItems.map(s => s.name).join(', ') || '(none)'}`);
 
 		// Hooks from .claude/settings.json files
-		const disableAllHooks = settingsFiles.some(s => s.settings.disableAllHooks === true);
-		const hookItems = await this.discoverHooks(disableAllHooks);
+		const hookItems = await this.discoverHooks(settingsFiles);
 		items.push(...hookItems);
 		this.logService.debug(`[ClaudeCustomizationProvider] hooks (${hookItems.length}): ${hookItems.map(h => h.name).join(', ') || '(none)'}`);
 
@@ -211,17 +202,16 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		}
 	}
 
-	private async discoverHooks(allHooksDisabled: boolean): Promise<vscode.ChatSessionCustomizationItem[]> {
+	private async discoverHooks(settingsFiles: Readonly<ClaudeSettingsFile[]>): Promise<vscode.ChatSessionCustomizationItem[]> {
 		const items: vscode.ChatSessionCustomizationItem[] = [];
-		const allSettings = await this.claudeSettingsService.readAllSettings();
 
-		for (const settingsFile of allSettings) {
+		for (const settingsFile of settingsFiles) {
 			try {
 				if (!settingsFile.settings.hooks) {
 					continue;
 				}
 
-				for (const eventId of HOOK_EVENT_IDS) {
+				for (const eventId of HOOK_EVENTS) {
 					const matchers = settingsFile.settings.hooks[eventId];
 					if (!matchers || matchers.length === 0) {
 						continue;
@@ -229,18 +219,23 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 					for (const matcher of matchers) {
 						for (const hook of matcher.hooks) {
-							if (hook.type !== 'command') {
-								this.logService.warn(`[ClaudeCustomizationProvider] Unsupported hook type: ${hook.type} in ${settingsFile.uri}`);
-								continue;
-							}
 							const matcherLabel = matcher.matcher === '*' ? '' : ` (${matcher.matcher})`;
+							let description: string | undefined;
+							switch (hook.type) {
+								case 'command': description = hook.command; break;
+								case 'prompt': description = hook.prompt; break;
+								case 'agent': description = hook.prompt; break;
+								case 'http': description = hook.url; break;
+							}
 							items.push({
 								uri: settingsFile.uri,
 								type: vscode.ChatSessionCustomizationType.Hook,
 								name: `${eventId}${matcherLabel}`,
-								description: hook.command,
-								enabled: !allHooksDisabled,
-								// Individual hooks can't be toggled — only disableAllHooks
+								description,
+								enabled: settingsFile.settings.disableAllHooks !== true,
+								enablementScope: settingsFile.type === ClaudeSettingsLocationType.User
+									? vscode.ChatSessionCustomizationEnablementScope.Global
+									: vscode.ChatSessionCustomizationEnablementScope.Workspace,
 							});
 						}
 					}
@@ -355,6 +350,20 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 				if (shouldUpdateSettings) {
 					const updated = { ...file.settings, claudeMdExcludes: newExcludes.length > 0 ? newExcludes : undefined };
+					await writeSettings(file.uri, updated);
+				}
+			}
+		} else if (type.id === vscode.ChatSessionCustomizationType.Hook.id) {
+			// Hooks are toggled via the disableAllHooks flag in the settings file
+			// that contains them. Toggling any hook toggles all hooks in that file.
+			for (const file of allSettingsFiles) {
+				if (file.uri.toString() !== uri.toString()) {
+					continue;
+				}
+				const newValue = !enabled ? true : undefined;
+				const shouldUpdateSettings = file.settings.disableAllHooks !== newValue;
+				if (shouldUpdateSettings) {
+					const updated = { ...file.settings, disableAllHooks: newValue };
 					await writeSettings(file.uri, updated);
 				}
 			}

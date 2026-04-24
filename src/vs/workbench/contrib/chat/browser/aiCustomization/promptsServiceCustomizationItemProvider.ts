@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
 import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
 import { OS } from '../../../../../base/common/platform.js';
-import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
+import { basename, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { localize } from '../../../../../nls.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
@@ -19,6 +19,7 @@ import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/servi
 import { ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
 import { getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
+import { getSkillFolderName } from '../../common/promptSyntax/config/promptFileLocations.js';
 
 /**
  * Adapts the rich promptsService model to the same provider-shaped items
@@ -88,9 +89,8 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			}
 			const uiIntegrations = this.workspaceService.getSkillUIIntegrations();
 			for (const skill of skills || []) {
-				const skillName = skill.name || basename(dirname(skill.uri)) || basename(skill.uri);
-				const skillFolderName = basename(dirname(skill.uri));
-				const uiTooltip = uiIntegrations.get(skillFolderName);
+				const skillName = getSkillFolderName(skill.uri);
+				const uiTooltip = uiIntegrations.get(skillName);
 				items.push({
 					uri: skill.uri,
 					type: promptType,
