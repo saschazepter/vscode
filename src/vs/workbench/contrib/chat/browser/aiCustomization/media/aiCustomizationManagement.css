@@ -736,8 +736,7 @@
 }
 
 .ai-customization-management-editor .ai-customization-embedded-detail.is-empty .embedded-detail-header,
-.ai-customization-management-editor .ai-customization-embedded-detail.is-empty .embedded-detail-description,
-.ai-customization-management-editor .ai-customization-embedded-detail.is-empty .embedded-detail-actions {
+.ai-customization-management-editor .ai-customization-embedded-detail.is-empty .embedded-detail-description {
 	display: none;
 }
 
@@ -796,25 +795,6 @@
 	line-height: 1.4;
 	white-space: pre-wrap;
 	word-break: break-word;
-}
-
-.ai-customization-management-editor .ai-customization-embedded-detail .embedded-detail-actions {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-}
-
-.ai-customization-management-editor .ai-customization-embedded-detail .embedded-detail-open-link {
-	color: var(--vscode-textLink-foreground);
-	cursor: pointer;
-	text-decoration: none;
-}
-
-.ai-customization-management-editor .ai-customization-embedded-detail .embedded-detail-open-link:hover,
-.ai-customization-management-editor .ai-customization-embedded-detail .embedded-detail-open-link:focus {
-	color: var(--vscode-textLink-activeForeground);
-	text-decoration: underline;
-	outline: none;
 }
 
 .ai-customization-management-editor .ai-customization-embedded-detail .embedded-detail-empty {

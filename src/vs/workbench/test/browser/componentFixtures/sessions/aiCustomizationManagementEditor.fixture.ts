@@ -44,7 +44,6 @@ import { AICustomizationManagementEditor } from '../../../../contrib/chat/browse
 import { EmbeddedMcpServerDetail } from '../../../../contrib/chat/browser/aiCustomization/embeddedMcpServerDetail.js';
 import { EmbeddedAgentPluginDetail } from '../../../../contrib/chat/browser/aiCustomization/embeddedAgentPluginDetail.js';
 import { AgentPluginItemKind, IAgentPluginItem } from '../../../../contrib/chat/browser/agentPluginEditor/agentPluginItems.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ContributionEnablementState } from '../../../../contrib/chat/common/enablement.js';
 import { AICustomizationManagementEditorInput } from '../../../../contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 import { IConfigurationService, IConfigurationValue } from '../../../../../platform/configuration/common/configuration.js';
@@ -1000,9 +999,6 @@ function renderEmbeddedPluginDetail(ctx: ComponentFixtureContext, item: IAgentPl
 		colorTheme: ctx.theme,
 		additionalServices: (reg) => {
 			registerWorkbenchServices(reg);
-			reg.defineInstance(IEditorService, new class extends mock<IEditorService>() {
-				override async openEditor(): Promise<undefined> { return undefined; }
-			}());
 		},
 	});
 

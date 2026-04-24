@@ -4,12 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from '../../../../../base/browser/dom.js';
-import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
-import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { LocalMcpServerScope } from '../../../../services/mcp/common/mcpWorkbenchManagementService.js';
 import { IMcpWorkbenchService, IWorkbenchMcpServer } from '../../../mcp/common/mcpTypes.js';
 import { mcpServerIcon, userIcon, workspaceIcon } from './aiCustomizationIcons.js';
@@ -18,8 +16,7 @@ const $ = DOM.$;
 
 /**
  * Compact detail view for an MCP server inside the AI Customizations management editor's
- * split-pane host. Renders identity (icon + name + scope) and description, plus an
- * "Open in editor" link that opens the full {@link McpServerEditor} in the main editor area.
+ * split-pane host. Renders identity (icon + name + scope) and description.
  *
  * Advanced actions (enable / disable / uninstall / configure) remain accessible via the
  * row's existing context menu, so this component intentionally stays small.
@@ -31,7 +28,6 @@ export class EmbeddedMcpServerDetail extends Disposable {
 	private readonly nameEl: HTMLElement;
 	private readonly scopeEl: HTMLElement;
 	private readonly descriptionEl: HTMLElement;
-	private readonly openLink: HTMLAnchorElement;
 	private readonly emptyEl: HTMLElement;
 
 	private current: IWorkbenchMcpServer | undefined;
@@ -39,7 +35,6 @@ export class EmbeddedMcpServerDetail extends Disposable {
 	constructor(
 		parent: HTMLElement,
 		@IMcpWorkbenchService private readonly mcpWorkbenchService: IMcpWorkbenchService,
-		@IHoverService private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -53,23 +48,6 @@ export class EmbeddedMcpServerDetail extends Disposable {
 		this.scopeEl = DOM.append(headerText, $('.embedded-detail-scope'));
 
 		this.descriptionEl = DOM.append(this.root, $('.embedded-detail-description'));
-
-		const actions = DOM.append(this.root, $('.embedded-detail-actions'));
-		this.openLink = DOM.append(actions, $<HTMLAnchorElement>('a.embedded-detail-open-link'));
-		this.openLink.textContent = localize('mcpOpenInEditor', "Open in editor");
-		this.openLink.setAttribute('role', 'button');
-		this.openLink.setAttribute('tabindex', '0');
-		this._register(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), this.openLink, localize('mcpOpenInEditorTooltip', "Open this MCP server in the full editor")));
-		this._register(DOM.addDisposableListener(this.openLink, 'click', e => {
-			e.preventDefault();
-			this.openInFullEditor();
-		}));
-		this._register(DOM.addDisposableListener(this.openLink, 'keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				this.openInFullEditor();
-			}
-		}));
 
 		this.emptyEl = DOM.append(this.root, $('.embedded-detail-empty'));
 		this.emptyEl.textContent = localize('mcpDetailEmpty', "No MCP server selected.");
@@ -97,13 +75,6 @@ export class EmbeddedMcpServerDetail extends Disposable {
 	clearInput(): void {
 		this.current = undefined;
 		this.renderItem();
-	}
-
-	private openInFullEditor(): void {
-		if (!this.current) {
-			return;
-		}
-		this.mcpWorkbenchService.open(this.current);
 	}
 
 	private renderItem(): void {
