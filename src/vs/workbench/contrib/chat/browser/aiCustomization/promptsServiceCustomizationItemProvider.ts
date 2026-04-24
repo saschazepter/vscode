@@ -18,7 +18,7 @@ import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
-import { getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
+import { getFriendlyName, getHookFileFriendlyName, isChatExtensionItem } from './aiCustomizationItemSource.js';
 import { getSkillFolderName } from '../../common/promptSyntax/config/promptFileLocations.js';
 
 /**
@@ -138,7 +138,7 @@ export class PromptsServiceCustomizationItemProvider implements ICustomizationIt
 			items.push({
 				uri: f.uri,
 				type: promptType,
-				name: f.name || getFriendlyName(basename(f.uri)),
+				name: f.name || getHookFileFriendlyName(f.uri.path, f.storage),
 				storage: f.storage,
 			});
 		}

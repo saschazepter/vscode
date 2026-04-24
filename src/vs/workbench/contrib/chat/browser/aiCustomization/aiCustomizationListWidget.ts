@@ -122,7 +122,7 @@ interface IHookChildEntry {
 
 type IListEntry = IGroupHeaderEntry | IFileItemEntry | IHookFileEntry | IHookChildEntry;
 
-const HOOK_FILE_HEADER_HEIGHT = 36;
+const HOOK_FILE_HEADER_HEIGHT = 44;
 const HOOK_CHILD_HEIGHT = 28;
 
 /**
@@ -246,6 +246,7 @@ interface IHookFileHeaderTemplateData {
 	readonly chevron: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly label: HTMLElement;
+	readonly description: HTMLElement;
 	readonly count: HTMLElement;
 	readonly actionsContainer: HTMLElement;
 	readonly actionBar: ActionBar;
@@ -277,15 +278,18 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 		const leftSection = DOM.append(container, $('.hook-file-left'));
 		const chevron = DOM.append(leftSection, $('.hook-file-chevron'));
 		const icon = DOM.append(leftSection, $('.hook-file-icon'));
-		const label = DOM.append(leftSection, $('.hook-file-label'));
-		const count = DOM.append(leftSection, $('.hook-file-count'));
+		const textContainer = DOM.append(leftSection, $('.hook-file-text'));
+		const nameRow = DOM.append(textContainer, $('.hook-file-name-row'));
+		const label = DOM.append(nameRow, $('.hook-file-label'));
+		const count = DOM.append(nameRow, $('.hook-file-count'));
+		const description = DOM.append(textContainer, $('.hook-file-description'));
 
 		const actionsContainer = DOM.append(container, $('.item-right'));
 		const actionBar = disposables.add(new ActionBar(actionsContainer, {
 			actionViewItemProvider: createActionViewItem.bind(undefined, this.instantiationService),
 		}));
 
-		return { container, chevron, icon, label, count, actionsContainer, actionBar, disposables, elementDisposables };
+		return { container, chevron, icon, label, description, count, actionsContainer, actionBar, disposables, elementDisposables };
 	}
 
 	renderElement(element: IHookFileEntry, _index: number, templateData: IHookFileHeaderTemplateData): void {
@@ -306,6 +310,16 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 		// Count
 		const childCount = item.hookChildren?.length ?? 0;
 		templateData.count.textContent = childCount > 0 ? `${childCount}` : '';
+
+		// Secondary text (file path)
+		const secondaryText = getCustomizationSecondaryText(item.description, item.filename, item.promptType);
+		if (secondaryText) {
+			templateData.description.textContent = secondaryText;
+			templateData.description.style.display = '';
+		} else {
+			templateData.description.textContent = '';
+			templateData.description.style.display = 'none';
+		}
 
 		// Disabled styling
 		templateData.container.classList.toggle('disabled', item.disabled);
@@ -583,7 +597,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		templateData.nameLabel.set(displayName, element.nameMatches);
 
 		// Optional inline badge (e.g. "always added", "*.ts")
-		if (element.badge && !element.disabled) {
+		if (element.badge) {
 			templateData.badge.textContent = element.badge;
 			templateData.badge.style.display = '';
 			if (element.badgeTooltip) {
@@ -1532,10 +1546,15 @@ export class AICustomizationListWidget extends Disposable {
 
 			const collapsed = this.collapsedGroups.has(group.groupKey);
 
-			// For hooks, count the total number of individual hooks across all files
+			// For hooks, count the total number of individual hooks across all files,
+			// excluding files that don't contribute any hooks.
 			const itemCount = isHookSection
-				? group.items.reduce((sum, item) => sum + (item.hookChildren?.length || 1), 0)
+				? group.items.reduce((sum, item) => sum + (item.hookChildren?.length ?? 0), 0)
 				: group.items.length;
+
+			if (isHookSection && itemCount === 0) {
+				continue;
+			}
 
 			this.displayEntries.push({
 				type: 'group-header',
@@ -1561,6 +1580,9 @@ export class AICustomizationListWidget extends Disposable {
 								this.displayEntries.push({ type: 'hook-child', parentItem: item, child });
 							}
 						}
+					} else if (isHookSection) {
+						// Hide hook files that don't contribute any hooks
+						continue;
 					} else {
 						this.displayEntries.push({ type: 'file-item', item });
 					}

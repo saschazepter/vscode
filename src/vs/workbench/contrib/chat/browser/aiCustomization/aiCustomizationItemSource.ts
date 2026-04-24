@@ -140,6 +140,65 @@ export function getFriendlyName(filename: string): string {
 }
 
 /**
+ * Derives a friendly display name for a hook settings file based on its path.
+ *
+ * Recognizes well-known tool directories (`.claude`, `.copilot`, `.vscode-insiders`, etc.)
+ * combined with well-known file stems (`settings`) and produces contextual names:
+ * - `~/.claude/settings.json`       → "Claude User Settings"
+ * - `.claude/settings.json`         → "Claude Settings"
+ * - `.claude/settings.local.json`   → "Claude Settings (Local)"
+ * - `.github/hooks/hooks.json`      → "hooks"
+ */
+export function getHookFileFriendlyName(uriPath: string, storage?: PromptsStorage): string {
+	const segments = uriPath.split('/');
+	const filename = segments[segments.length - 1] || '';
+
+	// Strip the .json extension to get the base stem
+	const stem = filename.replace(/\.json$/i, '') || filename;
+
+	// Check for .local suffix (e.g. settings.local.json → "settings")
+	const localMatch = stem.match(/^(.+)\.local$/i);
+	const coreStem = localMatch ? localMatch[1] : stem;
+
+	// Only apply tool-directory naming for well-known file stems
+	const wellKnownStems = new Set(['settings']);
+	if (wellKnownStems.has(coreStem.toLowerCase())) {
+		// Look for a known tool directory in the path (e.g. .claude, .copilot)
+		const toolDirMap: Record<string, string> = {
+			'.claude': 'Claude',
+			'.copilot': 'Copilot',
+			'.github': 'Copilot',
+		};
+
+		for (let i = segments.length - 2; i >= 0; i--) {
+			const toolLabel = toolDirMap[segments[i]];
+			if (!toolLabel) {
+				continue;
+			}
+
+			// Detect user-level vs workspace-level from storage
+			const isUserLevel = storage === PromptsStorage.user;
+
+			const titleCased = coreStem
+				.replace(/[-_]/g, ' ')
+				.replace(/\b\w/g, c => c.toUpperCase());
+
+			let name = isUserLevel
+				? `${toolLabel} User ${titleCased}`
+				: `${toolLabel} ${titleCased}`;
+
+			if (localMatch) {
+				name += ' (Local)';
+			}
+			return name;
+		}
+	}
+
+	// Default: just return the stem as-is
+	return stem;
+}
+
+/**
  * Expands hook file items into file-level entries with parsed child hooks.
  * Each file becomes a single item with `hookChildren` describing the
  * individual hooks within. Falls back to the original item (no children)
@@ -483,9 +542,16 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			for (const file of discovery.files) {
 				if (disabledUris.has(file.promptPath.uri) && !existingUris.has(file.promptPath.uri)) {
 					resolvedUris.add(file.promptPath.uri);
-					const name = promptType === PromptsType.skill
-						? (file.promptPath.name || basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri))
-						: (file.promptPath.name || getFriendlyName(basename(file.promptPath.uri)));
+					let name: string;
+					if (file.promptPath.name) {
+						name = file.promptPath.name;
+					} else if (promptType === PromptsType.skill) {
+						name = basename(dirname(file.promptPath.uri)) || basename(file.promptPath.uri);
+					} else if (promptType === PromptsType.hook) {
+						name = getHookFileFriendlyName(file.promptPath.uri.path, file.promptPath.storage);
+					} else {
+						name = getFriendlyName(basename(file.promptPath.uri));
+					}
 					missingItems.push({
 						uri: file.promptPath.uri,
 						type: promptType,
@@ -502,9 +568,14 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		// Fallback for disabled URIs not found in discovery info
 		for (const uri of disabledUris) {
 			if (!existingUris.has(uri) && !resolvedUris.has(uri)) {
-				const name = promptType === PromptsType.skill
-					? (basename(dirname(uri)) || basename(uri))
-					: getFriendlyName(basename(uri));
+				let name: string;
+				if (promptType === PromptsType.skill) {
+					name = basename(dirname(uri)) || basename(uri);
+				} else if (promptType === PromptsType.hook) {
+					name = getHookFileFriendlyName(uri.path);
+				} else {
+					name = getFriendlyName(basename(uri));
+				}
 				missingItems.push({
 					uri,
 					type: promptType,

@@ -435,7 +435,8 @@
 
 .ai-customization-list-item.disabled .item-name,
 .ai-customization-list-item.disabled .item-description,
-.ai-customization-list-item.disabled .item-type-icon {
+.ai-customization-list-item.disabled .item-type-icon,
+.ai-customization-list-item.disabled .item-badge {
 	opacity: 0.5;
 }
 
@@ -1187,7 +1188,8 @@
 }
 
 .ai-customization-hook-file-header.disabled .hook-file-label,
-.ai-customization-hook-file-header.disabled .hook-file-icon {
+.ai-customization-hook-file-header.disabled .hook-file-icon,
+.ai-customization-hook-file-header.disabled .hook-file-description {
 	opacity: 0.5;
 }
 
@@ -1198,6 +1200,30 @@
 	overflow: hidden;
 	gap: 6px;
 	min-width: 0;
+}
+
+.ai-customization-hook-file-header .hook-file-text {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	flex: 1;
+	min-width: 0;
+}
+
+.ai-customization-hook-file-header .hook-file-name-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	overflow: hidden;
+}
+
+.ai-customization-hook-file-header .hook-file-description {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 14px;
 }
 
 .ai-customization-hook-file-header .hook-file-chevron {
