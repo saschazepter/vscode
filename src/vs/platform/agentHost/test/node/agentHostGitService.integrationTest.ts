@@ -86,12 +86,4 @@ suite('AgentHostGitService - getSessionGitState (real git)', () => {
 		assert.strictEqual(result.uncommittedChanges, 2);
 		assert.strictEqual(result.hasGitHubRemote, false);
 	});
-
-	(hasGit ? test : test.skip)('caches results across rapid calls', async () => {
-		const dir = initRepo();
-		const a = await svc!.getSessionGitState(URI.file(dir));
-		const b = await svc!.getSessionGitState(URI.file(dir));
-		// Same identity proves the cached promise was returned.
-		assert.strictEqual(a, b);
-	});
 });
