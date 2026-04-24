@@ -5,7 +5,7 @@
 use super::paths::{InstalledServer, ServerPaths};
 use crate::async_pipe::get_socket_name;
 use crate::constants::{
-	AGENTS_WEB_URL, APPLICATION_NAME, EDITOR_WEB_URL, QUALITYLESS_PRODUCT_NAME,
+	AGENTS_WEB_URL, APPLICATION_NAME, COLORS_ENABLED, EDITOR_WEB_URL, QUALITYLESS_PRODUCT_NAME,
 	QUALITYLESS_SERVER_NAME,
 };
 use crate::download_cache::DownloadCache;
@@ -836,12 +836,48 @@ pub fn print_listening(log: &log::Logger, tunnel_name: &str) {
 		}
 	}
 
-	log.result(&format!("\nOpen VS Code in your browser {addr}"));
+	let use_colors = *COLORS_ENABLED;
+
+	// Helper to wrap a URL in an OSC 8 clickable hyperlink when colors are enabled.
+	let hyperlink = |url: &str| -> String {
+		if use_colors {
+			format!("\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\")
+		} else {
+			url.to_string()
+		}
+	};
+
+	// Helper to format a labeled link line with an arrow prefix.
+	let link_line = |label: &str, url: &str| -> String {
+		if use_colors {
+			format!("  \x1b[1m\x1b[32m➜\x1b[0m  {label}  {}", hyperlink(url))
+		} else {
+			format!("  ->  {label}  {url}")
+		}
+	};
+
+	// "✔ Tunnel <name> is ready"
+	let ready_line = if use_colors {
+		format!("\n\x1b[1m\x1b[32m✔\x1b[0m Tunnel \x1b[1m{tunnel_name}\x1b[0m is ready")
+	} else {
+		format!("\nTunnel {tunnel_name} is ready")
+	};
+	log.result(&ready_line);
+	log.result("");
+
+	log.result(&link_line("Open VS Code in your browser", addr.as_str()));
 
 	if let Some(agents_url) = AGENTS_WEB_URL {
-		log.result(&format!("Open Agents in your browser {agents_url}"));
+		log.result(&link_line("Open Agents in your browser", agents_url));
 	}
 
+	// Hint: how to stop the tunnel
+	let hint = if use_colors {
+		"\n\x1b[2mPress Ctrl+C to stop the tunnel\x1b[0m".to_string()
+	} else {
+		"\nPress Ctrl+C to stop the tunnel".to_string()
+	};
+	log.result(&hint);
 	log.result("");
 }
 
