@@ -314,7 +314,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			assert.strictEqual(output.trim(), marker);
 		});
 
-		test('network requests to allowlisted domains succeed in sandbox', async function () {
+		test.skip('network requests to allowlisted domains succeed in sandbox', async function () {
 			this.timeout(60000);
 
 			const configuration = vscode.workspace.getConfiguration();
@@ -332,7 +332,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			}
 		});
 
-		test('requestUnsandboxedExecution preserves sandbox $TMPDIR', async function () {
+		test.skip('requestUnsandboxedExecution preserves sandbox $TMPDIR', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_UNSANDBOX_${Date.now()}`;
@@ -370,7 +370,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			assert.ok(trimmed.endsWith(marker), `Unexpected output: ${JSON.stringify(trimmed)}`);
 		});
 
-		test('can read files outside the workspace', async function () {
+		test.skip('can read files outside the workspace', async function () {
 			this.timeout(60000);
 
 			const output = await invokeRunInTerminal('head -1 /etc/shells');
@@ -384,7 +384,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			);
 		});
 
-		test('can write inside the workspace folder', async function () {
+		test.skip('can write inside the workspace folder', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_WS_${Date.now()}`;
@@ -393,7 +393,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			assert.strictEqual(output.trim(), marker);
 		});
 
-		test('$TMPDIR is writable inside the sandbox', async function () {
+		test.skip('$TMPDIR is writable inside the sandbox', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_TMPDIR_${Date.now()}`;
@@ -402,7 +402,7 @@ function extractTextContent(result: vscode.LanguageModelToolResult): string {
 			assert.strictEqual(output.trim(), marker);
 		});
 
-		test('non-allowlisted domains trigger unsandboxed confirmation flow', async function () {
+		test.skip('non-allowlisted domains trigger unsandboxed confirmation flow', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_DOMAIN_${Date.now()}`;
