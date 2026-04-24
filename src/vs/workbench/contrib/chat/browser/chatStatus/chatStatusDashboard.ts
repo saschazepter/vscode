@@ -41,6 +41,7 @@ import { IChatEntitlementService, ChatEntitlementService, ChatEntitlement, IQuot
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { isNewUser } from './chatStatus.js';
 import { IChatStatusItemService, ChatStatusEntry } from './chatStatusItemService.js';
+import { IChatStatusDashboardSection, IChatStatusDashboardSectionService } from './chatStatusDashboardSectionService.js';
 import product from '../../../../../platform/product/common/product.js';
 import { contrastBorder, inputValidationErrorBorder, inputValidationInfoBorder, inputValidationWarningBorder, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { Color } from '../../../../../base/common/color.js';
@@ -139,6 +140,7 @@ export class ChatStatusDashboard extends DomWidget {
 		private readonly options: IChatStatusDashboardOptions | undefined,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@IChatStatusItemService private readonly chatStatusItemService: IChatStatusItemService,
+		@IChatStatusDashboardSectionService private readonly chatStatusDashboardSectionService: IChatStatusDashboardSectionService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -190,6 +192,7 @@ export class ChatStatusDashboard extends DomWidget {
 		const updatePromise = this.chatEntitlementService.update(token);
 
 		// Tabbed layout when both Usage and Inline Suggestions sections are available
+		let usageContainer: HTMLElement = this.element;
 		if (hasVisibleUsageContent && hasInlineSuggestionsSection) {
 			const usageContent = $('div.tab-content.active');
 			usageContent.setAttribute('role', 'tabpanel');
@@ -256,6 +259,7 @@ export class ChatStatusDashboard extends DomWidget {
 
 			this.renderUsageContent(usageContent, token, updatePromise);
 			this.renderInlineSuggestionsContent(inlineSuggestionsContent, token, updatePromise);
+			usageContainer = usageContent;
 		} else if (hasVisibleUsageContent) {
 			this.renderUsageContent(this.element, token, updatePromise);
 		} else if (hasInlineSuggestionsSection) {
@@ -284,6 +288,12 @@ export class ChatStatusDashboard extends DomWidget {
 					}
 				}));
 			}
+		}
+
+		// Collapsible contributed sections (e.g. AI usage metrics) — only in the Usage tab
+		for (const section of this.chatStatusDashboardSectionService.getSections()) {
+			usageContainer.appendChild($('hr'));
+			usageContainer.appendChild(this.renderCollapsibleSection(section));
 		}
 
 		// New to Chat / Signed out
@@ -487,6 +497,31 @@ export class ChatStatusDashboard extends DomWidget {
 			const toolbar = disposables.add(new ActionBar(header, { hoverDelegate: nativeHoverDelegate }));
 			toolbar.push([action], { icon: true, label: false });
 		}
+	}
+
+	private renderCollapsibleSection(section: IChatStatusDashboardSection): HTMLElement {
+		const container = $('div.collapsible-section');
+		let open = section.initialOpen ?? true;
+		container.classList.toggle('open', open);
+
+		const summary = $<HTMLButtonElement>('button.collapsible-section-summary');
+		summary.setAttribute('type', 'button');
+		container.appendChild(summary);
+		summary.setAttribute('aria-expanded', String(open));
+		summary.textContent = section.title;
+
+		// Animated wrapper: uses grid-template-rows 0fr -> 1fr to animate height auto.
+		const bodyWrapper = container.appendChild($('div.collapsible-section-body-wrapper'));
+		const body = bodyWrapper.appendChild($('div.collapsible-section-body'));
+		this._store.add(section.render(body));
+
+		this._store.add(addDisposableListener(summary, EventType.CLICK, () => {
+			open = !open;
+			container.classList.toggle('open', open);
+			summary.setAttribute('aria-expanded', String(open));
+		}));
+
+		return container;
 	}
 
 	private renderContributedChatStatusItem(item: ChatStatusEntry): { element: HTMLElement; disposables: DisposableStore } {

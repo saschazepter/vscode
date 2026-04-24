@@ -409,3 +409,45 @@
 	opacity: 0.6;
 	padding: 0 2px;
 }
+
+
+/* Collapsible contributed sections */
+.chat-status-bar-entry-tooltip .collapsible-section {
+	margin-top: 4px;
+}
+
+.chat-status-bar-entry-tooltip .collapsible-section > .collapsible-section-summary {
+	cursor: pointer;
+	color: var(--vscode-descriptionForeground);
+	font-weight: 600;
+	margin-bottom: 4px;
+	display: flex;
+	align-items: center;
+	user-select: none;
+	outline-offset: 2px;
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	text-align: left;
+	width: 100%;
+}
+
+.chat-status-bar-entry-tooltip .collapsible-section > .collapsible-section-summary::before {
+	font-family: codicon;
+	font-size: 14px;
+	margin-right: 4px;
+	content: '\eab6'; /* chevron-right */
+	transition: transform 150ms ease-in-out;
+}
+
+.chat-status-bar-entry-tooltip .collapsible-section.open > .collapsible-section-summary::before {
+	transform: rotate(90deg);
+}
+
+/* Body uses display:none when collapsed so the popup height changes in a single
+ * layout pass. The hover widget repositions in response to the size change, which
+ * keeps the popup anchored to the status bar instead of detaching from it. */
+.chat-status-bar-entry-tooltip .collapsible-section:not(.open) > .collapsible-section-body-wrapper {
+	display: none;
+}

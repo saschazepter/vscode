@@ -187,6 +187,14 @@ export class HoverWidget extends Widget implements IHoverWidget {
 			contentsElement.appendChild(options.content);
 			contentsElement.classList.add('html-hover-contents');
 
+			// Observe size changes for HTML content (e.g. collapsible sections) and
+			// request a re-layout so the hover position stays anchored to its target.
+			const resizeObserver = this._register(new dom.DisposableResizeObserver(() => {
+				this.layout();
+				this._onRequestLayout.fire();
+			}));
+			this._register(resizeObserver.observe(options.content));
+
 		} else {
 			const markdown = options.content;
 

@@ -6,27 +6,23 @@
 import { TaskQueue, timeout } from '../../../../../base/common/async.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { autorun, derived, IObservable, observableValue } from '../../../../../base/common/observable.js';
-import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { localize } from '../../../../../nls.js';
+import { IChatStatusDashboardSectionService } from '../../../chat/browser/chatStatus/chatStatusDashboardSectionService.js';
 import { IChatModel, IChatRequestModel } from '../../../chat/common/model/chatModel.js';
 import { IChatService } from '../../../chat/common/chatService/chatService.js';
-import { AiStatsStatusBar } from './aiStatsStatusBar.js';
-
-export type AiStatsRange = '30d' | '7d';
+import { createAiStatsHover } from './aiStatsView.js';
 
 export interface IAiStatsOverview {
-	readonly sessions: number;
-	readonly messages: number;
 	readonly totalTokens: number;
-	readonly activeDays: number;
+	/** Mean tokens per active day (days with at least one chat request) within the range. */
+	readonly avgTokensPerDay: number;
 	readonly currentStreak: number;
-	readonly longestStreak: number;
-	/** Hour of day with the most requests (0-23), or undefined if no data. */
-	readonly peakHour: number | undefined;
 	/** Identifier of the most-used model in the range, or undefined if no data. */
 	readonly favoriteModel: string | undefined;
-	/** 7 rows (Sun..Sat) by 24 cols (hour of day) with request counts. */
-	readonly heatmap: ReadonlyArray<ReadonlyArray<number>>;
+	/** Day with the highest token usage in the range, or undefined if no data. */
+	readonly topDay: { readonly dateMs: number; readonly tokens: number } | undefined;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,25 +35,17 @@ interface IDayBucket {
 }
 
 interface IAiStatsData {
-	/** Session ids we've already counted (capped). */
-	seenSessions: string[];
 	/** Day bucket keyed by yyyymmdd (local time). */
 	days: { [day: string]: IDayBucket };
 }
 
 const MAX_DAYS_RETAINED = 30;
-// Generous bound for distinct sessions seen within the retention window;
-// sized so heavy users won't hit it before old day buckets age out.
-const MAX_SEEN_SESSIONS = 2_000;
 
 export class AiStatsFeature extends Disposable {
 
 	private readonly _data: IValue<IAiStatsData>;
 	private readonly _dataVersion = observableValue(this, 0);
 	private readonly _recomputeTick = observableValue(this, 0);
-	private readonly _seen = new Set<string>();
-
-	readonly range = observableValue<AiStatsRange>(this, '30d');
 
 	/**
 	 * Bumps the {@link overview} derived so callers (e.g. the status bar hover)
@@ -71,19 +59,13 @@ export class AiStatsFeature extends Disposable {
 	constructor(
 		@IStorageService private readonly _storageService: IStorageService,
 		@IChatService private readonly _chatService: IChatService,
-		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IChatStatusDashboardSectionService private readonly _sectionService: IChatStatusDashboardSectionService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 
 		const storedValue = getStoredValue<IAiStatsData>(this._storageService, 'chatUsageStats', StorageScope.PROFILE, StorageTarget.USER);
 		this._data = rateLimitWrite(storedValue, 1, this._store);
-
-		const initial = this._data.getValue();
-		if (initial?.seenSessions) {
-			for (const id of initial.seenSessions) {
-				this._seen.add(id);
-			}
-		}
 
 		// Listen to all chat models, current and future
 		this._register(autorun(reader => {
@@ -93,8 +75,37 @@ export class AiStatsFeature extends Disposable {
 			}
 		}));
 
-		// Status bar entry
-		this._register(this._instantiationService.createInstance(AiStatsStatusBar, this));
+		// Register a collapsible section in the Copilot status menu
+		this._register(this._sectionService.registerSection({
+			id: 'aiStats',
+			title: localize('aiStats.section', "Metrics"),
+			render: container => {
+				this.triggerRecompute();
+				this._sendOpenTelemetry();
+				const store = new DisposableStore();
+				const elem = createAiStatsHover({
+					data: this,
+				}).keepUpdated(store);
+				container.appendChild(elem.element);
+				return store;
+			}
+		}));
+	}
+
+	private _sendOpenTelemetry(): void {
+		const overview = this.overview.get();
+		this._telemetryService.publicLog2<{
+			totalTokens: number;
+			avgTokensPerDay: number;
+		}, {
+			owner: 'hediet';
+			comment: 'Fired when the AI usage stats section is rendered in the Copilot status menu';
+			totalTokens: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Total completion tokens counted' };
+			avgTokensPerDay: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Mean tokens per active day in range' };
+		}>('aiStatsStatusBar.hover', {
+			totalTokens: overview.totalTokens,
+			avgTokensPerDay: overview.avgTokensPerDay,
+		});
 	}
 
 	private _observeModel(model: IChatModel): DisposableStore {
@@ -133,12 +144,6 @@ export class AiStatsFeature extends Disposable {
 	}
 
 	private _recordRequest(request: IChatRequestModel): void {
-		const sessionId = request.session.sessionId;
-		const isNewSession = !this._seen.has(sessionId);
-		if (isNewSession) {
-			this._seen.add(sessionId);
-		}
-
 		const data = this._getData();
 		const ts = request.timestamp ?? Date.now();
 		const date = new Date(ts);
@@ -148,15 +153,6 @@ export class AiStatsFeature extends Disposable {
 		const modelId = request.modelId;
 		if (modelId) {
 			bucket.modelCounts[modelId] = (bucket.modelCounts[modelId] ?? 0) + 1;
-		}
-		if (isNewSession) {
-			data.seenSessions.push(sessionId);
-			if (data.seenSessions.length > MAX_SEEN_SESSIONS) {
-				const removed = data.seenSessions.splice(0, data.seenSessions.length - MAX_SEEN_SESSIONS);
-				for (const id of removed) {
-					this._seen.delete(id);
-				}
-			}
 		}
 		this._persist(data);
 	}
@@ -170,7 +166,7 @@ export class AiStatsFeature extends Disposable {
 	}
 
 	private _getData(): IAiStatsData {
-		return this._data.getValue() ?? { seenSessions: [], days: {} };
+		return this._data.getValue() ?? { days: {} };
 	}
 
 	private _getDayBucket(data: IAiStatsData, date: Date): IDayBucket {
@@ -215,8 +211,7 @@ export class AiStatsFeature extends Disposable {
 	readonly overview: IObservable<IAiStatsOverview> = derived(this, reader => {
 		this._dataVersion.read(reader);
 		this._recomputeTick.read(reader);
-		const range = this.range.read(reader);
-		return computeOverview(this._getData(), this._seen.size, range, Date.now());
+		return computeOverview(this._getData(), Date.now());
 	});
 }
 
@@ -231,32 +226,24 @@ function dayKeyFromTimestamp(ts: number): string {
 	return dayKey(new Date(ts));
 }
 
-export function computeOverview(data: IAiStatsData, totalSessions: number, range: AiStatsRange, now: number): IAiStatsOverview {
+export function computeOverview(data: IAiStatsData, now: number): IAiStatsOverview {
 	const startOfToday = new Date(now);
 	startOfToday.setHours(0, 0, 0, 0);
 
-	const cutoff = range === '7d'
-		? startOfToday.getTime() - 6 * DAY_MS
-		: startOfToday.getTime() - 29 * DAY_MS;
+	const cutoff = startOfToday.getTime() - 29 * DAY_MS;
 
 	const allKeys = Object.keys(data.days).sort();
 	const includedKeys = allKeys.filter(k => parseDayKey(k) >= cutoff);
 
-	let messages = 0;
 	let tokens = 0;
-	const hourTotals = new Array<number>(24).fill(0);
 	const modelTotals = new Map<string, number>();
-	const heatmap: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
+	let topDay: { dateMs: number; tokens: number } | undefined;
 
 	for (const key of includedKeys) {
 		const bucket = data.days[key];
-		messages += bucket.requests;
 		tokens += bucket.tokens;
-		const dow = new Date(parseDayKey(key)).getDay();
-		for (let h = 0; h < 24; h++) {
-			const v = bucket.hourBuckets?.[h] ?? 0;
-			hourTotals[h] += v;
-			heatmap[dow][h] += v;
+		if (bucket.tokens > 0 && (!topDay || bucket.tokens > topDay.tokens)) {
+			topDay = { dateMs: parseDayKey(key), tokens: bucket.tokens };
 		}
 		if (bucket.modelCounts) {
 			for (const [m, c] of Object.entries(bucket.modelCounts)) {
@@ -265,20 +252,15 @@ export function computeOverview(data: IAiStatsData, totalSessions: number, range
 		}
 	}
 
-	const activeDays = includedKeys.filter(k => data.days[k].requests > 0).length;
+	// Current streak computed within the included range
+	const activeDayKeys = includedKeys.filter(k => data.days[k].requests > 0);
+	const activeDaySet = new Set(activeDayKeys);
+	const currentStreak = computeCurrentStreak(activeDaySet, startOfToday.getTime(), cutoff);
 
-	// Streaks computed within the included range
-	const activeDaySet = new Set(includedKeys.filter(k => data.days[k].requests > 0));
-	const { current, longest } = computeStreaks(activeDaySet, startOfToday.getTime(), cutoff);
-
-	let peakHour: number | undefined;
-	let peakHourValue = 0;
-	for (let h = 0; h < 24; h++) {
-		if (hourTotals[h] > peakHourValue) {
-			peakHourValue = hourTotals[h];
-			peakHour = h;
-		}
-	}
+	// Average tokens per active day (days with at least one chat request).
+	const avgTokensPerDay = activeDayKeys.length > 0
+		? Math.round(tokens / activeDayKeys.length)
+		: 0;
 
 	let favoriteModel: string | undefined;
 	let favoriteCount = 0;
@@ -289,20 +271,12 @@ export function computeOverview(data: IAiStatsData, totalSessions: number, range
 		}
 	}
 
-	// Sessions is range-aware: approximate by capping total seen sessions by messages
-	// (a session has at least 1 message in the range to be counted).
-	const sessions = Math.min(totalSessions, messages);
-
 	return {
-		sessions,
-		messages,
 		totalTokens: tokens,
-		activeDays,
-		currentStreak: current,
-		longestStreak: longest,
-		peakHour,
+		avgTokensPerDay,
+		currentStreak,
 		favoriteModel,
-		heatmap,
+		topDay,
 	};
 }
 
@@ -313,7 +287,7 @@ function parseDayKey(key: string): number {
 	return new Date(y, m, d).getTime();
 }
 
-function computeStreaks(activeDays: ReadonlySet<string>, todayMs: number, cutoff: number | undefined): { current: number; longest: number } {
+function computeCurrentStreak(activeDays: ReadonlySet<string>, todayMs: number, cutoff: number | undefined): number {
 	// Current streak: consecutive trailing days ending today (or yesterday if today not active)
 	let current = 0;
 	let cursor = todayMs;
@@ -328,26 +302,7 @@ function computeStreaks(activeDays: ReadonlySet<string>, todayMs: number, cutoff
 		current++;
 		cursor -= DAY_MS;
 	}
-
-	// Longest streak inside range
-	const sortedKeys = Array.from(activeDays).sort();
-	let longest = 0;
-	let run = 0;
-	let prevTs: number | undefined;
-	for (const key of sortedKeys) {
-		const ts = parseDayKey(key);
-		if (prevTs !== undefined && ts - prevTs === DAY_MS) {
-			run++;
-		} else {
-			run = 1;
-		}
-		if (run > longest) {
-			longest = run;
-		}
-		prevTs = ts;
-	}
-
-	return { current, longest };
+	return current;
 }
 
 interface IValue<T> {
