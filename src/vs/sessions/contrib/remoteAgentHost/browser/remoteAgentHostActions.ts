@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { IRemoteAgentHostService, parseRemoteAgentHostInput, RemoteAgentHostEntryType, RemoteAgentHostInputValidationError, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ISSHRemoteAgentHostService, SSHAuthMethod, type ISSHAgentHostConfig, type ISSHAgentHostConnection, type ISSHResolvedConfig } from '../../../../platform/agentHost/common/sshRemoteAgentHost.js';
 import { ITunnelAgentHostService, TUNNEL_ADDRESS_PREFIX, type ITunnelInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
@@ -467,10 +468,15 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.sessions.connectViaSSH',
-			title: localize2('connectViaSSH', "Connect to Remote Agent Host via SSH"),
+			title: localize2('connectViaSSH', "SSH..."),
 			category: SessionsCategories.Sessions,
 			f1: true,
+			icon: Codicon.remote,
 			precondition: ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
+			menu: {
+				id: MenuId.SessionWorkspacePickerManage,
+				order: 20,
+			},
 		});
 	}
 
@@ -646,10 +652,15 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.sessions.connectViaTunnel',
-			title: localize2('connectViaTunnel', "Connect to Remote Agent Host via Dev Tunnel"),
+			title: localize2('connectViaTunnel', "Tunnels..."),
 			category: SessionsCategories.Sessions,
 			f1: true,
+			icon: Codicon.cloud,
 			precondition: ContextKeyExpr.equals(`config.${RemoteAgentHostsEnabledSettingId}`, true),
+			menu: {
+				id: MenuId.SessionWorkspacePickerManage,
+				order: 10,
+			},
 		});
 	}
 
