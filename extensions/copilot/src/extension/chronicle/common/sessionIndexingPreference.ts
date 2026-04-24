@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
+import picomatch from 'picomatch';
 
 /**
  * Session indexing levels for cloud sync.
@@ -41,10 +42,25 @@ export class SessionIndexingPreference {
 	}
 
 	/**
-	 * Check if session sync is enabled.
-	 * Reads the core setting `chat.sessionSync.enabled`.
+	 * Check if session sync is enabled for a given repo.
+	 * Returns true if `chat.sessionSync.enabled` is true AND the repo is not excluded.
 	 */
-	hasCloudConsent(_repoNwo?: string): boolean {
-		return this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
+	hasCloudConsent(repoNwo?: string): boolean {
+		if (!(this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false)) {
+			return false;
+		}
+
+		if (repoNwo) {
+			const excludePatterns = this._configService.getNonExtensionConfig<string[]>('chat.sessionSync.excludeRepositories');
+			if (excludePatterns && excludePatterns.length > 0) {
+				for (const pattern of excludePatterns) {
+					if (pattern === repoNwo || picomatch.isMatch(repoNwo, pattern)) {
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
 	}
 }

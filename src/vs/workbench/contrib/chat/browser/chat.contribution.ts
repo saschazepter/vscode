@@ -488,6 +488,13 @@ configurationRegistry.registerConfiguration({
 				},
 			}
 		},
+		[ChatConfiguration.SessionSyncExcludeRepositories]: {
+			type: 'array',
+			items: { type: 'string' },
+			default: [],
+			markdownDescription: nls.localize('chat.sessionSync.excludeRepositories', "Repository patterns to exclude from session sync. Use exact `owner/repo` names or glob patterns like `my-org/*`. Sessions from matching repositories will only be stored locally."),
+			tags: ['experimental'],
+		},
 		[ChatConfiguration.AutoApproveEdits]: {
 			default: {
 				'**/*': true,
