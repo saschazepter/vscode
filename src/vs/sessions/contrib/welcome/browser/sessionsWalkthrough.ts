@@ -364,7 +364,8 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		}
 
 		try {
-			const scopes = this.productService.defaultChatAgent?.providerScopes?.[0] ?? [];
+			const scopes = this.productService.defaultChatAgent?.providerScopes?.[0]
+				?? ['read:user', 'user:email', 'repo', 'workflow'];
 			await this.authenticationService.createSession('github', scopes, { activateImmediate: true });
 			this.complete();
 		} catch (err) {
