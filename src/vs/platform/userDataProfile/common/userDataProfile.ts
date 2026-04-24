@@ -77,6 +77,7 @@ export function isUserDataProfile(thing: unknown): thing is IUserDataProfile {
 		&& URI.isUri(candidate.promptsHome)
 		&& URI.isUri(candidate.extensionsResource)
 		&& URI.isUri(candidate.mcpResource)
+		&& URI.isUri(candidate.agentPluginsHome)
 	);
 }
 
