@@ -11,6 +11,11 @@
 	position: relative;
 }
 
+.sessions-new-chat-editor {
+	height: 100%;
+	width: 100%;
+}
+
 .new-chat-widget-container {
 	display: flex;
 	flex-direction: column;

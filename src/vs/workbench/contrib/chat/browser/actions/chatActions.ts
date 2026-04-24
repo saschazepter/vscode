@@ -38,7 +38,9 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { ActiveEditorContext } from '../../../../common/contextkeys.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
-import { ACTIVE_GROUP, AUX_WINDOW_GROUP, SIDE_GROUP } from '../../../../services/editor/common/editorService.js';
+import { ACTIVE_GROUP, AUX_WINDOW_GROUP, PreferredGroup, SIDE_GROUP } from '../../../../services/editor/common/editorService.js';
+import { IEditorGroupsService, IEditorPart, IModalEditorPart } from '../../../../services/editor/common/editorGroupsService.js';
+import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
 import { IPreferencesService } from '../../../../services/preferences/common/preferences.js';
@@ -95,6 +97,31 @@ const defaultChat = {
 	completionsAdvancedSetting: product.defaultChatAgent?.completionsAdvancedSetting ?? '',
 	completionsMenuCommand: product.defaultChatAgent?.completionsMenuCommand ?? '',
 };
+
+async function openNewChatEditor(accessor: ServicesAccessor): Promise<void> {
+	const widgetService = accessor.get(IChatWidgetService);
+	await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), getNewChatEditorTarget(accessor), { pinned: true } satisfies IChatEditorOptions);
+}
+
+function getNewChatEditorTarget(accessor: ServicesAccessor): PreferredGroup {
+	const environmentService = accessor.get(IWorkbenchEnvironmentService);
+	if (!environmentService.isSessionsWindow) {
+		return ACTIVE_GROUP;
+	}
+
+	const editorGroupsService = accessor.get(IEditorGroupsService);
+	const sessionsChatEditorPart = editorGroupsService.parts.find(part =>
+		part !== editorGroupsService.mainPart &&
+		part.windowId === editorGroupsService.mainPart.windowId &&
+		!isModalEditorPart(part)
+	);
+
+	return sessionsChatEditorPart?.activeGroup ?? ACTIVE_GROUP;
+}
+
+function isModalEditorPart(part: IEditorPart): part is IModalEditorPart {
+	return typeof (part as IModalEditorPart).modalElement !== 'undefined';
+}
 
 export interface IChatViewOpenOptions {
 	/**
@@ -668,8 +695,7 @@ export function registerChatActions() {
 		}
 
 		async run(accessor: ServicesAccessor) {
-			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), ACTIVE_GROUP, { pinned: true } satisfies IChatEditorOptions);
+			await openNewChatEditor(accessor);
 		}
 	});
 
@@ -692,8 +718,7 @@ export function registerChatActions() {
 		}
 
 		async run(accessor: ServicesAccessor) {
-			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), ACTIVE_GROUP, { pinned: true } satisfies IChatEditorOptions);
+			await openNewChatEditor(accessor);
 		}
 	});
 
@@ -716,8 +741,7 @@ export function registerChatActions() {
 		}
 
 		async run(accessor: ServicesAccessor) {
-			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), ACTIVE_GROUP, { pinned: true } satisfies IChatEditorOptions);
+			await openNewChatEditor(accessor);
 		}
 	});
 
@@ -740,8 +764,7 @@ export function registerChatActions() {
 		}
 
 		async run(accessor: ServicesAccessor) {
-			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), ACTIVE_GROUP, { pinned: true } satisfies IChatEditorOptions);
+			await openNewChatEditor(accessor);
 		}
 	});
 

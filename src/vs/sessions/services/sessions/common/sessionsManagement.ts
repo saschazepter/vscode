@@ -86,9 +86,10 @@ export interface ISessionsManagementService {
 
 	/**
 	 * Select an existing session as the active session.
-	 * Sets `isNewChatSession` context to false and opens the active chat belonging to the session.
+	 * Sets `isNewChatSession` context to false and opens the chats belonging to the session
+	 * unless `openChats` is false.
 	 */
-	openSession(sessionResource: URI, options?: { preserveFocus?: boolean }): Promise<void>;
+	openSession(sessionResource: URI, options?: { preserveFocus?: boolean; openChats?: boolean }): Promise<void>;
 
 	/**
 	 * Open a specific chat within a session.
@@ -97,8 +98,13 @@ export interface ISessionsManagementService {
 	openChat(session: ISession, chatUri: URI): Promise<void>;
 
 	/**
+	 * Opens all non-untitled chats belonging to the active session in the chat editor part.
+	 */
+	openActiveSessionChats(options?: { preserveFocus?: boolean }): Promise<void>;
+
+	/**
 	 * Switch to the new-session view.
-	 * No-op if the current session is already a new session.
+	 * Also reveals the new-session editor in the chat editor part.
 	 */
 	openNewSessionView(): void;
 

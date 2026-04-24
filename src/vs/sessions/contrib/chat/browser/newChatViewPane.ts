@@ -21,6 +21,7 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { localize } from '../../../../nls.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { ISession } from '../../../services/sessions/common/session.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
@@ -31,10 +32,11 @@ import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/co
 
 // #region --- New Chat Widget ---
 
-class NewChatWidget extends Disposable {
+export class NewChatWidget extends Disposable {
 
 	private readonly _workspacePicker: WorkspacePicker;
 	private readonly _newChatInput: NewChatInputWidget;
+	private _session: ISession | undefined;
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -123,6 +125,7 @@ class NewChatWidget extends Disposable {
 		if (!activeSession) {
 			return false;
 		}
+		this._session = activeSession;
 
 		const sessionWorkspace = activeSession.workspace.get();
 		if (sessionWorkspace) {
@@ -136,7 +139,7 @@ class NewChatWidget extends Disposable {
 	}
 
 	private _createNewSession(selection: IWorkspaceSelection, sessionTypeId: string | undefined): void {
-		this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
+		this._session = this.sessionsManagementService.createNewSession(selection.providerId, selection.workspace.repositories[0].uri, sessionTypeId);
 	}
 
 	/**
@@ -163,13 +166,14 @@ class NewChatWidget extends Disposable {
 	// --- Send ---
 
 	private async _send(query: string, attachedContext?: IChatRequestVariableEntry[]): Promise<void> {
-		const session = this.sessionsManagementService.activeSession.get();
+		const session = this._session ?? this.sessionsManagementService.activeSession.get();
 		if (!session) {
 			this._workspacePicker.showPicker();
 			return;
 		}
 		try {
 			await this.sessionsManagementService.sendAndCreateChat(session, { query, attachedContext });
+			this._session = this.sessionsManagementService.activeSession.get();
 		} catch (e) {
 			this.logService.error('Failed to send request:', e);
 		}
@@ -204,6 +208,7 @@ class NewChatWidget extends Disposable {
 	 */
 	private async _onWorkspaceSelected(selection: IWorkspaceSelection | undefined, sessionTypeId: string | undefined): Promise<void> {
 		if (!selection) {
+			this._session = undefined;
 			this.sessionsManagementService.unsetNewSession();
 			return;
 		}

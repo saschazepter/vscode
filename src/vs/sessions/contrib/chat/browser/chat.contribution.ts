@@ -12,6 +12,10 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewExtensions, WindowEnablement } from '../../../../workbench/common/views.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../../workbench/browser/editor.js';
+import { EditorExtensions } from '../../../../workbench/common/editor.js';
+import { ACTIVE_GROUP, IEditorService, PreferredGroup } from '../../../../workbench/services/editor/common/editorService.js';
+import { IEditorGroupsService, IEditorPart, IModalEditorPart } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IsNewChatInSessionContext, IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
@@ -34,10 +38,13 @@ import { NewChatInSessionViewPane, NewChatInSessionViewId } from './newChatInSes
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { AccessibleViewRegistry } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
 import { SessionsChatAccessibilityHelp } from './sessionsChatAccessibilityHelp.js';
 import { SessionsOpenerParticipantContribution } from './sessionsOpenerParticipant.js';
+import { NewChatEditor, NewChatEditorInput, NEW_CHAT_EDITOR_ID } from './newChatEditor.js';
+
+export const OPEN_NEW_CHAT_EDITOR_COMMAND_ID = 'workbench.action.sessions.openNewChatEditor';
 
 
 class NewChatInSessionsWindowAction extends Action2 {
@@ -66,6 +73,64 @@ class NewChatInSessionsWindowAction extends Action2 {
 }
 
 registerAction2(NewChatInSessionsWindowAction);
+
+class OpenNewChatEditorAction extends Action2 {
+
+	constructor() {
+		super({
+			id: OPEN_NEW_CHAT_EDITOR_COMMAND_ID,
+			title: localize2('sessions.openNewChatEditor', "Open New Session Editor"),
+			f1: false,
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const editorService = accessor.get(IEditorService);
+		await editorService.openEditor(NewChatEditorInput.getOrCreate(), { pinned: true }, getChatEditorTarget(accessor));
+	}
+}
+
+registerAction2(OpenNewChatEditorAction);
+
+class OpenNewChatEditorOnStartupContribution implements IWorkbenchContribution {
+
+	static readonly ID = 'sessions.openNewChatEditorOnStartup';
+
+	constructor(
+		@ISessionsManagementService sessionsManagementService: ISessionsManagementService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+	) {
+		if (IsNewChatSessionContext.getValue(contextKeyService)) {
+			sessionsManagementService.openNewSessionView();
+		}
+	}
+}
+
+function getChatEditorTarget(accessor: ServicesAccessor): PreferredGroup {
+	const editorGroupsService = accessor.get(IEditorGroupsService);
+	const chatEditorPart = editorGroupsService.parts.find(part =>
+		part !== editorGroupsService.mainPart &&
+		part.windowId === editorGroupsService.mainPart.windowId &&
+		!isModalEditorPart(part)
+	);
+
+	return chatEditorPart?.activeGroup ?? ACTIVE_GROUP;
+}
+
+function isModalEditorPart(part: IEditorPart): part is IModalEditorPart {
+	return typeof (part as IModalEditorPart).modalElement !== 'undefined';
+}
+
+Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
+	EditorPaneDescriptor.create(
+		NewChatEditor,
+		NEW_CHAT_EDITOR_ID,
+		localize('sessions.newChatEditor', "New Session")
+	),
+	[
+		new SyncDescriptor(NewChatEditorInput)
+	]
+);
 
 
 
@@ -147,6 +212,7 @@ registerAction2(BranchChatSessionAction);
 
 // register workbench contributions
 registerWorkbenchContribution2(RegisterChatViewContainerContribution.ID, RegisterChatViewContainerContribution, WorkbenchPhase.BlockStartup);
+registerWorkbenchContribution2(OpenNewChatEditorOnStartupContribution.ID, OpenNewChatEditorOnStartupContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(SessionsOpenerParticipantContribution.ID, SessionsOpenerParticipantContribution, WorkbenchPhase.BlockStartup);
 

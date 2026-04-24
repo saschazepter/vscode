@@ -91,6 +91,10 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 					this._saveWorkingSet(previousSession.resource);
 				}
 
+				if (session?.status.read(undefined) === SessionStatus.Untitled) {
+					return;
+				}
+
 				// Apply working set for current session
 				void this._applyWorkingSet(session?.resource);
 			}));
@@ -158,6 +162,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 				// event listener that listens to the editor close event to hide the editor
 				// part if there are no visible editors
 				await this._editorGroupsService.applyWorkingSet(workingSet, { preserveFocus });
+				await this._sessionManagementService.openActiveSessionChats({ preserveFocus });
 				return;
 			}
 
@@ -173,6 +178,7 @@ export class SessionWorkingSetController extends Disposable implements IWorkbenc
 			if (result && !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
 				this._layoutService.setPartHidden(false, Parts.EDITOR_PART);
 			}
+			await this._sessionManagementService.openActiveSessionChats({ preserveFocus });
 		});
 	}
 

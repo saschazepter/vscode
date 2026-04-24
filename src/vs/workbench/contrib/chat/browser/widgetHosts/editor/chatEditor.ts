@@ -23,9 +23,10 @@ import { IThemeService } from '../../../../../../platform/theme/common/themeServ
 import { AbstractEditorWithViewState } from '../../../../../browser/parts/editor/editorWithViewState.js';
 import { IEditorOpenContext } from '../../../../../common/editor.js';
 import { EditorInput } from '../../../../../common/editor/editorInput.js';
-import { EDITOR_DRAG_AND_DROP_BACKGROUND } from '../../../../../common/theme.js';
+import { EDITOR_DRAG_AND_DROP_BACKGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, SIDE_BAR_FOREGROUND } from '../../../../../common/theme.js';
 import { IEditorGroup, IEditorGroupsService } from '../../../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
+import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { IChatModel, IChatModelInputState, IExportableChatData, ISerializableChatData } from '../../../common/model/chatModel.js';
 import { IChatService } from '../../../common/chatService/chatService.js';
@@ -81,6 +82,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 		@ITextResourceConfigurationService textResourceConfigurationService: ITextResourceConfigurationService,
 		@IEditorService editorService: IEditorService,
 		@IEditorGroupsService editorGroupService: IEditorGroupsService,
+		@IWorkbenchEnvironmentService private readonly workbenchEnvironmentService: IWorkbenchEnvironmentService,
 	) {
 		super(ChatEditorInput.EditorID, group, ChatEditor.VIEW_STATE_KEY, telemetryService, instantiationService, storageService, textResourceConfigurationService, themeService, editorService, editorGroupService);
 	}
@@ -99,6 +101,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 		const scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, this.scopedContextKeyService])));
 		ChatContextKeys.inChatEditor.bindTo(this._scopedContextKeyService).set(true);
 
+		const isSessionsWindow = this.workbenchEnvironmentService.isSessionsWindow;
 		this._widget = this._register(
 			scopedInstantiationService.createInstance(
 				ChatWidget,
@@ -117,16 +120,27 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 						progressMessageAtBottomOfResponse: mode => mode !== ChatModeKind.Ask,
 					},
 					enableImplicitContext: true,
-					enableWorkingSet: 'explicit',
+					enableWorkingSet: isSessionsWindow ? 'implicit' : 'explicit',
 					supportsChangingModes: true,
+					dndContainer: isSessionsWindow ? parent : undefined,
+					inputEditorMinLines: isSessionsWindow ? 2 : undefined,
+					isSessionsWindow,
 				},
-				{
-					listForeground: editorForeground,
-					listBackground: editorBackground,
-					overlayBackground: EDITOR_DRAG_AND_DROP_BACKGROUND,
-					inputEditorBackground: inputBackground,
-					resultEditorBackground: editorBackground
-				}));
+				isSessionsWindow
+					? {
+						listForeground: SIDE_BAR_FOREGROUND,
+						listBackground: SIDE_BAR_BACKGROUND,
+						overlayBackground: SIDE_BAR_DRAG_AND_DROP_BACKGROUND,
+						inputEditorBackground: SIDE_BAR_BACKGROUND,
+						resultEditorBackground: editorBackground
+					}
+					: {
+						listForeground: editorForeground,
+						listBackground: editorBackground,
+						overlayBackground: EDITOR_DRAG_AND_DROP_BACKGROUND,
+						inputEditorBackground: inputBackground,
+						resultEditorBackground: editorBackground
+					}));
 		this._register(this.widget.onDidSubmitAgent(() => {
 			this.group.pinEditor(this.input);
 		}));

@@ -8,11 +8,14 @@ import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../.
 import { ResourceMap } from '../../../../base/common/map.js';
 import { IObservable, ISettableObservable, autorun, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { ACTIVE_GROUP, PreferredGroup } from '../../../../workbench/services/editor/common/editorService.js';
+import { IEditorGroupsService, IEditorPart, IModalEditorPart } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ActiveSessionProviderIdContext, ActiveSessionTypeContext, IsActiveSessionArchivedContext, IsActiveSessionBackgroundProviderContext, IsNewChatInSessionContext, IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { ActiveSessionSupportsMultiChatContext, IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../common/sessionsManagement.js';
@@ -23,6 +26,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 
 const ACTIVE_SESSION_STATES_KEY = 'agentSessions.activeSessionStates';
 const ACTIVE_PROVIDER_KEY = 'sessions.activeProviderId';
+const OPEN_NEW_CHAT_EDITOR_COMMAND_ID = 'workbench.action.sessions.openNewChatEditor';
 
 /**
  * Persisted state for a session.
@@ -77,6 +81,8 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -257,10 +263,10 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		}
 
 		this._isNewChatInSessionContext.set(false);
-		await this.chatWidgetService.openSession(chatUri, ChatViewPaneTarget);
+		await this.chatWidgetService.openSession(chatUri, this.getChatEditorTarget(), { pinned: true });
 	}
 
-	async openSession(sessionResource: URI, options?: { preserveFocus?: boolean }): Promise<void> {
+	async openSession(sessionResource: URI, options?: { preserveFocus?: boolean; openChats?: boolean }): Promise<void> {
 		const sessionData = this.getSession(sessionResource);
 		if (!sessionData) {
 			this.logService.warn(`[SessionsManagement] openSession: session not found: ${sessionResource.toString()}`);
@@ -271,10 +277,56 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this._isNewChatInSessionContext.set(false);
 		this.setActiveSession(sessionData);
 
-		// Open the active chat (which may have been restored to the last active chat)
-		const activeChat = this._activeSession.get()?.activeChat.get();
-		const openUri = activeChat?.resource ?? sessionData.resource;
-		await this.chatWidgetService.openSession(openUri, ChatViewPaneTarget, { preserveFocus: options?.preserveFocus });
+		if (options?.openChats !== false) {
+			await this.openActiveSessionChats({ preserveFocus: options?.preserveFocus });
+		}
+	}
+
+	async openActiveSessionChats(options?: { preserveFocus?: boolean }): Promise<void> {
+		const activeSession = this._activeSession.get();
+		if (!activeSession) {
+			return;
+		}
+
+		const activeChat = activeSession.activeChat.get();
+		if (activeChat?.status.get() === SessionStatus.Untitled) {
+			this._isNewChatInSessionContext.set(true);
+		}
+
+		const chats = activeSession.chats.get()
+			.filter(chat => chat.status.get() !== SessionStatus.Untitled && !chat.isArchived.get());
+		if (chats.length === 0) {
+			return;
+		}
+
+		const target = this.getChatEditorTarget();
+		const activeChatToOpen = activeChat && chats.some(chat => this.uriIdentityService.extUri.isEqual(chat.resource, activeChat.resource)) ? activeChat : undefined;
+		const backgroundChats = activeChatToOpen
+			? chats.filter(chat => !this.uriIdentityService.extUri.isEqual(chat.resource, activeChatToOpen.resource))
+			: chats.slice(0, -1);
+		const foregroundChat = activeChatToOpen ?? chats.at(-1);
+
+		for (const chat of backgroundChats) {
+			await this.chatWidgetService.openSession(chat.resource, target, { pinned: true, preserveFocus: true });
+		}
+
+		if (foregroundChat) {
+			await this.chatWidgetService.openSession(foregroundChat.resource, target, { pinned: true, preserveFocus: options?.preserveFocus });
+		}
+	}
+
+	private getChatEditorTarget(): PreferredGroup {
+		const chatEditorPart = this.editorGroupsService.parts.find(part =>
+			part !== this.editorGroupsService.mainPart &&
+			part.windowId === this.editorGroupsService.mainPart.windowId &&
+			!this.isModalEditorPart(part)
+		);
+
+		return chatEditorPart?.activeGroup ?? ACTIVE_GROUP;
+	}
+
+	private isModalEditorPart(part: IEditorPart): part is IModalEditorPart {
+		return typeof (part as IModalEditorPart).modalElement !== 'undefined';
 	}
 
 	unsetNewSession(): void {
@@ -298,6 +350,19 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 				throw new Error(`No session types available for provider '${providerId}'`);
 			}
 		}
+		const pendingWorkspace = this._pendingNewSession?.workspace.get();
+		const pendingRepositoryUri = pendingWorkspace?.repositories[0]?.uri;
+		if (
+			this._pendingNewSession &&
+			this._pendingNewSession.providerId === providerId &&
+			this._pendingNewSession.sessionType === sessionTypeId &&
+			pendingRepositoryUri &&
+			this.uriIdentityService.extUri.isEqual(pendingRepositoryUri, repositoryUri)
+		) {
+			this.setActiveSession(this._pendingNewSession);
+			return this._pendingNewSession;
+		}
+
 		const session = provider.createNewSession(repositoryUri, sessionTypeId);
 		this._pendingNewSession = session;
 		this.setActiveSession(session);
@@ -365,16 +430,21 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 	}
 
 	openNewSessionView(): void {
-		// No-op if the current session is already a new session
-		if (this.isNewChatSessionContext.get()) {
-			return;
+		if (!this.isNewChatSessionContext.get()) {
+			// Restore the pending new session if one exists, so pickers
+			// re-derive their state from the still-alive session object.
+			// Otherwise clear active session (first time / after send).
+			this.setActiveSession(this._pendingNewSession ?? undefined);
+			this.isNewChatSessionContext.set(true);
+			this._isNewChatInSessionContext.set(false);
 		}
-		// Restore the pending new session if one exists, so pickers
-		// re-derive their state from the still-alive session object.
-		// Otherwise clear active session (first time / after send).
-		this.setActiveSession(this._pendingNewSession ?? undefined);
-		this.isNewChatSessionContext.set(true);
-		this._isNewChatInSessionContext.set(false);
+
+		this.openNewChatEditor();
+	}
+
+	private openNewChatEditor(): void {
+		this.commandService.executeCommand(OPEN_NEW_CHAT_EDITOR_COMMAND_ID)
+			.catch(error => this.logService.error('Failed to open new chat editor:', error));
 	}
 
 	openNewChatInSession(session: ISession): void {

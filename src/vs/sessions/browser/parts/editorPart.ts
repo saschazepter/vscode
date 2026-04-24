@@ -62,4 +62,10 @@ export class ChatEditorPart extends EditorPart {
 
 		super.layout(adjustedWidth, adjustedHeight, top, left);
 	}
+
+	close(): boolean {
+		// Working set restore treats non-main editor parts as closable.
+		// This part is fixed in the main window, so only its editors are closed.
+		return true;
+	}
 }
