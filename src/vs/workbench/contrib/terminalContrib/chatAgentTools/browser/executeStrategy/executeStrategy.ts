@@ -173,14 +173,22 @@ export async function trackIdleOnPrompt(
 	let state: TerminalState = TerminalState.Initial;
 
 	// Fallback in case prompt sequences are not seen but the terminal goes idle.
+	// This also serves as a recovery mechanism when the state machine is stuck in
+	// Executing because shell integration failed to detect command completion (e.g.
+	// multiline commands sent via bracketed paste mode or long-running commands).
+	const defaultFallbackMs = promptFallbackMs ?? 1000;
+	// Use a longer fallback when in Executing state since we have less confidence
+	// that the command is done — commands can legitimately go quiet for a few
+	// seconds mid-execution (e.g. network requests, compilation pauses).
+	const executingFallbackMs = Math.max(defaultFallbackMs * 10, 10_000);
 	const promptFallbackScheduler = store.add(new RunOnceScheduler(() => {
-		if (state === TerminalState.Executing || state === TerminalState.PromptAfterExecuting) {
+		if (state === TerminalState.PromptAfterExecuting) {
 			promptFallbackScheduler.cancel();
 			return;
 		}
 		state = TerminalState.PromptAfterExecuting;
 		scheduler.schedule();
-	}, promptFallbackMs ?? 1000));
+	}, defaultFallbackMs));
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
 	// on an A without a C following shortly after is a very good indicator that the command is done
@@ -214,10 +222,13 @@ export async function trackIdleOnPrompt(
 			scheduler.schedule();
 		} else {
 			scheduler.cancel();
-			if (state === TerminalState.Initial || state === TerminalState.Prompt) {
-				promptFallbackScheduler.schedule();
+			// Use a longer fallback timeout during Executing state to avoid
+			// prematurely resolving commands that go quiet mid-execution
+			// (e.g. sleep 5 && echo done, network waits, compilation).
+			if (state === TerminalState.Executing) {
+				promptFallbackScheduler.schedule(executingFallbackMs);
 			} else {
-				promptFallbackScheduler.cancel();
+				promptFallbackScheduler.schedule();
 			}
 		}
 	}));
