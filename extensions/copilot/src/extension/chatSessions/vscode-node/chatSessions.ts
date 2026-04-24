@@ -24,6 +24,7 @@ import { GitBranchNameGenerator } from '../../prompt/node/gitBranch';
 import { ChatSummarizerProvider } from '../../prompt/node/summarizer';
 import { IToolsService } from '../../tools/common/toolsService';
 import { IClaudeRuntimeDataService } from '../claude/common/claudeRuntimeDataService';
+import { IClaudeSettingsService } from '../claude/common/claudeSettingsService';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { ClaudeToolPermissionService, IClaudeToolPermissionService } from '../claude/common/claudeToolPermissionService';
 import { ClaudeCodeFolderMruService } from '../claude/node/claudeCodeFolderMru';
@@ -31,6 +32,7 @@ import { ClaudeAgentManager } from '../claude/node/claudeCodeAgent';
 import { ClaudeCodeModels, IClaudeCodeModels } from '../claude/node/claudeCodeModels';
 import { ClaudeCodeSdkService, IClaudeCodeSdkService } from '../claude/node/claudeCodeSdkService';
 import { ClaudeRuntimeDataService } from '../claude/node/claudeRuntimeDataService';
+import { ClaudeSettingsService } from '../claude/node/claudeSettingsService';
 import { ClaudePluginService, IClaudePluginService } from '../claude/node/claudeSkills';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { ClaudeSessionStateService } from '../claude/node/claudeSessionStateService';
@@ -149,6 +151,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 				[IFolderRepositoryManager, new SyncDescriptor(ClaudeFolderRepositoryManager)],
 				[IChatFolderMruService, new SyncDescriptor(ClaudeCodeFolderMruService)],
 				[IClaudeRuntimeDataService, new SyncDescriptor(ClaudeRuntimeDataService)],
+				[IClaudeSettingsService, new SyncDescriptor(ClaudeSettingsService)],
 				[IClaudePluginService, new SyncDescriptor(ClaudePluginService)],
 			));
 		const claudeAgentManager = this._register(claudeAgentInstaService.createInstance(ClaudeAgentManager));
