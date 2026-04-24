@@ -269,11 +269,27 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
 			try {
 				this.logService.info(`[anthony] system.notification received: kind=${event?.data?.kind} status=${this._status} session=${this.sessionId}`);
-				// Skip mid-turn: SDK already injects the notification inline; forwarding would duplicate it.
-				if (this._status === ChatSessionStatus.InProgress) {
-					this.logService.info(`[anthony] system.notification SKIPPED (mid-turn) kind=${event?.data?.kind}`);
-					return;
-				}
+				// NOTE: do NOT skip when `_status === InProgress`. In chained
+				// async-shell scenarios (e.g. async shell A done → handler still
+				// awaiting `session.idle` → assistant launches async shell B →
+				// SHELL_B_DONE arrives), `_status` is still `InProgress` from the
+				// first system-initiated turn. Skipping here would silently drop
+				// the second notification and the user never sees a follow-up bubble.
+
+				// Mark this session as being in a system-initiated turn for as long
+				// as the SDK is reacting to the notification. The SDK auto-fires
+				// its own follow-up turn from `Session.send()` *before* vscode's
+				// `sendSystemInitiatedRequest` round-trips back into our
+				// `_handleRequestImpl`, so the flag has to be set here for the
+				// auto-approve in the `permission.requested` listener to take effect
+				// on tools the SDK schedules during that turn.
+				//
+				// We deliberately do NOT clear this flag on `session.idle` — a single
+				// notification can drive multiple SDK turns (turn 1 reads shell
+				// output, turn 2 launches a chained async shell), each ending in
+				// `session.idle`. The flag is cleared in `handleRequest` when the
+				// next non-system-initiated (user-typed) request arrives.
+				this._isInSystemInitiatedTurn = true;
 				const notification = this._buildSystemNotification(event);
 				if (notification) {
 					this.logService.info(`[anthony] system.notification FORWARDING label="${notification.label}" message="${notification.message.slice(0, 80)}"`);
@@ -284,6 +300,31 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			} catch (err) {
 				this.logService.error(err, `[CopilotCLISession] Failed to translate system.notification for session ${this.sessionId}`);
 			}
+		})));
+
+		// Session-lifetime auto-approve for system-initiated turns.
+		//
+		// The per-request `permission.requested` listener registered inside
+		// `_handleRequestImplInner` is torn down when that handler returns
+		// (e.g. when `_awaitNextSessionIdle` resolves). But a single
+		// `system.notification` can drive multiple SDK turns — turn 1 reads
+		// shell output, turn 2 launches a chained async shell that requests
+		// a `shell` permission. By the time turn 2's `permission.requested`
+		// fires, the per-request listener is already gone and the SDK hangs
+		// forever waiting for `respondToPermission`.
+		//
+		// To keep chained async-shell flows working we install a session-wide
+		// listener that auto-approves *only* while `_isInSystemInitiatedTurn`
+		// is true. The flag is set when a `system.notification` arrives and
+		// cleared in `handleRequest` when a real user-typed request follows.
+		this.add(toDisposable(this._sdkSession.on('permission.requested', (event) => {
+			if (!this._isInSystemInitiatedTurn) {
+				return; // let the per-request listener handle it
+			}
+			const permissionRequest = event.data.permissionRequest;
+			const requestId = event.data.requestId;
+			this.logService.info(`[anthony] session-wide permission auto-approved during system-initiated turn: kind=${permissionRequest.kind}`);
+			this._sdkSession.respondToPermission(requestId, { kind: 'approved' });
 		})));
 	}
 
@@ -381,6 +422,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			await this.updateModel(model?.model, model?.reasoningEffort, authInfo, token);
 
 			this.logService.info(`[anthony] handleRequest entry: id=${request.id} isSystemInitiated=${!!request.isSystemInitiated} status=${this._status} session=${this.sessionId}`);
+			if (!request.isSystemInitiated && this._isInSystemInitiatedTurn) {
+				// A real user-typed request closes the system-initiated window.
+				this.logService.info(`[anthony] handleRequest: clearing _isInSystemInitiatedTurn (user-initiated request arrived) session=${this.sessionId}`);
+				this._isInSystemInitiatedTurn = false;
+			}
 			if (request.isSystemInitiated) {
 				// System-initiated requests are triggered by `system.notification`
 				// events. The SDK has already received the notification and queued
@@ -623,9 +669,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				// TODO: Until the chat platform supports interactive permission
 				// widgets inside system-initiated requests, we auto-approve
 				// here so the chained scenario from issue #309290 works.
-				if (this._isInSystemInitiatedTurn && permissionRequest.kind === 'shell') {
-					this.logService.info(`[anthony] permission auto-approved during system-initiated turn: kind=${permissionRequest.kind}`);
-					this._sdkSession.respondToPermission(requestId, { kind: 'approved' });
+				if (this._isInSystemInitiatedTurn) {
+					// Session-wide listener handles auto-approve for system-initiated
+					// turns; don't double-respond here.
 					return;
 				}
 
@@ -952,12 +998,13 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					// can stream `assistant.message_delta` / `tool.execution_*`
 					// events into this fresh chat response.
 					this.logService.info(`[anthony] system-initiated handler: awaiting next session.idle for session ${this.sessionId}`);
-					this._isInSystemInitiatedTurn = true;
-					try {
-						await this._awaitNextSessionIdle(token);
-					} finally {
-						this._isInSystemInitiatedTurn = false;
-					}
+					// `_isInSystemInitiatedTurn` is set in the `system.notification`
+					// listener (which fires before this handler is even invoked) and
+					// cleared in `handleRequest` when the next user-typed request arrives.
+					// We do NOT touch it here because a single notification can drive
+					// multiple SDK turns and clearing on the first `session.idle` would
+					// break auto-approve for permissions raised by later turns.
+					await this._awaitNextSessionIdle(token);
 					this.logService.info(`[anthony] system-initiated handler: session.idle resolved for session ${this.sessionId}`);
 				} else {
 					await this.sendRequestInternal(input, attachments, false, logStartTime);
