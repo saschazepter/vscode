@@ -262,6 +262,7 @@ setPartHidden(hidden: boolean, part: Parts): void
     - The main editor part is hidden by default but can be shown for explicit editor workflows that target the main editor part
     - **Chat Editor Part:**
         - The chat editor part is hidden by default and is only shown for explicit editor workflows that target the chat editor part
+        - Closing the last chat editor returns the chat bar to the new-session pane, except when session management is clearing chat editors as part of a session or view transition
         - Entering the new-session view closes all chat editor groups and leaves the part hidden
     - Modal editor opens do not change the current main editor visibility state
     - The sessions **Maximize Editor** action temporarily hides the panel when the visible panel is the terminal view, and the matching **Restore Editor** action reopens that terminal panel if maximize hid it
@@ -671,6 +672,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-24 | Closing the last chat editor now returns the chat bar to the new-session pane while hiding the chat editor part, but session-management cleanup during session/view switches suppresses that fallback. |
 | 2026-04-24 | Documented the hidden-by-default chat editor part and clarified that entering the new-session view closes chat editor groups without reopening the part. |
 
 | Date | Change |

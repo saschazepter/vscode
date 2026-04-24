@@ -954,6 +954,9 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			const chatEditorPart = this.getChatEditorPart();
 			if (part === chatEditorPart && this.partVisibility.chatEditor && this.areAllGroupsEmpty(part)) {
 				this.setChatEditorHidden(true);
+				if (!this.sessionsManagementService.isClearingChatEditorPartEditors) {
+					void this.sessionsManagementService.openNewSessionView();
+				}
 			}
 		}));
 

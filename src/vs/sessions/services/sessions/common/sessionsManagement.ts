@@ -103,6 +103,13 @@ export interface ISessionsManagementService {
 	openActiveSessionChats(options?: { preserveFocus?: boolean }): Promise<void>;
 
 	/**
+	 * Whether session management is currently clearing chat editor groups as part of
+	 * a view/session transition and close listeners should avoid routing back to the
+	 * new-session pane.
+	 */
+	readonly isClearingChatEditorPartEditors: boolean;
+
+	/**
 	 * Switch to the new-session view.
 	 * Also reveals the new-session editor in the chat editor part.
 	 */

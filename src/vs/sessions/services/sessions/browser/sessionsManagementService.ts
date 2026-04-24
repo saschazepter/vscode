@@ -72,6 +72,8 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 	private _activeSessionDisposables = this._register(new DisposableStore());
 	private readonly _providerListeners = this._register(new DisposableMap<string, IDisposable>());
 	private readonly _sessionStates: ResourceMap<ISessionState>;
+	private chatEditorPartClearDepth = 0;
+	get isClearingChatEditorPartEditors(): boolean { return this.chatEditorPartClearDepth > 0; }
 
 	constructor(
 		@IStorageService private readonly storageService: IStorageService,
@@ -348,12 +350,17 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			return true;
 		}
 
-		for (const group of chatEditorPart.groups) {
-			const closed = await group.closeAllEditors();
-			if (!closed) {
-				this.logService.warn('[SessionsManagement] Failed to close all chat editors before switching sessions');
-				return false;
+		this.chatEditorPartClearDepth++;
+		try {
+			for (const group of chatEditorPart.groups) {
+				const closed = await group.closeAllEditors();
+				if (!closed) {
+					this.logService.warn('[SessionsManagement] Failed to close all chat editors before switching sessions');
+					return false;
+				}
 			}
+		} finally {
+			this.chatEditorPartClearDepth--;
 		}
 
 		return true;
