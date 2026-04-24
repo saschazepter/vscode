@@ -12,8 +12,7 @@ import { ILogService } from '../../log/common/log.js';
 import { AHPFileSystemProvider } from '../common/agentHostFileSystemProvider.js';
 import { AgentSession, type IAgentService } from '../common/agentService.js';
 import type { CommandMap } from '../common/state/protocol/messages.js';
-import { ActionEnvelope, INotification, isRootAction, isSessionAction, isTerminalAction, type StateAction } from '../common/state/sessionActions.js';
-import { isClientDispatchable } from '../common/state/protocol/reducers.js';
+import { ActionEnvelope, INotification, isSessionAction, isTerminalAction, isRootAction, type RootAction, type SessionAction, type TerminalAction } from '../common/state/sessionActions.js';
 import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION } from '../common/state/sessionCapabilities.js';
 import {
 	AHP_AUTH_REQUIRED,
@@ -182,13 +181,9 @@ export class ProtocolServerHandler extends Disposable {
 					case 'dispatchAction':
 						if (client) {
 							this._logService.trace(`[ProtocolServer] dispatchAction: ${JSON.stringify(msg.params.action.type)}`);
-							const action = msg.params.action as StateAction;
+							const action = msg.params.action as RootAction | SessionAction | TerminalAction;
 							if (isRootAction(action) || isSessionAction(action) || isTerminalAction(action)) {
-								if (isClientDispatchable(action)) {
-									this._agentService.dispatchAction(action, client.clientId, msg.params.clientSeq);
-								} else {
-									this._logService.warn(`[ProtocolServer] Ignoring non-client-dispatchable action '${action.type}' from ${client.clientId}`);
-								}
+								this._agentService.dispatchAction(action, client.clientId, msg.params.clientSeq);
 							}
 						}
 						break;

@@ -96,20 +96,14 @@ import type {
 } from './protocol/actions.js';
 
 import type { ProtocolNotification } from './protocol/notifications.js';
-import type { RootAction as IRootAction_, SessionAction as ISessionAction_, ClientSessionAction as IClientSessionAction_, ServerSessionAction as IServerSessionAction_, TerminalAction as ITerminalAction_, ClientTerminalAction as IClientTerminalAction_, ClientRootAction as IClientRootAction_ } from './protocol/action-origin.generated.js';
+import type { RootAction as IRootAction_, SessionAction as ISessionAction_, ClientSessionAction as IClientSessionAction_, ServerSessionAction as IServerSessionAction_, TerminalAction as ITerminalAction_, ClientTerminalAction as IClientTerminalAction_ } from './protocol/action-origin.generated.js';
 
 export type RootAction = IRootAction_;
 export type SessionAction = ISessionAction_;
 export type ClientSessionAction = IClientSessionAction_;
-export type ClientRootAction = IClientRootAction_;
 export type ServerSessionAction = IServerSessionAction_;
 export type TerminalAction = ITerminalAction_;
 export type ClientTerminalAction = IClientTerminalAction_;
-
-/**
- * Union of all action types that a client may dispatch to the server.
- */
-export type ClientAction = IClientRootAction_ | IClientSessionAction_ | IClientTerminalAction_;
 
 // Root actions
 export type IAgentsChangedAction = RootAgentsChangedAction;
