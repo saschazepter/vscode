@@ -14,7 +14,7 @@ import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IRequestService } from '../../../../../../platform/request/common/request.js';
-import { IStorageService, InMemoryStorageService, StorageScope } from '../../../../../../platform/storage/common/storage.js';
+import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { IWorkspaceTrustManagementService } from '../../../../../../platform/workspace/common/workspaceTrust.js';
 import { IEnvironmentService } from '../../../../../../platform/environment/common/environment.js';
 import { ChatConfiguration } from '../../../common/constants.js';
@@ -392,14 +392,15 @@ suite('PluginMarketplaceService - invalidateGitHubCache', () => {
 		const { service, storageService } = createServiceWithStorage();
 
 		// Seed a cache entry in storage as if a previous fetch had cached it.
+		const reference = parseMarketplaceReference('microsoft/plugins')!;
 		const cacheData = JSON.stringify({
-			'github.com/microsoft/plugins': {
+			[reference.canonicalId]: {
 				expiresAt: Date.now() + 8 * 60 * 60 * 1000,
 				referenceRawValue: 'microsoft/plugins',
 				plugins: [{ name: 'test-plugin', description: '', version: '1.0.0', source: './test/' }],
 			}
 		});
-		storageService.store(GITHUB_CACHE_KEY, cacheData, StorageScope.APPLICATION, 0 /* StorageTarget.USER */);
+		storageService.store(GITHUB_CACHE_KEY, cacheData, StorageScope.APPLICATION, StorageTarget.MACHINE);
 		assert.ok(storageService.get(GITHUB_CACHE_KEY, StorageScope.APPLICATION), 'cache should be populated before invalidation');
 
 		service.invalidateGitHubCache();

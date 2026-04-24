@@ -388,9 +388,10 @@ export class PluginMarketplaceService extends Disposable implements IPluginMarke
 	}
 
 	invalidateGitHubCache(): void {
-		const cache = this._gitHubMarketplaceCache.value;
-		cache.clear();
-		this._savePersistedGitHubMarketplaceCache(cache);
+		if (this._gitHubMarketplaceCache.hasValue) {
+			this._gitHubMarketplaceCache.rawValue?.clear();
+		}
+		this._storageService.remove(GITHUB_MARKETPLACE_CACHE_STORAGE_KEY, StorageScope.APPLICATION);
 	}
 
 	async fetchMarketplacePlugins(token: CancellationToken): Promise<IMarketplacePlugin[]> {
