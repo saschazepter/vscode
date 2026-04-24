@@ -64,7 +64,8 @@ export class PlanAgentProvider extends Disposable implements vscode.ChatCustomAg
 				e.affectsConfiguration(ConfigKey.Deprecated.PlanAgentModel.fullyQualifiedId) ||
 				e.affectsConfiguration('chat.planAgent.defaultModel') ||
 				e.affectsConfiguration(ConfigKey.ImplementAgentModel.fullyQualifiedId) ||
-				e.affectsConfiguration(ConfigKey.ExploreAgentEnabled.fullyQualifiedId)) {
+				e.affectsConfiguration(ConfigKey.ExploreAgentEnabled.fullyQualifiedId) ||
+				e.affectsConfiguration(ConfigKey.Advanced.SearchSubagentToolEnabled.fullyQualifiedId)) {
 				this._onDidChangeCustomAgents.fire();
 			}
 		}));
@@ -104,18 +105,27 @@ export class PlanAgentProvider extends Disposable implements vscode.ChatCustomAg
 		return fileUri;
 	}
 
-	static buildAgentBody(exploreEnabled: boolean): string {
-		const discoverySection = exploreEnabled
-			? `## 1. Discovery
+	static buildAgentBody(exploreEnabled: boolean, searchSubagentEnabled: boolean): string {
+		let discoverySection: string;
+		if (exploreEnabled) {
+			discoverySection = `## 1. Discovery
 
 Run the *Explore* subagent to gather context, analogous existing features to use as implementation templates, and potential blockers or ambiguities. When the task spans multiple independent areas (e.g., frontend + backend, different features, separate repos), launch **2-3 *Explore* subagents in parallel** — one per area — to speed up discovery.
 
-Update the plan with your findings.`
-			: `## 1. Discovery
+Update the plan with your findings.`;
+		} else if (searchSubagentEnabled) {
+			discoverySection = `## 1. Discovery
 
 Use #tool:searchSubagent to gather context, analogous existing features to use as implementation templates, and potential blockers or ambiguities. When the task spans multiple independent areas (e.g., frontend + backend, different features, separate repos), launch **2-3 search subagents in parallel** — one per area — to speed up discovery.
 
 Update the plan with your findings.`;
+		} else {
+			discoverySection = `## 1. Discovery
+
+Search the codebase to gather context, analogous existing features to use as implementation templates, and potential blockers or ambiguities.
+
+Update the plan with your findings.`;
+		}
 
 		return `You are a PLANNING AGENT, pairing with the user to create a detailed, actionable plan.
 
@@ -205,6 +215,7 @@ Rules:
 	private buildCustomizedConfig(): AgentConfig {
 		const additionalTools = this.configurationService.getConfig(ConfigKey.PlanAgentAdditionalTools);
 		const isExploreEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.ExploreAgentEnabled, this.experimentationService);
+		const isSearchSubagentEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.SearchSubagentToolEnabled, this.experimentationService);
 		const coreDefaultModel = this.configurationService.getNonExtensionConfig<string>('chat.planAgent.defaultModel');
 		const modelOverride = coreDefaultModel || this.configurationService.getConfig(ConfigKey.Deprecated.PlanAgentModel);
 
@@ -250,7 +261,7 @@ Rules:
 			...(isExploreEnabled ? { agents: ['Explore'] } : {}),
 			tools,
 			handoffs: [startImplementationHandoff, openInEditorHandoff, ...(BASE_PLAN_AGENT_CONFIG.handoffs ?? [])],
-			body: PlanAgentProvider.buildAgentBody(isExploreEnabled),
+			body: PlanAgentProvider.buildAgentBody(isExploreEnabled, isSearchSubagentEnabled),
 			...(modelOverride ? { model: modelOverride } : {}),
 		};
 	}
