@@ -444,6 +444,18 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 					this._setupIdleInputListener();
 					return this._state;
 				}
+
+				// When the terminal has been idle (no new data) but the execution is
+				// still reported as active (e.g. task-backed executions), check the
+				// broader input-required heuristics. These patterns are too noisy to
+				// use during active output, but once the terminal has settled they
+				// reliably indicate an interactive prompt like "Enter your name: ".
+				if (recentlyIdle && isActive === true && detectsInputRequiredPattern(currentLastLine)) {
+					this._logService.trace(`OutputMonitor: waitForIdle -> broad input pattern detected while active+idle (waited=${waited}ms, lastLine=${this._formatLastLineForLog(currentTail)})`);
+					this._state = OutputMonitorState.Idle;
+					this._setupIdleInputListener();
+					return this._state;
+				}
 			}
 		} finally {
 			onDataDisposable.dispose();
@@ -554,9 +566,10 @@ export function detectsHighConfidenceInputPattern(cursorLine: string): boolean {
  * Full set of input-required patterns including broader heuristics (bare `:` and
  * `?` with trailing space). These may produce false positives on normal command
  * output, so they should only be used **after** the terminal has been confirmed
- * idle through normal polling (consecutive idle events with no data). Do NOT use
- * in `_waitForIdle` as a fast-path — use {@link detectsHighConfidenceInputPattern}
- * there instead.
+ * idle through normal polling (consecutive idle events with no data). In
+ * `_waitForIdle`, these are checked only when `recentlyIdle` is true (to handle
+ * active executions that are actually waiting for input). For the unconditional
+ * fast-path, use {@link detectsHighConfidenceInputPattern} instead.
  */
 export function detectsInputRequiredPattern(cursorLine: string): boolean {
 	if (detectsHighConfidenceInputPattern(cursorLine)) {
