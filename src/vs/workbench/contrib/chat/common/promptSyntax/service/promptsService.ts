@@ -625,9 +625,10 @@ export interface IPromptsService extends IDisposable {
 	readonly onDidChangeInstructions: Event<void>;
 
 	/**
-	 * Finds all available custom agents
+	 * Finds all available custom agents.
+	 * @param options.includeDisabled If true, includes disabled agents in the result.
 	 */
-	getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]>;
+	getCustomAgents(token: CancellationToken, options?: { includeDisabled?: boolean }): Promise<readonly ICustomAgent[]>;
 
 	/**
 	 * Parses the provided URI
@@ -663,22 +664,19 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Returns the list of disabled prompt file URIs for a given type. By default no prompt files are disabled.
-	 * @param namespace Optional harness namespace to isolate disabled state per harness (e.g. `'copilotcli'`, `'claude'`).
 	 */
-	getDisabledPromptFiles(type: PromptsType, namespace?: string): ResourceSet;
+	getDisabledPromptFiles(type: PromptsType): ResourceSet;
 
 	/**
 	 * Persists the set of disabled prompt file URIs for the given type.
 	 * @param scope Storage scope — defaults to profile. Use WORKSPACE to disable for the current workspace only.
-	 * @param namespace Optional harness namespace to isolate disabled state per harness.
 	 */
-	setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope?: StorageScope, namespace?: string): void;
+	setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope?: StorageScope): void;
 
 	/**
 	 * Returns the disabled prompt file URIs for a specific scope.
-	 * @param namespace Optional harness namespace to isolate disabled state per harness.
 	 */
-	getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope, namespace?: string): ResourceSet;
+	getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope): ResourceSet;
 
 	/**
 	 * Registers a prompt file provider that can provide prompt files for repositories.
@@ -694,8 +692,9 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Gets list of agent skills files.
+	 * @param options.includeDisabled If true, includes disabled skills in the result.
 	 */
-	findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined>;
+	findAgentSkills(token: CancellationToken, options?: { includeDisabled?: boolean }): Promise<IAgentSkill[] | undefined>;
 
 	/**
 	 * Event that is triggered when the list of skills changes.

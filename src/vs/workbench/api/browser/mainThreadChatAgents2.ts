@@ -281,7 +281,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	}
 
 	async $provideCustomAgents(token: CancellationToken): Promise<ICustomAgentDto[]> {
-		const customAgents = await this._promptsService.getCustomAgents(token);
+		const customAgents = await this._promptsService.getCustomAgents(token, { includeDisabled: true });
 		return customAgents.map(agent => this._toCustomAgentDto(agent));
 	}
 
@@ -291,7 +291,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	}
 
 	async $provideSkills(token: CancellationToken): Promise<ISkillDto[]> {
-		const skills = await this._promptsService.findAgentSkills(token) ?? [];
+		const skills = await this._promptsService.findAgentSkills(token, { includeDisabled: true }) ?? [];
 		return skills.map(skill => this._toSkillDto(skill));
 	}
 

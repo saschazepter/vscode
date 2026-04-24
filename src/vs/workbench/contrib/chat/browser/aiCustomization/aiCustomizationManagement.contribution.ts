@@ -23,7 +23,6 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { FileSystemProviderCapabilities, IFileService } from '../../../../../platform/files/common/files.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../../browser/editor.js';
@@ -39,7 +38,7 @@ import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { ContributionEnablementState, isContributionDisabled, isContributionEnabled } from '../../common/enablement.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
+import { PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { IChatWidgetService } from '../chat.js';
 import { AgentPluginItemKind } from '../agentPluginEditor/agentPluginItems.js';
@@ -193,22 +192,6 @@ function extractPlugin(context: AICustomizationContext): URI | undefined {
 		return undefined;
 	}
 	return URI.parse(raw);
-}
-
-/**
- * Returns true when the provider explicitly set an enablement scope on this item,
- * meaning the provider's enablementHandler owns disablement for it.
- * When false, VS Code should handle disablement via promptsService (with namespace).
- *
- * Items with `enablementScope: 'application'` are explicitly provider-reported but
- * application-managed — the provider does NOT own their disablement.
- */
-function hasProviderEnablement(context: AICustomizationContext): boolean {
-	if (URI.isUri(context) || typeof context === 'string') {
-		return false;
-	}
-	return context.providerEnablementScope !== undefined
-		&& context.providerEnablementScope !== 'application';
 }
 
 /**
@@ -776,7 +759,6 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
-		const promptsService = accessor.get(IPromptsService);
 		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
@@ -795,22 +777,10 @@ registerAction2(class extends Action2 {
 		}
 
 		// Provider-managed items: delegate to the harness's enablement provider.
-		// VS Code items on external harnesses: persist via promptsService with harness namespace.
-		// VS Code items on the VS Code harness: persist via enablementHandler (no namespace).
+		// All harnesses now own their disablement through enablementHandler.
 		const enablementHandler = harnessService.getActiveEnablementHandler();
-		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementHandler && hasProviderEnablement(context)) {
+		if (enablementHandler) {
 			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'global');
-		} else if (enablementHandler && !descriptor.itemProvider) {
-			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'global');
-		} else {
-			const namespace = descriptor.id;
-			const storage = extractStorage(context);
-			const scope = storage === PromptsStorage.local ? StorageScope.WORKSPACE : StorageScope.PROFILE;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, scope, namespace);
-			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, scope, namespace);
 		}
 	}
 });
@@ -825,7 +795,6 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
-		const promptsService = accessor.get(IPromptsService);
 		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
@@ -834,17 +803,8 @@ registerAction2(class extends Action2 {
 		}
 
 		const enablementHandler = harnessService.getActiveEnablementHandler();
-		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementHandler && hasProviderEnablement(context)) {
+		if (enablementHandler) {
 			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'workspace');
-		} else if (enablementHandler && !descriptor.itemProvider) {
-			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementHandler.handleCustomizationEnablement(uri, promptType, false, 'workspace');
-		} else {
-			const namespace = descriptor.id;
-			const disabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
-			disabled.add(uri);
-			promptsService.setDisabledPromptFiles(promptType, disabled, StorageScope.WORKSPACE, namespace);
 		}
 	}
 });
@@ -860,7 +820,6 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
-		const promptsService = accessor.get(IPromptsService);
 		const harnessService = accessor.get(ICustomizationHarnessService);
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
@@ -879,30 +838,10 @@ registerAction2(class extends Action2 {
 		}
 
 		// Provider-managed items: delegate to the harness's enablement provider.
-		// VS Code items on external harnesses: persist via promptsService with harness namespace.
-		// VS Code items on the VS Code harness: persist via enablementHandler (no namespace).
+		// All harnesses now own their disablement through enablementHandler.
 		const enablementHandler = harnessService.getActiveEnablementHandler();
-		const descriptor = harnessService.getActiveDescriptor();
-		if (enablementHandler && hasProviderEnablement(context)) {
+		if (enablementHandler) {
 			enablementHandler.handleCustomizationEnablement(uri, promptType, true, 'global');
-		} else if (enablementHandler && !descriptor.itemProvider) {
-			// VS Code harness — delegate to its enablement provider (no namespace)
-			enablementHandler.handleCustomizationEnablement(uri, promptType, true, 'global');
-		} else {
-			const namespace = descriptor.id;
-			// Remove from both scopes to fully re-enable
-			const profileDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.PROFILE, namespace);
-			const wasInProfile = profileDisabled.delete(uri);
-
-			const workspaceDisabled = promptsService.getDisabledPromptFilesForScope(promptType, StorageScope.WORKSPACE, namespace);
-			const wasInWorkspace = workspaceDisabled.delete(uri);
-
-			if (wasInProfile) {
-				promptsService.setDisabledPromptFiles(promptType, profileDisabled, StorageScope.PROFILE, namespace);
-			}
-			if (wasInWorkspace) {
-				promptsService.setDisabledPromptFiles(promptType, workspaceDisabled, StorageScope.WORKSPACE, namespace);
-			}
 		}
 	}
 });

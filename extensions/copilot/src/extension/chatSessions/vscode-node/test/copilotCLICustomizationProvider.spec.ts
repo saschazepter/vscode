@@ -101,13 +101,22 @@ function makeFileAgentInfo(name: string, fileUri: URI, description = ''): CLIAge
 }
 
 /** Creates a ChatInstruction stub with the required name and source fields. */
-function makeInstruction(uri: URI, name: string, pattern: string | undefined, description?: string): vscode.ChatInstruction {
-	return { uri, name, pattern, source: 'local', description };
+function makeInstruction(uri: URI, name: string, pattern: string | undefined, description?: string, extensionId?: string): vscode.ChatInstruction {
+	return { uri, name, pattern, source: extensionId ? 'extension' : 'local', description, extensionId };
 }
 
 /** Creates a ChatSkill stub, deriving the name from the parent directory for SKILL.md files. */
-function makeSkill(uri: URI, name: string): vscode.ChatSkill {
-	return { uri, name: name, source: 'local' };
+function makeSkill(uri: URI, name: string, extensionId?: string): vscode.ChatSkill {
+	return { uri, name: name, source: extensionId ? 'extension' : 'local', extensionId };
+}
+
+/** Creates a CLIAgentInfo with a file: URI and extensionId (extension-contributed agent). */
+function makeExtensionAgentInfo(name: string, fileUri: URI, extensionId: string, description = ''): CLIAgentInfo {
+	return {
+		agent: makeSweAgent(name, description),
+		sourceUri: fileUri,
+		extensionId,
+	};
 }
 
 /** Creates a ChatHook stub. */
@@ -600,42 +609,52 @@ describe('CopilotCLICustomizationProvider', () => {
 	});
 
 	describe('skill enablement', () => {
-		it('marks skill as enabled by default when no settings file', async () => {
+		it('marks extension-contributed skill as enabled by default when no settings file', async () => {
 			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
-			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check', 'my-ext.lint')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
 			expect(skillItems[0].enabled).toBe(true);
 		});
 
-		it('marks skill as disabled when in disabledSkills setting', async () => {
+		it('marks extension-contributed skill as disabled when in disabledSkills setting', async () => {
 			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['lint-check'] });
 			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
-			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check', 'my-ext.lint')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
 			expect(skillItems[0].enabled).toBe(false);
 		});
 
-		it('marks skill as enabled when not in disabledSkills', async () => {
+		it('marks extension-contributed skill as enabled when not in disabledSkills', async () => {
 			mockCopilotCLISettingsService.setSettings({ disabledSkills: ['other-skill'] });
 			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
-			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check', 'my-ext.lint')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
 			expect(skillItems[0].enabled).toBe(true);
 		});
 
-		it('sets enablementScope to Global for skills', async () => {
+		it('sets enablementScope to Global for extension-contributed skills', async () => {
+			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
+			mockPromptsService.setSkills([makeSkill(uri, 'lint-check', 'my-ext.lint')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
+			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+		});
+
+		it('sets enablementScope to None for filesystem-discovered skills (no extensionId)', async () => {
 			const uri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
 			mockPromptsService.setSkills([makeSkill(uri, 'lint-check')]);
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
-			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(skillItems[0].enabled).toBeUndefined();
 		});
 
 		it('disabling a skill adds it to disabledSkills in settings', async () => {
@@ -781,6 +800,66 @@ describe('CopilotCLICustomizationProvider', () => {
 				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
 
 			expect(fired).toBe(true);
+		});
+	});
+
+	describe('extensionId gating', () => {
+		it('extension-contributed agents get enablementScope: Global', async () => {
+			const fileUri = URI.file('/workspace/.github/my-agent.agent.md');
+			mockCopilotCLIAgents.setAgents([makeExtensionAgentInfo('my-agent', fileUri, 'ext.agents')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const agentItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Agent);
+			expect(agentItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(agentItems[0].enabled).toBe(true);
+		});
+
+		it('non-extension agents get enablementScope: None', async () => {
+			mockCopilotCLIAgents.setAgents([makeAgentInfo('explore', 'Fast code exploration')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const agentItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Agent);
+			expect(agentItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(agentItems[0].enabled).toBeUndefined();
+		});
+
+		it('extension-contributed instructions get enablementScope: Global', async () => {
+			const uri = URI.file('/workspace/.github/style.instructions.md');
+			mockPromptsService.setInstructions([makeInstruction(uri, 'style', undefined, undefined, 'ext.instructions')]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instrItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(instrItems[0].enabled).toBe(true);
+		});
+
+		it('filesystem-discovered instructions get enablementScope: None', async () => {
+			const uri = URI.file('/workspace/.github/style.instructions.md');
+			mockPromptsService.setInstructions([makeInstruction(uri, 'style', undefined)]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instrItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(instrItems[0].enabled).toBeUndefined();
+		});
+
+		it('agent instructions (AGENTS.md, etc.) are not disableable', async () => {
+			const agentsUri = URI.file('/workspace/AGENTS.md');
+			mockCustomInstructionsService.setAgentInstructionUris([agentsUri]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
+			expect(instrItems[0].enablementScope).toBeUndefined();
+			expect(instrItems[0].enabled).toBeUndefined();
+		});
+
+		it('hooks are not disableable (no extensionId available)', async () => {
+			mockPromptsService.setHooks([makeHook(URI.file('/workspace/.copilot/hooks/pre-commit.json'))]);
+
+			const items = await provider.provideChatSessionCustomizations(undefined!);
+			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
+			expect(hookItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(hookItems[0].enabled).toBeUndefined();
 		});
 	});
 });

@@ -1472,7 +1472,6 @@ export class AICustomizationListWidget extends Disposable {
 		}
 		const itemProvider = descriptor.itemProvider ?? (descriptor.syncProvider ? undefined : this.promptsServiceItemProvider);
 		const source = new ProviderCustomizationItemSource(
-			descriptor.id,
 			itemProvider,
 			descriptor.syncProvider,
 			this.promptsService,

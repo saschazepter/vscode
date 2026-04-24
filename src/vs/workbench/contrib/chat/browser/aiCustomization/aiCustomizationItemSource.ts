@@ -402,7 +402,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 	readonly onDidChange: Event<void>;
 
 	constructor(
-		private readonly harnessId: string,
 		private readonly itemProvider: ICustomizationItemProvider | undefined,
 		private readonly syncProvider: ICustomizationSyncProvider | undefined,
 		private readonly promptsService: IPromptsService,
@@ -481,11 +480,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 
 		// Overlay disabled state when:
 		// - VS Code items (explicit `storage` from provider): checked against
-		//   promptsService. On external harnesses (with itemProvider) the namespace
-		//   isolates per-harness state. On the VS Code harness (no itemProvider) no
-		//   namespace is needed.
+		//   promptsService. External harnesses handle disablement via the provider's
+		//   `enabled` field, so the overlay only applies to the VS Code harness.
 		const vscodeDisabledUris = this.hasNativeItemProvider
-			? this.promptsService.getDisabledPromptFiles(promptType, this.harnessId)
+			? new ResourceSet()  // External harness — provider reports disabled state directly
 			: this.promptsService.getDisabledPromptFiles(promptType);
 		const hasDisabled = vscodeDisabledUris.size > 0;
 		if (hasDisabled) {
@@ -641,10 +639,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			uriUseCounts.set(item.uri, (uriUseCounts.get(item.uri) ?? 0) + 1);
 		}
 		const appended: IAICustomizationListItem[] = [];
-		// Built-in skills are VS Code items — use namespaced promptsService disabled set
-		// only for external harnesses (with native item provider). VS Code harness uses no namespace.
+		// Built-in skills are VS Code items — use promptsService disabled set
+		// only for the VS Code harness. External harnesses handle disablement via the provider.
 		const disabledPromptFiles = this.hasNativeItemProvider
-			? this.promptsService.getDisabledPromptFiles(PromptsType.skill, this.harnessId)
+			? new ResourceSet()  // External harness — provider reports disabled state directly
 			: this.promptsService.getDisabledPromptFiles(PromptsType.skill);
 		for (const p of builtinPaths) {
 			const name = p.name ?? basename(p.uri);
@@ -691,10 +689,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 			return [];
 		}
 
-		// Local syncable items are VS Code items — use namespaced promptsService disabled set
-		// only for external harnesses (with native item provider). VS Code harness uses no namespace.
+		// Local syncable items are VS Code items — use promptsService disabled set
+		// only for the VS Code harness. External harnesses handle disablement via the provider.
 		const disabledUris = this.hasNativeItemProvider
-			? this.promptsService.getDisabledPromptFiles(promptType, this.harnessId)
+			? new ResourceSet()  // External harness — provider reports disabled state directly
 			: this.promptsService.getDisabledPromptFiles(promptType);
 		const providerItems: ICustomizationItem[] = files
 			.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user)

@@ -30,10 +30,6 @@ suite('aiCustomizationDisablement', () => {
 	const skillUri = URI.file('/workspace/.github/skills/my-skill/SKILL.md');
 	const instructionUri = URI.file('/workspace/.github/instructions/my-rule.instructions.md');
 
-	function makeDisabledKey(type: PromptsType, namespace?: string): string {
-		return namespace ? `${type}:${namespace}` : type;
-	}
-
 	function createMockPromptsService(): IPromptsService {
 		const disabledSets = new Map<string, ResourceSet>();
 		return {
@@ -48,14 +44,14 @@ suite('aiCustomizationDisablement', () => {
 			findAgentSkills: async () => [],
 			getHooks: async () => undefined,
 			getInstructionFiles: async () => [],
-			getDisabledPromptFiles: (type: PromptsType, namespace?: string): ResourceSet => {
-				return new ResourceSet([...(disabledSets.get(makeDisabledKey(type, namespace)) ?? [])]);
+			getDisabledPromptFiles: (type: PromptsType): ResourceSet => {
+				return new ResourceSet([...(disabledSets.get(type) ?? [])]);
 			},
-			getDisabledPromptFilesForScope: (type: PromptsType, _scope: StorageScope, namespace?: string): ResourceSet => {
-				return new ResourceSet([...(disabledSets.get(makeDisabledKey(type, namespace)) ?? [])]);
+			getDisabledPromptFilesForScope: (type: PromptsType, _scope: StorageScope): ResourceSet => {
+				return new ResourceSet([...(disabledSets.get(type) ?? [])]);
 			},
-			setDisabledPromptFiles: (type: PromptsType, uris: ResourceSet, _scope?: StorageScope, namespace?: string): void => {
-				disabledSets.set(makeDisabledKey(type, namespace), new ResourceSet([...uris]));
+			setDisabledPromptFiles: (type: PromptsType, uris: ResourceSet, _scope?: StorageScope): void => {
+				disabledSets.set(type, new ResourceSet([...uris]));
 			},
 		} as unknown as IPromptsService;
 	}
@@ -106,7 +102,6 @@ suite('aiCustomizationDisablement', () => {
 		const ps = opts.promptsService ?? createMockPromptsService();
 		const hasNative = opts.hasNativeItemProvider ?? !!opts.enablementHandler;
 		return new ProviderCustomizationItemSource(
-			opts.harnessId,
 			opts.itemProvider,
 			undefined,
 			ps,
@@ -162,16 +157,14 @@ suite('aiCustomizationDisablement', () => {
 
 	suite('disabled state overlay - API items', () => {
 
-		test('disabled via enablementHandler shows as disabled', async () => {
-			const eh = createMockEnablementHandler();
-			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
-
+		test('provider item with enabled:false shows as disabled', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'Agent', enablementScope: 'workspace',
+					enabled: false,
 				}]),
-				enablementHandler: eh,
+				enablementHandler: createMockEnablementHandler(),
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
@@ -191,11 +184,11 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(result[0].disabled, false);
 		});
 
-		test('NOT affected by promptsService disabled state', async () => {
+		test('NOT affected by promptsService disabled state for external harness', async () => {
 			const ps = createMockPromptsService();
 			const disabled = new ResourceSet();
 			disabled.add(agentUri);
-			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
+			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE);
 
 			const source = createItemSource({
 				harnessId: 'cli',
@@ -206,34 +199,45 @@ suite('aiCustomizationDisablement', () => {
 				promptsService: ps,
 			});
 
+			// External harness ignores promptsService disabled state — uses provider's enabled field
 			const result = await source.fetchItems(PromptsType.agent);
 			assert.strictEqual(result[0].disabled, false);
 		});
 	});
 
-	suite('disabled state overlay - VS Code items in external harness', () => {
+	suite('disabled state overlay - external harness provider items', () => {
 
-		test('disabled via namespaced promptsService shows as disabled', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(skillUri);
-			ps.setDisabledPromptFiles(PromptsType.skill, disabled, StorageScope.PROFILE, 'cli');
-
+		test('provider item with enabled:false shows as disabled', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
 					uri: skillUri, type: PromptsType.skill, name: 'Skill',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
+					enabled: false,
 				}]),
 				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
 			});
 
 			const result = await source.fetchItems(PromptsType.skill);
 			assert.strictEqual(result[0].disabled, true);
 		});
 
-		test('not in namespaced promptsService disabled set shows as enabled', async () => {
+		test('provider item with enabled:true shows as enabled', async () => {
+			const source = createItemSource({
+				harnessId: 'cli',
+				itemProvider: createMockItemProvider([{
+					uri: skillUri, type: PromptsType.skill, name: 'Skill',
+					storage: PromptsStorage.local, enablementScope: 'workspace',
+					enabled: true,
+				}]),
+				enablementHandler: createMockEnablementHandler(),
+			});
+
+			const result = await source.fetchItems(PromptsType.skill);
+			assert.strictEqual(result[0].disabled, false);
+		});
+
+		test('provider item without enabled field shows as enabled', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
@@ -246,28 +250,11 @@ suite('aiCustomizationDisablement', () => {
 			const result = await source.fetchItems(PromptsType.skill);
 			assert.strictEqual(result[0].disabled, false);
 		});
-
-		test('NOT affected by enablementHandler disabled state', async () => {
-			const eh = createMockEnablementHandler();
-			eh.handleCustomizationEnablement(skillUri, PromptsType.skill, false, 'global');
-
-			const source = createItemSource({
-				harnessId: 'cli',
-				itemProvider: createMockItemProvider([{
-					uri: skillUri, type: PromptsType.skill, name: 'Skill',
-					storage: PromptsStorage.local, enablementScope: 'workspace',
-				}]),
-				enablementHandler: eh,
-			});
-
-			const result = await source.fetchItems(PromptsType.skill);
-			assert.strictEqual(result[0].disabled, false);
-		});
 	});
 
-	suite('VS Code harness (no namespace)', () => {
+	suite('VS Code harness', () => {
 
-		test('reads disabled state from promptsService without namespace', async () => {
+		test('reads disabled state from promptsService', async () => {
 			const ps = createMockPromptsService();
 			const disabled = new ResourceSet();
 			disabled.add(agentUri);
@@ -285,71 +272,43 @@ suite('aiCustomizationDisablement', () => {
 			const result = await source.fetchItems(PromptsType.agent);
 			assert.strictEqual(result[0].disabled, true);
 		});
-
-		test('namespaced disabled state does NOT affect VS Code harness', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(agentUri);
-			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
-
-			const source = createItemSource({
-				harnessId: 'vscode',
-				itemProvider: createMockItemProvider([{
-					uri: agentUri, type: PromptsType.agent, name: 'Agent',
-					storage: PromptsStorage.local, enablementScope: 'workspace',
-				}]),
-				promptsService: ps,
-			});
-
-			const result = await source.fetchItems(PromptsType.agent);
-			assert.strictEqual(result[0].disabled, false);
-		});
 	});
 
-	suite('namespace isolation between harnesses', () => {
+	suite('harness isolation', () => {
 
-		test('disabling on one harness does not affect another', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(instructionUri);
-			ps.setDisabledPromptFiles(PromptsType.instructions, disabled, StorageScope.PROFILE, 'cli');
-
+		test('external harness disablement via provider enabled:false does not affect VS Code harness', async () => {
 			const items: ICustomizationItem[] = [{
 				uri: instructionUri, type: PromptsType.instructions, name: 'Rule',
 				storage: PromptsStorage.local, enablementScope: 'workspace',
 			}];
 
+			// External harness reports item as disabled via enabled:false
 			const cliSource = createItemSource({
 				harnessId: 'cli',
-				itemProvider: createMockItemProvider(items),
+				itemProvider: createMockItemProvider([{ ...items[0], enabled: false }]),
 				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
 			});
 			assert.strictEqual((await cliSource.fetchItems(PromptsType.instructions))[0].disabled, true);
 
-			const claudeSource = createItemSource({
-				harnessId: 'claude',
+			// VS Code harness is not affected — it reads from promptsService
+			const vscodeSource = createItemSource({
+				harnessId: 'vscode',
 				itemProvider: createMockItemProvider(items),
-				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
 			});
-			assert.strictEqual((await claudeSource.fetchItems(PromptsType.instructions))[0].disabled, false);
+			assert.strictEqual((await vscodeSource.fetchItems(PromptsType.instructions))[0].disabled, false);
 		});
 	});
 
 	suite('mixed API and VS Code items', () => {
 
 		test('API disabled, VS Code enabled', async () => {
-			const eh = createMockEnablementHandler();
-			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
-
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([
-					{ uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global' },
+					{ uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global', enabled: false },
 					{ uri: skillUri, type: PromptsType.agent, name: 'VS Code Agent', storage: PromptsStorage.local, enablementScope: 'workspace' },
 				]),
-				enablementHandler: eh,
+				enablementHandler: createMockEnablementHandler(),
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
@@ -362,20 +321,14 @@ suite('aiCustomizationDisablement', () => {
 			);
 		});
 
-		test('API enabled, VS Code disabled', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(skillUri);
-			ps.setDisabledPromptFiles(PromptsType.agent, disabled, StorageScope.PROFILE, 'cli');
-
+		test('API enabled, VS Code disabled via provider', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([
 					{ uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global' },
-					{ uri: skillUri, type: PromptsType.agent, name: 'VS Code Agent', storage: PromptsStorage.local, enablementScope: 'workspace' },
+					{ uri: skillUri, type: PromptsType.agent, name: 'VS Code Agent', storage: PromptsStorage.local, enablementScope: 'workspace', enabled: false },
 				]),
 				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
@@ -460,48 +413,6 @@ suite('aiCustomizationDisablement', () => {
 			assert.strictEqual(keys.disableButtonVisible, false);
 		});
 
-		test('external harness: disabled API agent ghost entry has enablementScope: global', async () => {
-			const eh = createMockEnablementHandler();
-			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
-
-			// Provider returns NO items (extension filtered out disabled agent)
-			const source = createItemSource({
-				harnessId: 'cli',
-				itemProvider: createMockItemProvider([]),
-				enablementHandler: eh,
-			});
-
-			const result = await source.fetchItems(PromptsType.agent);
-			assert.strictEqual(result.length, 1, 'ghost entry should be created');
-			assert.strictEqual(result[0].disabled, true);
-			assert.strictEqual(result[0].enablementScope, 'global');
-
-			const keys = computeContextKeys(result[0]);
-			assert.strictEqual(keys.enableButtonVisible, true, 'Enable button should be visible for ghost entry');
-		});
-
-		test('external harness: disabled VS Code item ghost entry has enablementScope: workspace', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(skillUri);
-			ps.setDisabledPromptFiles(PromptsType.skill, disabled, StorageScope.PROFILE, 'cli');
-
-			// Provider returns NO items
-			const source = createItemSource({
-				harnessId: 'cli',
-				itemProvider: createMockItemProvider([]),
-				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
-			});
-
-			const result = await source.fetchItems(PromptsType.skill);
-			assert.strictEqual(result.length, 1, 'ghost entry should be created');
-			assert.strictEqual(result[0].disabled, true);
-			assert.strictEqual(result[0].enablementScope, 'workspace');
-
-			const keys = computeContextKeys(result[0]);
-			assert.strictEqual(keys.enableButtonVisible, true, 'Enable button should be visible for ghost entry');
-		});
 	});
 
 	suite('provider item with pre-set enabled:false', () => {
@@ -589,16 +500,14 @@ suite('aiCustomizationDisablement', () => {
 		});
 
 		test('external harness: disabled API item shows Enable button', async () => {
-			const eh = createMockEnablementHandler();
-			eh.handleCustomizationEnablement(agentUri, PromptsType.agent, false, 'global');
-
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'CLI Agent',
 					enablementScope: 'global',
+					enabled: false,
 				}]),
-				enablementHandler: eh,
+				enablementHandler: createMockEnablementHandler(),
 			});
 
 			const result = await source.fetchItems(PromptsType.agent);
@@ -613,20 +522,15 @@ suite('aiCustomizationDisablement', () => {
 			});
 		});
 
-		test('external harness: disabled VS Code item shows Enable button', async () => {
-			const ps = createMockPromptsService();
-			const disabled = new ResourceSet();
-			disabled.add(skillUri);
-			ps.setDisabledPromptFiles(PromptsType.skill, disabled, StorageScope.PROFILE, 'cli');
-
+		test('external harness: disabled item via provider enabled:false shows Enable button', async () => {
 			const source = createItemSource({
 				harnessId: 'cli',
 				itemProvider: createMockItemProvider([{
 					uri: skillUri, type: PromptsType.skill, name: 'My Skill',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
+					enabled: false,
 				}]),
 				enablementHandler: createMockEnablementHandler(),
-				promptsService: ps,
 			});
 
 			const result = await source.fetchItems(PromptsType.skill);

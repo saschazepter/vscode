@@ -757,19 +757,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedInstructions.onDidChangePromise;
 	}
 
-	public async getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]> {
+	public async getCustomAgents(token: CancellationToken, options?: { includeDisabled?: boolean }): Promise<readonly ICustomAgent[]> {
 		const discoveryInfo = await this.cachedCustomAgents.get(token);
-		const result = this.agentsFromDiscoveryInfo(discoveryInfo);
-		return result;
+		return this.agentsFromDiscoveryInfo(discoveryInfo, options?.includeDisabled);
 	}
 
 	/**
 	 * Derives ICustomAgent[] from cached discovery info.
 	 */
-	private agentsFromDiscoveryInfo(discoveryInfo: IAgentDiscoveryInfo): readonly ICustomAgent[] {
+	private agentsFromDiscoveryInfo(discoveryInfo: IAgentDiscoveryInfo, includeDisabled?: boolean): readonly ICustomAgent[] {
 		const result: ICustomAgent[] = [];
 		for (const file of discoveryInfo.files) {
-			if (file.status === 'loaded' && file.agent) {
+			if (file.agent && (includeDisabled || file.status === 'loaded')) {
 				result.push(file.agent);
 			}
 		}
@@ -790,18 +789,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		const files = await Promise.all(allAgentFiles.map(async (promptPath): Promise<IAgentDiscoveryResult> => {
 			const uri = promptPath.uri;
-
-			if (disabledAgents.has(uri)) {
-				// Still parse the header so we have name/description for the UI
-				try {
-					const ast = await this.parseNew(uri, token);
-					const name = ast.header?.name;
-					const description = ast.header?.description;
-					return { status: 'skipped', skipReason: 'disabled', promptPath: this.withPromptPathMetadata(promptPath, name ?? promptPath.name, description ?? promptPath.description) };
-				} catch {
-					return { status: 'skipped', skipReason: 'disabled', promptPath };
-				}
-			}
+			const isDisabled = disabledAgents.has(uri);
 
 			try {
 				const ast = await this.parseNew(uri, token);
@@ -846,7 +834,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					: undefined;
 				if (!ast.header) {
 					const agent: ICustomAgent = { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true }, sessionTypes: promptPath.sessionTypes, ...(when !== undefined ? { when } : undefined) };
-					return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
+					return { status: isDisabled ? 'skipped' : 'loaded', ...(isDisabled ? { skipReason: 'disabled' as const } : undefined), promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
 				}
 				const visibility = {
 					userInvocable: ast.header.userInvocable !== false,
@@ -872,7 +860,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				}
 
 				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source, sessionTypes: promptPath.sessionTypes, ...(when !== undefined ? { when } : undefined) };
-				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
+				return { status: isDisabled ? 'skipped' : 'loaded', ...(isDisabled ? { skipReason: 'disabled' as const } : undefined), promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
 			} catch (e) {
 				const error = e instanceof Error ? e : new Error(String(e));
 				if (error instanceof FileOperationError && error.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
@@ -1093,9 +1081,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private readonly disabledPromptsStorageKeyPrefix = 'chat.disabledPromptFiles.';
 	private readonly disabledPromptsWorkspaceStorageKeyPrefix = 'chat.disabledPromptFiles.workspace.';
 
-	public getDisabledPromptFiles(type: PromptsType, namespace?: string): ResourceSet {
+	public getDisabledPromptFiles(type: PromptsType): ResourceSet {
 		const result = new ResourceSet();
-		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
+		const suffix = `.${type}`;
 		// Read profile-level disabled URIs
 		this._readDisabledFromStorage(this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix, StorageScope.PROFILE, result);
 		// Read workspace-level disabled URIs
@@ -1121,9 +1109,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 	}
 
-	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope: StorageScope = StorageScope.PROFILE, namespace?: string): void {
+	public setDisabledPromptFiles(type: PromptsType, uris: ResourceSet, scope: StorageScope = StorageScope.PROFILE): void {
 		const disabled = Array.from(uris).map(uri => uri.toJSON());
-		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
+		const suffix = `.${type}`;
 		const key = scope === StorageScope.WORKSPACE
 			? this.disabledPromptsWorkspaceStorageKeyPrefix.slice(0, -1) + suffix
 			: this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix;
@@ -1134,9 +1122,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 	/**
 	 * Returns the profile-level disabled URIs for a given type (excludes workspace overrides).
 	 */
-	public getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope, namespace?: string): ResourceSet {
+	public getDisabledPromptFilesForScope(type: PromptsType, scope: StorageScope): ResourceSet {
 		const result = new ResourceSet();
-		const suffix = namespace ? `.${namespace}.${type}` : `.${type}`;
+		const suffix = `.${type}`;
 		const key = scope === StorageScope.WORKSPACE
 			? this.disabledPromptsWorkspaceStorageKeyPrefix.slice(0, -1) + suffix
 			: this.disabledPromptsStorageKeyPrefix.slice(0, -1) + suffix;
@@ -1243,14 +1231,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedHooks.onDidChangePromise;
 	}
 
-	public async findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> {
+	public async findAgentSkills(token: CancellationToken, options?: { includeDisabled?: boolean }): Promise<IAgentSkill[] | undefined> {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		if (!useAgentSkills) {
 			return undefined;
 		}
 
 		const discoveryInfo = await this.cachedSkills.get(token);
-		const disabledSkills = this.getDisabledPromptFiles(PromptsType.skill);
+		const disabledSkills = options?.includeDisabled ? undefined : this.getDisabledPromptFiles(PromptsType.skill);
 		const result = this.skillsFromDiscoveryInfo(discoveryInfo, disabledSkills);
 		return result;
 	}
