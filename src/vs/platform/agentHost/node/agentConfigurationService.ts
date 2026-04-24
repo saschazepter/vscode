@@ -174,7 +174,25 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 	}
 
 	persistRootConfig(): void {
-		this._persistRootConfig();
+		if (!this._rootConfigResource) {
+			return;
+		}
+
+		const values = this._stateManager.rootState.config?.values ?? { [AgentHostConfigKey.Customizations]: [] };
+		const content = JSON.stringify(values, undefined, '\t');
+		const resource = this._rootConfigResource;
+
+		this._rootConfigWrite = this._rootConfigWrite
+			.catch(err => {
+				this._logService.warn('[AgentConfigurationService] Previous host config write failed', err);
+			})
+			.then(async () => {
+				await fs.promises.mkdir(dirname(resource.fsPath), { recursive: true });
+				await fs.promises.writeFile(resource.fsPath, `${content}\n`, 'utf8');
+			})
+			.catch(err => {
+				this._logService.error(`[AgentConfigurationService] Failed to persist host config to ${resource.fsPath}`, err);
+			});
 	}
 
 	/**
@@ -217,27 +235,5 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 			}
 			return { ...defaults };
 		}
-	}
-
-	private _persistRootConfig(): void {
-		if (!this._rootConfigResource) {
-			return;
-		}
-
-		const values = this._stateManager.rootState.config?.values ?? { [AgentHostConfigKey.Customizations]: [] };
-		const content = JSON.stringify(values, undefined, '\t');
-		const resource = this._rootConfigResource;
-
-		this._rootConfigWrite = this._rootConfigWrite
-			.catch(err => {
-				this._logService.warn('[AgentConfigurationService] Previous host config write failed', err);
-			})
-			.then(async () => {
-				await fs.promises.mkdir(dirname(resource.fsPath), { recursive: true });
-				await fs.promises.writeFile(resource.fsPath, `${content}\n`, 'utf8');
-			})
-			.catch(err => {
-				this._logService.error(`[AgentConfigurationService] Failed to persist host config to ${resource.fsPath}`, err);
-			});
 	}
 }

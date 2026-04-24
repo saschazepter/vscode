@@ -916,21 +916,11 @@ export class PluginListWidget extends Disposable {
 	}
 
 	private getRemoteGroupMetadata(groupKey: string | undefined): { group: string; label: string; description: string } {
-		switch (groupKey) {
-			case 'remote-client':
-				return {
-					group: groupKey,
-					label: localize('remoteClientGroup', "Client"),
-					description: localize('remoteClientGroupDescription', "Plugins currently synced from this client into the active remote session."),
-				};
-			case 'remote-host':
-			default:
-				return {
-					group: groupKey ?? 'remote-host',
-					label: localize('remoteHostGroup', "Remote"),
-					description: localize('remoteHostGroupDescription', "Plugins configured directly on the remote agent host and available without local sync."),
-				};
-		}
+		return {
+			group: groupKey ?? 'remote-host',
+			label: localize('remoteHostGroup', "Remote"),
+			description: localize('remoteHostGroupDescription', "Plugins configured directly on the remote agent host and available without local sync."),
+		};
 	}
 
 	private appendGroup(entries: IPluginListEntry[], header: { group: string; label: string; description: string }, items: readonly IPluginListEntry[], isFirst: boolean): boolean {

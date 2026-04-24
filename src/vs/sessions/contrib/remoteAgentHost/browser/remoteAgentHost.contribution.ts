@@ -27,7 +27,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentCustomizationDisableProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationDisableProvider.js';
-import { resolveTokenForResource, AgentHostAuthTokenCache } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
+import { authenticateProtectedResources, AgentHostAuthTokenCache, resolveAuthenticationInteractively } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostAuth.js';
 import { AgentHostLanguageModelProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostLanguageModelProvider.js';
 import { AgentHostSessionHandler } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionHandler.js';
 import { LoggingAgentConnection } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
@@ -525,27 +525,13 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		const authTokenCache = this._connections.get(address)?.authTokenCache;
 		provider?.setAuthenticationPending(true);
 		try {
-			for (const agent of agents) {
-				for (const resource of agent.protectedResources ?? []) {
-					const resourceUri = URI.parse(resource.resource);
-					const token = await this._resolveTokenForResource(resourceUri, resource.authorization_servers ?? [], resource.scopes_supported ?? []);
-					if (token) {
-						if (authTokenCache && !authTokenCache.updateAndIsChanged(resource.resource, token)) {
-							this._logService.trace(`[RemoteAgentHost] Auth token for ${resource.resource} unchanged; skipping authenticate RPC`);
-							continue;
-						}
-						this._logService.info(`[RemoteAgentHost] Authenticating for resource: ${resource.resource}`);
-						try {
-							await loggedConnection.authenticate({ resource: resource.resource, token });
-						} catch (rpcErr) {
-							authTokenCache?.clear(resource.resource);
-							throw rpcErr;
-						}
-					} else {
-						this._logService.info(`[RemoteAgentHost] No token resolved for resource: ${resource.resource}`);
-					}
-				}
-			}
+			await authenticateProtectedResources(agents, {
+				authTokenCache,
+				authenticationService: this._authenticationService,
+				logPrefix: '[RemoteAgentHost]',
+				logService: this._logService,
+				authenticate: request => loggedConnection.authenticate(request),
+			});
 		} catch (err) {
 			this._logService.error('[RemoteAgentHost] Failed to authenticate with connection', err);
 			loggedConnection.logError('authenticateWithConnection', err);
@@ -555,54 +541,19 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	}
 
 	/**
-	 * Resolve a bearer token for a set of authorization servers using the
-	 * standard VS Code authentication service provider resolution.
-	 */
-	private _resolveTokenForResource(resourceServer: URI, authorizationServers: readonly string[], scopes: readonly string[]): Promise<string | undefined> {
-		return resolveTokenForResource(resourceServer, authorizationServers, scopes, this._authenticationService, this._logService, '[RemoteAgentHost]');
-	}
-
-	/**
 	 * Interactively prompt the user to authenticate when the server requires it.
 	 * Returns true if authentication succeeded.
 	 */
 	private async _resolveAuthenticationInteractively(address: string, loggedConnection: LoggingAgentConnection, protectedResources: readonly ProtectedResourceMetadata[]): Promise<boolean> {
 		const authTokenCache = this._connections.get(address)?.authTokenCache;
 		try {
-			for (const resource of protectedResources) {
-				for (const server of resource.authorization_servers ?? []) {
-					const serverUri = URI.parse(server);
-					const resourceUri = URI.parse(resource.resource);
-					const token = await this._resolveTokenForResource(resourceUri, resource.authorization_servers ?? [], resource.scopes_supported ?? []);
-					if (token) {
-						await loggedConnection.authenticate({
-							resource: resource.resource,
-							token,
-						});
-						authTokenCache?.updateAndIsChanged(resource.resource, token);
-					} else {
-						const providerId = await this._authenticationService.getOrActivateProviderIdForServer(serverUri, resourceUri);
-						if (!providerId) {
-							continue;
-						}
-
-						const scopes = [...(resource.scopes_supported ?? [])];
-						const session = await this._authenticationService.createSession(providerId, scopes, {
-							activateImmediate: true,
-							authorizationServer: serverUri,
-						});
-
-						await loggedConnection.authenticate({
-							resource: resource.resource,
-							token: session.accessToken,
-						});
-						authTokenCache?.updateAndIsChanged(resource.resource, session.accessToken);
-					}
-
-					this._logService.info(`[RemoteAgentHost] Interactive authentication succeeded for ${resource.resource}`);
-					return true;
-				}
-			}
+			return await resolveAuthenticationInteractively(protectedResources, {
+				authTokenCache,
+				authenticationService: this._authenticationService,
+				logPrefix: '[RemoteAgentHost]',
+				logService: this._logService,
+				authenticate: request => loggedConnection.authenticate(request),
+			});
 		} catch (err) {
 			this._logService.error('[RemoteAgentHost] Interactive authentication failed', err);
 			loggedConnection.logError('resolveAuthenticationInteractively', err);

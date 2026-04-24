@@ -8,29 +8,9 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IPromptsService, PromptsStorage, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IAICustomizationWorkspaceService, applyStorageSourceFilter, IStorageSourceFilter } from '../../common/aiCustomizationWorkspaceService.js';
-import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
+import { AICustomizationManagementSection, sectionToPromptType } from './aiCustomizationManagement.js';
 import { ICustomizationHarnessService, ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
-
-/**
- * Maps section ID to prompt type. Duplicated from aiCustomizationListWidget
- * to avoid a circular dependency.
- */
-function sectionToPromptType(section: AICustomizationManagementSection): PromptsType {
-	switch (section) {
-		case AICustomizationManagementSection.Agents:
-			return PromptsType.agent;
-		case AICustomizationManagementSection.Skills:
-			return PromptsType.skill;
-		case AICustomizationManagementSection.Instructions:
-			return PromptsType.instructions;
-		case AICustomizationManagementSection.Hooks:
-			return PromptsType.hook;
-		case AICustomizationManagementSection.Prompts:
-		default:
-			return PromptsType.prompt;
-	}
-}
 
 /**
  * Snapshot of the list widget's internal state, passed in to avoid coupling.
@@ -137,6 +117,22 @@ export async function generateCustomizationDebugReport(
 	return lines.join('\n');
 }
 
+interface IPromptFilesByStorage {
+	readonly localFiles: readonly IPromptPath[];
+	readonly userFiles: readonly IPromptPath[];
+	readonly extensionFiles: readonly IPromptPath[];
+}
+
+async function getPromptFilesByStorage(promptsService: IPromptsService, promptType: PromptsType): Promise<IPromptFilesByStorage> {
+	const [localFiles, userFiles, extensionFiles] = await Promise.all([
+		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
+		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
+		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
+	]);
+
+	return { localFiles, userFiles, extensionFiles };
+}
+
 async function appendProviderData(lines: string[], provider: ICustomizationItemProvider, promptType: PromptsType, label: string): Promise<void> {
 	lines.push(`--- Stage 1: Provider Output (${label}) ---`);
 
@@ -196,11 +192,7 @@ async function appendProviderData(lines: string[], provider: ICustomizationItemP
 async function appendRawServiceData(lines: string[], promptsService: IPromptsService, promptType: PromptsType): Promise<void> {
 	lines.push('--- Stage 2a: Raw PromptsService Data ---');
 
-	const [localFiles, userFiles, extensionFiles] = await Promise.all([
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
-	]);
+	const { localFiles, userFiles, extensionFiles } = await getPromptFilesByStorage(promptsService, promptType);
 
 	lines.push(`  listPromptFilesForStorage(local):  ${localFiles.length} files`);
 	appendFileList(lines, localFiles);
@@ -250,12 +242,7 @@ async function appendRawServiceData(lines: string[], promptsService: IPromptsSer
 async function appendFilteredData(lines: string[], promptsService: IPromptsService, promptType: PromptsType, filter: IStorageSourceFilter): Promise<void> {
 	lines.push('--- Stage 2b: After applyStorageSourceFilter ---');
 
-	const [localFiles, userFiles, extensionFiles] = await Promise.all([
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
-		promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
-	]);
-
+	const { localFiles, userFiles, extensionFiles } = await getPromptFilesByStorage(promptsService, promptType);
 	const all: IPromptPath[] = [...localFiles, ...userFiles, ...extensionFiles];
 	const filtered = applyStorageSourceFilter(all, filter);
 	lines.push(`  Input: ${all.length} → Filtered: ${filtered.length}`);
