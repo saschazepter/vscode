@@ -44,14 +44,14 @@ import { builtinSlashSCommands, CopilotCLICommand, copilotCLICommands, ICopilotC
 import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
 import { buildMcpServerMappings } from '../copilotcli/node/mcpHandler';
 import { ICopilotCLISessionTracker } from '../copilotcli/vscode-node/copilotCLISessionTracker';
-import { ICopilotCLIChatSessionInitializer, SessionInitOptions } from './copilotCLIChatSessionInitializer';
-import { convertReferenceToVariable } from './copilotCLIPromptReferences';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { UNTRUSTED_FOLDER_MESSAGE } from './folderRepositoryManagerImpl';
 import { IPullRequestDetectionService } from './pullRequestDetectionService';
 import { getSelectedSessionOptions, ISessionOptionGroupBuilder, OPEN_REPOSITORY_COMMAND_ID, toRepositoryOptionItem, toWorkspaceFolderOptionItem } from './sessionOptionGroupBuilder';
 import { ISessionRequestLifecycle } from './sessionRequestLifecycle';
+import { ICopilotCLIChatSessionInitializer, SessionInitOptions } from '../copilotcli/vscode-node/copilotCLIChatSessionInitializer';
+import { convertReferenceToVariable } from '../copilotcli/vscode-node/copilotCLIPromptReferences';
 
 
 export interface ICopilotCLIChatSessionItemProvider extends IDisposable {
@@ -146,6 +146,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		@IChatSessionWorkspaceFolderService private readonly _workspaceFolderService: IChatSessionWorkspaceFolderService,
 		@IChatSessionMetadataStore private readonly _metadataStore: IChatSessionMetadataStore,
 		@IWorkspaceService private readonly _workspaceService: IWorkspaceService,
+		@IChatSessionWorktreeService chatSessionWorktreeService: IChatSessionWorktreeService,
 	) {
 		super();
 
@@ -180,6 +181,12 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			if (e.affectsConfiguration(ConfigKey.Advanced.CLIShowExternalSessions.fullyQualifiedId)) {
 				void refreshSessions();
 			}
+		}));
+		this._register(this._workspaceFolderService.onDidChangeWorkspaceFolderChanges(e => {
+			this.refreshSession({ reason: 'update', sessionId: e.sessionId });
+		}));
+		this._register(chatSessionWorktreeService.onDidChangeWorktreeChanges(e => {
+			this.refreshSession({ reason: 'update', sessionId: e.sessionId });
 		}));
 		controller.newChatSessionItemHandler = async (context) => {
 			const sessionId = this.sessionService.createNewSessionId();
@@ -218,7 +225,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			controller.resolveChatSessionItem = async (item, token) => {
 				const sessionId = SessionIdForCLI.parse(item.resource);
 				const session = await this.sessionService.getSessionItem(sessionId, token);
-				if (!session || token.isCancellationRequested || Array.isArray(item.changes)) {
+				if (!session || token.isCancellationRequested) {
 					return;
 				}
 				const updatedItem = await this.toChatSessionItem(session, { includeChanges: true }, token);
@@ -229,7 +236,10 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			controller.items.delete(SessionIdForCLI.getResource(e));
 		}));
 		this._register(this.sessionService.onDidChangeSession(async (e) => {
-			const item = await this.toChatSessionItem(e);
+			// Push path: VS Code uses the item we provide as source of truth and does not
+			// re-invoke `resolveChatSessionItem` for already-visible rows. Include changes
+			// eagerly so the visible row reflects the latest diff info.
+			const item = await this.toChatSessionItem(e, { includeChanges: true });
 			controller.items.add(item);
 		}));
 		this._register(this.sessionService.onDidCreateSession(async (e) => {
@@ -237,7 +247,7 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			if (controller.items.get(resource)) {
 				return;
 			}
-			const item = await this.toChatSessionItem(e);
+			const item = await this.toChatSessionItem(e, { includeChanges: true });
 			controller.items.add(item);
 		}));
 
@@ -324,14 +334,16 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			await Promise.allSettled(refreshOptions.sessionIds.map(async sessionId => {
 				const item = await this.sessionService.getSessionItem(sessionId, CancellationToken.None);
 				if (item) {
-					const chatSessionItem = await this.toChatSessionItem(item);
+					// Push path — include changes eagerly (see `onDidChangeSession`).
+					const chatSessionItem = await this.toChatSessionItem(item, { includeChanges: true });
 					this.controller.items.add(chatSessionItem);
 				}
 			}));
 		} else {
 			const item = await this.sessionService.getSessionItem(refreshOptions.sessionId, CancellationToken.None);
 			if (item) {
-				const chatSessionItem = await this.toChatSessionItem(item);
+				// Push path — include changes eagerly (see `onDidChangeSession`).
+				const chatSessionItem = await this.toChatSessionItem(item, { includeChanges: true });
 				this.controller.items.add(chatSessionItem);
 			}
 		}
@@ -360,7 +372,6 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			if (token.isCancellationRequested) {
 				return item;
 			}
-
 			// We need to get an updated version of worktree properties here because when the
 			// changes are being computed, the worktree properties are also updated with the
 			// repository state which we are passing along through the metadata
