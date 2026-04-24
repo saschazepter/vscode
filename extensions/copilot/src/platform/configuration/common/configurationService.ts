@@ -713,9 +713,6 @@ export namespace ConfigKey {
 
 		/** Internal: override reasoning/thinking effort sent to model APIs (e.g. Responses API, Messages API). Used by evals. */
 		export const ReasoningEffortOverride = defineSetting<string | null>('chat.reasoningEffortOverride', ConfigType.Simple, null);
-
-		/** Enable local session tracking and /chronicle commands. */
-		export const LocalIndexEnabled = defineAndMigrateExpSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', 'chat.localIndex.enabled', false);
 	}
 
 	/**
@@ -1021,6 +1018,9 @@ export namespace ConfigKey {
 	export const CopilotMemoryEnabled = defineSetting<boolean>('chat.copilotMemory.enabled', ConfigType.ExperimentBased, false);
 	export const MemoryToolEnabled = defineSetting<boolean>('chat.tools.memory.enabled', ConfigType.ExperimentBased, true);
 	export const ViewImageToolEnabled = defineSetting<boolean>('chat.tools.viewImage.enabled', ConfigType.ExperimentBased, true);
+
+	/** Enable local session tracking and /chronicle commands. */
+	export const LocalIndexEnabled = defineAndMigrateExpSetting<boolean>('chat.advanced.sessionSearch.localIndex.enabled', 'chat.localIndex.enabled', false);
 }
 
 export function getAllConfigKeys(): string[] {

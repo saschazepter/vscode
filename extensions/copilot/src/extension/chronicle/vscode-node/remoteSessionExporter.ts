@@ -129,16 +129,14 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		// Only set up span listener when both local index and cloud sync are enabled.
 		// Uses autorun to react if settings change at runtime.
-		const localEnabledNew = this._configService.getExperimentBasedConfigObservable(ConfigKey.Advanced.LocalIndexEnabled, this._expService);
-		const localEnabledOld = this._configService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.SessionSearchLocalIndexEnabled, this._expService);
+		const localEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.LocalIndexEnabled, this._expService);
 		const spanListenerStore = this._register(new DisposableStore());
 		this._register(autorun(reader => {
 			spanListenerStore.clear();
-			const localEnabled = this._configService.isConfigured(ConfigKey.Advanced.LocalIndexEnabled) ? localEnabledNew.read(reader) : localEnabledOld.read(reader);
 			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
-			if (!localEnabled || !cloudEnabled) {
+			if (!localEnabled.read(reader) || !cloudEnabled) {
 				// Suggest session sync when local index is on but sync is off
-				if (localEnabled && !cloudEnabled) {
+				if (localEnabled.read(reader) && !cloudEnabled) {
 					this._suggestSessionSync();
 				}
 				return;
