@@ -306,8 +306,7 @@
 /* ── Wizard Inputs ── */
 .wizard-textarea {
 	width: 100%;
-	min-height: 80px;
-	max-height: 160px;
+	min-height: 120px;
 	font-size: 13px;
 	font-family: inherit;
 	line-height: 1.5;
@@ -317,7 +316,8 @@
 	border-radius: 4px;
 	padding: 10px 12px;
 	outline: none;
-	resize: vertical;
+	resize: none;
+	overflow: hidden;
 	box-sizing: border-box;
 }
 
@@ -605,29 +605,50 @@
 }
 
 .wizard-ai-title-btn.monaco-button {
-	width: 28px;
-	height: 28px;
 	min-width: 28px;
-	padding: 0;
+	width: auto;
+	padding: 0 8px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
+	gap: 4px;
+	white-space: nowrap;
 }
 
 /* Description guidance text */
 .wizard-description-guidance {
-	margin-top: 12px;
+	margin-top: 0;
 	margin-bottom: 4px;
 	font-style: italic;
 	min-height: 1.4em;
 }
 
-/* Review: description value preserves whitespace */
-.review-description {
-	white-space: pre-wrap;
-	max-height: 200px;
-	overflow-y: auto;
+.wizard-md-hint {
+	margin-top: 0;
+	margin-bottom: 4px;
+}
+
+/* Review: description rendered content */
+.review-value.review-description {
+	white-space: normal;
+	max-height: none;
+	overflow: visible;
+	padding: 8px 12px;
+	border: 1px solid var(--vscode-input-border, #444);
+	border-radius: 4px;
+}
+
+.review-description .rendered-markdown {
+	color: inherit;
+}
+
+.review-description .rendered-markdown p:first-child {
+	margin-top: 0;
+}
+
+.review-description .rendered-markdown p:last-child {
+	margin-bottom: 0;
 }
 
 .wizard-review-details {
@@ -635,11 +656,6 @@
 	flex-direction: column;
 	gap: 10px;
 	margin-top: 8px;
-}
-
-.review-info-row {
-	display: flex;
-	gap: 24px;
 }
 
 .review-thumbnails {

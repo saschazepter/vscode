@@ -10,12 +10,14 @@ import { IContextMenuProvider } from '../../../../base/browser/contextmenu.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
-import { Action } from '../../../../base/common/actions.js';
+import { Action, Separator } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
+import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
@@ -85,6 +87,7 @@ export class IssueReporterOverlay {
 
 	// Step 2: Review
 	private reviewThumbCards: HTMLElement[] = [];
+	private readonly reviewRenderDisposables = new DisposableStore();
 	private uploading = false;
 	private includeSystemInfo = true;
 	private includeExtensions = true;
@@ -108,13 +111,17 @@ export class IssueReporterOverlay {
 	private visible = false;
 	private floatingBar: HTMLElement | undefined;
 	private submitted = false;
+	private _hideToolbarInScreenshots = true;
 
 	constructor(
 		private readonly data: IssueReporterData,
 		private readonly recordingSupported: boolean = false,
 		private readonly container: HTMLElement,
 		private readonly contextMenuProvider?: IContextMenuProvider,
+		private readonly markdownRendererService?: IMarkdownRendererService,
+		initialHideToolbar: boolean = true,
 	) {
+		this._hideToolbarInScreenshots = initialHideToolbar;
 		this.model = new IssueReporterModel({
 			...data,
 			issueType: data.issueType || IssueType.Bug,
@@ -319,11 +326,24 @@ export class IssueReporterOverlay {
 		append(delayDropdownContainer, $('span')).appendChild(renderIcon(Codicon.chevronDown));
 
 		if (this.contextMenuProvider) {
+			let menuOpen = false;
 			this.disposables.add(addDisposableListener(delayDropdownContainer, EventType.CLICK, (e) => {
 				e.stopPropagation();
-				if (delayDropdownContainer.classList.contains('disabled')) {
+				if (delayDropdownContainer.classList.contains('disabled') || menuOpen) {
 					return;
 				}
+				// Hide-toolbar-in-screenshots toggle (first)
+				const hideAction = new Action(
+					'hide-toolbar',
+					localize('hideToolbarInScreenshots', "Hide Toolbar in Screenshots"),
+					undefined,
+					true,
+					async () => {
+						this._hideToolbarInScreenshots = !this._hideToolbarInScreenshots;
+					}
+				);
+				hideAction.checked = this._hideToolbarInScreenshots;
+
 				const actions = delayOptions.map(opt => {
 					const action = new Action(
 						`delay-${opt.value}`,
@@ -335,11 +355,18 @@ export class IssueReporterOverlay {
 					action.checked = opt.value === this.screenshotDelay;
 					return action;
 				});
+
+				const allActions = [hideAction, new Separator(), ...actions];
+				menuOpen = true;
 				this.contextMenuProvider!.showContextMenu({
 					getAnchor: () => this.floatingBar!,
-					getActions: () => actions,
+					getActions: () => allActions,
 					skipTelemetry: true,
-					onHide: () => { for (const a of actions) { a.dispose(); } },
+					onHide: () => {
+						menuOpen = false;
+						hideAction.dispose();
+						for (const a of actions) { a.dispose(); }
+					},
 				});
 			}));
 
@@ -520,20 +547,6 @@ export class IssueReporterOverlay {
 			}
 		}));
 
-		// Guidance text (changes based on category)
-		this.descriptionGuidance = append(page, $('p.wizard-subtitle.wizard-description-guidance'));
-		this.updateDescriptionGuidance();
-
-		// Description textarea
-		const descLabel = append(page, $('label.wizard-field-label'));
-		descLabel.textContent = localize('description', "Description");
-		this.descriptionTextarea = append(page, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-		this.descriptionTextarea.placeholder = localize('descriptionPlaceholder', "Describe the issue in detail...");
-		this.descriptionTextarea.rows = 6;
-		if (this.data.issueBody) {
-			this.descriptionTextarea.value = this.data.issueBody;
-		}
-
 		// Title input with AI generate button
 		const titleGroup = append(page, $('div.wizard-field.wizard-title-field'));
 		const titleLabel = append(titleGroup, $('label.wizard-field-label'));
@@ -551,7 +564,7 @@ export class IssueReporterOverlay {
 		}));
 
 		const aiBtn = this.disposables.add(new Button(titleRow, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		aiBtn.label = `$(sparkle)`;
+		aiBtn.label = `$(sparkle) ${localize('generateTitleBtn', "Generate")}`;
 		aiBtn.element.classList.add('wizard-ai-title-btn');
 		aiBtn.element.title = localize('generateTitle', "Generate title from description");
 		this.disposables.add(aiBtn.onDidClick(() => {
@@ -559,6 +572,34 @@ export class IssueReporterOverlay {
 			if (desc) {
 				this._onDidRequestGenerateTitle.fire(desc);
 			}
+		}));
+
+		// Description field with guidance and auto-growing textarea
+		const descriptionGroup = append(page, $('div.wizard-field'));
+		const descLabel = append(descriptionGroup, $('label.wizard-field-label'));
+		descLabel.textContent = localize('description', "Description");
+
+		this.descriptionGuidance = append(descriptionGroup, $('p.wizard-subtitle.wizard-description-guidance'));
+		this.updateDescriptionGuidance();
+
+		const mdHint = append(descriptionGroup, $('p.wizard-subtitle.wizard-md-hint'));
+		mdHint.textContent = localize('markdownSupported', "Markdown formatting is supported.");
+
+		this.descriptionTextarea = append(descriptionGroup, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
+		this.descriptionTextarea.placeholder = localize('descriptionPlaceholder', "Describe the issue in detail...");
+		this.descriptionTextarea.rows = 6;
+		if (this.data.issueBody) {
+			this.descriptionTextarea.value = this.data.issueBody;
+		}
+		const autoGrowTextarea = () => {
+			this.descriptionTextarea.style.height = '0';
+			const newHeight = Math.max(this.descriptionTextarea.scrollHeight, 120);
+			this.descriptionTextarea.style.height = `${newHeight}px`;
+		};
+		autoGrowTextarea();
+		this.disposables.add(addDisposableListener(this.descriptionTextarea, EventType.INPUT, () => {
+			this.descriptionTextarea.classList.remove('invalid-input');
+			autoGrowTextarea();
 		}));
 	}
 
@@ -760,19 +801,10 @@ export class IssueReporterOverlay {
 		if (!details) {
 			return;
 		}
+		this.reviewRenderDisposables.clear();
 		details.textContent = '';
 
-		// Title (read-only)
-		const titleSection = append(details as HTMLElement, $('div.review-section'));
-		const titleLabel = append(titleSection, $('div.review-label'));
-		titleLabel.textContent = localize('issueTitle', "Title");
-		const titleValue = append(titleSection, $('div.review-value'));
-		titleValue.textContent = this.titleInput.value.trim() || localize('noTitle', "(no title)");
-
-		// Category + Description row
-		const infoRow = append(details as HTMLElement, $('div.review-info-row'));
-
-		const catSection = append(infoRow, $('div.review-section'));
+		const catSection = append(details as HTMLElement, $('div.review-section'));
 		const catLabel = append(catSection, $('div.review-label'));
 		catLabel.textContent = localize('category', "Category");
 		const catValue = append(catSection, $('div.review-value'));
@@ -783,11 +815,27 @@ export class IssueReporterOverlay {
 		};
 		catValue.textContent = (this.selectedIssueType !== undefined ? typeLabels[this.selectedIssueType] : undefined) ?? localize('unknown', "Unknown");
 
-		const descSection = append(infoRow, $('div.review-section'));
+		const titleSection = append(details as HTMLElement, $('div.review-section'));
+		const titleLabel = append(titleSection, $('div.review-label'));
+		titleLabel.textContent = localize('issueTitle', "Title");
+		const titleValue = append(titleSection, $('div.review-value'));
+		titleValue.textContent = this.titleInput.value.trim() || localize('noTitle', "(no title)");
+
+		const descSection = append(details as HTMLElement, $('div.review-section'));
 		const descLabel = append(descSection, $('div.review-label'));
 		descLabel.textContent = localize('description', "Description");
 		const descValue = append(descSection, $('div.review-value.review-description'));
-		descValue.textContent = this.descriptionTextarea.value.trim() || localize('noDescription', "(no description)");
+		const description = this.descriptionTextarea.value.trim();
+		if (description && this.markdownRendererService) {
+			const renderedMarkdown = this.markdownRendererService.render(
+				new MarkdownString(description),
+				{ markedOptions: { breaks: true } },
+			);
+			append(descValue, renderedMarkdown.element);
+			this.reviewRenderDisposables.add(renderedMarkdown);
+		} else {
+			descValue.textContent = description || localize('noDescription', "(no description)");
+		}
 
 		// Attachments row with full-size clickable thumbnails
 		const totalAttachments = this.screenshots.length + this.recordings.length;
@@ -811,7 +859,7 @@ export class IssueReporterOverlay {
 
 				this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
 					if (!this.uploading) {
-						this.openAnnotationEditor(i);
+						this._onDidRequestOpenScreenshot.fire(s);
 					}
 				}));
 				this.reviewThumbCards.push(card);
@@ -1343,6 +1391,10 @@ export class IssueReporterOverlay {
 		}
 	}
 
+	get shouldHideToolbarForCapture(): boolean {
+		return this._hideToolbarInScreenshots;
+	}
+
 	/** Update the internal model with additional data loaded asynchronously */
 	updateModel(newData: Record<string, unknown>): void {
 		this.model.update(newData);
@@ -1478,6 +1530,7 @@ export class IssueReporterOverlay {
 		if (this.recordingElapsedTimer !== undefined) {
 			clearInterval(this.recordingElapsedTimer);
 		}
+		this.reviewRenderDisposables.dispose();
 		this.disposables.dispose();
 		this._onDidClose.dispose();
 		this._onDidSubmit.dispose();

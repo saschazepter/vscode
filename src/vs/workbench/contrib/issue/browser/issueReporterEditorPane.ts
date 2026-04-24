@@ -34,8 +34,11 @@ import product from '../../../../platform/product/common/product.js';
 import { isLinuxSnap } from '../../../../base/common/platform.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
+import { ChatMessageRole, ILanguageModelsService, getTextResponseFromStream } from '../../chat/common/languageModels.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 /**
  * Editor pane that hosts the issue reporter wizard inside an editor tab.
@@ -65,7 +68,10 @@ export class IssueReporterEditorPane extends EditorPane {
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotificationService private readonly notificationService: INotificationService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -103,11 +109,15 @@ export class IssueReporterEditorPane extends EditorPane {
 		}
 
 		// Create the wizard — renders inside this container
+		const wizardConfig = this.configurationService.getValue<{ defaultHideToolbarInScreenshots?: boolean }>('issueReporter.experimental.issueReportingWizard');
+		const hideToolbar = wizardConfig?.defaultHideToolbarInScreenshots ?? true;
 		this.wizard = new IssueReporterOverlay(
 			data,
 			this.recordingService.isSupported,
 			this.container,
 			this.contextMenuService,
+			this.markdownRendererService,
+			hideToolbar,
 		);
 		this.inputDisposables.add(this.wizard);
 
@@ -134,16 +144,21 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire screenshot capture
 		this.inputDisposables.add(this.wizard.onDidRequestScreenshot(async () => {
 			try {
-				// Hide the floating bar so it doesn't appear in the screenshot
-				this.wizard?.hideFloatingBar();
+				// Conditionally hide the floating bar based on user setting
+				const shouldHide = this.wizard?.shouldHideToolbarForCapture ?? true;
+				if (shouldHide) {
+					this.wizard?.hideFloatingBar();
 
-				// Small delay to let the bar disappear before capture
-				await new Promise(r => setTimeout(r, 100));
+					// Small delay to let the bar disappear before capture
+					await new Promise(r => setTimeout(r, 100));
+				}
 
 				const dataUrl = await this.screenshotService.captureScreenshot();
 
-				// Keep bar hidden for a moment — the annotation editor opens anyway
-				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
+				// Show bar again after capture
+				if (shouldHide) {
+					setTimeout(() => this.wizard?.showFloatingBar(), 1000);
+				}
 
 				if (!dataUrl || !this.wizard) {
 					return;
@@ -249,6 +264,37 @@ export class IssueReporterEditorPane extends EditorPane {
 				// User opened the link — mark as submitted and show close button
 				this.wizard.markAsSubmitted();
 				this.wizard.showCloseButton();
+			}
+		}));
+
+		// Wire AI title generation
+		this.inputDisposables.add(this.wizard.onDidRequestGenerateTitle(async (description) => {
+			try {
+				const modelIds = await this.languageModelsService.selectLanguageModels({});
+				if (modelIds.length === 0) {
+					this.logService.warn('[IssueReporterEditorPane] No language models available for title generation');
+					return;
+				}
+				const modelId = modelIds[0];
+				const response = await this.languageModelsService.sendChatRequest(
+					modelId,
+					undefined,
+					[{
+						role: ChatMessageRole.User,
+						content: [{
+							type: 'text',
+							value: `Generate a concise issue title (max 10 words, no quotes, no prefix like "Bug:" or "Feature:") for this bug report description:\n\n${description}`,
+						}],
+					}],
+					{},
+					CancellationToken.None,
+				);
+				const title = (await getTextResponseFromStream(response)).trim().replace(/^["']|["']$/g, '');
+				if (title && this.wizard) {
+					this.wizard.setGeneratedTitle(title);
+				}
+			} catch (err) {
+				this.logService.error('[IssueReporterEditorPane] Title generation failed:', err);
 			}
 		}));
 	}
