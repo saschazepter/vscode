@@ -31,13 +31,15 @@ export const SYNCABLE_PROMPT_TYPES: readonly PromptsType[] = [
 ];
 
 /**
- * Storage sources whose contents are auto-synced. Built-in / extension
- * customizations are excluded — they are not the user's content.
+ * Storage sources whose contents are auto-synced. Extension and built-in
+ * customizations are included so the agent host has the same skills,
+ * instructions, and agents available as the local VS Code client.
  */
 export const SYNCABLE_STORAGE_SOURCES: readonly PromptsStorage[] = [
 	PromptsStorage.local,
 	PromptsStorage.user,
 	PromptsStorage.plugin,
+	PromptsStorage.extension,
 ];
 
 export interface ILocalCustomizationFile {

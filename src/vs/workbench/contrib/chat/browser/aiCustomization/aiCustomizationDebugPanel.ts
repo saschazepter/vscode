@@ -9,7 +9,8 @@ import { IPromptsService, PromptsStorage, IPromptPath } from '../../common/promp
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IAICustomizationWorkspaceService, applyStorageSourceFilter, IStorageSourceFilter } from '../../common/aiCustomizationWorkspaceService.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
-import { ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
+import { ICustomizationHarnessService, ICustomizationItemProvider, IHarnessDescriptor } from '../../common/customizationHarnessService.js';
+import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 
 /**
  * Maps section ID to prompt type. Duplicated from aiCustomizationListWidget
@@ -55,6 +56,8 @@ export async function generateCustomizationDebugReport(
 	widgetState: IDebugWidgetState,
 	activeDescriptor?: IHarnessDescriptor,
 	promptsServiceItemProvider?: ICustomizationItemProvider,
+	harnessService?: ICustomizationHarnessService,
+	agentPluginService?: IAgentPluginService,
 ): Promise<string> {
 	const promptType = sectionToPromptType(section);
 	const filter = workspaceService.getStorageSourceFilter(promptType);
@@ -121,6 +124,16 @@ export async function generateCustomizationDebugReport(
 	// Stage 4: Source folders
 	await appendSourceFolders(lines, promptsService, promptType);
 
+	// Stage 5: All registered harnesses
+	if (harnessService) {
+		appendAllHarnesses(lines, harnessService);
+	}
+
+	// Stage 6: Installed plugins
+	if (agentPluginService) {
+		appendInstalledPlugins(lines, agentPluginService);
+	}
+
 	return lines.join('\n');
 }
 
@@ -156,6 +169,9 @@ async function appendProviderData(lines: string[], provider: ICustomizationItemP
 			}
 			if (item.groupKey) {
 				lines.push(`      groupKey: ${item.groupKey}`);
+			}
+			if (item.itemKey) {
+				lines.push(`      itemKey: ${item.itemKey}`);
 			}
 			if (item.extensionLabel) {
 				lines.push(`      extensionLabel: ${item.extensionLabel}`);
@@ -305,4 +321,38 @@ function appendFileList(lines: string[], files: readonly { uri: URI }[]): void {
 	for (const f of files) {
 		lines.push(`    ${f.uri.fsPath}`);
 	}
+}
+
+function appendAllHarnesses(lines: string[], harnessService: ICustomizationHarnessService): void {
+	lines.push('--- Stage 5: All Registered Harnesses ---');
+	const activeId = harnessService.activeHarness.get();
+	const harnesses = harnessService.availableHarnesses.get();
+	lines.push(`  Active: ${activeId}`);
+	lines.push(`  Total harnesses: ${harnesses.length}`);
+	for (const h of harnesses) {
+		const isActive = h.id === activeId ? ' (ACTIVE)' : '';
+		lines.push(`  [${h.id}]${isActive} "${h.label}"`);
+		lines.push(`    hasItemProvider: ${!!h.itemProvider}`);
+		lines.push(`    hasDisableProvider: ${!!h.disableProvider}`);
+		lines.push(`    hiddenSections: ${h.hiddenSections ? `[${h.hiddenSections.join(', ')}]` : '(none)'}`);
+		lines.push(`    hideGenerateButton: ${h.hideGenerateButton ?? false}`);
+		lines.push(`    pluginActions: ${h.pluginActions?.length ?? 0}`);
+		if (h.pluginActions) {
+			for (const a of h.pluginActions) {
+				lines.push(`      - ${a.id}: ${a.label}`);
+			}
+		}
+	}
+	lines.push('');
+}
+
+function appendInstalledPlugins(lines: string[], agentPluginService: IAgentPluginService): void {
+	lines.push('--- Stage 6: Installed Plugins ---');
+	const plugins = agentPluginService.plugins.get();
+	lines.push(`  Total: ${plugins.length}`);
+	for (const p of plugins) {
+		lines.push(`  [${p.label}] ${p.uri.toString()}`);
+		lines.push(`    fromMarketplace: ${p.fromMarketplace}`);
+	}
+	lines.push('');
 }

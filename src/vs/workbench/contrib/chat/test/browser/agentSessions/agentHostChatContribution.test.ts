@@ -50,6 +50,7 @@ import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
 import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from '../../../browser/agentSessions/agentHost/agentHostSessionWorkingDirectoryResolver.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
+import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 
 // ---- Mock agent host service ------------------------------------------------
@@ -363,6 +364,16 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	instantiationService.stub(IAgentPluginService, {
 		plugins: observableValue('plugins', []),
 	});
+	instantiationService.stub(IPromptsService, new class extends mock<IPromptsService>() {
+		override readonly onDidChangeCustomAgents = Event.None;
+		override readonly onDidChangeSlashCommands = Event.None;
+		override readonly onDidChangeSkills = Event.None;
+		override readonly onDidChangeInstructions = Event.None;
+
+		override async listPromptFilesForStorage() {
+			return [];
+		}
+	}());
 	instantiationService.stub(ITerminalChatService, {
 		onDidContinueInBackground: Event.None,
 		registerTerminalInstanceWithToolSession: () => { },

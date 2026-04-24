@@ -30,11 +30,25 @@ import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyn
 import { PromptsStorage } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { BUILTIN_STORAGE } from '../../chat/common/builtinPromptsStorage.js';
 import { AgentCustomizationDisableProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationDisableProvider.js';
+import { SYNCED_CUSTOMIZATION_SCHEME } from '../../../../workbench/services/agentHost/common/agentHostFileSystemService.js';
 
 export { AgentCustomizationDisableProvider as RemoteAgentDisableProvider } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentCustomizationDisableProvider.js';
 
 const REMOTE_HOST_GROUP = 'remote-host';
 const REMOTE_CLIENT_GROUP = 'remote-client';
+
+/**
+ * Returns `true` for the synthetic "VS Code Synced Data" bundle plugin,
+ * which is an implementation detail of the customization sync pipeline
+ * and should not be surfaced as a standalone item in the UI.
+ */
+function isSyntheticBundle(customization: CustomizationRef): boolean {
+	try {
+		return URI.parse(customization.uri).scheme === SYNCED_CUSTOMIZATION_SCHEME;
+	} catch {
+		return false;
+	}
+}
 
 /**
  * Maps a plugin sub-directory name to the {@link PromptsType}
@@ -296,7 +310,15 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	}
 
 	private toRemoteUri(customization: CustomizationRef): URI {
-		return toAgentHostUri(URI.parse(customization.uri), this._connectionAuthority);
+		const original = URI.parse(customization.uri);
+		// The synthetic synced-customization bundle lives in the client's
+		// in-memory filesystem. Don't wrap it as an agent-host:// URI —
+		// the server doesn't have this scheme registered, so wrapping it
+		// would make expansion (and any direct read) fail.
+		if (original.scheme === SYNCED_CUSTOMIZATION_SCHEME) {
+			return original;
+		}
+		return toAgentHostUri(original, this._connectionAuthority);
 	}
 
 	private toBadge(customization: CustomizationRef, source: SessionCustomizationSource | undefined): { badge?: string; badgeTooltip?: string; groupKey?: string } {
@@ -317,8 +339,6 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 		}
 
 		return {
-			badge: localize('remoteAgentHost.hostBadge', "Remote Host"),
-			badgeTooltip: localize('remoteAgentHost.hostBadgeTooltip', "This plugin is configured directly on the remote agent host."),
 			groupKey: REMOTE_HOST_GROUP,
 		};
 	}
@@ -356,36 +376,49 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 		const items = new Map<string, ICustomizationItem>();
 
 		// Build parent plugin items keyed by customization ref
-		type PluginMeta = { item: ICustomizationItem; nonce: string | undefined; status: ReturnType<typeof toStatusString>; statusMessage: string | undefined; enabled: boolean | undefined };
+		type PluginMeta = { item: ICustomizationItem; nonce: string | undefined; status: ReturnType<typeof toStatusString>; statusMessage: string | undefined; enabled: boolean | undefined; childGroupKey?: string };
 		const plugins: PluginMeta[] = [];
 
 		for (const customization of this._agentCustomizations) {
 			const item = this.toItem(customization, undefined);
 			items.set(customizationItemKey(customization, undefined), item);
-			plugins.push({ item, nonce: customization.nonce, status: undefined, statusMessage: undefined, enabled: undefined });
+			plugins.push({ item, nonce: customization.nonce, status: undefined, statusMessage: undefined, enabled: undefined, childGroupKey: REMOTE_HOST_GROUP });
 		}
 
 		for (const sessionCustomization of this._sessionCustomizations ?? []) {
-			const item = this.toItem(sessionCustomization.customization, sessionCustomization);
-			items.set(
-				customizationItemKey(sessionCustomization.customization, sessionCustomization.source),
-				item,
-			);
-			// Only expand host-side plugins (not client-synced ones)
-			if (sessionCustomization.source !== SessionCustomizationSource.Client) {
-				plugins.push({
+			const isBundleItem = isSyntheticBundle(sessionCustomization.customization);
+			const isClientSynced = sessionCustomization.source === SessionCustomizationSource.Client;
+
+			// Don't show client-synced items as standalone plugin entries —
+			// the local "Enabled Locally" section already lists what's being
+			// synced. Same for the synthetic bundle (an implementation detail).
+			// Both are still expanded below so individual user skills/agents/etc.
+			// appear in their per-type tabs.
+			if (!isBundleItem && !isClientSynced) {
+				const item = this.toItem(sessionCustomization.customization, sessionCustomization);
+				items.set(
+					customizationItemKey(sessionCustomization.customization, sessionCustomization.source),
 					item,
-					nonce: sessionCustomization.customization.nonce,
-					status: toStatusString(sessionCustomization.status),
-					statusMessage: sessionCustomization.statusMessage,
-					enabled: sessionCustomization.enabled,
-				});
+				);
 			}
+
+			// Always expand plugin contents so individual files are visible.
+			const childGroupKey = isClientSynced ? REMOTE_CLIENT_GROUP : REMOTE_HOST_GROUP;
+			plugins.push({
+				item: isBundleItem || isClientSynced
+					? { uri: this.toRemoteUri(sessionCustomization.customization), type: 'plugin', name: '', storage: PromptsStorage.plugin, groupKey: childGroupKey }
+					: this.toItem(sessionCustomization.customization, sessionCustomization),
+				nonce: sessionCustomization.customization.nonce,
+				status: toStatusString(sessionCustomization.status),
+				statusMessage: sessionCustomization.statusMessage,
+				enabled: sessionCustomization.enabled,
+				childGroupKey,
+			});
 		}
 
 		// Expand each plugin directory in parallel to discover individual
 		// skills, agents, instructions, and prompts inside.
-		const expansions = await Promise.all(plugins.map(p => this._expandPluginContents(p.item.uri, p.nonce, token)));
+		const expansions = await Promise.all(plugins.map(p => this._expandPluginContents(p.item.uri, p.nonce, p.childGroupKey ?? REMOTE_HOST_GROUP, token)));
 		if (token.isCancellationRequested) {
 			return [];
 		}
@@ -413,13 +446,15 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	 *
 	 * Cached by `(uri, nonce)`; a different nonce invalidates the entry.
 	 */
-	private async _expandPluginContents(pluginUri: URI, nonce: string | undefined, token: CancellationToken): Promise<readonly ICustomizationItem[]> {
+	private async _expandPluginContents(pluginUri: URI, nonce: string | undefined, groupKey: string, token: CancellationToken): Promise<readonly ICustomizationItem[]> {
 		const cached = this._expansionCache.get(pluginUri);
 		if (cached && cached.nonce === nonce) {
 			return cached.children;
 		}
 
-		const fsRoot = toAgentHostUri(pluginUri, this._connectionAuthority);
+		// pluginUri is already an agent-host:// URI (from toRemoteUri),
+		// so use it directly as the filesystem root.
+		const fsRoot = pluginUri;
 		const children: ICustomizationItem[] = [];
 		try {
 			if (!await this._fileService.canHandleResource(fsRoot)) {
@@ -446,7 +481,7 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 				if (!promptType) {
 					continue;
 				}
-				children.push(...this._collectFromTypeDir(stat.stat.children, promptType));
+				children.push(...this._collectFromTypeDir(stat.stat.children, promptType, groupKey));
 			}
 			children.sort((a, b) => `${a.type}:${a.name}`.localeCompare(`${b.type}:${b.name}`));
 		} catch (err) {
@@ -464,9 +499,13 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	 * `SKILL.md`, but the local-sync bundler writes them as flat files;
 	 * both layouts are accepted.
 	 */
-	private _collectFromTypeDir(entries: readonly { name: string; resource: URI; isDirectory: boolean }[], promptType: PromptsType): ICustomizationItem[] {
+	private _collectFromTypeDir(entries: readonly { name: string; resource: URI; isDirectory: boolean }[], promptType: PromptsType, groupKey: string): ICustomizationItem[] {
 		const items: ICustomizationItem[] = [];
 		for (const child of entries) {
+			// Skip dotfiles (e.g. .DS_Store)
+			if (child.name.startsWith('.')) {
+				continue;
+			}
 			let displayName: string;
 			if (promptType === PromptsType.skill) {
 				displayName = child.isDirectory ? child.name : stripPromptFileExtensions(child.name);
@@ -481,7 +520,7 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 				type: promptType,
 				name: displayName,
 				storage: PromptsStorage.plugin,
-				groupKey: REMOTE_HOST_GROUP,
+				groupKey,
 			});
 		}
 		return items;
