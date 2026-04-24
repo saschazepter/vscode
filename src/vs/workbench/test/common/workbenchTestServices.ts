@@ -816,6 +816,7 @@ export class TestChatEntitlementService implements IChatEntitlementService {
 
 	readonly previewFeaturesDisabled = false;
 	readonly clientByokEnabled = false;
+	readonly hasByokModels = false;
 }
 
 export class TestLifecycleService extends Disposable implements ILifecycleService {

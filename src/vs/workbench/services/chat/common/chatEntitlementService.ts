@@ -161,6 +161,7 @@ export interface IChatEntitlementService {
 
 	readonly previewFeaturesDisabled: boolean;
 	readonly clientByokEnabled: boolean;
+	readonly hasByokModels: boolean;
 
 	readonly organisations: string[] | undefined;
 	readonly isInternal: boolean;
@@ -417,6 +418,10 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 
 	get clientByokEnabled(): boolean {
 		return this.contextKeyService.getContextKeyValue<boolean>('github.copilot.clientByokEnabled') === true;
+	}
+
+	get hasByokModels(): boolean {
+		return this.contextKeyService.getContextKeyValue<boolean>('github.copilot.hasByokModels') === true;
 	}
 
 	//#endregion

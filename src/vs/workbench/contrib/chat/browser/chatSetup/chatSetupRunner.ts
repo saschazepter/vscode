@@ -199,7 +199,7 @@ export class ChatSetup {
 		const styleButton = (...classes: string[]) => ({ styleButton: (button: IButton) => button.element.classList.add(...classes) });
 
 		let buttons: Array<ContinueWithButton>;
-		if (!options?.forceAnonymous && !this.chatEntitlementService.clientByokEnabled && (this.context.state.entitlement === ChatEntitlement.Unknown || options?.forceSignInDialog)) {
+		if (!options?.forceAnonymous && !this.chatEntitlementService.hasByokModels && (this.context.state.entitlement === ChatEntitlement.Unknown || options?.forceSignInDialog)) {
 			const defaultProviderButton: ContinueWithButton = [localize('continueWith', "Continue with {0}", defaultChat.provider.default.name), ChatSetupStrategy.SetupWithoutEnterpriseProvider, styleButton('continue-button', 'default')];
 			const defaultProviderLink: ContinueWithButton = [defaultProviderButton[0], defaultProviderButton[1], styleButton('link-button')];
 

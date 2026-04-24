@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { LanguageModelChatInformation, LanguageModelChatProvider, lm } from 'vscode';
+import { commands, LanguageModelChatInformation, LanguageModelChatProvider, lm } from 'vscode';
 import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { ILogService } from '../../../platform/log/common/logService';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
@@ -19,6 +19,8 @@ import { OllamaLMProvider } from './ollamaProvider';
 import { OAIBYOKLMProvider } from './openAIProvider';
 import { OpenRouterLMProvider } from './openRouterProvider';
 import { XAIBYOKLMProvider } from './xAIProvider';
+
+export const hasByokModelsContextKey = 'github.copilot.hasByokModels';
 
 export class BYOKContrib extends Disposable implements IExtensionContribution {
 	public readonly id: string = 'byok-contribution';
@@ -65,7 +67,22 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 		for (const [providerName, provider] of this._providers) {
 			this._byokRegistrations.add(lm.registerLanguageModelChatProvider(providerName, provider));
 		}
+
+		await this._updateHasByokModelsContext();
+
+		// Update context key when language models change (e.g., model configured/removed)
+		this._register(lm.onDidChangeChatModels(() => {
+			this._updateHasByokModelsContext();
+		}));
 	}
+
+	async _updateHasByokModelsContext(): Promise<void> {
+		const byokVendors = new Set(this._providers.keys());
+		const models = await lm.selectChatModels();
+		const hasModels = models.some(model => byokVendors.has(model.vendor));
+		commands.executeCommand('setContext', hasByokModelsContextKey, hasModels);
+	}
+
 	private async fetchKnownModelList(fetcherService: IFetcherService): Promise<Record<string, BYOKKnownModels>> {
 		try {
 			const data = await (await fetcherService.fetch('https://main.vscode-cdn.net/extensions/copilotChat.json', { method: 'GET', callSite: 'byok-known-models' })).json();

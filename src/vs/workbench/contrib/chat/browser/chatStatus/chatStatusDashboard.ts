@@ -288,11 +288,11 @@ export class ChatStatusDashboard extends DomWidget {
 
 		// New to Chat / Signed out
 		{
-			const newUser = isNewUser(this.chatEntitlementService);
+			const newUser = isNewUser(this.chatEntitlementService) && !this.chatEntitlementService.hasByokModels;
 			const anonymousUser = this.chatEntitlementService.anonymous;
 			const disabled = this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted;
 			const signedOut = this.chatEntitlementService.entitlement === ChatEntitlement.Unknown;
-			if (newUser || (signedOut && !this.chatEntitlementService.clientByokEnabled) || disabled) {
+			if (newUser || (signedOut && !this.chatEntitlementService.hasByokModels) || disabled) {
 				this.element.appendChild($('hr'));
 
 				let descriptionText: string | MarkdownString;
@@ -465,12 +465,12 @@ export class ChatStatusDashboard extends DomWidget {
 	}
 
 	private canUseChat(): boolean {
-		if (!this.chatEntitlementService.sentiment.completed || this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted) {
-			return false; // chat not completed or not enabled
+		if ((!this.chatEntitlementService.sentiment.completed && !this.chatEntitlementService.hasByokModels) || this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted) {
+			return false; // chat not completed or not enabled (unless BYOK models are configured)
 		}
 
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.Unknown || this.chatEntitlementService.entitlement === ChatEntitlement.Available) {
-			return this.chatEntitlementService.anonymous || this.chatEntitlementService.clientByokEnabled; // signed out or not-yet-signed-up users can only use Chat if anonymous access or BYOK is allowed
+			return this.chatEntitlementService.anonymous || this.chatEntitlementService.hasByokModels; // signed out or not-yet-signed-up users can only use Chat if anonymous access or BYOK models are configured
 		}
 
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.Free && this.chatEntitlementService.quotas.chat?.percentRemaining === 0 && this.chatEntitlementService.quotas.completions?.percentRemaining === 0) {

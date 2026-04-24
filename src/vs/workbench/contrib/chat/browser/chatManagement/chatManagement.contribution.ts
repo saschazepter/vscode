@@ -36,7 +36,8 @@ const LANGUAGE_MODELS_ENTITLEMENT_PRECONDITION = ContextKeyExpr.and(ChatContextK
 	ChatContextKeys.Entitlement.planProPlus,
 	ChatContextKeys.Entitlement.planBusiness,
 	ChatContextKeys.Entitlement.planEnterprise,
-	ChatContextKeys.Entitlement.internal
+	ChatContextKeys.Entitlement.internal,
+	ContextKeyExpr.equals('github.copilot.clientByokEnabled', true)
 ));
 
 Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(

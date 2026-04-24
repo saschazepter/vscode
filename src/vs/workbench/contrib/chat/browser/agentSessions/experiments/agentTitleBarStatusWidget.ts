@@ -861,7 +861,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		// Special case 2: User has exceeded quota (needs to upgrade)
 		const chatSentiment = this.chatEntitlementService.sentiment;
 		const chatQuotaExceeded = this.chatEntitlementService.quotas.chat?.percentRemaining === 0;
-		const signedOut = this.chatEntitlementService.entitlement === ChatEntitlement.Unknown && !this.chatEntitlementService.clientByokEnabled;
+		const signedOut = this.chatEntitlementService.entitlement === ChatEntitlement.Unknown && !this.chatEntitlementService.hasByokModels;
 		const anonymous = this.chatEntitlementService.anonymous;
 		const free = this.chatEntitlementService.entitlement === ChatEntitlement.Free;
 
