@@ -15,6 +15,8 @@ export interface IRecordingData {
 	readonly durationMs: number;
 	/** File size in bytes. */
 	readonly sizeBytes: number;
+	/** True if the recording was automatically stopped because it hit the file size limit. */
+	readonly stoppedBySize?: boolean;
 }
 
 export const enum RecordingState {
@@ -36,9 +38,6 @@ export interface IRecordingService {
 
 	/** Fires when recording state changes. */
 	readonly onDidChangeState: Event<RecordingState>;
-
-	/** Maximum recording duration in seconds. */
-	readonly maxDurationSeconds: number;
 
 	/**
 	 * Returns the list of supported recording MIME types on this platform.
@@ -71,7 +70,6 @@ export class BrowserRecordingService implements IRecordingService {
 	readonly _serviceBrand: undefined;
 	readonly isSupported = false;
 	readonly state = RecordingState.Idle;
-	readonly maxDurationSeconds = 0;
 	readonly onDidChangeState = Event.None;
 
 	getSupportedFormats(): { mimeType: string; label: string; extension: string }[] {

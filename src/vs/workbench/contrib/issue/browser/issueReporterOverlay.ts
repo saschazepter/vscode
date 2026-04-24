@@ -821,8 +821,9 @@ export class IssueReporterOverlay {
 				const rec = this.recordings[i];
 				const card = append(thumbRow, $('div.wizard-screenshot-card.wizard-recording-card.review-attachment-card'));
 				if (rec.thumbnailDataUrl) {
-					const thumbImg = append(card, $('img'));
+					const thumbImg = append(card, $('img')) as HTMLImageElement;
 					thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+					thumbImg.alt = localize('recordingThumbnailAlt', "Recording {0}", i + 1);
 					thumbImg.setAttribute('draggable', 'false');
 				}
 				const playOverlay = append(card, $('div.wizard-recording-play'));
@@ -1214,8 +1215,9 @@ export class IssueReporterOverlay {
 
 			// Show video thumbnail if available
 			if (rec.thumbnailDataUrl) {
-				const thumbImg = append(card, $('img.wizard-screenshot-img'));
+				const thumbImg = append(card, $('img.wizard-screenshot-img')) as HTMLImageElement;
 				thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+				thumbImg.alt = localize('recordingThumbnailAlt', "Recording {0}", i + 1);
 				thumbImg.setAttribute('draggable', 'false');
 			}
 

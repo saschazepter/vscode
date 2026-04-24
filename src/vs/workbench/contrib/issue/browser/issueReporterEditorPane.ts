@@ -21,6 +21,7 @@ import { IEnvironmentService } from '../../../../platform/environment/common/env
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
+import { FileAccess } from '../../../../base/common/network.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
@@ -33,6 +34,7 @@ import product from '../../../../platform/product/common/product.js';
 import { isLinuxSnap } from '../../../../base/common/platform.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 
 /**
@@ -63,6 +65,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -171,7 +174,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			}
 		}));
 
-		// Wire recording stop
+		// Wire recording stop (user-initiated)
 		this.inputDisposables.add(this.wizard.onDidRequestStopRecording(async () => {
 			try {
 				const recordingData = await this.recordingService.stopRecording();
@@ -181,6 +184,29 @@ export class IssueReporterEditorPane extends EditorPane {
 				this.wizard?.setRecordingState(RecordingState.Idle);
 			} catch (err) {
 				this.logService.error('[IssueReporterEditorPane] Stop recording failed:', err);
+				this.wizard?.setRecordingState(RecordingState.Idle);
+			}
+		}));
+
+		// Handle auto-stop triggered by the recording service (e.g. size limit reached)
+		this.inputDisposables.add(this.recordingService.onDidChangeState(async (state) => {
+			// Only handle auto-stop: if the service stopped on its own while the wizard
+			// still thinks we're recording (user didn't press Stop manually)
+			if (state === RecordingState.Stopped && this.wizard?.recordingState === RecordingState.Recording) {
+				try {
+					const recordingData = await this.recordingService.stopRecording();
+					if (recordingData) {
+						await this.saveRecordingAndAdd(recordingData);
+						if (recordingData.stoppedBySize) {
+							this.notificationService.notify({
+								severity: Severity.Warning,
+								message: localize('recordingTooLarge', "Recording stopped automatically: the 100 MB upload limit was reached."),
+							});
+						}
+					}
+				} catch (err) {
+					this.logService.error('[IssueReporterEditorPane] Auto-stop recording failed:', err);
+				}
 				this.wizard?.setRecordingState(RecordingState.Idle);
 			}
 		}));
@@ -318,58 +344,80 @@ export class IssueReporterEditorPane extends EditorPane {
 			await this.fileService.writeFile(target, VSBuffer.wrap(new Uint8Array(arrayBuffer)));
 			this.logService.info(`[IssueReporterEditorPane] Recording saved to ${target.toString()}`);
 
-			const thumbnailDataUrl = await this.generateVideoThumbnail(data.blob);
+			// Generate thumbnail from the saved file — blob URLs are blocked by
+			// Electron's CSP for media elements, so we use the saved file via
+			// the vscode-file:// protocol which the renderer can load.
+			const thumbnailDataUrl = await this.generateVideoThumbnail(target);
 			this.wizard?.addRecording(target.fsPath, data.durationMs, thumbnailDataUrl);
 		} catch (err) {
 			this.logService.error('[IssueReporterEditorPane] Failed to save recording:', err);
 		}
 	}
 
-	private generateVideoThumbnail(blob: Blob): Promise<string | undefined> {
+	private generateVideoThumbnail(fileUri: URI): Promise<string | undefined> {
+		// The fileUri may use the vscode-userdata: scheme. Convert to a real
+		// file:// URI via fsPath, then to vscode-file://vscode-app/ so the
+		// renderer's CSP allows loading it as a media source.
+		const browserUri = FileAccess.uriToBrowserUri(URI.file(fileUri.fsPath));
+
 		return new Promise(resolve => {
-			const timeout = setTimeout(() => { cleanup(); resolve(undefined); }, 5000);
-			let cleaned = false;
-			const cleanup = () => {
-				if (cleaned) { return; }
-				cleaned = true;
-				clearTimeout(timeout);
-				URL.revokeObjectURL(url);
-				video.remove();
-			};
-
-			const url = URL.createObjectURL(blob);
 			const video = document.createElement('video');
-			video.muted = true;
-			video.preload = 'auto';
-			video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
-			document.body.appendChild(video);
-			video.src = url;
-
-			video.addEventListener('loadeddata', () => {
-				video.currentTime = Math.min(0.5, video.duration / 2);
-			}, { once: true });
-
-			video.addEventListener('seeked', () => {
+			const timeout = setTimeout(() => finish(undefined), 5000);
+			let resolved = false;
+			const finish = (result: string | undefined) => {
+				if (resolved) { return; }
+				resolved = true;
+				clearTimeout(timeout);
+				video.pause();
+				video.removeAttribute('src');
+				video.load();
+				video.remove();
+				resolve(result);
+			};
+			const captureFrame = () => {
 				try {
+					if (!video.videoWidth || !video.videoHeight) {
+						finish(undefined);
+						return;
+					}
 					const canvas = document.createElement('canvas');
 					canvas.width = video.videoWidth;
 					canvas.height = video.videoHeight;
 					const ctx = canvas.getContext('2d');
-					if (ctx) {
-						ctx.drawImage(video, 0, 0);
-						cleanup();
-						resolve(canvas.toDataURL('image/jpeg', 0.7));
-					} else {
-						cleanup();
-						resolve(undefined);
+					if (!ctx) {
+						finish(undefined);
+						return;
 					}
+					ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+					finish(canvas.toDataURL('image/jpeg', 0.7));
 				} catch {
-					cleanup();
-					resolve(undefined);
+					finish(undefined);
 				}
-			}, { once: true });
+			};
 
-			video.addEventListener('error', () => { cleanup(); resolve(undefined); }, { once: true });
+			video.muted = true;
+			video.playsInline = true;
+			video.preload = 'auto';
+			video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:320px;height:240px;opacity:0;pointer-events:none;';
+			document.body.appendChild(video);
+			video.src = browserUri.toString(true);
+
+			video.addEventListener('loadeddata', () => {
+				video.pause();
+				const duration = Number.isFinite(video.duration) ? video.duration : 0;
+				if (duration > 0.5) {
+					video.addEventListener('seeked', () => captureFrame(), { once: true });
+					try {
+						video.currentTime = Math.min(0.5, duration / 2);
+					} catch {
+						captureFrame();
+					}
+					return;
+				}
+				captureFrame();
+			}, { once: true });
+			video.addEventListener('error', () => finish(undefined), { once: true });
+			video.load();
 		});
 	}
 

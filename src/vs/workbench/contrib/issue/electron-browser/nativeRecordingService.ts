@@ -8,12 +8,12 @@ import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IRecordingData, IRecordingService, RecordingState } from '../browser/recordingService.js';
 
-const MAX_DURATION_SECONDS = 30;
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB — GitHub upload limit
+const SIZE_LIMIT_THRESHOLD = 0.9; // Stop at 90% to account for chunk overshoot
 
 export class NativeRecordingService extends Disposable implements IRecordingService {
 	readonly _serviceBrand: undefined;
 	readonly isSupported = true;
-	readonly maxDurationSeconds = MAX_DURATION_SECONDS;
 
 	private _state = RecordingState.Idle;
 	private readonly _onDidChangeState = this._register(new Emitter<RecordingState>());
@@ -22,8 +22,9 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 	private mediaRecorder: MediaRecorder | undefined;
 	private mediaStream: MediaStream | undefined;
 	private chunks: Blob[] = [];
+	private bytesRecorded = 0;
+	private stoppedBySize = false;
 	private startTime = 0;
-	private maxDurationTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
@@ -101,6 +102,8 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 		}
 
 		this.chunks = [];
+		this.bytesRecorded = 0;
+		this.stoppedBySize = false;
 		this.startTime = Date.now();
 
 		try {
@@ -116,7 +119,19 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 
 		this.mediaRecorder.ondataavailable = e => {
 			if (e.data && e.data.size > 0) {
+				if (this.stoppedBySize) {
+					return;
+				}
+				// Always accept the current chunk, then check if we've hit the limit.
+				// This means the file may overshoot by up to one chunk (~75 KB at 250ms),
+				// which is negligible at the 100 MB GitHub limit.
 				this.chunks.push(e.data);
+				this.bytesRecorded += e.data.size;
+				if (this.bytesRecorded >= MAX_FILE_SIZE_BYTES * SIZE_LIMIT_THRESHOLD && this._state === RecordingState.Recording) {
+					this.logService.info('[RecordingService] Max file size reached, stopping recording.');
+					this.stoppedBySize = true;
+					this.mediaRecorder?.stop();
+				}
 			}
 		};
 
@@ -124,7 +139,6 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 		this.mediaRecorder.onstop = () => {
 			// Only move to Stopped if we were Recording (avoid double transition)
 			if (this._state === RecordingState.Recording) {
-				this.clearMaxDurationTimer();
 				this.stopTracks();
 				this.setState(RecordingState.Stopped);
 			}
@@ -139,16 +153,8 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 			};
 		}
 
-		this.mediaRecorder.start(); // No timeslice — collect all data at stop for reliable short recordings
+		this.mediaRecorder.start(1000); // 1-second timeslice for size tracking
 		this.setState(RecordingState.Recording);
-
-		// Enforce max duration
-		this.maxDurationTimer = setTimeout(() => {
-			if (this._state === RecordingState.Recording) {
-				this.logService.info('[RecordingService] Max recording duration reached, stopping.');
-				this.mediaRecorder?.stop();
-			}
-		}, MAX_DURATION_SECONDS * 1000);
 	}
 
 	async stopRecording(): Promise<IRecordingData | undefined> {
@@ -172,7 +178,6 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 			});
 		}
 
-		this.clearMaxDurationTimer();
 		this.stopTracks();
 
 		if (this.chunks.length === 0) {
@@ -189,6 +194,7 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 			mimeType,
 			durationMs,
 			sizeBytes: blob.size,
+			stoppedBySize: this.stoppedBySize,
 		};
 
 		this.chunks = [];
@@ -218,17 +224,11 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 		}
 	}
 
-	private clearMaxDurationTimer(): void {
-		if (this.maxDurationTimer !== undefined) {
-			clearTimeout(this.maxDurationTimer);
-			this.maxDurationTimer = undefined;
-		}
-	}
-
 	private cleanup(): void {
-		this.clearMaxDurationTimer();
 		this.stopTracks();
 		this.chunks = [];
+		this.bytesRecorded = 0;
+		this.stoppedBySize = false;
 		this.mediaRecorder = undefined;
 	}
 }
