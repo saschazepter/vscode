@@ -1341,6 +1341,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			// Regular handoff to specified agent
 			const switched = await this._switchToAgentByName(handoff.agent);
 			if (!switched) {
+				this.logService.warn(`[Handoff] Did not execute handoff '${handoff.label}' to '${handoff.agent}' because switching agents was unsuccessful`);
 				return;
 			}
 			// Switch to the specified model if provided
@@ -2296,11 +2297,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		});
 	}
 
-	private async _applyPromptFileIfSet(requestInput: IChatRequestInputOptions, sessionResource: URI): Promise<void> {
+	/**
+	 * @returns `false` when the prompt metadata requested an agent switch that the
+	 * user cancelled, signalling that input submission should be aborted.
+	 */
+	private async _applyPromptFileIfSet(requestInput: IChatRequestInputOptions, sessionResource: URI): Promise<boolean> {
 		// first check if the input has a prompt slash command
 		const agentSlashPromptPart = this.parsedInput.parts.find((r): r is ChatRequestSlashPromptPart => r instanceof ChatRequestSlashPromptPart);
 		if (!agentSlashPromptPart) {
-			return;
+			return true;
 		}
 
 		// Prompt slash commands are transformed out of the input before sendRequest.
@@ -2312,7 +2317,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// need to resolve the slash command to get the prompt file
 		const slashCommand = await this.customizationHarnessService.resolvePromptSlashCommand(agentSlashPromptPart.name, sessionType, CancellationToken.None);
 		if (!slashCommand) {
-			return;
+			return true;
 		}
 		const parseResult = slashCommand.parsedPromptFile;
 		// add the prompt file to the context
@@ -2332,8 +2337,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.telemetryService.publicLog2<ChatPromptRunEvent, ChatPromptRunClassification>('chat.promptRun', promptRunEvent);
 
 		if (parseResult.header) {
-			await this._applyPromptMetadata(parseResult.header, requestInput);
+			const applied = await this._applyPromptMetadata(parseResult.header, requestInput);
+			if (!applied) {
+				return false;
+			}
 		}
+
+		return true;
 	}
 
 	private async _acceptInput(query: { query: string } | undefined, options: IChatAcceptInputOptions = {}): Promise<IChatResponseModel | undefined> {
@@ -2422,7 +2432,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		// process the prompt command
-		await this._applyPromptFileIfSet(requestInputs, this.viewModel.sessionResource);
+		const promptApplied = await this._applyPromptFileIfSet(requestInputs, this.viewModel.sessionResource);
+		if (!promptApplied) {
+			return;
+		}
 
 		if (this.viewOptions.enableWorkingSet !== undefined && this.input.currentModeKind === ChatModeKind.Edit) {
 			const uniqueWorkingSetEntries = new ResourceSet(); // NOTE: this is used for bookkeeping so the UI can avoid rendering references in the UI that are already shown in the working set
@@ -2855,7 +2868,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return true;
 	}
 
-	private async _applyPromptMetadata({ agent, tools, model }: PromptHeader, requestInput: IChatRequestInputOptions): Promise<void> {
+	/**
+	 * @returns `false` when the agent switch was cancelled (e.g. user dismissed the
+	 * mode-switch confirmation dialog), signalling that the caller should abort the
+	 * current input submission.
+	 */
+	private async _applyPromptMetadata({ agent, tools, model }: PromptHeader, requestInput: IChatRequestInputOptions): Promise<boolean> {
 
 		if (tools !== undefined && !agent && this.input.currentModeKind !== ChatModeKind.Agent) {
 			agent = ChatMode.Agent.name.get();
@@ -2864,7 +2882,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (agent) {
 			const switched = await this._switchToAgentByName(agent);
 			if (!switched) {
-				return;
+				return false;
 			}
 		}
 
@@ -2877,6 +2895,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (model !== undefined) {
 			this.input.switchModelByQualifiedName(model);
 		}
+
+		return true;
 	}
 
 	delegateScrollFromMouseWheelEvent(browserEvent: IMouseWheelEvent): void {
