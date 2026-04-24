@@ -7,7 +7,7 @@ import { PromptElement, PromptSizing } from '@vscode/prompt-tsx';
 import { isGpt54, isGpt54ConcisePromptExp, isGpt54LargePromptExp } from '../../../../../platform/endpoint/common/chatModelCapabilities';
 import { IChatEndpoint } from '../../../../../platform/networking/common/networking';
 import { IInstantiationService } from '../../../../../util/vs/platform/instantiation/common/instantiation';
-import { getActiveSearchSubagentName, ToolName } from '../../../../tools/common/toolNames';
+import { ToolName } from '../../../../tools/common/toolNames';
 import { CUSTOM_TOOL_SEARCH_NAME, ToolSearchToolPromptOptimized } from '../toolSearchInstructions';
 import { GPT5CopilotIdentityRule } from '../../base/copilotIdentity';
 import { InstructionMessage } from '../../base/instructionMessage';
@@ -54,7 +54,7 @@ export class Gpt54Prompt extends PromptElement<DefaultAgentPromptProps> {
 				As an expert coding agent, your primary focus is writing code, answering questions, and helping the user complete their task in the current environment. You build context by examining the codebase first without making assumptions or jumping to conclusions. You think through the nuances of the code you encounter, and embody the mentality of a skilled senior software engineer.<br />
 				- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)<br />
 				- Parallelize tool calls whenever possible - especially file reads, such as `cat`, `rg`, `sed`, `ls`, `git show`, `nl`, `wc`. Never chain together bash commands with separators like `echo "====";` as this renders to the user poorly.<br />
-				{getActiveSearchSubagentName(tools) && <>- For efficient codebase exploration, prefer {getActiveSearchSubagentName(tools)} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}. Use this as a quick injection of context before beginning to solve the problem yourself.<br /></>}
+				{(tools[ToolName.SearchSubagent] || tools[ToolName.ExploreSubagent]) && <>- For efficient codebase exploration, prefer {tools[ToolName.SearchSubagent] ? ToolName.SearchSubagent : ToolName.ExploreSubagent} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}. Use this as a quick injection of context before beginning to solve the problem yourself.<br /></>}
 			</Tag>
 			<Tag name='editing_constraints'>
 				- Default to ASCII when editing or creating files. Only introduce non-ASCII or other Unicode characters when there is a clear justification and the file already uses them.<br />

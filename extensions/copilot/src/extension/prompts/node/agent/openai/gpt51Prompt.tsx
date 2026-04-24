@@ -6,7 +6,7 @@
 import { PromptElement, PromptSizing } from '@vscode/prompt-tsx';
 import { isGpt51Family, isGptCodexFamily } from '../../../../../platform/endpoint/common/chatModelCapabilities';
 import { IChatEndpoint } from '../../../../../platform/networking/common/networking';
-import { getActiveSearchSubagentName, ToolName } from '../../../../tools/common/toolNames';
+import { ToolName } from '../../../../tools/common/toolNames';
 import { GPT5CopilotIdentityRule } from '../../base/copilotIdentity';
 import { InstructionMessage } from '../../base/instructionMessage';
 import { ResponseTranslationRules } from '../../base/responseTranslationRules';
@@ -144,7 +144,7 @@ class Gpt51Prompt extends PromptElement<DefaultAgentPromptProps> {
 				- Working on the repo(s) in the current environment is allowed, even if they are proprietary.<br />
 				- Analyzing code for vulnerabilities is allowed.<br />
 				- Showing user code and tool call details is allowed.<br />
-				{getActiveSearchSubagentName(tools) && <>For codebase exploration, prefer {getActiveSearchSubagentName(tools)} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}.<br /></>}
+				{(tools[ToolName.SearchSubagent] || tools[ToolName.ExploreSubagent]) && <>For codebase exploration, prefer {tools[ToolName.SearchSubagent] ? ToolName.SearchSubagent : ToolName.ExploreSubagent} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}.<br /></>}
 				- Use the {ToolName.ApplyPatch} tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {`{"input":"*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"}`}.<br />
 				<br />
 				{tools[ToolName.ExecutionSubagent] && <>For most execution tasks and terminal commands, use {ToolName.ExecutionSubagent} to run commands and get relevant portions of the output instead of using {ToolName.CoreRunInTerminal}. Use {ToolName.CoreRunInTerminal} in rare cases when you want the entire output of a single command without truncation.<br /></>}

@@ -6,7 +6,7 @@
 import { PromptElement, PromptSizing } from '@vscode/prompt-tsx';
 import { isGpt52CodexFamily } from '../../../../../platform/endpoint/common/chatModelCapabilities';
 import { IChatEndpoint } from '../../../../../platform/networking/common/networking';
-import { getActiveSearchSubagentName, ToolName } from '../../../../tools/common/toolNames';
+import { ToolName } from '../../../../tools/common/toolNames';
 import { GPT5CopilotIdentityRule } from '../../base/copilotIdentity';
 import { InstructionMessage } from '../../base/instructionMessage';
 import { Gpt5SafetyRule } from '../../base/safetyRules';
@@ -50,7 +50,7 @@ class Gpt51CodexPrompt extends PromptElement<DefaultAgentPromptProps> {
 			</Tag>
 			<Tag name='tool_use'>
 				- You have access to many tools. If a tool exists to perform a specific task, you MUST use that tool instead of running a terminal command to perform that task.<br />
-				{getActiveSearchSubagentName(tools) && <>- For efficient codebase exploration, prefer {getActiveSearchSubagentName(tools)} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}. Use this as a quick injection of context before beginning to solve the problem yourself.<br /></>}
+				{(tools[ToolName.SearchSubagent] || tools[ToolName.ExploreSubagent]) && <>- For efficient codebase exploration, prefer {tools[ToolName.SearchSubagent] ? ToolName.SearchSubagent : ToolName.ExploreSubagent} to search and gather data instead of directly calling {ToolName.FindTextInFiles}, {ToolName.Codebase} or {ToolName.FindFiles}. Use this as a quick injection of context before beginning to solve the problem yourself.<br /></>}
 				{tools[ToolName.CoreRunTest] && <>- Use the {ToolName.CoreRunTest} tool to run tests instead of running terminal commands.<br /></>}
 				{tools[ToolName.CoreManageTodoList] && <>
 					<br />
