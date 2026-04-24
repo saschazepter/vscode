@@ -46,7 +46,7 @@ import { IDocumentContext } from '../../prompt/node/documentContext';
 import { IIntent, NoopReplyInterpreter, ReplyInterpreterMetaData, TelemetryData } from '../../prompt/node/intents';
 import { ResponseProcessorContext } from '../../prompt/node/responseProcessorContext';
 import { PromptRenderer } from '../../prompts/node/base/promptRenderer';
-import { ICompletedToolCallRound, InlineChat2Prompt, LARGE_FILE_LINE_THRESHOLD } from '../../prompts/node/inline/inlineChat2Prompt';
+import { ICompletedToolCallRound, InlineChat2Prompt, LARGE_FILE_LINE_THRESHOLD } from './inlineChatPrompt';
 import { InlineChatEditCodePrompt } from '../../prompts/node/inline/inlineChatEditCodePrompt';
 import { ToolName } from '../../tools/common/toolNames';
 import { CopilotToolMode } from '../../tools/common/toolsRegistry';
