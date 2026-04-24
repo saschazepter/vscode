@@ -1418,25 +1418,28 @@ export class IssueReporterOverlay {
 				return `${mins}:${secs}`;
 			};
 
+			const stopLabel = localize('stopRecording', "Stop recording");
+			const makeLabel = () => `$(stop-circle) ${stopLabel} ${formatTime()}`;
+
 			if (this.recordBtn) {
 				this.recordBtn.element.classList.add('recording');
-				this.recordBtn.label = `$(stop-circle) ${formatTime()}`;
-				this.recordingElapsedLabel.style.display = 'none'; // label itself carries the timer now
+				this.recordBtn.label = makeLabel();
+				this.recordingElapsedLabel.style.display = 'none';
 			}
 
 			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.element.classList.add('recording');
-				this.captureStripRecordBtn.element.title = localize('stopRecording', "Stop recording");
-				this.captureStripRecordBtn.label = `$(stop-circle) ${formatTime()}`;
+				this.captureStripRecordBtn.element.title = stopLabel;
+				this.captureStripRecordBtn.label = makeLabel();
 			}
 
 			this.recordingElapsedTimer = setInterval(() => {
-				const timeStr = formatTime();
+				const label = makeLabel();
 				if (this.recordBtn) {
-					this.recordBtn.label = `$(stop-circle) ${timeStr}`;
+					this.recordBtn.label = label;
 				}
 				if (this.captureStripRecordBtn) {
-					this.captureStripRecordBtn.label = `$(stop-circle) ${timeStr}`;
+					this.captureStripRecordBtn.label = label;
 				}
 			}, 1000);
 		} else {

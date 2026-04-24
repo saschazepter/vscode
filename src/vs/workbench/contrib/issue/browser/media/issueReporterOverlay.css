@@ -1180,7 +1180,7 @@
 	color: #fff !important;
 	animation: recording-pulse 1.5s ease-in-out infinite;
 	font-variant-numeric: tabular-nums;
-	min-width: 110px;
+	min-width: 160px;
 }
 
 .wizard-record-btn.recording .wizard-record-icon {
