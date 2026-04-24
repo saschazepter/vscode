@@ -34,7 +34,7 @@ import { AGENT_MD_FILENAME, CLAUDE_CONFIG_FOLDER, CLAUDE_LOCAL_MD_FILENAME, CLAU
 import { PROMPT_LANGUAGE_ID, PromptFileSource, PromptsType, Target, getPromptsTypeForLanguageId } from '../promptTypes.js';
 import { IWorkspaceInstructionFile, PromptFilesLocator } from '../utils/promptFilesLocator.js';
 import { evaluateApplyToPattern, PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../promptFileParser.js';
-import { IAgentInstructions, type IAgentSource, IChatPromptSlashCommand, IConfiguredHooksInfo, ICustomAgent, IExtensionPromptPath, isExtensionPromptPath, ILocalPromptPath, IPluginPromptPath, IPromptPath, IPromptsService, IAgentSkill, IInstructionDiscoveryInfo, IInstructionDiscoveryResult, IInstructionFile, IUserPromptPath, PromptsStorage, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, IPromptSourceFolderResult, ICustomAgentVisibility, IAgentInstructionFile, AgentInstructionFileType, Logger, ISlashCommandDiscoveryInfo, ISlashCommandDiscoveryResult, IAgentDiscoveryInfo, IAgentDiscoveryResult, IHookDiscoveryInfo, IResolvedChatPromptSlashCommand } from './promptsService.js';
+import { IAgentInstructions, type IAgentSource, IChatPromptSlashCommand, IConfiguredHooksInfo, ICustomAgent, IExtensionPromptPath, isExtensionPromptPath, ILocalPromptPath, IPluginPromptPath, IPromptPath, IPromptsService, IAgentSkill, IInstructionDiscoveryInfo, IInstructionDiscoveryResult, IInstructionFile, IUserPromptPath, PromptsStorage, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, IPromptSourceFolderResult, ICustomAgentVisibility, IAgentInstructionFile, AgentInstructionFileType, Logger, ISlashCommandDiscoveryInfo, ISlashCommandDiscoveryResult, IAgentDiscoveryInfo, IAgentDiscoveryResult, IHookDiscoveryInfo, IResolvedChatPromptSlashCommand, matchesSessionType } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { ChatRequestHooks, parseSubagentHooksFromYaml } from '../hookSchema.js';
@@ -216,9 +216,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 			() => Event.any(
 				this.getFileLocatorEvent(PromptsType.agent),
 				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.agent),
+				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CHAT_HOOKS)),
 				this._onDidContributedWhenChange.event,
-				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CUSTOM_AGENT_HOOKS)),
 				this._onDidPluginPromptFilesChange.event,
+				this.workspaceTrustService.onDidChangeTrust,
 			)
 		));
 
@@ -580,8 +581,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 			// For hooks, return the Copilot hooks folder for creating new hooks
 			// (Claude paths are read-only and not included here)
 			const hooksFolders = await this.fileLocator.getHookSourceFolders();
-			for (const uri of hooksFolders) {
-				result.push({ uri, storage: PromptsStorage.local, type });
+			for (const folder of hooksFolders) {
+				result.push({ uri: folder.uri, storage: folder.storage, type, source: folder.source });
 			}
 		} else {
 			for (const uri of await this.fileLocator.getConfigBasedSourceFolders(type)) {
@@ -693,9 +694,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return command.match(/^[\p{L}\d_\-\.:]+$/u) !== null;
 	}
 
-	public async resolvePromptSlashCommand(name: string, token: CancellationToken): Promise<IResolvedChatPromptSlashCommand | undefined> {
+	public async resolvePromptSlashCommand(name: string, sessionType: string | undefined, token: CancellationToken): Promise<IResolvedChatPromptSlashCommand | undefined> {
 		const commands = await this.getPromptSlashCommands(token);
-		const command = commands.find(cmd => cmd.name === name);
+		const command = commands.find(cmd => cmd.name === name && matchesSessionType(cmd.sessionTypes, sessionType));
 		if (command) {
 			return {
 				...command,
@@ -772,6 +773,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const stopWatch = StopWatch.create(true);
 		const allAgentFiles = await this.listPromptFiles(PromptsType.agent, token);
 		const disabledAgents = this.getDisabledPromptFiles(PromptsType.agent);
+		const useChatHooks = this.configurationService.getValue(PromptsConfig.USE_CHAT_HOOKS);
+		const isWorkspaceTrusted = this.workspaceTrustService.isWorkspaceTrusted();
 
 		// Get user home for tilde expansion in hook cwd paths
 		const userHomeUri = await this.pathService.userHome();
@@ -788,74 +791,24 @@ export class PromptsService extends Disposable implements IPromptsService {
 			try {
 				const ast = await this.parseNew(uri, token);
 
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				let metadata: any | undefined;
-				if (ast.header) {
-					const advanced = ast.header.getAttribute(PromptHeaderAttributes.advancedOptions);
-					if (advanced && advanced.value.type === 'map') {
-						metadata = {};
-						for (const [key, value] of Object.entries(advanced.value)) {
-							if (value.type === 'scalar') {
-								metadata[key] = value;
-							}
-						}
-					}
-				}
-				const toolReferences: IVariableReference[] = [];
-				if (ast.body) {
-					const bodyOffset = ast.body.offset;
-					const bodyVarRefs = ast.body.variableReferences;
-					for (let i = bodyVarRefs.length - 1; i >= 0; i--) { // in reverse order
-						const { name, offset, fullLength } = bodyVarRefs[i];
-						const range = new OffsetRange(offset - bodyOffset, offset - bodyOffset + fullLength);
-						toolReferences.push({ name, range });
-					}
-				}
-
-				const agentInstructions = {
-					content: ast.body?.getContent() ?? '',
-					toolReferences,
-					metadata,
-				} satisfies IAgentInstructions;
-
-				const name = ast.header?.name ?? promptPath.name ?? getCleanPromptName(uri);
-				const description = ast.header?.description ?? promptPath.description;
-				const target = getTarget(PromptsType.agent, ast.header ?? uri);
-
-				const source: IAgentSource = IAgentSource.fromPromptPath(promptPath);
-				const when = isExtensionPromptPath(promptPath) && promptPath.when
-					? ContextKeyExpr.deserialize(promptPath.when) ?? undefined
-					: undefined;
-				if (!ast.header) {
-					const agent: ICustomAgent = { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true }, sessionTypes: promptPath.sessionTypes, ...(when !== undefined ? { when } : undefined) };
-					return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
-				}
-				const visibility = {
-					userInvocable: ast.header.userInvocable !== false,
-					agentInvocable: ast.header.infer !== undefined ? ast.header.infer === true : ast.header.disableModelInvocation !== true,
-				} satisfies ICustomAgentVisibility;
-
-				let model = ast.header.model;
-				if (target === Target.Claude && model) {
-					model = mapClaudeModels(model);
-				}
-				let { tools, handOffs, argumentHint, agents } = ast.header;
-				if (target === Target.Claude && tools) {
-					tools = mapClaudeTools(tools);
-				}
-
 				// Parse hooks from the frontmatter if present
 				let hooks: ChatRequestHooks | undefined;
-				const useCustomAgentHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CUSTOM_AGENT_HOOKS);
-				const hooksRaw = ast.header.hooksRaw;
-				if (useCustomAgentHooks && hooksRaw) {
+				const hooksRaw = ast.header?.hooksRaw;
+				if (useChatHooks && isWorkspaceTrusted && hooksRaw) {
 					const hookWorkspaceFolder = this.workspaceService.getWorkspaceFolder(uri) ?? defaultFolder;
 					const workspaceRootUri = hookWorkspaceFolder?.uri;
+					const target = getTarget(PromptsType.agent, ast.header ?? promptPath.uri);
 					hooks = parseSubagentHooksFromYaml(hooksRaw, workspaceRootUri, userHome, target);
 				}
-
-				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source, sessionTypes: promptPath.sessionTypes, ...(when !== undefined ? { when } : undefined) };
-				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
+				const extra = {
+					sessionTypes: promptPath.sessionTypes,
+					hooks,
+					name: promptPath.name,
+					description: promptPath.description,
+					source: IAgentSource.fromPromptPath(promptPath)
+				};
+				const agent = CustomAgent.fromParsedPromptFile(ast, extra);
+				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, agent.name, agent.description), agent };
 			} catch (e) {
 				const error = e instanceof Error ? e : new Error(String(e));
 				if (error instanceof FileOperationError && error.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
@@ -1786,13 +1739,70 @@ class ModelChangeTracker extends Disposable {
 	}
 }
 
+export namespace CustomAgent {
+	export function fromParsedPromptFile(ast: ParsedPromptFile, extra: { name?: string; description?: string; when?: string; source: IAgentSource; hooks?: ChatRequestHooks; sessionTypes: readonly string[] | undefined }): ICustomAgent {
+		const uri = ast.uri;
+		const { hooks, sessionTypes } = extra;
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		let metadata: any | undefined;
+		if (ast.header) {
+			const advanced = ast.header.getAttribute(PromptHeaderAttributes.advancedOptions);
+			if (advanced && advanced.value.type === 'map') {
+				metadata = {};
+				for (const [key, value] of Object.entries(advanced.value)) {
+					if (value.type === 'scalar') {
+						metadata[key] = value;
+					}
+				}
+			}
+		}
+		const toolReferences: IVariableReference[] = [];
+		if (ast.body) {
+			const bodyOffset = ast.body.offset;
+			const bodyVarRefs = ast.body.variableReferences;
+			for (let i = bodyVarRefs.length - 1; i >= 0; i--) { // in reverse order
+				const { name, offset, fullLength } = bodyVarRefs[i];
+				const range = new OffsetRange(offset - bodyOffset, offset - bodyOffset + fullLength);
+				toolReferences.push({ name, range });
+			}
+		}
+
+		const agentInstructions = { content: ast.body?.getContent() ?? '', toolReferences, metadata } satisfies IAgentInstructions;
+
+		const name = ast.header?.name ?? extra.name ?? getCleanPromptName(uri);
+		const description = ast.header?.description ?? extra.description;
+		const target = getTarget(PromptsType.agent, ast.header ?? uri);
+
+		const when = extra.when ? ContextKeyExpr.deserialize(extra.when) ?? undefined : undefined;
+		const source = extra.source;
+		if (!ast.header) {
+			return { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true }, sessionTypes, hooks, when };
+		}
+		const visibility = {
+			userInvocable: ast.header.userInvocable !== false,
+			agentInvocable: ast.header.infer !== undefined ? ast.header.infer === true : ast.header.disableModelInvocation !== true,
+		} satisfies ICustomAgentVisibility;
+
+		let model = ast.header.model;
+		if (target === Target.Claude && model) {
+			model = mapClaudeModels(model);
+		}
+		let { tools, handOffs, argumentHint, agents } = ast.header;
+		if (target === Target.Claude && tools) {
+			tools = mapClaudeTools(tools);
+		}
+		return { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, agentInstructions, source, sessionTypes, hooks, when };
+
+	}
+}
+
 namespace IAgentSource {
 	export function fromPromptPath(promptPath: IPromptPath): IAgentSource {
 		if (promptPath.storage === PromptsStorage.extension) {
 			return {
 				storage: PromptsStorage.extension,
-				extensionId: promptPath.extension.identifier,
-				type: promptPath.source
+				extensionId: promptPath.extension.identifier
 			};
 		} else if (promptPath.storage === PromptsStorage.plugin) {
 			return {
