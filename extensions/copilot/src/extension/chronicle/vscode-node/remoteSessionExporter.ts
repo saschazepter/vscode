@@ -188,12 +188,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		this._syncSuggestionShown = true;
 
 		vscode.window.showInformationMessage(
-			vscode.l10n.t('Session sync is available for richer cross-device Copilot session history.'),
+			vscode.l10n.t('Enable session sync for richer cross-device chat session history.'),
 			vscode.l10n.t('Enable'),
 			vscode.l10n.t('Don\'t Show Again'),
 		).then(choice => {
 			if (choice === vscode.l10n.t('Enable')) {
-				vscode.workspace.getConfiguration('chat').update('sessionSync.enabled', true, vscode.ConfigurationTarget.Global);
+				vscode.commands.executeCommand('workbench.action.openSettings', 'chat.sessionSync.enabled');
 			}
 		});
 	}
