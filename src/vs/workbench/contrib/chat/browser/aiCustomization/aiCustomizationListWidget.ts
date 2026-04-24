@@ -1264,7 +1264,7 @@ export class AICustomizationListWidget extends Disposable {
 						label = localize('remoteHostGroupShort', "Remote");
 						break;
 					case 'remote-client':
-						label = localize('remoteClientGroupShort', "Client");
+						label = localize('remoteClientGroupShort', "Local");
 						break;
 					default:
 						label = formatDisplayName(key);
