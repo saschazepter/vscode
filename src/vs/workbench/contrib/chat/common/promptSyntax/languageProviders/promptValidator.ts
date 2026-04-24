@@ -15,6 +15,7 @@ import { ILanguageModelToolsService, SpecedToolAliases } from '../../tools/langu
 import { PromptsType, Target } from '../promptTypes.js';
 import { ISequenceValue, IHeaderAttribute, IScalarValue, parseCommaSeparatedList, ParsedPromptFile, PromptHeader, IValue, PromptHeaderAttributes } from '../promptFileParser.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
+import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, isInClaudeRulesFolder, LEGACY_MODE_FILE_EXTENSION, VALID_SKILL_NAME_REGEX } from '../config/promptFileLocations.js';
@@ -37,6 +38,7 @@ export class PromptValidator {
 		@ILabelService private readonly labelService: ILabelService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@ILogService private readonly logger: ILogService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) { }
 
 	public async validate(promptAST: ParsedPromptFile, promptType: PromptsType, report: (markers: IMarkerData) => void): Promise<void> {
@@ -82,6 +84,19 @@ export class PromptValidator {
 				MarkerSeverity.Error
 			));
 			return;
+		}
+
+		// Validate context: fork — requires the skill tool to be enabled
+		const contextAttribute = promptAST.header?.getAttribute(PromptHeaderAttributes.context);
+		if (contextAttribute && contextAttribute.value.type === 'scalar' && contextAttribute.value.value.trim() === 'fork') {
+			const skillToolEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.skill.enabled');
+			if (!skillToolEnabled) {
+				report(toMarker(
+					localize('promptValidator.contextForkNotSupported', "The 'context: fork' attribute requires the skill tool to be enabled (github.copilot.chat.skill.enabled)."),
+					contextAttribute.value.range,
+					MarkerSeverity.Warning
+				));
+			}
 		}
 
 		if (nameAttribute.value.type === 'scalar') {
