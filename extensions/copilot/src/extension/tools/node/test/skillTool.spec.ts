@@ -8,12 +8,12 @@ import { toolCategories, ToolCategory, ToolName } from '../../common/toolNames';
 import { ToolRegistry } from '../../common/toolsRegistry';
 
 // Ensure side-effect registration
-import '../loadSkillTool';
+import '../skillTool';
 
-suite('LoadSkillTool', () => {
+suite('SkillTool', () => {
 	test('is registered and categorized as Core', () => {
-		const isRegistered = ToolRegistry.getTools().some(t => t.toolName === ToolName.LoadSkill);
+		const isRegistered = ToolRegistry.getTools().some(t => t.toolName === ToolName.Skill);
 		expect(isRegistered).toBe(true);
-		expect(toolCategories[ToolName.LoadSkill]).toBe(ToolCategory.Core);
+		expect(toolCategories[ToolName.Skill]).toBe(ToolCategory.Core);
 	});
 });
