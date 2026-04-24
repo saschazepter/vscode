@@ -130,7 +130,9 @@ export abstract class SessionSettingsService<TLocationType extends string, TSett
 	async writeSettingsFile(uri: URI, settings: TSettings): Promise<void> {
 		const content = new TextEncoder().encode(JSON.stringify(settings, null, 4));
 		await this.fileSystemService.writeFile(uri, content);
-		// Cache will be invalidated by the file watcher
+		// Eagerly invalidate so that subsequent reads (before the file
+		// watcher fires) return fresh data.
+		this._settingsCache = undefined;
 	}
 
 	/**

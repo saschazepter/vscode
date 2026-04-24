@@ -407,7 +407,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				const targetSettingsUri = !enabled ? this.claudeSettingsService.getUri(location, uri) : undefined;
 
 				for (const file of allSettingsFiles) {
-					if (!file.settings.skillOverrides || typeof file.settings.skillOverrides !== 'object') {
+					if (file.settings.skillOverrides && typeof file.settings.skillOverrides !== 'object') {
+						// skip malformed skillOverrides
+						this.logService.warn(`[ClaudeCustomizationProvider] Skipping malformed skillOverrides in ${file.uri.toString()}`);
 						continue;
 					}
 
