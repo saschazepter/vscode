@@ -10,6 +10,7 @@ import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -147,6 +148,14 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 	private readonly _onDidDisconnect = this._register(new Emitter<void>());
 	protected override get onConnectionLost(): Event<void> { return this._onDidDisconnect.event; }
 
+	/**
+	 * Overridable seam so tests can exercise both the web and non-web
+	 * branches of the label/description gating without depending on the
+	 * ambient {@link isWeb} constant (the browser test runner always
+	 * reports `isWeb === true`).
+	 */
+	protected get isWebPlatform(): boolean { return isWeb; }
+
 	private _connection: IAgentConnection | undefined;
 	private _defaultDirectory: string | undefined;
 	private readonly _connectionListeners = this._register(new DisposableStore());
@@ -249,13 +258,14 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 	}
 
 	protected _adapterOptions() {
+		const web = this.isWebPlatform;
 		return {
-			description: new MarkdownString().appendText(this.label),
+			description: web ? undefined : new MarkdownString().appendText(this.label),
 			buildWorkspace: (project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, gitState: ISessionGitState | undefined) => {
 				const uriForDescription = project?.uri ?? workingDirectory;
 				const description = uriForDescription ? this._labelService.getUriLabel(dirname(uriForDescription), { relative: false }) : undefined;
 				const branchProtectionPatterns = readBranchProtectionPatterns(this._configurationService);
-				return RemoteAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, this.label, gitState, description, branchProtectionPatterns);
+				return RemoteAgentHostSessionsProvider.buildWorkspace(project, workingDirectory, web ? undefined : this.label, gitState, description, branchProtectionPatterns);
 			},
 		};
 	}
@@ -499,14 +509,14 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 
 	// -- Workspaces ----------------------------------------------------------
 
-	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string, gitState: ISessionGitState | undefined, description?: string, branchProtectionPatterns?: readonly string[]): ISessionWorkspace | undefined {
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string | undefined, gitState: ISessionGitState | undefined, description?: string, branchProtectionPatterns?: readonly string[]): ISessionWorkspace | undefined {
 		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false, description, branchProtectionPatterns }, gitState);
 	}
 
 	private _buildWorkspaceFromUri(uri: URI): ISessionWorkspace {
 		const folderName = basename(uri) || uri.path;
 		return {
-			label: `${folderName} [${this.label}]`,
+			label: this.isWebPlatform ? folderName : `${folderName} [${this.label}]`,
 			description: this._labelService.getUriLabel(dirname(uri), { relative: false }),
 			group: this.label,
 			icon: Codicon.remote,
