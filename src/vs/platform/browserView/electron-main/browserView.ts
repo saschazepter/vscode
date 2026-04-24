@@ -592,9 +592,11 @@ export class BrowserView extends Disposable {
 	 * Capture a screenshot of this view
 	 */
 	async captureScreenshot(options?: IBrowserViewCaptureScreenshotOptions): Promise<VSBuffer> {
-		// This ensures the webContents rendering pipeline is ready so background tabs can be captured too.
-		this._view.setVisible(true);
-		this._view.setVisible(false);
+		if (!this._view.getVisible()) {
+			// This ensures the webContents rendering pipeline is ready so background tabs can be captured too.
+			this._view.setVisible(true);
+			this._view.setVisible(false);
+		}
 
 		const quality = options?.quality ?? 80;
 		if (options?.pageRect) {

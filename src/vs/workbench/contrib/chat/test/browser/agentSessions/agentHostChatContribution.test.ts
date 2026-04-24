@@ -639,6 +639,23 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(listController.items.length, 0);
 		});
+
+		test('refresh marks archived sessions as archived items', async () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'archived'),
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'Archived session',
+				isArchived: true,
+			});
+
+			await listController.refresh(CancellationToken.None);
+
+			assert.strictEqual(listController.items.length, 1);
+			assert.strictEqual(listController.items[0].archived, true);
+		});
 	});
 
 	// ---- Session ID resolution in _invokeAgent --------------------------
