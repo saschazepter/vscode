@@ -25,13 +25,12 @@ import { ScreenshotAnnotationEditor } from './screenshotAnnotation.js';
 const MAX_ATTACHMENTS = 5;
 
 const enum WizardStep {
-	Categorize = 0,
+	Attachments = 0,
 	Describe = 1,
-	Screenshots = 2,
-	Review = 3,
+	Review = 2,
 }
 
-const STEP_COUNT = 4;
+const STEP_COUNT = 3;
 
 export interface IScreenshot {
 	readonly dataUrl: string;
@@ -62,20 +61,17 @@ export class IssueReporterOverlay {
 	private stepContainer!: HTMLElement;
 	private readonly stepPages: HTMLElement[] = [];
 
-	// Step 1: Categorize
+	// Step 1: Describe (category + description + title)
 	private readonly issueTypeButtons: HTMLElement[] = [];
 	private selectedIssueType: IssueType | undefined;
 	private typeButtonGroup!: HTMLElement;
-
-	// Step 2: Describe
 	private descriptionTextarea!: HTMLTextAreaElement;
-	private describePageContent!: HTMLElement;
-	private bugSummaryTextarea!: HTMLTextAreaElement;
-	private bugReproTextarea!: HTMLTextAreaElement;
-	private bugObservedTextarea!: HTMLTextAreaElement;
-	private bugExpectedTextarea!: HTMLTextAreaElement;
+	private descriptionGuidance!: HTMLElement;
+	private titleInput!: InputBox;
+	private readonly _onDidRequestGenerateTitle = new Emitter<string>();
+	readonly onDidRequestGenerateTitle: Event<string> = this._onDidRequestGenerateTitle.event;
 
-	// Step 3: Screenshots & Recording
+	// Step 0: Screenshots & Recording
 	private screenshotContainer!: HTMLElement;
 	private screenshotDelay = 0;
 	private captureBtn!: Button;
@@ -84,10 +80,10 @@ export class IssueReporterOverlay {
 	private recordingElapsedTimer: ReturnType<typeof setInterval> | undefined;
 	private recordingStartTime = 0;
 	private currentRecordingState = RecordingState.Idle;
+	private delayedScreenshotPending = false;
 	private readonly recordings: { filePath: string; durationMs: number; thumbnailDataUrl?: string }[] = [];
 
-	// Step 4: Review
-	private titleInput!: InputBox;
+	// Step 2: Review
 	private reviewThumbCards: HTMLElement[] = [];
 	private uploading = false;
 	private includeSystemInfo = true;
@@ -106,7 +102,7 @@ export class IssueReporterOverlay {
 	// Progress dots
 	private readonly progressDots: HTMLElement[] = [];
 
-	private currentStep: WizardStep = WizardStep.Categorize;
+	private currentStep: WizardStep = WizardStep.Attachments;
 	private readonly screenshots: IScreenshot[] = [];
 	private readonly model: IssueReporterModel;
 	private visible = false;
@@ -158,10 +154,9 @@ export class IssueReporterOverlay {
 
 		// ── Step content area ──
 		this.stepContainer = append(this.wizardPanel, $('div.wizard-step-container'));
-		this.createStep1Categorize();
-		this.createStep2Describe();
-		this.createStep3Screenshots();
-		this.createStep4Review();
+		this.createStep0Attachments();
+		this.createStep1Describe();
+		this.createStep2Review();
 
 		// ── Bottom navigation ──
 		const nav = append(this.wizardPanel, $('div.wizard-nav'));
@@ -181,198 +176,8 @@ export class IssueReporterOverlay {
 		this.updateStepUI();
 	}
 
-	// ── Step 1: Describe ──
-	// ── Step 2: Describe (dynamic based on category) ──
-	private createStep2Describe(): void {
-		const page = append(this.stepContainer, $('div.wizard-step'));
-		this.stepPages.push(page);
-
-		const heading = append(page, $('h2.wizard-heading'));
-		heading.textContent = localize('sendFeedback', "Describe your feedback");
-
-		this.describePageContent = append(page, $('div.wizard-describe-content'));
-
-		// Hidden textarea used for model serialization — we'll compose into it before submit
-		this.descriptionTextarea = document.createElement('textarea');
-		this.descriptionTextarea.style.display = 'none';
-		page.appendChild(this.descriptionTextarea);
-
-		this.buildDescribeForm();
-	}
-
-	private buildDescribeForm(): void {
-		this.describePageContent.textContent = '';
-
-		if (this.selectedIssueType === IssueType.Bug) {
-			// Bug: structured fields
-			const summaryLabel = append(this.describePageContent, $('label.wizard-field-label'));
-			summaryLabel.textContent = localize('summary', "Summary");
-			this.bugSummaryTextarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			this.bugSummaryTextarea.placeholder = localize('summaryPlaceholder', "Brief summary of the bug");
-			this.bugSummaryTextarea.rows = 2;
-
-			const reproLabel = append(this.describePageContent, $('label.wizard-field-label'));
-			reproLabel.textContent = localize('reproSteps', "Reproduction Steps");
-			this.bugReproTextarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			this.bugReproTextarea.placeholder = localize('reproPlaceholder', "1. Go to...\n2. Click on...\n3. See error");
-			this.bugReproTextarea.rows = 4;
-
-			const observedLabel = append(this.describePageContent, $('label.wizard-field-label'));
-			observedLabel.textContent = localize('observedBehavior', "Observed Behavior");
-			this.bugObservedTextarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			this.bugObservedTextarea.placeholder = localize('observedPlaceholder', "What actually happened?");
-			this.bugObservedTextarea.rows = 2;
-
-			const expectedLabel = append(this.describePageContent, $('label.wizard-field-label'));
-			expectedLabel.textContent = localize('expectedBehavior', "Expected Behavior");
-			this.bugExpectedTextarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			this.bugExpectedTextarea.placeholder = localize('expectedPlaceholder', "What did you expect to happen?");
-			this.bugExpectedTextarea.rows = 2;
-
-			if (this.data.issueBody) {
-				this.bugSummaryTextarea.value = this.data.issueBody;
-			}
-		} else if (this.selectedIssueType === IssueType.FeatureRequest) {
-			// Feature Request
-			const subtitle = append(this.describePageContent, $('p.wizard-subtitle'));
-			subtitle.textContent = localize('featureSubtitle', "Describe the feature you'd like to see. What problem does it solve?");
-
-			const textarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			textarea.placeholder = localize('featurePlaceholder', "Describe the feature, the problem it solves, and any alternatives you've considered");
-			textarea.rows = 6;
-			this.descriptionTextarea = textarea;
-			if (this.data.issueBody) {
-				textarea.value = this.data.issueBody;
-			}
-		} else if (this.selectedIssueType === IssueType.PerformanceIssue) {
-			// Performance Issue
-			const subtitle = append(this.describePageContent, $('p.wizard-subtitle'));
-			subtitle.textContent = localize('perfSubtitle', "Describe the performance problem you're experiencing");
-
-			const textarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			textarea.placeholder = localize('perfPlaceholder', "What is slow? When does it happen? Does it happen consistently or intermittently?");
-			textarea.rows = 6;
-			this.descriptionTextarea = textarea;
-			if (this.data.issueBody) {
-				textarea.value = this.data.issueBody;
-			}
-		} else {
-			// Fallback
-			const textarea = append(this.describePageContent, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
-			textarea.placeholder = localize('descriptionPlaceholder', "Describe the issue. What did you expect, and what happened instead?");
-			textarea.rows = 5;
-			this.descriptionTextarea = textarea;
-			if (this.data.issueBody) {
-				textarea.value = this.data.issueBody;
-			}
-		}
-	}
-
-	/** Compose the description from the form fields into a single string */
-	private composeDescription(): string {
-		if (this.selectedIssueType === IssueType.Bug) {
-			const parts: string[] = [];
-			const summary = this.bugSummaryTextarea?.value.trim();
-			const repro = this.bugReproTextarea?.value.trim();
-			const observed = this.bugObservedTextarea?.value.trim();
-			const expected = this.bugExpectedTextarea?.value.trim();
-
-			if (summary) {
-				parts.push(`### Summary\n\n${summary}`);
-			}
-			if (repro) {
-				parts.push(`### Reproduction Steps\n\n${repro}`);
-			}
-			if (observed) {
-				parts.push(`### Observed Behavior\n\n${observed}`);
-			}
-			if (expected) {
-				parts.push(`### Expected Behavior\n\n${expected}`);
-			}
-			return parts.join('\n\n');
-		}
-		return this.descriptionTextarea.value.trim();
-	}
-
-	private hasDescriptionContent(): boolean {
-		if (this.selectedIssueType === IssueType.Bug) {
-			return !!(
-				this.bugSummaryTextarea?.value.trim() ||
-				this.bugReproTextarea?.value.trim() ||
-				this.bugObservedTextarea?.value.trim() ||
-				this.bugExpectedTextarea?.value.trim()
-			);
-		}
-		return !!this.descriptionTextarea.value.trim();
-	}
-
-	// ── Step 1: Categorize ──
-	private createStep1Categorize(): void {
-		const page = append(this.stepContainer, $('div.wizard-step'));
-		this.stepPages.push(page);
-
-		const heading = append(page, $('h2.wizard-heading'));
-		heading.textContent = localize('categorize', "What kind of feedback is this?");
-
-		const subtitle = append(page, $('p.wizard-subtitle'));
-		subtitle.textContent = localize('categorizeSubtitle', "Selecting the right category helps us identify and route your feedback to the correct team");
-
-		this.typeButtonGroup = append(page, $('div.wizard-type-buttons'));
-		const types = [
-			{ type: IssueType.Bug, label: localize('bug', "Bug"), icon: Codicon.bug, shortcut: '1' },
-			{ type: IssueType.FeatureRequest, label: localize('featureRequest', "Feature Request"), icon: Codicon.lightbulb, shortcut: '2' },
-			{ type: IssueType.PerformanceIssue, label: localize('performanceIssue', "Performance Issue"), icon: Codicon.dashboard, shortcut: '3' },
-		];
-
-		const selectType = (type: IssueType) => {
-			this.selectedIssueType = type;
-			this.model.update({ issueType: type });
-			this.typeButtonGroup.classList.remove('invalid-input');
-			for (const b of this.issueTypeButtons) {
-				b.classList.toggle('selected', b.getAttribute('data-type') === String(type));
-			}
-		};
-
-		for (const { type, label, icon } of types) {
-			const btn = append(this.typeButtonGroup, $('div.wizard-type-btn'));
-			btn.setAttribute('role', 'button');
-			btn.setAttribute('tabindex', '0');
-			btn.setAttribute('data-type', String(type));
-
-			const iconEl = append(btn, $('span.wizard-type-icon'));
-			iconEl.appendChild(renderIcon(icon));
-			const labelEl = append(btn, $('span'));
-			labelEl.textContent = label;
-
-			this.issueTypeButtons.push(btn);
-
-			this.disposables.add(addDisposableListener(btn, EventType.CLICK, () => {
-				selectType(type);
-			}));
-
-			this.disposables.add(addDisposableListener(btn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					btn.click();
-				}
-			}));
-		}
-
-		// Number key shortcuts for category selection (1, 2, 3)
-		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (this.currentStep !== WizardStep.Categorize) {
-				return;
-			}
-			const index = ['1', '2', '3'].indexOf(e.key);
-			if (index >= 0 && index < types.length) {
-				e.preventDefault();
-				selectType(types[index].type);
-			}
-		}));
-	}
-
-	// ── Step 3: Screenshots ──
-	private createStep3Screenshots(): void {
+	// ── Step 0: Attachments ──
+	private createStep0Attachments(): void {
 		const page = append(this.stepContainer, $('div.wizard-step'));
 		this.stepPages.push(page);
 
@@ -419,6 +224,9 @@ export class IssueReporterOverlay {
 			}
 			if (this.screenshotDelay > 0) {
 				this.captureBtn.enabled = false;
+				this.delayedScreenshotPending = true;
+				this.updateScreenshotThumbnails();
+				this.updateAttachmentButtons();
 				const origLabel = this.captureBtn.label as string;
 				let remaining = this.screenshotDelay;
 				this.captureBtn.label = `${remaining}...`;
@@ -430,6 +238,9 @@ export class IssueReporterOverlay {
 						clearInterval(interval);
 						this.captureBtn.label = origLabel;
 						this.captureBtn.enabled = true;
+						this.delayedScreenshotPending = false;
+						this.updateScreenshotThumbnails();
+						this.updateAttachmentButtons();
 						this._onDidRequestScreenshot.fire();
 					}
 				}, 1000);
@@ -461,12 +272,15 @@ export class IssueReporterOverlay {
 		}
 
 		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
+		this.updateScreenshotThumbnails();
 
 		// Hide inline actions and use the floating capture bar instead
 		actions.style.display = 'none';
 		this.createFloatingCaptureBar();
 	}
 
+	private captureStripCaptureBtn: HTMLElement | undefined;
+	private captureStripDelayBtn: HTMLElement | undefined;
 	private captureStripRecordBtn: Button | undefined;
 	private captureStripRecordElapsed: HTMLElement | undefined;
 
@@ -484,6 +298,7 @@ export class IssueReporterOverlay {
 		const segmented = append(this.floatingBar, $('div.wizard-segmented-btn'));
 
 		const captureBtn = append(segmented, $('div.wizard-segmented-main.primary'));
+		this.captureStripCaptureBtn = captureBtn;
 		captureBtn.setAttribute('role', 'button');
 		captureBtn.setAttribute('tabindex', '0');
 		const cameraIcon = append(captureBtn, $('span'));
@@ -499,6 +314,7 @@ export class IssueReporterOverlay {
 			{ label: localize('tenSecDelay', "10 second delay"), value: 10 },
 		];
 		const delayDropdownContainer = append(segmented, $('div.wizard-segmented-dropdown.primary'));
+		this.captureStripDelayBtn = delayDropdownContainer;
 		delayDropdownContainer.setAttribute('role', 'button');
 		delayDropdownContainer.setAttribute('tabindex', '0');
 		append(delayDropdownContainer, $('span')).appendChild(renderIcon(Codicon.chevronDown));
@@ -506,6 +322,9 @@ export class IssueReporterOverlay {
 		if (this.contextMenuProvider) {
 			this.disposables.add(addDisposableListener(delayDropdownContainer, EventType.CLICK, (e) => {
 				e.stopPropagation();
+				if (delayDropdownContainer.classList.contains('disabled')) {
+					return;
+				}
 				const actions = delayOptions.map(opt => {
 					const action = new Action(
 						`delay-${opt.value}`,
@@ -541,6 +360,9 @@ export class IssueReporterOverlay {
 					captureBtn.style.minWidth = `${captureBtn.offsetWidth}px`;
 					captureBtn.style.textAlign = 'center';
 					captureBtn.classList.add('disabled');
+					this.delayedScreenshotPending = true;
+					this.updateScreenshotThumbnails();
+					this.updateAttachmentButtons();
 					let remaining = this.screenshotDelay;
 					captureLbl.textContent = `${remaining}...`;
 					const interval = setInterval(() => {
@@ -553,6 +375,9 @@ export class IssueReporterOverlay {
 							captureBtn.classList.remove('disabled');
 							captureBtn.style.minWidth = '';
 							captureBtn.style.textAlign = '';
+							this.delayedScreenshotPending = false;
+							this.updateScreenshotThumbnails();
+							this.updateAttachmentButtons();
 							this._onDidRequestScreenshot.fire();
 						}
 					}, 1000);
@@ -581,7 +406,7 @@ export class IssueReporterOverlay {
 		body.appendChild(this.floatingBar);
 
 		// Only visible on step 3
-		this.floatingBar.style.display = this.currentStep === WizardStep.Screenshots ? '' : 'none';
+		this.floatingBar.style.display = this.currentStep === WizardStep.Attachments ? '' : 'none';
 
 		// Dragging (clamped to window bounds)
 		let dragStartX = 0;
@@ -630,7 +455,7 @@ export class IssueReporterOverlay {
 		if (!this.floatingBar) {
 			return;
 		}
-		const shouldShow = this.currentStep === WizardStep.Screenshots;
+		const shouldShow = this.currentStep === WizardStep.Attachments;
 		this.floatingBar.style.display = shouldShow ? '' : 'none';
 		if (shouldShow) {
 			// Reset to default position
@@ -640,29 +465,151 @@ export class IssueReporterOverlay {
 		}
 	}
 
-	// ── Step 4: Review & Submit ──
-	private createStep4Review(): void {
-		const page = append(this.stepContainer, $('div.wizard-step.wizard-step-review'));
+	// ── Step 1: Describe (category + description + title) ──
+	private createStep1Describe(): void {
+		const page = append(this.stepContainer, $('div.wizard-step'));
 		this.stepPages.push(page);
 
 		const heading = append(page, $('h2.wizard-heading'));
-		heading.textContent = localize('reviewSubmit', "Review and submit");
+		heading.textContent = localize('describeHeading', "Describe your feedback");
 
-		// Title input
-		const titleGroup = append(page, $('div.wizard-field'));
+		// Category selection
+		const catLabel = append(page, $('label.wizard-field-label'));
+		catLabel.textContent = localize('feedbackCategory', "Category");
+
+		this.typeButtonGroup = append(page, $('div.wizard-type-buttons'));
+		const types = [
+			{ type: IssueType.Bug, label: localize('bug', "Bug"), icon: Codicon.bug },
+			{ type: IssueType.FeatureRequest, label: localize('featureRequest', "Feature Request"), icon: Codicon.lightbulb },
+			{ type: IssueType.PerformanceIssue, label: localize('performanceIssue', "Performance Issue"), icon: Codicon.dashboard },
+		];
+
+		const selectType = (type: IssueType) => {
+			this.selectedIssueType = type;
+			this.model.update({ issueType: type });
+			this.typeButtonGroup.classList.remove('invalid-input');
+			for (const b of this.issueTypeButtons) {
+				b.classList.toggle('selected', b.getAttribute('data-type') === String(type));
+			}
+			this.updateDescriptionGuidance();
+		};
+
+		for (const { type, label, icon } of types) {
+			const btn = append(this.typeButtonGroup, $('div.wizard-type-btn'));
+			btn.setAttribute('role', 'button');
+			btn.setAttribute('tabindex', '0');
+			btn.setAttribute('data-type', String(type));
+
+			const iconEl = append(btn, $('span.wizard-type-icon'));
+			iconEl.appendChild(renderIcon(icon));
+			const labelEl = append(btn, $('span'));
+			labelEl.textContent = label;
+
+			this.issueTypeButtons.push(btn);
+			this.disposables.add(addDisposableListener(btn, EventType.CLICK, () => selectType(type)));
+			this.disposables.add(addDisposableListener(btn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					btn.click();
+				}
+			}));
+		}
+
+		// Number key shortcuts for category selection (1, 2, 3)
+		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (this.currentStep !== WizardStep.Describe) {
+				return;
+			}
+			const index = ['1', '2', '3'].indexOf(e.key);
+			if (index >= 0 && index < types.length) {
+				// Only when no textarea/input is focused
+				const activeEl = this.wizardPanel.ownerDocument.activeElement;
+				if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) {
+					return;
+				}
+				e.preventDefault();
+				selectType(types[index].type);
+			}
+		}));
+
+		// Guidance text (changes based on category)
+		this.descriptionGuidance = append(page, $('p.wizard-subtitle.wizard-description-guidance'));
+		this.updateDescriptionGuidance();
+
+		// Description textarea
+		const descLabel = append(page, $('label.wizard-field-label'));
+		descLabel.textContent = localize('description', "Description");
+		this.descriptionTextarea = append(page, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
+		this.descriptionTextarea.placeholder = localize('descriptionPlaceholder', "Describe the issue in detail...");
+		this.descriptionTextarea.rows = 6;
+		if (this.data.issueBody) {
+			this.descriptionTextarea.value = this.data.issueBody;
+		}
+
+		// Title input with AI generate button
+		const titleGroup = append(page, $('div.wizard-field.wizard-title-field'));
 		const titleLabel = append(titleGroup, $('label.wizard-field-label'));
-		titleLabel.textContent = localize('issueTitle', "Issue title");
-		this.titleInput = this.disposables.add(new InputBox(titleGroup, undefined, {
+		titleLabel.textContent = localize('issueTitle', "Title");
+		const titleRow = append(titleGroup, $('div.wizard-title-row'));
+		this.titleInput = this.disposables.add(new InputBox(titleRow, undefined, {
 			placeholder: localize('issueTitlePlaceholder', "Brief summary of the issue"),
 			inputBoxStyles: defaultInputBoxStyles,
 		}));
 		if (this.data.issueTitle) {
 			this.titleInput.value = this.data.issueTitle;
 		}
-
 		this.disposables.add(this.titleInput.onDidChange(() => {
 			this.titleInput.element.classList.remove('invalid-input');
 		}));
+
+		const aiBtn = this.disposables.add(new Button(titleRow, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
+		aiBtn.label = `$(sparkle)`;
+		aiBtn.element.classList.add('wizard-ai-title-btn');
+		aiBtn.element.title = localize('generateTitle', "Generate title from description");
+		this.disposables.add(aiBtn.onDidClick(() => {
+			const desc = this.descriptionTextarea.value.trim();
+			if (desc) {
+				this._onDidRequestGenerateTitle.fire(desc);
+			}
+		}));
+	}
+
+	/** Update the guidance text above the description based on selected category */
+	private updateDescriptionGuidance(): void {
+		if (!this.descriptionGuidance) {
+			return;
+		}
+		switch (this.selectedIssueType) {
+			case IssueType.Bug:
+				this.descriptionGuidance.textContent = localize('bugGuidance',
+					"Describe what happened, the steps to reproduce, what you expected, and what you observed instead.");
+				break;
+			case IssueType.FeatureRequest:
+				this.descriptionGuidance.textContent = localize('featureGuidance',
+					"Describe the feature you'd like to see, what problem it would solve, and any alternatives you've considered.");
+				break;
+			case IssueType.PerformanceIssue:
+				this.descriptionGuidance.textContent = localize('perfGuidance',
+					"Describe what is slow, when it happens, whether it's consistent or intermittent, and any patterns you've noticed.");
+				break;
+			default:
+				this.descriptionGuidance.textContent = localize('defaultGuidance',
+					"Select a category above, then describe your feedback in detail.");
+				break;
+		}
+	}
+
+	private hasDescriptionContent(): boolean {
+		return !!this.descriptionTextarea.value.trim();
+	}
+
+	// ── Step 2: Review & Submit ──
+	private createStep2Review(): void {
+		const page = append(this.stepContainer, $('div.wizard-step.wizard-step-review'));
+		this.stepPages.push(page);
+
+		const heading = append(page, $('h2.wizard-heading'));
+		heading.textContent = localize('reviewSubmit', "Review and submit");
 
 		// Review details (filled dynamically) — compact horizontal layout
 		append(page, $('div.wizard-review-details'));
@@ -689,7 +636,7 @@ export class IssueReporterOverlay {
 			if (e.key === 'Escape') {
 				e.preventDefault();
 				e.stopPropagation();
-				if (this.currentStep > WizardStep.Categorize) {
+				if (this.currentStep > WizardStep.Attachments) {
 					this.goBack();
 				} else {
 					this.close();
@@ -702,7 +649,7 @@ export class IssueReporterOverlay {
 		if (this.submitted) {
 			return;
 		}
-		if (this.currentStep > WizardStep.Categorize) {
+		if (this.currentStep > WizardStep.Attachments) {
 			this.setStep(this.currentStep - 1);
 		}
 	}
@@ -711,23 +658,27 @@ export class IssueReporterOverlay {
 		if (this.submitted && this.currentStep !== WizardStep.Review) {
 			return;
 		}
-		if (this.currentStep === WizardStep.Categorize && this.selectedIssueType === undefined) {
-			this.typeButtonGroup.classList.add('invalid-input');
-			return;
-		}
-
-		if (this.currentStep === WizardStep.Categorize) {
-			// Rebuild the describe form when advancing from category step
-			this.buildDescribeForm();
-		}
 
 		if (this.currentStep === WizardStep.Describe) {
-			if (!this.hasDescriptionContent()) {
-				this.describePageContent.classList.add('invalid-input');
+			// Validate: category must be selected
+			if (this.selectedIssueType === undefined) {
+				this.typeButtonGroup.classList.add('invalid-input');
 				return;
 			}
-			this.describePageContent.classList.remove('invalid-input');
-			this.model.update({ issueDescription: this.composeDescription() });
+			// Validate: description must not be empty
+			if (!this.hasDescriptionContent()) {
+				this.descriptionTextarea.classList.add('invalid-input');
+				return;
+			}
+			this.descriptionTextarea.classList.remove('invalid-input');
+			// Validate: title must not be empty
+			const title = this.titleInput.value.trim();
+			if (!title) {
+				this.titleInput.element.classList.add('invalid-input');
+				this.titleInput.focus();
+				return;
+			}
+			this.model.update({ issueDescription: this.descriptionTextarea.value.trim() });
 		}
 
 		if (this.currentStep === WizardStep.Review) {
@@ -754,16 +705,12 @@ export class IssueReporterOverlay {
 		this.updateStepUI();
 
 		if (step === WizardStep.Describe) {
-			// Focus the first textarea in the describe form
-			const firstTextarea = this.describePageContent.querySelector('textarea');
-			if (firstTextarea) {
-				firstTextarea.focus();
-			}
+			this.descriptionTextarea.focus();
 		} else if (step === WizardStep.Review) {
 			this.updateReviewDetails();
-			this.titleInput.focus();
+			this.wizardPanel.focus();
 		} else {
-			// Categorize / Screenshots — focus the panel so keyboard shortcuts work
+			// Attachments — focus the panel so keyboard shortcuts work
 			this.wizardPanel.focus();
 		}
 	}
@@ -773,10 +720,9 @@ export class IssueReporterOverlay {
 		this.stepIndicator.textContent = localize('stepOf', "Step {0} of {1}", stepNum, STEP_COUNT);
 
 		const stepNames = [
-			localize('labels', "Category"),
+			localize('screenshots', "Attachments"),
 			localize('composeMessage', "Describe"),
-			localize('screenshots', "Screenshots"),
-			localize('submit', "Submit"),
+			localize('submit', "Review"),
 		];
 		this.stepLabel.textContent = `| ${stepNames[this.currentStep]}`;
 
@@ -796,14 +742,14 @@ export class IssueReporterOverlay {
 		}
 
 		// Back button visibility
-		this.backButton.element.style.display = this.currentStep === WizardStep.Categorize ? 'none' : '';
+		this.backButton.element.style.display = this.currentStep === WizardStep.Attachments ? 'none' : '';
 
 		// Next button label
 		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
 		if (this.currentStep === WizardStep.Review) {
 			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
 			this.nextButton.element.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
-		} else if (this.currentStep === WizardStep.Screenshots) {
+		} else if (this.currentStep === WizardStep.Attachments) {
 			this.nextButton.label = this.screenshots.length === 0
 				? localize('skip', "Skip")
 				: localize('next', "Next");
@@ -813,7 +759,7 @@ export class IssueReporterOverlay {
 			this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 		}
 
-		// Show/hide capture strip (only on step 3)
+		// Show/hide capture strip (only on attachments step)
 		this.updateCaptureStripVisibility();
 	}
 
@@ -825,14 +771,15 @@ export class IssueReporterOverlay {
 		}
 		details.textContent = '';
 
-		// Compact: Description · Category on one row
-		const infoRow = append(details as HTMLElement, $('div.review-info-row'));
+		// Title (read-only)
+		const titleSection = append(details as HTMLElement, $('div.review-section'));
+		const titleLabel = append(titleSection, $('div.review-label'));
+		titleLabel.textContent = localize('issueTitle', "Title");
+		const titleValue = append(titleSection, $('div.review-value'));
+		titleValue.textContent = this.titleInput.value.trim() || localize('noTitle', "(no title)");
 
-		const descSection = append(infoRow, $('div.review-section'));
-		const descLabel = append(descSection, $('div.review-label'));
-		descLabel.textContent = localize('description', "Description");
-		const descValue = append(descSection, $('div.review-value'));
-		descValue.textContent = this.descriptionTextarea.value.trim() || localize('noDescription', "(no description)");
+		// Category + Description row
+		const infoRow = append(details as HTMLElement, $('div.review-info-row'));
 
 		const catSection = append(infoRow, $('div.review-section'));
 		const catLabel = append(catSection, $('div.review-label'));
@@ -844,6 +791,12 @@ export class IssueReporterOverlay {
 			[IssueType.PerformanceIssue]: localize('performanceIssue', "Performance Issue"),
 		};
 		catValue.textContent = (this.selectedIssueType !== undefined ? typeLabels[this.selectedIssueType] : undefined) ?? localize('unknown', "Unknown");
+
+		const descSection = append(infoRow, $('div.review-section'));
+		const descLabel = append(descSection, $('div.review-label'));
+		descLabel.textContent = localize('description', "Description");
+		const descValue = append(descSection, $('div.review-value.review-description'));
+		descValue.textContent = this.descriptionTextarea.value.trim() || localize('noDescription', "(no description)");
 
 		// Attachments row with full-size clickable thumbnails
 		const totalAttachments = this.screenshots.length + this.recordings.length;
@@ -1134,12 +1087,11 @@ export class IssueReporterOverlay {
 	private submit(): void {
 		const title = this.titleInput.value.trim();
 		if (!title) {
-			this.titleInput.element.classList.add('invalid-input');
-			this.titleInput.focus();
+			// Should not happen — validated in goNext() on Describe step
 			return;
 		}
 
-		const description = this.composeDescription();
+		const description = this.descriptionTextarea.value.trim();
 		this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
 
 		const body = this.buildIssueBody();
@@ -1182,30 +1134,47 @@ export class IssueReporterOverlay {
 
 	private updateAttachmentButtons(): void {
 		const atMax = this.getTotalAttachments() >= MAX_ATTACHMENTS;
+		const maxMsg = localize('maxAttachmentsReached', "Max attachments reached");
+		const wouldReachMax = this.getTotalAttachments() >= MAX_ATTACHMENTS - 1;
 
-		this.captureBtn.enabled = !atMax;
-		this.captureBtn.label = atMax
-			? localize('maxAttachmentsReached', "Max attachments reached")
+		// Screenshot disabled when: at max, OR recording will fill the last slot
+		const screenshotDisabled = atMax || (wouldReachMax && this.currentRecordingState === RecordingState.Recording);
+		// Record disabled when: at max, OR delayed screenshot will fill the last slot
+		const recordDisabled = atMax || (wouldReachMax && this.delayedScreenshotPending);
+
+		this.captureBtn.enabled = !screenshotDisabled;
+		this.captureBtn.label = screenshotDisabled
+			? maxMsg
 			: localize('addScreenshot', "Add screenshot");
 
 		if (this.recordBtn) {
-			this.recordBtn.enabled = !atMax;
 			if (this.currentRecordingState !== RecordingState.Recording) {
-				this.recordBtn.label = atMax
-					? localize('maxAttachmentsReached', "Max attachments reached")
+				this.recordBtn.enabled = !recordDisabled;
+				this.recordBtn.label = recordDisabled
+					? maxMsg
 					: localize('recordVideo', "Record video");
+			}
+		}
+
+		// Floating bar buttons
+		if (this.captureStripCaptureBtn && !this.delayedScreenshotPending) {
+			this.captureStripCaptureBtn.classList.toggle('disabled', screenshotDisabled);
+			this.captureStripCaptureBtn.title = screenshotDisabled ? maxMsg : '';
+		}
+		if (this.captureStripDelayBtn) {
+			this.captureStripDelayBtn.classList.toggle('disabled', screenshotDisabled);
+			this.captureStripDelayBtn.title = screenshotDisabled ? maxMsg : '';
+		}
+		if (this.captureStripRecordBtn) {
+			if (this.currentRecordingState !== RecordingState.Recording) {
+				this.captureStripRecordBtn.enabled = !recordDisabled;
+				this.captureStripRecordBtn.element.title = recordDisabled ? maxMsg : localize('recordVideo', "Record video");
 			}
 		}
 	}
 
 	private updateScreenshotThumbnails(): void {
 		this.screenshotContainer.textContent = '';
-
-		if (this.screenshots.length === 0 && this.recordings.length === 0) {
-			const empty = append(this.screenshotContainer, $('div.wizard-screenshots-empty'));
-			empty.textContent = localize('noScreenshots', "No screenshots or recordings added yet");
-			return;
-		}
 
 		for (let i = 0; i < this.screenshots.length; i++) {
 			const screenshot = this.screenshots[i];
@@ -1271,11 +1240,19 @@ export class IssueReporterOverlay {
 		}
 
 		if (this.getTotalAttachments() < MAX_ATTACHMENTS) {
+			const wouldReachMax = this.getTotalAttachments() >= MAX_ATTACHMENTS - 1;
+			const addDisabled = wouldReachMax && (this.currentRecordingState === RecordingState.Recording || this.delayedScreenshotPending);
 			const addCard = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-screenshot-add'));
+			if (addDisabled) {
+				addCard.classList.add('disabled');
+				addCard.title = localize('maxAttachmentsReached', "Max attachments reached");
+			}
 			const plus = append(addCard, $('div.wizard-screenshot-plus'));
 			plus.appendChild(renderIcon(Codicon.add));
 			this.disposables.add(addDisposableListener(addCard, EventType.CLICK, () => {
-				this._onDidRequestScreenshot.fire();
+				if (!addCard.classList.contains('disabled')) {
+					this._onDidRequestScreenshot.fire();
+				}
 			}));
 		}
 	}
@@ -1308,7 +1285,7 @@ export class IssueReporterOverlay {
 	}
 
 	private buildIssueBody(): string {
-		const description = this.composeDescription();
+		const description = this.descriptionTextarea.value.trim();
 		this.model.update({ issueDescription: description });
 
 		let body = this.model.serialize();
@@ -1349,7 +1326,7 @@ export class IssueReporterOverlay {
 	}
 
 	showFloatingBar(): void {
-		if (this.floatingBar && this.currentStep === WizardStep.Screenshots) {
+		if (this.floatingBar && this.currentStep === WizardStep.Attachments) {
 			this.floatingBar.style.display = '';
 		}
 	}
@@ -1391,6 +1368,11 @@ export class IssueReporterOverlay {
 	/** Mark as submitted — locks navigation and disables discard dialog */
 	markAsSubmitted(): void {
 		this.submitted = true;
+	}
+
+	/** Set the title input value (e.g., from AI generation) */
+	setGeneratedTitle(title: string): void {
+		this.titleInput.value = title;
 	}
 
 	/** Show a "Close" button next to the submit button after successful submission */
@@ -1477,6 +1459,9 @@ export class IssueReporterOverlay {
 				this.floatingBar.classList.remove('wizard-strip-recording');
 			}
 		}
+
+		this.updateScreenshotThumbnails();
+		this.updateAttachmentButtons();
 	}
 
 	addRecording(filePath: string, durationMs: number, thumbnailDataUrl?: string): void {
@@ -1498,5 +1483,6 @@ export class IssueReporterOverlay {
 		this._onDidRequestStopRecording.dispose();
 		this._onDidRequestOpenRecording.dispose();
 		this._onDidRequestOpenScreenshot.dispose();
+		this._onDidRequestGenerateTitle.dispose();
 	}
 }

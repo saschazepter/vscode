@@ -155,6 +155,10 @@
 	background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
+.wizard-segmented-main.disabled:hover {
+	background: var(--vscode-button-background, #0e639c);
+}
+
 .wizard-segmented-main > * {
 	display: flex;
 	align-items: center;
@@ -178,6 +182,10 @@
 	background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
+.wizard-segmented-dropdown.disabled:hover {
+	background: var(--vscode-button-background, #0e639c);
+}
+
 .wizard-segmented-dropdown > * {
 	display: flex;
 	align-items: center;
@@ -187,6 +195,13 @@
 .wizard-floating-bar.wizard-strip-recording .wizard-segmented-btn {
 	opacity: 0.3;
 	pointer-events: none;
+}
+
+/* Disabled state for segmented buttons when max attachments reached */
+.wizard-segmented-main.disabled,
+.wizard-segmented-dropdown.disabled {
+	opacity: 0.4;
+	cursor: default;
 }
 
 /* Recording state in floating bar */
@@ -318,11 +333,6 @@
 }
 
 .wizard-textarea.invalid-input {
-	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
-	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
-}
-
-.wizard-describe-content.invalid-input .wizard-textarea {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
 }
@@ -494,6 +504,15 @@
 	color: var(--vscode-focusBorder, #007acc);
 }
 
+.wizard-screenshot-add.disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.wizard-screenshot-add.disabled:hover .wizard-screenshot-plus {
+	color: var(--vscode-descriptionForeground, #888);
+}
+
 /* ── Screenshot Controls ── */
 
 .wizard-screenshot-actions {
@@ -575,6 +594,43 @@
 .wizard-field .monaco-inputbox.invalid-input .input {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
+}
+
+/* Title row: InputBox + AI sparkle button */
+.wizard-title-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.wizard-title-row .monaco-inputbox {
+	flex: 1;
+}
+
+.wizard-ai-title-btn.monaco-button {
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+/* Description guidance text */
+.wizard-description-guidance {
+	margin-top: 12px;
+	margin-bottom: 4px;
+	font-style: italic;
+	min-height: 1.4em;
+}
+
+/* Review: description value preserves whitespace */
+.review-description {
+	white-space: pre-wrap;
+	max-height: 200px;
+	overflow-y: auto;
 }
 
 .wizard-review-details {
