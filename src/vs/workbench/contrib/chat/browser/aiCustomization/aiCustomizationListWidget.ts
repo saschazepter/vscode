@@ -1289,7 +1289,13 @@ export class AICustomizationListWidget extends Disposable {
 						label = formatDisplayName(key);
 				}
 				group = { groupKey: key, label, icon: Codicon.folder, description: '', items: [] };
-				groups.push(group);
+				// Insert dynamic groups before the built-in group so it always stays last.
+				const builtinIdx = groups.findIndex(g => g.groupKey === BUILTIN_STORAGE);
+				if (builtinIdx >= 0) {
+					groups.splice(builtinIdx, 0, group);
+				} else {
+					groups.push(group);
+				}
 			}
 			group.items.push(item);
 		}
