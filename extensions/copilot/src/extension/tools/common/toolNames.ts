@@ -168,20 +168,6 @@ export function getToolName(name: string | ContributedToolName): string | ToolNa
 	return contributedToolNameToToolNames.get(name as ContributedToolName) ?? name;
 }
 
-/**
- * Returns the active search/explore subagent tool name if either is enabled in the tools map.
- * Use this in prompts to check for and reference whichever variant is active.
- */
-export function getActiveSearchSubagentName(tools: Partial<Record<ToolName, boolean>>): string | undefined {
-	if (tools[ToolName.SearchSubagent]) {
-		return ToolName.SearchSubagent;
-	}
-	if (tools[ToolName.ExploreSubagent]) {
-		return ToolName.ExploreSubagent;
-	}
-	return undefined;
-}
-
 export function mapContributedToolNamesInString(str: string): string {
 	contributedToolNameToToolNames.forEach((value, key) => {
 		const re = new RegExp(`\\b${key}\\b`, 'g');
