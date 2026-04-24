@@ -124,6 +124,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Register delete cloud sessions command
 		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.deleteSessions', () => this._deleteCloudSessions()));
 
+		// Register suggest session sync command (called from chronicleIntent when user runs /chronicle)
+		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.suggest', () => this._suggestSessionSync()));
+
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
 
@@ -135,10 +138,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			spanListenerStore.clear();
 			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
 			if (!localEnabled.read(reader) || !cloudEnabled) {
-				// Suggest session sync when local index is on but sync is off
-				if (localEnabled.read(reader) && !cloudEnabled) {
-					this._suggestSessionSync();
-				}
 				return;
 			}
 
@@ -181,6 +180,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		if (this._syncSuggestionShown) {
 			return;
 		}
+		// Only suggest when local index is on but session sync is off
+		const localEnabled = this._configService.getExperimentBasedConfig(ConfigKey.LocalIndexEnabled, this._expService);
+		if (!localEnabled || this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled')) {
+			return;
+		}
 		this._syncSuggestionShown = true;
 
 		vscode.window.showInformationMessage(
@@ -211,20 +215,24 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		// Build Quick Pick items
 		type SessionQuickPickItem = vscode.QuickPickItem & { sessionId: string };
-		const sessionItems: SessionQuickPickItem[] = rows.map(row => {
-			const label = row.first_message
-				? row.first_message.length > 60 ? row.first_message.substring(0, 60) + '...' : row.first_message
-				: row.id.substring(0, 8);
-			const description = [
-				row.repository,
-				row.created_at ? new Date(row.created_at).toLocaleDateString() : undefined,
-			].filter(Boolean).join(' · ');
-			return { label, description, sessionId: row.id };
-		});
+		const selectAllId = '__all__';
+		const sessionItems: SessionQuickPickItem[] = [
+			{ label: '$(checklist) ' + vscode.l10n.t('Select All ({0} sessions)', rows.length), sessionId: selectAllId },
+			...rows.map(row => {
+				const label = row.first_message
+					? row.first_message.length > 60 ? row.first_message.substring(0, 60) + '...' : row.first_message
+					: row.id.substring(0, 8);
+				const description = [
+					row.repository,
+					row.created_at ? new Date(row.created_at).toLocaleDateString() : undefined,
+				].filter(Boolean).join(' · ');
+				return { label, description, sessionId: row.id };
+			}),
+		];
 
 		const picked = await vscode.window.showQuickPick(sessionItems, {
 			title: vscode.l10n.t('Delete Cloud Session Data'),
-			placeHolder: vscode.l10n.t('Select sessions to delete from the cloud (or select all with Ctrl+A)'),
+			placeHolder: vscode.l10n.t('Select sessions to delete from the cloud'),
 			canPickMany: true,
 		});
 
@@ -232,7 +240,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			return;
 		}
 
-		const sessionsToDelete = picked.map(p => rows.find(r => r.id === p.sessionId)!).filter(Boolean);
+		// If "Select All" is checked, delete all sessions
+		const sessionsToDelete = picked.some(p => p.sessionId === selectAllId)
+			? rows
+			: picked.map(p => rows.find(r => r.id === p.sessionId)!).filter(Boolean);
 
 		// Confirmation
 		const confirm = await vscode.window.showWarningMessage(

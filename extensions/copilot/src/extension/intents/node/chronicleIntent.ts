@@ -22,6 +22,7 @@ import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexin
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
+import { IRunCommandExecutionService } from '../../../platform/commands/common/runCommandExecutionService';
 import { IToolsService } from '../../tools/common/toolsService';
 import { ToolName } from '../../tools/common/toolNames';
 import { Conversation } from '../../prompt/common/conversation';
@@ -68,6 +69,7 @@ export class ChronicleIntent implements IIntent {
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IExperimentationService private readonly _expService: IExperimentationService,
 		@IFetcherService private readonly _fetcherService: IFetcherService,
+		@IRunCommandExecutionService private readonly _commandService: IRunCommandExecutionService,
 	) {
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
 	}
@@ -92,6 +94,9 @@ export class ChronicleIntent implements IIntent {
 			stream.markdown(l10n.t('Session search is not available yet.'));
 			return {};
 		}
+
+		// Nudge user to enable session sync (non-blocking, once per session)
+		this._commandService.executeCommand('github.copilot.sessionSync.suggest').catch(() => { /* command not available */ });
 
 		// Route by command name (e.g. 'chronicle:standup') or fall back to parsing the prompt
 		const { subcommand, rest } = this._resolveSubcommand(request);
