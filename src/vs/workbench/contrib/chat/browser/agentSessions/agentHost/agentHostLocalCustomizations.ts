@@ -120,6 +120,8 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
 			name: getFriendlyName(basename(file.uri)),
 			storage: file.storage,
 			enabled: !file.disabled,
+			extensionId: undefined,
+			pluginUri: undefined,
 		}));
 	}
 }

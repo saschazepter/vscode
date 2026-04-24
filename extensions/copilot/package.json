@@ -1478,20 +1478,6 @@
 						]
 					},
 					{
-						"name": "doc",
-						"when": "!config.inlineChat.enableV2",
-						"description": "%copilot.workspace.doc.description%",
-						"disambiguation": [
-							{
-								"category": "doc",
-								"description": "Add documentation comment for this symbol",
-								"examples": [
-									"Add jsdoc to this method"
-								]
-							}
-						]
-					},
-					{
 						"name": "fix",
 						"when": "!config.inlineChat.enableV2",
 						"description": "%copilot.workspace.fix.description%",
@@ -4282,16 +4268,6 @@
 							"experimental"
 						]
 					},
-					"github.copilot.chat.inlineChat.selectionRatioThreshold": {
-						"type": "number",
-						"default": 0,
-						"markdownDescription": "%github.copilot.config.inlineChat.selectionRatioThreshold%",
-						"tags": [
-							"advanced",
-							"experimental",
-							"onExp"
-						]
-					},
 					"github.copilot.chat.inlineChat.reasoningEffort": {
 						"type": "string",
 						"default": "low",
@@ -4677,7 +4653,7 @@
 					},
 					"github.copilot.chat.cli.lazyLoadSessionItem.enabled": {
 						"type": "boolean",
-						"default": false,
+						"default": true,
 						"markdownDescription": "%github.copilot.config.cli.lazyLoadSessionItem.enabled%",
 						"tags": [
 							"advanced"
