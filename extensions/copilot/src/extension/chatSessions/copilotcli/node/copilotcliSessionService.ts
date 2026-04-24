@@ -26,7 +26,7 @@ import { disposableTimeout, raceCancellation, raceCancellationError, SequencerBy
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { Emitter, Event } from '../../../../util/vs/base/common/event';
 import { Lazy } from '../../../../util/vs/base/common/lazy';
-import { Disposable, DisposableMap, IDisposable, IReference, MutableDisposable, RefCountedDisposable, toDisposable } from '../../../../util/vs/base/common/lifecycle';
+import { Disposable, DisposableMap, DisposableStore, IDisposable, IReference, MutableDisposable, RefCountedDisposable, toDisposable } from '../../../../util/vs/base/common/lifecycle';
 import { basename, dirname, joinPath } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { generateUuid } from '../../../../util/vs/base/common/uuid';
@@ -314,6 +314,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 	private _sessionManager: Lazy<Promise<internal.LocalSessionManager>>;
 	private _sessionWrappers = new DisposableMap<string, RefCountedSession>();
+	private _keepAliveDisposables = new DisposableMap<string, IDisposable>();
 	private readonly _partialSessionHistories = new Map<string, readonly (ChatRequestTurn2 | ChatResponseTurn2)[]>();
 
 
@@ -1274,6 +1275,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		}));
 		session.add(toDisposable(() => {
 			this._sessionWrappers.deleteAndLeak(sdkSession.sessionId);
+			this._keepAliveDisposables.deleteAndDispose(sdkSession.sessionId);
 			this.sessionMutexForGetSession.delete(sdkSession.sessionId);
 			(async () => {
 				if (sdkSession.isAbortable()) {
@@ -1312,8 +1314,10 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			}
 		};
 		const keepAliveTimer = new MutableDisposable<IDisposable>();
-		session.add(keepAliveTimer);
-		session.add(toDisposable(releaseKeepAlive));
+		const keepAliveDisposable = new DisposableStore();
+		keepAliveDisposable.add(keepAliveTimer);
+		keepAliveDisposable.add(toDisposable(releaseKeepAlive));
+		this._keepAliveDisposables.set(sdkSession.sessionId, keepAliveDisposable);
 		session.add(session.onDidChangeStatus(() => {
 			const status = session.status;
 			if (status === undefined || status === ChatSessionStatus.Completed || status === ChatSessionStatus.Failed) {
@@ -1336,6 +1340,11 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		this._sessionLabels.delete(sessionId);
 		this._partialSessionHistories.delete(sessionId);
 		this._sessionWorkingDirectories.delete(sessionId);
+		// Release the post-turn keep-alive ref (if any) before disposing the
+		// session wrapper, so the underlying refcount can actually reach zero
+		// and the session disposes synchronously instead of being held alive
+		// by a pending keep-alive timer for up to KEEP_ALIVE_TIMEOUT_MS.
+		this._keepAliveDisposables.deleteAndDispose(sessionId);
 		try {
 			{
 				const session = this._sessionWrappers.get(sessionId);
