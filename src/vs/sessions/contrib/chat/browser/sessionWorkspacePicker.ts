@@ -97,7 +97,7 @@ export class WorkspacePicker extends Disposable {
 	 * Set to `true` once the user has explicitly picked or cleared a workspace.
 	 * Until then, late-arriving provider registrations are allowed to upgrade
 	 * the current (auto-restored) selection to the user's stored "checked"
-	 * entry. After the user has acted, providers coming and going never moves
+	 * entry. After the user has acted, providers coming and going never move
 	 * the selection out from under them.
 	 */
 	private _userHasPicked = false;
@@ -155,7 +155,10 @@ export class WorkspacePicker extends Disposable {
 				const providers = this.sessionsProvidersService.getProviders();
 				if (!providers.some(p => p.id === this._selectedWorkspace!.providerId)) {
 					this._selectedWorkspace = undefined;
+					this._connectionStatusWatch.clear();
 					this._updateTriggerLabel();
+					this._onDidChangeSelection.fire();
+					this._onDidSelectWorkspace.fire(undefined);
 				}
 			}
 			if (!this._userHasPicked) {
