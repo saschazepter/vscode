@@ -8,7 +8,7 @@ import * as touch from '../../../../base/browser/touch.js';
 import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { localize } from '../../../../nls.js';
@@ -26,7 +26,6 @@ import { IOutputService } from '../../../../workbench/services/output/common/out
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
-import { autorun } from '../../../../base/common/observable.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { ISessionWorkspace, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
@@ -96,7 +95,6 @@ export class WorkspacePicker extends Disposable {
 
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
-	private readonly _connectionStatusListener = this._register(new MutableDisposable());
 
 	/** Cached VS Code recent folder URIs, resolved lazily. */
 	private _vsCodeRecentFolderUris: URI[] = [];
@@ -150,10 +148,7 @@ export class WorkspacePicker extends Disposable {
 					this._onDidSelectWorkspace.fire(restored);
 				}
 			}
-			this._watchConnectionStatus();
 		}));
-
-		this._watchConnectionStatus();
 
 		// Load VS Code recent folders eagerly and refresh on changes
 		this._loadVSCodeRecentFolders();
@@ -603,45 +598,16 @@ export class WorkspacePicker extends Disposable {
 		dom.clearNode(this._triggerElement);
 		const workspace = this._selectedWorkspace?.workspace;
 		const label = workspace ? workspace.label : localize('pickWorkspace', "workspace");
-		const baseIcon = workspace ? workspace.icon : Codicon.project;
-
-		// Reflect remote connection state in the trigger: spinner while
-		// connecting, grayed when offline. The selection itself is preserved
-		// across connection state changes — the user picked it and we keep
-		// honoring that pick until they explicitly choose something else.
-		const status = this._selectedWorkspace
-			? this._connectionStatusFor(this._selectedWorkspace.providerId)
-			: undefined;
-		const isConnecting = status === RemoteAgentHostConnectionStatus.Connecting;
-		const isDisconnected = status === RemoteAgentHostConnectionStatus.Disconnected;
-
-		this._triggerElement.classList.toggle('connecting', isConnecting);
-		this._triggerElement.classList.toggle('disconnected', isDisconnected);
+		const icon = workspace ? workspace.icon : Codicon.project;
 
 		this._triggerElement.setAttribute('aria-label', workspace
-			? isDisconnected
-				? localize('workspacePicker.selectedAriaLabelOffline', "New session in {0} (offline)", label)
-				: isConnecting
-					? localize('workspacePicker.selectedAriaLabelConnecting', "New session in {0} (connecting)", label)
-					: localize('workspacePicker.selectedAriaLabel', "New session in {0}", label)
+			? localize('workspacePicker.selectedAriaLabel', "New session in {0}", label)
 			: localize('workspacePicker.pickAriaLabel', "Start by picking a workspace"));
 
-		// While connecting, show a spinner in place of the workspace icon so
-		// the user can see the remote is still coming up. Once connected (or
-		// if disconnected), show the workspace's normal icon.
-		const icon = isConnecting ? ThemeIcon.modify(Codicon.loading, 'spin') : baseIcon;
 		dom.append(this._triggerElement, renderIcon(icon));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
 		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown)).classList.add('sessions-chat-dropdown-chevron');
-	}
-
-	private _connectionStatusFor(providerId: string): RemoteAgentHostConnectionStatus | undefined {
-		const provider = this.sessionsProvidersService.getProvider(providerId);
-		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
-			return undefined;
-		}
-		return provider.connectionStatus.get();
 	}
 
 	/**
@@ -650,31 +616,11 @@ export class WorkspacePicker extends Disposable {
 	 * Returns false for providers without connection status (e.g. local providers).
 	 */
 	protected _isProviderUnavailable(providerId: string): boolean {
-		const status = this._connectionStatusFor(providerId);
-		return status !== undefined && status !== RemoteAgentHostConnectionStatus.Connected;
-	}
-
-	/**
-	 * Watch connection status observables from all remote providers so the
-	 * trigger label reflects connecting/disconnected state. We deliberately do
-	 * NOT change the selection on connection state changes — the user's
-	 * explicit pick is preserved across reconnects, disconnects, and provider
-	 * registration races. If a remote fails to connect, the trigger renders
-	 * grayed and the gear menu lets them reconnect or pick something else.
-	 */
-	private _watchConnectionStatus(): void {
-		const remoteProviders = this.sessionsProvidersService.getProviders().filter(isAgentHostProvider).filter(p => p.connectionStatus !== undefined);
-		if (remoteProviders.length === 0) {
-			this._connectionStatusListener.clear();
-			return;
+		const provider = this.sessionsProvidersService.getProvider(providerId);
+		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
+			return false;
 		}
-
-		this._connectionStatusListener.value = autorun(reader => {
-			for (const provider of remoteProviders) {
-				provider.connectionStatus!.read(reader);
-			}
-			this._updateTriggerLabel();
-		});
+		return provider.connectionStatus.get() !== RemoteAgentHostConnectionStatus.Connected;
 	}
 
 	protected _isSelectedWorkspace(selection: IWorkspaceSelection): boolean {
