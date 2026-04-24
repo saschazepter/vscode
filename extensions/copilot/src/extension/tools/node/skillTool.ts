@@ -14,6 +14,7 @@ import { FileType } from '../../../platform/filesystem/common/fileTypes';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { extUriBiasedIgnorePathCase } from '../../../util/vs/base/common/resources';
+import { equalsIgnoreCase } from '../../../util/vs/base/common/strings';
 import { isString } from '../../../util/vs/base/common/types';
 import { URI } from '../../../util/vs/base/common/uri';
 import { ExtendedLanguageModelToolResult, LanguageModelTextPart, MarkdownString } from '../../../vscodeTypes';
@@ -139,7 +140,12 @@ Task: ${query}`;
 		}
 		const subagentResponse = parts.join('') || 'Skill completed with no output';
 
-		const result = new ExtendedLanguageModelToolResult([new LanguageModelTextPart(subagentResponse)]);
+		// Frame the result as skill output (not as another agent's response) so the
+		// parent agent summarizes the content naturally without treating it as a
+		// conversation with a separate agent.
+		const result = new ExtendedLanguageModelToolResult([new LanguageModelTextPart(
+			`Result from the "${skillLabel}" skill:\n\n${subagentResponse}`
+		)]);
 		result.toolMetadata = {
 			skill: options.input.skill,
 			skillUri: uri.toString(),
@@ -244,7 +250,7 @@ Task: ${query}`;
 				if (!SKILL_SKIP_DIRS.has(name)) {
 					await this.listRelatedFilesRecursive(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name), files, depth + 1);
 				}
-			} else if (type === FileType.File && name.toUpperCase() !== SKILL_FILENAME.toUpperCase()) {
+			} else if (type === FileType.File && !equalsIgnoreCase(name, SKILL_FILENAME)) {
 				const relativePath = extUriBiasedIgnorePathCase.relativePath(baseUri, extUriBiasedIgnorePathCase.joinPath(currentUri, name));
 				if (relativePath) {
 					files.push(relativePath);
