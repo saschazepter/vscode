@@ -8,7 +8,7 @@ import * as touch from '../../../../base/browser/touch.js';
 import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -40,6 +40,14 @@ const LEGACY_STORAGE_KEY_RECENT_PROJECTS = 'sessions.recentlyPickedProjects';
 const STORAGE_KEY_RECENT_WORKSPACES = 'sessions.recentlyPickedWorkspaces';
 const FILTER_THRESHOLD = 10;
 const MAX_RECENT_WORKSPACES = 10;
+
+/**
+ * Grace period for a restored remote workspace's provider to reach Connected
+ * before we fall back to no selection. SSH tunnels typically connect within
+ * a couple seconds; if it hasn't connected by then, we'd rather show no
+ * selection than leave the user staring at an unreachable workspace.
+ */
+const RESTORE_CONNECT_GRACE_MS = 5000;
 
 /**
  * A workspace selection from the picker, pairing the workspace with its owning provider.
@@ -722,12 +730,19 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * When restoring a workspace whose provider is currently Connecting (or not
-	 * yet connected), watch for the connection to fail (Disconnected after a
-	 * Connecting transition). On failure, clears the selection and fires
-	 * `onDidSelectWorkspace(undefined)` so the view pane calls
-	 * `unsetNewSession()`. Has no effect if the user has already made an
-	 * explicit pick (`_userHasPicked = true`).
+	 * When restoring a workspace whose provider isn't currently Connected,
+	 * watch the connection status. Fires `onDidSelectWorkspace(undefined)`
+	 * (which the view pane converts to `unsetNewSession()`) if:
+	 *   - the status transitions to Disconnected after we start watching, or
+	 *   - the status is still not Connected after a short grace period.
+	 *
+	 * The grace period covers a race: provider state can transition synchronously
+	 * inside provider registration before our autorun's first read, so we may
+	 * never observe an explicit Disconnected transition. The timer ensures we
+	 * eventually fall back instead of leaving the picker showing an unreachable
+	 * remote with no session.
+	 *
+	 * Has no effect once the user makes an explicit pick (`_userHasPicked`).
 	 */
 	private _watchForConnectionFailure(selection: IWorkspaceSelection): void {
 		const provider = this.sessionsProvidersService.getProvider(selection.providerId);
@@ -735,31 +750,43 @@ export class WorkspacePicker extends Disposable {
 			return;
 		}
 		const connStatus = provider.connectionStatus;
-		// If already connected, nothing to watch.
 		if (connStatus.get() === RemoteAgentHostConnectionStatus.Connected) {
 			return;
 		}
-		// Track whether a connection attempt ever started. Remote providers
-		// register initially as Disconnected and transition through Connecting
-		// before settling. We only fall back if a connection was actually
-		// attempted and then failed (Connecting → Disconnected).
-		let sawConnecting = connStatus.get() === RemoteAgentHostConnectionStatus.Connecting;
-		this._connectionStatusWatch.value = autorun(reader => {
+
+		const store = new DisposableStore();
+		this._connectionStatusWatch.value = store;
+
+		const fallback = () => {
+			this._connectionStatusWatch.clear();
+			if (!this._userHasPicked && this._isSelectedWorkspace(selection)) {
+				this._selectedWorkspace = undefined;
+				this._updateTriggerLabel();
+				this._onDidChangeSelection.fire();
+				this._onDidSelectWorkspace.fire(undefined);
+			}
+		};
+
+		let isFirstRun = true;
+		store.add(autorun(reader => {
 			const status = connStatus.read(reader);
 			if (status === RemoteAgentHostConnectionStatus.Connected) {
 				this._connectionStatusWatch.clear();
-			} else if (status === RemoteAgentHostConnectionStatus.Connecting) {
-				sawConnecting = true;
-			} else if (status === RemoteAgentHostConnectionStatus.Disconnected && sawConnecting) {
-				this._connectionStatusWatch.clear();
-				if (!this._userHasPicked) {
-					this._selectedWorkspace = undefined;
-					this._updateTriggerLabel();
-					this._onDidChangeSelection.fire();
-					this._onDidSelectWorkspace.fire(undefined);
-				}
+			} else if (status === RemoteAgentHostConnectionStatus.Disconnected && !isFirstRun) {
+				fallback();
 			}
-		});
+			isFirstRun = false;
+		}));
+
+		// Safety net: if the connection hasn't succeeded by the grace period,
+		// fall back. Catches the case where the provider's status flips before
+		// our autorun subscribes (so we never observe a transition).
+		const handle = setTimeout(() => {
+			if (connStatus.get() !== RemoteAgentHostConnectionStatus.Connected) {
+				fallback();
+			}
+		}, RESTORE_CONNECT_GRACE_MS);
+		store.add(toDisposable(() => clearTimeout(handle)));
 	}
 
 	/**
