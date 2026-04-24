@@ -92,12 +92,41 @@ describe('buildRefsQuery', () => {
 });
 
 describe('extractFilePath', () => {
-	it('extracts filePath from apply_patch args', () => {
-		expect(extractFilePath('apply_patch', { filePath: '/src/index.ts' })).toBe('/src/index.ts');
+	it('extracts filePath from apply_patch patch text', () => {
+		expect(extractFilePath('apply_patch', { input: '*** Begin Patch\n*** Update File: /src/index.ts\n@@ ...' })).toBe('/src/index.ts');
 	});
 
-	it('extracts path from create tool args', () => {
+	it('extracts filePath from apply_patch Add File header', () => {
+		expect(extractFilePath('apply_patch', { input: '*** Begin Patch\n*** Add File: /src/new.ts\n+content\n*** End Patch' })).toBe('/src/new.ts');
+	});
+
+	it('extracts filePath from create tool args (legacy)', () => {
 		expect(extractFilePath('create', { path: '/src/new.ts' })).toBe('/src/new.ts');
+	});
+
+	it('extracts filePath from insert_edit_into_file args', () => {
+		expect(extractFilePath('insert_edit_into_file', { filePath: '/src/index.ts', code: 'x' })).toBe('/src/index.ts');
+	});
+
+	it('extracts filePath from replace_string_in_file args', () => {
+		expect(extractFilePath('replace_string_in_file', { filePath: '/src/util.ts', oldString: 'a', newString: 'b' })).toBe('/src/util.ts');
+	});
+
+	it('extracts filePath from multi_replace_string_in_file first replacement', () => {
+		expect(extractFilePath('multi_replace_string_in_file', {
+			replacements: [
+				{ filePath: '/src/a.ts', oldString: 'a', newString: 'b' },
+				{ filePath: '/src/b.ts', oldString: 'c', newString: 'd' },
+			],
+		})).toBe('/src/a.ts');
+	});
+
+	it('returns undefined for multi_replace_string_in_file with empty replacements', () => {
+		expect(extractFilePath('multi_replace_string_in_file', { replacements: [] })).toBeUndefined();
+	});
+
+	it('extracts filePath from create_file args', () => {
+		expect(extractFilePath('create_file', { filePath: '/src/new.ts' })).toBe('/src/new.ts');
 	});
 
 	it('returns undefined for non-file-tracking tools', () => {
@@ -108,8 +137,12 @@ describe('extractFilePath', () => {
 		expect(extractFilePath('apply_patch', null)).toBeUndefined();
 	});
 
+	it('returns undefined when apply_patch input has no file header', () => {
+		expect(extractFilePath('apply_patch', { input: 'no file header here' })).toBeUndefined();
+	});
+
 	it('returns undefined when no path field exists', () => {
-		expect(extractFilePath('apply_patch', { content: 'hello' })).toBeUndefined();
+		expect(extractFilePath('create_file', { content: 'hello' })).toBeUndefined();
 	});
 });
 

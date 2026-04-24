@@ -8,21 +8,53 @@
  */
 
 /** Tools whose arguments contain a file path being modified. */
-const FILE_TRACKING_TOOLS = new Set(['apply_patch', 'str_replace_editor', 'create_file', 'create']);
+const FILE_TRACKING_TOOLS = new Set([
+	'apply_patch',                  // VS Code (GPT-4.1, o4-mini, etc.) and CLI-compatible patch tool
+	'str_replace_editor',           // CLI-style str-replace tool (backward compat)
+	'create_file',                  // VS Code create file tool
+	'create',                       // CLI-style create tool (backward compat)
+	'insert_edit_into_file',        // VS Code insert-edit tool
+	'replace_string_in_file',       // VS Code replace-string tool
+	'multi_replace_string_in_file', // VS Code multi-replace tool
+]);
 
 /** GitHub MCP server tool prefix. */
 const GH_MCP_PREFIX = 'github-mcp-server-';
 
 /**
  * Extract absolute file path from tool arguments if available.
- * Handles both CLI-style (edit/create with `path`) and VS Code-style
- * (apply_patch with `patch`, str_replace_editor with `filePath`, create_file with `filePath`).
+ * Handles VS Code tools (`filePath` field), CLI-style tools (`path` field),
+ * `apply_patch` (file path embedded in patch text), and
+ * `multi_replace_string_in_file` (first entry in `replacements` array).
  * @internal Exported for testing.
  */
 export function extractFilePath(toolName: string, toolArgs: unknown): string | undefined {
 	if (!FILE_TRACKING_TOOLS.has(toolName)) { return undefined; }
 	if (typeof toolArgs !== 'object' || toolArgs === null) { return undefined; }
 	const args = toolArgs as Record<string, unknown>;
+
+	// multi_replace_string_in_file uses { replacements: Array<{ filePath, oldString, newString }> }
+	if (toolName === 'multi_replace_string_in_file') {
+		const replacements = args.replacements;
+		if (Array.isArray(replacements) && replacements.length > 0) {
+			return getStringField(replacements[0], 'filePath');
+		}
+		return undefined;
+	}
+
+	// apply_patch uses { input: "<patch text>" } — extract first affected file from patch header.
+	// Patch headers look like: "*** Add File: <path>", "*** Update File: <path>", "*** Delete File: <path>"
+	if (toolName === 'apply_patch') {
+		const input = args.input;
+		if (typeof input === 'string') {
+			const match = input.match(/^\*\*\* (?:Add|Delete|Update) File: (.+)/m);
+			if (match?.[1]) {
+				return match[1].trim();
+			}
+		}
+		// Fall through to check for explicit filePath/path (CLI compat)
+	}
+
 	// VS Code tools use 'filePath', CLI tools use 'path'
 	const filePath = args.filePath ?? args.path;
 	return typeof filePath === 'string' ? filePath : undefined;

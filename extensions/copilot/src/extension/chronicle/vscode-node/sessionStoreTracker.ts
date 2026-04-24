@@ -438,20 +438,17 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	// ── Utilities ────────────────────────────────────────────────────────
 
 	private _extractToolArgs(span: ICompletedSpanData): Record<string, unknown> {
-		const args: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(span.attributes)) {
-			if (key.startsWith('gen_ai.tool.input.')) {
-				args[key.slice('gen_ai.tool.input.'.length)] = value;
-			}
-		}
-		const serialized = span.attributes['gen_ai.tool.input'];
+		const serialized = span.attributes[GenAiAttr.TOOL_CALL_ARGUMENTS];
 		if (typeof serialized === 'string') {
 			try {
-				return JSON.parse(serialized);
+				const parsed = JSON.parse(serialized);
+				if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+					return parsed as Record<string, unknown>;
+				}
 			} catch {
 				// ignore parse errors
 			}
 		}
-		return args;
+		return {};
 	}
 }
