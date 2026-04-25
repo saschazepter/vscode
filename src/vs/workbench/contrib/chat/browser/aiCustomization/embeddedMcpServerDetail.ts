@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from '../../../../../base/browser/dom.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
@@ -92,11 +91,9 @@ export class EmbeddedMcpServerDetail extends Disposable {
 
 		this.nameEl.textContent = server.label || server.name;
 
-		// Icon: prefer codicon hint, fall back to the standard MCP server icon.
-		const iconClasses = ['embedded-detail-icon', 'codicon'];
-		const codiconId = server.codicon && (Codicon as Record<string, unknown>)[server.codicon] ? server.codicon : mcpServerIcon.id;
-		iconClasses.push(`codicon-${codiconId}`);
-		this.iconEl.className = iconClasses.join(' ');
+		// Icon: server.codicon (when set) is the full codicon class (e.g. "codicon-foo");
+		// fall back to the standard MCP server themed icon otherwise.
+		this.iconEl.className = `embedded-detail-icon ${server.codicon ? `codicon ${server.codicon}` : ThemeIcon.asClassName(mcpServerIcon)}`;
 
 		// Scope label
 		const scope = server.local?.scope;
