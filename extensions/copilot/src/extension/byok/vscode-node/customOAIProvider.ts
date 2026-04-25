@@ -164,6 +164,7 @@ export abstract class AbstractCustomOAIBYOKModelProvider extends AbstractOpenAIC
 export class CustomOAIBYOKModelProvider extends AbstractCustomOAIBYOKModelProvider {
 
 	static readonly providerName: string = 'CustomOAI';
+	static readonly providerId = 'customoai';
 	private providerName: string = CustomOAIBYOKModelProvider.providerName;
 
 	constructor(
@@ -175,7 +176,7 @@ export class CustomOAIBYOKModelProvider extends AbstractCustomOAIBYOKModelProvid
 		@IExperimentationService expService: IExperimentationService,
 		@IVSCodeExtensionContext extensionContext: IVSCodeExtensionContext
 	) {
-		super(CustomOAIBYOKModelProvider.providerName.toLowerCase(), CustomOAIBYOKModelProvider.providerName, _byokStorageService, logService, fetcherService, instantiationService, configurationService, expService, extensionContext);
+		super(CustomOAIBYOKModelProvider.providerId, CustomOAIBYOKModelProvider.providerName, _byokStorageService, logService, fetcherService, instantiationService, configurationService, expService, extensionContext);
 		this.migrateExistingConfigs();
 	}
 

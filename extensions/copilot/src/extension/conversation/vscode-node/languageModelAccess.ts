@@ -587,7 +587,13 @@ export class CopilotLanguageModelWrapper extends Disposable {
 				throw vscode.LanguageModelError.Blocked(blockedExtensionMessage);
 			} else if (result.type === ChatFetchResponseType.QuotaExceeded) {
 				const outageStatus = await this._octoKitService.getGitHubOutageStatus();
-				const details = getErrorDetailsFromChatFetchError(result, (await this._authenticationService.getCopilotToken()).copilotPlan, outageStatus);
+				let copilotPlan: string | undefined;
+				try {
+					copilotPlan = (await this._authenticationService.getCopilotToken()).copilotPlan;
+				} catch {
+					// Not signed in (e.g., BYOK-only user); plan info unavailable
+				}
+				const details = getErrorDetailsFromChatFetchError(result, copilotPlan, outageStatus);
 				const err = new vscode.LanguageModelError(details.message);
 				err.name = 'ChatQuotaExceeded';
 				throw err;

@@ -48,6 +48,7 @@ export function resolveAzureUrl(modelId: string, url: string): string {
 export class AzureBYOKModelProvider extends AbstractCustomOAIBYOKModelProvider {
 
 	static readonly providerName = 'Azure';
+	static readonly providerId = 'azure';
 
 	constructor(
 		byokStorageService: IBYOKStorageService,
@@ -59,7 +60,7 @@ export class AzureBYOKModelProvider extends AbstractCustomOAIBYOKModelProvider {
 		@IVSCodeExtensionContext extensionContext: IVSCodeExtensionContext
 	) {
 		super(
-			AzureBYOKModelProvider.providerName.toLowerCase(),
+			AzureBYOKModelProvider.providerId,
 			AzureBYOKModelProvider.providerName,
 			byokStorageService,
 			logService,

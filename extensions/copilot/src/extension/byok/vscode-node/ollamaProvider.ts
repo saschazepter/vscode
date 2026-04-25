@@ -39,6 +39,7 @@ export interface OllamaConfig extends LanguageModelChatConfiguration {
 
 export class OllamaLMProvider extends AbstractOpenAICompatibleLMProvider<OllamaConfig> {
 	public static readonly providerName = 'Ollama';
+	public static readonly providerId = 'ollama';
 	private _modelCache = new Map<string, IChatModelInformation>();
 
 	constructor(
@@ -50,7 +51,7 @@ export class OllamaLMProvider extends AbstractOpenAICompatibleLMProvider<OllamaC
 		@IExperimentationService expService: IExperimentationService
 	) {
 		super(
-			OllamaLMProvider.providerName.toLowerCase(),
+			OllamaLMProvider.providerId,
 			OllamaLMProvider.providerName,
 			undefined,
 			byokStorageService,

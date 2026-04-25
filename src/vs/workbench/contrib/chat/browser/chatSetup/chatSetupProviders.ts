@@ -256,7 +256,9 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 	}
 
 	private async doInvoke(request: IChatAgentRequest, progress: (part: IChatProgress) => void, chatService: IChatService, languageModelsService: ILanguageModelsService, chatWidgetService: IChatWidgetService, chatAgentService: IChatAgentService, languageModelToolsService: ILanguageModelToolsService, defaultAccountService: IDefaultAccountService): Promise<IChatAgentResult> {
-		const hasByokModels = this.chatEntitlementService.hasByokModels;
+		// Check both the context key and the workbench model cache for BYOK models.
+		// The context key may not be set yet due to timing (extension sets it asynchronously).
+		const hasByokModels = this.chatEntitlementService.hasByokModels || this.hasNonCopilotModels(languageModelsService);
 		if (
 			(!this.context.state.completed && !hasByokModels) ||				// Setup not completed (unless BYOK models are configured)
 			this.context.state.disabled ||										// Extension disabled: run setup to enable
@@ -272,6 +274,16 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		}
 
 		return this.doInvokeWithoutSetup(request, progress, chatService, languageModelsService, chatWidgetService, chatAgentService, languageModelToolsService);
+	}
+
+	private hasNonCopilotModels(languageModelsService: ILanguageModelsService): boolean {
+		for (const id of languageModelsService.getLanguageModelIds()) {
+			const model = languageModelsService.lookupLanguageModel(id);
+			if (model && model.vendor !== 'copilot') {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private async doInvokeWithoutSetup(request: IChatAgentRequest, progress: (part: IChatProgress) => void, chatService: IChatService, languageModelsService: ILanguageModelsService, chatWidgetService: IChatWidgetService, chatAgentService: IChatAgentService, languageModelToolsService: ILanguageModelToolsService): Promise<IChatAgentResult> {

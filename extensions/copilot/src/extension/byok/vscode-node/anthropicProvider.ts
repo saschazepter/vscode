@@ -34,6 +34,7 @@ import { IBYOKStorageService } from './byokStorageService';
 export class AnthropicLMProvider extends AbstractLanguageModelChatProvider {
 
 	public static readonly providerName = 'Anthropic';
+	public static readonly providerId = 'anthropic';
 
 	constructor(
 		knownModels: BYOKKnownModels | undefined,
@@ -46,7 +47,7 @@ export class AnthropicLMProvider extends AbstractLanguageModelChatProvider {
 		@IOTelService private readonly _otelService: IOTelService,
 		@IToolDeferralService private readonly _toolDeferralService: IToolDeferralService,
 	) {
-		super(AnthropicLMProvider.providerName.toLowerCase(), AnthropicLMProvider.providerName, knownModels, byokStorageService, logService);
+		super(AnthropicLMProvider.providerId, AnthropicLMProvider.providerName, knownModels, byokStorageService, logService);
 
 	}
 

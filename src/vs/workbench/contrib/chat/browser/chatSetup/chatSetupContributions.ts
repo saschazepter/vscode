@@ -73,7 +73,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 	constructor(
 		@IActionViewItemService actionViewItemService: IActionViewItemService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IChatEntitlementService chatEntitlementService: ChatEntitlementService,
+		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@ILogService private readonly logService: ILogService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchExtensionEnablementService private readonly extensionEnablementService: IWorkbenchExtensionEnablementService,
@@ -648,6 +648,12 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 						untrusted = true; // by missing workspace trust
 					} else if (state === EnablementState.DisabledWorkspace) {
 						disabledInWorkspace = true; // disabled at workspace level
+					} else if (this.chatEntitlementService.clientByokEnabled) {
+						// Enable the extension for BYOK usage even without sign-in
+						this.logService.info('[chat setup] Enabling chat extension for BYOK usage');
+						this.extensionsWorkbenchService.setEnablement([defaultChatExtension], EnablementState.EnabledGlobally).then(() => {
+							return this.extensionsWorkbenchService.updateRunningExtensions(localize('enableChatExtensionByok', "Enabling AI features"));
+						});
 					}
 				}
 			} else {

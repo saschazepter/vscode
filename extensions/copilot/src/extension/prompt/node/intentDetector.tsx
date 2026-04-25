@@ -260,7 +260,14 @@ export class IntentDetector implements ChatParticipantDetectionProvider {
 		history: Turn[] = [],
 		document?: TextDocumentSnapshot
 	) {
-		const endpoint = await this.endpointProvider.getChatEndpoint('copilot-fast');
+		let endpoint;
+		try {
+			endpoint = await this.endpointProvider.getChatEndpoint('copilot-fast');
+		} catch {
+			// Internal telemetry only — skip if we can't resolve the copilot endpoint
+			// (e.g., BYOK-only user without sign-in).
+			return;
+		}
 
 		const { messages: currentSelection } = await renderPromptElement(this.instantiationService, endpoint, CurrentSelection, { document });
 		const { messages: conversationHistory } = await renderPromptElement(this.instantiationService, endpoint, ConversationHistory, { history, priority: 1000 }, undefined, undefined).catch(() => ({ messages: [] }));

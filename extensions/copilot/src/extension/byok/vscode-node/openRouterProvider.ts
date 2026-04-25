@@ -25,6 +25,7 @@ interface OpenRouterModelData {
 
 export class OpenRouterLMProvider extends AbstractOpenAICompatibleLMProvider {
 	public static readonly providerName = 'OpenRouter';
+	public static readonly providerId = 'openrouter';
 	constructor(
 		byokStorageService: IBYOKStorageService,
 		@IFetcherService fetcherService: IFetcherService,
@@ -34,7 +35,7 @@ export class OpenRouterLMProvider extends AbstractOpenAICompatibleLMProvider {
 		@IExperimentationService expService: IExperimentationService
 	) {
 		super(
-			OpenRouterLMProvider.providerName.toLowerCase(),
+			OpenRouterLMProvider.providerId,
 			OpenRouterLMProvider.providerName,
 			undefined,
 			byokStorageService,

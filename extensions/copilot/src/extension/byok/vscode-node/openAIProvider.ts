@@ -14,6 +14,7 @@ import { IBYOKStorageService } from './byokStorageService';
 
 export class OAIBYOKLMProvider extends AbstractOpenAICompatibleLMProvider {
 	public static readonly providerName = 'OpenAI';
+	public static readonly providerId = 'openai';
 
 	constructor(
 		knownModels: BYOKKnownModels,
@@ -25,7 +26,7 @@ export class OAIBYOKLMProvider extends AbstractOpenAICompatibleLMProvider {
 		@IExperimentationService expService: IExperimentationService
 	) {
 		super(
-			OAIBYOKLMProvider.providerName.toLowerCase(),
+			OAIBYOKLMProvider.providerId,
 			OAIBYOKLMProvider.providerName,
 			knownModels,
 			byokStorageService,

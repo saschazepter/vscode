@@ -23,6 +23,7 @@ import { isNewUser } from './chatStatus.js';
 import product from '../../../../../platform/product/common/product.js';
 import { isCompletionsEnabled } from '../../../../../editor/common/services/completionsEnablement.js';
 import { ChatConfiguration } from '../../common/constants.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 
 export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribution {
 
@@ -42,6 +43,7 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInlineCompletionsService private readonly completionsService: IInlineCompletionsService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -73,6 +75,13 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 		this._register(this.chatEntitlementService.onDidChangeEntitlement(() => this.update()));
 
 		this._register(this.completionsService.onDidChangeIsSnoozing(() => this.update()));
+
+		// Update status bar when BYOK models become available (or are removed)
+		this._register(this.contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome({ has: (key) => key === 'github.copilot.hasByokModels' })) {
+				this.update();
+			}
+		}));
 
 		this._register(this.chatSessionsService.onDidChangeInProgress(() => {
 			const oldSessionsCount = this.runningSessionsCount;

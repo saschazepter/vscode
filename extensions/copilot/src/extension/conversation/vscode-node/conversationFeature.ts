@@ -25,6 +25,7 @@ import { DisposableStore, IDisposable, combinedDisposable } from '../../../util/
 import { URI } from '../../../util/vs/base/common/uri';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { ContributionCollection, IExtensionContribution } from '../../common/contributions';
+import { byokVendorIds } from '../../byok/vscode-node/byokContribution';
 import { vscodeNodeChatContributions } from '../../extension/vscode-node/contributions';
 import { IMergeConflictService } from '../../git/common/mergeConflictService';
 import { registerInlineChatCommands } from '../../inlineChat/vscode-node/inlineChatCommands';
@@ -111,6 +112,30 @@ export class ConversationFeature implements IExtensionContribution {
 
 			activationBlockerDeferred.complete();
 		}));
+
+		// Also activate when BYOK models become available (even without sign-in)
+		this._disposables.add(vscode.lm.onDidChangeChatModels(() => {
+			if (!this._activated) {
+				void this._checkByokModelsAndActivate(activationBlockerDeferred);
+			}
+		}));
+
+		// Check for already-registered BYOK models (may have been registered before this listener)
+		if (!this._activated) {
+			void this._checkByokModelsAndActivate(activationBlockerDeferred);
+		}
+	}
+
+	private async _checkByokModelsAndActivate(activationBlockerDeferred: DeferredPromise<void>): Promise<void> {
+		for (const vendor of byokVendorIds) {
+			const models = await vscode.lm.selectChatModels({ vendor });
+			if (models.length > 0) {
+				this.logService.info('ConversationFeature: Activating due to BYOK models becoming available');
+				this.activated = true;
+				activationBlockerDeferred.complete();
+				return;
+			}
+		}
 	}
 
 	get enabled() {

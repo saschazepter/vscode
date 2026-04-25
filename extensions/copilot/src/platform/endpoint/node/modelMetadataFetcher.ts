@@ -231,7 +231,15 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 		}
 		const requestStartTime = Date.now();
 
-		const copilotToken = (await this._authService.getCopilotToken()).token;
+		let copilotToken: string;
+		try {
+			copilotToken = (await this._authService.getCopilotToken()).token;
+		} catch (e) {
+			// Not signed in (e.g., BYOK-only user). Copilot model metadata is unavailable.
+			// BYOK models are resolved separately and don't need this metadata.
+			this._lastFetchError = e;
+			return;
+		}
 		const requestId = generateUuid();
 		const requestMetadata: RequestMetadata = { type: RequestType.Models, isModelLab: this._isModelLab };
 
