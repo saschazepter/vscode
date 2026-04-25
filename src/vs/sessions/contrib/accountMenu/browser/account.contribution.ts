@@ -9,7 +9,7 @@ import './media/accountTitleBarWidget.css';
 import '../../../../workbench/contrib/chat/browser/chatStatus/media/chatStatus.css';
 import Severity from '../../../../base/common/severity.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { Event } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2, IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -757,6 +757,50 @@ class TitleBarUpdateWidget extends BaseActionViewItem {
 
 // --- Register custom view item --- //
 
+// These actions are registered at module level (not lazily inside AccountWidgetContribution)
+// so that Menus.TitleBarRightLayout is non-empty when the MenuWorkbenchToolBar is first
+// constructed. If they were registered lazily (WorkbenchPhase.AfterRestored), the toolbar's
+// IntersectionObserver would have already observed an empty, display:none container and
+// stopped listening for menu changes — causing the widgets to never appear.
+//
+// The actual widget rendering and interaction is handled by TitleBarUpdateWidget /
+// TitleBarAccountWidget, which are custom view items registered via IActionViewItemService
+// in AccountWidgetContribution. Those widgets attach their own DOM click handlers, so
+// run() here is intentionally a no-op.
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: SessionsTitleBarUpdateWidgetAction,
+			title: localize2('agentsUpdateTitleBar', "Agents Update"),
+			menu: {
+				id: Menus.TitleBarRightLayout,
+				group: 'navigation',
+				order: 99,
+				when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
+			}
+		});
+	}
+
+	run(): void { }
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: SessionsTitleBarAccountWidgetAction,
+			title: localize2('agentsAccountStatusTitleBar', "Agents Account and Status"),
+			menu: {
+				id: Menus.TitleBarRightLayout,
+				group: 'navigation',
+				order: 100,
+				when: IsAuxiliaryWindowContext.toNegated(),
+			}
+		});
+	}
+
+	run(): void { }
+});
+
 class AccountWidgetContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.sessionsWidget';
@@ -767,58 +811,25 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 	) {
 		super();
 
+		// Use an emitter to notify the toolbar to re-render after the view item factories
+		// are registered. actionViewItemService.register() does not fire onDidChange on its
+		// own (only when the optional `event` argument fires), so without this the toolbar
+		// would never re-render with the custom view items if the IntersectionObserver already
+		// fired its first visible callback before this contribution ran.
+		const refresh = this._register(new Emitter<void>());
+
 		// Titlebar update widget (to the right of separator, left of account badge)
-		let updateWidget: TitleBarUpdateWidget | undefined;
 		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarUpdateWidgetAction, (action, options) => {
-			updateWidget = instantiationService.createInstance(TitleBarUpdateWidget, action, options);
-			return updateWidget;
-		}, undefined));
-
-		this._register(registerAction2(class extends Action2 {
-			constructor() {
-				super({
-					id: SessionsTitleBarUpdateWidgetAction,
-					title: localize2('agentsUpdateTitleBar', "Agents Update"),
-					menu: {
-						id: Menus.TitleBarRightLayout,
-						group: 'navigation',
-						order: 99,
-						when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
-					}
-				});
-			}
-
-			async run(): Promise<void> {
-				updateWidget?.onClick();
-			}
-		}));
+			return instantiationService.createInstance(TitleBarUpdateWidget, action, options);
+		}, refresh.event));
 
 		// Titlebar account widget (rightmost in titlebar)
-		let accountWidget: TitleBarAccountWidget | undefined;
 		this._register(actionViewItemService.register(Menus.TitleBarRightLayout, SessionsTitleBarAccountWidgetAction, (action, options) => {
-			accountWidget = instantiationService.createInstance(TitleBarAccountWidget, action, options);
-			return accountWidget;
-		}, undefined));
+			return instantiationService.createInstance(TitleBarAccountWidget, action, options);
+		}, refresh.event));
 
-		this._register(registerAction2(class extends Action2 {
-			constructor() {
-				super({
-					id: SessionsTitleBarAccountWidgetAction,
-					title: localize2('agentsAccountStatusTitleBar', "Agents Account and Status"),
-					menu: {
-						id: Menus.TitleBarRightLayout,
-						group: 'navigation',
-						order: 100,
-						when: IsAuxiliaryWindowContext.toNegated(),
-					}
-				});
-			}
-
-			async run(): Promise<void> {
-				accountWidget?.onClick();
-			}
-		}));
-
+		// Fire once to trigger the toolbar re-render now that both factories are in place.
+		refresh.fire();
 	}
 }
 
