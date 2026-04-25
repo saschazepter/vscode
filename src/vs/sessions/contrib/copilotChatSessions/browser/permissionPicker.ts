@@ -24,7 +24,6 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../base/common/uri.js';
 import { CopilotChatSessionsProvider } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
 import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { SessionStatus } from '../../../services/sessions/common/session.js';
 
 const PERMISSION_LEVEL_OPTION_ID = 'permissionLevel';
 
@@ -368,10 +367,11 @@ export class CopilotPermissionPickerDelegate extends Disposable implements IPerm
 			if (!chatSession) {
 				return;
 			}
-			this._chatSessionsService.setSessionOption(chatSession.resource, PERMISSION_LEVEL_OPTION_ID, level);
-			if (chatSession.status.get() === SessionStatus.Untitled) {
+			if (chatSession.setOption) {
 				chatSession.setPermissionLevel(level);
-				chatSession.setOption?.(PERMISSION_LEVEL_OPTION_ID, level);
+				chatSession.setOption(PERMISSION_LEVEL_OPTION_ID, level);
+			} else {
+				this._chatSessionsService.setSessionOption(chatSession.resource, PERMISSION_LEVEL_OPTION_ID, level);
 			}
 		}
 	}

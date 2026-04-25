@@ -16,7 +16,6 @@ import { ISessionsManagementService } from '../../../services/sessions/common/se
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { CopilotChatSessionsProvider } from './copilotChatSessionsProvider.js';
 import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { SessionStatus } from '../../../services/sessions/common/session.js';
 
 const PERMISSION_MODE_OPTION_ID = 'permissionMode';
 
@@ -148,9 +147,10 @@ export class ClaudePermissionModePicker extends Disposable {
 				return;
 			}
 			const option = { id: mode.id, name: mode.label };
-			this.chatSessionsService.setSessionOption(chatSession.resource, PERMISSION_MODE_OPTION_ID, option);
-			if (chatSession.status.get() === SessionStatus.Untitled) {
-				chatSession.setOption?.(PERMISSION_MODE_OPTION_ID, option);
+			if (chatSession.setOption) {
+				chatSession.setOption(PERMISSION_MODE_OPTION_ID, option);
+			} else {
+				this.chatSessionsService.setSessionOption(chatSession.resource, PERMISSION_MODE_OPTION_ID, option);
 			}
 		}
 	}

@@ -506,6 +506,40 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 		expect(activeSession.setPermissionLevel).toHaveBeenCalledWith('autopilot');
 	});
 
+	it('scopes live permissionLevel changes to the targeted session', async () => {
+		const provider = Object.create(CopilotCLIChatSessionContentProvider.prototype) as CopilotCLIChatSessionContentProvider;
+		(provider as unknown as { sessionItemProvider: CopilotCLIChatSessionItemProvider }).sessionItemProvider = itemProvider;
+		(provider as unknown as { _activeSessionsById: Map<string, ICopilotCLISession> })._activeSessionsById = new Map<string, ICopilotCLISession>();
+		const sessionA = { sessionId: 'sdk-a', setPermissionLevel: vi.fn() } as unknown as ICopilotCLISession;
+		const sessionB = { sessionId: 'sdk-b', setPermissionLevel: vi.fn() } as unknown as ICopilotCLISession;
+		itemProvider.untitledSessionIdMapping.set('resource-a', sessionA.sessionId);
+		itemProvider.untitledSessionIdMapping.set('resource-b', sessionB.sessionId);
+		provider.trackActiveSession('resource-a', sessionA);
+		provider.trackActiveSession('resource-b', sessionB);
+
+		await provider.provideHandleOptionsChange(Uri.parse('copilotcli:/resource-b'), [
+			{ optionId: 'permissionLevel', value: 'autopilot' }
+		], disposables.add(new CancellationTokenSource()).token);
+
+		expect(sessionB.setPermissionLevel).toHaveBeenCalledWith('autopilot');
+		expect(sessionA.setPermissionLevel).not.toHaveBeenCalled();
+	});
+
+	it('clears permissionLevel on an active session when option value is undefined', async () => {
+		const provider = Object.create(CopilotCLIChatSessionContentProvider.prototype) as CopilotCLIChatSessionContentProvider;
+		(provider as unknown as { sessionItemProvider: CopilotCLIChatSessionItemProvider }).sessionItemProvider = itemProvider;
+		(provider as unknown as { _activeSessionsById: Map<string, ICopilotCLISession> })._activeSessionsById = new Map<string, ICopilotCLISession>();
+		const activeSession = { sessionId: 'sdk-session', setPermissionLevel: vi.fn() } as unknown as ICopilotCLISession;
+		itemProvider.untitledSessionIdMapping.set('untitled-session', activeSession.sessionId);
+		provider.trackActiveSession('untitled-session', activeSession);
+
+		await provider.provideHandleOptionsChange(Uri.parse('copilotcli:/untitled-session'), [
+			{ optionId: 'permissionLevel', value: undefined }
+		], disposables.add(new CancellationTokenSource()).token);
+
+		expect(activeSession.setPermissionLevel).toHaveBeenCalledWith(undefined);
+	});
+
 	it('uses worktree workingDirectory when isolation is enabled for a new untitled session', async () => {
 		const worktreeProperties = {
 			autoCommit: true,

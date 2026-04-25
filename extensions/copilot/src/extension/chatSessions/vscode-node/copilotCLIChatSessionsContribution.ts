@@ -1078,8 +1078,9 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 		const wasBranchOptionShow = !!this._selectedRepoForBranches;
 		let triggerProviderOptionsChange = false;
 		for (const update of updates) {
-			if (update.optionId === PERMISSION_LEVEL_OPTION_ID && typeof update.value === 'string') {
-				this._getActiveSessionForResourceId(sessionId)?.setPermissionLevel(update.value);
+			if (update.optionId === PERMISSION_LEVEL_OPTION_ID) {
+				const level = typeof update.value === 'string' ? update.value : undefined;
+				this._getActiveSessionForResourceId(sessionId)?.setPermissionLevel(level);
 			} else if (update.optionId === REPOSITORY_OPTION_ID && typeof update.value === 'string' && this.sessionItemProvider.isNewSession(sessionId)) {
 				const folder = vscode.Uri.file(update.value);
 				if (isEqual(folder, this._selectedRepoForBranches?.repoUri)) {
