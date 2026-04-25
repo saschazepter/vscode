@@ -250,7 +250,7 @@ VS Code calls `getChatSessionInputState` to get a `ChatSessionInputState` object
 InputStateReactivePipeline {
   permissionMode:   ISettableObservable<PermissionMode>
   folderUri:        ISettableObservable<URI | undefined>
-  folderItems:      ISettableObservable<ChatSessionProviderOptionItem[]>
+  folderItems:      ISettableObservable<readonly vscode.ChatSessionProviderOptionItem[]>
   isSessionStarted: ISettableObservable<boolean>
   store:            DisposableStore    // owns all autoruns for this pipeline
 }
