@@ -89,7 +89,7 @@ export class AgentService extends Disposable implements IAgentService {
 		private readonly _fileService: IFileService,
 		private readonly _sessionDataService: ISessionDataService,
 		private readonly _productService: IProductService,
-		private readonly _gitService?: IAgentHostGitService,
+		private readonly _gitService: IAgentHostGitService,
 	) {
 		super();
 		this._logService.info('AgentService initialized');
@@ -198,8 +198,10 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		// Additionally, overlay live session state from the state manager
-		// which is more up to date than what's on disk.
+		// Overlay live session state from the state manager.
+		// For the title, prefer the state manager's value when it is
+		// non-empty, so SDK-sourced titles are not overwritten by the
+		// initial empty placeholder.
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
@@ -325,7 +327,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * git state.
 	 */
 	private _attachGitState(session: URI, workingDirectory: URI | undefined): void {
-		if (!this._gitService || !workingDirectory) {
+		if (!workingDirectory) {
 			return;
 		}
 		this._gitService.getSessionGitState(workingDirectory).then(
