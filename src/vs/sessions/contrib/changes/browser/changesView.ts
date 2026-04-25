@@ -766,7 +766,7 @@ export class ChangesViewPane extends ViewPane {
 		} else {
 			// Local session
 			const branchName = this.viewModel.activeSessionStateObs.get()?.branchName;
-			name = repository.workingDirectory && branchName
+			name = branchName
 				? `${basename(repository.uri)} (${branchName})`
 				: basename(repository.uri);
 		}
