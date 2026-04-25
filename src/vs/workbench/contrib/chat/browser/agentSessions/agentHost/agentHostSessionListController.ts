@@ -212,14 +212,17 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		};
 	}
 
-	private _buildMetadata(workingDirectory?: URI): { readonly [key: string]: unknown } | undefined {
-		if (!this._description) {
+	private _buildMetadata(workingDirectory: URI | undefined): { readonly [key: string]: unknown } | undefined {
+		if (!this._description && !workingDirectory) {
 			return undefined;
 		}
-		const result: { [key: string]: unknown } = { remoteAgentHost: this._description };
+		const result: { [key: string]: unknown } = {};
+		if (this._description) {
+			result.remoteAgentHost = this._description;
+		}
 		if (workingDirectory) {
 			result.workingDirectoryPath = workingDirectory.fsPath;
 		}
-		return result;
+		return Object.keys(result).length > 0 ? result : undefined;
 	}
 }

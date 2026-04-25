@@ -15,7 +15,7 @@ import type { CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCom
 import { ProtectedResourceMetadata, type ConfigSchema, type FileEdit, type ModelSelection, type SessionActiveClient, type ToolDefinition } from './state/protocol/state.js';
 import type { ActionEnvelope, INotification, RootAction, SessionAction, TerminalAction } from './state/sessionActions.js';
 import type { ResourceCopyParams, ResourceCopyResult, ResourceDeleteParams, ResourceDeleteResult, ResourceListResult, ResourceMoveParams, ResourceMoveResult, ResourceReadResult, ResourceWriteParams, ResourceWriteResult, IStateSnapshot } from './state/sessionProtocol.js';
-import { AttachmentType, ComponentToState, SessionInputResponseKind, SessionStatus, StateComponents, type CustomizationRef, type PendingMessage, type RootState, type SessionInputAnswer, type SessionInputRequest, type ToolCallResult, type ToolResultContent, type PolicyState, type StringOrMarkdown } from './state/sessionState.js';
+import { AttachmentType, ComponentToState, SessionInputResponseKind, SessionStatus, StateComponents, type CustomizationRef, type PendingMessage, type RootState, type SessionInputAnswer, type SessionInputRequest, type SessionMeta, type ToolCallResult, type ToolResultContent, type PolicyState, type StringOrMarkdown } from './state/sessionState.js';
 
 // IPC contract between the renderer and the agent host utility process.
 // Defines all serializable event types, the IAgent provider interface,
@@ -87,6 +87,13 @@ export interface IAgentSessionMetadata {
 	readonly isRead?: boolean;
 	readonly isArchived?: boolean;
 	readonly diffs?: readonly FileEdit[];
+	/**
+	 * Side-channel metadata mirroring {@link SessionSummary._meta}.
+	 * Producers SHOULD use namespaced keys; consumers MUST ignore unknown
+	 * keys. Use the typed accessors in `sessionState.ts` (e.g.
+	 * `readSessionGitState`) for well-known slots.
+	 */
+	readonly _meta?: SessionMeta;
 }
 
 export interface IAgentSessionProjectInfo {

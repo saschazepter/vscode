@@ -19,13 +19,14 @@ import { ISessionDataService } from '../common/sessionDataService.js';
 import { ActionType, ActionEnvelope, INotification, RootAction, SessionAction, TerminalAction, isSessionAction } from '../common/state/sessionActions.js';
 import type { CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, type ResponsePart, type SessionConfigState, type ISessionFileDiff, type SessionSummary, type ToolCallCompletedState, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
+import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, withSessionGitState, type ResponsePart, type SessionConfigState, type ISessionFileDiff, type SessionSummary, type ToolCallCompletedState, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { IProductService } from '../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentSideEffects } from './agentSideEffects.js';
 import { AgentHostTerminalManager, type IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './copilot/fileEditTracker.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
+import { IAgentHostGitService } from './agentHostGitService.js';
 
 /**
  * The agent service implementation that runs inside the agent-host utility
@@ -88,6 +89,7 @@ export class AgentService extends Disposable implements IAgentService {
 		private readonly _fileService: IFileService,
 		private readonly _sessionDataService: ISessionDataService,
 		private readonly _productService: IProductService,
+		private readonly _gitService?: IAgentHostGitService,
 	) {
 		super();
 		this._logService.info('AgentService initialized');
@@ -109,6 +111,10 @@ export class AgentService extends Disposable implements IAgentService {
 			getAgent: session => this._findProviderForSession(session),
 			sessionDataService: this._sessionDataService,
 			agents: this._agents,
+			onTurnComplete: session => {
+				const workingDirStr = this._stateManager.getSessionState(session)?.summary.workingDirectory;
+				this._attachGitState(URI.parse(session), workingDirStr ? URI.parse(workingDirStr) : undefined);
+			},
 		}));
 
 		// Terminal management — the terminal manager listens to the state
@@ -192,10 +198,8 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		// Overlay live session state from the state manager.
-		// For the title, prefer the state manager's value when it is
-		// non-empty, so SDK-sourced titles are not overwritten by the
-		// initial empty placeholder.
+		// Additionally, overlay live session state from the state manager
+		// which is more up to date than what's on disk.
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
@@ -307,7 +311,36 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		this._stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: session.toString() });
 
+		// Lazily compute git state for sessions with a working directory;
+		// attaches under `summary._meta.git` once ready.
+		this._attachGitState(session, created.workingDirectory ?? config?.workingDirectory);
+
 		return session;
+	}
+
+	/**
+	 * Fire-and-forget probe that resolves the session's git state for its
+	 * working directory (if any) and merges it into `state._meta.git` via
+	 * the state manager. Failures are logged; sessions simply remain without
+	 * git state.
+	 */
+	private _attachGitState(session: URI, workingDirectory: URI | undefined): void {
+		if (!this._gitService || !workingDirectory) {
+			return;
+		}
+		this._gitService.getSessionGitState(workingDirectory).then(
+			gitState => {
+				if (!gitState) {
+					return;
+				}
+				const sessionKey = session.toString();
+				const current = this._stateManager.getSessionState(sessionKey)?._meta;
+				this._stateManager.setSessionMeta(sessionKey, withSessionGitState(current, gitState));
+			},
+			e => {
+				this._logService.warn(`[AgentService] Failed to compute git state for ${session}`, e);
+			},
+		);
 	}
 
 	private _persistConfigValues(session: URI, values: Record<string, unknown>): void {
@@ -556,6 +589,12 @@ export class AgentService extends Disposable implements IAgentService {
 
 		this._stateManager.restoreSession(summary, turns);
 
+		// Restore persisted `_meta` (e.g. git state) onto the new session
+		// state. This dispatches a SessionMetaChanged action.
+		if (meta._meta) {
+			this._stateManager.setSessionMeta(sessionStr, meta._meta);
+		}
+
 		// Resolve the session config so clients (e.g. the running-session
 		// auto-approve picker) can render session-mutable properties for
 		// sessions that were not created in the current process lifetime.
@@ -573,6 +612,10 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 
 		this._logService.info(`[AgentService] Restored session ${sessionStr} with ${turns.length} turns`);
+
+		// Lazily compute git state for sessions with a working directory;
+		// attaches under `summary._meta.git` once ready.
+		this._attachGitState(session, meta.workingDirectory);
 	}
 
 	async resourceRead(uri: URI): Promise<ResourceReadResult> {

@@ -91,7 +91,17 @@ export interface ISessionRepository {
 	/** Name of the base branch. */
 	readonly baseBranchName: string | undefined;
 	/** Whether the base branch is protected (drives PR vs merge workflow). */
-	readonly baseBranchProtected: boolean | undefined;
+	readonly baseBranchProtected?: boolean;
+	/** Whether the repository has a github.com remote. */
+	readonly hasGitHubRemote?: boolean;
+	/** Upstream tracking branch name (e.g. `origin/feature`). */
+	readonly upstreamBranchName?: string;
+	/** Number of commits the upstream branch is ahead of the local branch. */
+	readonly incomingChanges?: number;
+	/** Number of commits the local branch is ahead of the upstream branch. */
+	readonly outgoingChanges?: number;
+	/** Number of files with uncommitted changes. */
+	readonly uncommittedChanges?: number;
 }
 
 /**

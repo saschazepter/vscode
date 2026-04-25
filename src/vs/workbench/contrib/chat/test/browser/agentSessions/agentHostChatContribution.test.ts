@@ -1954,6 +1954,28 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(controller.items[0].description, undefined);
 		});
 
+		test('list controller surfaces only working directory in metadata (git state is now per-session state, not summary)', async () => {
+			const { instantiationService, agentHostService } = createTestServices(disposables);
+
+			const controller = disposables.add(instantiationService.createInstance(
+				AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined, 'local'));
+
+			const workingDirectory = URI.file('/repo/work');
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'sess-git'),
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'With git',
+				workingDirectory,
+			});
+			await controller.refresh(CancellationToken.None);
+
+			assert.strictEqual(controller.items.length, 1);
+			assert.deepStrictEqual(controller.items[0].metadata, {
+				workingDirectoryPath: workingDirectory.fsPath,
+			});
+		});
+
 		test('handler works with any IAgentConnection, not just IAgentHostService', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { instantiationService, agentHostService, chatAgentService } = createTestServices(disposables);
 
