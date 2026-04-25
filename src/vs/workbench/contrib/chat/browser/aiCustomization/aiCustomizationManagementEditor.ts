@@ -5,7 +5,6 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { onUnexpectedError } from '../../../../../base/common/errors.js';
@@ -35,6 +34,7 @@ import { registerColor } from '../../../../../platform/theme/common/colorRegistr
 import { PANEL_BORDER } from '../../../../common/theme.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationListWidget } from './aiCustomizationListWidget.js';
+import { IAICustomizationItemsModel, ITEMS_MODEL_SECTIONS } from './aiCustomizationItemsModel.js';
 import { McpListWidget } from './mcpListWidget.js';
 import { PluginListWidget } from './pluginListWidget.js';
 import {
@@ -313,7 +313,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private welcomePage: AICustomizationWelcomePage | undefined;
 
 	private readonly editorDisposables = this._register(new DisposableStore());
-	private readonly promptsSectionCountScheduler = this._register(new RunOnceScheduler(() => this._doRefreshAllPromptsSectionCounts(), 100));
 	private _editorContentChanged = false;
 	private _previousActiveHarnessId: string | undefined;
 
@@ -352,6 +351,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
 		@IViewsService private readonly viewsService: IViewsService,
+		@IAICustomizationItemsModel private readonly itemsModel: IAICustomizationItemsModel,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -598,7 +598,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 				}
 			}
 			this._previousActiveHarnessId = activeId;
-			this.refreshAllPromptsSectionCounts();
 		}));
 
 		// When the harness selector setting is off, lock to Local harness.
@@ -942,18 +941,18 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.modelsWidget.fireItemCount();
 		}
 
-		// Any prompts data change → refresh ALL prompts section counts (debounced)
-		this.editorDisposables.add(this.promptsService.onDidChangeCustomAgents(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeSkills(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeInstructions(() => this.refreshAllPromptsSectionCounts()));
-		this.editorDisposables.add(this.promptsService.onDidChangeSlashCommands(() => this.refreshAllPromptsSectionCounts()));
-
-		// Load initial counts for all sections
-		this.refreshAllPromptsSectionCounts();
+		// Per-prompts-section autoruns: drive sidebar counts from the items model,
+		// the same source the editor list widget renders from.
+		for (const section of ITEMS_MODEL_SECTIONS) {
+			const observable = this.itemsModel.getCount(section);
+			this.editorDisposables.add(autorun(reader => {
+				this.updateSectionCount(section, observable.read(reader));
+			}));
+		}
 
 		// Load items for the initial section
 		if (this.isPromptsSection(this.selectedSection)) {
-			void this.listWidget.setSection(this.selectedSection);
+			this.listWidget.setSection(this.selectedSection);
 		}
 	}
 
@@ -979,28 +978,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Re-splice the sections list to trigger re-render
 		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
 		this.ensureSectionsListReflectsActiveSection();
-	}
-
-	/**
-	 * Schedules a debounced refresh of all prompts-based section counts.
-	 */
-	private refreshAllPromptsSectionCounts(): void {
-		this.promptsSectionCountScheduler.schedule();
-	}
-
-	/**
-	 * Performs the actual refresh of all prompts-based section counts.
-	 * Uses the list widget's shared item-loading logic so sidebar counts
-	 * match the per-group counts shown inside each section.
-	 */
-	private _doRefreshAllPromptsSectionCounts(): void {
-		for (const section of this.sections) {
-			if (this.isPromptsSection(section.id)) {
-				this.listWidget.computeItemCountForSection(section.id).then(count => {
-					this.updateSectionCount(section.id, count);
-				}, onUnexpectedError);
-			}
-		}
 	}
 
 	//#endregion
@@ -1061,7 +1038,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Load items for the new section (only for prompts-based sections)
 		if (this.isPromptsSection(section)) {
-			void this.listWidget.setSection(section);
+			this.listWidget.setSection(section);
 		}
 
 		this.ensureSectionsListReflectsActiveSection(section);
@@ -1194,7 +1171,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				await this.fileService.createFile(fileUri);
 				await this.showEmbeddedEditor(fileUri, fileName, PromptsType.instructions, PromptsStorage.local, true);
 			}
-			void this.listWidget.refresh();
+			this.listWidget.refresh();
 			return;
 		}
 
@@ -1255,7 +1232,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		await this.commandService.executeCommand(commandId, options);
-		void this.listWidget.refresh();
+		this.listWidget.refresh();
 	}
 
 	/**
@@ -1447,7 +1424,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.storageService.store(AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY, sectionId, StorageScope.PROFILE, StorageTarget.USER);
 			this.updateContentVisibility();
 			if (this.isPromptsSection(sectionId)) {
-				void this.listWidget.setSection(sectionId);
+				this.listWidget.setSection(sectionId);
 			}
 			// Re-layout after visibility change so the newly-visible widget
 			// can measure its flex-computed container height correctly.
@@ -1471,7 +1448,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	 * Refreshes the list widget.
 	 */
 	public refreshList(): void {
-		void this.listWidget.refresh();
+		this.listWidget.refresh();
 	}
 
 	/**

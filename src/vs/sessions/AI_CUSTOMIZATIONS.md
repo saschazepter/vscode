@@ -55,7 +55,6 @@ src/vs/sessions/contrib/chat/browser/
 └── promptsService.ts                           # AgenticPromptsService (CLI user roots)
 src/vs/sessions/contrib/sessions/browser/
 ├── aiCustomizationShortcutsWidget.ts           # Shortcuts widget
-├── customizationCounts.ts                      # Source count utilities (type-aware)
 └── customizationsToolbar.contribution.ts       # Sidebar customization links
 ```
 
@@ -220,7 +219,7 @@ Skills that are directly invoked by UI elements (toolbar buttons, menu items) ar
 
 ### Count Consistency
 
-`customizationCounts.ts` uses the **same data sources** as the list widget. When a harness with an `itemProvider` is active (determined by `getActiveItemProvider()`), counts come from that provider's `provideChatSessionCustomizations()`. Otherwise, both counts and the list go through the `PromptsServiceCustomizationItemProvider` fallback, ensuring counts match what the list displays.
+Counts shown in the sidebar (per-link badges and the header total in `AICustomizationShortcutsWidget`) are driven by the same `IAICustomizationItemsModel` singleton (`workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemsModel.ts`) that feeds the customizations editor's list widget. The model owns the per-active-harness `ProviderCustomizationItemSource` cache and exposes per-section `IObservable<readonly IAICustomizationListItem[]>`; sidebar consumers `read` `.length` from those observables. There is exactly one discovery path, so editor and sidebar counts cannot diverge. McpServers and Plugins use their own service observables (`IMcpService.servers`, `IAgentPluginService.plugins`) directly.
 
 ### Item Badges
 
