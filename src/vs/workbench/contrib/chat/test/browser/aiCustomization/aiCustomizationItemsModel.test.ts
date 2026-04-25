@@ -24,151 +24,171 @@ import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/se
 suite('AICustomizationItemsModel', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	let disposables: DisposableStore;
-	let instaService: TestInstantiationService;
+	suite('basics', () => {
 
-	let activeHarness: ISettableObservable<string>;
-	let availableHarnesses: ISettableObservable<readonly IHarnessDescriptor[]>;
-	let descriptorA: IHarnessDescriptor;
-	let descriptorB: IHarnessDescriptor;
-	let providerA_didChange: Emitter<void>;
-	let providerA_callCount: number;
-	let providerA_items: ICustomizationItem[];
+		let disposables: DisposableStore;
+		let instaService: TestInstantiationService;
 
-	function createDescriptor(id: string, provider: ICustomizationItemProvider): IHarnessDescriptor {
-		return {
-			id,
-			label: id,
-			icon: Codicon.settingsGear,
-			getStorageSourceFilter: (): IStorageSourceFilter => ({ sources: [PromptsStorage.local, PromptsStorage.user] }),
-			itemProvider: provider,
-		};
-	}
+		let activeHarness: ISettableObservable<string>;
+		let availableHarnesses: ISettableObservable<readonly IHarnessDescriptor[]>;
+		let descriptorA: IHarnessDescriptor;
+		let descriptorB: IHarnessDescriptor;
+		let providerA_didChange: Emitter<void>;
+		let providerA_callCount: number;
+		let providerA_items: ICustomizationItem[];
 
-	setup(() => {
-		disposables = new DisposableStore();
-		providerA_didChange = disposables.add(new Emitter<void>());
-		providerA_callCount = 0;
-		providerA_items = [];
+		function createDescriptor(id: string, provider: ICustomizationItemProvider): IHarnessDescriptor {
+			return {
+				id,
+				label: id,
+				icon: Codicon.settingsGear,
+				getStorageSourceFilter: (): IStorageSourceFilter => ({ sources: [PromptsStorage.local, PromptsStorage.user] }),
+				itemProvider: provider,
+			};
+		}
 
-		const providerA: ICustomizationItemProvider = {
-			onDidChange: providerA_didChange.event,
-			provideChatSessionCustomizations: (_token: CancellationToken) => {
-				providerA_callCount++;
-				return Promise.resolve(providerA_items.slice());
-			},
-		};
-		const providerB: ICustomizationItemProvider = {
-			onDidChange: Event.None,
-			provideChatSessionCustomizations: (_token: CancellationToken) => Promise.resolve([]),
-		};
-		descriptorA = createDescriptor('A', providerA);
-		descriptorB = createDescriptor('B', providerB);
+		setup(() => {
+			disposables = new DisposableStore();
+			providerA_didChange = disposables.add(new Emitter<void>());
+			providerA_callCount = 0;
+			providerA_items = [];
 
-		activeHarness = observableValue('activeHarness', 'A');
-		availableHarnesses = observableValue<readonly IHarnessDescriptor[]>('availableHarnesses', [descriptorA, descriptorB]);
+			const providerA: ICustomizationItemProvider = {
+				onDidChange: providerA_didChange.event,
+				provideChatSessionCustomizations: (_token: CancellationToken) => {
+					providerA_callCount++;
+					return Promise.resolve(providerA_items.slice());
+				},
+			};
+			const providerB: ICustomizationItemProvider = {
+				onDidChange: Event.None,
+				provideChatSessionCustomizations: (_token: CancellationToken) => Promise.resolve([]),
+			};
+			descriptorA = createDescriptor('A', providerA);
+			descriptorB = createDescriptor('B', providerB);
 
-		instaService = workbenchInstantiationService({}, disposables);
+			activeHarness = observableValue('activeHarness', 'A');
+			availableHarnesses = observableValue<readonly IHarnessDescriptor[]>('availableHarnesses', [descriptorA, descriptorB]);
 
-		instaService.stub(IPromptsService, {
-			onDidChangeCustomAgents: Event.None,
-			onDidChangeSlashCommands: Event.None,
-			onDidChangeSkills: Event.None,
-			onDidChangeHooks: Event.None,
-			onDidChangeInstructions: Event.None,
-			listPromptFiles: async () => [],
-			getCustomAgents: async () => [],
-			findAgentSkills: async () => [],
-			getHooks: async () => undefined,
-			getInstructionFiles: async () => [],
-			getDisabledPromptFiles: () => new ResourceSet(),
+			instaService = workbenchInstantiationService({}, disposables);
+
+			instaService.stub(IPromptsService, {
+				onDidChangeCustomAgents: Event.None,
+				onDidChangeSlashCommands: Event.None,
+				onDidChangeSkills: Event.None,
+				onDidChangeHooks: Event.None,
+				onDidChangeInstructions: Event.None,
+				listPromptFiles: async () => [],
+				getCustomAgents: async () => [],
+				findAgentSkills: async () => [],
+				getHooks: async () => undefined,
+				getInstructionFiles: async () => [],
+				getDisabledPromptFiles: () => new ResourceSet(),
+			});
+
+			instaService.stub(IAICustomizationWorkspaceService, {
+				activeProjectRoot: observableValue('test', undefined),
+				getActiveProjectRoot: () => undefined,
+				managementSections: [AICustomizationManagementSection.Agents],
+				isSessionsWindow: false,
+				welcomePageFeatures: { showGettingStartedBanner: false },
+				getStorageSourceFilter: () => ({ sources: [] }),
+				getSkillUIIntegrations: () => new Map(),
+				hasOverrideProjectRoot: observableValue('test', false),
+				commitFiles: async () => { },
+				deleteFiles: async () => { },
+				generateCustomization: async () => { },
+				setOverrideProjectRoot: () => { },
+				clearOverrideProjectRoot: () => { },
+			});
+
+			instaService.stub(ICustomizationHarnessService, {
+				activeHarness,
+				availableHarnesses,
+				setActiveHarness: (id: string) => activeHarness.set(id, undefined),
+				getStorageSourceFilter: () => ({ sources: [] }),
+				getActiveDescriptor: () => availableHarnesses.get().find(d => d.id === activeHarness.get())!,
+				findHarnessById: (id: string) => availableHarnesses.get().find(d => d.id === id),
+				registerExternalHarness: () => ({ dispose() { } }),
+			});
+
+			instaService.stub(IAgentPluginService, {
+				plugins: observableValue('test', []),
+				enablementModel: {
+					readEnabled: () => ContributionEnablementState.EnabledProfile,
+					setEnabled: () => { },
+					remove: () => { },
+				},
+			});
 		});
 
-		instaService.stub(IAICustomizationWorkspaceService, {
-			activeProjectRoot: observableValue('test', undefined),
-			getActiveProjectRoot: () => undefined,
-			managementSections: [AICustomizationManagementSection.Agents],
-			isSessionsWindow: false,
-			welcomePageFeatures: { showGettingStartedBanner: false },
-			getStorageSourceFilter: () => ({ sources: [] }),
-			getSkillUIIntegrations: () => new Map(),
-			hasOverrideProjectRoot: observableValue('test', false),
-			commitFiles: async () => { },
-			deleteFiles: async () => { },
-			generateCustomization: async () => { },
-			setOverrideProjectRoot: () => { },
-			clearOverrideProjectRoot: () => { },
+		teardown(() => disposables.dispose());
+
+		test('exposes per-section observables for all prompts-based sections', () => {
+			const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			assert.ok(model.getItems(AICustomizationManagementSection.Agents));
+			assert.ok(model.getItems(AICustomizationManagementSection.Skills));
+			assert.ok(model.getItems(AICustomizationManagementSection.Instructions));
+			assert.ok(model.getItems(AICustomizationManagementSection.Prompts));
+			assert.ok(model.getItems(AICustomizationManagementSection.Hooks));
 		});
 
-		instaService.stub(ICustomizationHarnessService, {
-			activeHarness,
-			availableHarnesses,
-			setActiveHarness: (id: string) => activeHarness.set(id, undefined),
-			getStorageSourceFilter: () => ({ sources: [] }),
-			getActiveDescriptor: () => availableHarnesses.get().find(d => d.id === activeHarness.get())!,
-			findHarnessById: (id: string) => availableHarnesses.get().find(d => d.id === id),
-			registerExternalHarness: () => ({ dispose() { } }),
+		test('does not fetch on construction (lazy)', async () => {
+			disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			await timeout(0);
+			assert.strictEqual(providerA_callCount, 0);
 		});
 
-		instaService.stub(IAgentPluginService, {
-			plugins: observableValue('test', []),
-			enablementModel: {
-				readEnabled: () => ContributionEnablementState.EnabledProfile,
-				setEnabled: () => { },
-				remove: () => { },
-			},
+		test('first read of a section triggers a fetch', async () => {
+			const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			model.getItems(AICustomizationManagementSection.Agents);
+			await timeout(0);
+			assert.strictEqual(providerA_callCount, 1);
+			// Reading a different section triggers a separate fetch for that section only.
+			model.getItems(AICustomizationManagementSection.Skills);
+			await timeout(0);
+			assert.strictEqual(providerA_callCount, 2);
 		});
-	});
 
-	teardown(() => disposables.dispose());
+		test('source.onDidChange refetches only previously-observed sections', async () => {
+			const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			model.getItems(AICustomizationManagementSection.Agents);
+			await timeout(0);
+			const before = providerA_callCount;
+			providerA_didChange.fire();
+			await timeout(0);
+			// One refetch for the one observed section — not 5.
+			assert.strictEqual(providerA_callCount, before + 1);
+		});
 
-	test('exposes per-section observables for all prompts-based sections', () => {
-		const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
-		assert.ok(model.getItems(AICustomizationManagementSection.Agents));
-		assert.ok(model.getItems(AICustomizationManagementSection.Skills));
-		assert.ok(model.getItems(AICustomizationManagementSection.Instructions));
-		assert.ok(model.getItems(AICustomizationManagementSection.Prompts));
-		assert.ok(model.getItems(AICustomizationManagementSection.Hooks));
-	});
+		test('switching harness re-binds and refetches observed sections', async () => {
+			const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			model.getItems(AICustomizationManagementSection.Agents);
+			await timeout(0);
+			const sourceA = model.getActiveItemSource();
+			activeHarness.set('B', undefined);
+			await timeout(0);
+			const sourceB = model.getActiveItemSource();
+			assert.notStrictEqual(sourceA, sourceB);
+		});
 
-	test('initial fetch populates all sections from the active descriptor', async () => {
-		const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
-		// 5 sections × 1 fetch each (one fetch per prompt type via the source).
-		await timeout(0);
-		assert.strictEqual(providerA_callCount, 5);
-		// All sections start empty (no items provided).
-		assert.strictEqual(model.getCount(AICustomizationManagementSection.Agents).get(), 0);
-	});
+		test('source cache is keyed by descriptor identity (not id) — re-registration produces a fresh source', async () => {
+			const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
+			model.getItems(AICustomizationManagementSection.Agents);
+			await timeout(0);
+			const sourceA1 = model.getActiveItemSource();
 
-	test('source.onDidChange triggers a refetch', async () => {
-		const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
-		await timeout(0);
-		const before = providerA_callCount;
-		providerA_didChange.fire();
-		await timeout(0);
-		assert.ok(providerA_callCount > before, `expected refetch, got ${providerA_callCount} vs ${before}`);
-		assert.ok(model.getActiveItemSource()); // sanity
-	});
+			// Replace descriptor A with a fresh descriptor that re-uses the same id.
+			const replacementProvider: ICustomizationItemProvider = {
+				onDidChange: Event.None,
+				provideChatSessionCustomizations: async () => [],
+			};
+			const replacementA = createDescriptor('A', replacementProvider);
+			availableHarnesses.set([replacementA, descriptorB], undefined);
+			await timeout(0);
 
-	test('switching harness re-binds and refetches', async () => {
-		const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
-		await timeout(0);
-		const sourceA = model.getActiveItemSource();
-		activeHarness.set('B', undefined);
-		await timeout(0);
-		const sourceB = model.getActiveItemSource();
-		assert.notStrictEqual(sourceA, sourceB);
-	});
-
-	test('reuses the same source per descriptor id (cache)', async () => {
-		const model = disposables.add(instaService.createInstance(AICustomizationItemsModel));
-		await timeout(0);
-		const sourceA1 = model.getActiveItemSource();
-		activeHarness.set('B', undefined);
-		await timeout(0);
-		activeHarness.set('A', undefined);
-		await timeout(0);
-		const sourceA2 = model.getActiveItemSource();
-		assert.strictEqual(sourceA1, sourceA2);
+			const sourceA2 = model.getActiveItemSource();
+			assert.notStrictEqual(sourceA1, sourceA2);
+		});
 	});
 });

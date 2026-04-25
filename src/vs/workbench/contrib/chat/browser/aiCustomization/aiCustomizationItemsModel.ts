@@ -75,6 +75,14 @@ export interface IAICustomizationItemsModel {
 	 * an `itemProvider` nor a `syncProvider`. Exposed for the debug report.
 	 */
 	getPromptsServiceItemProvider(): ICustomizationItemProvider;
+
+	/**
+	 * Resolves once the most recent fetch for `section` has settled. Useful for
+	 * tests / fixtures that need rendered output to reflect at least one fetch.
+	 * Calling this also marks the section as observed (i.e. starts a fetch if
+	 * none has been kicked off yet).
+	 */
+	whenSectionLoaded(section: ItemsModelSection): Promise<void>;
 }
 
 export class AICustomizationItemsModel extends Disposable implements IAICustomizationItemsModel {
@@ -83,11 +91,26 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 	private readonly itemNormalizer: AICustomizationItemNormalizer;
 	private readonly promptsServiceItemProvider: PromptsServiceCustomizationItemProvider;
 
-	/** Cached source per-descriptor id (mirrors the previous list-widget cache). */
-	private readonly sourceCache = new Map<string, IAICustomizationItemSource>();
+	/**
+	 * Cached source per active descriptor. Keyed by descriptor reference (not id) so that
+	 * an external harness re-registering under the same id (e.g. extension reload) gets a
+	 * fresh source bound to the new provider. Pruned when its descriptor is no longer
+	 * present in `availableHarnesses`.
+	 */
+	private readonly sourceCache = new Map<IHarnessDescriptor, IAICustomizationItemSource>();
 
 	private readonly perSection = new Map<ItemsModelSection, ISettableObservable<readonly IAICustomizationListItem[]>>();
+	private readonly perSectionCount = new Map<ItemsModelSection, IObservable<number>>();
 	private readonly fetchSeq = new Map<ItemsModelSection, number>();
+	/** Promise of the most recent fetch per section (resolves regardless of stale-discard). */
+	private readonly perSectionPending = new Map<ItemsModelSection, Promise<void>>();
+	/**
+	 * Sections that have been observed at least once. The model only fetches on
+	 * demand: first `getItems`/`getCount` for a section triggers an initial fetch,
+	 * and subsequent harness/source/workspace change events refetch only sections
+	 * that have already been read. This avoids 5x provider enumeration on startup.
+	 */
+	private readonly observedSections = new Set<ItemsModelSection>();
 
 	constructor(
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
@@ -117,40 +140,43 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 		);
 
 		for (const section of ITEMS_MODEL_SECTIONS) {
-			this.perSection.set(section, observableValue<readonly IAICustomizationListItem[]>(`aiCustomizationItems:${section}`, []));
+			const items = observableValue<readonly IAICustomizationListItem[]>(`aiCustomizationItems:${section}`, []);
+			this.perSection.set(section, items);
+			this.perSectionCount.set(section, derived(reader => items.read(reader).length));
 			this.fetchSeq.set(section, 0);
 		}
 
-		// Re-bind to the active source whenever the active harness or the set
-		// of available harnesses changes (a new external provider may have
-		// registered for the already-active id), and refetch all sections.
+		// Re-bind to the active source whenever the active harness or the set of available
+		// harnesses changes (a new external provider may have registered for the already-
+		// active id), prune the source cache, and refetch any observed sections.
 		const sourceChangeListener = this._register(new MutableDisposable());
 		this._register(autorun(reader => {
+			const available = this.harnessService.availableHarnesses.read(reader);
 			this.harnessService.activeHarness.read(reader);
-			this.harnessService.availableHarnesses.read(reader);
+			this.pruneSourceCache(available);
 			const descriptor = this.harnessService.getActiveDescriptor();
 			const source = this.getOrCreateSource(descriptor);
-			sourceChangeListener.value = source.onDidChange(() => this.refetchAll(source));
-			this.refetchAll(source);
+			sourceChangeListener.value = source.onDidChange(() => this.refetchObserved(source));
+			this.refetchObserved(source);
 		}));
 
-		// Workspace folder changes / active project root changes affect the
-		// items the prompts service surfaces (e.g. workspace vs. user
-		// classification of agent-instructions).
-		this._register(workspaceContextService.onDidChangeWorkspaceFolders(() => this.refetchAll(this.getActiveItemSource())));
+		// Workspace folder changes / active project root changes affect the items the
+		// prompts service surfaces (e.g. workspace vs. user classification).
+		this._register(workspaceContextService.onDidChangeWorkspaceFolders(() => this.refetchObserved(this.getActiveItemSource())));
 		this._register(autorun(reader => {
 			this.workspaceService.activeProjectRoot.read(reader);
-			this.refetchAll(this.getActiveItemSource());
+			this.refetchObserved(this.getActiveItemSource());
 		}));
 	}
 
 	getItems(section: ItemsModelSection): IObservable<readonly IAICustomizationListItem[]> {
+		this.markObserved(section);
 		return this.perSection.get(section)!;
 	}
 
 	getCount(section: ItemsModelSection): IObservable<number> {
-		const items = this.getItems(section);
-		return derived(reader => items.read(reader).length);
+		this.markObserved(section);
+		return this.perSectionCount.get(section)!;
 	}
 
 	getActiveItemSource(): IAICustomizationItemSource {
@@ -161,8 +187,21 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 		return this.promptsServiceItemProvider;
 	}
 
+	whenSectionLoaded(section: ItemsModelSection): Promise<void> {
+		this.markObserved(section);
+		return this.perSectionPending.get(section) ?? Promise.resolve();
+	}
+
+	private markObserved(section: ItemsModelSection): void {
+		if (this.observedSections.has(section) || this._store.isDisposed) {
+			return;
+		}
+		this.observedSections.add(section);
+		this.refetchSection(section, this.getActiveItemSource());
+	}
+
 	private getOrCreateSource(descriptor: IHarnessDescriptor): IAICustomizationItemSource {
-		const cached = this.sourceCache.get(descriptor.id);
+		const cached = this.sourceCache.get(descriptor);
 		if (cached) {
 			return cached;
 		}
@@ -176,12 +215,21 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 			this.pathService,
 			this.itemNormalizer,
 		);
-		this.sourceCache.set(descriptor.id, source);
+		this.sourceCache.set(descriptor, source);
 		return source;
 	}
 
-	private refetchAll(source: IAICustomizationItemSource): void {
-		for (const section of ITEMS_MODEL_SECTIONS) {
+	private pruneSourceCache(available: readonly IHarnessDescriptor[]): void {
+		const live = new Set(available);
+		for (const descriptor of this.sourceCache.keys()) {
+			if (!live.has(descriptor)) {
+				this.sourceCache.delete(descriptor);
+			}
+		}
+	}
+
+	private refetchObserved(source: IAICustomizationItemSource): void {
+		for (const section of this.observedSections) {
 			this.refetchSection(section, source);
 		}
 	}
@@ -191,7 +239,7 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 		this.fetchSeq.set(section, seq);
 		const promptType = sectionToPromptType(section);
 		const observable = this.perSection.get(section)!;
-		source.fetchItems(promptType).then(items => {
+		const pending = source.fetchItems(promptType).then(items => {
 			if (this._store.isDisposed) {
 				return;
 			}
@@ -204,7 +252,13 @@ export class AICustomizationItemsModel extends Disposable implements IAICustomiz
 				return;
 			}
 			observable.set(items, undefined);
-		}, onUnexpectedError);
+		}, e => {
+			if (this._store.isDisposed) {
+				return;
+			}
+			onUnexpectedError(e);
+		});
+		this.perSectionPending.set(section, pending);
 	}
 }
 

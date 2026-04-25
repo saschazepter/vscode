@@ -802,9 +802,11 @@ export class AICustomizationListWidget extends Disposable {
 
 	/**
 	 * Sets the current section and binds the list to the model's per-section
-	 * observable. Updates flow automatically through the autorun.
+	 * observable. Returns once the initial fetch for the section has resolved
+	 * so that callers (e.g. tests/fixtures) can rely on rendered output
+	 * reflecting at least one fetch.
 	 */
-	setSection(section: AICustomizationManagementSection): void {
+	async setSection(section: AICustomizationManagementSection): Promise<void> {
 		this.currentSection = section;
 		this.updateSectionHeader();
 
@@ -826,6 +828,7 @@ export class AICustomizationListWidget extends Disposable {
 			this._onDidChangeItemCount.fire(items.length);
 		});
 		this.updateAddButton();
+		await this.itemsModel.whenSectionLoaded(modelSection);
 	}
 
 	/**

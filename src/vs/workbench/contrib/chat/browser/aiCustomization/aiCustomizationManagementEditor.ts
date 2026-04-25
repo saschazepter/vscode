@@ -952,7 +952,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Load items for the initial section
 		if (this.isPromptsSection(this.selectedSection)) {
-			this.listWidget.setSection(this.selectedSection);
+			void this.listWidget.setSection(this.selectedSection);
 		}
 	}
 
@@ -1038,7 +1038,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Load items for the new section (only for prompts-based sections)
 		if (this.isPromptsSection(section)) {
-			this.listWidget.setSection(section);
+			void this.listWidget.setSection(section);
 		}
 
 		this.ensureSectionsListReflectsActiveSection(section);
@@ -1424,7 +1424,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.storageService.store(AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY, sectionId, StorageScope.PROFILE, StorageTarget.USER);
 			this.updateContentVisibility();
 			if (this.isPromptsSection(sectionId)) {
-				this.listWidget.setSection(sectionId);
+				void this.listWidget.setSection(sectionId);
 			}
 			// Re-layout after visibility change so the newly-visible widget
 			// can measure its flex-computed container height correctly.

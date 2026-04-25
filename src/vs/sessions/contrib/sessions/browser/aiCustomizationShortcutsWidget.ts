@@ -17,7 +17,8 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
-import { IAICustomizationItemsModel, ITEMS_MODEL_SECTIONS } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemsModel.js';
+import { IAICustomizationItemsModel } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemsModel.js';
+import { CUSTOMIZATION_ITEMS } from './customizationsToolbar.contribution.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
 
@@ -95,16 +96,22 @@ export class AICustomizationShortcutsWidget extends Disposable {
 			options?.onDidChangeLayout?.();
 		}));
 
-		// Header total = sum of all customization-driven sections + MCP + plugins.
-		// All inputs come from the same observables that drive the editor and
-		// per-link badges, so this number is always consistent with both.
+		// Header total = sum of the same counts shown by each visible sidebar
+		// link (CUSTOMIZATION_ITEMS). This guarantees the header value equals
+		// the sum of the per-link badges by construction — and excludes
+		// sections like Prompts that the editor exposes but the sidebar does
+		// not surface.
 		const totalCount = derived(reader => {
 			let total = 0;
-			for (const section of ITEMS_MODEL_SECTIONS) {
-				total += this.itemsModel.getCount(section).read(reader);
+			for (const config of CUSTOMIZATION_ITEMS) {
+				if (config.modelSection) {
+					total += this.itemsModel.getCount(config.modelSection).read(reader);
+				} else if (config.isMcp) {
+					total += this.mcpService.servers.read(reader).length;
+				} else if (config.isPlugins) {
+					total += this.agentPluginService.plugins.read(reader).length;
+				}
 			}
-			total += this.mcpService.servers.read(reader).length;
-			total += this.agentPluginService.plugins.read(reader).length;
 			return total;
 		});
 		this._register(autorun(reader => {
