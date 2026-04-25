@@ -24,7 +24,7 @@ import { ISessionsManagementService } from '../../../services/sessions/common/se
 import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { SideBarVisibleContext } from '../../../../workbench/common/contextkeys.js';
 import { Menus } from '../../menus.js';
-import { ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
+import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { getAccountTitleBarState, getAccountProfileImageUrl, getAccountTitleBarBadgeKey } from '../../../contrib/accountMenu/browser/accountTitleBarState.js';
 import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusDashboard.js';
 
@@ -229,25 +229,61 @@ export class MobileTitlebarPart extends Disposable {
 		this.isAccountLoading = true;
 		this.renderAccountState();
 
+		// Try the default account service first (returns the fully resolved
+		// account with entitlements). Fall back to reading GitHub sessions
+		// directly from the authentication service — this covers the window
+		// between session creation and DefaultAccountProvider initialization.
+		let accountName: string | undefined;
+		let accountProviderId: string | undefined;
+		let accountProviderLabel: string | undefined;
+
 		const account = await this.defaultAccountService.getDefaultAccount();
 		if (requestId !== this.accountRequestCounter) {
 			return;
 		}
 
-		this.accountName = account?.accountName;
-		this.accountProviderId = account?.authenticationProvider.id;
-		this.accountProviderLabel = account?.authenticationProvider.name;
+		if (account) {
+			accountName = account.accountName;
+			accountProviderId = account.authenticationProvider.id;
+			accountProviderLabel = account.authenticationProvider.name;
+		} else {
+			try {
+				const sessions = await this.authenticationService.getSessions('github');
+				if (requestId !== this.accountRequestCounter) {
+					return;
+				}
+				if (sessions.length > 0) {
+					accountName = sessions[0].account.label;
+					accountProviderId = 'github';
+					accountProviderLabel = 'GitHub';
+				}
+			} catch {
+				// Provider not available yet
+			}
+		}
+
+		this.accountName = accountName;
+		this.accountProviderId = accountProviderId;
+		this.accountProviderLabel = accountProviderLabel;
 		this.isAccountLoading = false;
 		this.refreshAvatar();
 		this.renderAccountState();
 	}
 
 	private renderAccountState(): void {
+		// When we have a session from the auth service but the entitlement
+		// service hasn't resolved yet (still Unknown), treat it as the
+		// account being available rather than signed out. This avoids
+		// showing "Sign In" right after the walkthrough completes.
+		const entitlement = this.accountName && this.chatEntitlementService.entitlement === ChatEntitlement.Unknown
+			? ChatEntitlement.Unresolved
+			: this.chatEntitlementService.entitlement;
+
 		const state = getAccountTitleBarState({
 			isAccountLoading: this.isAccountLoading,
 			accountName: this.accountName,
 			accountProviderLabel: this.accountProviderLabel,
-			entitlement: this.chatEntitlementService.entitlement,
+			entitlement,
 			sentiment: this.chatEntitlementService.sentiment,
 			quotas: this.chatEntitlementService.quotas,
 		});
