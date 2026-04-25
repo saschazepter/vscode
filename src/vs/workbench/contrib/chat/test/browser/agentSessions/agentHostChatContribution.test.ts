@@ -667,6 +667,52 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(listController.items.length, 1);
 			assert.strictEqual(listController.items[0].archived, true);
 		});
+
+		test('refresh skips listSessions RPC after first successful call', async () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			agentHostService.addSession({ session: AgentSession.uri('copilot', 'aaa'), startTime: 1000, modifiedTime: 2000, summary: 'My session' });
+
+			let listCalls = 0;
+			const originalListSessions = agentHostService.listSessions.bind(agentHostService);
+			agentHostService.listSessions = async () => { listCalls++; return originalListSessions(); };
+
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 1);
+			assert.strictEqual(listController.items.length, 1);
+
+			// Subsequent refresh should not re-fetch — the cache is kept in
+			// sync via notify/sessionAdded etc.
+			await listController.refresh(CancellationToken.None);
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 1);
+			assert.strictEqual(listController.items.length, 1);
+		});
+
+		test('refresh retries listSessions if the first call failed', async () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			let listCalls = 0;
+			const originalListSessions = agentHostService.listSessions.bind(agentHostService);
+			agentHostService.listSessions = async () => {
+				listCalls++;
+				if (listCalls === 1) {
+					throw new Error('fail');
+				}
+				return originalListSessions();
+			};
+
+			agentHostService.addSession({ session: AgentSession.uri('copilot', 'aaa'), startTime: 1000, modifiedTime: 2000, summary: 'My session' });
+
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 1);
+			assert.strictEqual(listController.items.length, 0);
+
+			// Failure must not mark the cache valid; the next refresh retries.
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 2);
+			assert.strictEqual(listController.items.length, 1);
+		});
 	});
 
 	// ---- Session ID resolution in _invokeAgent --------------------------

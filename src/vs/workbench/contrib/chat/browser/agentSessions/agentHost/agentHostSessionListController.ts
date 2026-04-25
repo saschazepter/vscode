@@ -76,6 +76,17 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 	private _items: IChatSessionItem[] = [];
 	/** Cached full summaries per session so partial updates can be applied. */
 	private readonly _cachedSummaries = new Map<string, SessionSummary>();
+	/**
+	 * Once `listSessions()` has succeeded, the in-memory list is kept in
+	 * sync by `notify/sessionAdded`, `notify/sessionRemoved`, and
+	 * `notify/sessionSummaryChanged`. Subsequent `refresh()` calls then
+	 * just re-emit the cached items instead of re-issuing the RPC.
+	 *
+	 * Lifetime: the controller is created per agent registration and
+	 * disposed when the registration is torn down (e.g. on connection
+	 * replacement), so this flag naturally resets on reconnect.
+	 */
+	private _cacheValid = false;
 
 	constructor(
 		private readonly _sessionType: string,
@@ -137,6 +148,13 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 	}
 
 	async refresh(_token: CancellationToken): Promise<void> {
+		if (this._cacheValid) {
+			// Cache is kept in sync by notify/sessionAdded,
+			// notify/sessionRemoved, and notify/sessionSummaryChanged. No
+			// need to round-trip through the agent host on every refresh.
+			this._onDidChangeChatSessionItems.fire({ addedOrUpdated: this._items });
+			return;
+		}
 		try {
 			const sessions = await this._connection.listSessions();
 			const filtered = sessions.filter(s => AgentSession.provider(s.session) === this._provider);
@@ -168,6 +186,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 					diffs: s.diffs,
 				});
 			});
+			this._cacheValid = true;
 		} catch {
 			this._cachedSummaries.clear();
 			this._items = [];
