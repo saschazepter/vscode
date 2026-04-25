@@ -150,12 +150,13 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 					continue;
 				}
 
-				const messages = await this._sdkService.getSessionMessages(sessionId, info.cwd);
+				const sessionDir = info.cwd ?? dir;
+				const messages = await this._sdkService.getSessionMessages(sessionId, sessionDir);
 				if (token.isCancellationRequested) {
 					return undefined;
 				}
 
-				const subagents = await this._loadSubagents(sessionId, info.cwd, token);
+				const subagents = await this._loadSubagents(sessionId, sessionDir, token);
 
 				const folderName = basename(folderUri);
 				return buildClaudeCodeSession(info, messages, subagents, folderName);

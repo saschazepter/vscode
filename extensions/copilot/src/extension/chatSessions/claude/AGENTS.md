@@ -138,7 +138,7 @@ All interactions are displayed through VS Code's native chat UI, providing a sea
 Adapts raw SDK session data into the internal `IClaudeCodeSession` / `ISubagentSession` schemas:
 - **`buildClaudeCodeSession()`**: Assembles a full `IClaudeCodeSession` from session info, messages, and subagents
 - **`sdkSubagentMessagesToSubagentSession()`**: Converts raw SDK `SessionMessage[]` into an `ISubagentSession`
-- **`extractParentToolUseId()`**: Helper that extracts `parent_tool_use_id` from the first assistant message in a `SessionMessage[]` array, used to correlate a subagent session with the Agent/Task tool_use block that spawned it
+- **`extractParentToolUseId()`**: Helper that scans a `SessionMessage[]` array until it finds a string `parent_tool_use_id`, used to correlate a subagent session with the Agent/Task tool_use block that spawned it
 
 ### `node/claudeSkills.ts`
 

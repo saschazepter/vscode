@@ -182,8 +182,9 @@ function extractParentToolUseId(messages: readonly SessionMessage[]): string | u
  * Converts SDK `SessionMessage[]` (from `getSubagentMessages`) into an
  * `ISubagentSession` for display in the chat history.
  *
- * Extracts `parent_tool_use_id` from the first assistant message to link
- * the subagent back to its spawning Agent tool_use in the parent session.
+ * Extracts `parent_tool_use_id` from the first assistant message that
+ * contains one, to link the subagent back to its spawning Agent tool_use
+ * in the parent session.
  */
 export function sdkSubagentMessagesToSubagentSession(
 	agentId: string,

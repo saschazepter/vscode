@@ -413,9 +413,9 @@ export function buildChatHistory(session: IClaudeCodeSession): (vscode.ChatReque
 				processToolResults(content, toolContext);
 			}
 
-			// After processing tool results, inject subagent tool calls for completed Task tools.
-			// Each subagent's parentToolUseId links it to the Agent tool_use that spawned it.
-			// We match tool_result blocks in user messages to subagents via tool_use_id.
+			// After processing tool results, inject subagent tool calls for subagents correlated via parentToolUseId.
+			// Each subagent's parentToolUseId links it to the Agent or legacy Task tool_use that spawned it.
+			// We match tool_result blocks in user messages to those subagents via tool_use_id.
 			for (const content of userContents) {
 				if (typeof content === 'string') {
 					continue;
