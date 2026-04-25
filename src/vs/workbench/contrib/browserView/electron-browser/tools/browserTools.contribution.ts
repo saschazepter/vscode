@@ -7,7 +7,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
-import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
 import { registerWorkbenchContribution2, WorkbenchPhase, type IWorkbenchContribution } from '../../../../common/contributions.js';
@@ -15,6 +15,7 @@ import { IEditorService } from '../../../../services/editor/common/editorService
 import { IChatContextService } from '../../../chat/browser/contextContrib/chatContextService.js';
 import { ILanguageModelToolsService, ToolDataSource, ToolSet } from '../../../chat/common/tools/languageModelToolsService.js';
 import { IBrowserViewWorkbenchService } from '../../common/browserView.js';
+import { canShareBrowserWithAgentContext } from '../features/browserEditorChatFeatures.js';
 import { formatBrowserEditorList } from './browserToolHelpers.js';
 import { ClickBrowserTool, ClickBrowserToolData } from './clickBrowserTool.js';
 import { DragElementTool, DragElementToolData } from './dragElementTool.js';
@@ -41,12 +42,12 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILanguageModelToolsService private readonly toolsService: ILanguageModelToolsService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
 		@IChatContextService private readonly chatContextService: IChatContextService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IBrowserViewWorkbenchService private readonly browserViewService: IBrowserViewWorkbenchService,
 		@IAgentNetworkFilterService private readonly agentNetworkFilterService: IAgentNetworkFilterService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -62,8 +63,9 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 
 		this._updateToolRegistrations();
 
-		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('workbench.browser.enableChatTools')) {
+		const sharingContextKeys = new Set(canShareBrowserWithAgentContext.keys());
+		this._register(contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(sharingContextKeys)) {
 				this._updateToolRegistrations();
 			}
 		}));
@@ -72,7 +74,7 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 	private _updateToolRegistrations(): void {
 		this._toolsStore.clear();
 
-		if (!this.configurationService.getValue<boolean>('workbench.browser.enableChatTools')) {
+		if (!this.contextKeyService.contextMatchesRules(canShareBrowserWithAgentContext)) {
 			// If chat tools are disabled, we only register the non-agentic open tool,
 			// which allows opening browser pages without granting access to their contents.
 			this._toolsStore.add(this.toolsService.registerTool(OpenBrowserToolNonAgenticData, this.instantiationService.createInstance(OpenBrowserToolNonAgentic)));

@@ -40,6 +40,7 @@ import { PolicyCategory } from '../../../../../base/common/policy.js';
 import { workbenchConfigurationNodeBase } from '../../../../common/configuration.js';
 import { safeSetInnerHtml } from '../../../../../base/browser/domSanitize.js';
 import { BrowserActionCategory } from '../browserViewActions.js';
+import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 
 // Register tools
 import '../tools/browserTools.contribution.js';
@@ -159,8 +160,9 @@ const BrowserCategory = localize2('browserCategory', "Browser");
 
 const CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE = new RawContextKey<boolean>('browserElementSelectionActive', false, localize('browser.elementSelectionActive', "Whether element selection is currently active"));
 
-const canShareBrowserWithAgentContext = ContextKeyExpr.and(
+export const canShareBrowserWithAgentContext = ContextKeyExpr.and(
 	ChatContextKeys.enabled,
+	IsSessionsWindowContext.negate(),
 	ContextKeyExpr.has(`config.${ChatConfiguration.AgentEnabled}`),
 	ContextKeyExpr.has(`config.workbench.browser.enableChatTools`),
 )!;
