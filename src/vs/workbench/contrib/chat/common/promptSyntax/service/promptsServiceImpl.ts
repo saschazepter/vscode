@@ -548,7 +548,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 			if (!file.when) {
 				return true;
 			}
-
+			// items that come in from extensions (via contribution point or provider) can have a `when` clause.
+			// The service checks that when clause when passing it out and also tracks all properties that are
+			// part of the when clause for refreshing purposes.`
 			const when = ContextKeyExpr.deserialize(file.when);
 			if (!when) {
 				this.logger.warn(`[getExtensionPromptFiles] Ignoring contributed prompt file with invalid when clause: ${file.when}`);

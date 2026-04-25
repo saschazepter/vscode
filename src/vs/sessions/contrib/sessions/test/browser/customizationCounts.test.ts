@@ -83,7 +83,6 @@ function createMockPromptsService(opts: {
 			storage: c.storage,
 			userInvocable: true,
 			parsedPromptFile: undefined!,
-			when: undefined,
 		})),
 		getSourceFolders: async () => [],
 		getResolvedSourceFolders: async () => [],
