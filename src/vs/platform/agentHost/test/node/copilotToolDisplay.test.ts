@@ -330,10 +330,10 @@ suite('skill events', () => {
 			withPathSameIdOnComplete: true,
 			withPathToolName: 'skill',
 			withPathDisplayName: 'Read Skill',
-			withPathInvocation: { markdown: 'Reading [plan](file:///abs/repo/skills/plan/SKILL.md)' },
-			withPathPastTense: { markdown: 'Read [plan](file:///abs/repo/skills/plan/SKILL.md)' },
+			withPathInvocation: { markdown: 'Reading skill [plan](file:///abs/repo/skills/plan/SKILL.md)' },
+			withPathPastTense: { markdown: 'Read skill [plan](file:///abs/repo/skills/plan/SKILL.md)' },
 			withPathSuccess: true,
-			noPathToolCallId: 'synth-skill-plan',
+			noPathToolCallId: 'synth-skill-2108d652',
 			noPathInvocation: 'Reading skill plan',
 			noPathPastTense: 'Read skill plan',
 		});

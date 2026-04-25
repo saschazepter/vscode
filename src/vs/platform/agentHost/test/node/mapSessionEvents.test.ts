@@ -300,7 +300,7 @@ suite('mapSessionEvents', () => {
 					toolCallId: 'synth-skill-evt-42',
 					toolName: 'skill',
 					displayName: 'Read Skill',
-					invocationMessage: { markdown: 'Reading [plan](file:///abs/repo/skills/plan/SKILL.md)' },
+					invocationMessage: { markdown: 'Reading skill [plan](file:///abs/repo/skills/plan/SKILL.md)' },
 				},
 				skillComplete: {
 					session,
@@ -308,7 +308,7 @@ suite('mapSessionEvents', () => {
 					toolCallId: 'synth-skill-evt-42',
 					result: {
 						success: true,
-						pastTenseMessage: { markdown: 'Read [plan](file:///abs/repo/skills/plan/SKILL.md)' },
+						pastTenseMessage: { markdown: 'Read skill [plan](file:///abs/repo/skills/plan/SKILL.md)' },
 					},
 				},
 				assistantRole: 'assistant',

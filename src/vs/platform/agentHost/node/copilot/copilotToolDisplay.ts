@@ -6,7 +6,8 @@
 import type { PermissionRequest } from '@github/copilot-sdk';
 import { hasKey } from '../../../../base/common/types.js';
 import { URI } from '../../../../base/common/uri.js';
-import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
+import { appendEscapedMarkdownInlineCode, escapeMarkdownLinkLabel } from '../../../../base/common/htmlContent.js';
+import { hash } from '../../../../base/common/hash.js';
 import { localize } from '../../../../nls.js';
 import type { IAgentToolCompleteEvent, IAgentToolReadyEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
@@ -427,16 +428,17 @@ export interface ICopilotSkillInvokedData {
 
 /**
  * Builds a stable synthetic tool call id for a `skill.invoked` event so
- * reconnect/replay produces the same id as the original live emit.
+ * reconnect/replay produces the same id as the original live emit. The id
+ * is used unencoded as a path segment (e.g. by `ChatResponseResource.createUri`),
+ * so it must not contain characters like `/` -- we hash any fallback values
+ * that could carry filesystem paths or arbitrary text.
  */
 export function getSkillSyntheticToolCallId(eventId: string | undefined, data: ICopilotSkillInvokedData): string {
 	if (eventId) {
 		return `synth-skill-${eventId}`;
 	}
-	if (data.path) {
-		return `synth-skill-${data.path}`;
-	}
-	return `synth-skill-${data.name}`;
+	const seed = data.path ?? data.name;
+	return `synth-skill-${hash(seed).toString(16)}`;
 }
 
 /**
@@ -453,10 +455,17 @@ export function synthesizeSkillToolEvents(
 	const toolCallId = getSkillSyntheticToolCallId(eventId, data);
 	const displayName = localize('toolName.skill', "Read Skill");
 	// Use the skill name as the link text rather than the basename: every skill
-	// file is named SKILL.md, so `Reading [plan]` reads better than the
-	// always-identical `Reading [SKILL.md]`. The client may further upgrade this
-	// link to a rich pill based on the `SKILL.md` basename.
-	const skillLink = data.path ? `[${data.name}](${URI.file(data.path)})` : undefined;
+	// file is named SKILL.md, so `Reading skill [plan]` reads better than the
+	// always-identical `Reading skill [SKILL.md]`. The client may further upgrade
+	// this link to a rich pill based on the `SKILL.md` basename. Skill names and
+	// paths come from the SDK / agent host and are escaped to prevent markdown
+	// injection from a malicious skill author.
+	// Escape only the characters that would break out of markdown link text
+	// syntax (`\` and `]`); a full markdown escape would leave visible
+	// backslashes in renderers (like the skill pill) that extract link text
+	// without re-parsing markdown.
+	const escapedName = escapeMarkdownLinkLabel(data.name);
+	const skillLink = data.path ? `[${escapedName}](${URI.file(data.path)})` : undefined;
 	const invocationMessage: StringOrMarkdown = skillLink
 		? md(localize('toolInvoke.skill', "Reading skill {0}", skillLink))
 		: localize('toolInvoke.skillName', "Reading skill {0}", data.name);
