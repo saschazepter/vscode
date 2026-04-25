@@ -65,6 +65,9 @@ export class AgentService extends Disposable implements IAgentService {
 	/** Exposes the state manager for co-hosting a WebSocket protocol server. */
 	get stateManager(): AgentHostStateManager { return this._stateManager; }
 
+	/** Exposes the configuration service so agent providers can share root config plumbing. */
+	get configurationService(): IAgentConfigurationService { return this._configurationService; }
+
 	/** Registered providers keyed by their {@link AgentProvider} id. */
 	private readonly _providers = new Map<AgentProvider, IAgent>();
 	/** Maps each active session URI (toString) to its owning provider. */

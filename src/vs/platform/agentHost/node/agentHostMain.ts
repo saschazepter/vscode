@@ -17,6 +17,7 @@ import * as os from 'os';
 import * as inspector from 'inspector';
 import { AgentHostIpcChannels, IAgentHostInspectInfo, IAgentHostSocketInfo, IConnectionTrackerService } from '../common/agentService.js';
 import { AgentService } from './agentService.js';
+import { IAgentConfigurationService } from './agentConfigurationService.js';
 import { IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { CopilotAgent } from './copilot/copilotAgent.js';
 import { ProtocolServerHandler } from './protocolServerHandler.js';
@@ -103,6 +104,7 @@ function startAgentHost(): void {
 		diServices.set(IDiffComputeService, diffComputeService);
 
 		diServices.set(IAgentHostTerminalManager, agentService.terminalManager);
+		diServices.set(IAgentConfigurationService, agentService.configurationService);
 		const instantiationService = new InstantiationService(diServices);
 		diServices.set(IAgentHostGitService, instantiationService.createInstance(AgentHostGitService));
 		agentService.registerProvider(instantiationService.createInstance(CopilotAgent));
