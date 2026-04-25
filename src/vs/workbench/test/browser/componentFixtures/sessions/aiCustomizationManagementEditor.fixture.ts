@@ -199,6 +199,9 @@ function createMockHarnessService(activeHarnessId: string, descriptors: readonly
 		override getActiveDescriptor() {
 			return descriptors.find(h => h.id === active.get()) ?? descriptors[0];
 		}
+		override findHarnessById(id: string) {
+			return descriptors.find(h => h.id === id);
+		}
 		override setActiveHarness(id: string) { active.set(id, undefined); }
 		override registerExternalHarness() { return { dispose() { } }; }
 	}();
