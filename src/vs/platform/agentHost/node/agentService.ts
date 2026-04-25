@@ -19,7 +19,7 @@ import { ISessionDataService } from '../common/sessionDataService.js';
 import { ActionType, ActionEnvelope, INotification, RootAction, SessionAction, TerminalAction, isSessionAction } from '../common/state/sessionActions.js';
 import type { CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, withSessionGitState, type ResponsePart, type SessionConfigState, type ISessionFileDiff, type SessionSummary, type ToolCallCompletedState, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
+import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, readSessionGitState, withSessionGitState, type ResponsePart, type SessionConfigState, type ISessionFileDiff, type SessionSummary, type ToolCallCompletedState, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { IProductService } from '../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentSideEffects } from './agentSideEffects.js';
@@ -335,7 +335,8 @@ export class AgentService extends Disposable implements IAgentService {
 				}
 				const sessionKey = session.toString();
 				const current = this._stateManager.getSessionState(sessionKey)?._meta;
-				this._stateManager.setSessionMeta(sessionKey, withSessionGitState(current, gitState));
+				const next = withSessionGitState(current, gitState);
+				this._stateManager.setSessionMeta(sessionKey, next);
 			},
 			e => {
 				this._logService.warn(`[AgentService] Failed to compute git state for ${session}`, e);
@@ -439,6 +440,19 @@ export class AgentService extends Disposable implements IAgentService {
 		if (!snapshot) {
 			throw new Error(`Cannot subscribe to unknown resource: ${resourceStr}`);
 		}
+
+		// Ensure git state has been computed for this session. When the snapshot
+		// already existed (e.g. seeded by list query, or restored earlier), the
+		// restore path that normally calls `_attachGitState` is skipped — so
+		// trigger it lazily here for the first subscriber. `_attachGitState`
+		// is async and updates `_meta.git` once ready, which clients see via
+		// the normal state-update stream.
+		const sessionState = this._stateManager.getSessionState(resourceStr);
+		if (sessionState && readSessionGitState(sessionState._meta) === undefined) {
+			const wd = sessionState.summary?.workingDirectory;
+			this._attachGitState(resource, wd ? URI.parse(wd) : undefined);
+		}
+
 		return snapshot;
 	}
 

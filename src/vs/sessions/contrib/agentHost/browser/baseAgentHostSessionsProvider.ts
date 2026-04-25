@@ -123,7 +123,9 @@ export class AgentHostSessionAdapter implements ISession {
 		this._project = metadata.project;
 		this._workingDirectory = metadata.workingDirectory;
 		this._meta = metadata._meta;
-		this.workspace = observableValue('workspace', _options.buildWorkspace(this._project, this._workingDirectory, readSessionGitState(this._meta)));
+		const initialGitState = readSessionGitState(this._meta);
+		const initialWorkspace = _options.buildWorkspace(this._project, this._workingDirectory, initialGitState);
+		this.workspace = observableValue('workspace', initialWorkspace);
 		this.loading = _options.loading;
 
 		if (metadata.isRead === false) {
@@ -235,7 +237,8 @@ export class AgentHostSessionAdapter implements ISession {
 	 */
 	setMeta(meta: IAgentSessionMetadata['_meta']): boolean {
 		this._meta = meta;
-		const workspace = this._options.buildWorkspace(this._project, this._workingDirectory, readSessionGitState(this._meta));
+		const gitState = readSessionGitState(this._meta);
+		const workspace = this._options.buildWorkspace(this._project, this._workingDirectory, gitState);
 		if (agentHostSessionWorkspaceKey(workspace) === agentHostSessionWorkspaceKey(this.workspace.get())) {
 			return false;
 		}
