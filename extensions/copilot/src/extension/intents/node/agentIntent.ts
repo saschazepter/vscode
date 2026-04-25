@@ -853,12 +853,16 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 						...summaryMsgResult.messages,
 					];
 
+					const turnId = promptContext.conversation?.getLatestTurn()?.id;
 					const response = await this.endpoint.makeChatRequest2({
 						debugName: 'summarizeConversationHistory-inline',
 						messages,
 						finishedCb: undefined,
 						location: ChatLocation.Agent,
 						conversationId,
+						turnId,
+						useWebSocket: false,
+						ignoreStatefulMarker: true,
 						requestOptions: {
 							temperature: 0,
 							stream: false,
