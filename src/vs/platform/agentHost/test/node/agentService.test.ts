@@ -375,6 +375,40 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(tc.confirmed, ToolCallConfirmationReason.NotNeeded);
 		});
 
+		test('interleaves reasoning, markdown, and tool calls in stream order on resume', async () => {
+			service.registerProvider(copilotAgent);
+			const { session } = await copilotAgent.createSession();
+			const sessions = await copilotAgent.listSessions();
+			const sessionResource = sessions[0].session;
+
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'u-1', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'a-1', content: 'Reply A', reasoningText: 'Thinking A', toolRequests: [{ toolCallId: 'tc-1', name: 'shell' }] },
+				{ type: 'tool_start', session, toolCallId: 'tc-1', toolName: 'shell', displayName: 'Shell', invocationMessage: 'Running...' },
+				{ type: 'tool_complete', session, toolCallId: 'tc-1', result: { success: true, pastTenseMessage: 'Ran', content: [{ type: ToolResultContentType.Text, text: 'ok' }] } },
+				{ type: 'message', session, role: 'assistant', messageId: 'a-2', content: 'Reply B', reasoningText: 'Thinking B', toolRequests: [] },
+			];
+
+			await service.restoreSession(sessionResource);
+
+			const state = service.stateManager.getSessionState(sessionResource.toString());
+			assert.ok(state);
+			const turn = state!.turns[0];
+			const summary = turn.responseParts.map(p => {
+				if (p.kind === ResponsePartKind.Reasoning) { return ['reasoning', p.content]; }
+				if (p.kind === ResponsePartKind.Markdown) { return ['markdown', p.content]; }
+				if (p.kind === ResponsePartKind.ToolCall) { return ['toolCall', p.toolCall.toolCallId]; }
+				return ['other'];
+			});
+			assert.deepStrictEqual(summary, [
+				['reasoning', 'Thinking A'],
+				['markdown', 'Reply A'],
+				['toolCall', 'tc-1'],
+				['reasoning', 'Thinking B'],
+				['markdown', 'Reply B'],
+			]);
+		});
+
 		test('flushes interrupted turns', async () => {
 			service.registerProvider(copilotAgent);
 			const { session } = await copilotAgent.createSession();

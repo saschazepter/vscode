@@ -14,7 +14,7 @@ import { FileSystemProviderErrorCode, IFileService, toFileSystemProviderErrorCod
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, IAgent, IAgentCreateSessionConfig, IAgentMessageEvent, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent, AuthenticateParams, AuthenticateResult } from '../common/agentService.js';
+import { AgentProvider, AgentSession, IAgent, IAgentCreateSessionConfig, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSubagentStartedEvent, IAgentToolStartEvent, SessionHistoryEvent, AuthenticateParams, AuthenticateResult } from '../common/agentService.js';
 import { ISessionDataService } from '../common/sessionDataService.js';
 import { ActionType, ActionEnvelope, INotification, RootAction, SessionAction, TerminalAction, isSessionAction } from '../common/state/sessionActions.js';
 import type { CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
@@ -690,7 +690,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * closes it.
 	 */
 	private _buildTurnsFromMessages(
-		messages: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[],
+		messages: readonly SessionHistoryEvent[],
 	): Turn[] {
 		const turns: Turn[] = [];
 		// Track subagent metadata by parent tool call ID so we can inject
@@ -735,6 +735,16 @@ export class AgentService extends Disposable implements IAgentService {
 				}
 				if (!currentTurn) {
 					currentTurn = startTurn(msg.messageId, '');
+				}
+
+				// Reasoning is bundled onto the assistant message and
+				// logically precedes its content/tool calls.
+				if (msg.reasoningText) {
+					currentTurn.responseParts.push({
+						kind: ResponsePartKind.Reasoning,
+						id: generateUuid(),
+						content: msg.reasoningText,
+					});
 				}
 
 				if (msg.content) {
@@ -821,7 +831,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * tool calls.
 	 */
 	private _buildSubagentTurns(
-		parentMessages: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[],
+		parentMessages: readonly SessionHistoryEvent[],
 		parentToolCallId: string,
 		childSessionUri: string,
 	): Turn[] {
@@ -903,12 +913,21 @@ export class AgentService extends Disposable implements IAgentService {
 					kind: ResponsePartKind.ToolCall,
 					toolCall: tc,
 				});
-			} else if (msg.type === 'message' && msg.role === 'assistant' && msg.content) {
-				responseParts.push({
-					kind: ResponsePartKind.Markdown,
-					id: generateUuid(),
-					content: msg.content,
-				});
+			} else if (msg.type === 'message' && msg.role === 'assistant') {
+				if (msg.reasoningText) {
+					responseParts.push({
+						kind: ResponsePartKind.Reasoning,
+						id: generateUuid(),
+						content: msg.reasoningText,
+					});
+				}
+				if (msg.content) {
+					responseParts.push({
+						kind: ResponsePartKind.Markdown,
+						id: generateUuid(),
+						content: msg.content,
+					});
+				}
 			}
 		}
 

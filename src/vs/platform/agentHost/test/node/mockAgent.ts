@@ -9,7 +9,7 @@ import { observableValue } from '../../../../base/common/observable.js';
 import type { IAuthorizationProtectedResourceMetadata } from '../../../../base/common/oauth.js';
 import { URI } from '../../../../base/common/uri.js';
 import { type ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSession, type AgentProvider, type IAgent, type IAgentAttachment, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentMessageEvent, type IAgentModelInfo, type IAgentProgressEvent, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type IAgentSubagentStartedEvent, type IAgentToolCompleteEvent, type IAgentToolStartEvent } from '../../common/agentService.js';
+import { AgentSession, type AgentProvider, type IAgent, type IAgentAttachment, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentMessageEvent, type IAgentModelInfo, type IAgentProgressEvent, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type IAgentToolCompleteEvent, type IAgentToolStartEvent, type SessionHistoryEvent } from '../../common/agentService.js';
 import { ProtectedResourceMetadata, type ModelSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { CustomizationStatus, ToolResultContentType, type CustomizationRef, type PendingMessage, type ToolCallResult } from '../../common/state/sessionState.js';
@@ -48,7 +48,7 @@ export class MockAgent implements IAgent {
 	customizations: CustomizationRef[] = [];
 
 	/** Configurable return value for getSessionMessages. */
-	sessionMessages: (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[] = [];
+	sessionMessages: SessionHistoryEvent[] = [];
 
 	/** Optional overrides applied to session metadata from listSessions. */
 	sessionMetadataOverrides: Partial<Omit<IAgentSessionMetadata, 'session'>> = {};
@@ -100,7 +100,7 @@ export class MockAgent implements IAgent {
 		this.setPendingMessagesCalls.push({ session, steeringMessage, queuedMessages });
 	}
 
-	async getSessionMessages(_session: URI): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[]> {
+	async getSessionMessages(_session: URI): Promise<SessionHistoryEvent[]> {
 		return this.sessionMessages;
 	}
 

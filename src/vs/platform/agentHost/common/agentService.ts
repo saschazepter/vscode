@@ -340,6 +340,17 @@ export interface IAgentReasoningEvent extends IAgentProgressEventBase {
 	readonly content: string;
 }
 
+/**
+ * The set of events returned by {@link IAgent.getSessionMessages} when
+ * reconstructing a session's history. Reasoning is carried inline on
+ * {@link IAgentMessageEvent.reasoningText} rather than as a separate event.
+ */
+export type SessionHistoryEvent =
+	| IAgentMessageEvent
+	| IAgentToolStartEvent
+	| IAgentToolCompleteEvent
+	| IAgentSubagentStartedEvent;
+
 /** A steering message was consumed (sent to the model). */
 export interface IAgentSteeringConsumedEvent extends IAgentProgressEventBase {
 	readonly type: 'steering_consumed';
@@ -452,7 +463,7 @@ export interface IAgent {
 	setPendingMessages?(session: URI, steeringMessage: PendingMessage | undefined, queuedMessages: readonly PendingMessage[]): void;
 
 	/** Retrieve all session events/messages for reconstruction. */
-	getSessionMessages(session: URI): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[]>;
+	getSessionMessages(session: URI): Promise<SessionHistoryEvent[]>;
 
 	/** Dispose a session, freeing resources. */
 	disposeSession(session: URI): Promise<void>;

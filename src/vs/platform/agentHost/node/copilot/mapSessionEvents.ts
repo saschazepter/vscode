@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
-import { IAgentMessageEvent, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
+import { SessionHistoryEvent } from '../../common/agentService.js';
 import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
 import { IFileEditRecord, ISessionDatabase } from '../../common/sessionDataService.js';
 import { ToolResultContentType, type ToolResultContent } from '../../common/state/sessionState.js';
@@ -90,8 +90,8 @@ export async function mapSessionEvents(
 	db: ISessionDatabase | undefined,
 	events: readonly ISessionEvent[],
 	workingDirectory?: URI,
-): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[]> {
-	const result: (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[] = [];
+): Promise<SessionHistoryEvent[]> {
+	const result: SessionHistoryEvent[] = [];
 	const toolInfoByCallId = new Map<string, { toolName: string; parameters: Record<string, unknown> | undefined; rewrittenArgs?: string }>();
 
 	// Collect all tool call IDs for edit tools so we can batch-query the database

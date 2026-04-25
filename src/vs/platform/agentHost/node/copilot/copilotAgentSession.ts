@@ -17,7 +17,7 @@ import { INativeEnvironmentService } from '../../../environment/common/environme
 import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
-import { IAgentAttachment, IAgentMessageEvent, IAgentProgressEvent, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
+import { IAgentAttachment, IAgentProgressEvent, SessionHistoryEvent } from '../../common/agentService.js';
 import { stripRedundantCdPrefix } from '../../common/commandLineHelpers.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import type { FileEdit, ToolDefinition } from '../../common/state/protocol/state.js';
@@ -330,7 +330,7 @@ export class CopilotAgentSession extends Disposable {
 		}
 	}
 
-	async getMessages(): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[]> {
+	async getMessages(): Promise<SessionHistoryEvent[]> {
 		const events = await this._wrapper.session.getMessages();
 		let db: ISessionDatabase | undefined;
 		try {
