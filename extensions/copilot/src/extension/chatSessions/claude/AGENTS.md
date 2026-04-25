@@ -236,6 +236,120 @@ In multi-root and empty workspaces, a folder picker option appears in the chat s
 - **`node/claudeCodeAgent.ts`**: Consumes `ClaudeFolderInfo` in `ClaudeCodeSession._startSession()`
 - **`node/sessionParser/claudeCodeSessionService.ts`**: `_getProjectSlugs()` generates slugs for all folders
 
+## Input State Reactive Pipeline
+
+The chat session input controls (permission mode picker, folder picker) are driven by a reactive observable pipeline, not by imperative setter calls. Understanding this pipeline is important when modifying input state behavior.
+
+### Overview
+
+VS Code calls `getChatSessionInputState` to get a `ChatSessionInputState` object whose `.groups` array drives the UI. Rather than computing groups once and returning them, the pipeline keeps `groups` live: shared observables push changes into each state object whenever relevant configuration changes.
+
+### Key Types
+
+```
+InputStateReactivePipeline {
+  permissionMode:   ISettableObservable<PermissionMode>
+  folderUri:        ISettableObservable<URI | undefined>
+  folderItems:      ISettableObservable<ChatSessionProviderOptionItem[]>
+  isSessionStarted: ISettableObservable<boolean>
+  store:            DisposableStore    // owns all autoruns for this pipeline
+}
+```
+
+### Seeding: Extracting Initial Values
+
+Before attaching any autoruns, `_createInputStateReactivePipeline` calls `_computeSeedValues(state.groups)` to extract the current groups into typed values. This must happen *before* the first autorun runs, because the first autorun pass immediately reads `allGroups` and writes to `state.groups` — if the per-state observables were left at defaults, that write would discard the carefully-constructed initial groups.
+
+`_computeSeedValues` extracts four values:
+
+| Value | Source | Fallback |
+|---|---|---|
+| `permissionMode` | Selected item id in the `permissionMode` group | `lastUsedPermissionMode` |
+| `folderUri` | Selected item id in the `folder` group | `undefined` |
+| `folderItems` | Full item list of the `folder` group | `[]` |
+| `isSessionStarted` | `locked: true` on any folder item or the selected item | `false` |
+
+The `isSessionStarted` recovery from `locked` items is important for the `previousInputState` path: the previous state's groups encode the lock signal via `locked: true` on their items. If `_computeSeedValues` did not recover this, the pipeline would start with `isSessionStarted = false` and the `folderGroup` derived would re-render all items as unlocked.
+
+### Shared vs. Per-State Observables
+
+`ClaudeChatSessionItemController` holds two **shared** observables (one instance per controller, not per session):
+
+| Observable | Source | Purpose |
+|---|---|---|
+| `_bypassPermissionsEnabled` | `IConfigurationService` event | Controls which permission mode items are available |
+| `_workspaceFolders` | `IWorkspaceService` event | Controls folder picker items and visibility |
+
+Each call to `getChatSessionInputState` creates a **per-state** pipeline with `_createInputStateReactivePipeline(state)`. The per-state observables are seeded via `_computeSeedValues`.
+
+`folderItems` is a settable per-state observable (not a pure `derived`) because of an async edge case: when the workspace has no folders, the items come from an async MRU fetch (`IFolderRepositoryManager`). An autorun watches `_workspaceFolders` and updates `folderItems` synchronously when folders exist, or kicks off the async MRU fetch when the workspace is empty.
+
+### Derived Computation and Autorun
+
+Inside `_createInputStateReactivePipeline`, `derived` observables combine shared and per-state inputs:
+
+```
+permissionModeGroup  = derived(bypassEnabled, permissionMode)
+folderGroup          = derived(folderItems, workspaceFolders, folderUri, isSessionStarted)
+allGroups            = derived(permissionModeGroup, folderGroup)
+```
+
+An `autorun` reads `allGroups` and writes to `state.groups`. This is the only place `state.groups` is written — the pipeline is the single source of truth for the UI.
+
+### Lifetime Management (WeakRef + FinalizationRegistry)
+
+The `autorun`'s closure holds a `WeakRef<ChatSessionInputState>` rather than a direct reference. This is required because the shared observables (`_workspaceFolders`, `_bypassPermissionsEnabled`) hold strong references to the autorun's observer. Without the `WeakRef`, each `state` object would be transitively reachable through the shared observable → autorun → closure → state chain, and would never be garbage collected.
+
+When VS Code discards a `ChatSessionInputState`, the `WeakRef` lets the GC collect it. The `FinalizationRegistry` (`_stateAutorunRegistry`) then fires and calls `store.dispose()`, which unsubscribes all autoruns for that state.
+
+```
+SharedObservable ──strong──► autorun observer
+                                     │
+                                  WeakRef    ← allows GC of state
+                                     │
+                              state.groups (written on change)
+```
+
+```typescript
+_stateAutorunRegistry = new FinalizationRegistry<DisposableStore>(store => store.dispose())
+// registered as: _stateAutorunRegistry.register(state, pipeline.store)
+```
+
+### External Permission Mode Updates
+
+When Claude executes `EnterPlanMode` or `ExitPlanMode` tools, `claudeMessageDispatch.ts` calls `IClaudeSessionStateService.setPermissionModeForSession()`, which fires `onDidChangeSessionState`. The pipeline subscribes to this event via a second autorun:
+
+```typescript
+const externalPermissionMode = observableFromEvent(
+    this,
+    Event.filter(sessionStateService.onDidChangeSessionState,
+        e => e.sessionId === sessionId && e.permissionMode !== undefined),
+    () => sessionStateService.getPermissionModeForSession(sessionId),
+);
+pipeline.store.add(autorun(reader => {
+    pipeline.permissionMode.set(externalPermissionMode.read(reader), undefined);
+}));
+```
+
+This autorun is registered on `pipeline.store`, so it is disposed along with all other pipeline autoruns when the state is GC'd.
+
+### Session-Started Signal
+
+The `isSessionStarted` observable controls whether folder items carry `locked: true`. It is set in two places:
+
+- **Restoring an existing session** (new-state path): `pipeline.isSessionStarted.set(true, undefined)` in `_setupInputState` when `isExistingSession` is true.
+- **First message sent** (new-untitled session): `ClaudeChatSessionContentProvider.createHandler()` calls `markSessionStarted(inputState)`, which looks up the pipeline from `_statePipelines` and sets `isSessionStarted` to `true`. This is how the folder gets locked after the user submits their first prompt.
+
+`_statePipelines` is a `WeakMap<ChatSessionInputState, InputStateReactivePipeline>` that enables these external mutations. The `WeakMap` does not prevent GC of state objects (WeakMap keys are held weakly), so it complements rather than interferes with the `FinalizationRegistry`.
+
+### Critical Invariant: Subscribe After Both Branches
+
+`_setupInputState` creates `state` and `pipeline` in one of two branches:
+- **`context.previousInputState` path** — VS Code already has a state for this session and is asking for a fresh one; seed from the old groups.
+- **New-state path** — first call for this session; fetch groups from disk or defaults.
+
+**The external permission mode subscription must run after both branches.** If it only runs in the new-state path, permission mode changes from `EnterPlanMode`/`ExitPlanMode` are silently dropped for every session after the first `getChatSessionInputState` call. Guard against this regression by ensuring the subscription is placed outside the `if/else` block.
+
 ## Session Metadata and Git Commands
 
 ### Session Metadata Enrichment
