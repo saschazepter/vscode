@@ -71,6 +71,12 @@ class TestRunInTerminalTool extends RunInTerminalTool {
 
 type ITestRunInTerminalToolInvocationData = IChatTerminalToolInvocationData & { requiresConfirmationForRetry?: boolean };
 
+interface ITestActiveExecution {
+	readonly completionPromise: Promise<{ readonly exitCode?: number }>;
+	getOutput(): string;
+	dispose(): void;
+}
+
 suite('RunInTerminalTool', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -83,6 +89,8 @@ suite('RunInTerminalTool', () => {
 	let chatServiceDisposeEmitter: Emitter<{ sessionResources: URI[]; reason: 'cleared' }>;
 	let chatSessionArchivedEmitter: Emitter<IAgentSession>;
 	let capturedSteeringRequests: { sessionResource: URI; message: string }[];
+	let acquiredSessionReferenceCount: number;
+	let disposedSessionReferenceCount: number;
 	let sandboxEnabled: boolean;
 	let sandboxPrereqResult: ITerminalSandboxPrerequisiteCheckResult;
 	let terminalSandboxService: ITerminalSandboxService;
@@ -136,6 +144,8 @@ suite('RunInTerminalTool', () => {
 		chatServiceDisposeEmitter = new Emitter<{ sessionResources: URI[]; reason: 'cleared' }>();
 		chatSessionArchivedEmitter = new Emitter<IAgentSession>();
 		capturedSteeringRequests = [];
+		acquiredSessionReferenceCount = 0;
+		disposedSessionReferenceCount = 0;
 
 		instantiationService = workbenchInstantiationService({
 			configurationService: () => configurationService,
@@ -149,14 +159,23 @@ suite('RunInTerminalTool', () => {
 				capturedSteeringRequests.push({ sessionResource, message });
 				return { kind: 'rejected', reason: 'test' };
 			},
-			acquireExistingSession: () => ({
-				object: {
-					lastRequest: undefined,
-					lastRequestObs: constObservable(undefined),
-					onDidChange: Event.None,
-				},
-				dispose: () => { },
-			}) as unknown as NonNullable<ReturnType<IChatService['acquireExistingSession']>>,
+			acquireExistingSession: () => {
+				acquiredSessionReferenceCount++;
+				let isDisposed = false;
+				return {
+					object: {
+						lastRequest: undefined,
+						lastRequestObs: constObservable(undefined),
+						onDidChange: Event.None,
+					},
+					dispose: () => {
+						if (!isDisposed) {
+							isDisposed = true;
+							disposedSessionReferenceCount++;
+						}
+					},
+				} as unknown as NonNullable<ReturnType<IChatService['acquireExistingSession']>>;
+			},
 		} as unknown as IChatService;
 		instantiationService.stub(IChatService, chatServiceStub);
 		instantiationService.stub(IAgentSessionsService, {
@@ -286,6 +305,20 @@ suite('RunInTerminalTool', () => {
 
 	function getAutomaticUnsandboxRetryTitle(tool: RunInTerminalTool, shellType: string, blockedDomains: string[] | undefined): IMarkdownString {
 		return (tool as unknown as Record<string, (shellType: string, blockedDomains: string[] | undefined) => IMarkdownString>)['_getAutomaticUnsandboxRetryTitle'](shellType, blockedDomains);
+	}
+
+	function setActiveExecution(termId: string, execution: ITestActiveExecution): void {
+		const activeExecutions = (runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, ITestActiveExecution> })._activeExecutions;
+		activeExecutions.set(termId, execution);
+		store.add(toDisposable(() => activeExecutions.delete(termId)));
+	}
+
+	function createPendingActiveExecution(getOutput: () => string): ITestActiveExecution {
+		return {
+			completionPromise: new Promise(() => { }),
+			getOutput,
+			dispose: () => { },
+		};
 	}
 
 	suite('sandbox invocation messaging', () => {
@@ -1965,9 +1998,7 @@ suite('RunInTerminalTool', () => {
 			dispose: () => { },
 		} as unknown as { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void };
 
-		(runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string }> })._activeExecutions.set(termId, {
-			getOutput: () => output,
-		});
+		setActiveExecution(termId, createPendingActiveExecution(() => output));
 
 		// eslint-disable-next-line @typescript-eslint/naming-convention
 		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void }) => void })
@@ -2012,9 +2043,7 @@ suite('RunInTerminalTool', () => {
 			isBackground: false,
 		});
 
-		(runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string }> })._activeExecutions.set(termId, {
-			getOutput: () => 'Password:',
-		});
+		setActiveExecution(termId, createPendingActiveExecution(() => 'Password:'));
 
 		// eslint-disable-next-line @typescript-eslint/naming-convention
 		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void }) => void })
@@ -2032,6 +2061,45 @@ suite('RunInTerminalTool', () => {
 		commandFinishedEmitter.fire({ exitCode: 0 });
 		ok(runInTerminalTool.sessionTerminalAssociations.has(sessionResource), 'Session terminal association should still be preserved after command finishes');
 		strictEqual(runInTerminalTool.sessionTerminalAssociations.get(sessionResource)!.isBackground, false, 'Terminal should still be foreground after command finishes');
+	});
+
+	test('should release completion notification session ref when execution completed before listener observes finish', async () => {
+		const termId = 'test-completed-before-notification-term';
+		const sessionResource = LocalChatSessionUri.forSession('test-completed-before-notification-session');
+
+		const commandFinishedEmitter = new Emitter<{ exitCode: number | undefined }>();
+		const terminalDisposedEmitter = new Emitter<void>();
+		const inputDataEmitter = new Emitter<string>();
+
+		const terminalInstance = {
+			capabilities: {
+				get: (cap: TerminalCapability) => cap === TerminalCapability.CommandDetection ? { onCommandFinished: commandFinishedEmitter.event } : undefined,
+			},
+			onDisposed: terminalDisposedEmitter.event,
+			onDidInputData: inputDataEmitter.event,
+		} as unknown as ITerminalInstance;
+
+		setActiveExecution(termId, {
+			completionPromise: Promise.resolve({ exitCode: 0 }),
+			getOutput: () => 'done',
+			dispose: () => { },
+		});
+
+		const acquiredBefore = acquiredSessionReferenceCount;
+		const disposedBefore = disposedSessionReferenceCount;
+
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string) => void })
+			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'echo done');
+
+		strictEqual(acquiredSessionReferenceCount, acquiredBefore + 1, 'Expected completion notification to acquire a session reference');
+		strictEqual(disposedSessionReferenceCount, disposedBefore, 'Reference should stay alive until completion cleanup runs');
+
+		await Promise.resolve();
+
+		strictEqual(disposedSessionReferenceCount, disposedBefore + 1, 'Expected completion promise cleanup to release the session reference');
+		strictEqual(capturedSteeringRequests.length, 1, 'Expected completion promise cleanup to send the missed completion notification');
+		ok(capturedSteeringRequests[0].message.includes('command completed with exit code 0'), 'Expected completion notification to include the exit code');
 	});
 
 	suite('auto approve warning acceptance mechanism', () => {

@@ -2149,13 +2149,18 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// The monitor wakes only on new terminal data (not on a fixed interval), so
 		// resource cost is proportional to actual terminal activity.
 		const store = new DisposableStore();
+		store.add(sessionRef);
+		let didHandleCompletion = false;
 
 		// Track whether the user has started replying to terminal prompts directly.
 		// Once set, all future input-needed notifications are suppressed so the agent
 		// stops asking questions and lets the user finish interacting with the terminal.
 		let userIsReplyingDirectly = false;
 
-		const disposeNotification = () => this._backgroundNotifications.deleteAndDispose(notificationKey);
+		const disposeNotification = () => {
+			this._backgroundNotifications.deleteAndDispose(notificationKey);
+			store.dispose();
+		};
 
 		// If the user manually stopped the agent, suppress background
 		// steering requests and tear down the notification listeners.
@@ -2249,9 +2254,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			this._dismissPendingCarouselsForTerminal(chatSessionResource, termId);
 		}));
 
-		store.add(sessionRef);
+		const sendCompletionNotification = (exitCode: number | undefined): void => {
+			if (store.isDisposed || didHandleCompletion) {
+				return;
+			}
+			didHandleCompletion = true;
 
-		store.add(commandDetection.onCommandFinished(command => {
 			const execution = RunInTerminalTool._activeExecutions.get(termId);
 			if (!execution) {
 				disposeNotification();
@@ -2266,7 +2274,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			// if the user runs additional commands via send_to_terminal.
 			disposeNotification();
 
-			const exitCode = command.exitCode;
 			const exitCodeText = exitCode !== undefined ? ` with exit code ${exitCode}` : '';
 			const currentOutput = execution.getOutput();
 			const message = `[Terminal ${termId} notification: command completed${exitCodeText}. Use send_to_terminal to send another command or kill_terminal to stop it.]\nTerminal output:\n${currentOutput}`;
@@ -2282,7 +2289,16 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}).catch(e => {
 				this._logService.warn(`RunInTerminalTool: Failed to send completion notification for terminal ${termId}`, e);
 			});
-		}));
+		};
+
+		store.add(commandDetection.onCommandFinished(command => sendCompletionNotification(command.exitCode)));
+
+		const execution = RunInTerminalTool._activeExecutions.get(termId);
+		execution?.completionPromise.then(result => {
+			sendCompletionNotification(result.exitCode);
+		}, () => {
+			disposeNotification();
+		});
 
 		// Clean up all background resources when the terminal is disposed
 		// (e.g. user closes the terminal) to avoid leaking listeners and monitors.
@@ -2303,7 +2319,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}
 		}));
 
-		this._backgroundNotifications.set(notificationKey, store);
+		if (!store.isDisposed) {
+			this._backgroundNotifications.set(notificationKey, store);
+		}
 	}
 
 	/**
