@@ -15,7 +15,7 @@ import { autorun, derived, IObservable, observableValue, transaction } from '../
 import { extUriBiasedIgnorePathCase, isEqual } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
-import { AgentProvider, AgentSession, IAgentAttachment, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentProvider, AgentSession, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { SessionTruncatedAction } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
@@ -931,12 +931,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const turnId = request.requestId;
 		this._clientDispatchedTurnIds.add(turnId);
 		const cleanUpTurnId = () => this._clientDispatchedTurnIds.delete(turnId);
-		const attachments = this._convertVariablesToAttachments(request);
-		const messageAttachments: MessageAttachment[] = attachments.map(a => ({
-			type: a.type,
-			path: a.path,
-			displayName: a.displayName,
-		}));
+		const messageAttachments = this._convertVariablesToAttachments(request);
 
 		// If the user selected a different model since the session was created
 		// (or since the last turn), dispatch a model change action first so the
@@ -2425,26 +2420,26 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			?? this._workspaceContextService.getWorkspace().folders[0]?.uri;
 	}
 
-	private _convertVariablesToAttachments(request: IChatAgentRequest): IAgentAttachment[] {
-		const attachments: IAgentAttachment[] = [];
+	private _convertVariablesToAttachments(request: IChatAgentRequest): MessageAttachment[] {
+		const attachments: MessageAttachment[] = [];
 		for (const v of request.variables.variables) {
 			if (v.kind === 'file') {
 				const uri = v.value instanceof URI ? v.value : undefined;
 				if (uri?.scheme === 'file') {
-					const rebased = this._rebaseAttachmentUri(uri, request.sessionResource);
-					attachments.push({ type: AttachmentType.File, path: rebased.fsPath, displayName: v.name });
+					const attachmentUri = this._rebaseAttachmentUri(uri, request.sessionResource);
+					attachments.push({ type: AttachmentType.File, uri: attachmentUri.toString(), displayName: v.name });
 				}
 			} else if (v.kind === 'directory') {
 				const uri = v.value instanceof URI ? v.value : undefined;
 				if (uri?.scheme === 'file') {
-					const rebased = this._rebaseAttachmentUri(uri, request.sessionResource);
-					attachments.push({ type: AttachmentType.Directory, path: rebased.fsPath, displayName: v.name });
+					const attachmentUri = this._rebaseAttachmentUri(uri, request.sessionResource);
+					attachments.push({ type: AttachmentType.Directory, uri: attachmentUri.toString(), displayName: v.name });
 				}
 			} else if (v.kind === 'implicit' && v.isSelection) {
 				const uri = v.uri;
 				if (uri?.scheme === 'file') {
-					const rebased = this._rebaseAttachmentUri(uri, request.sessionResource);
-					attachments.push({ type: AttachmentType.Selection, path: rebased.fsPath, displayName: v.name });
+					const attachmentUri = this._rebaseAttachmentUri(uri, request.sessionResource);
+					attachments.push({ type: AttachmentType.Selection, uri: attachmentUri.toString(), displayName: v.name });
 				}
 			}
 		}

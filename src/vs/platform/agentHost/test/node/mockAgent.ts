@@ -35,7 +35,7 @@ export class MockAgent implements IAgent {
 	private _nextId = 1;
 
 
-	readonly sendMessageCalls: { session: URI; prompt: string }[] = [];
+	readonly sendMessageCalls: { session: URI; prompt: string; attachments?: readonly IAgentAttachment[] }[] = [];
 	readonly setPendingMessagesCalls: { session: URI; steeringMessage: PendingMessage | undefined; queuedMessages: readonly PendingMessage[] }[] = [];
 	readonly disposeSessionCalls: URI[] = [];
 	readonly abortSessionCalls: URI[] = [];
@@ -92,8 +92,8 @@ export class MockAgent implements IAgent {
 		return { items: [] };
 	}
 
-	async sendMessage(session: URI, prompt: string): Promise<void> {
-		this.sendMessageCalls.push({ session, prompt });
+	async sendMessage(session: URI, prompt: string, attachments?: IAgentAttachment[]): Promise<void> {
+		this.sendMessageCalls.push({ session, prompt, attachments });
 	}
 
 	setPendingMessages(session: URI, steeringMessage: PendingMessage | undefined, queuedMessages: readonly PendingMessage[]): void {

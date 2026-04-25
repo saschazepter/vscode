@@ -1642,7 +1642,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'file', path: URI.file('/workspace/test.ts').fsPath, displayName: 'test.ts' },
+				{ type: 'file', uri: URI.file('/workspace/test.ts').toString(), displayName: 'test.ts' },
 			]);
 		}));
 
@@ -1663,7 +1663,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'directory', path: URI.file('/workspace/src').fsPath, displayName: 'src' },
+				{ type: 'directory', uri: URI.file('/workspace/src').toString(), displayName: 'src' },
 			]);
 		}));
 
@@ -1684,18 +1684,19 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'selection', path: URI.file('/workspace/foo.ts').fsPath, displayName: 'selection' },
+				{ type: 'selection', uri: URI.file('/workspace/foo.ts').toString(), displayName: 'selection' },
 			]);
 		}));
 
-		test('non-file URIs are skipped', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		test('non-file URI variables are skipped', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+			const uri = URI.from({ scheme: 'untitled', path: '/foo' });
 
 			const { turnPromise, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables, {
 				message: 'check this',
 				variables: {
 					variables: [
-						upcastPartial({ kind: 'file', id: 'v-file', name: 'untitled', value: URI.from({ scheme: 'untitled', path: '/foo' }) }),
+						upcastPartial({ kind: 'file', id: 'v-file', name: 'untitled', value: uri }),
 					],
 				},
 			});
@@ -1704,7 +1705,6 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
-			// No attachments because it's not a file:// URI
 			assert.strictEqual(turnAction.userMessage.attachments, undefined);
 		}));
 
@@ -1747,8 +1747,8 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'file', path: URI.file('/workspace/a.ts').fsPath, displayName: 'a.ts' },
-				{ type: 'directory', path: URI.file('/workspace/lib').fsPath, displayName: 'lib' },
+				{ type: 'file', uri: URI.file('/workspace/a.ts').toString(), displayName: 'a.ts' },
+				{ type: 'directory', uri: URI.file('/workspace/lib').toString(), displayName: 'lib' },
 			]);
 		}));
 
@@ -1770,7 +1770,7 @@ suite('AgentHostChatContribution', () => {
 		// On the first turn of a worktree-isolated session, the workbench
 		// resolves attachments under the original workspace folder, but the
 		// agent server has resolved its working directory to a freshly
-		// created worktree path. The handler rebases attachment paths so the
+		// created worktree path. The handler rebases attachment URIs so the
 		// agent receives URIs under its own working directory.
 
 		test('rebases file/directory/selection attachments under requested working dir onto resolved working dir', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -1797,9 +1797,9 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'file', path: URI.file('/worktree/a.ts').fsPath, displayName: 'a.ts' },
-				{ type: 'directory', path: URI.file('/worktree/lib').fsPath, displayName: 'lib' },
-				{ type: 'selection', path: URI.file('/worktree/sub/foo.ts').fsPath, displayName: 'selection' },
+				{ type: 'file', uri: URI.file('/worktree/a.ts').toString(), displayName: 'a.ts' },
+				{ type: 'directory', uri: URI.file('/worktree/lib').toString(), displayName: 'lib' },
+				{ type: 'selection', uri: URI.file('/worktree/sub/foo.ts').toString(), displayName: 'selection' },
 			]);
 		}));
 
@@ -1824,7 +1824,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'file', path: URI.file('/source/a.ts').fsPath, displayName: 'a.ts' },
+				{ type: 'file', uri: URI.file('/source/a.ts').toString(), displayName: 'a.ts' },
 			]);
 		}));
 
@@ -1850,7 +1850,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(agentHostService.turnActions.length, 1);
 			const turnAction = agentHostService.turnActions[0].action as ITurnStartedAction;
 			assert.deepStrictEqual(turnAction.userMessage.attachments, [
-				{ type: 'file', path: URI.file('/elsewhere/elsewhere.ts').fsPath, displayName: 'elsewhere.ts' },
+				{ type: 'file', uri: URI.file('/elsewhere/elsewhere.ts').toString(), displayName: 'elsewhere.ts' },
 			]);
 		}));
 	});
