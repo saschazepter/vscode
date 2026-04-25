@@ -62,7 +62,12 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	private readonly _onDidNotification = new Emitter<INotification>();
 	override readonly onDidNotification = this._onDidNotification.event;
 	override readonly onAgentHostExit = Event.None;
-	override readonly onAgentHostStart = Event.None;
+	private readonly _onAgentHostStart = new Emitter<void>();
+	override readonly onAgentHostStart = this._onAgentHostStart.event;
+
+	fireAgentHostStart(): void {
+		this._onAgentHostStart.fire();
+	}
 
 	private readonly _authenticationPending: ISettableObservable<boolean> = observableValue('authenticationPending', false);
 	override readonly authenticationPending: IObservable<boolean> = this._authenticationPending;
@@ -712,6 +717,30 @@ suite('AgentHostChatContribution', () => {
 			await listController.refresh(CancellationToken.None);
 			assert.strictEqual(listCalls, 2);
 			assert.strictEqual(listController.items.length, 1);
+		});
+
+		test('agent host restart invalidates cache so next refresh re-fetches', async () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			agentHostService.addSession({ session: AgentSession.uri('copilot', 'aaa'), startTime: 1000, modifiedTime: 2000, summary: 'Before restart' });
+
+			let listCalls = 0;
+			const originalListSessions = agentHostService.listSessions.bind(agentHostService);
+			agentHostService.listSessions = async () => { listCalls++; return originalListSessions(); };
+
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 1);
+
+			// Subsequent refresh uses cache — no new RPC.
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 1);
+
+			// Directly resetting the cache (as onAgentHostStart does) must cause
+			// the next refresh to re-fetch.
+			listController.resetCache();
+
+			await listController.refresh(CancellationToken.None);
+			assert.strictEqual(listCalls, 2);
 		});
 	});
 

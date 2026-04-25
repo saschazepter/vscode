@@ -143,6 +143,11 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 		}));
 	}
 
+	/** Reset the list-sessions cache so the next {@link refresh} re-fetches from the agent host. */
+	resetCache(): void {
+		this._cacheValid = false;
+	}
+
 	get items(): readonly IChatSessionItem[] {
 		return this._items;
 	}
