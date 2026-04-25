@@ -88,7 +88,8 @@ export interface IAgentSessionMetadata {
 	readonly isArchived?: boolean;
 	readonly diffs?: readonly FileEdit[];
 	/**
-	 * Side-channel metadata mirroring {@link SessionSummary._meta}.
+	 * Side-channel metadata mirroring {@link SessionState._meta}, propagated
+	 * to clients via per-session state subscriptions.
 	 * Producers SHOULD use namespaced keys; consumers MUST ignore unknown
 	 * keys. Use the typed accessors in `sessionState.ts` (e.g.
 	 * `readSessionGitState`) for well-known slots.

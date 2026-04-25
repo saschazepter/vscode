@@ -312,7 +312,7 @@ export class AgentService extends Disposable implements IAgentService {
 		this._stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: session.toString() });
 
 		// Lazily compute git state for sessions with a working directory;
-		// attaches under `summary._meta.git` once ready.
+		// attaches under `state._meta.git` once ready.
 		this._attachGitState(session, created.workingDirectory ?? config?.workingDirectory);
 
 		return session;
@@ -614,7 +614,7 @@ export class AgentService extends Disposable implements IAgentService {
 		this._logService.info(`[AgentService] Restored session ${sessionStr} with ${turns.length} turns`);
 
 		// Lazily compute git state for sessions with a working directory;
-		// attaches under `summary._meta.git` once ready.
+		// attaches under `state._meta.git` once ready.
 		this._attachGitState(session, meta.workingDirectory);
 	}
 

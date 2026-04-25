@@ -142,10 +142,18 @@ export class ChangesViewModel extends Disposable {
 			if (sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined) {
 				return true;
 			}
-			// Agent-host sessions don't set repositoryPath in metadata; check workspace instead.
+			// Agent-host sessions don't set repositoryPath in metadata; derive this
+			// from surfaced git state on the workspace's first repository so we
+			// don't enable git-specific UI for non-git working directories.
 			const activeSession = this.sessionManagementService.activeSession.read(reader);
 			const workspace = activeSession?.workspace.read(reader);
-			return workspace !== undefined && workspace.repositories.length > 0;
+			const repository = workspace?.repositories[0];
+			return repository !== undefined && (
+				repository.uncommittedChanges !== undefined ||
+				repository.incomingChanges !== undefined ||
+				repository.outgoingChanges !== undefined ||
+				repository.upstreamBranchName !== undefined
+			);
 		});
 
 		// Active session first checkpoint ref

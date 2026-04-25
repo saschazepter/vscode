@@ -229,8 +229,9 @@ export class AgentHostSessionAdapter implements ISession {
 	}
 
 	/**
-	 * Apply a SessionSummary `_meta` delta and rebuild the workspace if the
-	 * git state changed. Returns `true` iff the workspace actually changed.
+	 * Apply a `SessionState._meta` delta (fed from `_applySessionMetaFromState`)
+	 * and rebuild the workspace if the git state changed. Returns `true` iff
+	 * the workspace actually changed.
 	 */
 	setMeta(meta: IAgentSessionMetadata['_meta']): boolean {
 		this._meta = meta;
