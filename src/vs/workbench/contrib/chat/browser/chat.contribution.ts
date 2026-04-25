@@ -8,6 +8,7 @@ import { Disposable, DisposableMap, DisposableStore } from '../../../../base/com
 import { Schemas } from '../../../../base/common/network.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { PolicyCategory } from '../../../../base/common/policy.js';
+import { CopilotSessionSearchPolicy } from '../../../../base/common/defaultAccount.js';
 import { AgentHostEnabledSettingId, AgentHostIpcLoggingSettingId } from '../../../../platform/agentHost/common/agentService.js';
 import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../../../platform/networkFilter/common/networkFilterService.js';
 import { AgentNetworkDomainSettingId } from '../../../../platform/networkFilter/common/settings.js';
@@ -479,7 +480,7 @@ configurationRegistry.registerConfiguration({
 				name: 'CopilotSessionSync',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.118',
-				value: (policyData) => policyData.session_sync_enabled === false ? false : undefined,
+				value: (policyData) => policyData.session_search === CopilotSessionSearchPolicy.Disabled ? false : undefined,
 				localization: {
 					description: {
 						key: 'chat.sessionSync.enabled.policy',
