@@ -128,10 +128,17 @@ All interactions are displayed through VS Code's native chat UI, providing a sea
 - Loads and manages persisted Claude Code sessions from disk
 - Reads `.jsonl` session files from `~/.claude/projects/<workspace-slug>/`
 - Builds message chains from leaf nodes to reconstruct full conversations
-- Discovers and parses subagent sessions from `{session-id}/subagents/agent-*.jsonl`
+- Loads subagent sessions via SDK APIs (`listSubagents` + `getSubagentMessages`) and correlates them with their spawning tool use via `parent_tool_use_id` (stored as `ISubagentSession.parentToolUseId`)
 - Provides session caching with mtime-based invalidation
 - Used to resume previous Claude Code conversations
 - See `node/sessionParser/README.md` for detailed documentation
+
+### `node/sessionParser/sdkSessionAdapter.ts`
+
+Adapts raw SDK session data into the internal `IClaudeCodeSession` / `ISubagentSession` schemas:
+- **`buildClaudeCodeSession()`**: Assembles a full `IClaudeCodeSession` from session info, messages, and subagents
+- **`sdkSubagentMessagesToSubagentSession()`**: Converts raw SDK `SessionMessage[]` into an `ISubagentSession`
+- **`extractParentToolUseId()`**: Helper that extracts `parent_tool_use_id` from the first assistant message in a `SessionMessage[]` array, used to correlate a subagent session with the Agent/Task tool_use block that spawned it
 
 ### `node/claudeSkills.ts`
 
@@ -150,7 +157,7 @@ All interactions are displayed through VS Code's native chat UI, providing a sea
 ### `common/claudeTools.ts`
 
 Defines Claude Code's tool interface:
-- **ClaudeToolNames**: Enum of all supported tool names (Bash, Read, Edit, Write, etc.)
+- **ClaudeToolNames**: Enum of all supported tool names (Bash, Read, Edit, Write, etc.). `Agent` is the current name (SDK v2.1.63+); `Task` is kept for backward compatibility with older sessions.
 - **Tool input interfaces**: Type definitions for each tool's input parameters
 - **claudeEditTools**: List of tools that modify files (Edit, MultiEdit, Write, NotebookEdit)
 - **getAffectedUrisForEditTool**: Extracts file URIs that will be modified by edit operations
@@ -161,6 +168,12 @@ Formats tool invocations for display in VS Code's chat UI:
 - Creates `ChatToolInvocationPart` instances with appropriate messaging
 - Handles tool-specific formatting (Bash commands, file reads, searches, etc.)
 - Suppresses certain tools from display (TodoWrite, Edit, Write) where other UI handles them
+
+### `../../chatSessions/vscode-node/chatHistoryBuilder.ts`
+
+Converts a persisted `IClaudeCodeSession` into VS Code `ChatResponsePart[]` for replay in the chat UI:
+- Reconstructs assistant text, thinking blocks, tool invocations, and tool results into chat response parts
+- Matches subagent sessions to their spawning Agent/Task tool_use blocks using `ISubagentSession.parentToolUseId`, injecting the subagent's tool calls inline under the parent tool invocation
 
 ## Message Flow
 
