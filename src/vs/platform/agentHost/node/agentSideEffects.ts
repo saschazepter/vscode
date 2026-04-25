@@ -618,7 +618,7 @@ export class AgentSideEffects extends Disposable {
 				}
 				const attachments = action.userMessage.attachments?.map((a): IAgentAttachment => ({
 					type: a.type,
-					path: a.path,
+					uri: URI.parse(a.uri),
 					displayName: a.displayName,
 				}));
 				agent.sendMessage(URI.parse(action.session), action.userMessage.text, attachments, action.turnId).catch(err => {
@@ -872,7 +872,7 @@ export class AgentSideEffects extends Disposable {
 		}
 		const attachments = msg.userMessage.attachments?.map((a): IAgentAttachment => ({
 			type: a.type,
-			path: a.path,
+			uri: URI.parse(a.uri),
 			displayName: a.displayName,
 		}));
 		agent.sendMessage(URI.parse(session), msg.userMessage.text, attachments, turnId).catch(err => {

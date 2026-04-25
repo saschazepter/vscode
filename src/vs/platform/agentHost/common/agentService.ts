@@ -186,7 +186,7 @@ export interface IAgentSessionConfigCompletionsParams extends IAgentResolveSessi
 /** Serializable attachment passed alongside a message to the agent host. */
 export interface IAgentAttachment {
 	readonly type: AttachmentType;
-	readonly path: string;
+	readonly uri: URI;
 	readonly displayName?: string;
 	/** For selections: the selected text. */
 	readonly text?: string;
