@@ -20,7 +20,7 @@ import { ILogService, NullLogService } from '../../../log/common/log.js';
 import { AgentSession, IAgent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import type { RootConfigChangedAction } from '../../common/state/protocol/actions.js';
-import { CustomizationStatus, SessionCustomizationSource } from '../../common/state/protocol/state.js';
+import { CustomizationStatus } from '../../common/state/protocol/state.js';
 import { ActionType, ActionEnvelope, SessionAction } from '../../common/state/sessionActions.js';
 import { buildSubagentSessionUri, PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
@@ -738,7 +738,6 @@ suite('AgentSideEffects', () => {
 			agent.customizations = [customization];
 			agent.getSessionCustomizations = async () => [{
 				customization,
-				source: SessionCustomizationSource.Host,
 				enabled: true,
 				status: CustomizationStatus.Loaded,
 			}];
@@ -763,7 +762,6 @@ suite('AgentSideEffects', () => {
 			assert.ok(sessionCustomizationAction && hasKey(sessionCustomizationAction.action, { customizations: true }));
 			assert.deepStrictEqual(sessionCustomizationAction.action.customizations, [{
 				customization,
-				source: SessionCustomizationSource.Host,
 				enabled: true,
 				status: CustomizationStatus.Loaded,
 			}]);
@@ -782,7 +780,6 @@ suite('AgentSideEffects', () => {
 			agent.customizations = [customization];
 			agent.getSessionCustomizations = async () => [{
 				customization,
-				source: SessionCustomizationSource.Host,
 				enabled: true,
 				status: CustomizationStatus.Loaded,
 			}];
@@ -801,7 +798,6 @@ suite('AgentSideEffects', () => {
 			assert.ok(sessionCustomizationAction && hasKey(sessionCustomizationAction.action, { customizations: true }));
 			assert.deepStrictEqual(sessionCustomizationAction.action.customizations, [{
 				customization,
-				source: SessionCustomizationSource.Host,
 				enabled: true,
 				status: CustomizationStatus.Loaded,
 			}]);

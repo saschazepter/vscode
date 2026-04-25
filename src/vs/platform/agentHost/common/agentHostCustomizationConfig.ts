@@ -3,11 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { isEqualOrParent } from '../../../base/common/resources.js';
-import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { createSchema, schemaProperty } from './agentHostSchema.js';
-import { CustomizationScopeKind, type CustomizationRef } from './state/protocol/state.js';
+import { type CustomizationRef } from './state/protocol/state.js';
 
 /**
  * Well-known root-config keys used by the platform to configure agent-host
@@ -40,23 +38,6 @@ export const agentHostCustomizationConfigSchema = createSchema({
 					type: 'string',
 					title: localize('agentHost.config.customizations.descriptionField', "Description"),
 				},
-				scope: {
-					type: 'object',
-					title: localize('agentHost.config.customizations.scope', "Scope"),
-					properties: {
-						kind: {
-							type: 'string',
-							title: localize('agentHost.config.customizations.scopeKind', "Scope"),
-							enum: [CustomizationScopeKind.Host, CustomizationScopeKind.Workspace],
-						},
-						workspace: {
-							type: 'string',
-							title: localize('agentHost.config.customizations.workspace', "Workspace Folder"),
-							description: localize('agentHost.config.customizations.workspaceDescription', "Workspace folder URI this plugin applies to when scope is set to Workspace."),
-						},
-					},
-					required: ['kind'],
-				},
 			},
 			required: ['uri', 'displayName'],
 		},
@@ -72,17 +53,4 @@ export function getAgentHostConfiguredCustomizations(values: Record<string, unkn
 	return agentHostCustomizationConfigSchema.validate(AgentHostConfigKey.Customizations, raw)
 		? raw
 		: defaultAgentHostCustomizationConfigValues[AgentHostConfigKey.Customizations];
-}
-
-export function customizationMatchesDirectory(customization: CustomizationRef, directory: URI | undefined): boolean {
-	if (!customization.scope || customization.scope.kind === CustomizationScopeKind.Host) {
-		return true;
-	}
-
-	const workspace = customization.scope.workspace;
-	if (!directory || !workspace) {
-		return false;
-	}
-
-	return isEqualOrParent(directory, URI.parse(workspace));
 }

@@ -10,7 +10,7 @@ import { mock } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { type IAgentConnection } from '../../../../../platform/agentHost/common/agentService.js';
 import { ActionType, type ActionEnvelope, type INotification, type StateAction } from '../../../../../platform/agentHost/common/state/sessionActions.js';
-import { CustomizationScopeKind, CustomizationStatus, SessionCustomizationSource, type AgentInfo, type CustomizationRef, type RootState, type SessionCustomization } from '../../../../../platform/agentHost/common/state/protocol/state.js';
+import { CustomizationStatus, type AgentInfo, type CustomizationRef, type RootState, type SessionCustomization } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService, type IFileStatResult } from '../../../../../platform/files/common/files.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
@@ -93,34 +93,30 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 			createNotificationService(),
 			{} as IAICustomizationWorkspaceService,
 		));
-		const hostScoped: CustomizationRef = { uri: 'file:///plugins/shared', displayName: 'Shared Plugin' };
-		const workspaceScoped: CustomizationRef = {
-			uri: 'file:///plugins/shared',
-			displayName: 'Shared Plugin',
-			scope: {
-				kind: CustomizationScopeKind.Workspace,
-				workspace: 'file:///workspace',
-			},
+		const pluginA: CustomizationRef = { uri: 'file:///plugins/shared', displayName: 'Shared Plugin' };
+		const pluginB: CustomizationRef = {
+			uri: 'file:///plugins/other',
+			displayName: 'Other Plugin',
 		};
 		connection.setRootState({
 			agents: [],
 			config: {
 				schema: { type: 'object', properties: {} },
-				values: { customizations: [hostScoped, workspaceScoped] },
+				values: { customizations: [pluginA, pluginB] },
 			},
 		});
 
-		await controller.removeConfiguredPlugin(hostScoped);
+		await controller.removeConfiguredPlugin(pluginA);
 
 		assert.deepStrictEqual(connection.dispatchedActions, [{
 			type: ActionType.RootConfigChanged,
 			config: {
-				customizations: [workspaceScoped],
+				customizations: [pluginB],
 			},
 		}]);
 	});
 
-	test('provider assigns distinct item keys to scope-distinct remote plugins', async () => {
+	test('provider assigns distinct item keys to plugins with different URIs', async () => {
 		const connection = disposables.add(new MockAgentConnection());
 		const controller = disposables.add(new RemoteAgentPluginController(
 			'Test Host',
@@ -130,18 +126,11 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 			createNotificationService(),
 			{} as IAICustomizationWorkspaceService,
 		));
-		const hostScoped: CustomizationRef = { uri: 'file:///plugins/shared', displayName: 'Shared Plugin' };
-		const workspaceScoped: CustomizationRef = {
-			uri: 'file:///plugins/shared',
-			displayName: 'Shared Plugin',
-			scope: {
-				kind: CustomizationScopeKind.Workspace,
-				workspace: 'file:///workspace',
-			},
-		};
+		const pluginA: CustomizationRef = { uri: 'file:///plugins/a', displayName: 'Plugin A' };
+		const pluginB: CustomizationRef = { uri: 'file:///plugins/b', displayName: 'Plugin B' };
 
 		connection.setRootState({
-			agents: [createAgentInfo([hostScoped, workspaceScoped])],
+			agents: [createAgentInfo([pluginA, pluginB])],
 		});
 
 		const fileService = new class extends mock<IFileService>() {
@@ -150,7 +139,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		};
 
 		const provider = disposables.add(new RemoteAgentCustomizationItemProvider(
-			createAgentInfo([hostScoped, workspaceScoped]),
+			createAgentInfo([pluginA, pluginB]),
 			connection,
 			'test-authority',
 			controller,
@@ -176,7 +165,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		const hostScoped: CustomizationRef = { uri: 'file:///plugins/shared', displayName: 'Shared Plugin' };
 		const synced: SessionCustomization = {
 			customization: hostScoped,
-			source: SessionCustomizationSource.Client,
+			clientId: 'test-client',
 			enabled: true,
 		};
 
@@ -227,7 +216,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		const clientPlugin: CustomizationRef = { uri: 'file:///plugins/client-plugin', displayName: 'Client Plugin' };
 		const synced: SessionCustomization = {
 			customization: clientPlugin,
-			source: SessionCustomizationSource.Client,
+			clientId: 'test-client',
 			enabled: true,
 		};
 
@@ -285,7 +274,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		const bundleRef: CustomizationRef = { uri: bundleUri, displayName: 'VS Code Synced Data', nonce: 'abc' };
 		const synced: SessionCustomization = {
 			customization: bundleRef,
-			source: SessionCustomizationSource.Client,
+			clientId: 'test-client',
 			enabled: true,
 			status: CustomizationStatus.Loaded,
 		};
@@ -374,7 +363,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		const bundleRef: CustomizationRef = { uri: bundleUri, displayName: 'VS Code Synced Data', nonce: 'abc' };
 		const synced: SessionCustomization = {
 			customization: bundleRef,
-			source: SessionCustomizationSource.Client,
+			clientId: 'test-client',
 			enabled: true,
 		};
 
@@ -427,7 +416,6 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 		const pluginRef: CustomizationRef = { uri: 'file:///plugins/my-plugin', displayName: 'My Plugin' };
 		const sessionCustomization: SessionCustomization = {
 			customization: pluginRef,
-			source: SessionCustomizationSource.Host,
 			enabled: false,
 			status: CustomizationStatus.Error,
 			statusMessage: 'something went wrong',
@@ -506,7 +494,6 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 				session: 'agent://copilotcli/session-1',
 				customizations: [{
 					customization: pluginRef,
-					source: SessionCustomizationSource.Host,
 					enabled: true,
 				}],
 			},
@@ -553,7 +540,7 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 				session: 'agent://copilotcli/session-1',
 				customizations: [{
 					customization: clientPlugin,
-					source: SessionCustomizationSource.Client,
+					clientId: 'test-client',
 					enabled: true,
 				}],
 			},
@@ -640,8 +627,8 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 				type: ActionType.SessionCustomizationsChanged,
 				session: 'agent://copilotcli/session-1',
 				customizations: [
-					{ customization: clientA, source: SessionCustomizationSource.Client, enabled: true },
-					{ customization: clientB, source: SessionCustomizationSource.Client, enabled: true },
+					{ customization: clientA, clientId: 'test-client', enabled: true },
+					{ customization: clientB, clientId: 'test-client', enabled: true },
 				],
 			},
 		});

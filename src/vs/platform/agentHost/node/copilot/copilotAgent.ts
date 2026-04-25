@@ -22,14 +22,14 @@ import { IParsedPlugin, parsePlugin } from '../../../agentPlugins/common/pluginP
 import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
-import { customizationMatchesDirectory, AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
+import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentDeltaEvent, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { AutoApproveLevel, ISchemaProperty, createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { ISessionDataService, SESSION_DB_FILENAME } from '../../common/sessionDataService.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { ProtectedResourceMetadata, SessionCustomizationSource, type ConfigSchema, type ModelSelection, type SessionCustomization, type ToolDefinition } from '../../common/state/protocol/state.js';
+import { ProtectedResourceMetadata, type ConfigSchema, type ModelSelection, type SessionCustomization, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { CustomizationStatus, CustomizationRef, SessionInputResponseKind, type PendingMessage, type SessionInputAnswer, type ToolCallResult, type PolicyState } from '../../common/state/sessionState.js';
 import { IAgentHostGitService } from '../agentHostGitService.js';
@@ -1249,9 +1249,7 @@ class PluginController extends Disposable {
 
 	public getSessionCustomizations(directory: URI | undefined): readonly SessionCustomization[] {
 		return [
-			...this._hostCustomizations
-				.filter(item => customizationMatchesDirectory(item.customization.customization, directory))
-				.map(item => this._applyEnablement(item.customization)),
+			...this._hostCustomizations.map(item => this._applyEnablement(item.customization)),
 			...this._clientCustomizations.map(item => this._applyEnablement(item.customization)),
 		];
 	}
@@ -1274,7 +1272,6 @@ class PluginController extends Disposable {
 		return [
 			...host.filter(item =>
 				!!item.plugin
-				&& customizationMatchesDirectory(item.customization.customization, directory)
 				&& this._isEnabled(item.customization)
 			).map(item => item.plugin!),
 			...client.filter(item =>
@@ -1304,13 +1301,12 @@ class PluginController extends Disposable {
 		this._hostCustomizations = customizations.map(customization => ({
 			customization: {
 				customization,
-				source: SessionCustomizationSource.Host,
 				enabled: true,
 				status: CustomizationStatus.Loading,
 			},
 		}));
 		this._onDidChange.fire();
-		this._hostSync = Promise.all(customizations.map(customization => this._resolveConfiguredCustomization(customization, SessionCustomizationSource.Host))).then(resolved => {
+		this._hostSync = Promise.all(customizations.map(customization => this._resolveConfiguredCustomization(customization))).then(resolved => {
 			if (revision === this._hostRevision) {
 				this._hostCustomizations = resolved;
 			}
@@ -1327,7 +1323,7 @@ class PluginController extends Disposable {
 		this._clientCustomizations = customizations.map(customization => ({
 			customization: {
 				customization,
-				source: SessionCustomizationSource.Client,
+				clientId,
 				enabled: true,
 				status: CustomizationStatus.Loading,
 			},
@@ -1346,13 +1342,13 @@ class PluginController extends Disposable {
 				this._clientCustomizations = status.map(customization => ({
 					customization: {
 						...customization,
-						source: SessionCustomizationSource.Client,
+						clientId,
 					},
 				}));
 				progress?.(this._clientCustomizations.map(item => ({ customization: this._applyEnablement(item.customization) })));
 			});
 
-			const resolved = await Promise.all(result.map(item => this._resolveSyncedCustomization(item)));
+			const resolved = await Promise.all(result.map(item => this._resolveSyncedCustomization(item, clientId)));
 			if (revision === this._clientRevision) {
 				this._clientCustomizations = resolved;
 			}
@@ -1374,14 +1370,13 @@ class PluginController extends Disposable {
 		return customization.enabled === enabled ? customization : { ...customization, enabled };
 	}
 
-	private async _resolveConfiguredCustomization(customization: CustomizationRef, source: SessionCustomizationSource): Promise<IResolvedCustomization> {
+	private async _resolveConfiguredCustomization(customization: CustomizationRef): Promise<IResolvedCustomization> {
 		const pluginDir = URI.parse(customization.uri);
 		const parsed = await this._tryParsePlugin(pluginDir);
 		if (!parsed) {
 			return {
 				customization: {
 					customization,
-					source,
 					enabled: true,
 					status: CustomizationStatus.Error,
 					statusMessage: localize('copilotAgent.pluginParseError', "Error parsing plugin."),
@@ -1392,7 +1387,6 @@ class PluginController extends Disposable {
 		return {
 			customization: {
 				customization,
-				source,
 				enabled: true,
 				status: CustomizationStatus.Loaded,
 			},
@@ -1401,12 +1395,12 @@ class PluginController extends Disposable {
 		};
 	}
 
-	private async _resolveSyncedCustomization(item: ISyncedCustomization): Promise<IResolvedCustomization> {
+	private async _resolveSyncedCustomization(item: ISyncedCustomization, clientId: string): Promise<IResolvedCustomization> {
 		if (!item.pluginDir) {
 			return {
 				customization: {
 					...item.customization,
-					source: SessionCustomizationSource.Client,
+					clientId,
 				},
 			};
 		}
@@ -1416,7 +1410,7 @@ class PluginController extends Disposable {
 			return {
 				customization: {
 					...item.customization,
-					source: SessionCustomizationSource.Client,
+					clientId,
 					status: CustomizationStatus.Error,
 					statusMessage: localize('copilotAgent.pluginParseError', "Error parsing plugin."),
 				},
@@ -1426,7 +1420,7 @@ class PluginController extends Disposable {
 		return {
 			customization: {
 				...item.customization,
-				source: SessionCustomizationSource.Client,
+				clientId,
 			},
 			pluginDir: item.pluginDir,
 			plugin: parsed,

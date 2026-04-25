@@ -20,7 +20,6 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { AGENT_HOST_SCHEME, fromAgentHostUri, toAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 import type { IAgentConnection } from '../../../../platform/agentHost/common/agentService.js';
 import { ActionType } from '../../../../platform/agentHost/common/state/sessionActions.js';
-import { CustomizationScopeKind, SessionCustomizationSource } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo, type CustomizationRef, type RootState, type SessionCustomization, CustomizationStatus } from '../../../../platform/agentHost/common/state/sessionState.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
@@ -98,13 +97,12 @@ function toStatusString(status: CustomizationStatus | undefined): 'loading' | 'l
 }
 
 function customizationKey(customization: CustomizationRef): string {
-	const scope = customization.scope;
-	return `${customization.uri}::${scope?.kind ?? CustomizationScopeKind.Host}::${scope?.workspace ?? ''}`;
+	return customization.uri;
 }
 
-function customizationItemKey(customization: CustomizationRef, source: SessionCustomizationSource | undefined): string {
-	return source === SessionCustomizationSource.Client
-		? `${customizationKey(customization)}::${source}`
+function customizationItemKey(customization: CustomizationRef, clientId: string | undefined): string {
+	return clientId !== undefined
+		? `${customizationKey(customization)}::${clientId}`
 		: customizationKey(customization);
 }
 
@@ -281,18 +279,10 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 		return toAgentHostUri(original, this._connectionAuthority);
 	}
 
-	private toBadge(customization: CustomizationRef, source: SessionCustomizationSource | undefined): { badge?: string; badgeTooltip?: string; groupKey?: string } {
-		if (source === SessionCustomizationSource.Client) {
+	private toBadge(customization: CustomizationRef, clientId: string | undefined): { badge?: string; badgeTooltip?: string; groupKey?: string } {
+		if (clientId !== undefined) {
 			return {
 				groupKey: REMOTE_CLIENT_GROUP,
-			};
-		}
-
-		if (customization.scope?.kind === CustomizationScopeKind.Workspace && customization.scope.workspace) {
-			return {
-				badge: localize('remoteAgentHost.workspaceBadge', "Workspace"),
-				badgeTooltip: localize('remoteAgentHost.workspaceBadgeTooltip', "This plugin is configured on the remote host for workspace {0}.", customization.scope.workspace),
-				groupKey: REMOTE_HOST_GROUP,
 			};
 		}
 
@@ -302,9 +292,9 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 	}
 
 	private toItem(customization: CustomizationRef, sessionCustomization: SessionCustomization | undefined): ICustomizationItem {
-		const source = sessionCustomization?.source;
-		const badge = this.toBadge(customization, source);
-		const actions = source === SessionCustomizationSource.Client
+		const clientId = sessionCustomization?.clientId;
+		const badge = this.toBadge(customization, clientId);
+		const actions = clientId !== undefined
 			? undefined
 			: <const>[{
 				id: 'remoteAgentHost.removeConfiguredPlugin',
@@ -314,7 +304,7 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 			}];
 
 		return {
-			itemKey: customizationItemKey(customization, source),
+			itemKey: customizationItemKey(customization, clientId),
 			uri: this.toRemoteUri(customization),
 			type: 'plugin',
 			name: customization.displayName,
@@ -347,17 +337,17 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 
 		for (const sessionCustomization of this._sessionCustomizations ?? []) {
 			const isBundleItem = isSyntheticBundle(sessionCustomization.customization);
-			const isClientSynced = sessionCustomization.source === SessionCustomizationSource.Client;
+			const isClientSynced = sessionCustomization.clientId !== undefined;
 
 			// Always show session customizations as distinct plugin entries —
-			// client-synced items appear in the "Client" group, host-owned in
+			// client-synced items appear in the "Local" group, host-owned in
 			// the "Remote" group. The synthetic bundle is an implementation
 			// detail and is not shown as a standalone entry, but is still
 			// expanded below so individual user files appear in per-type tabs.
 			if (!isBundleItem) {
 				const item = this.toItem(sessionCustomization.customization, sessionCustomization);
 				items.set(
-					customizationItemKey(sessionCustomization.customization, sessionCustomization.source),
+					customizationItemKey(sessionCustomization.customization, sessionCustomization.clientId),
 					item,
 				);
 			}
