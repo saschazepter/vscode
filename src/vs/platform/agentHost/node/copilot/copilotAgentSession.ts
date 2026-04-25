@@ -24,7 +24,7 @@ import type { FileEdit, ToolDefinition } from '../../common/state/protocol/state
 import { SessionInputAnswerState, SessionInputAnswerValueKind, SessionInputQuestionKind, SessionInputResponseKind, ToolResultContentType, type PendingMessage, type SessionInputAnswer, type SessionInputRequest, type ToolCallResult, type ToolResultContent } from '../../common/state/sessionState.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 import type { ShellManager } from './copilotShellTools.js';
-import { getEditFilePath, getInvocationMessage, getPastTenseMessage, getPermissionDisplay, getShellLanguage, getSubagentMetadata, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool, isShellTool, tryStringify, type ITypedPermissionRequest } from './copilotToolDisplay.js';
+import { getEditFilePath, getInvocationMessage, getPastTenseMessage, getPermissionDisplay, getShellLanguage, getSubagentMetadata, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool, isShellTool, synthesizeSkillToolEvents, tryStringify, type ITypedPermissionRequest } from './copilotToolDisplay.js';
 import { FileEditTracker } from './fileEditTracker.js';
 import { mapSessionEvents } from './mapSessionEvents.js';
 import { buildPendingEditContentUri } from './pendingEditContentStore.js';
@@ -791,6 +791,17 @@ export class CopilotAgentSession extends Disposable {
 		this._register(wrapper.onIdle(() => {
 			this._logService.info(`[Copilot:${sessionId}] Session idle`);
 			this._onDidSessionProgress.fire({ session, type: 'idle' });
+		}));
+
+		// The SDK emits a `skill` tool call (which we hide) and a richer
+		// `skill.invoked` event with the resolved SKILL.md path. Synthesize a
+		// tool-start/complete pair from the latter so the UI can render a
+		// clickable file link, matching the `view`-tool display style.
+		this._register(wrapper.onSkillInvoked(e => {
+			this._logService.info(`[Copilot:${sessionId}] Skill invoked: ${e.data.name} (${e.data.path})`);
+			const { start, complete } = synthesizeSkillToolEvents(session, e.data, e.id);
+			this._onDidSessionProgress.fire(start);
+			this._onDidSessionProgress.fire(complete);
 		}));
 
 		this._register(wrapper.onSubagentStarted(e => {
