@@ -88,6 +88,8 @@ export interface ISessionRepository {
 	readonly workingDirectory: URI | undefined;
 	/** Provider-chosen display detail (e.g., branch name, host name). */
 	readonly detail: string | undefined;
+	/** Current branch name. */
+	readonly branchName?: string;
 	/** Name of the base branch. */
 	readonly baseBranchName: string | undefined;
 	/** Whether the base branch is protected (drives PR vs merge workflow). */

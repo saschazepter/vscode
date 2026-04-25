@@ -402,7 +402,8 @@ export class ChangesViewModel extends Disposable {
 			// Session state
 			const workspaceRepository = workspace?.repositories[0];
 			const hasGitRepository = this.activeSessionHasGitRepositoryObs.read(reader);
-			const branchName = (sessionMetadata?.branchName ?? sessionMetadata?.branch) as string | undefined;
+			const branchName = (sessionMetadata?.branchName ?? sessionMetadata?.branch) as string | undefined
+				?? workspaceRepository?.branchName;
 			const baseBranchName = (sessionMetadata?.baseBranchName ?? sessionMetadata?.baseBranch) as string | undefined;
 			// Both Copilot Chat sessions (cloud-provided) and agent-host sessions
 			// (computed in the provider from `git.branchProtection`) populate

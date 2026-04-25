@@ -67,6 +67,7 @@ export function agentHostSessionWorkspaceKey(workspace: ISessionWorkspace | unde
 		workspace.label,
 		extUri.getComparisonKey(repository.uri),
 		repository.workingDirectory ? extUri.getComparisonKey(repository.workingDirectory) : '',
+		repository.branchName ?? '',
 		repository.baseBranchName ?? '',
 		String(repository.baseBranchProtected ?? ''),
 		String(repository.hasGitHubRemote ?? ''),
@@ -87,7 +88,8 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 	const incomingChanges = gitState?.incomingChanges;
 	const outgoingChanges = gitState?.outgoingChanges;
 	const uncommittedChanges = gitState?.uncommittedChanges;
-	const gitFields = { baseBranchName, baseBranchProtected, hasGitHubRemote, upstreamBranchName, incomingChanges, outgoingChanges, uncommittedChanges };
+	const branchName = gitState?.branchName;
+	const gitFields = { branchName, baseBranchName, baseBranchProtected, hasGitHubRemote, upstreamBranchName, incomingChanges, outgoingChanges, uncommittedChanges };
 	if (project) {
 		const repositoryWorkingDirectory = extUri.isEqual(workingDirectory, project.uri) ? undefined : workingDirectory;
 		return {

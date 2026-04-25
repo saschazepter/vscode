@@ -639,6 +639,9 @@ export class ChangesViewPane extends ViewPane {
 			const changes = changesObs.read(reader);
 			const viewMode = this.viewModel.viewModeObs.read(reader);
 			const isLoading = this.viewModel.activeSessionIsLoadingObs.read(reader);
+			// Subscribe to active session state so the tree rebuilds when fields
+			// like `branchName` arrive asynchronously (used by `getTreeRootInfo`).
+			this.viewModel.activeSessionStateObs.read(reader);
 
 			if (!this.tree || isLoading) {
 				return;
@@ -763,7 +766,7 @@ export class ChangesViewPane extends ViewPane {
 		} else {
 			// Local session
 			const branchName = this.viewModel.activeSessionStateObs.get()?.branchName;
-			name = repository.workingDirectory
+			name = repository.workingDirectory && branchName
 				? `${basename(repository.uri)} (${branchName})`
 				: basename(repository.uri);
 		}
