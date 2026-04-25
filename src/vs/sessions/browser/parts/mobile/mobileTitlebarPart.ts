@@ -19,6 +19,7 @@ import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/a
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { fillInActionBarActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
+import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { SideBarVisibleContext } from '../../../../workbench/common/contextkeys.js';
@@ -97,6 +98,7 @@ export class MobileTitlebarPart extends Disposable {
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@IMenuService private readonly menuService: IMenuService,
 	) {
@@ -160,8 +162,10 @@ export class MobileTitlebarPart extends Disposable {
 		this.accountBadgeElement = append(this.accountButton, $('span.mobile-account-badge'));
 		this._register(addDisposableListener(this.accountButton, EventType.CLICK, () => this.showAccountPanel()));
 
-		// Track account state
+		// Track account state — listen to multiple sources to catch
+		// updates regardless of service initialization ordering.
 		this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => this.refreshAccount()));
+		this._register(this.authenticationService.onDidChangeSessions(() => this.refreshAccount()));
 		this._register(this.chatEntitlementService.onDidChangeEntitlement(() => this.renderAccountState()));
 		this._register(this.chatEntitlementService.onDidChangeSentiment(() => this.renderAccountState()));
 		this._register(this.chatEntitlementService.onDidChangeQuotaExceeded(() => this.renderAccountState()));
