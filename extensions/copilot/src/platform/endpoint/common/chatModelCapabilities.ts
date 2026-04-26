@@ -391,9 +391,9 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
 }
 
 /**
- * Checks for an exact model version or a hyphen-delimited suffix.
+ * Checks for an exact model version or a hyphen-suffixed variant.
  */
-function modelIdHasVersionPrefix(normalizedModelId: string, versionPrefix: string): boolean {
+function matchesExactVersionOrSuffixedVariant(normalizedModelId: string, versionPrefix: string): boolean {
 	return normalizedModelId === versionPrefix || normalizedModelId.startsWith(`${versionPrefix}-`);
 }
 
@@ -401,7 +401,7 @@ function modelIdHasVersionPrefix(normalizedModelId: string, versionPrefix: strin
  * Checks normalized OpenAI model ids that support Responses API tool search.
  */
 function modelSupportsResponsesApiToolSearch(normalizedModelId: string): boolean {
-	return modelIdHasVersionPrefix(normalizedModelId, 'gpt-5-4') || modelIdHasVersionPrefix(normalizedModelId, 'gpt-5-5');
+	return matchesExactVersionOrSuffixedVariant(normalizedModelId, 'gpt-5-4') || matchesExactVersionOrSuffixedVariant(normalizedModelId, 'gpt-5-5');
 }
 
 /**
