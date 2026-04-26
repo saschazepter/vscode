@@ -240,6 +240,11 @@ export class AgentHostGitService implements IAgentHostGitService {
 		// a real OS path string, not a URI.
 		const indexFile = URI.joinPath(tempDir, 'index').fsPath;
 		const env: Record<string, string> = { GIT_INDEX_FILE: indexFile };
+		// GVFS (Virtual File System) repos use a hook that acquires a lock around
+		// git commands. Setting COMMAND_HOOK_LOCK=1 prevents the temp-index
+		// operations from blocking the main working-tree lock. This mirrors what
+		// the extension's `buildTempIndexEnv` does for the same reason.
+		env.COMMAND_HOOK_LOCK = '1';
 		try {
 			const seeded = await this._runGit(repositoryRoot, ['read-tree', 'HEAD'], { env });
 			if (seeded === undefined) {
