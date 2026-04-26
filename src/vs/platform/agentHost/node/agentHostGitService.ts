@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as cp from 'child_process';
-import * as fs from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from '../../../base/common/path.js';
 import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
+import { generateUuid } from '../../../base/common/uuid.js';
+import { INativeEnvironmentService } from '../../environment/common/environment.js';
+import { IFileService } from '../../files/common/files.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { FileEditKind, type ISessionFileDiff, type ISessionGitState } from '../common/state/sessionState.js';
 import { buildGitBlobUri } from './gitDiffContent.js';
@@ -106,6 +106,11 @@ export function getBranchCompletions(branches: readonly string[], options?: { re
 
 export class AgentHostGitService implements IAgentHostGitService {
 	declare readonly _serviceBrand: undefined;
+
+	constructor(
+		@IFileService private readonly _fileService: IFileService,
+		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
+	) { }
 
 	async isInsideWorkTree(workingDirectory: URI): Promise<boolean> {
 		return (await this._runGit(workingDirectory, ['rev-parse', '--is-inside-work-tree']))?.trim() === 'true';
@@ -229,13 +234,16 @@ export class AgentHostGitService implements IAgentHostGitService {
 		// (including untracked files) without disturbing the user's real
 		// index. `read-tree HEAD` seeds it; in empty repos that fails so we
 		// fall back to the empty tree, leaving everything as "added".
-		const tempDir = await fs.mkdtemp(join(tmpdir(), 'agent-host-git-diff-'));
-		const indexFile = join(tempDir, 'index');
+		const tempDir = URI.joinPath(this._environmentService.tmpDir, `agent-host-git-diff-${generateUuid()}`);
+		await this._fileService.createFolder(tempDir);
+		// `GIT_INDEX_FILE` is consumed by the `git` subprocess so it must be
+		// a real OS path string, not a URI.
+		const indexFile = URI.joinPath(tempDir, 'index').fsPath;
 		const env: Record<string, string> = { GIT_INDEX_FILE: indexFile };
 		try {
 			const seeded = await this._runGit(repositoryRoot, ['read-tree', 'HEAD'], { env });
 			if (seeded === undefined) {
-				// Empty repo (no HEAD yet) — `read-tree` of the empty tree always succeeds.
+				// Empty repo (no HEAD yet) - `read-tree` of the empty tree always succeeds.
 				await this._runGit(repositoryRoot, ['read-tree', EMPTY_TREE_OBJECT], { env });
 			}
 			// Stage every change in the working tree (modified, deleted,
@@ -244,7 +252,7 @@ export class AgentHostGitService implements IAgentHostGitService {
 			await this._runGit(repositoryRoot, ['add', '-A', '--', ':/'], { env });
 			return await this._runGit(repositoryRoot, ['diff', '--cached', '--raw', '--numstat', '--diff-filter=ADMR', '-z', mergeBaseCommit, '--'], { env });
 		} finally {
-			try { await fs.rm(tempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+			try { await this._fileService.del(tempDir, { recursive: true, useTrash: false }); } catch { /* best-effort */ }
 		}
 	}
 

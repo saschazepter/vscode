@@ -17,13 +17,27 @@ import assert from 'assert';
 import * as cp from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
+import { NullLogService } from '../../../log/common/log.js';
 import { join } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { INativeEnvironmentService } from '../../../environment/common/environment.js';
+import { FileService } from '../../../files/common/fileService.js';
+import { Schemas } from '../../../../base/common/network.js';
+import { DiskFileSystemProvider } from '../../../files/node/diskFileSystemProvider.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { AgentHostGitService } from '../../node/agentHostGitService.js';
 
+function createGitService(disposables: Pick<DisposableStore, 'add'>): AgentHostGitService {
+	const logService = new NullLogService();
+	const fileService = disposables.add(new FileService(logService));
+	disposables.add(fileService.registerProvider(Schemas.file, disposables.add(new DiskFileSystemProvider(logService))));
+	const env: Partial<INativeEnvironmentService> = { tmpDir: URI.file(tmpdir()) };
+	return new AgentHostGitService(fileService, env as INativeEnvironmentService);
+}
+
 suite('AgentHostGitService - getSessionGitState (real git)', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	// Skip the on-disk git tests when `git` is not on PATH (e.g. minimal CI).
 	const hasGit = (() => {
@@ -35,7 +49,7 @@ suite('AgentHostGitService - getSessionGitState (real git)', () => {
 
 	setup(() => {
 		tmpRoot = undefined;
-		svc = new AgentHostGitService();
+		svc = createGitService(disposables);
 	});
 
 	teardown(() => {
@@ -127,7 +141,7 @@ suite('AgentHostGitService - getSessionGitState (real git)', () => {
 });
 
 suite('AgentHostGitService - computeSessionFileDiffs (real git)', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	const hasGit = (() => {
 		try { cp.execFileSync('git', ['--version'], { stdio: 'ignore' }); return true; } catch { return false; }
@@ -138,7 +152,7 @@ suite('AgentHostGitService - computeSessionFileDiffs (real git)', () => {
 
 	setup(() => {
 		tmpRoot = undefined;
-		svc = new AgentHostGitService();
+		svc = createGitService(disposables);
 	});
 
 	teardown(() => {
