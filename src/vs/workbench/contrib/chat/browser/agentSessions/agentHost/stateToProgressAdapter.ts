@@ -411,13 +411,15 @@ export function rewriteMarkdownLinks(markdown: string, connectionAuthority: stri
  * or returns `undefined` if the token should be left alone (external
  * scheme or unparseable URI).
  *
- * The output is the canonical inline form `[text](newHref)` (or
- * `![text](newHref)` for images). When the original link has no display
- * text the chat renderer falls back to its file-widget rendering, but a
- * non-empty label (e.g. a skill name) is preserved so the renderer shows
- * it instead of the URI's basename. This also means autolinks (`<url>`)
- * and reference-style links (`[text][ref]`) are normalized into the
- * inline form.
+ * The output collapses to the canonical inline form `[](newHref)` (or
+ * `![](newHref)` for images) — the chat renderer has richer handling for
+ * empty-text agent-host links (rendering them as a file widget), so
+ * preserving the original label isn't useful for most links. The one
+ * exception is skill links (URIs whose basename is `SKILL.md`), where the
+ * skill name is preserved as the label so the skill pill renderer can
+ * display it instead of the always-identical `SKILL.md` basename. This
+ * also means autolinks (`<url>`) and reference-style links
+ * (`[text][ref]`) are normalized into the inline form.
  */
 function rewriteLinkTokenRaw(token: Tokens.Link | Tokens.Image, connectionAuthority: string): string | undefined {
 	let parsed: URI;
@@ -431,22 +433,26 @@ function rewriteLinkTokenRaw(token: Tokens.Link | Tokens.Image, connectionAuthor
 		return undefined;
 	}
 	let agentHostUri = toAgentHostUri(parsed, connectionAuthority);
+	const isSkill = isSkillFileUri(parsed);
 	// VS-Code-specific: links pointing at a `SKILL.md` file are rendered as a
 	// rich skill pill rather than a plain markdown link. The chat renderer's
 	// inline anchor widget keys off the `vscodeLinkType` query parameter (see
 	// `chatInlineAnchorWidget.ts`), so we tag the URI here on the client side
 	// rather than at the agent host. We do this whether or not the link came
 	// in pre-tagged so older sessions and other agent providers also benefit.
-	if (isSkillFileUri(parsed) && !agentHostUri.query.includes('vscodeLinkType=')) {
+	if (isSkill && !agentHostUri.query.includes('vscodeLinkType=')) {
 		const existing = agentHostUri.query;
 		agentHostUri = agentHostUri.with({ query: existing ? `${existing}&vscodeLinkType=skill` : 'vscodeLinkType=skill' });
 	}
 	const prefix = token.type === 'image' ? '![' : '[';
+	// Only preserve the link text for skill links — the skill pill renderer
+	// extracts the label from the markdown to display the skill name. For all
+	// other agent-host links, leave the text empty so the chat renderer's
+	// inline anchor widget takes over with its rich file-widget rendering.
 	// Escape only the characters that would break out of markdown link text
-	// syntax (`\` and `]`). A full markdown escape would leave visible
-	// backslashes in renderers (like the skill pill) that extract link text
-	// without re-parsing markdown.
-	const text = escapeMarkdownLinkLabel(token.text ?? '');
+	// syntax (`\` and `]`); a full markdown escape would leave visible
+	// backslashes in the skill pill which extracts text without re-parsing.
+	const text = isSkill ? escapeMarkdownLinkLabel(token.text ?? '') : '';
 	return `${prefix}${text}](${agentHostUri.toString()})`;
 }
 
