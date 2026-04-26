@@ -390,13 +390,18 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
 	return undefined;
 }
 
-function modelIdHasVersionPrefix(modelId: string, versionPrefix: string): boolean {
-	return modelId === versionPrefix || modelId.startsWith(`${versionPrefix}-`);
+/**
+ * Checks for an exact model version or a hyphen-delimited suffix.
+ */
+function modelIdHasVersionPrefix(normalizedModelId: string, versionPrefix: string): boolean {
+	return normalizedModelId === versionPrefix || normalizedModelId.startsWith(`${versionPrefix}-`);
 }
 
-function modelSupportsResponsesApiToolSearch(modelId: string): boolean {
-	const normalized = modelId.toLowerCase().replace(/\./g, '-');
-	return modelIdHasVersionPrefix(normalized, 'gpt-5-4') || modelIdHasVersionPrefix(normalized, 'gpt-5-5');
+/**
+ * Checks normalized OpenAI model ids that support Responses API tool search.
+ */
+function modelSupportsResponsesApiToolSearch(normalizedModelId: string): boolean {
+	return modelIdHasVersionPrefix(normalizedModelId, 'gpt-5-4') || modelIdHasVersionPrefix(normalizedModelId, 'gpt-5-5');
 }
 
 /**
@@ -410,7 +415,7 @@ function modelSupportsResponsesApiToolSearch(modelId: string): boolean {
  */
 export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
 	const normalized = modelId.toLowerCase().replace(/\./g, '-');
-	if (modelSupportsResponsesApiToolSearch(modelId)) {
+	if (modelSupportsResponsesApiToolSearch(normalized)) {
 		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
 	}
 
@@ -428,7 +433,8 @@ export function isResponsesApiToolSearchEnabled(
 	experimentationService: IExperimentationService,
 ): boolean {
 	const family = typeof endpoint === 'string' ? endpoint : endpoint.family;
-	return modelSupportsResponsesApiToolSearch(family) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
+	const normalized = family.toLowerCase().replace(/\./g, '-');
+	return modelSupportsResponsesApiToolSearch(normalized) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
 }
 
 /**
