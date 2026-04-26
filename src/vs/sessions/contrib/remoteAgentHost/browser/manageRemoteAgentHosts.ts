@@ -98,7 +98,7 @@ registerAction2(class extends Action2 {
 
 			const items: (ManageHostsPickItem | IQuickPickSeparator)[] = [];
 			if (remoteItems.length > 0) {
-				items.push({ type: 'separator', label: localize('manageHosts.connectedHeader', "Connected") });
+				items.push({ type: 'separator', label: localize('manageHosts.remoteHostsHeader', "Remote Agent Hosts") });
 				items.push(...remoteItems);
 			}
 			if (menuActionItems.length > 0) {

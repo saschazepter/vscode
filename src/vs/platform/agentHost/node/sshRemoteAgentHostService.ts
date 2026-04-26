@@ -704,6 +704,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 			await fsp.mkdir(sshDir, { recursive: true, mode: isPosix ? 0o700 : undefined });
 		} catch (err) {
 			this._logService.warn(`${LOG_PREFIX} Failed to ensure ~/.ssh directory: ${err}`);
+			throw err;
 		}
 		try {
 			await fsp.access(configPath);
@@ -713,6 +714,7 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 				await handle.close();
 			} catch (err) {
 				this._logService.warn(`${LOG_PREFIX} Failed to create ${configPath}: ${err}`);
+				throw err;
 			}
 		}
 		return URI.file(configPath);
