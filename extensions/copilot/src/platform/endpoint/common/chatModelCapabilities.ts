@@ -390,6 +390,15 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
 	return undefined;
 }
 
+function modelIdHasVersionPrefix(modelId: string, versionPrefix: string): boolean {
+	return modelId === versionPrefix || modelId.startsWith(`${versionPrefix}-`);
+}
+
+function modelSupportsResponsesApiToolSearch(modelId: string): boolean {
+	const normalized = modelId.toLowerCase().replace(/\./g, '-');
+	return modelIdHasVersionPrefix(normalized, 'gpt-5-4') || modelIdHasVersionPrefix(normalized, 'gpt-5-5');
+}
+
 /**
  * Tool search is supported by:
  * - Claude Sonnet 4.5 (claude-sonnet-4-5-* or claude-sonnet-4.5-*)
@@ -401,7 +410,7 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
  */
 export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
 	const normalized = modelId.toLowerCase().replace(/\./g, '-');
-	if (normalized.startsWith('gpt-5-4') || normalized.startsWith('gpt-5-5')) {
+	if (modelSupportsResponsesApiToolSearch(modelId)) {
 		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
 	}
 
@@ -419,8 +428,7 @@ export function isResponsesApiToolSearchEnabled(
 	experimentationService: IExperimentationService,
 ): boolean {
 	const family = typeof endpoint === 'string' ? endpoint : endpoint.family;
-	const normalized = family.toLowerCase().replace(/\./g, '-');
-	return (normalized.startsWith('gpt-5-4') || normalized.startsWith('gpt-5-5')) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
+	return modelSupportsResponsesApiToolSearch(family) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
 }
 
 /**
