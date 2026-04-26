@@ -66,12 +66,14 @@ describe('modelSupportsToolSearch', () => {
 
 	test('supports OpenAI gpt-5.4 and gpt-5.5 models', () => {
 		expect(modelSupportsToolSearch('gpt-5.4')).toBe(true);
-		expect(modelSupportsToolSearch('gpt-5.4-preview')).toBe(true);
 		expect(modelSupportsToolSearch('gpt-5.5')).toBe(true);
 	});
 
 	test('rejects other non-Claude models', () => {
 		expect(modelSupportsToolSearch('gpt-5')).toBe(false);
+		expect(modelSupportsToolSearch('gpt-5.4-mini')).toBe(false);
+		expect(modelSupportsToolSearch('gpt-5.4-preview')).toBe(false);
+		expect(modelSupportsToolSearch('gpt-5.5-preview')).toBe(false);
 		expect(modelSupportsToolSearch('gemini-2.5-pro')).toBe(false);
 		expect(modelSupportsToolSearch('o4-mini')).toBe(false);
 	});

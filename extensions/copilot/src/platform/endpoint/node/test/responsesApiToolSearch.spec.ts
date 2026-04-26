@@ -81,7 +81,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('passes tools through without defer_loading when tool search disabled', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, false);
 
@@ -96,7 +96,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('adds client tool_search and defer_loading when enabled', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, true);
 
@@ -136,7 +136,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('does not defer tools for non-Agent locations', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, true);
 
@@ -155,7 +155,7 @@ describe('createResponsesRequestBody tools', () => {
 		// `tools: ['my-mcp-server/*']` filters out tool_search. Without this gate, every
 		// MCP tool would be marked deferred and stripped from the request, leaving the
 		// agent with nothing to call.
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, true);
 
@@ -180,7 +180,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('always filters tool_search function tool from tools array', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, false);
 
@@ -202,7 +202,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('converts tool_search history even when feature flag is off', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const configService = accessor.get(IConfigurationService) as InMemoryConfigurationService;
 		configService.setConfig(ConfigKey.ResponsesApiToolSearchEnabled, false);
 
@@ -248,7 +248,7 @@ describe('createResponsesRequestBody tools', () => {
 	});
 
 	it('converts tool_search history when current request has no tools', () => {
-		const endpoint = createMockEndpoint('gpt-5.4-preview');
+		const endpoint = createMockEndpoint('gpt-5.4');
 		const messages: Raw.ChatMessage[] = [
 			{ role: Raw.ChatRole.User, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'Hello' }] },
 			{
