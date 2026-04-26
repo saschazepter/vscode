@@ -120,6 +120,11 @@ export function isGpt54(model: LanguageModelChat | IChatEndpoint | string) {
 	return family.startsWith('gpt-5.4') || HIDDEN_MODEL_J_HASHES.includes(h);
 }
 
+export function isGpt55(model: LanguageModelChat | IChatEndpoint | string) {
+	const family = typeof model === 'string' ? model : model.family;
+	return family.startsWith('gpt-5.5');
+}
+
 export function isGpt54ConcisePromptExp(
 	accessor: ServicesAccessor,
 	model: LanguageModelChat | IChatEndpoint | string,
@@ -397,11 +402,11 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
  * - Claude Opus 4.5 (claude-opus-4-5-* or claude-opus-4.5-*)
  * - Claude Opus 4.6 (claude-opus-4-6-* or claude-opus-4.6-*)
  * - Claude Opus 4.7 (claude-opus-4-7-* or claude-opus-4.7-*)
- * - OpenAI gpt-5.4 (gpt-5.4-*), but only when the `ResponsesApiToolSearchEnabled` setting is enabled
+ * - OpenAI gpt-5.4 (gpt-5.4-*) and gpt-5.5 (gpt-5.5-*), but only when the `ResponsesApiToolSearchEnabled` setting is enabled
  */
 export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
 	const lower = modelId.toLowerCase();
-	if (isGpt54(lower)) {
+	if (isGpt54(lower) || isGpt55(lower)) {
 		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
 	}
 
@@ -419,7 +424,7 @@ export function isResponsesApiToolSearchEnabled(
 	configurationService: IConfigurationService,
 	experimentationService: IExperimentationService,
 ): boolean {
-	return isGpt54(endpoint) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
+	return (isGpt54(endpoint) || isGpt55(endpoint)) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
 }
 
 /**
