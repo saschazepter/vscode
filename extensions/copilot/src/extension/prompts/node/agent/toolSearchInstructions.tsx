@@ -16,10 +16,15 @@ export interface ToolSearchToolPromptProps extends BasePromptElementProps {
 	readonly modelFamily: string | undefined;
 }
 
+export interface DeferredToolListReminderProps extends BasePromptElementProps {
+	readonly availableTools: readonly LanguageModelToolInformation[] | undefined;
+}
+
 /**
  * Condensed tool search instructions shared across model prompts.
- * Renders deferred-tool search guidance when the endpoint supports tool search.
- * Self-gates on `endpoint.supportsToolSearch` — returns nothing if disabled.
+ * Renders deferred-tool search *guidance* when the endpoint supports tool
+ * search and at least one deferred tool is available. The list itself is
+ * rendered by `DeferredToolListReminder` inside the global agent context.
  */
 export class ToolSearchToolPromptOptimized extends PromptElement<ToolSearchToolPromptProps> {
 	constructor(
@@ -40,12 +45,8 @@ export class ToolSearchToolPromptOptimized extends PromptElement<ToolSearchToolP
 			return;
 		}
 
-		const deferredTools = this.props.availableTools
-			.filter(tool => !this.toolDeferralService.isNonDeferredTool(tool.name))
-			.map(tool => tool.name)
-			.sort();
-
-		if (deferredTools.length === 0) {
+		const hasDeferredTool = this.props.availableTools.some(tool => !this.toolDeferralService.isNonDeferredTool(tool.name));
+		if (!hasDeferredTool) {
 			return;
 		}
 
@@ -55,8 +56,48 @@ export class ToolSearchToolPromptOptimized extends PromptElement<ToolSearchToolP
 			Describe what capability you need in natural language. The search uses semantic similarity to find the most relevant tools.<br />
 			<br />
 			Do NOT call {CUSTOM_TOOL_SEARCH_NAME} again for a tool already returned by a previous search. If a search returns no matching tools, the tool is not available. Do not retry with different patterns.<br />
-			<br />
-			Available deferred tools (must be loaded before use):<br />
+		</Tag>;
+	}
+}
+
+/**
+ * Emits the list of deferred tools. Rendered inside `GlobalAgentContext` so it
+ * appears once at the start of the conversation and is then frozen for the
+ * remainder of the session via `GlobalContextMessageMetadata` — keeps the
+ * list out of every per-turn user message and out of the system prompt prefix.
+ *
+ * Self-gates on `endpoint.supportsToolSearch`. The surrounding `<Tag>` name
+ * matches the reference used by `tool_search`'s tool description.
+ *
+ * Note: the snapshot is taken at first render. Tools that become available
+ * later in the conversation (e.g. MCP servers connecting mid-session) won't
+ * appear in this list.
+ */
+export class DeferredToolListReminder extends PromptElement<DeferredToolListReminderProps> {
+	constructor(
+		props: PromptElementProps<DeferredToolListReminderProps>,
+		@IToolDeferralService private readonly toolDeferralService: IToolDeferralService,
+	) {
+		super(props);
+	}
+
+	async render(state: void, sizing: PromptSizing) {
+		const endpoint = sizing.endpoint as IChatEndpoint | undefined;
+		if (!endpoint?.supportsToolSearch || !this.props.availableTools) {
+			return;
+		}
+
+		const deferredTools = this.props.availableTools
+			.filter(tool => !this.toolDeferralService.isNonDeferredTool(tool.name))
+			.map(tool => tool.name)
+			.sort();
+
+		if (deferredTools.length === 0) {
+			return;
+		}
+
+		return <Tag name='availableDeferredTools'>
+			Available deferred tools (must be loaded with {CUSTOM_TOOL_SEARCH_NAME} before use):<br />
 			{deferredTools.join('\n')}
 		</Tag>;
 	}
