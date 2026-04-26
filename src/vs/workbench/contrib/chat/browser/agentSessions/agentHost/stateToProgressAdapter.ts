@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IMarkdownString, MarkdownString } from '../../../../../../base/common/htmlContent.js';
+import { escapeMarkdownLinkLabel, IMarkdownString, MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { marked, type Token, type Tokens, type TokensList } from '../../../../../../base/common/marked/marked.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, type ActiveTurn, type ICompletedToolCall, type ToolCallState, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -411,11 +411,13 @@ export function rewriteMarkdownLinks(markdown: string, connectionAuthority: stri
  * or returns `undefined` if the token should be left alone (external
  * scheme or unparseable URI).
  *
- * The output collapses to the canonical inline form `[](newHref)` (or
- * `![](newHref)` for images) — the chat renderer has richer handling for
- * empty-text agent-host links, so preserving the original label isn't
- * useful. This also means autolinks (`<url>`) and reference-style links
- * (`[text][ref]`) are normalized into the inline form.
+ * The output is the canonical inline form `[text](newHref)` (or
+ * `![text](newHref)` for images). When the original link has no display
+ * text the chat renderer falls back to its file-widget rendering, but a
+ * non-empty label (e.g. a skill name) is preserved so the renderer shows
+ * it instead of the URI's basename. This also means autolinks (`<url>`)
+ * and reference-style links (`[text][ref]`) are normalized into the
+ * inline form.
  */
 function rewriteLinkTokenRaw(token: Tokens.Link | Tokens.Image, connectionAuthority: string): string | undefined {
 	let parsed: URI;
@@ -428,9 +430,34 @@ function rewriteLinkTokenRaw(token: Tokens.Link | Tokens.Image, connectionAuthor
 	if (!scheme || EXTERNAL_LINK_SCHEMES.has(scheme)) {
 		return undefined;
 	}
-	const newHref = toAgentHostUri(parsed, connectionAuthority).toString();
+	let agentHostUri = toAgentHostUri(parsed, connectionAuthority);
+	// VS-Code-specific: links pointing at a `SKILL.md` file are rendered as a
+	// rich skill pill rather than a plain markdown link. The chat renderer's
+	// inline anchor widget keys off the `vscodeLinkType` query parameter (see
+	// `chatInlineAnchorWidget.ts`), so we tag the URI here on the client side
+	// rather than at the agent host. We do this whether or not the link came
+	// in pre-tagged so older sessions and other agent providers also benefit.
+	if (isSkillFileUri(parsed) && !agentHostUri.query.includes('vscodeLinkType=')) {
+		const existing = agentHostUri.query;
+		agentHostUri = agentHostUri.with({ query: existing ? `${existing}&vscodeLinkType=skill` : 'vscodeLinkType=skill' });
+	}
 	const prefix = token.type === 'image' ? '![' : '[';
-	return `${prefix}](${newHref})`;
+	// Escape only the characters that would break out of markdown link text
+	// syntax (`\` and `]`). A full markdown escape would leave visible
+	// backslashes in renderers (like the skill pill) that extract link text
+	// without re-parsing markdown.
+	const text = escapeMarkdownLinkLabel(token.text ?? '');
+	return `${prefix}${text}](${agentHostUri.toString()})`;
+}
+
+/**
+ * Returns true when the URI's basename is `SKILL.md` (case-insensitive).
+ * Used to tag skill links so the chat renderer shows the rich skill pill
+ * instead of a plain markdown anchor.
+ */
+function isSkillFileUri(uri: URI): boolean {
+	const name = basename(uri);
+	return name.toLowerCase() === 'skill.md';
 }
 
 /**

@@ -244,8 +244,8 @@ suite('stateToProgressAdapter', () => {
 			if (response.type !== 'response') { return; }
 			const part = response.parts[0] as IChatMarkdownContent;
 			assert.deepStrictEqual(part.content.value,
-				'See [](vscode-agent-host://my-host/file/-/a/b.ts), ' +
-				'[](vscode-agent-host://my-host/agenthost-content/-/s/x), ' +
+				'See [local](vscode-agent-host://my-host/file/-/a/b.ts), ' +
+				'[content](vscode-agent-host://my-host/agenthost-content/-/s/x), ' +
 				'[external](https://example.com) and ' +
 				'[rel](./foo.md).'
 			);
@@ -270,8 +270,8 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(response.type, 'response');
 			if (response.type !== 'response') { return; }
 			const value = (response.parts[0] as IChatMarkdownContent).content.value;
-			assert.ok(value.includes('[](vscode-agent-host://my-host/file/-/a.ts)'));
-			assert.ok(value.includes('[](vscode-agent-host://my-host/file/-/c.ts)'));
+			assert.ok(value.includes('[real](vscode-agent-host://my-host/file/-/a.ts)'));
+			assert.ok(value.includes('[another](vscode-agent-host://my-host/file/-/c.ts)'));
 			// The link inside the fenced code block must NOT be rewritten.
 			assert.ok(value.includes('[fake](file:///b.ts)'));
 			assert.ok(!value.includes('[fake](vscode-agent-host'));
@@ -289,7 +289,7 @@ suite('stateToProgressAdapter', () => {
 			if (response.type !== 'response') { return; }
 			const value = (response.parts[0] as IChatMarkdownContent).content.value;
 			assert.strictEqual(value,
-				'Real [](vscode-agent-host://my-host/file/-/a.ts) and literal `[two](file:///b.ts)` here.'
+				'Real [one](vscode-agent-host://my-host/file/-/a.ts) and literal `[two](file:///b.ts)` here.'
 			);
 		});
 
@@ -415,7 +415,7 @@ suite('stateToProgressAdapter', () => {
 			assert.ok(invocation.pastTenseMessage);
 			assert.strictEqual(typeof invocation.pastTenseMessage, 'object');
 			const value = (invocation.pastTenseMessage as { value: string }).value;
-			assert.strictEqual(value, 'Read [](vscode-agent-host://ssh__macbook-air/file/-/path/to/foo.ts)');
+			assert.strictEqual(value, 'Read [foo.ts](vscode-agent-host://ssh__macbook-air/file/-/path/to/foo.ts)');
 		});
 
 		test('finalizes terminal tool with output and exit code', () => {
