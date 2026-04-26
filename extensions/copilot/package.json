@@ -3820,7 +3820,6 @@
 						"default": false,
 						"markdownDescription": "%github.copilot.config.anthropic.cacheBreakpoints.lastTwoMessages%",
 						"tags": [
-							"advanced",
 							"experimental",
 							"onExp"
 						]
