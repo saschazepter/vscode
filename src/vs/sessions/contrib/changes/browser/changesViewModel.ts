@@ -403,7 +403,8 @@ export class ChangesViewModel extends Disposable {
 			const hasGitRepository = this.activeSessionHasGitRepositoryObs.read(reader);
 			const branchName = (sessionMetadata?.branchName ?? sessionMetadata?.branch) as string | undefined
 				?? workspaceRepository?.branchName;
-			const baseBranchName = (sessionMetadata?.baseBranchName ?? sessionMetadata?.baseBranch) as string | undefined;
+			const baseBranchName = (sessionMetadata?.baseBranchName ?? sessionMetadata?.baseBranch) as string | undefined
+				?? workspaceRepository?.baseBranchName;
 
 			// Fall back to reading details from repo on the session management service session
 			const isMergeBaseBranchProtected = (sessionMetadata?.baseBranchProtected as boolean | undefined)
