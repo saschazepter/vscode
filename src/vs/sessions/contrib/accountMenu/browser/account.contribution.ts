@@ -258,6 +258,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		action: IAction,
 		options: IBaseActionViewItemOptions | undefined,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@IMenuService private readonly menuService: IMenuService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IHoverService private readonly hoverService: IHoverService,
@@ -273,6 +274,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		});
 
 		this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => this.refreshAccount()));
+		this._register(this.authenticationService.onDidChangeSessions(() => this.refreshAccount()));
 		this._register(this.chatEntitlementService.onDidChangeEntitlement(() => this.renderState()));
 		this._register(this.chatEntitlementService.onDidChangeSentiment(() => this.renderState()));
 		this._register(this.chatEntitlementService.onDidChangeQuotaExceeded(() => this.renderState()));
@@ -316,14 +318,41 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		this.isAccountLoading = true;
 		this.renderState();
 
+		let accountName: string | undefined;
+		let accountProviderId: string | undefined;
+		let accountProviderLabel: string | undefined;
+
 		const account = await this.defaultAccountService.getDefaultAccount();
 		if (requestId !== this.accountRequestCounter) {
 			return;
 		}
 
-		this.accountName = account?.accountName;
-		this.accountProviderId = account?.authenticationProvider.id;
-		this.accountProviderLabel = account?.authenticationProvider.name;
+		if (account) {
+			accountName = account.accountName;
+			accountProviderId = account.authenticationProvider.id;
+			accountProviderLabel = account.authenticationProvider.name;
+		} else {
+			// Fall back to reading GitHub sessions directly — covers the
+			// window between session creation and DefaultAccountProvider
+			// initialization.
+			try {
+				const sessions = await this.authenticationService.getSessions('github');
+				if (requestId !== this.accountRequestCounter) {
+					return;
+				}
+				if (sessions.length > 0) {
+					accountName = sessions[0].account.label;
+					accountProviderId = 'github';
+					accountProviderLabel = 'GitHub';
+				}
+			} catch {
+				// Provider not available yet
+			}
+		}
+
+		this.accountName = accountName;
+		this.accountProviderId = accountProviderId;
+		this.accountProviderLabel = accountProviderLabel;
 		this.isAccountLoading = false;
 		this.refreshAvatar();
 		this.renderState();
@@ -334,11 +363,17 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 			return;
 		}
 
+		// When we have a session but entitlement hasn't resolved yet,
+		// treat as Unresolved to avoid showing "Agents Signed Out".
+		const entitlement = this.accountName && this.chatEntitlementService.entitlement === ChatEntitlement.Unknown
+			? ChatEntitlement.Unresolved
+			: this.chatEntitlementService.entitlement;
+
 		const state = getAccountTitleBarState({
 			isAccountLoading: this.isAccountLoading,
 			accountName: this.accountName,
 			accountProviderLabel: this.accountProviderLabel,
-			entitlement: this.chatEntitlementService.entitlement,
+			entitlement,
 			sentiment: this.chatEntitlementService.sentiment,
 			quotas: this.chatEntitlementService.quotas,
 		});
