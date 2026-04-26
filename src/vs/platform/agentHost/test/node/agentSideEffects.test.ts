@@ -1953,7 +1953,14 @@ suite('AgentSideEffects', () => {
 			disposables.add(localSideEffects.registerProgressListener(localAgent));
 
 			const envelopes: ActionEnvelope[] = [];
-			disposables.add(localStateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+			let resolveDiffs: (() => void) | undefined;
+			const diffsEmitted = new Promise<void>(r => { resolveDiffs = r; });
+			disposables.add(localStateManager.onDidEmitEnvelope(e => {
+				envelopes.push(e);
+				if (e.action.type === ActionType.SessionDiffsChanged) {
+					resolveDiffs?.();
+				}
+			}));
 
 			// Trigger a turn-complete (which fires the immediate diff path).
 			localSideEffects.handleAction({
@@ -1964,8 +1971,9 @@ suite('AgentSideEffects', () => {
 			});
 			localAgent.fireProgress({ session: URI.parse(sessionUri.toString()), type: 'idle' });
 
-			// Wait for the sequenced async diff computation to settle.
-			await new Promise(r => setTimeout(r, 100));
+			// Wait deterministically for the SessionDiffsChanged envelope rather
+			// than sleeping a fixed amount.
+			await diffsEmitted;
 
 			assert.deepStrictEqual(computeCalls, [{ workingDirectory: 'file:///wd', sessionUri: sessionUri.toString(), baseBranch: 'main' }]);
 			const diffsAction = envelopes.map(e => e.action).find(a => a.type === ActionType.SessionDiffsChanged);
@@ -2005,7 +2013,14 @@ suite('AgentSideEffects', () => {
 			disposables.add(localSideEffects.registerProgressListener(localAgent));
 
 			const envelopes: ActionEnvelope[] = [];
-			disposables.add(localStateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+			let resolveDiffs: (() => void) | undefined;
+			const diffsEmitted = new Promise<void>(r => { resolveDiffs = r; });
+			disposables.add(localStateManager.onDidEmitEnvelope(e => {
+				envelopes.push(e);
+				if (e.action.type === ActionType.SessionDiffsChanged) {
+					resolveDiffs?.();
+				}
+			}));
 
 			localSideEffects.handleAction({
 				type: ActionType.SessionTurnStarted,
@@ -2015,7 +2030,7 @@ suite('AgentSideEffects', () => {
 			});
 			localAgent.fireProgress({ session: URI.parse(sessionUri.toString()), type: 'idle' });
 
-			await new Promise(r => setTimeout(r, 100));
+			await diffsEmitted;
 
 			// With no recorded edits, the edit-tracker aggregator returns an empty array — the
 			// important assertion is that we still produced a SessionDiffsChanged envelope, which

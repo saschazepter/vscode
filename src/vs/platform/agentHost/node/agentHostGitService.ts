@@ -249,6 +249,13 @@ export class AgentHostGitService implements IAgentHostGitService {
 	}
 
 	async showBlob(workingDirectory: URI, sha: string, repoRelativePath: string): Promise<VSBuffer | undefined> {
+		// Validate sha before passing it to git. `git show <sha>:<path>` parses
+		// its argument as a revision, so an attacker-controlled sha that starts
+		// with `-` could inject options, and a non-hex value could resolve to
+		// commit could resolve to surprising refs. Object names are 4-64 lowercase hex chars.
+		if (!/^[0-9a-f]{4,64}$/.test(sha)) {
+			return undefined;
+		}
 		const inside = await this._runGit(workingDirectory, ['rev-parse', '--is-inside-work-tree']);
 		if (inside?.trim() !== 'true') {
 			return undefined;
@@ -324,10 +331,13 @@ export class AgentHostGitService implements IAgentHostGitService {
 		return stripUndefined(result);
 	}
 
-	private _runGit(workingDirectory: URI, args: readonly string[], options?: { readonly timeout?: number; readonly throwOnError?: boolean; readonly env?: Record<string, string> }): Promise<string | undefined> {
+	private _runGit(workingDirectory: URI, args: readonly string[], options?: { readonly timeout?: number; readonly throwOnError?: boolean; readonly env?: Record<string, string>; readonly maxBuffer?: number }): Promise<string | undefined> {
 		return new Promise((resolve, reject) => {
 			const env = options?.env ? { ...process.env, ...options.env } : undefined;
-			cp.execFile('git', [...args], { cwd: workingDirectory.fsPath, timeout: options?.timeout ?? 5000, env }, (error, stdout, stderr) => {
+			// Default maxBuffer is 32MB — Node's default is ~1MB, which is
+			// easy to exceed for diff output in large repos. Exceeding it
+			// causes execFile to error and we'd silently drop the diff.
+			cp.execFile('git', [...args], { cwd: workingDirectory.fsPath, timeout: options?.timeout ?? 5000, env, maxBuffer: options?.maxBuffer ?? 32 * 1024 * 1024 }, (error, stdout, stderr) => {
 				if (error) {
 					if (options?.throwOnError) {
 						reject(new Error(stderr || error.message));

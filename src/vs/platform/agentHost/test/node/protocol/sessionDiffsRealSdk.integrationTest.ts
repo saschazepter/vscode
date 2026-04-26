@@ -150,7 +150,10 @@ function resolveGitHubToken(): string {
 		// (not a write_file tool) so the edit isn't reported via the SDK's
 		// file-edit content events — the diff has to come from git.
 		const targetFile = join(tempDir, 'from-bash.txt');
-		const prompt = `Use the bash shell tool to run exactly: echo hello > ${targetFile}\nDo not use any file-write tool. Use only bash.`;
+		// Quote/escape targetFile for the shell so paths containing spaces or
+		// shell metacharacters don't break the test.
+		const shellQuotedTargetFile = `'${targetFile.replace(/'/g, `'\\''`)}'`;
+		const prompt = `Use the bash shell tool to run exactly: echo hello > ${shellQuotedTargetFile}\nDo not use any file-write tool. Use only bash.`;
 		client.notify('dispatchAction', {
 			clientSeq: 1,
 			action: { type: 'session/turnStarted', session: realSessionUri, turnId: 'turn-diff', userMessage: { text: prompt } },
