@@ -299,7 +299,7 @@ suite('SessionsWelcomeContribution', () => {
 		document.body.appendChild(container);
 
 		try {
-			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container));
+			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container, true));
 			const overlayElement = container.querySelector<HTMLElement>('.sessions-walkthrough-overlay');
 			assert.ok(overlayElement);
 
@@ -349,7 +349,7 @@ suite('SessionsWelcomeContribution', () => {
 					}
 				} as unknown as ICommandService);
 
-				const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container));
+				const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container, true));
 				const githubButton = container.querySelector<HTMLButtonElement>('.sessions-walkthrough-provider-btn.provider-github');
 				const googleButton = container.querySelector<HTMLButtonElement>('.sessions-walkthrough-provider-btn.provider-google');
 				const appleButton = container.querySelector<HTMLButtonElement>('.sessions-walkthrough-provider-btn.provider-apple');
@@ -406,7 +406,7 @@ suite('SessionsWelcomeContribution', () => {
 		document.body.appendChild(container);
 
 		try {
-			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container));
+			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container, true));
 			const enterpriseButton = container.querySelector<HTMLButtonElement>('.sessions-walkthrough-provider-btn.provider-enterprise');
 			assert.ok(enterpriseButton);
 
@@ -455,7 +455,7 @@ suite('SessionsWelcomeContribution', () => {
 		document.body.appendChild(container);
 
 		try {
-			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container));
+			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container, true));
 			const disclaimer = container.querySelector<HTMLElement>('.sessions-walkthrough-disclaimer');
 			assert.ok(disclaimer);
 			assert.strictEqual(disclaimer.classList.contains('hidden'), false);
@@ -499,7 +499,7 @@ suite('SessionsWelcomeContribution', () => {
 		document.body.appendChild(container);
 
 		try {
-			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container));
+			const overlay = disposables.add(instantiationService.createInstance(SessionsWalkthroughOverlay, container, true));
 			const disclaimer = container.querySelector<HTMLElement>('.sessions-walkthrough-disclaimer');
 			assert.ok(disclaimer);
 			assert.strictEqual(disclaimer.classList.contains('hidden'), false);
