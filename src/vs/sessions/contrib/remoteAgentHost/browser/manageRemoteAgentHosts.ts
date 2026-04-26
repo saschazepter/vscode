@@ -159,20 +159,13 @@ registerAction2(class extends Action2 {
 					return;
 				}
 				if (selected.kind === 'remote') {
-					// Defer to allow the picker to fully hide before opening options
-					setTimeout(async () => {
-						const result = await instantiationService.invokeFunction(a => showRemoteHostOptions(a, selected.provider, { showBackButton: true }));
+					void instantiationService.invokeFunction(a => showRemoteHostOptions(a, selected.provider, { showBackButton: true })).then(result => {
 						if (result === 'back') {
 							showManagePicker();
 						}
-					}, 1);
+					});
 				} else if (selected.kind === 'menu-action') {
-					// Defer to allow the picker to fully hide, then run the action.
-					// Pass showManagePicker as the onBack callback so sub-pickers
-					// that support back navigation can return here.
-					setTimeout(() => {
-						commandService.executeCommand(selected.action.id, () => showManagePicker());
-					}, 1);
+					commandService.executeCommand(selected.action.id, () => showManagePicker());
 				}
 			}));
 

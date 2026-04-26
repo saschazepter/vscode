@@ -324,7 +324,9 @@ async function promptToConnectViaSSH(
 		const cmdId = result.kind === 'add-config'
 			? RemoteAgentHostCommandIds.addNewSSHHost
 			: RemoteAgentHostCommandIds.configureSSHHosts;
-		await commandService.executeCommand(cmdId);
+		// Pass back callback so sub-picker can navigate back to this SSH picker
+		const onBackToSSH = () => instantiationService.invokeFunction(a => promptToConnectViaSSH(a, options));
+		await commandService.executeCommand(cmdId, onBackToSSH);
 		return;
 	}
 
@@ -688,7 +690,7 @@ registerAction2(class extends Action2 {
 		});
 	}
 
-	override async run(accessor: ServicesAccessor): Promise<void> {
+	override async run(accessor: ServicesAccessor, onBack?: () => void): Promise<void> {
 		const sshService = accessor.get(ISSHRemoteAgentHostService);
 		const editorService = accessor.get(IEditorService);
 		const quickInputService = accessor.get(IQuickInputService);
@@ -724,12 +726,51 @@ registerAction2(class extends Action2 {
 			isUserConfig: index === 0,
 		}));
 
-		const picked = items.length === 1
-			? items[0]
-			: await quickInputService.pick(items, {
-				title: localize('sshConfigPickTitle', "Select SSH configuration file to edit"),
-				placeHolder: localize('sshConfigPickPlaceholder', "Select an SSH configuration file"),
-			});
+		// If there's only one file, skip the picker and open it directly.
+		// If onBack is provided we still need to show the picker to offer navigation.
+		if (items.length === 1 && !onBack) {
+			const picked = items[0];
+			try {
+				const uri = picked.isUserConfig
+					? await sshService.ensureUserSSHConfig().catch(() => userConfigUri)
+					: picked.uri;
+				await editorService.openEditor({ resource: uri, options: { pinned: true } satisfies ITextEditorOptions });
+			} catch (err) {
+				notificationService.error(localize('sshConfigOpenFailed', "Failed to open SSH config file: {0}", String(err)));
+			}
+			return;
+		}
+
+		const picked = await new Promise<'back' | ISSHConfigFilePickItem | undefined>(resolve => {
+			const store = new DisposableStore();
+			const picker = store.add(quickInputService.createQuickPick<ISSHConfigFilePickItem>());
+			picker.title = localize('sshConfigPickTitle', "Select SSH configuration file to edit");
+			picker.placeholder = localize('sshConfigPickPlaceholder', "Select an SSH configuration file");
+			picker.items = items;
+			if (onBack) {
+				picker.buttons = [quickInputService.backButton];
+			}
+			store.add(picker.onDidTriggerButton(button => {
+				if (button === quickInputService.backButton) {
+					resolve('back');
+					picker.hide();
+				}
+			}));
+			store.add(picker.onDidAccept(() => {
+				resolve(picker.selectedItems[0]);
+				picker.hide();
+			}));
+			store.add(picker.onDidHide(() => {
+				resolve(undefined);
+				store.dispose();
+			}));
+			picker.show();
+		});
+
+		if (picked === 'back') {
+			onBack?.();
+			return;
+		}
 		if (!picked) {
 			return;
 		}
@@ -759,7 +800,8 @@ interface IAuthProviderPickItem extends IQuickPickItem {
 
 async function promptToConnectViaTunnel(
 	accessor: ServicesAccessor,
-): Promise<void> {
+	options: { showBackButton?: boolean } = {},
+): Promise<'back' | void> {
 	const tunnelService = accessor.get(ITunnelAgentHostService);
 	const quickInputService = accessor.get(IQuickInputService);
 	const notificationService = accessor.get(INotificationService);
@@ -807,23 +849,27 @@ async function promptToConnectViaTunnel(
 	}
 
 	// Step 2: Show tunnel picker immediately in busy state while enumerating
-	const tunnelPicker = quickInputService.createQuickPick<ITunnelPickItem>();
+	const store = new DisposableStore();
+	const tunnelPicker = store.add(quickInputService.createQuickPick<ITunnelPickItem>());
 	tunnelPicker.title = localize('tunnelPickTitle', "Connect via Dev Tunnel");
 	tunnelPicker.placeholder = localize('tunnelPickPlaceholder', "Select a dev tunnel to connect to");
 	tunnelPicker.busy = true;
+	if (options.showBackButton) {
+		tunnelPicker.buttons = [quickInputService.backButton];
+	}
 	tunnelPicker.show();
 
 	let tunnels: ITunnelInfo[];
 	try {
 		tunnels = await tunnelService.listTunnels();
 	} catch (err) {
-		tunnelPicker.dispose();
+		store.dispose();
 		notificationService.error(localize('tunnelListFailed', "Failed to list dev tunnels: {0}", err instanceof Error ? err.message : String(err)));
 		return;
 	}
 
 	if (tunnels.length === 0) {
-		tunnelPicker.dispose();
+		store.dispose();
 		notificationService.info(localize('tunnelNoneFound', "No dev tunnels with agent host support were found. Start a tunnel with 'code tunnel' on another machine."));
 		return;
 	}
@@ -836,16 +882,26 @@ async function promptToConnectViaTunnel(
 	tunnelPicker.busy = false;
 
 	// Step 3: Wait for user selection
-	const picked = await new Promise<ITunnelPickItem | undefined>(resolve => {
-		tunnelPicker.onDidAccept(() => {
+	const picked = await new Promise<'back' | ITunnelPickItem | undefined>(resolve => {
+		store.add(tunnelPicker.onDidTriggerButton(button => {
+			if (button === quickInputService.backButton) {
+				resolve('back');
+				tunnelPicker.hide();
+			}
+		}));
+		store.add(tunnelPicker.onDidAccept(() => {
 			resolve(tunnelPicker.selectedItems[0]);
-			tunnelPicker.dispose();
-		});
-		tunnelPicker.onDidHide(() => {
+			tunnelPicker.hide();
+		}));
+		store.add(tunnelPicker.onDidHide(() => {
 			resolve(undefined);
-			tunnelPicker.dispose();
-		});
+			store.dispose();
+		}));
 	});
+
+	if (picked === 'back') {
+		return 'back';
+	}
 	if (!picked) {
 		return;
 	}
@@ -927,7 +983,10 @@ registerAction2(class extends Action2 {
 		});
 	}
 
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		await promptToConnectViaTunnel(accessor);
+	override async run(accessor: ServicesAccessor, onBack?: () => void): Promise<void> {
+		const result = await promptToConnectViaTunnel(accessor, { showBackButton: !!onBack });
+		if (result === 'back') {
+			onBack?.();
+		}
 	}
 });

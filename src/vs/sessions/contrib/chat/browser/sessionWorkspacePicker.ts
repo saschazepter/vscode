@@ -529,6 +529,8 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	private _showRemoteHostOptionsDelayed(provider: IAgentHostSessionsProvider): void {
+		// Defer one tick so the action widget fully tears down (focus/DOM cleanup)
+		// before the QuickPick opens and claims focus.
 		const timeout = setTimeout(() => {
 			this.instantiationService.invokeFunction(accessor => showRemoteHostOptions(accessor, provider));
 		}, 1);
