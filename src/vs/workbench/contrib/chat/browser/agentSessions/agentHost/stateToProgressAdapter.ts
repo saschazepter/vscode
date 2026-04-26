@@ -445,14 +445,15 @@ function rewriteLinkTokenRaw(token: Tokens.Link | Tokens.Image, connectionAuthor
 		agentHostUri = agentHostUri.with({ query: existing ? `${existing}&vscodeLinkType=skill` : 'vscodeLinkType=skill' });
 	}
 	const prefix = token.type === 'image' ? '![' : '[';
-	// Only preserve the link text for skill links — the skill pill renderer
-	// extracts the label from the markdown to display the skill name. For all
-	// other agent-host links, leave the text empty so the chat renderer's
-	// inline anchor widget takes over with its rich file-widget rendering.
+	// Preserve the label for skill links (so the skill pill renderer can show
+	// the skill name) and for image alt text (accessibility — the inline
+	// anchor widget only applies to links, not images). For all other
+	// agent-host links, leave the text empty so the chat renderer's inline
+	// anchor widget takes over with its rich file-widget rendering.
 	// Escape only the characters that would break out of markdown link text
 	// syntax (`\` and `]`); a full markdown escape would leave visible
 	// backslashes in the skill pill which extracts text without re-parsing.
-	const text = isSkill ? escapeMarkdownLinkLabel(token.text ?? '') : '';
+	const text = isSkill || token.type === 'image' ? escapeMarkdownLinkLabel(token.text ?? '') : '';
 	return `${prefix}${text}](${agentHostUri.toString()})`;
 }
 
