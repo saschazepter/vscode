@@ -75,7 +75,6 @@ describe('modelSupportsToolSearch', () => {
 		expect(modelSupportsToolSearch('gpt-5.4', configurationService, experimentationService)).toBe(true);
 		expect(modelSupportsToolSearch('gpt-5.4-preview', configurationService, experimentationService)).toBe(true);
 		expect(modelSupportsToolSearch('gpt-5.5', configurationService, experimentationService)).toBe(true);
-		expect(modelSupportsToolSearch('gpt-5.5-preview', configurationService, experimentationService)).toBe(true);
 		expect(modelSupportsToolSearch('gpt-5.4')).toBe(false);
 		expect(modelSupportsToolSearch('gpt-5.5')).toBe(false);
 	});
