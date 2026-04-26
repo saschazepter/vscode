@@ -428,8 +428,16 @@ export class MobileTitlebarPart extends Disposable {
 			append(profileInfo, $('div.mobile-account-sheet-name')).textContent = localize('mobileAccount.signedOut', "Not signed in");
 		}
 
-		// Copilot status dashboard — only when signed in
-		if (!this.chatEntitlementService.sentiment.hidden && !!this.accountName) {
+		// Copilot status dashboard — only when signed in AND entitlements
+		// have resolved. When entitlement is Unknown or Available (setup
+		// pending), the dashboard shows a "Set up Copilot" prompt that
+		// doesn't apply in the agents app.
+		const entitlement = this.chatEntitlementService.entitlement;
+		const showDashboard = !this.chatEntitlementService.sentiment.hidden
+			&& !!this.accountName
+			&& entitlement !== ChatEntitlement.Unknown
+			&& entitlement !== ChatEntitlement.Available;
+		if (showDashboard) {
 			const dashboardSection = append(content, $('div.mobile-account-sheet-section'));
 			const store = new DisposableStore();
 			this.copilotDashboardStore.value = store;
