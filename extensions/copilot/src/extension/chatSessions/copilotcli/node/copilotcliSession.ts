@@ -269,12 +269,16 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		this.add(toDisposable(this._sdkSession.on('system.notification', (event: SystemNotificationEvent) => {
 			try {
 				this.logService.info(`[anthony] system.notification received: kind=${event?.data?.kind} status=${this._status} session=${this.sessionId}`);
-				// NOTE: do NOT skip when `_status === InProgress`. In chained
-				// async-shell scenarios (e.g. async shell A done → handler still
-				// awaiting `session.idle` → assistant launches async shell B →
-				// SHELL_B_DONE arrives), `_status` is still `InProgress` from the
-				// first system-initiated turn. Skipping here would silently drop
-				// the second notification and the user never sees a follow-up bubble.
+				// Skip forwarding when a user-typed turn is in flight — the SDK
+				// will fold the notification into the running turn and we avoid
+				// a wasteful round-trip plus an extra bubble. Chained
+				// system-initiated turns must still forward, otherwise the
+				// follow-up notification (e.g. shell B done while shell A's
+				// turn is still streaming) would be silently dropped.
+				if (this._status === ChatSessionStatus.InProgress && !this._isInSystemInitiatedTurn) {
+					this.logService.info(`[anthony] system.notification SKIPPED (user-typed turn in flight; SDK will fold inline) session=${this.sessionId}`);
+					return;
+				}
 
 				// Mark this session as being in a system-initiated turn for as long
 				// as the SDK is reacting to the notification. The SDK auto-fires
