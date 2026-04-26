@@ -184,18 +184,22 @@ export function createMessagesRequestBody(accessor: ServicesAccessor, options: I
 	// "Last two messages" cache breakpoint strategy: place cache_control on the last
 	// two merged messages. This is gated behind an experiment and replaces the
 	// heuristic-based addCacheBreakpoints (which runs upstream in the prompt builder).
-	const useLastTwoMessages = configurationService.getExperimentBasedConfig(ConfigKey.AnthropicCacheBreakpointsLastTwoMessages, experimentationService);
 	// Run before addToolsAndSystemCacheControl: shifting markers placed first,
-	// static markers fill the remainder.
+	// static markers fill the remainder. When the experiment is on we count slots
+	// once and thread the budget through both functions to avoid a redundant walk.
+	const useLastTwoMessages = configurationService.getExperimentBasedConfig(ConfigKey.AnthropicCacheBreakpointsLastTwoMessages, experimentationService);
+	let precomputedSlots: number | undefined;
 	if (useLastTwoMessages) {
-		addLastTwoMessagesCacheControl(messagesResult);
+		precomputedSlots = maxCacheBreakpoints - countExistingMessageAndSystemCacheControl(messagesResult);
+		if (precomputedSlots > 0) {
+			precomputedSlots -= addLastTwoMessagesCacheControl(messagesResult, precomputedSlots);
+		}
 	}
 
 	// Add cache_control to the last tool and last system block so the stable tools+system
 	// prefix is cached across turns. Per the Anthropic docs, cache prefixes are created in
 	// order: tools → system → messages, and a max of 4 cache_control blocks is allowed.
-	// Count existing cache_control in messages+system first to stay within the limit.
-	addToolsAndSystemCacheControl(finalTools, messagesResult);
+	addToolsAndSystemCacheControl(finalTools, messagesResult, precomputedSlots);
 
 	// Guard: The Anthropic Messages API requires the conversation to end with a user message.
 	// A trailing assistant message is treated as a prefill request, which is not supported
@@ -524,8 +528,11 @@ function countExistingMessageAndSystemCacheControl(messagesResult: { messages: M
 export function addToolsAndSystemCacheControl(
 	tools: AnthropicMessagesTool[],
 	messagesResult: { messages: MessageParam[]; system?: TextBlockParam[] },
+	slotsAvailable?: number,
 ): void {
-	let slotsAvailable = maxCacheBreakpoints - countExistingMessageAndSystemCacheControl(messagesResult);
+	if (slotsAvailable === undefined) {
+		slotsAvailable = maxCacheBreakpoints - countExistingMessageAndSystemCacheControl(messagesResult);
+	}
 	if (slotsAvailable <= 0) {
 		return;
 	}
@@ -552,46 +559,62 @@ export function addToolsAndSystemCacheControl(
 }
 
 /**
- * Adds cache_control to the last two messages in the conversation.
+ * Adds cache_control to the last two distinct messages in the conversation.
  * This implements a simpler "shifting breakpoint" strategy: the last two messages
- * always get cache breakpoints, which naturally advances as the conversation grows.
+ * always carry cache breakpoints, which naturally advances as the conversation grows.
  * Combined with addToolsAndSystemCacheControl (which handles tools + system),
  * this gives 4 breakpoints: 2 static (tools/system) + 2 shifting (last two messages).
  *
- * Precondition: caller has disabled upstream cache_control insertion (prompt-tsx
- * markers + addCacheBreakpoints). When called with messages that already contain
- * cache_control, this function will not overwrite or move existing markers and may
- * place fewer than 2 new ones.
+ * If a trailing message already carries a cache_control marker, it counts toward the
+ * "two distinct messages" target and no additional marker is added — protecting the
+ * intent against any upstream code that may have placed markers before this runs.
+ *
+ * Returns the number of new cache_control markers added (0–2).
  */
 export function addLastTwoMessagesCacheControl(
 	messagesResult: { messages: MessageParam[]; system?: TextBlockParam[] },
-): void {
-	let slotsAvailable = maxCacheBreakpoints - countExistingMessageAndSystemCacheControl(messagesResult);
+	slotsAvailable?: number,
+): number {
+	if (slotsAvailable === undefined) {
+		slotsAvailable = maxCacheBreakpoints - countExistingMessageAndSystemCacheControl(messagesResult);
+	}
 	if (slotsAvailable <= 0) {
-		return;
+		return 0;
 	}
 
 	// Walk messages in reverse, marking the last cacheable content block of the
-	// last two messages.
+	// last two distinct messages. A message that already has a cache_control
+	// marker counts toward the target without a new marker being added.
 	const messages = messagesResult.messages;
 	let markedCount = 0;
+	let added = 0;
 	for (let i = messages.length - 1; i >= 0 && slotsAvailable > 0 && markedCount < 2; i--) {
 		const msg = messages[i];
 		if (!Array.isArray(msg.content) || msg.content.length === 0) {
 			continue;
 		}
 
+		const alreadyMarked = msg.content.some(b =>
+			typeof b === 'object' && 'cache_control' in b && b.cache_control
+		);
+		if (alreadyMarked) {
+			markedCount++;
+			continue;
+		}
+
 		// Find the last block in this message that supports cache_control
 		for (let j = msg.content.length - 1; j >= 0; j--) {
 			const block = msg.content[j];
-			if (typeof block === 'object' && contentBlockSupportsCacheControl(block) && !block.cache_control) {
+			if (typeof block === 'object' && contentBlockSupportsCacheControl(block)) {
 				block.cache_control = { type: 'ephemeral' };
 				slotsAvailable--;
 				markedCount++;
+				added++;
 				break;
 			}
 		}
 	}
+	return added;
 }
 
 export async function processResponseFromMessagesEndpoint(

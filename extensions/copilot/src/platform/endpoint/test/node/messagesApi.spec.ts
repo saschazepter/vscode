@@ -814,6 +814,51 @@ suite('addLastTwoMessagesCacheControl', function () {
 		expect(countAllCacheControl(messages)).toBe(4);
 	});
 
+	test('treats trailing message with existing cache_control as already marked', function () {
+		// Regression: prior code would walk past a pre-marked tail message and
+		// add two new markers to earlier messages, ending up with 3 distinct
+		// marked messages instead of 2.
+		const messages = makeMessages(
+			{ role: 'user', content: [{ type: 'text', text: 'a' }] as ContentBlockParam[] },
+			{ role: 'assistant', content: [{ type: 'text', text: 'b' }] as ContentBlockParam[] },
+			{ role: 'user', content: [{ type: 'text', text: 'c' }] as ContentBlockParam[] },
+			{ role: 'assistant', content: [{ type: 'text', text: 'd', cache_control: { type: 'ephemeral' } }] as ContentBlockParam[] },
+		);
+		const messagesResult = { messages };
+
+		const added = addLastTwoMessagesCacheControl(messagesResult);
+
+		expect(added).toBe(1);
+		expect(getCacheControl((messages[3].content as ContentBlockParam[])[0])).toEqual({ type: 'ephemeral' });
+		expect(getCacheControl((messages[2].content as ContentBlockParam[])[0])).toEqual({ type: 'ephemeral' });
+		expect(getCacheControl((messages[1].content as ContentBlockParam[])[0])).toBeUndefined();
+		expect(getCacheControl((messages[0].content as ContentBlockParam[])[0])).toBeUndefined();
+		expect(countAllCacheControl(messages)).toBe(2);
+	});
+
+	test('does not add a second marker to a message that already has one on a non-last block', function () {
+		const messages = makeMessages(
+			{ role: 'user', content: [{ type: 'text', text: 'a' }] as ContentBlockParam[] },
+			{
+				role: 'assistant', content: [
+					{ type: 'text', text: 'first', cache_control: { type: 'ephemeral' } },
+					{ type: 'text', text: 'second' },
+				] as ContentBlockParam[]
+			},
+		);
+		const messagesResult = { messages };
+
+		const added = addLastTwoMessagesCacheControl(messagesResult);
+
+		// Last message already counts as marked; only the prior message gets a new marker.
+		expect(added).toBe(1);
+		const assistantContent = messages[1].content as ContentBlockParam[];
+		expect(getCacheControl(assistantContent[0])).toEqual({ type: 'ephemeral' });
+		expect(getCacheControl(assistantContent[1])).toBeUndefined();
+		expect(getCacheControl((messages[0].content as ContentBlockParam[])[0])).toEqual({ type: 'ephemeral' });
+		expect(countAllCacheControl(messages)).toBe(2);
+	});
+
 	test('marks assistant-with-tool-calls as fork point', function () {
 		const messages = makeMessages(
 			{ role: 'user', content: [{ type: 'text', text: 'do stuff' }] as ContentBlockParam[] },
