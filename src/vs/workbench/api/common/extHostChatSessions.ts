@@ -629,7 +629,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		});
 	}
 
-	sendSystemInitiatedRequest(extension: IExtensionDescription, sessionResource: vscode.Uri, message: string, options: vscode.SystemInitiatedChatRequestOptions): Promise<void> {
+	sendSystemInitiatedRequest(extension: IExtensionDescription, sessionResource: vscode.Uri, prompt: string, options: vscode.SystemInitiatedChatRequestOptions): Promise<void> {
 		let ownedHandle: number | undefined;
 		for (const [handle, entry] of this._chatSessionContentProviders) {
 			if (entry.chatSessionScheme === sessionResource.scheme && ExtensionIdentifier.equals(entry.extension.identifier, extension.identifier)) {
@@ -643,7 +643,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		if (!options || typeof options.systemInitiatedLabel !== 'string' || options.systemInitiatedLabel.length === 0) {
 			return Promise.reject(new Error(`sendSystemInitiatedRequest: 'systemInitiatedLabel' is required`));
 		}
-		return this._proxy.$sendSystemInitiatedRequest(ownedHandle, sessionResource, message, { systemInitiatedLabel: options.systemInitiatedLabel });
+		return this._proxy.$sendSystemInitiatedRequest(ownedHandle, sessionResource, prompt, { systemInitiatedLabel: options.systemInitiatedLabel });
 	}
 
 	async $provideChatSessionContent(handle: number, sessionResourceComponents: UriComponents, context: ChatSessionContentContextDto, token: CancellationToken): Promise<IChatSessionDto> {

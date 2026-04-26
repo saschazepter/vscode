@@ -1004,7 +1004,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		// throw new Error('Method not implemented.');
 	}
 
-	async $sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, message: string, options: { systemInitiatedLabel: string }): Promise<void> {
+	async $sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, prompt: string, options: { systemInitiatedLabel: string }): Promise<void> {
 		const resource = URI.revive(sessionResource);
 		const ownedHandle = this._sessionTypeToHandle.get(resource.scheme);
 		if (ownedHandle !== handle) {
@@ -1018,7 +1018,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 			return;
 		}
 		try {
-			await this._chatService.sendRequest(resource, message, {
+			await this._chatService.sendRequest(resource, prompt, {
 				isSystemInitiated: true,
 				systemInitiatedLabel: options.systemInitiatedLabel,
 				queue: ChatRequestQueueKind.Steering,

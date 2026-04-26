@@ -589,12 +589,12 @@ declare module 'vscode' {
 		 * as a steering request so it preempts the currently active turn.
 		 *
 		 * @param sessionResource Uri of the target chat session. Its scheme must match a {@link ChatSessionContentProvider} registered by this extension.
-		 * @param message The message body sent to the session's participant.
+		 * @param prompt The prompt sent to the session's participant. This becomes {@link ChatRequest.prompt} on the synthesized request.
 		 * @param options Display and routing options for the request.
 		 *
 		 * @returns A thenable that resolves once the request has been accepted and queued.
 		 */
-		export function sendSystemInitiatedRequest(sessionResource: Uri, message: string, options: SystemInitiatedChatRequestOptions): Thenable<void>;
+		export function sendSystemInitiatedRequest(sessionResource: Uri, prompt: string, options: SystemInitiatedChatRequestOptions): Thenable<void>;
 	}
 
 	/**

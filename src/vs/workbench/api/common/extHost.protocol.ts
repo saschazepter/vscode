@@ -3716,7 +3716,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$handleAnchorResolve(handle: number, sessionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void;
 	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string): void;
 
-	$sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, message: string, options: { systemInitiatedLabel: string }): Promise<void>;
+	$sendSystemInitiatedRequest(handle: number, sessionResource: UriComponents, prompt: string, options: { systemInitiatedLabel: string }): Promise<void>;
 }
 
 export interface ExtHostChatSessionsShape {
