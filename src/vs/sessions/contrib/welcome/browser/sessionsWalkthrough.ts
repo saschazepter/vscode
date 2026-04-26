@@ -151,10 +151,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const titleEl = this._isFirstLaunch
 			? append(right, $('h2', undefined, localize('walkthrough.welcome.title', "Welcome to {0}", productName)))
 			: append(right, $('h2', undefined, localize('walkthrough.signin.title', "Sign In")));
-		const subtitleEl = append(right, $('p', undefined, localize('walkthrough.welcome.subtitle', "Your AI-powered coding agent that builds, tests, and iterates for you.")));
-		append(right, $('p.sessions-walkthrough-tagline', undefined, localize('walkthrough.welcome.tagline', "Happy Agentic Coding!")));
-		if (!this._isFirstLaunch) {
-			append(right, $('p', undefined, localize('walkthrough.signin.subtitle', "Sign in to continue.")));
+		const subtitleEl = append(right, $('p', undefined, this._isFirstLaunch
+			? localize('walkthrough.welcome.subtitle', "Your AI-powered coding agent that builds, tests, and iterates for you.")
+			: localize('walkthrough.signin.subtitle', "Sign in to continue.")));
+		if (this._isFirstLaunch) {
+			append(right, $('p.sessions-walkthrough-tagline', undefined, localize('walkthrough.welcome.tagline', "Happy Agentic Coding!")));
 		}
 
 		this._renderSignInButtons(stepDisposables, right, titleEl, subtitleEl);
