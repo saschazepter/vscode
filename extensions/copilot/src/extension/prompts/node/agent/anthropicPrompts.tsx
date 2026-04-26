@@ -5,15 +5,15 @@
 
 import { PromptElement, PromptElementProps, PromptPiece, PromptSizing } from '@vscode/prompt-tsx';
 import { IConfigurationService } from '../../../../platform/configuration/common/configurationService';
-import { isHiddenModelG, modelSupportsToolSearch } from '../../../../platform/endpoint/common/chatModelCapabilities';
+import { isHiddenModelG } from '../../../../platform/endpoint/common/chatModelCapabilities';
 import { CUSTOM_TOOL_SEARCH_NAME, isAnthropicContextEditingEnabled } from '../../../../platform/networking/common/anthropic';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
+import { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
 import { IExperimentationService } from '../../../../platform/telemetry/common/nullExperimentationService';
 import { agenticBrowserTools, ToolName } from '../../../tools/common/toolNames';
 import { InstructionMessage } from '../base/instructionMessage';
 import { ResponseTranslationRules } from '../base/responseTranslationRules';
-import { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
-import { ToolSearchToolPromptOptimized, ToolSearchToolPromptProps } from './toolSearchInstructions';
+import { hasDeferredTool, ToolSearchToolPromptOptimized, ToolSearchToolPromptProps } from './toolSearchInstructions';
 import { Tag } from '../base/tag';
 import { EXISTING_CODE_MARKER } from '../panel/codeBlockFormattingRules';
 import { MathIntegrationRules } from '../panel/editorIntegrationRules';
@@ -37,18 +37,7 @@ class ToolSearchToolPrompt extends PromptElement<ToolSearchToolPromptProps> {
 
 	async render(state: void, sizing: PromptSizing) {
 		const endpoint = sizing.endpoint as IChatEndpoint | undefined;
-
-		// Check if tool search is enabled for this model
-		const toolSearchEnabled = endpoint
-			? !!endpoint.supportsToolSearch
-			: modelSupportsToolSearch(this.props.modelFamily ?? '');
-
-		if (!toolSearchEnabled || !this.props.availableTools) {
-			return;
-		}
-
-		const hasDeferredTool = this.props.availableTools.some(tool => !this.toolDeferralService.isNonDeferredTool(tool.name));
-		if (!hasDeferredTool) {
+		if (!endpoint?.supportsToolSearch || !hasDeferredTool(this.props.availableTools, this.toolDeferralService)) {
 			return;
 		}
 
@@ -265,7 +254,7 @@ class Claude45DefaultPrompt extends PromptElement<DefaultAgentPromptProps> {
 				{!tools[ToolName.CoreRunInTerminal] && <>You don't currently have any tools available for running terminal commands. If the user asks you to run a terminal command, you can ask the user to enable terminal tools or print a codeblock with the suggested command.<br /></>}
 				{tools[ToolName.CoreOpenBrowserPage] && tools.hasAgenticBrowserTools && <>Use the browser tools ({ToolName.CoreOpenBrowserPage}, {agenticBrowserTools.find(k => tools[k])}, etc.) when beneficial for front-end tasks, such as when visualizing or validating UI changes.<br /></>}
 				Tools can be disabled by the user. You may see tools used previously in the conversation that are not currently available. Be careful to only use the tools that are currently available to you.<br />
-				<ToolSearchToolPrompt availableTools={this.props.availableTools} modelFamily={this.props.modelFamily} />
+				<ToolSearchToolPrompt availableTools={this.props.availableTools} />
 			</Tag>
 			<Tag name='communicationStyle'>
 				Maintain clarity and directness in all responses, delivering complete information while matching response depth to the task's complexity.<br />
@@ -393,7 +382,7 @@ class Claude46OptimizedBasePrompt extends PromptElement<DefaultAgentPromptProps>
 				When invoking a tool that takes a file path, always use the absolute file path. If the file has a scheme like untitled: or vscode-userdata:, use a URI with the scheme.<br />
 				{tools[ToolName.CoreOpenBrowserPage] && tools.hasAgenticBrowserTools && <>Use the browser tools ({ToolName.CoreOpenBrowserPage}, {agenticBrowserTools.find(k => tools[k])}, etc.) when beneficial for front-end tasks, such as when visualizing or validating UI changes.<br /></>}
 				Tools can be disabled by the user. Only use tools that are currently available.<br />
-				<ToolSearchToolPromptOptimized availableTools={this.props.availableTools} modelFamily={this.props.modelFamily} />
+				<ToolSearchToolPromptOptimized availableTools={this.props.availableTools} />
 			</Tag>
 			<Tag name='communicationStyle'>
 				Be brief. Target 1-3 sentences for simple answers. Expand only for complex work or when requested.<br />

@@ -176,7 +176,7 @@ class HiddenModelBPrompt extends PromptElement<DefaultAgentPromptProps> {
 				<Tag name='toolUseInstructions'>
 					Don't call {ToolName.ExecutionSubagent} multiple times in parallel. Instead, invoke one subagent and wait for its response before running the next command.<br />
 				</Tag></>}
-			<ToolSearchToolPromptOptimized availableTools={this.props.availableTools} modelFamily={this.props.modelFamily} />
+			<ToolSearchToolPromptOptimized availableTools={this.props.availableTools} />
 			<FileLinkificationInstructionsOptimized />
 			<ResponseTranslationRules />
 		</InstructionMessage >;

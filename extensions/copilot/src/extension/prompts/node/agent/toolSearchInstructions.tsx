@@ -5,19 +5,29 @@
 
 import { BasePromptElementProps, PromptElement, PromptElementProps, PromptSizing } from '@vscode/prompt-tsx';
 import type { LanguageModelToolInformation } from 'vscode';
-import { modelSupportsToolSearch } from '../../../../platform/endpoint/common/chatModelCapabilities';
 import { CUSTOM_TOOL_SEARCH_NAME } from '../../../../platform/networking/common/anthropic';
-import { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
+import { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
 import { Tag } from '../base/tag';
 
 export interface ToolSearchToolPromptProps extends BasePromptElementProps {
 	readonly availableTools: readonly LanguageModelToolInformation[] | undefined;
-	readonly modelFamily: string | undefined;
 }
 
 export interface DeferredToolListReminderProps extends BasePromptElementProps {
 	readonly availableTools: readonly LanguageModelToolInformation[] | undefined;
+}
+
+/**
+ * True when `availableTools` contains at least one tool that the deferral
+ * service treats as deferred. Shared between the system-prompt guidance and
+ * the global-context list so they appear/disappear together.
+ */
+export function hasDeferredTool(
+	availableTools: readonly LanguageModelToolInformation[] | undefined,
+	toolDeferralService: IToolDeferralService,
+): boolean {
+	return !!availableTools?.some(tool => !toolDeferralService.isNonDeferredTool(tool.name));
 }
 
 /**
@@ -36,17 +46,7 @@ export class ToolSearchToolPromptOptimized extends PromptElement<ToolSearchToolP
 
 	async render(state: void, sizing: PromptSizing) {
 		const endpoint = sizing.endpoint as IChatEndpoint | undefined;
-
-		const toolSearchEnabled = endpoint
-			? !!endpoint.supportsToolSearch
-			: modelSupportsToolSearch(this.props.modelFamily ?? '');
-
-		if (!toolSearchEnabled || !this.props.availableTools) {
-			return;
-		}
-
-		const hasDeferredTool = this.props.availableTools.some(tool => !this.toolDeferralService.isNonDeferredTool(tool.name));
-		if (!hasDeferredTool) {
+		if (!endpoint?.supportsToolSearch || !hasDeferredTool(this.props.availableTools, this.toolDeferralService)) {
 			return;
 		}
 
