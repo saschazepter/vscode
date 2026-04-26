@@ -1907,4 +1907,122 @@ suite('AgentSideEffects', () => {
 			]);
 		});
 	});
+
+	// ---- Session diff computation ----------------------------------------------
+
+	suite('session diff computation', () => {
+
+		test('git-driven path is preferred when a git service is provided and the working dir is a git work tree', async () => {
+			const sessionDb = new SessionDatabase(':memory:');
+			disposables.add(toDisposable(() => sessionDb.close()));
+			const sessionDataService = createSessionDataService(sessionDb);
+			const localStateManager = disposables.add(new AgentHostStateManager(new NullLogService()));
+			const localAgent = new MockAgent();
+			disposables.add(toDisposable(() => localAgent.dispose()));
+
+			const gitDiffs = [{
+				after: { uri: 'file:///wd/new.ts', content: { uri: 'file:///wd/new.ts' } },
+				diff: { added: 1, removed: 0 },
+			}];
+			const computeCalls: { workingDirectory: string; sessionUri: string; baseBranch: string | undefined }[] = [];
+			const stubGit = {
+				computeSessionFileDiffs: async (wd: URI, opts: { sessionUri: string; baseBranch?: string }) => {
+					computeCalls.push({ workingDirectory: wd.toString(), sessionUri: opts.sessionUri, baseBranch: opts.baseBranch });
+					return gitDiffs;
+				},
+			} as unknown as import('../../node/agentHostGitService.js').IAgentHostGitService;
+
+			const localSideEffects = createTestSideEffects(disposables, localStateManager, {
+				getAgent: () => localAgent,
+				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
+				sessionDataService,
+				gitService: stubGit,
+				onTurnComplete: () => { },
+			});
+
+			localStateManager.createSession({
+				resource: sessionUri.toString(),
+				provider: 'mock',
+				title: 'Test',
+				status: SessionStatus.Idle,
+				createdAt: Date.now(),
+				modifiedAt: Date.now(),
+				workingDirectory: 'file:///wd',
+			});
+			await sessionDb.setMetadata('agentHost.diffBaseBranch', 'main');
+			disposables.add(localSideEffects.registerProgressListener(localAgent));
+
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(localStateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			// Trigger a turn-complete (which fires the immediate diff path).
+			localSideEffects.handleAction({
+				type: ActionType.SessionTurnStarted,
+				session: sessionUri.toString(),
+				turnId: 'turn-1',
+				userMessage: { text: 'hi' },
+			});
+			localAgent.fireProgress({ session: URI.parse(sessionUri.toString()), type: 'idle' });
+
+			// Wait for the sequenced async diff computation to settle.
+			await new Promise(r => setTimeout(r, 100));
+
+			assert.deepStrictEqual(computeCalls, [{ workingDirectory: 'file:///wd', sessionUri: sessionUri.toString(), baseBranch: 'main' }]);
+			const diffsAction = envelopes.map(e => e.action).find(a => a.type === ActionType.SessionDiffsChanged);
+			assert.ok(diffsAction, 'expected a SessionDiffsChanged action');
+			assert.deepStrictEqual((diffsAction as { diffs: unknown }).diffs, gitDiffs);
+		});
+
+		test('falls back to the edit-tracker aggregator when the git service returns undefined', async () => {
+			const sessionDb = new SessionDatabase(':memory:');
+			disposables.add(toDisposable(() => sessionDb.close()));
+			const sessionDataService = createSessionDataService(sessionDb);
+			const localStateManager = disposables.add(new AgentHostStateManager(new NullLogService()));
+			const localAgent = new MockAgent();
+			disposables.add(toDisposable(() => localAgent.dispose()));
+
+			const stubGit = {
+				computeSessionFileDiffs: async () => undefined,
+			} as unknown as import('../../node/agentHostGitService.js').IAgentHostGitService;
+
+			const localSideEffects = createTestSideEffects(disposables, localStateManager, {
+				getAgent: () => localAgent,
+				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
+				sessionDataService,
+				gitService: stubGit,
+				onTurnComplete: () => { },
+			});
+
+			localStateManager.createSession({
+				resource: sessionUri.toString(),
+				provider: 'mock',
+				title: 'Test',
+				status: SessionStatus.Idle,
+				createdAt: Date.now(),
+				modifiedAt: Date.now(),
+				workingDirectory: 'file:///wd',
+			});
+			disposables.add(localSideEffects.registerProgressListener(localAgent));
+
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(localStateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			localSideEffects.handleAction({
+				type: ActionType.SessionTurnStarted,
+				session: sessionUri.toString(),
+				turnId: 'turn-1',
+				userMessage: { text: 'hi' },
+			});
+			localAgent.fireProgress({ session: URI.parse(sessionUri.toString()), type: 'idle' });
+
+			await new Promise(r => setTimeout(r, 100));
+
+			// With no recorded edits, the edit-tracker aggregator returns an empty array — the
+			// important assertion is that we still produced a SessionDiffsChanged envelope, which
+			// proves the fallback path executed without throwing.
+			const diffsAction = envelopes.map(e => e.action).find(a => a.type === ActionType.SessionDiffsChanged);
+			assert.ok(diffsAction, 'expected a SessionDiffsChanged action from the fallback path');
+			assert.deepStrictEqual((diffsAction as { diffs: unknown[] }).diffs, []);
+		});
+	});
 });

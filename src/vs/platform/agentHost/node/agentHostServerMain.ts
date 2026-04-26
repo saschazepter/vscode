@@ -162,8 +162,11 @@ async function main(): Promise<void> {
 	// Session data service
 	const sessionDataService = new SessionDataService(URI.file(environmentService.userDataPath), fileService, logService);
 
-	// Create the agent service (owns AgentHostStateManager + AgentSideEffects internally)
+	// Git service is shared by AgentService (for diff computation + showBlob)
+	// and the production agent registration path. Construct once.
 	const gitService = new AgentHostGitService();
+
+	// Create the agent service (owns AgentHostStateManager + AgentSideEffects internally)
 	const agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService);
 	disposables.add(agentService);
 
