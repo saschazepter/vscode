@@ -391,20 +391,6 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
 }
 
 /**
- * Checks for an exact model version or a hyphen-suffixed variant.
- */
-function matchesExactVersionOrSuffixedVariant(normalizedModelId: string, versionPrefix: string): boolean {
-	return normalizedModelId === versionPrefix || normalizedModelId.startsWith(`${versionPrefix}-`);
-}
-
-/**
- * Checks normalized OpenAI model ids that support Responses API tool search.
- */
-function modelSupportsResponsesApiToolSearch(normalizedModelId: string): boolean {
-	return matchesExactVersionOrSuffixedVariant(normalizedModelId, 'gpt-5-4') || matchesExactVersionOrSuffixedVariant(normalizedModelId, 'gpt-5-5');
-}
-
-/**
  * Tool search is supported by:
  * - Claude Sonnet 4.5 (claude-sonnet-4-5-* or claude-sonnet-4.5-*)
  * - Claude Sonnet 4.6 (claude-sonnet-4-6-* or claude-sonnet-4.6-*)
@@ -415,7 +401,7 @@ function modelSupportsResponsesApiToolSearch(normalizedModelId: string): boolean
  */
 export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
 	const normalized = modelId.toLowerCase().replace(/\./g, '-');
-	if (modelSupportsResponsesApiToolSearch(normalized)) {
+	if (normalized.startsWith('gpt-5-4') || normalized.startsWith('gpt-5-5')) {
 		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
 	}
 
@@ -434,7 +420,7 @@ export function isResponsesApiToolSearchEnabled(
 ): boolean {
 	const family = typeof endpoint === 'string' ? endpoint : endpoint.family;
 	const normalized = family.toLowerCase().replace(/\./g, '-');
-	return modelSupportsResponsesApiToolSearch(normalized) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
+	return (normalized.startsWith('gpt-5-4') || normalized.startsWith('gpt-5-5')) && configurationService.getExperimentBasedConfig(ConfigKey.ResponsesApiToolSearchEnabled, experimentationService);
 }
 
 /**
