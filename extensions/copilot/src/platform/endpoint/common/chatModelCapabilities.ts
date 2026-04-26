@@ -397,15 +397,13 @@ export function getVerbosityForModelSync(model: IChatEndpoint): 'low' | 'medium'
  * - Claude Opus 4.5 (claude-opus-4-5-* or claude-opus-4.5-*)
  * - Claude Opus 4.6 (claude-opus-4-6-* or claude-opus-4.6-*)
  * - Claude Opus 4.7 (claude-opus-4-7-* or claude-opus-4.7-*)
- * - OpenAI gpt-5.4 (gpt-5.4-*) and gpt-5.5 (gpt-5.5-*), but only when the `ResponsesApiToolSearchEnabled` setting is enabled
+ * - OpenAI gpt-5.4 (gpt-5.4-*) and gpt-5.5 (gpt-5.5-*)
  */
 export function modelSupportsToolSearch(modelId: string, configurationService?: IConfigurationService, experimentationService?: IExperimentationService): boolean {
 	const normalized = modelId.toLowerCase().replace(/\./g, '-');
-	if (normalized.startsWith('gpt-5-4') || normalized.startsWith('gpt-5-5')) {
-		return !!configurationService && !!experimentationService && isResponsesApiToolSearchEnabled(modelId, configurationService, experimentationService);
-	}
-
-	return normalized.startsWith('claude-sonnet-4-5') ||
+	return normalized.startsWith('gpt-5-4') ||
+		normalized.startsWith('gpt-5-5') ||
+		normalized.startsWith('claude-sonnet-4-5') ||
 		normalized.startsWith('claude-sonnet-4-6') ||
 		normalized.startsWith('claude-opus-4-5') ||
 		normalized.startsWith('claude-opus-4-6') ||
