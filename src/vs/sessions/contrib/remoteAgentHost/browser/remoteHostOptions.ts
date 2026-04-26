@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -40,6 +41,11 @@ export function getStatusHover(status: RemoteAgentHostConnectionStatus, address?
 	}
 }
 
+export interface IShowRemoteHostOptionsOptions {
+	/** When true, show a Back button in the picker title bar. The promise resolves to `'back'` if pressed. */
+	readonly showBackButton?: boolean;
+}
+
 /**
  * Show the per-remote management options quickpick (Reconnect / Remove /
  * Copy Address / Open Settings / Show Output) for the given provider.
@@ -48,11 +54,14 @@ export function getStatusHover(status: RemoteAgentHostConnectionStatus, address?
  * "Manage Remote Agent Hosts..." command, so both surfaces drive the
  * same actions. Callers that don't have a {@link ServicesAccessor} should
  * use `instantiationService.invokeFunction(accessor => showRemoteHostOptions(accessor, provider))`.
+ *
+ * Returns `'back'` if the user clicked the back button (only possible when
+ * `options.showBackButton` is true), otherwise `undefined`.
  */
-export async function showRemoteHostOptions(accessor: ServicesAccessor, provider: IAgentHostSessionsProvider): Promise<void> {
+export async function showRemoteHostOptions(accessor: ServicesAccessor, provider: IAgentHostSessionsProvider, options: IShowRemoteHostOptionsOptions = {}): Promise<'back' | undefined> {
 	const address = provider.remoteAddress;
 	if (!address) {
-		return;
+		return undefined;
 	}
 
 	const quickInputService = accessor.get(IQuickInputService);
@@ -64,7 +73,8 @@ export async function showRemoteHostOptions(accessor: ServicesAccessor, provider
 	const status = provider.connectionStatus?.get();
 	const isConnected = status === RemoteAgentHostConnectionStatus.Connected;
 
-	const items: IQuickPickItem[] = [];
+	type RemoteOptionPickItem = IQuickPickItem & { id: string };
+	const items: RemoteOptionPickItem[] = [];
 	if (!isConnected) {
 		items.push({ label: '$(debug-restart) ' + localize('workspacePicker.reconnect', "Reconnect"), id: 'reconnect' });
 	}
@@ -77,15 +87,39 @@ export async function showRemoteHostOptions(accessor: ServicesAccessor, provider
 		items.push({ label: '$(output) ' + localize('workspacePicker.showOutput', "Show Output"), id: 'output' });
 	}
 
-	const picked = await quickInputService.pick(items, {
-		placeHolder: localize('workspacePicker.remoteOptionsTitle', "Options for {0}", provider.label),
+	const result = await new Promise<'back' | RemoteOptionPickItem | undefined>((resolve) => {
+		const store = new DisposableStore();
+		const picker = store.add(quickInputService.createQuickPick<RemoteOptionPickItem>());
+		picker.placeholder = localize('workspacePicker.remoteOptionsTitle', "Options for {0}", provider.label);
+		picker.items = items;
+		if (options.showBackButton) {
+			picker.buttons = [quickInputService.backButton];
+		}
+		store.add(picker.onDidTriggerButton(button => {
+			if (button === quickInputService.backButton) {
+				resolve('back');
+				picker.hide();
+			}
+		}));
+		store.add(picker.onDidAccept(() => {
+			resolve(picker.selectedItems[0]);
+			picker.hide();
+		}));
+		store.add(picker.onDidHide(() => {
+			resolve(undefined);
+			store.dispose();
+		}));
+		picker.show();
 	});
-	if (!picked) {
-		return;
+
+	if (result === 'back') {
+		return 'back';
+	}
+	if (!result) {
+		return undefined;
 	}
 
-	const action = (picked as IQuickPickItem & { id: string }).id;
-	switch (action) {
+	switch (result.id) {
 		case 'reconnect':
 			remoteAgentHostService.reconnect(address);
 			break;
@@ -104,5 +138,6 @@ export async function showRemoteHostOptions(accessor: ServicesAccessor, provider
 			}
 			break;
 	}
+	return undefined;
 }
 

@@ -108,64 +108,78 @@ registerAction2(class extends Action2 {
 			return items;
 		};
 
-		const store = new DisposableStore();
-		const picker = quickInputService.createQuickPick<ManageHostsPickItem>({ useSeparators: true });
-		store.add(picker);
-		picker.title = localize('manageHosts.title', "Manage Remote Agent Hosts");
-		picker.placeholder = localize('manageHosts.placeholder', "Select a remote to manage or pick an action");
-		picker.matchOnDescription = true;
-		picker.matchOnDetail = true;
+		const showManagePicker = () => {
+			const store = new DisposableStore();
+			const picker = quickInputService.createQuickPick<ManageHostsPickItem>({ useSeparators: true });
+			store.add(picker);
+			picker.title = localize('manageHosts.title', "Manage Remote Agent Hosts");
+			picker.placeholder = localize('manageHosts.placeholder', "Select a remote to manage or pick an action");
+			picker.matchOnDescription = true;
+			picker.matchOnDetail = true;
 
-		let lastFilter = '';
-		const refresh = () => {
-			lastFilter = picker.value;
-			picker.items = buildItems();
-			picker.value = lastFilter;
-		};
-		refresh();
+			let lastFilter = '';
+			const refresh = () => {
+				lastFilter = picker.value;
+				picker.items = buildItems();
+				picker.value = lastFilter;
+			};
+			refresh();
 
-		// Refresh when providers/connection status change
-		store.add(sessionsProvidersService.onDidChangeProviders(() => refresh()));
-		const observerStore = store.add(new DisposableStore());
-		const subscribeToProviders = () => {
-			observerStore.clear();
-			for (const p of sessionsProvidersService.getProviders()) {
-				if (isAgentHostProvider(p) && p.connectionStatus) {
-					observerStore.add(autorun(reader => {
-						p.connectionStatus!.read(reader);
-						refresh();
-					}));
+			// Refresh when providers/connection status change
+			store.add(sessionsProvidersService.onDidChangeProviders(() => refresh()));
+			const observerStore = store.add(new DisposableStore());
+			const subscribeToProviders = () => {
+				observerStore.clear();
+				for (const p of sessionsProvidersService.getProviders()) {
+					if (isAgentHostProvider(p) && p.connectionStatus) {
+						observerStore.add(autorun(reader => {
+							p.connectionStatus!.read(reader);
+							refresh();
+						}));
+					}
 				}
-			}
-		};
-		subscribeToProviders();
-		store.add(sessionsProvidersService.onDidChangeProviders(() => subscribeToProviders()));
+			};
+			subscribeToProviders();
+			store.add(sessionsProvidersService.onDidChangeProviders(() => subscribeToProviders()));
 
-		store.add(picker.onDidTriggerItemButton(async e => {
-			if (e.item.kind === 'remote' && e.button === removeButton) {
-				const address = e.item.provider.remoteAddress;
-				if (address) {
-					await remoteAgentHostService.removeRemoteAgentHost(address);
-					// onDidChangeProviders will refresh
+			store.add(picker.onDidTriggerItemButton(async e => {
+				if (e.item.kind === 'remote' && e.button === removeButton) {
+					const address = e.item.provider.remoteAddress;
+					if (address) {
+						await remoteAgentHostService.removeRemoteAgentHost(address);
+						// onDidChangeProviders will refresh
+					}
 				}
-			}
-		}));
+			}));
 
-		store.add(picker.onDidAccept(() => {
-			const selected = picker.selectedItems[0];
-			picker.hide();
-			if (!selected) {
-				return;
-			}
-			if (selected.kind === 'remote') {
-				// Defer to allow the picker to fully hide before opening options
-				setTimeout(() => instantiationService.invokeFunction(a => showRemoteHostOptions(a, selected.provider)), 1);
-			} else if (selected.kind === 'menu-action') {
-				commandService.executeCommand(selected.action.id);
-			}
-		}));
+			store.add(picker.onDidAccept(() => {
+				const selected = picker.selectedItems[0];
+				picker.hide();
+				if (!selected) {
+					return;
+				}
+				if (selected.kind === 'remote') {
+					// Defer to allow the picker to fully hide before opening options
+					setTimeout(async () => {
+						const result = await instantiationService.invokeFunction(a => showRemoteHostOptions(a, selected.provider, { showBackButton: true }));
+						if (result === 'back') {
+							showManagePicker();
+						}
+					}, 1);
+				} else if (selected.kind === 'menu-action') {
+					// Defer to allow the picker to fully hide, then run the action.
+					// Pass showManagePicker as the onBack callback so sub-pickers
+					// that support back navigation can return here.
+					setTimeout(() => {
+						commandService.executeCommand(selected.action.id, () => showManagePicker());
+					}, 1);
+				}
+			}));
 
-		store.add(picker.onDidHide(() => store.dispose()));
-		picker.show();
+			store.add(picker.onDidHide(() => store.dispose()));
+			picker.show();
+		};
+
+		showManagePicker();
 	}
 });

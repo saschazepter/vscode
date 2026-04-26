@@ -221,7 +221,8 @@ type SSHHostPickerItem = ISSHAliasPickItem | ISSHNewHostPickItem | ISSHFooterPic
 
 async function promptToConnectViaSSH(
 	accessor: ServicesAccessor,
-): Promise<void> {
+	options: { showBackButton?: boolean } = {},
+): Promise<'back' | void> {
 	const sshService = accessor.get(ISSHRemoteAgentHostService);
 	const quickInputService = accessor.get(IQuickInputService);
 	const notificationService = accessor.get(INotificationService);
@@ -252,13 +253,16 @@ async function promptToConnectViaSSH(
 		alwaysShow: true,
 	};
 
-	const result = await new Promise<SSHHostPickerItem | undefined>((resolve) => {
+	const result = await new Promise<'back' | SSHHostPickerItem | undefined>((resolve) => {
 		const store = new DisposableStore();
 		const picker = store.add(quickInputService.createQuickPick<SSHHostPickerItem>());
 		picker.title = localize('sshHostTitle', "Connect via SSH");
 		picker.placeholder = localize('sshHostPickerPlaceholder', "Select configured SSH host or enter user@host");
 		picker.ignoreFocusOut = true;
 		picker.matchOnDescription = true;
+		if (options.showBackButton) {
+			picker.buttons = [quickInputService.backButton];
+		}
 
 		let newHostVisible = false;
 		const updateItems = () => {
@@ -290,6 +294,12 @@ async function promptToConnectViaSSH(
 			}
 		}));
 
+		store.add(picker.onDidTriggerButton(button => {
+			if (button === quickInputService.backButton) {
+				resolve('back');
+				picker.hide();
+			}
+		}));
 		store.add(picker.onDidAccept(() => {
 			const selected = picker.selectedItems[0];
 			resolve(selected);
@@ -301,6 +311,10 @@ async function promptToConnectViaSSH(
 		}));
 		picker.show();
 	});
+
+	if (result === 'back') {
+		return 'back';
+	}
 
 	if (!result) {
 		return;
@@ -594,8 +608,11 @@ registerAction2(class extends Action2 {
 		});
 	}
 
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		await promptToConnectViaSSH(accessor);
+	override async run(accessor: ServicesAccessor, onBack?: () => void): Promise<void> {
+		const result = await promptToConnectViaSSH(accessor, { showBackButton: !!onBack });
+		if (result === 'back') {
+			onBack?.();
+		}
 	}
 });
 
