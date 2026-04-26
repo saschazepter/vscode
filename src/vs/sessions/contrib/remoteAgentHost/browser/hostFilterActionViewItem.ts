@@ -318,6 +318,11 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		sheet.setAttribute('role', 'dialog');
 		sheet.setAttribute('aria-label', localize('agentHostFilter.sheet.aria', "Select Agent Host"));
 
+		// Prevent taps on the sheet from bubbling to the backdrop dismiss handler
+		disposables.add(dom.addDisposableListener(sheet, dom.EventType.CLICK, e => e.stopPropagation()));
+		disposables.add(Gesture.addTarget(sheet));
+		disposables.add(dom.addDisposableListener(sheet, TouchEventType.Tap, e => dom.EventHelper.stop(e, true)));
+
 		// Drag handle
 		const handle = targetDocument.createElement('div');
 		handle.className = 'host-picker-sheet-handle';
@@ -394,7 +399,12 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		const firstItem = list.querySelector<HTMLElement>('.host-picker-sheet-item');
 		firstItem?.focus();
 
+		let isDismissing = false;
 		const dismiss = () => {
+			if (isDismissing) {
+				return;
+			}
+			isDismissing = true;
 			sheet.classList.add('dismissing');
 			backdrop.classList.add('dismissing');
 			const onEnd = () => {
