@@ -1,0 +1,203 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* ===========================================================================
+ * Agents Aquarium
+ * ===========================================================================
+ * - .agents-aquarium-water     full backdrop layer over the chat bar region
+ * - .agents-aquarium-fish      one per swimming fish (DOM + inline SVG)
+ * - .agents-aquarium-food      one per food pellet
+ * - .agents-aquarium-toggle    persistent floating button above the chat input
+ *
+ * All layers use pointer-events: none so the underlying chat UI keeps
+ * receiving clicks/keystrokes; mouse handling is done at the workbench main
+ * container level by aquariumOverlay.ts.
+ */
+
+/* ---- Water (background tint + caustics) ---- */
+
+/* Ensure the chat bar establishes a positioning context so the water layer
+ * (its first child) anchors exactly to the chat bar's bounds. */
+.monaco-workbench .part.chatbar {
+	position: relative;
+}
+
+.agents-aquarium-water {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	overflow: hidden;
+	z-index: 0;
+	/* sits behind any later sibling content in the chat bar */
+	border-radius: 12px;
+	opacity: 0;
+	transition: opacity 320ms ease-out;
+	background:
+		radial-gradient(circle at 30% 20%, rgba(36, 191, 165, 0.10), transparent 55%),
+		radial-gradient(circle at 75% 65%, rgba(0, 122, 204, 0.10), transparent 60%),
+		radial-gradient(circle at 50% 90%, rgba(188, 63, 188, 0.08), transparent 65%);
+}
+
+.agents-aquarium-water.visible {
+	opacity: 1;
+}
+
+/* Soft caustics shimmer overlay. */
+.agents-aquarium-water::after {
+	content: '';
+	position: absolute;
+	inset: -10%;
+	pointer-events: none;
+	background:
+		radial-gradient(ellipse 30% 20% at 20% 30%, rgba(255, 255, 255, 0.06), transparent 70%),
+		radial-gradient(ellipse 25% 18% at 70% 60%, rgba(255, 255, 255, 0.05), transparent 70%),
+		radial-gradient(ellipse 22% 16% at 50% 80%, rgba(255, 255, 255, 0.04), transparent 70%);
+	animation: agents-aquarium-caustics 9s ease-in-out infinite alternate;
+	mix-blend-mode: screen;
+}
+
+@keyframes agents-aquarium-caustics {
+	0% {
+		transform: translate(0, 0) scale(1);
+		opacity: 0.7;
+	}
+	50% {
+		transform: translate(2%, -1%) scale(1.05);
+		opacity: 1;
+	}
+	100% {
+		transform: translate(-1%, 2%) scale(0.98);
+		opacity: 0.8;
+	}
+}
+
+/* ---- Fish ---- */
+
+.agents-aquarium-fish-layer,
+.agents-aquarium-food-layer {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.agents-aquarium-fish {
+	position: absolute;
+	top: 0;
+	left: 0;
+	will-change: transform;
+	pointer-events: none;
+	/* No drop-shadow / blur filter: those break GPU compositing and force
+	 * a software rasterization pass per fish per frame. Worth ~10x in paint
+	 * cost when scaled to 50 fish. */
+}
+
+.agents-aquarium-fish-inner {
+	width: 100%;
+	height: 100%;
+	transform-origin: center;
+	transition: transform 180ms ease-out;
+}
+
+.agents-aquarium-fish svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+	overflow: visible;
+}
+
+/* Body strips: each strip is a clipped vertical slice of the VS Code logo.
+ * Strips animate translateY with a per-strip phase offset, producing a
+ * sine wave that travels along the body — the actual swimming motion. */
+.agents-aquarium-fish-strip {
+	animation: agents-aquarium-body-wave 720ms ease-in-out infinite;
+	/* 720ms / 10 strips = ~72ms phase delay between strips. Negative delays
+	 * start each strip mid-cycle so the wave is fully formed at t=0. */
+	animation-delay: calc(var(--strip-index, 0) * -72ms);
+}
+
+@keyframes agents-aquarium-body-wave {
+	0%, 100% {
+		transform: translateY(-3.5px);
+	}
+	50% {
+		transform: translateY(3.5px);
+	}
+}
+
+/* ---- Food pellets ---- */
+
+.agents-aquarium-food {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 6px;
+	height: 6px;
+	margin-left: -3px;
+	margin-top: -3px;
+	border-radius: 50%;
+	background: radial-gradient(circle at 35% 35%, #ffd56a, #c98a17 80%);
+	box-shadow: 0 0 4px rgba(255, 200, 80, 0.6);
+	pointer-events: none;
+	will-change: transform;
+}
+
+/* ---- Toggle button (always visible, top-right of the chat bar) ---- */
+
+/* The chat bar's `.part.chatbar` already establishes a positioning context
+ * (it has its own padding/border), so absolute positioning anchors the
+ * button relative to it. */
+.agents-aquarium-toggle {
+	position: absolute;
+	top: 12px;
+	right: 14px;
+	z-index: 100;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--vscode-foreground, #cccccc);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	cursor: pointer;
+	opacity: 0.5;
+	transition: opacity 160ms ease-out, background-color 160ms ease-out, color 160ms ease-out;
+}
+
+.agents-aquarium-toggle:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+
+/* Use the same `.monaco-workbench` prefix as the workbench's own
+ * `button:focus` rule so we win the cascade by source order without
+ * resorting to !important. */
+.monaco-workbench button.agents-aquarium-toggle:focus,
+.monaco-workbench button.agents-aquarium-toggle:focus-visible {
+	outline: none;
+}
+
+.agents-aquarium-toggle.active {
+	opacity: 1;
+	color: #ff6b88;
+}
+
+.agents-aquarium-toggle .codicon {
+	font-size: 14px;
+}
+
+/* ---- Reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+	.agents-aquarium-fish-strip,
+	.agents-aquarium-water::after {
+		animation: none;
+	}
+	.agents-aquarium-water {
+		transition: none;
+	}
+}
