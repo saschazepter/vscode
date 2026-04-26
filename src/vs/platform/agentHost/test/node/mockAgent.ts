@@ -77,9 +77,9 @@ export class MockAgent implements IAgent {
 	/** Optional override for the working directory returned by createSession. */
 	resolvedWorkingDirectory: URI | undefined;
 
-	async createSession(_config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
-		const rawId = `${this.id}-session-${this._nextId++}`;
-		const session = AgentSession.uri(this.id, rawId);
+	async createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
+		const session = config?.session ?? AgentSession.uri(this.id, `${this.id}-session-${this._nextId++}`);
+		const rawId = AgentSession.id(session);
 		this._sessions.set(rawId, session);
 		return { session, project: mockProject(this.id), workingDirectory: this.resolvedWorkingDirectory };
 	}
@@ -240,9 +240,9 @@ export class ScriptedMockAgent implements IAgent {
 		}));
 	}
 
-	async createSession(_config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
-		const rawId = `mock-session-${this._nextId++}`;
-		const session = AgentSession.uri('mock', rawId);
+	async createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
+		const session = config?.session ?? AgentSession.uri('mock', `mock-session-${this._nextId++}`);
+		const rawId = AgentSession.id(session);
 		this._sessions.set(rawId, session);
 		return { session, project: mockProject(this.id) };
 	}

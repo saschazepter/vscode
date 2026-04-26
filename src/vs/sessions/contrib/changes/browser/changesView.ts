@@ -639,8 +639,6 @@ export class ChangesViewPane extends ViewPane {
 			const changes = changesObs.read(reader);
 			const viewMode = this.viewModel.viewModeObs.read(reader);
 			const isLoading = this.viewModel.activeSessionIsLoadingObs.read(reader);
-			// Subscribe to active session state so the tree rebuilds when fields
-			// like `branchName` arrive asynchronously (used by `getTreeRootInfo`).
 			this.viewModel.activeSessionStateObs.read(reader);
 
 			if (!this.tree || isLoading) {

@@ -22,7 +22,7 @@ import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js
 import { SessionActiveClient, ResponsePartKind, SessionLifecycle, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
-import { MockAgent } from './mockAgent.js';
+import { MockAgent, ScriptedMockAgent } from './mockAgent.js';
 import { mapSessionEvents, type ISessionEvent } from '../../node/copilot/mapSessionEvents.js';
 import { createNoopGitService, createSessionDataService } from '../common/sessionTestHelpers.js';
 
@@ -126,6 +126,31 @@ suite('AgentService (node dispatcher)', () => {
 
 			const session = await service.createSession({ provider: 'copilot' });
 			assert.strictEqual(AgentSession.provider(session), 'copilot');
+		});
+
+		test('honors requested session URI', async () => {
+			service.registerProvider(copilotAgent);
+
+			const requestedSession = AgentSession.uri('copilot', 'requested-session');
+			const session = await service.createSession({ provider: 'copilot', session: requestedSession });
+			assert.strictEqual(session.toString(), requestedSession.toString());
+		});
+
+		test('scripted mock agent honors requested session URI', async () => {
+			const agent = new ScriptedMockAgent();
+			disposables.add(toDisposable(() => agent.dispose()));
+
+			const requestedSession = AgentSession.uri('mock', 'requested-session');
+			const result = await agent.createSession({ session: requestedSession });
+			const sessions = await agent.listSessions();
+
+			assert.deepStrictEqual({
+				created: result.session.toString(),
+				listed: sessions.some(s => s.session.toString() === requestedSession.toString()),
+			}, {
+				created: requestedSession.toString(),
+				listed: true,
+			});
 		});
 
 		test('uses default provider when none specified', async () => {

@@ -142,9 +142,8 @@ export class ChangesViewModel extends Disposable {
 			if (sessionType === COPILOT_CLOUD_SESSION_TYPE || metadata?.repositoryPath !== undefined) {
 				return true;
 			}
-			// Agent-host sessions don't set repositoryPath in metadata; derive this
-			// from surfaced git state on the workspace's first repository so we
-			// don't enable git-specific UI for non-git working directories.
+
+			// Fall back to reading details from repo on the session management service session
 			const activeSession = this.sessionManagementService.activeSession.read(reader);
 			const workspace = activeSession?.workspace.read(reader);
 			const repository = workspace?.repositories[0];
@@ -405,9 +404,8 @@ export class ChangesViewModel extends Disposable {
 			const branchName = (sessionMetadata?.branchName ?? sessionMetadata?.branch) as string | undefined
 				?? workspaceRepository?.branchName;
 			const baseBranchName = (sessionMetadata?.baseBranchName ?? sessionMetadata?.baseBranch) as string | undefined;
-			// Both Copilot Chat sessions (cloud-provided) and agent-host sessions
-			// (computed in the provider from `git.branchProtection`) populate
-			// `baseBranchProtected` on the workspace repository.
+
+			// Fall back to reading details from repo on the session management service session
 			const isMergeBaseBranchProtected = (sessionMetadata?.baseBranchProtected as boolean | undefined)
 				?? workspaceRepository?.baseBranchProtected;
 			const isolationMode = workspaceRepository?.workingDirectory === undefined
@@ -421,8 +419,7 @@ export class ChangesViewModel extends Disposable {
 				(gitHubInfo.pullRequest.icon?.id === Codicon.gitPullRequestDraft.id ||
 					gitHubInfo.pullRequest.icon?.id === Codicon.gitPullRequest.id);
 
-			// Repository state — fall back to workspace repository fields for agent-host
-			// sessions, which populate git state there rather than in metadata.
+			// Fall back to reading details from repo on the session management service session
 			const hasGitHubRemote = (sessionMetadata?.hasGitHubRemote as boolean | undefined) ?? workspaceRepository?.hasGitHubRemote ?? false;
 			const upstreamBranchName = (sessionMetadata?.upstreamBranchName as string | undefined) ?? workspaceRepository?.upstreamBranchName;
 			const incomingChanges = (sessionMetadata?.incomingChanges as number | undefined) ?? workspaceRepository?.incomingChanges ?? 0;

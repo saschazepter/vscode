@@ -20,10 +20,6 @@ The sessions process is a portable, standalone server that multiple clients can 
 
 See the agent host protocol documentation for more details.
 
-## Learnings
-
-* **Never make a constructor dependency optional just to avoid updating callers.** If a service is always needed for a feature, make it required. An optional `_service?` parameter silences TypeScript at the call site while leaving the feature silently non-functional at runtime — and this kind of silent no-op is extremely hard to debug. Either update all callers when adding a required dependency, or don't wire the feature at all until you do.
-
 ## End to End Testing
 
 You can run `node ./scripts/code-agent-host.js` to start an agent host. If you pass `--enable-mock-agent`, then the `ScriptedMockAgent` will be used.
