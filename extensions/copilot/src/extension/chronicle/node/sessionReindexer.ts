@@ -60,14 +60,6 @@ function tryParseArgs(raw: string | number | boolean | undefined): unknown {
 
 /**
  * Rebuild the local Chronicle session store by re-reading JSONL debug logs from disk.
- *
- * Design principles:
- * - **Streaming**: Uses `streamEntries()` callback — never loads an entire JSONL file into memory.
- * - **Sequential**: Processes one session at a time; per-session buffer is a local variable.
- * - **Bounded**: Strings are truncated to match sessionStoreTracker limits.
- * - **Non-blocking**: Yields to the event loop between sessions via `setTimeout(0)`.
- * - **Idempotent**: Uses UPSERT/INSERT OR IGNORE so re-running is safe.
- * - **Cancellable**: Checks `token.isCancellationRequested` between sessions.
  */
 export async function reindexSessions(
 	store: ISessionStore,
@@ -204,7 +196,6 @@ function processEntry(
 		case 'turn_start':
 			processUserMessage(entry, state);
 			break;
-		case 'llm_request':
 		case 'agent_response':
 			processAssistantResponse(entry, sessionId, buffer, state);
 			break;
@@ -251,9 +242,9 @@ function processAssistantResponse(
 	buffer: PerSessionWriteBuffer,
 	state: TurnPairingState,
 ): void {
-	// Extract assistant response from outputMessages attribute (same as sessionStoreTracker)
-	const outputMessagesRaw = entry.attrs.outputMessages as string | undefined;
-	const assistantResponse = extractAssistantResponse(outputMessagesRaw);
+	// Extract assistant response from the 'response' attribute (as written by chatDebugFileLoggerService)
+	const responseRaw = entry.attrs.response as string | undefined;
+	const assistantResponse = extractAssistantResponse(responseRaw);
 
 	// Only create a turn if we have at least a user message or assistant response
 	if (!state.pendingUserMessage && !assistantResponse) {

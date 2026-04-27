@@ -105,9 +105,9 @@ describe('reindexSessions', () => {
 		entries.set('session-1', [
 			makeEntry({ type: 'session_start', name: 'session_start', sid: 'session-1', attrs: { cwd: '/workspace' } }),
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-1', attrs: { content: 'Fix the bug' } }),
-			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'I fixed the bug by changing X' }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'I fixed the bug by changing X' }] }]) } }),
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-1', attrs: { content: 'Now add tests' } }),
-			makeEntry({ type: 'llm_request', name: 'llm_request', sid: 'session-1', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'Added tests for X' }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'Added tests for X' }] }]) } }),
 		]);
 
 		const debugLog = createMockDebugLogService(['session-1'], entries);
@@ -233,7 +233,7 @@ describe('reindexSessions', () => {
 		const entries = new Map<string, IDebugLogEntry[]>();
 		entries.set('session-good', [
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-good', attrs: { content: 'hello' } }),
-			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-good', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'hi' }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-good', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'hi' }] }]) } }),
 		]);
 
 		// Create a debug log service where session-bad throws
@@ -261,7 +261,7 @@ describe('reindexSessions', () => {
 		const entries = new Map<string, IDebugLogEntry[]>();
 		entries.set('session-1', [
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-1', attrs: { content: longUserMsg } }),
-			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: longAssistantMsg }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: longAssistantMsg }] }]) } }),
 		]);
 
 		const debugLog = createMockDebugLogService(['session-1'], entries);
@@ -269,8 +269,8 @@ describe('reindexSessions', () => {
 
 		await reindexSessions(store, debugLog, vi.fn(), cts.token);
 
-		expect(store.insertedTurns[0].user_message!.length).toBeLessThanOrEqual(103); // 100 + '...'
-		expect(store.insertedTurns[0].assistant_response!.length).toBeLessThanOrEqual(1003); // 1000 + '...'
+		expect(store.insertedTurns[0].user_message!.length).toBeLessThanOrEqual(100);
+		expect(store.insertedTurns[0].assistant_response!.length).toBeLessThanOrEqual(1000);
 	});
 
 	it('handles sessions with no session_start event', async () => {
@@ -278,7 +278,7 @@ describe('reindexSessions', () => {
 		const entries = new Map<string, IDebugLogEntry[]>();
 		entries.set('session-1', [
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-1', attrs: { content: 'hello' } }),
-			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'hi' }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'hi' }] }]) } }),
 		]);
 
 		const debugLog = createMockDebugLogService(['session-1'], entries);
@@ -328,7 +328,7 @@ describe('reindexSessions', () => {
 		const entries = new Map<string, IDebugLogEntry[]>();
 		entries.set('session-1', [
 			makeEntry({ type: 'user_message', name: 'user_message', sid: 'session-1', attrs: { content: 'Implement a login page' } }),
-			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { outputMessages: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'Done' }] }]) } }),
+			makeEntry({ type: 'agent_response', name: 'agent_response', sid: 'session-1', attrs: { response: JSON.stringify([{ role: 'assistant', parts: [{ type: 'text', content: 'Done' }] }]) } }),
 		]);
 
 		const debugLog = createMockDebugLogService(['session-1'], entries);

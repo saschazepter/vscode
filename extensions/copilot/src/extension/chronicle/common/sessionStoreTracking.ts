@@ -23,14 +23,22 @@ export const MAX_ASSISTANT_RESPONSE_LENGTH = 1000;
 export const MAX_SUMMARY_LENGTH = 100;
 
 /**
- * Truncate a string to `maxLength`, appending '...' if it was truncated.
+ * Truncate a string to at most `maxLength` stored characters, appending '...' if truncated.
+ * The returned value, including the truncation suffix, never exceeds `maxLength`.
  * Returns `undefined` for falsy input.
  */
 export function truncateForStore(value: string | undefined, maxLength: number): string | undefined {
 	if (!value) {
 		return undefined;
 	}
-	return value.length > maxLength ? value.slice(0, maxLength).trim() + '...' : value;
+	if (value.length <= maxLength) {
+		return value;
+	}
+	const ellipsis = '...';
+	if (maxLength <= ellipsis.length) {
+		return ellipsis.slice(0, maxLength);
+	}
+	return value.slice(0, maxLength - ellipsis.length).trimEnd() + ellipsis;
 }
 
 /** Terminal/shell tool names that may produce refs. */
