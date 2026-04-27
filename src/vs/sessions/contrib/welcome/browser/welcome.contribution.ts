@@ -245,6 +245,9 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		// Handle the walkthrough outcome
 		walkthrough.outcome.then(outcome => {
 			this.logService.info(`[sessions welcome] Walkthrough finished with outcome: ${outcome}`);
+			if (this._store.isDisposed) {
+				return;
+			}
 			if (!welcomeCompletionStored && shouldPersistWelcomeCompletion(outcome, this.defaultAccountService)) {
 				welcomeCompletionStored = true;
 				this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);

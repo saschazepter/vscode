@@ -196,6 +196,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		// whether it's the first launch or a returning user who is signed out.
 		const titleEl = append(right, $('h2', undefined, localize('walkthrough.welcome.title', "Welcome to {0}", productName)));
 		const subtitleEl = append(right, $('p', undefined, localize('walkthrough.welcome.subtitle', "Your AI-powered coding agent that builds, tests, and iterates for you.")));
+		append(right, $('p.sessions-walkthrough-tagline', undefined, localize('walkthrough.welcome.tagline', "Happy Agentic Coding!")));
 
 		this._renderSignInButtons(stepDisposables, right, titleEl, subtitleEl);
 	}
