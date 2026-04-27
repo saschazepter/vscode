@@ -372,3 +372,15 @@
 	color: var(--vscode-problemsInfoIcon-foreground);
 	opacity: 1;
 }
+
+/* Tabbed workspace picker — tab bar rendered above the action widget list. */
+.action-widget .sessions-workspace-picker-tabbar {
+	display: flex;
+	align-items: center;
+	padding: 6px 6px 4px 6px;
+	border-bottom: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-editorHoverWidget-border));
+}
+
+.action-widget .sessions-workspace-picker-tabbar .monaco-custom-radio {
+	width: 100%;
+}

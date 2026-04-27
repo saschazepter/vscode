@@ -119,7 +119,7 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	constructor(
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
+		@IActionWidgetService protected readonly actionWidgetService: IActionWidgetService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService protected readonly sessionsProvidersService: ISessionsProvidersService,
@@ -213,9 +213,19 @@ export class WorkspacePicker extends Disposable {
 
 	/**
 	 * Shows the workspace picker dropdown anchored to the trigger element.
+	 *
+	 * @param force When true, re-show even if the picker is already visible.
+	 *              Used by subclasses (e.g. {@link TabbedWorkspacePicker}) to
+	 *              swap items in place when the active tab changes. The
+	 *              underlying context view replaces its content in-place when
+	 *              `show()` is called while visible, so no manual hide is
+	 *              required and there is no visible flicker.
 	 */
-	showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible) {
+	showPicker(force = false): void {
+		if (!this._triggerElement) {
+			return;
+		}
+		if (!force && this.actionWidgetService.isVisible) {
 			return;
 		}
 
@@ -245,8 +255,8 @@ export class WorkspacePicker extends Disposable {
 		};
 
 		const listOptions = showFilter
-			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true }
-			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true };
+			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: this._getPickerMinWidth(), maxWidth: this._getPickerMaxWidth() }
+			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: this._getPickerMinWidth(), maxWidth: this._getPickerMaxWidth() };
 		triggerElement.setAttribute('aria-expanded', 'true');
 
 		this.actionWidgetService.show<IWorkspacePickerItem>(
@@ -262,7 +272,33 @@ export class WorkspacePicker extends Disposable {
 				getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 			},
 			listOptions,
+			this._getPickerHeader(),
 		);
+	}
+
+	/**
+	 * Hook for subclasses to provide an element rendered above the filter and
+	 * list inside the action widget (e.g. a tab bar). Returning `undefined`
+	 * keeps the default headerless layout.
+	 */
+	protected _getPickerHeader(): HTMLElement | undefined {
+		return undefined;
+	}
+
+	/**
+	 * Hook for subclasses to enforce a minimum picker width so that, for
+	 * example, a tab header is never wider than the list content.
+	 */
+	protected _getPickerMinWidth(): number | undefined {
+		return undefined;
+	}
+
+	/**
+	 * Hook for subclasses to enforce a maximum picker width so that long item
+	 * labels are truncated rather than expanding the popup.
+	 */
+	protected _getPickerMaxWidth(): number | undefined {
+		return undefined;
 	}
 
 	/**
@@ -334,7 +370,39 @@ export class WorkspacePicker extends Disposable {
 	 * Collects browse actions from all registered providers.
 	 */
 	protected _getAllBrowseActions(): ISessionWorkspaceBrowseAction[] {
-		return this.sessionsProvidersService.getProviders().flatMap(p => p.browseActions);
+		const include = this._includeBrowseAction;
+		return this.sessionsProvidersService.getProviders()
+			.flatMap(p => p.browseActions)
+			.filter(a => !include || include(a));
+	}
+
+	/**
+	 * Builds the picker items list from recent workspaces.
+	 *
+	 * Items are shown in a flat recency-sorted list (most recently used first)
+	 * without source grouping. Own recents come first, followed by VS Code
+	 * recent folders.
+	 */
+	/**
+	 * Optional predicates used by subclasses (e.g. {@link TabbedWorkspacePicker})
+	 * to scope the picker contents to a category. When unset, every entry is
+	 * included.
+	 */
+	protected _includeWorkspace?: (selection: IWorkspaceSelection) => boolean;
+	protected _includeBrowseAction?: (action: ISessionWorkspaceBrowseAction) => boolean;
+
+	/** True when the picker is currently filtered down to a subset. */
+	protected get _isFiltered(): boolean {
+		return !!(this._includeWorkspace || this._includeBrowseAction);
+	}
+
+	/**
+	 * Whether the bottom "Manage…" submenu should be included. Defaults to
+	 * hiding it whenever the picker is filtered (subclass overrides can
+	 * re-enable it for specific filters).
+	 */
+	protected _includeManageSubmenu(): boolean {
+		return !this._isFiltered;
 	}
 
 	/**
@@ -350,10 +418,15 @@ export class WorkspacePicker extends Disposable {
 		// Collect recent workspaces from picker storage across all providers
 		const allProviders = this.sessionsProvidersService.getProviders();
 		const providerIds = new Set(allProviders.map(p => p.id));
-		const ownRecentWorkspaces = this._getRecentWorkspaces().filter(w => providerIds.has(w.providerId));
+		const includeWs = this._includeWorkspace;
+		const ownRecentWorkspaces = this._getRecentWorkspaces()
+			.filter(w => providerIds.has(w.providerId))
+			.filter(w => !includeWs || includeWs({ providerId: w.providerId, workspace: w.workspace }));
 
 		// Merge VS Code recent folders (resolved through providers, deduplicated)
-		const vsCodeRecents = this._getVSCodeRecentWorkspaces().filter(w => providerIds.has(w.providerId));
+		const vsCodeRecents = this._getVSCodeRecentWorkspaces()
+			.filter(w => providerIds.has(w.providerId))
+			.filter(w => !includeWs || includeWs({ providerId: w.providerId, workspace: w.workspace }));
 		const ownRecentCount = ownRecentWorkspaces.length;
 		const recentWorkspaces = [...ownRecentWorkspaces, ...vsCodeRecents];
 
@@ -462,42 +535,49 @@ export class WorkspacePicker extends Disposable {
 		}
 
 		// "Manage" submenu: dynamic remote provider entries + menu-contributed actions
+		const includeManage = this._includeManageSubmenu();
 
 		// Dynamic remote provider entries
 		const remoteProviderActions: IAction[] = [];
-		for (const provider of remoteProviders) {
-			const status = provider.connectionStatus!.get();
-			const isTunnel = provider.remoteAddress?.startsWith(TUNNEL_ADDRESS_PREFIX);
-			const action = toAction({
-				id: `workspacePicker.remote.${provider.id}`,
-				label: provider.label,
-				tooltip: getStatusLabel(status),
-				enabled: true,
-				run: () => {
-					this.actionWidgetService.hide();
-					this._showRemoteHostOptionsDelayed(provider);
-				},
-			});
-			const extended = action as IAction & { icon?: ThemeIcon; hoverContent?: string; onRemove?: () => void };
-			extended.icon = isTunnel ? Codicon.cloud : Codicon.remote;
-			extended.hoverContent = getStatusHover(status, provider.remoteAddress);
-			if (!isTunnel && provider.remoteAddress) {
-				const address = provider.remoteAddress;
-				extended.onRemove = async () => {
-					await this.remoteAgentHostService.removeRemoteAgentHost(address);
-				};
+		if (includeManage) {
+			for (const provider of remoteProviders) {
+				const status = provider.connectionStatus!.get();
+				const isTunnel = provider.remoteAddress?.startsWith(TUNNEL_ADDRESS_PREFIX);
+				const action = toAction({
+					id: `workspacePicker.remote.${provider.id}`,
+					label: provider.label,
+					tooltip: getStatusLabel(status),
+					enabled: true,
+					run: () => {
+						this.actionWidgetService.hide();
+						this._showRemoteHostOptionsDelayed(provider);
+					},
+				});
+				const extended = action as IAction & { icon?: ThemeIcon; hoverContent?: string; onRemove?: () => void };
+				extended.icon = isTunnel ? Codicon.cloud : Codicon.remote;
+				extended.hoverContent = getStatusHover(status, provider.remoteAddress);
+				if (!isTunnel && provider.remoteAddress) {
+					const address = provider.remoteAddress;
+					extended.onRemove = async () => {
+						await this.remoteAgentHostService.removeRemoteAgentHost(address);
+					};
+				}
+				remoteProviderActions.push(action);
 			}
-			remoteProviderActions.push(action);
 		}
 
-		// Menu-contributed actions (e.g. Tunnels..., SSH...)
+		// Menu-contributed actions (e.g. Tunnels..., SSH...). Hidden when filtering
+		// to a single category — the contributed actions are global to the picker
+		// and would feel out of place inside a single-category tab.
 		const menuContributedActions: IAction[] = [];
-		const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
-		for (const [, actions] of menuActions) {
-			for (const menuAction of actions) {
-				if (menuAction instanceof MenuItemAction) {
-					const icon = ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
-					menuContributedActions.push(Object.assign(menuAction, { icon }));
+		if (includeManage) {
+			const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
+			for (const [, actions] of menuActions) {
+				for (const menuAction of actions) {
+					if (menuAction instanceof MenuItemAction) {
+						const icon = ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
+						menuContributedActions.push(Object.assign(menuAction, { icon }));
+					}
 				}
 			}
 		}

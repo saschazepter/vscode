@@ -4,3 +4,4 @@
  *--------------------------------------------------------------------------------------------*/
 
 export const SessionsExperimentalShellGradientBackgroundSettingId = 'sessions.experimental.shellGradientBackground';
+export const SessionsExperimentalTabbedWorkspacePickerSettingId = 'sessions.experimental.tabbedWorkspacePicker';

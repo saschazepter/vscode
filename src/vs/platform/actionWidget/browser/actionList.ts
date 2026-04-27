@@ -454,6 +454,12 @@ export interface IActionListOptions {
 	readonly minWidth?: number;
 
 	/**
+	 * Maximum width for the action list. When set, items wider than this are
+	 * truncated rather than expanding the popup.
+	 */
+	readonly maxWidth?: number;
+
+	/**
 	 * Optional handler for markdown links activated in item descriptions or hovers.
 	 * When unset, links open via the opener service with command links allowed.
 	 */
@@ -1010,11 +1016,13 @@ export class ActionListWidget<T> extends Disposable {
 	computeMaxWidth(minWidth: number): number {
 		const visibleCount = this._list.length;
 		const effectiveMinWidth = Math.max(minWidth, this._options?.minWidth ?? 0);
+		const maxWidthCap = this._options?.maxWidth ?? Number.POSITIVE_INFINITY;
+		const clamp = (w: number) => Math.min(Math.max(w, effectiveMinWidth), maxWidthCap);
 		let maxWidth = effectiveMinWidth;
 
 		const totalItemCount = this._allMenuItems.length;
 		if (totalItemCount >= 50) {
-			return Math.max(380, effectiveMinWidth);
+			return clamp(380);
 		}
 
 		if (totalItemCount > visibleCount) {
@@ -1044,7 +1052,7 @@ export class ActionListWidget<T> extends Disposable {
 				}
 			}
 
-			maxWidth = Math.max(...itemWidths, effectiveMinWidth);
+			maxWidth = clamp(Math.max(...itemWidths, effectiveMinWidth));
 
 			// Restore visible items
 			this._list.splice(0, allItems.length, visibleItems);
@@ -1062,7 +1070,7 @@ export class ActionListWidget<T> extends Disposable {
 				itemWidths.push(width + this._computeToolbarWidth(this._list.element(i)));
 			}
 		}
-		return Math.max(...itemWidths, effectiveMinWidth);
+		return clamp(Math.max(...itemWidths, effectiveMinWidth));
 	}
 
 	focusPrevious() {

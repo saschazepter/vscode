@@ -37,7 +37,7 @@ export const IActionWidgetService = createDecorator<IActionWidgetService>('actio
 export interface IActionWidgetService {
 	readonly _serviceBrand: undefined;
 
-	show<T>(user: string, supportsPreview: boolean, items: readonly IActionListItem<T>[], delegate: IActionListDelegate<T>, anchor: HTMLElement | StandardMouseEvent | IAnchor, container: HTMLElement | undefined, actionBarActions?: readonly IAction[], accessibilityProvider?: Partial<IListAccessibilityProvider<IActionListItem<T>>>, listOptions?: IActionListOptions): void;
+	show<T>(user: string, supportsPreview: boolean, items: readonly IActionListItem<T>[], delegate: IActionListDelegate<T>, anchor: HTMLElement | StandardMouseEvent | IAnchor, container: HTMLElement | undefined, actionBarActions?: readonly IAction[], accessibilityProvider?: Partial<IListAccessibilityProvider<IActionListItem<T>>>, listOptions?: IActionListOptions, headerElement?: HTMLElement): void;
 
 	hide(didCancel?: boolean): void;
 
@@ -61,7 +61,7 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 		super();
 	}
 
-	show<T>(user: string, supportsPreview: boolean, items: readonly IActionListItem<T>[], delegate: IActionListDelegate<T>, anchor: HTMLElement | StandardMouseEvent | IAnchor, container: HTMLElement | undefined, actionBarActions?: readonly IAction[], accessibilityProvider?: Partial<IListAccessibilityProvider<IActionListItem<T>>>, listOptions?: IActionListOptions): void {
+	show<T>(user: string, supportsPreview: boolean, items: readonly IActionListItem<T>[], delegate: IActionListDelegate<T>, anchor: HTMLElement | StandardMouseEvent | IAnchor, container: HTMLElement | undefined, actionBarActions?: readonly IAction[], accessibilityProvider?: Partial<IListAccessibilityProvider<IActionListItem<T>>>, listOptions?: IActionListOptions, headerElement?: HTMLElement): void {
 		const visibleContext = ActionWidgetContextKeys.Visible.bindTo(this._contextKeyService);
 
 		const list = this._instantiationService.createInstance(ActionList, user, supportsPreview, items, delegate, accessibilityProvider, listOptions, anchor);
@@ -69,7 +69,7 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 			getAnchor: () => anchor,
 			render: (container: HTMLElement) => {
 				visibleContext.set(true);
-				return this._renderWidget(container, list, actionBarActions ?? []);
+				return this._renderWidget(container, list, actionBarActions ?? [], headerElement);
 			},
 			onHide: (didCancel) => {
 				visibleContext.reset();
@@ -116,13 +116,16 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 		this._list.clear();
 	}
 
-	private _renderWidget(element: HTMLElement, list: ActionList<unknown>, actionBarActions: readonly IAction[]): IDisposable {
+	private _renderWidget(element: HTMLElement, list: ActionList<unknown>, actionBarActions: readonly IAction[], headerElement?: HTMLElement): IDisposable {
 		const widget = document.createElement('div');
 		widget.classList.add('action-widget');
 		element.appendChild(widget);
 
 		this._list.value = list;
 		if (this._list.value) {
+			if (headerElement) {
+				widget.appendChild(headerElement);
+			}
 			if (this._list.value.filterContainer) {
 				widget.appendChild(this._list.value.filterContainer);
 			}
