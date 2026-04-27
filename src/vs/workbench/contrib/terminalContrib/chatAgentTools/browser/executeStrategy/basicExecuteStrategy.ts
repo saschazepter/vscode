@@ -90,6 +90,10 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 					this._log('onDone via terminal disposal');
 					return { type: 'disposal' } as const;
 				}),
+				Event.toPromise(this._instance.onExit, store).then((exitCodeOrError) => {
+					this._log(`onDone via process exit (code=${exitCodeOrError})`);
+					return { type: 'processExit', exitCodeOrError } as const;
+				}),
 				// A longer idle prompt event is used here as a catch all for unexpected cases where
 				// the end event doesn't fire for some reason.
 				trackIdleOnPrompt(this._instance, idlePollInterval * 3, store, idlePollInterval).then(() => {
@@ -160,9 +164,12 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 				this._log(`No finished command surfaced for requested=${commandId}`);
 			}
 
-			// Wait for the terminal to idle
-			this._log('Waiting for idle');
-			await waitForIdle(this._instance.onData, idlePollInterval);
+			// Wait for the terminal to idle, but skip if the process already exited
+			// since no more data will arrive.
+			if (!(onDoneResult && onDoneResult.type === 'processExit')) {
+				this._log('Waiting for idle');
+				await waitForIdle(this._instance.onData, idlePollInterval);
+			}
 			if (token.isCancellationRequested) {
 				throw new CancellationError();
 			}
@@ -198,7 +205,11 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 				additionalInformationLines.push('Command produced no output');
 			}
 
-			const exitCode = finishedCommand?.exitCode;
+			// Determine exit code from shell integration or from the process exit event
+			let exitCode = finishedCommand?.exitCode;
+			if (exitCode === undefined && onDoneResult && onDoneResult.type === 'processExit') {
+				exitCode = isNumber(onDoneResult.exitCodeOrError) ? onDoneResult.exitCodeOrError : undefined;
+			}
 			if (isNumber(exitCode) && exitCode > 0) {
 				additionalInformationLines.push(`Command exited with code ${exitCode}`);
 			}

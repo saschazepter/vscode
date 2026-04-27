@@ -75,6 +75,10 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 					this._log('onDone via terminal disposal');
 					return { type: 'disposal' } as const;
 				}),
+				Event.toPromise(this._instance.onExit, store).then((exitCodeOrError) => {
+					this._log(`onDone via process exit (code=${exitCodeOrError})`);
+					return { type: 'processExit', exitCodeOrError } as const;
+				}),
 				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval).then(() => {
 					this._log('onDone via idle prompt');
 				}),
@@ -150,7 +154,11 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 				additionalInformationLines.push('Command produced no output');
 			}
 
-			const exitCode = finishedCommand?.exitCode;
+			// Determine exit code from shell integration or from the process exit event
+			let exitCode = finishedCommand?.exitCode;
+			if (exitCode === undefined && onDoneResult && onDoneResult.type === 'processExit') {
+				exitCode = isNumber(onDoneResult.exitCodeOrError) ? onDoneResult.exitCodeOrError : undefined;
+			}
 			if (isNumber(exitCode) && exitCode > 0) {
 				additionalInformationLines.push(`Command exited with code ${exitCode}`);
 			}
