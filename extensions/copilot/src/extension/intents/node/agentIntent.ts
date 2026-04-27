@@ -632,9 +632,18 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 						this._persistSummaryOnTurn(bgResult, promptContext, contextLengthBefore);
 						this._sendBackgroundCompactionTelemetry(budgetExceededTrigger, 'applied', contextRatio, promptContext);
 						didSummarizeThisIteration = true;
-						// Re-render with the compacted history
-						const renderer = PromptRenderer.create(this.instantiationService, endpoint, this.prompt, { ...props, promptContext });
-						result = await renderer.render(progress, token);
+						try {
+							const reRenderer = PromptRenderer.create(this.instantiationService, endpoint, this.prompt, { ...props, promptContext });
+							result = await reRenderer.render(progress, token);
+						} catch (reRenderError) {
+							if (reRenderError instanceof BudgetExceededError) {
+								this.logService.debug(`[ConversationHistorySummarizer] re-render after background compaction still exceeded budget — falling back`);
+								this._sendBackgroundCompactionTelemetry(budgetExceededTrigger, 'appliedButReRenderFailed', contextRatio, promptContext);
+								result = await renderWithoutSummarization('budget exceeded after background compaction applied', { ...props, promptContext });
+							} else {
+								throw reRenderError;
+							}
+						}
 					} else {
 						this.logService.debug(`[ConversationHistorySummarizer] background compaction produced no usable result after budget exceeded — falling back to synchronous summarization`);
 						this._sendBackgroundCompactionTelemetry(budgetExceededTrigger, 'noResult', contextRatio, promptContext);
