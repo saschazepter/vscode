@@ -586,16 +586,6 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 	private async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
 		const sessions = await this.getSessions(authProviderId);
-
-		// When no scopes are configured on web (e.g. vscode.dev where
-		// product config may not include providerScopes), accept any
-		// session. This only applies to web — on desktop, scopes should
-		// always be configured via product.json.
-		if (isWeb && allScopes.length === 0 && sessions.length > 0) {
-			this.logService.debug('[DefaultAccount] No scopes configured on web, accepting all sessions');
-			return [...sessions];
-		}
-
 		const matchingSessions = [];
 		for (const session of sessions) {
 			this.logService.debug('[DefaultAccount] Checking session with scopes', session.scopes);
@@ -906,7 +896,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			throw new Error('No default account provider configured');
 		}
 		const { additionalScopes, ...sessionOptions } = options ?? {};
-		const defaultAccountScopes = this.defaultAccountConfig.authenticationProvider.scopes[0] ?? [];
+		const defaultAccountScopes = this.defaultAccountConfig.authenticationProvider.scopes[0];
 		const scopes = additionalScopes ? distinct([...defaultAccountScopes, ...additionalScopes]) : defaultAccountScopes;
 		const session = await this.authenticationService.createSession(authProvider.id, scopes, sessionOptions);
 		for (const preferredExtension of this.defaultAccountConfig.preferredExtensions) {

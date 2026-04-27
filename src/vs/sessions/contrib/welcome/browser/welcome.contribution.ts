@@ -5,7 +5,6 @@
 
 import { isWeb } from '../../../../base/common/platform.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../base/common/observable.js';
 import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { localize2 } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -20,7 +19,6 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
-import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { SessionsWalkthroughOverlay, WalkthroughOutcome } from './sessionsWalkthrough.js';
 import { WELCOME_COMPLETE_KEY } from '../../../common/welcome.js';
 
@@ -101,7 +99,6 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
-		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -164,10 +161,7 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 	 * and show the sign-in walkthrough again. Without this, passive sign-out
 	 * leaves the user on a seemingly-working workbench with a stale UI.
 	 *
-	 * Also watches for passive token expiry: when the entitlement becomes
-	 * {@link ChatEntitlement.Unknown} (e.g. 401 from entitlement endpoint)
-	 * the session may still exist in storage but be unusable. In that case,
-	 * clear the marker and re-show the walkthrough.
+	 * Also watches for passive token expiry on web.
 	 */
 	private _watchWebAuth(): void {
 		this._register(this.authenticationService.onDidChangeSessions(async e => {
@@ -183,43 +177,6 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 				// Provider became unavailable — treat as signed out
 			}
 			this.logService.info('[sessions welcome] GitHub session removed on web, re-showing walkthrough');
-			this.storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
-			this.showWalkthrough(false);
-		}));
-
-		// Watch for passive token expiry: entitlement flips to Unknown while
-		// the welcome completion marker is still set (session exists but is
-		// unusable). Only triggers after the user has previously completed
-		// sign-in — avoids firing during initial load.
-		//
-		// The first autorun evaluation is skipped to avoid a false positive:
-		// if entitlement starts as non-Unknown (e.g. Unresolved from cache)
-		// and then transitions to Unknown on the first network check, we
-		// don't want to re-show the walkthrough during normal startup.
-		let isFirstRun = true;
-		let wasSignedIn = false;
-		this._register(autorun(reader => {
-			this.chatEntitlementService.entitlementObs.read(reader);
-			const entitlement = this.chatEntitlementService.entitlement;
-			if (isFirstRun) {
-				isFirstRun = false;
-				if (entitlement !== ChatEntitlement.Unknown) {
-					wasSignedIn = true;
-				}
-				return;
-			}
-			if (entitlement !== ChatEntitlement.Unknown) {
-				wasSignedIn = true;
-				return;
-			}
-			if (!wasSignedIn) {
-				return;
-			}
-			const isCompleted = this.storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false);
-			if (!isCompleted) {
-				return;
-			}
-			this.logService.info('[sessions welcome] Entitlement became Unknown on web (token expired), re-showing walkthrough');
 			this.storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
 			this.showWalkthrough(false);
 		}));

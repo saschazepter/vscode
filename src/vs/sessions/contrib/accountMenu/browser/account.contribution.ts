@@ -38,7 +38,7 @@ import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from
 import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusDashboard.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { getAccountProfileImageUrl, getAccountTitleBarBadgeKey, getAccountTitleBarState } from '../../../browser/accountTitleBarState.js';
+import { getAccountProfileImageUrl, getAccountTitleBarBadgeKey, getAccountTitleBarState, resolveAccountInfo } from '../../../browser/accountTitleBarState.js';
 import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IAuthenticationAccessService } from '../../../../workbench/services/authentication/browser/authenticationAccessService.js';
@@ -320,41 +320,14 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		this.isAccountLoading = true;
 		this.renderState();
 
-		let accountName: string | undefined;
-		let accountProviderId: string | undefined;
-		let accountProviderLabel: string | undefined;
-
-		const account = await this.defaultAccountService.getDefaultAccount();
+		const info = await resolveAccountInfo(this.defaultAccountService, this.authenticationService);
 		if (requestId !== this.accountRequestCounter) {
 			return;
 		}
 
-		if (account) {
-			accountName = account.accountName;
-			accountProviderId = account.authenticationProvider.id;
-			accountProviderLabel = account.authenticationProvider.name;
-		} else {
-			// Fall back to reading GitHub sessions directly — covers the
-			// window between session creation and DefaultAccountProvider
-			// initialization.
-			try {
-				const sessions = await this.authenticationService.getSessions('github');
-				if (requestId !== this.accountRequestCounter) {
-					return;
-				}
-				if (sessions.length > 0) {
-					accountName = sessions[0].account.label;
-					accountProviderId = 'github';
-					accountProviderLabel = 'GitHub';
-				}
-			} catch {
-				// Provider not available yet
-			}
-		}
-
-		this.accountName = accountName;
-		this.accountProviderId = accountProviderId;
-		this.accountProviderLabel = accountProviderLabel;
+		this.accountName = info?.accountName;
+		this.accountProviderId = info?.accountProviderId;
+		this.accountProviderLabel = info?.accountProviderLabel;
 		this.isAccountLoading = false;
 		this.refreshAvatar();
 		this.renderState();
@@ -662,14 +635,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 	}
 
 	private shouldShowCopilotDashboardHover(): boolean {
-		if (this.chatEntitlementService.sentiment.hidden || !this.accountName) {
-			return false;
-		}
-		// Don't show the dashboard when entitlement is Unknown or Available —
-		// it renders a "Set up Copilot" prompt that doesn't apply in the
-		// agents app which has its own walkthrough for setup.
-		const entitlement = this.chatEntitlementService.entitlement;
-		return entitlement !== ChatEntitlement.Unknown && entitlement !== ChatEntitlement.Available;
+		return !this.chatEntitlementService.sentiment.hidden && !!this.accountName;
 	}
 
 	private createCopilotHoverContent(): HTMLElement {
