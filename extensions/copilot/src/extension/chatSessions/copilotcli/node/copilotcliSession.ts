@@ -1664,19 +1664,16 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	): Promise<UserInputResponse | undefined> {
 		return new Promise<UserInputResponse | undefined>(resolve => {
 			let settled = false;
-			let pendingRequest: McPendingUserInputRequest | undefined;
 			const complete = (result: UserInputResponse | undefined) => {
 				if (settled) {
 					return;
 				}
 				settled = true;
-				if (pendingRequest) {
-					getMissionControlPendingUserInputRequests(state).delete(pendingRequest);
-				}
+				getMissionControlPendingUserInputRequests(state).delete(pendingRequest);
 				cancellationListener?.dispose();
 				resolve(result);
 			};
-			pendingRequest = {
+			const pendingRequest: McPendingUserInputRequest = {
 				requestId,
 				toolCallId,
 				resolve: complete,
