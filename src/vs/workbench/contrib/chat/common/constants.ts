@@ -10,6 +10,8 @@ import { ContextKeyExpr, RawContextKey } from '../../../../platform/contextkey/c
 import { ProductQualityContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import { ChatEntitlementContextKeys } from '../../../services/chat/common/chatEntitlementService.js';
 import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
+import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 export enum ChatConfiguration {
 	AIDisabled = 'chat.disableAIFeatures',
@@ -89,6 +91,21 @@ export enum ChatConfiguration {
 	 * controlled rollout.
 	 */
 	SymbolToolsCacheStable = 'chat.experimental.symbolTools.cacheStable',
+}
+
+/**
+ * Returns true if the animated chat input progress border should currently be active.
+ *
+ * The border is suppressed when reduced motion is in effect, because a frozen
+ * (non-animating) gradient comet conveys no useful state and is just visual noise.
+ * In that case the persistent progress fallback (controlled by
+ * {@link ChatConfiguration.ChatPersistentProgressEnabled}) becomes effective again.
+ */
+export function isChatProgressBorderActive(configurationService: IConfigurationService, accessibilityService: IAccessibilityService): boolean {
+	if (configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true) {
+		return false;
+	}
+	return !accessibilityService.isMotionReduced();
 }
 
 /**

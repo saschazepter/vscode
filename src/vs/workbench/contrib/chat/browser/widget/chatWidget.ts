@@ -33,6 +33,7 @@ import { ICodeEditorService } from '../../../../../editor/browser/services/codeE
 import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { localize } from '../../../../../nls.js';
+import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { MenuId } from '../../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
@@ -64,7 +65,7 @@ import { IChatSlashCommandService } from '../../common/participants/chatSlashCom
 import { IChatTodoListService } from '../../common/tools/chatTodoListService.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isWorkspaceVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { ChatViewModel, IChatResponseViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, ThinkingDisplayMode } from '../../common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatProgressBorderActive, ThinkingDisplayMode } from '../../common/constants.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
@@ -417,6 +418,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IChatAttachmentResolveService private readonly chatAttachmentResolveService: IChatAttachmentResolveService,
 		@IChatTipService private readonly chatTipService: IChatTipService,
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
+		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 	) {
 		super();
 
@@ -473,6 +475,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.updateWorkingProgressBorder();
 			}
 		}));
+
+		this._register(this.accessibilityService.onDidChangeReducedMotion(() => this.updateWorkingProgressBorder()));
 
 		this._register(bindContextKey(decidedChatEditingResourceContextKey, contextKeyService, (reader) => {
 			const currentSession = this._editingSession.read(reader);
@@ -672,7 +676,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!inputContainer) {
 			return;
 		}
-		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true;
+		const enabled = isChatProgressBorderActive(this.configurationService, this.accessibilityService);
 		const inProgress = !!this.viewModel?.model.requestInProgress.get();
 		inputContainer.classList.toggle('working', enabled && inProgress);
 	}

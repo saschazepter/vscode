@@ -59,7 +59,7 @@ import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, IChatWorkingProgress, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM } from '../../common/model/chatViewModel.js';
 import { getNWords } from '../../common/model/chatWordCounter.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, isChatProgressBorderActive, ThinkingDisplayMode } from '../../common/constants.js';
 import { ClickAnimation } from '../../../../../base/browser/ui/animations/animations.js';
 import { MarkHelpfulActionId } from '../actions/chatTitleActions.js';
 import { ChatTreeItem, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidgetService } from '../chat.js';
@@ -1072,7 +1072,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& this.configService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true;
+			&& !isChatProgressBorderActive(this.configService, this.accessibilityService);
 		if (element.isComplete) {
 			return undefined;
 		}
@@ -1240,7 +1240,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return;
 		}
 
-		if (element.isComplete && this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false && this.configService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true) {
+		if (element.isComplete && this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false && !isChatProgressBorderActive(this.configService, this.accessibilityService)) {
 			return;
 		}
 

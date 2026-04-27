@@ -10,10 +10,11 @@ import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js
 import { IChatMarkdownContent, IChatTerminalToolInvocationData, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized } from '../../../common/chatService/chatService.js';
 import { IChatContentPartRenderContext, IChatContentPart } from './chatContentParts.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
-import { ChatConfiguration, ThinkingDisplayMode } from '../../../common/constants.js';
+import { ChatConfiguration, isChatProgressBorderActive, ThinkingDisplayMode } from '../../../common/constants.js';
 import { ChatTreeItem } from '../../chat.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
 import { AccessibilityWorkbenchSettingId } from '../../../../accessibility/browser/accessibilityConfiguration.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IRenderedMarkdown } from '../../../../../../base/browser/markdownRenderer.js';
@@ -294,6 +295,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IHoverService hoverService: IHoverService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IAccessibilityService accessibilityService: IAccessibilityService,
 	) {
 		const initialText = extractTextFromPart(content);
 		const extractedTitle = extractTitleFromThinkingContent(initialText)
@@ -305,7 +307,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.content = content;
 		this.allThinkingParts.push(content);
 		this.showProgressDetails = this.configurationService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true;
+			&& !isChatProgressBorderActive(this.configurationService, accessibilityService);
 		const configuredMode = this.configurationService.getValue<ThinkingDisplayMode>('chat.agent.thinkingStyle') ?? ThinkingDisplayMode.Collapsed;
 
 		this.fixedScrollingMode = configuredMode === ThinkingDisplayMode.FixedScrolling;
