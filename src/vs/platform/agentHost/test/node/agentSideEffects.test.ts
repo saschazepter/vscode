@@ -22,14 +22,14 @@ import { ISessionDataService } from '../../common/sessionDataService.js';
 import type { RootConfigChangedAction } from '../../common/state/protocol/actions.js';
 import { CustomizationStatus } from '../../common/state/protocol/state.js';
 import { ActionType, ActionEnvelope, SessionAction } from '../../common/state/sessionActions.js';
-import { buildSubagentSessionUri, PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
+import { AttachmentType, buildSubagentSessionUri, PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from '../../node/agentConfigurationService.js';
 import { AgentService } from '../../node/agentService.js';
 import { AgentSideEffects, IAgentSideEffectsOptions } from '../../node/agentSideEffects.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
-import { createNullSessionDataService, createSessionDataService } from '../common/sessionTestHelpers.js';
+import { createNoopGitService, createNullSessionDataService, createSessionDataService } from '../common/sessionTestHelpers.js';
 import { MockAgent } from './mockAgent.js';
 
 // ---- Tests ------------------------------------------------------------------
@@ -99,6 +99,7 @@ suite('AgentSideEffects', () => {
 			getAgent: () => agent,
 			agents: agentList,
 			sessionDataService: createNullSessionDataService(),
+			onTurnComplete: () => { },
 		});
 	});
 
@@ -124,7 +125,26 @@ suite('AgentSideEffects', () => {
 			// sendMessage is async but fire-and-forget; wait a tick
 			await new Promise(r => setTimeout(r, 10));
 
-			assert.deepStrictEqual(agent.sendMessageCalls, [{ session: URI.parse(sessionUri.toString()), prompt: 'hello world' }]);
+			assert.deepStrictEqual(agent.sendMessageCalls, [{ session: URI.parse(sessionUri.toString()), prompt: 'hello world', attachments: undefined }]);
+		});
+
+		test('parses protocol attachment URI strings before passing them to the agent', () => {
+			setupSession();
+			const fileUri = URI.file('/workspace/test.ts');
+			const action: SessionAction = {
+				type: ActionType.SessionTurnStarted,
+				session: sessionUri.toString(),
+				turnId: 'turn-1',
+				userMessage: { text: 'hello world', attachments: [{ type: AttachmentType.File, uri: fileUri.toString(), displayName: 'test.ts' }] },
+			};
+
+			sideEffects.handleAction(action);
+
+			assert.deepStrictEqual(agent.sendMessageCalls, [{
+				session: URI.parse(sessionUri.toString()),
+				prompt: 'hello world',
+				attachments: [{ type: AttachmentType.File, uri: URI.parse(fileUri.toString()), displayName: 'test.ts' }],
+			}]);
 		});
 
 		test('dispatches session/error when no agent is found', async () => {
@@ -134,6 +154,7 @@ suite('AgentSideEffects', () => {
 				getAgent: () => undefined,
 				agents: emptyAgents,
 				sessionDataService: {} as ISessionDataService,
+				onTurnComplete: () => { },
 			});
 
 			const envelopes: ActionEnvelope[] = [];
@@ -462,6 +483,27 @@ suite('AgentSideEffects', () => {
 			// Session was idle, so the queued message is consumed immediately
 			assert.strictEqual(agent.sendMessageCalls.length, 1);
 			assert.strictEqual(agent.sendMessageCalls[0].prompt, 'queued message');
+		});
+
+		test('parses queued protocol attachment URI strings before passing them to the agent', () => {
+			setupSession();
+			const fileUri = URI.file('/workspace/queued.ts');
+			const action: SessionAction = {
+				type: ActionType.SessionPendingMessageSet as const,
+				session: sessionUri.toString(),
+				kind: PendingMessageKind.Queued,
+				id: 'q-uri',
+				userMessage: { text: 'queued message', attachments: [{ type: AttachmentType.File, uri: fileUri.toString(), displayName: 'queued.ts' }] },
+			};
+
+			stateManager.dispatchClientAction(action, { clientId: 'test', clientSeq: 1 });
+			sideEffects.handleAction(action);
+
+			assert.deepStrictEqual(agent.sendMessageCalls, [{
+				session: URI.parse(sessionUri.toString()),
+				prompt: 'queued message',
+				attachments: [{ type: AttachmentType.File, uri: URI.parse(fileUri.toString()), displayName: 'queued.ts' }],
+			}]);
 		});
 
 		test('syncs on SessionPendingMessageRemoved', () => {
@@ -1304,6 +1346,7 @@ suite('AgentSideEffects', () => {
 				getAgent: () => localAgent,
 				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
 				sessionDataService,
+				onTurnComplete: () => { },
 			});
 
 			localStateManager.createSession({
@@ -1332,7 +1375,7 @@ suite('AgentSideEffects', () => {
 			const sessionDataService = createSessionDataService(sessionDb);
 			const localAgent = new MockAgent();
 			disposables.add(toDisposable(() => localAgent.dispose()));
-			const localService = disposables.add(new AgentService(new NullLogService(), fileService, sessionDataService, { _serviceBrand: undefined } as IProductService));
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, sessionDataService, { _serviceBrand: undefined } as IProductService, createNoopGitService()));
 			localService.registerProvider(localAgent);
 
 			// Create a session on the agent backend
@@ -1352,7 +1395,7 @@ suite('AgentSideEffects', () => {
 			const sessionDataService = createSessionDataService(sessionDb);
 			const localAgent = new MockAgent();
 			disposables.add(toDisposable(() => localAgent.dispose()));
-			const localService = disposables.add(new AgentService(new NullLogService(), fileService, sessionDataService, { _serviceBrand: undefined } as IProductService));
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, sessionDataService, { _serviceBrand: undefined } as IProductService, createNoopGitService()));
 			localService.registerProvider(localAgent);
 
 			// Create a session on the agent backend
@@ -1385,6 +1428,7 @@ suite('AgentSideEffects', () => {
 				getAgent: () => localAgent,
 				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
 				sessionDataService,
+				onTurnComplete: () => { },
 			});
 
 			const session = localStateManager.createSession({

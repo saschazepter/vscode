@@ -55,6 +55,7 @@ export const enum ActionType {
 	SessionActivityChanged = 'session/activityChanged',
 	SessionDiffsChanged = 'session/diffsChanged',
 	SessionConfigChanged = 'session/configChanged',
+	SessionMetaChanged = 'session/metaChanged',
 	RootTerminalsChanged = 'root/terminalsChanged',
 	RootConfigChanged = 'root/configChanged',
 	TerminalData = 'terminal/data',
@@ -750,6 +751,22 @@ export interface SessionConfigChangedAction {
 	replace?: boolean;
 }
 
+/**
+ * The session's `_meta` side-channel changed. Replaces `state._meta`
+ * entirely (full-replacement semantics). Producers SHOULD merge any
+ * keys they wish to preserve into the new value before dispatching.
+ *
+ * @category Session Actions
+ * @version 1
+ */
+export interface SessionMetaChangedAction {
+	type: ActionType.SessionMetaChanged;
+	/** Session URI */
+	session: URI;
+	/** New `_meta` payload, or `undefined` to clear it */
+	_meta: Record<string, unknown> | undefined;
+}
+
 // ─── Truncation ──────────────────────────────────────────────────────────────
 
 /**
@@ -1164,6 +1181,7 @@ export type StateAction =
 	| SessionActivityChangedAction
 	| SessionDiffsChangedAction
 	| SessionConfigChangedAction
+	| SessionMetaChangedAction
 	| TerminalDataAction
 	| TerminalInputAction
 	| TerminalResizedAction

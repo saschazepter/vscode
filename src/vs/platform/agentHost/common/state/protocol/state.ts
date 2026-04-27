@@ -331,6 +331,14 @@ export interface SessionState {
 	 * {@link SessionActiveClient.customizations | activeClient.customizations}.
 	 */
 	customizations?: SessionCustomization[];
+	/**
+	 * Additional provider-specific metadata for this session.
+	 *
+	 * Clients MAY look for well-known keys here to provide enhanced UI.
+	 * For example, a `git` key may provide extra git metadata about the session's
+	 * workingDirectory.
+	 */
+	_meta?: Record<string, unknown>;
 }
 
 /**
@@ -587,11 +595,20 @@ export interface SessionInputTextQuestion extends SessionInputQuestionBase {
 /** Numeric question within a session input request. */
 export interface SessionInputNumberQuestion extends SessionInputQuestionBase {
 	kind: SessionInputQuestionKind.Number | SessionInputQuestionKind.Integer;
-	/** Minimum value */
+	/**
+	 * Minimum value
+	 * @format float
+	 */
 	min?: number;
-	/** Maximum value */
+	/**
+	 * Maximum value
+	 * @format float
+	 */
 	max?: number;
-	/** Default numeric value */
+	/**
+	 * Default numeric value
+	 * @format float
+	 */
 	defaultValue?: number;
 }
 
@@ -682,6 +699,7 @@ export interface SessionInputTextAnswerValue {
 
 export interface SessionInputNumberAnswerValue {
 	kind: SessionInputAnswerValueKind.Number;
+	/** @format float */
 	value: number;
 }
 
@@ -827,8 +845,8 @@ export interface UserMessage {
 export interface MessageAttachment {
 	/** Attachment type */
 	type: AttachmentType;
-	/** File/directory path */
-	path: string;
+	/** File/directory URI */
+	uri: URI;
 	/** Display name */
 	displayName?: string;
 }
