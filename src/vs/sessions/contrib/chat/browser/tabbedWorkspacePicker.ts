@@ -88,12 +88,17 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 			contextKeyService,
 			instantiationService,
 		);
-		// Re-arm auto-tab whenever the workspace selection changes (from any
-		// source — user click, programmatic, browse-action) so the next open
-		// follows the new selection's category instead of staying stuck on the
-		// user's previous tab pick.
-		this._register(this.onDidSelectWorkspace(() => {
-			this._userPickedTab = false;
+		// Re-arm auto-tab whenever the workspace selection changes to a new
+		// value (from any source — user click, programmatic, browse-action),
+		// but only while the picker is closed. This way picking a tab and
+		// then a workspace within the same open keeps that tab active for
+		// the current session, while the next fresh open follows the latest
+		// selection's category. Clears (`undefined`) are ignored so the
+		// previously-active tab is preserved.
+		this._register(this.onDidSelectWorkspace(selection => {
+			if (selection && !this.actionWidgetService.isVisible) {
+				this._userPickedTab = false;
+			}
 		}));
 	}
 
