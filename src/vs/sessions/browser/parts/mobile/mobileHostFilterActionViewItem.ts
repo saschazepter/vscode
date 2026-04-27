@@ -14,7 +14,7 @@ import { DisposableStore, MutableDisposable } from '../../../../base/common/life
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { AgentHostFilterConnectionStatus, IAgentHostFilterService } from '../../../contrib/remoteAgentHost/common/agentHostFilter.js';
+import { IAgentHostFilterService } from '../../../contrib/remoteAgentHost/common/agentHostFilter.js';
 import { HostFilterActionViewItem } from '../../../contrib/remoteAgentHost/browser/hostFilterActionViewItem.js';
 import './media/hostPickerDropdown.css';
 
@@ -85,11 +85,12 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		disposables.add(Gesture.addTarget(panel));
 		disposables.add(dom.addDisposableListener(panel, TouchEventType.Tap, e => dom.EventHelper.stop(e, true)));
 
-		// Position below the trigger element
+		// Position below the trigger element, centered horizontally
 		const triggerRect = this.element!.getBoundingClientRect();
 		const gap = 4;
 		panel.style.top = `${triggerRect.bottom + gap}px`;
-		panel.style.left = `${triggerRect.left}px`;
+		panel.style.left = '50%';
+		panel.style.transform = 'translateX(-50%)';
 		panel.style.minWidth = `${Math.max(triggerRect.width, 200)}px`;
 
 		for (const host of hosts) {
@@ -110,15 +111,6 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			labelSpan.className = 'host-picker-dropdown-item-label';
 			labelSpan.textContent = host.label;
 			item.appendChild(labelSpan);
-
-			if (host.status !== AgentHostFilterConnectionStatus.Connected) {
-				const statusSpan = targetDocument.createElement('span');
-				statusSpan.className = 'host-picker-dropdown-item-status';
-				statusSpan.textContent = host.status === AgentHostFilterConnectionStatus.Connecting
-					? localize('agentHostFilter.dropdown.connecting', "connecting…")
-					: localize('agentHostFilter.dropdown.disconnected', "disconnected");
-				item.appendChild(statusSpan);
-			}
 
 			if (selectedId === host.providerId) {
 				const checkSpan = targetDocument.createElement('span');
