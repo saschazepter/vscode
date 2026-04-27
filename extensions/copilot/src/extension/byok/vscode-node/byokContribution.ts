@@ -40,12 +40,12 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 		super();
 		this._byokStorageService = new BYOKStorageService(extensionContext);
 		this._authChange(authService, this._instantiationService).catch(error => {
-			this._logService.error(error, 'BYOK: Error during initial auth change handling.');
+			this._logService.error(error, 'BYOK: Failed to initialize BYOK providers during startup.');
 		});
 
 		this._register(authService.onDidAuthenticationChange(() => {
 			this._authChange(authService, this._instantiationService).catch(error => {
-				this._logService.error(error, 'BYOK: Error during auth change handling.');
+				this._logService.error(error, 'BYOK: Failed to register BYOK providers after authentication change.');
 			});
 		}));
 	}
@@ -100,7 +100,7 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 			return {};
 		}
 		let knownModels: Record<string, BYOKKnownModels>;
-		if (data.version !== 1 || !data.modelInfo) {
+		if (!data || data.version !== 1 || !data.modelInfo) {
 			this._logService.warn('BYOK: Copilot Chat known models list is not in the expected format. Defaulting to empty list.');
 			knownModels = {};
 		} else {
