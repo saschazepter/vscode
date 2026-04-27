@@ -447,7 +447,7 @@
 	"github.copilot.command.cli.compact.description": "Free up context by compacting the conversation history",
 	"github.copilot.command.cli.plan.description": "Create an implementation plan before coding",
 	"github.copilot.command.cli.fleet.description": "Enable fleet mode for parallel subagent execution",
-	"github.copilot.command.cli.remote.description": "Enable remote control for this session",
+	"github.copilot.command.cli.remote.description": "Show remote control status, or use /remote on and /remote off",
 	"github.copilot.command.claude.sessions.rename": "Rename...",
 	"github.copilot.command.claude.sessions.commit": "Commit",
 	"github.copilot.command.claude.sessions.commitAndSync": "Commit and Sync",

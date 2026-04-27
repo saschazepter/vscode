@@ -33,7 +33,7 @@ import { IToolsService } from '../../../tools/common/toolsService';
 import { IChatSessionMetadataStore } from '../../common/chatSessionMetadataStore';
 import { ExternalEditTracker } from '../../common/externalEditTracker';
 import { getWorkingDirectory, isIsolationEnabled, IWorkspaceInfo } from '../../common/workspaceInfo';
-import { enrichToolInvocationWithSubagentMetadata, isCopilotCliEditToolCall, isCopilotCLIToolThatCouldRequirePermissions, isTodoRelatedSqlQuery, processToolExecutionComplete, processToolExecutionStart, ToolCall, updateTodoListFromSqlItems, clearTodoList } from '../common/copilotCLITools';
+import { clearTodoList, enrichToolInvocationWithSubagentMetadata, isCopilotCliEditToolCall, isCopilotCLIToolThatCouldRequirePermissions, isTodoRelatedSqlQuery, processToolExecutionComplete, processToolExecutionStart, stripReminders, ToolCall, updateTodoListFromSqlItems } from '../common/copilotCLITools';
 import { clearPendingCopilotCLIRequestContext, setPendingCopilotCLIRequestContext } from '../common/pendingRequestContext';
 import { getCopilotCLISessionDir } from './cliHelpers';
 import { SessionIdForCLI } from '../common/utils';
@@ -63,6 +63,7 @@ export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'pla
  */
 interface McSharedState {
 	mcSessionId: string;
+	mcFrontendUrl?: string;
 	mcEventBuffer: McEvent[];
 	mcCompletedCommandIds: string[];
 	mcPendingPermissionRequests: Map<string, { resolve(result: PermissionRequestResult): void }>;
@@ -143,6 +144,40 @@ function getMissionControlSessionTitleFromEvent(event: { type?: string; data?: u
 		? event.data.title
 		: undefined;
 	return typeof title === 'string' && title.trim().length > 0 ? title : undefined;
+}
+
+function getMissionControlEventData(event: { type?: string; data?: unknown }): Record<string, unknown> {
+	if (!event.data || typeof event.data !== 'object') {
+		return {};
+	}
+
+	const data = event.data as Record<string, unknown>;
+	if (event.type === 'user.message') {
+		const content = data.content;
+		if (typeof content !== 'string') {
+			return data;
+		}
+
+		const sanitizedContent = stripReminders(content);
+		return sanitizedContent === content ? data : { ...data, content: sanitizedContent };
+	}
+
+	if (event.type !== 'tool.execution_start') {
+		return data;
+	}
+
+	const toolName = data.toolName;
+	if (toolName !== 'bash' && toolName !== 'powershell' && toolName !== 'task') {
+		return data;
+	}
+
+	const args = data.arguments;
+	if (!args || typeof args !== 'object' || !('description' in args)) {
+		return data;
+	}
+
+	const { description: _description, ...sanitizedArgs } = args as Record<string, unknown>;
+	return { ...data, arguments: sanitizedArgs };
 }
 
 function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set<string> {
@@ -1060,8 +1095,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	}
 
 	/**
-	 * Handle `/remote` command — enables or disables Mission Control remote
-	 * control for this session by calling the Copilot API directly.
+	 * Handle `/remote` command — prints status or enables/disables Mission
+	 * Control remote control for this session by calling the Copilot API directly.
 	 */
 	private async _handleRemoteControl(input: CopilotCLISessionInput): Promise<void> {
 		if (!this.configurationService.getConfig(ConfigKey.Advanced.CLIRemoteEnabled)) {
@@ -1071,10 +1106,25 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 		const args = ('prompt' in input ? input.prompt : '')?.trim().toLowerCase();
 		const isCurrentlyActive = !!this._mcState;
-		const enable = args === 'off' ? false : (args === 'on' ? true : !isCurrentlyActive);
+		if (!args) {
+			this._showRemoteControlStatus();
+			return;
+		}
+		if (args !== 'on' && args !== 'off') {
+			this._stream?.markdown(l10n.t('Usage: /remote, /remote on, /remote off'));
+			return;
+		}
+		if (args === 'on' && isCurrentlyActive) {
+			this._showRemoteControlStatus();
+			return;
+		}
+		if (args === 'off' && !isCurrentlyActive) {
+			this._showRemoteControlStatus();
+			return;
+		}
 
 		try {
-			if (!enable) {
+			if (args === 'off') {
 				await this._teardownRemoteControl();
 				this._stream?.markdown(l10n.t('Remote control disabled.'));
 				return;
@@ -1134,6 +1184,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			// so it persists across CopilotCLISession instances.
 			const sharedState: McSharedState = {
 				mcSessionId: mcData.id,
+				mcFrontendUrl: undefined,
 				mcEventBuffer: [],
 				mcCompletedCommandIds: [],
 				mcPendingPermissionRequests: new Map(),
@@ -1229,7 +1280,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						parentId: e.parentId ?? state.mcLastEventId ?? null,
 						ephemeral: e.ephemeral,
 						type: eventType,
-						data: (e.data ?? {}) as Record<string, unknown>,
+						data: getMissionControlEventData(e),
 					});
 					state.mcLastEventId = e.id;
 				} else {
@@ -1239,7 +1290,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						timestamp: new Date().toISOString(),
 						parentId: state.mcLastEventId ?? null,
 						type: eventType,
-						data: (e.data ?? {}) as Record<string, unknown>,
+						data: getMissionControlEventData(e),
 					});
 					state.mcLastEventId = id;
 				}
@@ -1247,6 +1298,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 			// Step 8: Construct and display the frontend URL
 			const frontendUrl = `https://github.com/${nwo.owner}/${nwo.repo}/tasks/${taskId}`;
+			sharedState.mcFrontendUrl = frontendUrl;
 			this.logService.info(`[CopilotCLISession] MC session created, URL: ${frontendUrl}`);
 
 			// Render a persistent inline info banner using the proposed
@@ -1271,6 +1323,26 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		} catch (error) {
 			this.logService.error(`[CopilotCLISession] Remote control error: ${error}`);
 			this._stream?.markdown(l10n.t('Unable to enable remote control: {0}', error instanceof Error ? error.message : String(error)));
+		}
+	}
+
+	private _showRemoteControlStatus(): void {
+		const state = this._mcState;
+		if (!state) {
+			this._stream?.markdown(l10n.t('Remote control is disabled. Use /remote on to enable it.'));
+			return;
+		}
+
+		const message = state.mcFrontendUrl
+			? l10n.t('Remote control is enabled. Use /remote off to disable it. Session URL: {0}', state.mcFrontendUrl)
+			: l10n.t('Remote control is enabled. Use /remote off to disable it.');
+		this._stream?.markdown(message);
+		if (state.mcFrontendUrl) {
+			this._stream?.button({
+				command: 'vscode.open',
+				arguments: [Uri.parse(state.mcFrontendUrl)],
+				title: l10n.t('Open on GitHub'),
+			});
 		}
 	}
 
@@ -1393,12 +1465,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				parentId: event.parentId ?? state.mcLastEventId ?? null,
 				ephemeral: event.ephemeral,
 				type: eventType,
-				data: (event.data ?? {}) as Record<string, unknown>,
+				data: getMissionControlEventData(event),
 			};
 			state.mcLastEventId = event.id;
 			state.mcEventBuffer.push(mcEvent);
 		} else {
-			state.mcEventBuffer.push(this._createMcEvent(eventType, (event.data ?? {}) as Record<string, unknown>));
+			state.mcEventBuffer.push(this._createMcEvent(eventType, getMissionControlEventData(event)));
 		}
 	}
 
@@ -1446,8 +1518,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const content = typeof event.data === 'object' && event.data !== null && 'content' in event.data
 				? event.data.content
 				: undefined;
-			if (typeof content === 'string' && content.trim().length > 0) {
-				return content.trim();
+			if (typeof content === 'string') {
+				const sanitizedContent = stripReminders(content).trim();
+				if (sanitizedContent.length > 0) {
+					return sanitizedContent;
+				}
 			}
 		}
 

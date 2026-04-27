@@ -790,6 +790,76 @@ describe('CopilotCLISession', () => {
 		expect(remoteState.mcPendingPermissionRequests.size).toBe(0);
 	});
 
+	it('reports remote control status when /remote is invoked without arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: '' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Remote control is disabled. Use /remote on to enable it.');
+	});
+
+	it('reports enabled remote control status when /remote is invoked without arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcFrontendUrl: 'https://github.com/microsoft/vscode/tasks/123',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: '' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Remote control is enabled. Use /remote off to disable it. Session URL: https://github.com/microsoft/vscode/tasks/123');
+	});
+
+	it('shows /remote usage for unsupported arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: 'wat' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Usage: /remote, /remote on, /remote off');
+	});
+
 	it('forwards session.idle to Mission Control so remote running state clears', async () => {
 		const session = await createSession();
 		const remoteState = {
@@ -855,6 +925,117 @@ describe('CopilotCLISession', () => {
 		(session as any)._pendingPrompt = '/remote';
 
 		await expect((session as any)._getMissionControlSessionTitle()).resolves.toBe('hey');
+	});
+
+	it('sanitizes hidden prompt markup when deriving the Mission Control title', async () => {
+		const session = await createSession();
+		vi.spyOn(sdkSession, 'getEvents').mockReturnValue([
+			{
+				type: 'user.message',
+				data: {
+					content: '/remote <reminder>IMPORTANT: hidden context</reminder><attachments><attachment id="microsoft/vscode-tools">repo</attachment></attachments><userRequest></userRequest>',
+				}
+			},
+		] as any);
+
+		await expect((session as any)._getMissionControlSessionTitle()).resolves.toBe('/remote');
+	});
+
+	it('sanitizes hidden prompt markup before forwarding user messages to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'remote-command-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: {
+				content: '/remote <reminder>IMPORTANT: hidden context</reminder><attachments><attachment id="microsoft/vscode-tools">repo</attachment></attachments><userRequest></userRequest>',
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('/remote');
+	});
+
+	it('strips shell tool descriptions before forwarding tool starts to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: {
+				toolCallId: 'bash-1',
+				toolName: 'bash',
+				arguments: { command: 'echo hello', description: 'Simple echo command.' },
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			data: { arguments: { command: string; description?: string } };
+		}).data.arguments).toEqual({ command: 'echo hello' });
+	});
+
+	it('strips task descriptions before forwarding tool starts to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: {
+				toolCallId: 'task-1',
+				toolName: 'task',
+				arguments: { description: 'Simple task.', prompt: 'Run echo', agent_type: 'task' },
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			data: { arguments: { prompt: string; agent_type: string; description?: string } };
+		}).data.arguments).toEqual({ prompt: 'Run echo', agent_type: 'task' });
 	});
 
 	it('does not forward report_intent tool events to Mission Control', async () => {
