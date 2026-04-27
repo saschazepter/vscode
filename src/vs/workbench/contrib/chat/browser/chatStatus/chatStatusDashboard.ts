@@ -291,8 +291,9 @@ export class ChatStatusDashboard extends DomWidget {
 			const newUser = isNewUser(this.chatEntitlementService);
 			const anonymousUser = this.chatEntitlementService.anonymous;
 			const disabled = this.chatEntitlementService.sentiment.disabled || this.chatEntitlementService.sentiment.untrusted;
+			const hidden = this.chatEntitlementService.sentiment.hidden;
 			const signedOut = this.chatEntitlementService.entitlement === ChatEntitlement.Unknown;
-			if (newUser || signedOut || disabled) {
+			if ((newUser || signedOut || disabled) && !hidden) {
 				this.element.appendChild($('hr'));
 
 				let descriptionText: string | MarkdownString;
