@@ -1270,7 +1270,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			{
 				label: localize('repositories', "Repositories"),
 				description: localize('github', "GitHub"),
-				icon: Codicon.repo,
+				icon: Codicon.library,
 				providerId: this.id,
 				run: () => this._browseForRepo(),
 			},

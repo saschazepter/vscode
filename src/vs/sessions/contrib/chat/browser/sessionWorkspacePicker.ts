@@ -406,6 +406,15 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
+	 * Whether grouped browse actions with multiple providers should be
+	 * expanded into top-level items instead of nested under a submenu.
+	 * Defaults to `false` (submenu).
+	 */
+	protected _inlineGroupedBrowseActions(): boolean {
+		return false;
+	}
+
+	/**
 	 * Builds the picker items list from recent workspaces.
 	 *
 	 * Items are shown in a flat recency-sorted list (most recently used first)
@@ -487,13 +496,31 @@ export class WorkspacePicker extends Disposable {
 				items.push({
 					kind: ActionListItemKind.Action,
 					label: localize(`workspacePicker.browseSelectAction`, "Select {0}...", label),
-					description: action.description,
 					group: { title: '', icon },
 					disabled: isUnavailable,
 					item: { browseActionIndex: index },
 				});
 			} else {
-				// Multiple providers for this group — show submenu
+				// Multiple providers for this group — show submenu, or expand
+				// inline when the subclass requests it (e.g. the Remote tab
+				// in the tabbed picker variant).
+				if (this._inlineGroupedBrowseActions()) {
+					for (const { action, index } of actions) {
+						const provider = allProviders.find(p => p.id === action.providerId);
+						const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
+						const isUnavailable = connectionStatus === RemoteAgentHostConnectionStatus.Disconnected || connectionStatus === RemoteAgentHostConnectionStatus.Connecting;
+						items.push({
+							kind: ActionListItemKind.Action,
+							label: action.description ?? provider?.label ?? label,
+							description: localize('workspacePicker.browseSelectAction', "Select {0}...", label),
+							group: { title: '', icon: action.icon ?? icon },
+							disabled: isUnavailable,
+							className: 'sessions-browse-inline-item',
+							item: { browseActionIndex: index },
+						});
+					}
+					continue;
+				}
 				const submenuActions = actions.map(({ action, index }) => {
 					const provider = allProviders.find(p => p.id === action.providerId);
 					const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
@@ -527,7 +554,6 @@ export class WorkspacePicker extends Disposable {
 			items.push({
 				kind: ActionListItemKind.Action,
 				label: localize('workspacePicker.browseSelectAction', "Select {0}...", action.label),
-				description: action.description,
 				group: { title: '', icon: action.icon },
 				disabled: isUnavailable,
 				item: { browseActionIndex: index },

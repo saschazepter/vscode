@@ -7,6 +7,7 @@ import * as dom from '../../../../base/browser/dom.js';
 import { Radio } from '../../../../base/browser/ui/radio/radio.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
@@ -31,8 +32,8 @@ interface ITabDescriptor {
 }
 
 const TABS: readonly ITabDescriptor[] = [
-	{ id: 'folders', label: localize('tabbedPicker.folders', "Folders") },
-	{ id: 'repositories', label: localize('tabbedPicker.repositories', "Repositories") },
+	{ id: 'folders', label: localize('tabbedPicker.local', "Local") },
+	{ id: 'repositories', label: localize('tabbedPicker.github', "GitHub") },
 	{ id: 'remote', label: localize('tabbedPicker.remote', "Remote") },
 ];
 
@@ -107,17 +108,44 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 		}));
 		header.appendChild(radio.domNode);
 
-		this._tabDisposables.add(radio.onDidSelect(index => {
-			const next = TABS[index];
-			if (!next || next.id === this._activeTab) {
+		const activateTab = (next: WorkspaceCategory) => {
+			if (next === this._activeTab) {
 				return;
 			}
-			this._activeTab = next.id;
+			this._activeTab = next;
 			this._userPickedTab = true;
 			// Re-show in place. The underlying context view replaces its
 			// content when `show()` is called while visible, so we avoid the
 			// flicker that hide()+setTimeout(show) caused.
 			this.showPicker(true);
+		};
+
+		this._tabDisposables.add(radio.onDidSelect(index => {
+			const next = TABS[index];
+			if (next) {
+				activateTab(next.id);
+			}
+		}));
+
+		// Keyboard nav: left/right arrows cycle tabs from anywhere in the
+		// popup (filter input or list). The list normally only consumes
+		// up/down, so left/right are safe to intercept here.
+		this._tabDisposables.add(dom.addStandardDisposableListener(header.ownerDocument, 'keydown', e => {
+			if (!header.isConnected) {
+				return;
+			}
+			if (e.keyCode !== KeyCode.LeftArrow && e.keyCode !== KeyCode.RightArrow) {
+				return;
+			}
+			const currentIndex = TABS.findIndex(t => t.id === this._activeTab);
+			if (currentIndex < 0) {
+				return;
+			}
+			const delta = e.keyCode === KeyCode.RightArrow ? 1 : -1;
+			const nextIndex = (currentIndex + delta + TABS.length) % TABS.length;
+			e.preventDefault();
+			e.stopPropagation();
+			activateTab(TABS[nextIndex].id);
 		}));
 
 		return header;
@@ -138,6 +166,13 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 		// Manage entries (remote provider list, Tunnels..., SSH..., etc.) are
 		// only relevant when looking at remote agent hosts. Hide them in the
 		// Folders and Repositories tabs.
+		return this._activeTab === 'remote';
+	}
+
+	protected override _inlineGroupedBrowseActions(): boolean {
+		// In the Remote tab, expand multi-provider browse groups (e.g.
+		// "Select Folders…" with several remote hosts behind it) into
+		// top-level items instead of nesting them under a submenu.
 		return this._activeTab === 'remote';
 	}
 

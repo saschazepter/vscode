@@ -377,10 +377,31 @@
 .action-widget .sessions-workspace-picker-tabbar {
 	display: flex;
 	align-items: center;
-	padding: 6px 6px 4px 6px;
-	border-bottom: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-editorHoverWidget-border));
+	padding: 2px 2px 6px;
 }
 
 .action-widget .sessions-workspace-picker-tabbar .monaco-custom-radio {
 	width: 100%;
+	gap: 4px;
+}
+
+.action-widget .sessions-workspace-picker-tabbar .monaco-custom-radio > .monaco-button {
+	border-color: transparent;
+	border-radius: 4px;
+}
+
+.action-widget .sessions-workspace-picker-tabbar .monaco-custom-radio > .monaco-button:not(.active) {
+	color: var(--vscode-descriptionForeground);
+}
+
+/* Inline browse actions (e.g. "Select Folders…" entries in the Remote tab):
+ * show the host name as the primary label and only reveal the secondary
+ * "Select Folders…" description on hover/focus to reduce repetition. */
+.action-widget .monaco-list-row.action.sessions-browse-inline-item .description {
+	visibility: hidden;
+}
+
+.action-widget .monaco-list-row.action.sessions-browse-inline-item:hover:not(.option-disabled) .description,
+.action-widget .monaco-list-row.action.sessions-browse-inline-item.focused:not(.option-disabled) .description {
+	visibility: visible;
 }
