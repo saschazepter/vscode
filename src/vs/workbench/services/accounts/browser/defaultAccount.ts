@@ -334,9 +334,9 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			this.logService.error('[DefaultAccount] Error while waiting for installed extensions to be registered', getErrorMessage(error));
 		}
 
-		this.logService.info('[DefaultAccount] Starting initialization');
+		console.log('[DefaultAccount] Starting initialization');
 		await this.doUpdateDefaultAccount();
-		this.logService.info('[DefaultAccount] Initialization complete. Account:', this._defaultAccount?.defaultAccount.accountName ?? 'null');
+		console.log('[DefaultAccount] Initialization complete. Account:', this._defaultAccount?.defaultAccount.accountName ?? 'null');
 
 		this._register(this.onDidChangeDefaultAccount(account => {
 			this.telemetryService.publicLog2<DefaultAccountStatusTelemetry, DefaultAccountStatusTelemetryClassification>('defaultaccount:status', { status: account ? 'available' : 'unavailable', initial: false });
@@ -434,7 +434,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 		const declaredProvider = this.authenticationService.declaredProviders.find(provider => provider.id === defaultAccountProvider.id);
 		if (!declaredProvider) {
-			this.logService.info(`[DefaultAccount] Authentication provider is not declared.`, defaultAccountProvider);
+			console.log(`[DefaultAccount] Authentication provider is not declared.`, defaultAccountProvider);
 			return null;
 		}
 
@@ -517,15 +517,15 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, options?: { forceRefresh?: boolean }): Promise<IDefaultAccountData | null> {
 		try {
-			this.logService.info('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
+			console.log('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
 			const sessions = await this.findMatchingProviderSession(authenticationProvider.id, this.defaultAccountConfig.authenticationProvider.scopes);
 
 			if (!sessions?.length) {
-				this.logService.info('[DefaultAccount] No matching session found for provider:', authenticationProvider.id, 'Expected scopes:', JSON.stringify(this.defaultAccountConfig.authenticationProvider.scopes));
+				console.log('[DefaultAccount] No matching session found for provider:', authenticationProvider.id, 'Expected scopes:', JSON.stringify(this.defaultAccountConfig.authenticationProvider.scopes));
 				return null;
 			}
 
-			this.logService.info('[DefaultAccount] Found', sessions.length, 'matching session(s). Account:', sessions[0].account.label, 'Scopes:', sessions[0].scopes);
+			console.log('[DefaultAccount] Found', sessions.length, 'matching session(s). Account:', sessions[0].account.label, 'Scopes:', sessions[0].scopes);
 			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, options);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
@@ -588,17 +588,17 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 	private async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
 		const sessions = await this.getSessions(authProviderId);
-		this.logService.info('[DefaultAccount] Got', sessions.length, 'total session(s) for provider:', authProviderId);
+		console.log('[DefaultAccount] Got', sessions.length, 'total session(s) for provider:', authProviderId);
 		const matchingSessions = [];
 		for (const session of sessions) {
-			this.logService.info('[DefaultAccount] Checking session', session.id, 'account:', session.account.label, 'scopes:', session.scopes);
+			console.log('[DefaultAccount] Checking session', session.id, 'account:', session.account.label, 'scopes:', session.scopes);
 			for (const scopes of allScopes) {
 				if (this.scopesMatch(session.scopes, scopes)) {
 					matchingSessions.push(session);
 				}
 			}
 		}
-		this.logService.info('[DefaultAccount] Matching sessions:', matchingSessions.length);
+		console.log('[DefaultAccount] Matching sessions:', matchingSessions.length);
 		return matchingSessions.length > 0 ? matchingSessions : undefined;
 	}
 
