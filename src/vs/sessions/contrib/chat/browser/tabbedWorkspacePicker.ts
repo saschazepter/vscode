@@ -39,10 +39,10 @@ const TABBED_PICKER_WIDTH = 360;
  * Categorization rules:
  *   - **Remote**: any workspace whose owning provider is a remote agent host
  *     (tunnels, SSH hosts, etc.) plus that provider's browse actions.
- *   - **Repositories** ("GitHub" tab): GitHub-backed workspaces (e.g.
+ *   - **Repositories** (GitHub tab): GitHub-backed workspaces (e.g.
  *     `github-remote-file://`) plus browse actions in the `repositories`
  *     group.
- *   - **Folders** ("Local" tab): anything else — local file:// folders and
+ *   - **Folders** (Local tab): anything else — local file:// folders and
  *     the providers' "Folders" browse actions.
  */
 export class TabbedWorkspacePicker extends WorkspacePicker {
@@ -51,23 +51,24 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 	private _activeTab: WorkspaceCategory = 'folders';
 	private _userPickedTab = false;
 
+	// Re-arm auto-tab whenever the workspace selection changes (from any
+	// source — user click, programmatic, browse-action) so the next open
+	// follows the new selection's category instead of staying stuck on the
+	// user's previous tab pick.
+	private readonly _resetUserPickedTab = this._register(this.onDidSelectWorkspace(() => {
+		this._userPickedTab = false;
+	}));
+
 	override showPicker(force = false): void {
 		// Default the active tab to the category of the currently selected
-		// workspace. The user-pick latch is reset whenever the selection
-		// changes (see `setSelectedWorkspace`), so picking a tab during one
-		// open of the picker doesn't permanently override auto-tab.
+		// workspace. The user-pick latch is reset on every selection change,
+		// so picking a tab during one open of the picker doesn't permanently
+		// override auto-tab.
 		if (!this._userPickedTab && this.selectedProject) {
 			this._activeTab = this._categorizeWorkspace(this.selectedProject) ?? this._activeTab;
 		}
 		this._applyTabFilter(this._activeTab);
 		super.showPicker(force);
-	}
-
-	override setSelectedWorkspace(project: IWorkspaceSelection, fireEvent = true): void {
-		// Re-arm auto-tab so the next open follows the new selection's
-		// category instead of being stuck on the user's previous tab pick.
-		this._userPickedTab = false;
-		super.setSelectedWorkspace(project, fireEvent);
 	}
 
 	protected override _getPickerHeader(): HTMLElement | undefined {
