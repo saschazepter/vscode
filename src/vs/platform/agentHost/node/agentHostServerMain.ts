@@ -165,27 +165,32 @@ async function main(): Promise<void> {
 	const sessionDataService = new SessionDataService(URI.file(environmentService.userDataPath), fileService, logService);
 	const rootConfigResource = joinPath(environmentService.appSettingsHome, 'globalStorage', 'agent-host-config.json');
 
+	// Build the DI container early so the git service can be created via
+	// `createInstance` (it needs IFileService + INativeEnvironmentService).
+	// The git service is shared by AgentService (for diff computation +
+	// showBlob) and the production agent registration path.
+	const diServices = new ServiceCollection();
+	diServices.set(IProductService, productService);
+	diServices.set(INativeEnvironmentService, environmentService);
+	diServices.set(ILogService, logService);
+	diServices.set(IFileService, fileService);
+	diServices.set(ISessionDataService, sessionDataService);
+	const instantiationService = new InstantiationService(diServices);
+	const gitService = instantiationService.createInstance(AgentHostGitService);
+
 	// Create the agent service (owns AgentHostStateManager + AgentSideEffects internally)
-	const gitService = new AgentHostGitService();
 	const agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, rootConfigResource);
 	disposables.add(agentService);
 
 	// Register agents
 	if (!options.quiet) {
 		// Production agents (require DI)
-		const diServices = new ServiceCollection();
 		const pluginManager = new AgentPluginManager(URI.file(environmentService.userDataPath), fileService, logService);
-		diServices.set(IProductService, productService);
-		diServices.set(INativeEnvironmentService, environmentService);
-		diServices.set(ILogService, logService);
-		diServices.set(IFileService, fileService);
-		diServices.set(ISessionDataService, sessionDataService);
 		diServices.set(IAgentPluginManager, pluginManager);
 		diServices.set(IDiffComputeService, disposables.add(new NodeWorkerDiffComputeService(logService)));
 		diServices.set(IAgentHostTerminalManager, agentService.terminalManager);
 		diServices.set(IAgentConfigurationService, agentService.configurationService);
 		diServices.set(IAgentHostGitService, gitService);
-		const instantiationService = new InstantiationService(diServices);
 		const copilotAgent = disposables.add(instantiationService.createInstance(CopilotAgent));
 		agentService.registerProvider(copilotAgent);
 		log('CopilotAgent registered');
