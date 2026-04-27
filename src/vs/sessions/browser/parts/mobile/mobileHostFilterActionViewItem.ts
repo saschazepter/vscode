@@ -16,6 +16,7 @@ import { IContextMenuService } from '../../../../platform/contextview/browser/co
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { AgentHostFilterConnectionStatus, IAgentHostFilterService } from '../../../contrib/remoteAgentHost/common/agentHostFilter.js';
 import { HostFilterActionViewItem } from '../../../contrib/remoteAgentHost/browser/hostFilterActionViewItem.js';
+import './media/hostPickerDropdown.css';
 
 /**
  * Mobile variant of {@link HostFilterActionViewItem}.
