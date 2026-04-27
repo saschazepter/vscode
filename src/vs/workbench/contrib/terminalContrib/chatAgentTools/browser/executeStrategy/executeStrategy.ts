@@ -200,35 +200,42 @@ export async function trackIdleOnPrompt(
 	// Fallback for when shell integration breaks mid-command: data arrives and
 	// C/D sequences transition us to Executing, but no A (prompt) sequence ever
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
-	// cancelled in that state, causing a permanent hang. This scheduler is
-	// rescheduled on every data event while in the Executing state, so it only
-	// fires after 10s of data-idle. When it fires, it checks if the cursor line
-	// looks like a prompt before completing — if not, it reschedules to avoid
-	// prematurely completing long-running commands that pause without output.
-	const executingFallbackScheduler = store.add(new RunOnceScheduler(async () => {
+	// cancelled in that state, causing a permanent hang.
+	//
+	// Two complementary fallbacks handle this:
+	// 1. executingIdleFallback: fires after 10s of data-idle in the Executing
+	//    state. If the cursor line looks like a prompt, complete immediately.
+	//    This handles the common case where the command finished but the prompt
+	//    sequence was lost.
+	// 2. executingHardCap: fires 30s after entering the Executing state,
+	//    regardless of data activity. This is the ultimate safety net — if shell
+	//    integration is broken, the terminal won't look like a prompt either,
+	//    so the idle check alone would never complete.
+	const executingIdleFallback = store.add(new RunOnceScheduler(async () => {
 		if (state !== TerminalState.Executing) {
 			return;
 		}
-		// Check if the terminal looks like it's at a prompt before completing.
-		// Long-running commands can pause for extended periods without output
-		// (e.g. downloading, compiling), so we only complete if the cursor line
-		// matches a known prompt pattern.
 		const xterm = await instance.xtermReadyPromise;
 		if (xterm) {
 			const buffer = xterm.raw.buffer.active;
 			const line = buffer.getLine(buffer.baseY + buffer.cursorY);
 			if (line) {
 				const content = line.translateToString(true);
-				if (!detectsCommonPromptPattern(content).detected) {
-					// Doesn't look like a prompt — reschedule and check again later
-					executingFallbackScheduler.schedule();
+				if (detectsCommonPromptPattern(content).detected) {
+					state = TerminalState.PromptAfterExecuting;
+					scheduler.schedule();
 					return;
 				}
 			}
 		}
-		state = TerminalState.PromptAfterExecuting;
-		scheduler.schedule();
+		// Doesn't look like a prompt — let the hard cap handle it
 	}, 10_000));
+	const executingHardCap = store.add(new RunOnceScheduler(() => {
+		if (state === TerminalState.Executing) {
+			state = TerminalState.PromptAfterExecuting;
+			scheduler.schedule();
+		}
+	}, 30_000));
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
 	// on an A without a C following shortly after is a very good indicator that the command is done
@@ -254,20 +261,23 @@ export async function trackIdleOnPrompt(
 					state = TerminalState.Prompt;
 				} else if (state === TerminalState.Executing) {
 					state = TerminalState.PromptAfterExecuting;
-					executingFallbackScheduler.cancel();
+					executingIdleFallback.cancel();
+					executingHardCap.cancel();
 				}
 			} else if (match.groups?.type === 'C' || match.groups?.type === 'D') {
 				state = TerminalState.Executing;
-				// Start the executing fallback — if no prompt (A) arrives within
-				// 10s, we treat the terminal as idle to avoid hanging forever
-				// when shell integration breaks mid-command.
-				executingFallbackScheduler.schedule();
+				// Start both executing fallbacks — the idle fallback checks for
+				// a prompt after 10s of no data, and the hard cap ensures we
+				// never hang longer than 30s even if no prompt is detected.
+				executingIdleFallback.schedule();
+				executingHardCap.schedule();
 			}
 		}
 		// Re-schedule on every data event as we're tracking data idle
 		if (state === TerminalState.PromptAfterExecuting) {
 			promptFallbackScheduler.cancel();
-			executingFallbackScheduler.cancel();
+			executingIdleFallback.cancel();
+			executingHardCap.cancel();
 			scheduler.schedule();
 		} else {
 			scheduler.cancel();
@@ -275,11 +285,10 @@ export async function trackIdleOnPrompt(
 				promptFallbackScheduler.schedule();
 			} else {
 				promptFallbackScheduler.cancel();
-				// Re-schedule the executing fallback on every data event so it
-				// only fires after 10s of data-idle while in the Executing
-				// state. Without this, long-running commands that produce
-				// output for more than 10s would be prematurely completed.
-				executingFallbackScheduler.schedule();
+				// Re-schedule the idle fallback on every data event so it only
+				// fires after 10s of data-idle. The hard cap is NOT rescheduled
+				// — it's an absolute 30s limit from the first C/D sequence.
+				executingIdleFallback.schedule();
 			}
 		}
 	}));
