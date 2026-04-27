@@ -168,6 +168,9 @@
 
 .ai-customization-toolbar .ai-customization-home-btn .codicon {
 	margin: 0;
+	/* Codicons are a single-weight font; bump the size so the home icon
+	 * visually matches the weight of the bold "Customizations" label. */
+	font-size: 18px;
 }
 
 .ai-customization-toolbar .ai-customization-home-btn:hover {
