@@ -55,12 +55,6 @@ export interface IAgentSideEffectsOptions {
 	 * excluded — only the parent session URI is passed.
 	 */
 	readonly onTurnComplete: (session: ProtocolURI) => void;
-	/**
-	 * Optional git service used for the git-driven diff path. When absent
-	 * (e.g. minimal test setups), diff computation falls back to the
-	 * edit-tracker aggregator.
-	 */
-	readonly gitService?: IAgentHostGitService;
 }
 
 /** A progress event that was deferred because its subagent session does not exist yet. */
@@ -121,6 +115,7 @@ export class AgentSideEffects extends Disposable {
 		private readonly _options: IAgentSideEffectsOptions,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
+		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
 	) {
 		super();
 		this._diffComputeService = this._register(new NodeWorkerDiffComputeService(this._logService));
@@ -995,12 +990,8 @@ export class AgentSideEffects extends Disposable {
 			return undefined;
 		}
 		const baseBranch = (await db.getMetadata(META_DIFF_BASE_BRANCH)) ?? undefined;
-		const gitService = this._options.gitService;
-		if (!gitService) {
-			return undefined;
-		}
 		try {
-			return await gitService.computeSessionFileDiffs(workingDirectoryUri, { sessionUri: session, baseBranch });
+			return await this._gitService.computeSessionFileDiffs(workingDirectoryUri, { sessionUri: session, baseBranch });
 		} catch (err) {
 			this._logService.warn('[AgentSideEffects] git-driven diff computation failed; falling back to edit-tracker', err);
 			return undefined;

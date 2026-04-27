@@ -23,6 +23,7 @@ import { ActionType, ActionEnvelope, SessionAction } from '../../common/state/se
 import { AttachmentType, buildSubagentSessionUri, PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from '../../node/agentConfigurationService.js';
+import { IAgentHostGitService } from '../../node/agentHostGitService.js';
 import { AgentService } from '../../node/agentService.js';
 import { AgentSideEffects, IAgentSideEffectsOptions } from '../../node/agentSideEffects.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
@@ -35,14 +36,15 @@ import { MockAgent } from './mockAgent.js';
 /**
  * Constructs an {@link AgentSideEffects} with a minimal local instantiation
  * scope that satisfies its {@link IAgentConfigurationService} /
- * {@link ILogService} dependencies.
+ * {@link ILogService} / {@link IAgentHostGitService} dependencies.
  */
-function createTestSideEffects(disposables: DisposableStore, stateManager: AgentHostStateManager, options: IAgentSideEffectsOptions): AgentSideEffects {
+function createTestSideEffects(disposables: DisposableStore, stateManager: AgentHostStateManager, options: IAgentSideEffectsOptions, gitService?: IAgentHostGitService): AgentSideEffects {
 	const logService = new NullLogService();
 	const configService = disposables.add(new AgentConfigurationService(stateManager, logService));
 	const instantiationService = disposables.add(new InstantiationService(new ServiceCollection(
 		[ILogService, logService],
 		[IAgentConfigurationService, configService],
+		[IAgentHostGitService, gitService ?? createNoopGitService()],
 	), /*strict*/ true));
 	return disposables.add(instantiationService.createInstance(AgentSideEffects, stateManager, options));
 }
@@ -1936,9 +1938,8 @@ suite('AgentSideEffects', () => {
 				getAgent: () => localAgent,
 				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
 				sessionDataService,
-				gitService: stubGit,
 				onTurnComplete: () => { },
-			});
+			}, stubGit);
 
 			localStateManager.createSession({
 				resource: sessionUri.toString(),
@@ -1997,9 +1998,8 @@ suite('AgentSideEffects', () => {
 				getAgent: () => localAgent,
 				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
 				sessionDataService,
-				gitService: stubGit,
 				onTurnComplete: () => { },
-			});
+			}, stubGit);
 
 			localStateManager.createSession({
 				resource: sessionUri.toString(),

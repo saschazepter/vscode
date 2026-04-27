@@ -106,6 +106,7 @@ export class AgentService extends Disposable implements IAgentService {
 		const services = new ServiceCollection(
 			[ILogService, this._logService],
 			[IAgentConfigurationService, configurationService],
+			[IAgentHostGitService, this._gitService],
 		);
 		const instantiationService = this._register(new InstantiationService(services, /*strict*/ true));
 
@@ -113,7 +114,6 @@ export class AgentService extends Disposable implements IAgentService {
 			getAgent: session => this._findProviderForSession(session),
 			sessionDataService: this._sessionDataService,
 			agents: this._agents,
-			gitService: this._gitService,
 			onTurnComplete: session => {
 				const workingDirStr = this._stateManager.getSessionState(session)?.summary.workingDirectory;
 				this._attachGitState(URI.parse(session), workingDirStr ? URI.parse(workingDirStr) : undefined);
