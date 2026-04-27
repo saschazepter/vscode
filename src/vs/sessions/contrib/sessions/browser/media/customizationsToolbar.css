@@ -86,9 +86,22 @@
 	position: relative;
 }
 
-/* Customizations header label uses heavier weight */
+/* Customizations header label uses heavier weight and the strong
+ * foreground color, so the entire `<home> Customizations` row reads as
+ * the section title. */
 .ai-customization-toolbar .ai-customization-header .customization-link-button {
 	font-weight: 500;
+	/* Drop the leading padding so "Customizations" sits exactly 10px
+	 * after the home icon — matching the icon→label distance of the
+	 * section rows below. */
+	padding-left: 0;
+	color: var(--vscode-agentsPanel-foreground, var(--vscode-foreground));
+}
+
+/* Section rows below the header use a lighter foreground so the header
+ * remains the most prominent element in the section. */
+.ai-customization-toolbar .ai-customization-toolbar-content .customization-link-button {
+	color: var(--vscode-descriptionForeground);
 }
 
 /* Counts - floating right inside the button */
@@ -137,18 +150,18 @@
 }
 
 /* Home button — leading entrypoint to the customizations welcome page.
- * Matches `.sidebar-action-button` layout (padding + gap) so the home
- * icon aligns vertically with the section icons rendered below. */
+ * Mirrors `.sidebar-action-button` padding so the home icon's left edge
+ * lands at the same x as the Agents/Skills icons. The right padding is
+ * 10px because the adjacent header button drops its own left padding,
+ * yielding exactly the same icon→label gap as the section rows. */
 .ai-customization-toolbar .ai-customization-home-btn {
 	flex-shrink: 0;
 	box-sizing: border-box;
 	display: flex;
 	align-items: center;
-	padding: 4px 8px;
-	gap: 10px;
+	padding: 4px 10px 4px 8px;
 	border-radius: 4px;
 	cursor: pointer;
-	opacity: 0.8;
 	touch-action: manipulation;
 	color: var(--vscode-agentsPanel-foreground, var(--vscode-foreground));
 }
@@ -158,12 +171,10 @@
 }
 
 .ai-customization-toolbar .ai-customization-home-btn:hover {
-	opacity: 1;
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .ai-customization-toolbar .ai-customization-home-btn:focus {
-	opacity: 1;
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
