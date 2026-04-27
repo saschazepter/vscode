@@ -39,7 +39,7 @@ import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { getAccountProfileImageUrl, getAccountTitleBarBadgeKey, getAccountTitleBarState, resolveAccountInfo } from '../../../browser/accountTitleBarState.js';
-import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
+import { IsPhoneLayoutContext, SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IAuthenticationAccessService } from '../../../../workbench/services/authentication/browser/authenticationAccessService.js';
 import { IAuthenticationUsageService } from '../../../../workbench/services/authentication/browser/authenticationUsageService.js';
@@ -220,12 +220,13 @@ registerAction2(class extends Action2 {
 	}
 });
 
-// Settings
+// Settings (hidden on phone — no settings UI on mobile)
 MenuRegistry.appendMenuItem(AccountMenu, {
 	command: {
 		id: 'workbench.action.openSettings',
 		title: localize('settings', "Settings"),
 	},
+	when: IsPhoneLayoutContext.negate(),
 	group: '2_settings',
 	order: 1,
 });
