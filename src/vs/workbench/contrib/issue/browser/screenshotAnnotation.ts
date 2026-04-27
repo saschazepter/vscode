@@ -6,12 +6,14 @@
 import { $, addDisposableListener, append, EventType, getWindow } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
+import { IContextViewProvider } from '../../../../base/browser/ui/contextview/contextview.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
-import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IScreenshot } from './issueReporterOverlay.js';
 
 const enum AnnotationTool {
@@ -151,6 +153,7 @@ export class ScreenshotAnnotationEditor {
 	constructor(
 		private readonly screenshot: IScreenshot,
 		private readonly parentElement: HTMLElement,
+		private readonly contextViewProvider: IContextViewProvider,
 	) {
 		this.createUI();
 		this.loadImage();
@@ -241,17 +244,18 @@ export class ScreenshotAnnotationEditor {
 		}));
 
 		// 6. Font family selector
-		const fontFamilySelect = append(toolbar, $('select.toolbar-select')) as HTMLSelectElement;
-		fontFamilySelect.title = localize('fontFamily', "Font Family");
-		for (const ff of FONT_FAMILIES) {
-			const opt = $('option') as HTMLOptionElement;
-			opt.value = ff.value;
-			opt.textContent = ff.label;
-			fontFamilySelect.appendChild(opt);
-		}
-		fontFamilySelect.value = this.activeFontFamily;
-		this.disposables.add(addDisposableListener(fontFamilySelect, EventType.CHANGE, () => {
-			this.activeFontFamily = fontFamilySelect.value;
+		const fontFamilySelectContainer = append(toolbar, $('div.toolbar-select-container'));
+		const fontFamilyOptions: ISelectOptionItem[] = FONT_FAMILIES.map(ff => ({ text: ff.label }));
+		const fontFamilySelect = this.disposables.add(new SelectBox(
+			fontFamilyOptions,
+			Math.max(0, FONT_FAMILIES.findIndex(ff => ff.value === this.activeFontFamily)),
+			this.contextViewProvider,
+			defaultSelectBoxStyles,
+			{ ariaLabel: localize('fontFamily', "Font Family"), useCustomDrawn: true }
+		));
+		fontFamilySelect.render(fontFamilySelectContainer);
+		this.disposables.add(fontFamilySelect.onDidSelect(({ index }) => {
+			this.activeFontFamily = FONT_FAMILIES[index].value;
 			if (this.textEditState) {
 				this.textEditState.fontFamily = this.activeFontFamily;
 				this.redraw();
@@ -259,17 +263,18 @@ export class ScreenshotAnnotationEditor {
 		}));
 
 		// 7. Font size selector
-		const fontSizeSelect = append(toolbar, $('select.toolbar-select')) as HTMLSelectElement;
-		fontSizeSelect.title = localize('fontSize', "Font Size");
-		for (const size of FONT_SIZES) {
-			const opt = $('option') as HTMLOptionElement;
-			opt.value = String(size);
-			opt.textContent = `${size}px`;
-			fontSizeSelect.appendChild(opt);
-		}
-		fontSizeSelect.value = String(this.activeFontSize);
-		this.disposables.add(addDisposableListener(fontSizeSelect, EventType.CHANGE, () => {
-			this.activeFontSize = parseInt(fontSizeSelect.value);
+		const fontSizeSelectContainer = append(toolbar, $('div.toolbar-select-container.toolbar-select-container-small'));
+		const fontSizeOptions: ISelectOptionItem[] = FONT_SIZES.map(size => ({ text: `${size}px` }));
+		const fontSizeSelect = this.disposables.add(new SelectBox(
+			fontSizeOptions,
+			Math.max(0, FONT_SIZES.findIndex(size => size === this.activeFontSize)),
+			this.contextViewProvider,
+			defaultSelectBoxStyles,
+			{ ariaLabel: localize('fontSize', "Font Size"), useCustomDrawn: true }
+		));
+		fontSizeSelect.render(fontSizeSelectContainer);
+		this.disposables.add(fontSizeSelect.onDidSelect(({ index }) => {
+			this.activeFontSize = FONT_SIZES[index];
 			if (this.textEditState) {
 				this.textEditState.fontSize = this.activeFontSize;
 				this.redraw();

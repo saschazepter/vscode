@@ -1010,7 +1010,7 @@
 .issue-reporter-annotation-overlay {
 	position: absolute;
 	inset: 0;
-	z-index: 10001;
+	z-index: 3;
 	background: var(--vscode-editor-background, #1e1e1e);
 	display: flex;
 	flex-direction: column;
@@ -1149,25 +1149,19 @@
 }
 
 /* ── Toolbar selects (font family / size) ── */
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select {
-	height: 26px;
-	font-size: 12px;
-	font-family: var(--vscode-font-family, inherit);
-	color: var(--vscode-dropdown-foreground, var(--vscode-foreground, #ccc));
-	background: var(--vscode-dropdown-background, #3c3c3c);
-	border: 1px solid var(--vscode-dropdown-border, #555);
-	border-radius: 4px;
-	padding: 0 6px;
-	outline: none;
-	cursor: pointer;
+.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container {
+	min-width: 120px;
+	margin: 0 2px;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select:hover {
-	background: var(--vscode-list-hoverBackground, var(--vscode-dropdown-background, #3c3c3c));
+.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container-small {
+	min-width: 72px;
+	margin: 0 2px;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select:focus {
-	border-color: var(--vscode-focusBorder, #007acc);
+.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container .monaco-select-box {
+	min-height: 26px;
+	padding: 2px 23px 2px 8px;
 }
 
 .issue-reporter-annotation-overlay .annotation-toolbar .crop-btn {

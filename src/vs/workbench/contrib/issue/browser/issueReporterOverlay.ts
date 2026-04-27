@@ -18,6 +18,7 @@ import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
+import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
@@ -118,6 +119,7 @@ export class IssueReporterOverlay {
 		private readonly data: IssueReporterData,
 		private readonly recordingSupported: boolean = false,
 		private readonly container: HTMLElement,
+		private readonly contextViewService: IContextViewService,
 		private readonly contextMenuProvider?: IContextMenuProvider,
 		private readonly markdownRendererService?: IMarkdownRendererService,
 		initialHideToolbar: boolean = true,
@@ -1324,7 +1326,7 @@ export class IssueReporterOverlay {
 		}
 
 		const screenshot = this.screenshots[index];
-		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel);
+		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel, this.contextViewService);
 		this.disposables.add(editor);
 
 		editor.onDidSave(annotatedDataUrl => {

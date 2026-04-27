@@ -34,7 +34,7 @@ import { IWorkbenchAssignmentService } from '../../../services/assignment/common
 import product from '../../../../platform/product/common/product.js';
 import { isLinuxSnap } from '../../../../base/common/platform.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
-import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IContextMenuService, IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
@@ -69,6 +69,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotificationService private readonly notificationService: INotificationService,
@@ -118,6 +119,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			data,
 			this.recordingService.isSupported,
 			this.container,
+			this.contextViewService,
 			this.contextMenuService,
 			this.markdownRendererService,
 			hideToolbar,
