@@ -660,7 +660,14 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 	}
 
 	private shouldShowCopilotDashboardHover(): boolean {
-		return !this.chatEntitlementService.sentiment.hidden && !!this.accountName;
+		if (this.chatEntitlementService.sentiment.hidden || !this.accountName) {
+			return false;
+		}
+		// Don't show the dashboard when entitlement is Unknown or Available —
+		// it renders a "Set up Copilot" prompt that doesn't apply in the
+		// agents app which has its own walkthrough for setup.
+		const entitlement = this.chatEntitlementService.entitlement;
+		return entitlement !== ChatEntitlement.Unknown && entitlement !== ChatEntitlement.Available;
 	}
 
 	private createCopilotHoverContent(): HTMLElement {
