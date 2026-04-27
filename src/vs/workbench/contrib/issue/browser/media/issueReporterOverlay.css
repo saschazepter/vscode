@@ -17,6 +17,7 @@
    Wizard Panel — renders inside the editor tab
    ═══════════════════════════════════════════════ */
 .issue-reporter-wizard {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	max-height: none;
@@ -997,24 +998,17 @@
 
 /* ── Annotation Editor Buttons ── */
 .issue-reporter-annotation-overlay .monaco-button {
-	color: var(--vscode-button-foreground, #fff) !important;
-	background: var(--vscode-button-background, #0e639c) !important;
-	border: none !important;
 	border-radius: 2px;
-	height: 24px;
-	font-size: 12px;
-	min-width: 70px;
-	padding: 0 10px;
+	height: 28px;
+	font-size: 13px;
+	min-width: 80px;
+	padding: 0 14px;
 	cursor: pointer;
-}
-
-.issue-reporter-annotation-overlay .monaco-button:hover {
-	background: var(--vscode-button-hoverBackground, #1177bb) !important;
 }
 
 /* ── Annotation Editor ── */
 .issue-reporter-annotation-overlay {
-	position: fixed;
+	position: absolute;
 	inset: 0;
 	z-index: 10001;
 	background: var(--vscode-editor-background, #1e1e1e);
@@ -1028,18 +1022,17 @@
 .issue-reporter-annotation-overlay .annotation-toolbar {
 	display: flex;
 	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
 	gap: 3px;
 	padding: 4px 10px;
-	padding-right: 140px;
-	/* leave space for window controls (min/max/close) */
-	height: 34px;
+	min-height: 34px;
 	background: var(--vscode-titleBar-activeBackground, #3c3c3c);
 	border-bottom: 1px solid var(--vscode-panel-border, #444);
-	-webkit-app-region: drag;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar > * {
-	-webkit-app-region: no-drag;
+.issue-reporter-annotation-overlay .annotation-crop-toolbar {
+	gap: 8px;
 }
 
 .issue-reporter-annotation-overlay .annotation-toolbar .tool-btn {
@@ -1078,6 +1071,15 @@
 
 .issue-reporter-annotation-overlay .annotation-toolbar .toolbar-spacer {
 	flex: 1;
+}
+
+.issue-reporter-annotation-overlay .annotation-toolbar .monaco-button {
+	height: 26px;
+	min-width: 70px;
+	padding: 0 12px;
+	font-size: 12px;
+	width: auto;
+	flex: none;
 }
 
 .issue-reporter-annotation-overlay .annotation-toolbar .color-btn {
@@ -1124,6 +1126,14 @@
 	box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
 }
 
+.issue-reporter-annotation-overlay .annotation-hint {
+	text-align: center;
+	padding: 6px 0;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground, #999);
+	border-bottom: 1px solid var(--vscode-panel-border, #444);
+}
+
 .issue-reporter-annotation-overlay .annotation-canvas-container {
 	flex: 1;
 	display: flex;
@@ -1154,20 +1164,29 @@
 
 /* ── Toolbar selects (font family / size) ── */
 .issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select {
-	height: 24px;
-	font-size: 11px;
-	font-family: inherit;
-	color: var(--vscode-foreground, #ccc);
+	height: 26px;
+	font-size: 12px;
+	font-family: var(--vscode-font-family, inherit);
+	color: var(--vscode-dropdown-foreground, var(--vscode-foreground, #ccc));
 	background: var(--vscode-dropdown-background, #3c3c3c);
 	border: 1px solid var(--vscode-dropdown-border, #555);
-	border-radius: 2px;
-	padding: 0 4px;
+	border-radius: 4px;
+	padding: 0 6px;
 	outline: none;
 	cursor: pointer;
 }
 
+.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select:hover {
+	background: var(--vscode-list-hoverBackground, var(--vscode-dropdown-background, #3c3c3c));
+}
+
 .issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select:focus {
 	border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.issue-reporter-annotation-overlay .annotation-toolbar .crop-btn {
+	font-size: 16px;
+	line-height: 1;
 }
 
 /* ═══════════════════════════════════════════════

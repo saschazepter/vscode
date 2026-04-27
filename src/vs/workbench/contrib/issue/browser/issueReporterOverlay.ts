@@ -1324,8 +1324,7 @@ export class IssueReporterOverlay {
 		}
 
 		const screenshot = this.screenshots[index];
-		const targetWindow = getWindow(this.wizardPanel);
-		const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
+		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel);
 		this.disposables.add(editor);
 
 		editor.onDidSave(annotatedDataUrl => {
