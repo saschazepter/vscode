@@ -20,6 +20,7 @@ import {
 	extractRefsFromMcpTool,
 	extractRefsFromTerminal,
 	extractRepoFromMcpTool,
+	extractToolArgs,
 	isGitHubMcpTool,
 } from '../common/sessionStoreTracking';
 
@@ -259,7 +260,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		}
 
 		const turnIndex = span.attributes[CopilotChatAttr.TURN_INDEX] as number | undefined;
-		const toolArgs = this._extractToolArgs(span);
+		const toolArgs = extractToolArgs(span);
 
 		// Extract file path
 		const filePath = extractFilePath(toolName, toolArgs);
@@ -450,20 +451,5 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
 			}, { opsCount: totalOps });
 		}
-	}
-
-	// ── Utilities ────────────────────────────────────────────────────────
-
-	private _extractToolArgs(span: ICompletedSpanData): Record<string, unknown> {
-		// Tool arguments are stored in gen_ai.tool.call.arguments as serialized JSON
-		const serialized = span.attributes[GenAiAttr.TOOL_CALL_ARGUMENTS];
-		if (typeof serialized === 'string') {
-			try {
-				return JSON.parse(serialized) as Record<string, unknown>;
-			} catch {
-				// ignore parse errors
-			}
-		}
-		return {};
 	}
 }
