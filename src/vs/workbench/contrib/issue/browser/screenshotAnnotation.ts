@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, addDisposableListener, append, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { Button, unthemedButtonStyles } from '../../../../base/browser/ui/button/button.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
@@ -195,7 +196,7 @@ export class ScreenshotAnnotationEditor {
 		const fontFamilySelect = append(toolbar, $('select.toolbar-select')) as HTMLSelectElement;
 		fontFamilySelect.title = localize('fontFamily', "Font Family");
 		for (const ff of FONT_FAMILIES) {
-			const opt = fontFamilySelect.ownerDocument.createElement('option');
+			const opt = $('option') as HTMLOptionElement;
 			opt.value = ff.value;
 			opt.textContent = ff.label;
 			fontFamilySelect.appendChild(opt);
@@ -209,7 +210,7 @@ export class ScreenshotAnnotationEditor {
 		const fontSizeSelect = append(toolbar, $('select.toolbar-select')) as HTMLSelectElement;
 		fontSizeSelect.title = localize('fontSize', "Font Size");
 		for (const size of FONT_SIZES) {
-			const opt = fontSizeSelect.ownerDocument.createElement('option');
+			const opt = $('option') as HTMLOptionElement;
 			opt.value = String(size);
 			opt.textContent = `${size}px`;
 			fontSizeSelect.appendChild(opt);
@@ -299,7 +300,7 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private loadImage(): void {
-		const img = new Image();
+		const img = mainWindow.document.createElement('img');
 		img.onload = () => {
 			this.imageElement = img;
 			this.imageWidth = img.naturalWidth;
@@ -552,18 +553,18 @@ export class ScreenshotAnnotationEditor {
 	private applyCrop(r: { x: number; y: number; width: number; height: number }): void {
 		// Composite current state, then crop
 		const currentDataUrl = this.compositeToDataUrl();
-		const img = new Image();
+		const img = mainWindow.document.createElement('img');
 		img.onload = () => {
 			// Crop from the full-resolution image
 			const targetWindow = getWindow(this.canvas);
-			const cropCanvas = targetWindow.document.createElement('canvas');
+			const cropCanvas = mainWindow.document.createElement('canvas');
 			cropCanvas.width = r.width;
 			cropCanvas.height = r.height;
 			const cropCtx = cropCanvas.getContext('2d')!;
 			cropCtx.drawImage(img, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height);
 
 			// Create new image from cropped
-			const croppedImg = new Image();
+			const croppedImg = mainWindow.document.createElement('img');
 			croppedImg.onload = () => {
 				this.imageElement = croppedImg;
 				this.imageWidth = croppedImg.naturalWidth;
@@ -590,7 +591,7 @@ export class ScreenshotAnnotationEditor {
 		const canvasRect = this.canvas.getBoundingClientRect();
 		const containerRect = canvasContainer.getBoundingClientRect();
 
-		const input = canvasContainer.ownerDocument.createElement('input');
+		const input = $('input') as HTMLInputElement;
 		input.type = 'text';
 		input.className = 'annotation-text-input';
 		const leftPos = canvasRect.left - containerRect.left + pos.x * this.scale;
@@ -965,7 +966,7 @@ export class ScreenshotAnnotationEditor {
 	private compositeToDataUrl(): string {
 		// Create a final canvas at full resolution
 		const targetWindow = getWindow(this.canvas);
-		const finalCanvas = targetWindow.document.createElement('canvas');
+		const finalCanvas = mainWindow.document.createElement('canvas');
 		finalCanvas.width = this.imageWidth;
 		finalCanvas.height = this.imageHeight;
 		const ctx = finalCanvas.getContext('2d')!;

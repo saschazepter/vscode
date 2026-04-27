@@ -209,7 +209,7 @@ export class IssueReporterOverlay {
 			{ label: localize('tenSeconds', "10 seconds"), value: 10 },
 		];
 		for (const opt of delayOptions) {
-			const option = delaySelect.ownerDocument.createElement('option');
+			const option = $('option') as HTMLOptionElement;
 			option.value = String(opt.value);
 			option.textContent = opt.label;
 			delaySelect.appendChild(option);
@@ -221,8 +221,7 @@ export class IssueReporterOverlay {
 		this.captureBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles }));
 		this.captureBtn.label = localize('addScreenshot', "Add screenshot");
 		this.captureBtn.element.classList.add('wizard-capture-btn');
-		const cameraIcon = document.createElement('span');
-		cameraIcon.className = 'wizard-capture-icon';
+		const cameraIcon = $('span.wizard-capture-icon');
 		cameraIcon.appendChild(renderIcon(Codicon.deviceCamera));
 		this.captureBtn.element.insertBefore(cameraIcon, this.captureBtn.element.firstChild);
 
@@ -262,8 +261,7 @@ export class IssueReporterOverlay {
 			this.recordBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			this.recordBtn.label = localize('recordVideo', "Record video");
 			this.recordBtn.element.classList.add('wizard-record-btn');
-			const recordIcon = document.createElement('span');
-			recordIcon.className = 'wizard-record-icon';
+			const recordIcon = $('span.wizard-record-icon');
 			recordIcon.appendChild(renderIcon(Codicon.record));
 			this.recordBtn.element.insertBefore(recordIcon, this.recordBtn.element.firstChild);
 
@@ -1125,8 +1123,7 @@ export class IssueReporterOverlay {
 		if (state === 'done') {
 			// Replace ring with checkmark
 			overlay.textContent = '';
-			const check = document.createElement('span');
-			check.className = 'review-progress-check';
+			const check = $('span.review-progress-check');
 			check.appendChild(renderIcon(Codicon.check));
 			overlay.appendChild(check);
 		}
@@ -1329,6 +1326,7 @@ export class IssueReporterOverlay {
 		const screenshot = this.screenshots[index];
 		const targetWindow = getWindow(this.wizardPanel);
 		const editor = new ScreenshotAnnotationEditor(screenshot, targetWindow.document.body);
+		this.disposables.add(editor);
 
 		editor.onDidSave(annotatedDataUrl => {
 			screenshot.annotatedDataUrl = annotatedDataUrl;
@@ -1401,6 +1399,24 @@ export class IssueReporterOverlay {
 
 	get shouldHideToolbarForCapture(): boolean {
 		return this._hideToolbarInScreenshots;
+	}
+
+	/** Re-parent the floating bar into the current window (used after move to auxiliary window) */
+	reparentFloatingBar(): void {
+		if (!this.floatingBar) {
+			return;
+		}
+		const targetWindow = getWindow(this.container);
+		const body = targetWindow.document.body;
+		// Check if the floating bar is already in the correct window body
+		if (this.floatingBar.parentElement !== body) {
+			this.floatingBar.remove();
+			body.appendChild(this.floatingBar);
+			// Reset position so it appears in the new window
+			this.floatingBar.style.left = '';
+			this.floatingBar.style.top = '';
+			this.floatingBar.style.right = '30%';
+		}
 	}
 
 	/** Update the internal model with additional data loaded asynchronously */
