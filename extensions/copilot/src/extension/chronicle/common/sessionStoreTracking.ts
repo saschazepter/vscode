@@ -4,8 +4,36 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Helpers for extracting file paths and refs from tool calls.
+ * Helpers for extracting file paths and refs from tool calls,
+ * plus shared constants for session store truncation limits.
  */
+
+// ── Truncation limits (shared by sessionStoreTracker and sessionReindexer) ──
+
+/** Maximum characters stored for user_message. */
+export const MAX_USER_MESSAGE_LENGTH = 100;
+
+/** Maximum characters stored for assistant_response. */
+export const MAX_ASSISTANT_RESPONSE_LENGTH = 1000;
+
+/** Maximum characters stored for session summary. */
+export const MAX_SUMMARY_LENGTH = 100;
+
+/**
+ * Truncate a string to `maxLength`, appending '...' if it was truncated.
+ * Returns `undefined` for falsy input.
+ */
+export function truncateForStore(value: string | undefined, maxLength: number): string | undefined {
+	if (!value) {
+		return undefined;
+	}
+	return value.length > maxLength ? value.slice(0, maxLength).trim() + '...' : value;
+}
+
+/** Terminal/shell tool names that may produce refs. */
+export function isTerminalTool(toolName: string): boolean {
+	return toolName === 'runInTerminal' || toolName === 'run_in_terminal';
+}
 
 /** Tools whose arguments contain a file path being modified or read. */
 const FILE_TRACKING_TOOLS = new Set([
