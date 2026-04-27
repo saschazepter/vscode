@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { Event } from '../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { isWeb } from '../../../../../base/common/platform.js';
-import { ISettableObservable, observableValue, transaction } from '../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
@@ -16,7 +16,6 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IExtensionService } from '../../../../../workbench/services/extensions/common/extensions.js';
-import { ChatEntitlement, IChatEntitlementService, IChatSentiment } from '../../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { ChatSetupStrategy } from '../../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { IWorkbenchEnvironmentService } from '../../../../../workbench/services/environment/common/environmentService.js';
 import { IWorkbenchLayoutService } from '../../../../../workbench/services/layout/browser/layoutService.js';
@@ -28,34 +27,24 @@ import { IAuthenticationService } from '../../../../../workbench/services/authen
 import { resetSessionsWelcome, SessionsWelcomeContribution } from '../../browser/welcome.contribution.js';
 import { SessionsWalkthroughOverlay, WalkthroughOutcome } from '../../browser/sessionsWalkthrough.js';
 
-class MockChatEntitlementService implements Partial<IChatEntitlementService> {
+const MOCK_ACCOUNT: IDefaultAccount = {
+	accountName: 'testuser',
+	sessionId: 'test-session',
+	enterprise: false,
+	authenticationProvider: { id: 'github', name: 'GitHub', enterprise: false },
+};
 
-	declare readonly _serviceBrand: undefined;
+class MockDefaultAccountService implements Pick<IDefaultAccountService, 'currentDefaultAccount' | 'onDidChangeDefaultAccount'> {
 
-	readonly onDidChangeEntitlement = Event.None;
-	readonly onDidChangeSentiment = Event.None;
-	readonly onDidChangeAnonymous = Event.None;
-	readonly onDidChangeQuotaExceeded = Event.None;
-	readonly onDidChangeQuotaRemaining = Event.None;
+	private readonly _onDidChangeDefaultAccount = new Emitter<IDefaultAccount | null>();
+	readonly onDidChangeDefaultAccount = this._onDidChangeDefaultAccount.event;
 
-	readonly entitlementObs: ISettableObservable<ChatEntitlement> = observableValue('entitlement', ChatEntitlement.Free);
-	readonly sentimentObs: ISettableObservable<IChatSentiment> = observableValue('sentiment', { completed: true, installed: true } as IChatSentiment);
-	readonly anonymousObs: ISettableObservable<boolean> = observableValue('anonymous', false);
+	currentDefaultAccount: IDefaultAccount | null = null;
 
-	readonly organisations = undefined;
-	readonly isInternal = false;
-	readonly sku = undefined;
-	readonly copilotTrackingId = undefined;
-	readonly quotas = {};
-	readonly previewFeaturesDisabled = false;
-	readonly clientByokEnabled = false;
-
-	get entitlement(): ChatEntitlement { return this.entitlementObs.get(); }
-	get sentiment(): IChatSentiment { return this.sentimentObs.get(); }
-	get anonymous(): boolean { return this.anonymousObs.get(); }
-
-	update(): Promise<void> { return Promise.resolve(); }
-	markAnonymousRateLimited(): void { }
+	setAccount(account: IDefaultAccount | null): void {
+		this.currentDefaultAccount = account;
+		this._onDidChangeDefaultAccount.fire(account);
+	}
 }
 
 class TestWalkthroughOverlay extends Disposable {
@@ -78,12 +67,12 @@ suite('SessionsWelcomeContribution', () => {
 
 	const disposables = new DisposableStore();
 	let instantiationService: TestInstantiationService;
-	let mockEntitlementService: MockChatEntitlementService;
+	let mockDefaultAccountService: MockDefaultAccountService;
 
 	setup(() => {
 		instantiationService = workbenchInstantiationService(undefined, disposables);
-		mockEntitlementService = new MockChatEntitlementService();
-		instantiationService.stub(IChatEntitlementService, mockEntitlementService as unknown as IChatEntitlementService);
+		mockDefaultAccountService = new MockDefaultAccountService();
+		instantiationService.stub(IDefaultAccountService, mockDefaultAccountService as unknown as IDefaultAccountService);
 
 		// Ensure product has a defaultChatAgent so the contribution activates
 		const productService = instantiationService.get(IProductService);
@@ -121,10 +110,7 @@ suite('SessionsWelcomeContribution', () => {
 	}
 
 	test('first launch shows overlay', async () => {
-		// First launch with no entitlement — should show overlay
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: false, installed: false } as IChatSentiment, undefined);
-
+		// First launch, not signed in — should show overlay
 		// On web, _checkWebAuth must see no sessions to show the walkthrough
 		instantiationService.stub(IAuthenticationService, {
 			getSessions: () => Promise.resolve([]),
@@ -138,63 +124,43 @@ suite('SessionsWelcomeContribution', () => {
 		assert.strictEqual(isOverlayVisible(), true);
 	});
 
-	test('returning user with valid entitlement does not show overlay', async () => {
+	test('returning user signed in does not show overlay', async () => {
 		markReturningUser();
+		mockDefaultAccountService.setAccount(MOCK_ACCOUNT);
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
 		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), false);
 	});
 
-	test('returning user: transient Unknown entitlement does NOT show overlay', async () => {
+	test('returning user not signed in shows overlay', async () => {
 		markReturningUser();
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
-
+		// currentDefaultAccount is null by default
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
 		await flushMicrotasks();
-		assert.strictEqual(isOverlayVisible(), false, 'should not show initially');
-
-		// Simulate transient Unknown (stale token → 401)
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, tx);
-		});
-
-		assert.strictEqual(isOverlayVisible(), false, 'should NOT show overlay for transient Unknown');
-
-		// Simulate recovery (token refreshed → entitlement restored)
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, tx);
-		});
-
-		assert.strictEqual(isOverlayVisible(), false, 'should remain hidden after recovery');
+		assert.strictEqual(isOverlayVisible(), true);
 	});
 
-	(isWeb ? test.skip : test)('returning user: sign out clears welcome completion and shows overlay on Unknown entitlement', async () => {
+	(isWeb ? test.skip : test)('returning user: sign out shows overlay; signing back in hides it and persists completion', async () => {
 		markReturningUser();
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Pro, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
+		mockDefaultAccountService.setAccount(MOCK_ACCOUNT);
 
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
 		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), false, 'should not show initially');
 
-		const storageService = instantiationService.get(IStorageService);
-		storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
+		// Simulate sign out
+		mockDefaultAccountService.setAccount(null);
 
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, tx);
-		});
+		assert.strictEqual(isOverlayVisible(), true, 'should show overlay after sign out');
 
-		assert.strictEqual(isOverlayVisible(), true, 'should show overlay after explicit sign out');
-
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, tx);
-		});
+		// Simulate signing back in
+		mockDefaultAccountService.setAccount(MOCK_ACCOUNT);
 		await flushMicrotasks();
 
+		const storageService = instantiationService.get(IStorageService);
 		assert.strictEqual(isOverlayVisible(), false, 'should hide overlay after signing back in');
 		assert.strictEqual(storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false), true);
 	});
@@ -212,50 +178,14 @@ suite('SessionsWelcomeContribution', () => {
 			args: { ...(environmentService as IWorkbenchEnvironmentService & { args?: Record<string, unknown> }).args, 'skip-sessions-welcome': true },
 		} as IWorkbenchEnvironmentService);
 
-		resetSessionsWelcome(storageService, instantiationService, layoutService, mockEntitlementService, contextKeyService, instantiationService.get(IWorkbenchEnvironmentService), logService);
+		resetSessionsWelcome(storageService, instantiationService, layoutService, mockDefaultAccountService as unknown as IDefaultAccountService, contextKeyService, instantiationService.get(IWorkbenchEnvironmentService), logService);
 
 		assert.strictEqual(storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false), false, 'should clear completion state');
 		assert.strictEqual(isOverlayVisible(), false, 'should not show overlay when skip flag is set');
 	});
 
-	test('returning user: transient Unresolved entitlement does NOT show overlay', async () => {
-		markReturningUser();
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Pro, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
-
-		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
-		assert.ok(contribution);
-		await flushMicrotasks();
-
-		// Simulate Unresolved (intermediate state during account resolution)
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Unresolved, tx);
-		});
-
-		assert.strictEqual(isOverlayVisible(), false, 'should NOT show overlay for Unresolved');
-	});
-
-	(isWeb ? test.skip : test)('returning user: extension disabled DOES show overlay', async () => {
-		markReturningUser();
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
-
-		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
-		assert.ok(contribution);
-		await flushMicrotasks();
-
-		// Simulate extension being disabled
-		transaction(tx => {
-			mockEntitlementService.sentimentObs.set({ completed: true, installed: true, disabled: true } as IChatSentiment, tx);
-		});
-
-		assert.strictEqual(isOverlayVisible(), true, 'should show overlay when extension is disabled');
-	});
-
-	test('setup completion dismisses overlay and persists welcome completion', async () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: false, installed: false } as IChatSentiment, undefined);
-
+	test('sign-in dismisses overlay and persists welcome completion', async () => {
+		// First launch, not signed in
 		instantiationService.stub(IAuthenticationService, {
 			getSessions: () => Promise.resolve([]),
 			onDidChangeSessions: Event.None,
@@ -267,27 +197,17 @@ suite('SessionsWelcomeContribution', () => {
 		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), true, 'should show on first launch');
 
-		// Simulate setup completion; the walkthrough remains visible until it resolves
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, tx);
-			mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, tx);
-		});
+		// Simulate sign-in completing
+		mockDefaultAccountService.setAccount(MOCK_ACCOUNT);
 		await flushMicrotasks();
 
 		const storageService = instantiationService.get(IStorageService);
 		assert.strictEqual(storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false), true);
-		assert.strictEqual(isOverlayVisible(), false, 'should dismiss once setup completes');
+		assert.strictEqual(isOverlayVisible(), false, 'should dismiss once signed in');
 	});
 
 	(isWeb ? test.skip : test)('first-launch + already signed in shows welcome screen; Get Started completes it', async () => {
-		// Already set up: installed, not disabled, has entitlement
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
-
-		instantiationService.stub(IDefaultAccountService, {
-			getDefaultAccount: () => Promise.resolve(undefined)
-		} as unknown as IDefaultAccountService);
-		instantiationService.stub(ILogService, new NullLogService());
+		mockDefaultAccountService.setAccount(MOCK_ACCOUNT);
 		instantiationService.stub(ICommandService, {
 			executeCommand: () => Promise.resolve(false)
 		} as unknown as ICommandService);
@@ -324,9 +244,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	test('walkthrough cannot be dismissed by Escape or backdrop click', () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		instantiationService.stub(ICommandService, {
 			executeCommand: () => Promise.resolve(false)
 		} as unknown as ICommandService);
@@ -334,9 +251,6 @@ suite('SessionsWelcomeContribution', () => {
 			stopExtensionHosts: () => Promise.resolve(false),
 			startExtensionHosts: () => Promise.resolve()
 		} as unknown as IExtensionService);
-		instantiationService.stub(IDefaultAccountService, {
-			getDefaultAccount: () => Promise.resolve(undefined)
-		} as unknown as IDefaultAccountService);
 		instantiationService.stub(ILogService, new NullLogService());
 
 		const container = document.createElement('div');
@@ -362,17 +276,11 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	(isWeb ? test.skip : test)('walkthrough preserves provider-specific sign-in strategies', async () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		let commandArgs: unknown[] | undefined;
 		instantiationService.stub(IExtensionService, {
 			stopExtensionHosts: () => Promise.resolve(false),
 			startExtensionHosts: () => Promise.resolve()
 		} as unknown as IExtensionService);
-		instantiationService.stub(IDefaultAccountService, {
-			getDefaultAccount: () => Promise.resolve(undefined)
-		} as unknown as IDefaultAccountService);
 		instantiationService.stub(ILogService, new NullLogService());
 
 		const container = document.createElement('div');
@@ -426,9 +334,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	(isWeb ? test.skip : test)('enterprise sign-in option is removed after setup begins', async () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		let resolveExecuteCommand!: () => void;
 		const executeCommandStarted = new Promise<void>(resolve => {
 			resolveExecuteCommand = resolve;
@@ -468,9 +373,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	test('walkthrough shows disclaimer links on the initial sign-in screen', () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		instantiationService.stub(ICommandService, {
 			executeCommand: () => Promise.resolve(false)
 		} as unknown as ICommandService);
@@ -478,9 +380,6 @@ suite('SessionsWelcomeContribution', () => {
 			stopExtensionHosts: () => Promise.resolve(false),
 			startExtensionHosts: () => Promise.resolve()
 		} as unknown as IExtensionService);
-		instantiationService.stub(IDefaultAccountService, {
-			getDefaultAccount: () => Promise.resolve(undefined)
-		} as unknown as IDefaultAccountService);
 		instantiationService.stub(ILogService, new NullLogService());
 		const productService = instantiationService.get(IProductService);
 		instantiationService.stub(IProductService, {
@@ -514,9 +413,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	test('walkthrough falls back to default disclaimer links when product links are missing', () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		instantiationService.stub(ICommandService, {
 			executeCommand: () => Promise.resolve(false)
 		} as unknown as ICommandService);
@@ -564,9 +460,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	test('dismissing walkthrough does not mark welcome complete', async () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		instantiationService.stub(IAuthenticationService, {
 			getSessions: () => Promise.resolve([]),
 			onDidChangeSessions: Event.None,
@@ -590,9 +483,6 @@ suite('SessionsWelcomeContribution', () => {
 	});
 
 	test('completing walkthrough marks welcome complete', async () => {
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
-		mockEntitlementService.sentimentObs.set({ installed: false } as IChatSentiment, undefined);
-
 		instantiationService.stub(IAuthenticationService, {
 			getSessions: () => Promise.resolve([]),
 			onDidChangeSessions: Event.None,
@@ -613,23 +503,5 @@ suite('SessionsWelcomeContribution', () => {
 		const storageService = instantiationService.get(IStorageService);
 		assert.strictEqual(storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false), true);
 		assert.strictEqual(isOverlayVisible(), false);
-	});
-
-	(isWeb ? test.skip : test)('returning user: entitlement going to Available DOES show overlay', async () => {
-		markReturningUser();
-		mockEntitlementService.entitlementObs.set(ChatEntitlement.Free, undefined);
-		mockEntitlementService.sentimentObs.set({ completed: true, installed: true } as IChatSentiment, undefined);
-
-		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
-		assert.ok(contribution);
-		await flushMicrotasks();
-
-		// Available means user can sign up for free — this is a real state,
-		// not transient, so the overlay should show
-		transaction(tx => {
-			mockEntitlementService.entitlementObs.set(ChatEntitlement.Available, tx);
-		});
-
-		assert.strictEqual(isOverlayVisible(), true, 'should show overlay for Available entitlement');
 	});
 });
