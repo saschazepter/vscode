@@ -27,10 +27,6 @@ interface IExecuteHandoffResult {
 
 // CommandsRegistry types all handlers as returning void, but our commands
 // return real values. This helper performs the double cast safely.
-function runCommand<T>(handler: Function, ...args: unknown[]): T {
-	return handler(...args) as unknown as T;
-}
-
 async function runCommandAsync<T>(handler: Function, ...args: unknown[]): Promise<T> {
 	return await handler(...args) as unknown as T;
 }
@@ -43,6 +39,7 @@ function createMockMode(overrides: Partial<IChatMode> & { id: string; kind: Chat
 		description: constObservable(undefined),
 		isBuiltin: overrides.isBuiltin ?? false,
 		target: constObservable(Target.Undefined),
+		resolveDetails: () => Promise.resolve(),
 		...overrides,
 	} as IChatMode;
 }
@@ -70,7 +67,7 @@ suite('GetHandoffsAction', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('should return all modes when no sourceCustomAgent is specified', () => {
+	test('should return all modes when no sourceCustomAgent is specified', async () => {
 		const askMode = createMockMode({ id: 'ask', kind: ChatModeKind.Ask, isBuiltin: true });
 		const planMode = createMockMode({
 			id: 'plan',
@@ -85,7 +82,7 @@ suite('GetHandoffsAction', () => {
 		const handler = CommandsRegistry.getCommand(GetHandoffsActionId)?.handler;
 		assert.ok(handler);
 
-		const result = runCommand<ICustomAgentInfo[]>(handler, instantiationService);
+		const result = await runCommandAsync<ICustomAgentInfo[]>(handler, instantiationService);
 		assert.strictEqual(result.length, 2);
 		assert.strictEqual(result[0].name, 'ask');
 		assert.strictEqual(result[0].handoffs.length, 0);
@@ -93,7 +90,7 @@ suite('GetHandoffsAction', () => {
 		assert.strictEqual(result[1].handoffs.length, 1);
 	});
 
-	test('should filter by sourceCustomAgent (case-insensitive)', () => {
+	test('should filter by sourceCustomAgent (case-insensitive)', async () => {
 		const askMode = createMockMode({ id: 'ask', kind: ChatModeKind.Ask, isBuiltin: true });
 		const planMode = createMockMode({
 			id: 'plan',
@@ -108,13 +105,13 @@ suite('GetHandoffsAction', () => {
 		const handler = CommandsRegistry.getCommand(GetHandoffsActionId)?.handler;
 		assert.ok(handler);
 
-		const result = runCommand<ICustomAgentInfo[]>(handler, instantiationService, { sourceCustomAgent: 'Plan' });
+		const result = await runCommandAsync<ICustomAgentInfo[]>(handler, instantiationService, { sourceCustomAgent: 'Plan' });
 		assert.deepStrictEqual(result.length, 1);
 		assert.strictEqual(result[0].name, 'plan');
 		assert.strictEqual(result[0].handoffs.length, 1);
 	});
 
-	test('should return empty array for non-matching sourceCustomAgent', () => {
+	test('should return empty array for non-matching sourceCustomAgent', async () => {
 		const askMode = createMockMode({ id: 'ask', kind: ChatModeKind.Ask, isBuiltin: true });
 
 		instantiationService.set(IChatModeService, new MockChatModeService({ builtin: [askMode], custom: [] }));
@@ -122,7 +119,7 @@ suite('GetHandoffsAction', () => {
 		const handler = CommandsRegistry.getCommand(GetHandoffsActionId)?.handler;
 		assert.ok(handler);
 
-		const result = runCommand<ICustomAgentInfo[]>(handler, instantiationService, { sourceCustomAgent: 'nonexistent' });
+		const result = await runCommandAsync<ICustomAgentInfo[]>(handler, instantiationService, { sourceCustomAgent: 'nonexistent' });
 		assert.deepStrictEqual(result, []);
 	});
 });

@@ -10,7 +10,7 @@ import * as dom from '../../../../../base/browser/dom.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { IMouseWheelEvent } from '../../../../../base/browser/mouseEvent.js';
 import { disposableTimeout, timeout } from '../../../../../base/common/async.js';
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
@@ -1232,6 +1232,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private renderChatSuggestNextWidget(): void {
+		// Cancel any in-flight render so its async resolution becomes a no-op,
+		// then issue a fresh token for this render attempt.
+		this._chatSuggestNextRenderCts.value = new CancellationTokenSource();
+		void this._renderChatSuggestNextWidget(this._chatSuggestNextRenderCts.value.token);
+	}
+
+	private readonly _chatSuggestNextRenderCts = this._register(new MutableDisposable<CancellationTokenSource>());
+
+	private async _renderChatSuggestNextWidget(token: CancellationToken): Promise<void> {
 		if (this.lifecycleService.willShutdown) {
 			return;
 		}
@@ -1265,6 +1274,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			responseMode = this.chatModeService.findModeById(modeInfo.modeId);
 		} else {
 			responseMode = this.input.currentModeObs.get();
+		}
+
+		// Ensure the mode's heavy details (handoffs) are loaded before reading them.
+		if (responseMode) {
+			await responseMode.resolveDetails(token);
+		}
+		// Bail if a newer render started (or the widget was disposed) while we were resolving.
+		if (token.isCancellationRequested || this._store.isDisposed) {
+			return;
 		}
 
 		const handoffs = responseMode?.handOffs?.get();
@@ -2355,6 +2373,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!this.viewModel) {
 			return;
 		}
+
+		// Ensure the active mode's heavy details (instructions, tools, handoffs)
+		// are loaded before we read `currentModeInfo` and submit the request.
+		// This is a no-op when details are already cached.
+		await this.input.currentModeObs.get().resolveDetails(CancellationToken.None);
 
 		// Check if a custom submit handler wants to handle this submission
 		if (this.viewOptions.submitHandler) {

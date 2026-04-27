@@ -1139,6 +1139,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this._currentModeObservable.set(mode, undefined);
 		this._onDidChangeCurrentChatMode.fire();
 
+		// Eagerly load the mode's heavy details (instructions, tools, handoffs, ...)
+		// so subsequent reads of `currentModeInfo` don't see undefined fields.
+		void mode.resolveDetails(CancellationToken.None);
+
 		// Sync to model (mode is now persisted in the model's input state)
 		this._syncInputStateToModel();
 	}

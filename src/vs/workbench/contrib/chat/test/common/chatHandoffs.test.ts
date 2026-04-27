@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { constObservable, observableValue } from '../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { buildCustomAgentHandoffsInfo, getHandoffId, IChatMode } from '../../common/chatModes.js';
@@ -19,6 +20,7 @@ function createMockMode(overrides: Partial<IChatMode> & { id: string; kind: Chat
 		description: constObservable(undefined),
 		isBuiltin: overrides.isBuiltin ?? false,
 		target: constObservable(Target.Undefined),
+		resolveDetails: () => Promise.resolve(),
 		...overrides,
 	} as IChatMode;
 }
@@ -45,14 +47,14 @@ suite('getHandoffId', () => {
 suite('buildCustomAgentHandoffsInfo', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('should return empty handoffs for modes without handOffs', () => {
+	test('should return empty handoffs for modes without handOffs', async () => {
 		const mode = createMockMode({
 			id: 'ask',
 			kind: ChatModeKind.Ask,
 			isBuiltin: true,
 		});
 
-		const result = buildCustomAgentHandoffsInfo([mode]);
+		const result = await buildCustomAgentHandoffsInfo([mode], CancellationToken.None);
 		assert.deepStrictEqual(result, [{
 			id: 'ask',
 			name: 'ask',
@@ -62,7 +64,7 @@ suite('buildCustomAgentHandoffsInfo', () => {
 		}]);
 	});
 
-	test('should map handoffs with all fields', () => {
+	test('should map handoffs with all fields', async () => {
 		const handoffs: IHandOff[] = [
 			{ agent: 'agent', label: 'Start Implementation', prompt: 'Start implementation', send: true, model: 'gpt-4o' },
 			{ agent: 'agent', label: 'Open in Editor', prompt: 'Open the plan', showContinueOn: false },
@@ -74,7 +76,7 @@ suite('buildCustomAgentHandoffsInfo', () => {
 			visibility: observableValue('visibility', { userInvocable: true, agentInvocable: false }),
 		});
 
-		const result = buildCustomAgentHandoffsInfo([mode]);
+		const result = await buildCustomAgentHandoffsInfo([mode], CancellationToken.None);
 		assert.deepStrictEqual(result, [{
 			id: 'plan-mode',
 			name: 'plan-mode',
@@ -87,11 +89,11 @@ suite('buildCustomAgentHandoffsInfo', () => {
 		}]);
 	});
 
-	test('should handle multiple modes', () => {
+	test('should handle multiple modes', async () => {
 		const askMode = createMockMode({ id: 'ask', kind: ChatModeKind.Ask, isBuiltin: true });
 		const agentMode = createMockMode({ id: 'agent', kind: ChatModeKind.Agent, isBuiltin: true });
 
-		const result = buildCustomAgentHandoffsInfo([askMode, agentMode]);
+		const result = await buildCustomAgentHandoffsInfo([askMode, agentMode], CancellationToken.None);
 		assert.deepStrictEqual(result, [
 			{
 				id: 'ask',
@@ -110,7 +112,7 @@ suite('buildCustomAgentHandoffsInfo', () => {
 		]);
 	});
 
-	test('should omit optional handoff fields when undefined', () => {
+	test('should omit optional handoff fields when undefined', async () => {
 		const handoffs: IHandOff[] = [
 			{ agent: 'agent', label: 'Go', prompt: 'do it' },
 		];
@@ -120,7 +122,7 @@ suite('buildCustomAgentHandoffsInfo', () => {
 			handOffs: observableValue('handOffs', handoffs),
 		});
 
-		const result = buildCustomAgentHandoffsInfo([mode]);
+		const result = await buildCustomAgentHandoffsInfo([mode], CancellationToken.None);
 		const info = result[0].handoffs[0];
 		assert.strictEqual(info.id, 'agent:go');
 		assert.strictEqual(info.send, undefined);

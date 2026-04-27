@@ -13,9 +13,9 @@ import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { AICustomizationManagementSection, IStorageSourceFilter } from './aiCustomizationWorkspaceService.js';
-import { PromptsType } from './promptSyntax/promptTypes.js';
+import { PromptsType, Target } from './promptSyntax/promptTypes.js';
 import { AGENT_MD_FILENAME } from './promptSyntax/config/promptFileLocations.js';
-import { IAgentSource, IChatPromptSlashCommand, ICustomAgent, IPromptsService, IResolvedChatPromptSlashCommand, matchesSessionType, PromptsStorage } from './promptSyntax/service/promptsService.js';
+import { IAgentSource, IChatPromptSlashCommand, ICustomAgent, ICustomAgentVisibility, IPromptsService, IResolvedChatPromptSlashCommand, matchesSessionType, PromptsStorage } from './promptSyntax/service/promptsService.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { SessionType } from './chatSessionsService.js';
 import { CustomAgent } from './promptSyntax/service/promptsServiceImpl.js';
@@ -166,6 +166,30 @@ export interface ICustomizationItem {
 	readonly badgeTooltip?: string;
 }
 
+
+export interface IAgentCustomizationItem {
+	readonly uri: URI;
+	readonly type: string;
+	readonly name: string;
+	readonly description?: string;
+	/** Storage origin (local, user, extension, plugin). Set by providers that know the source. */
+	readonly storage?: PromptsStorage;
+	/** The extension identifier that contributed this customization, if any. */
+	readonly extensionId: string | undefined;
+	/** The URI of the plugin that contributed this customization, if any. */
+	readonly pluginUri: URI | undefined;
+	/** Where this agent was loaded from, ready for use as `IAgentSource`. */
+	readonly source: IAgentSource;
+	/** Target of the agent (Copilot, VS Code, Claude, ...). Available without resolving the full agent. */
+	readonly target: Target;
+	/** Visibility flags (user-invocable, agent-invocable). Available without resolving the full agent. */
+	readonly visibility: ICustomAgentVisibility;
+	/** Session types this agent applies to. Available without resolving the full agent. */
+	readonly sessionTypes: readonly string[] | undefined;
+
+	getCustomAgent(token: CancellationToken): Promise<ICustomAgent | undefined>;
+}
+
 /**
  * Provider interface for extension-contributed harnesses that supply
  * customization items directly from their SDK.
@@ -289,6 +313,8 @@ export interface ICustomizationHarnessService {
 	 * details via the core prompts service.
 	 */
 	getCustomAgents(sessionType: string, token: CancellationToken): Promise<readonly ICustomAgent[]>;
+
+	getAgentCustomizationItems(sessionType: string, token: CancellationToken): Promise<readonly IAgentCustomizationItem[]>;
 
 	/**
 	 * Resolves a slash command to its full metadata, including the parsed prompt file for prompt commands.
@@ -654,11 +680,26 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		return result;
 	}
 
-	async getCustomAgents(sessionType: string, token: CancellationToken): Promise<readonly ICustomAgent[]> {
+	async getAgentCustomizationItems(sessionType: string, token: CancellationToken): Promise<readonly IAgentCustomizationItem[]> {
 		const harness = this.findHarnessById(sessionType);
 		if (!harness || !harness.itemProvider) {
 			const allAgents = await this.promptsService.getCustomAgents(token);
-			return allAgents.filter(agent => matchesSessionType(agent.sessionTypes, sessionType));
+			return allAgents
+				.filter(agent => matchesSessionType(agent.sessionTypes, sessionType))
+				.map(agent => ({
+					uri: agent.uri,
+					type: PromptsType.agent,
+					name: agent.name,
+					description: agent.description,
+					storage: agent.source.storage,
+					extensionId: agent.source.storage === PromptsStorage.extension ? agent.source.extensionId.value : undefined,
+					pluginUri: agent.source.storage === PromptsStorage.plugin ? agent.source.pluginUri : undefined,
+					source: agent.source,
+					target: agent.target,
+					visibility: agent.visibility,
+					sessionTypes: agent.sessionTypes,
+					getCustomAgent: async () => agent,
+				}));
 		}
 
 		const items = await harness.itemProvider.provideChatSessionCustomizations(token);
@@ -677,22 +718,49 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 			return { storage: PromptsStorage.local };
 		};
 
-		const result: ICustomAgent[] = [];
-		for (const item of items) {
-			if ((item.enabled !== false) && item.type === PromptsType.agent) {
-				const promptFile = await this.promptsService.parseNew(item.uri, token);
-				const extra = {
+		// Default metadata for provider-backed agents until providers expose them explicitly.
+		const defaultVisibility: ICustomAgentVisibility = { userInvocable: true, agentInvocable: true };
+
+		return items
+			.filter(item => (item.enabled !== false) && item.type === PromptsType.agent)
+			.map(item => {
+				const source = getSource(item);
+				return {
+					uri: item.uri,
+					type: item.type,
 					name: item.name,
 					description: item.description,
+					storage: item.storage,
+					extensionId: item.extensionId,
+					pluginUri: item.pluginUri,
+					source,
+					target: Target.Undefined,
+					visibility: defaultVisibility,
 					sessionTypes: [sessionType],
-					hooks: undefined,
-					source: getSource(item),
-					type: PromptsType.agent,
+					getCustomAgent: async agentToken => {
+						try {
+							const promptFile = await this.promptsService.parseNew(item.uri, agentToken);
+							const extra = {
+								name: item.name,
+								description: item.description,
+								sessionTypes: [sessionType],
+								hooks: undefined,
+								source,
+								type: PromptsType.agent,
+							};
+							return CustomAgent.fromParsedPromptFile(promptFile, extra);
+						} catch {
+							return undefined;
+						}
+					},
 				};
-				result.push(CustomAgent.fromParsedPromptFile(promptFile, extra));
-			}
-		}
-		return result;
+			});
+	}
+
+	async getCustomAgents(sessionType: string, token: CancellationToken): Promise<readonly ICustomAgent[]> {
+		const customizationItems = await this.getAgentCustomizationItems(sessionType, token);
+		const result = await Promise.all(customizationItems.map(item => item.getCustomAgent(token)));
+		return result.filter((item): item is ICustomAgent => item !== undefined);
 	}
 
 	public async resolvePromptSlashCommand(name: string, sessionType: string, token: CancellationToken): Promise<IResolvedChatPromptSlashCommand | undefined> {
@@ -719,5 +787,6 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		return undefined;
 	}
 }
+
 
 // #endregion

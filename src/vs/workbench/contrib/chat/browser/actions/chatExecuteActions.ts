@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { basename } from '../../../../../base/common/resources.js';
@@ -1069,7 +1070,7 @@ class GetHandoffsAction extends Action2 {
 			allModes = allModes.filter(m => m.name.get().toLowerCase() === filterName.toLowerCase());
 		}
 
-		return buildCustomAgentHandoffsInfo(allModes);
+		return buildCustomAgentHandoffsInfo(allModes, CancellationToken.None);
 	}
 }
 

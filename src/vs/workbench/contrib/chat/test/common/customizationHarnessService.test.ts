@@ -471,6 +471,102 @@ suite('CustomizationHarnessService', () => {
 			const agents = await service.getCustomAgents(testSessionType, CancellationToken.None);
 			assert.deepStrictEqual(agents.map(agent => agent.name), ['selected']);
 		});
+
+		test('skips provider agents that fail to parse', async () => {
+			const testSessionType = 'test-session-type';
+			const failingUri = URI.parse('file:///workspace/.test/agents/failing.agent.md');
+			const promptsService = new class extends MockPromptsService {
+				override async parseNew(uri: URI) {
+					if (uri.toString() === failingUri.toString()) {
+						throw new Error('parse failed');
+					}
+					return { uri };
+				}
+			};
+
+			const emitter = new Emitter<void>();
+			store.add(emitter);
+			const service = new CustomizationHarnessServiceBase([{
+				id: testSessionType,
+				label: 'Test Extension',
+				icon: ThemeIcon.fromId('extensions'),
+				getStorageSourceFilter: () => ({ sources: [PromptsStorage.local] }),
+				itemProvider: {
+					onDidChange: emitter.event,
+					provideChatSessionCustomizations: async () => [
+						{ uri: URI.parse('file:///workspace/.test/agents/selected.agent.md'), type: PromptsType.agent, name: 'selected', extensionId: undefined, pluginUri: undefined },
+						{ uri: failingUri, type: PromptsType.agent, name: 'failing', extensionId: undefined, pluginUri: undefined },
+					],
+				},
+			}], testSessionType, promptsService);
+			store.add(service);
+
+			const agents = await service.getCustomAgents(testSessionType, CancellationToken.None);
+			assert.deepStrictEqual(agents.map(agent => agent.name), ['selected']);
+		});
+	});
+
+	suite('getAgentCustomizationItems', () => {
+		const createAgent = (name: string, path: string, sessionTypes?: readonly string[]): ICustomAgent => ({
+			uri: URI.parse(path),
+			name,
+			target: Target.GitHubCopilot,
+			visibility: { userInvocable: true, agentInvocable: true },
+			agentInstructions: { content: '', toolReferences: [] },
+			source: { storage: PromptsStorage.local },
+			sessionTypes,
+		});
+
+		test('falls back to promptsService and preserves source metadata', async () => {
+			const testSessionType = 'test-session-type';
+			const promptsService = new MockPromptsService();
+			promptsService.setCustomModes([
+				createAgent('matching', 'file:///workspace/.github/agents/matching.agent.md', [testSessionType]),
+				createAgent('global', 'file:///workspace/.github/agents/global.agent.md'),
+				createAgent('other', 'file:///workspace/.github/agents/other.agent.md', ['other-session']),
+			]);
+			const service = new CustomizationHarnessServiceBase([createVSCodeHarnessDescriptor([PromptsStorage.extension])], SessionType.Local, promptsService);
+			store.add(service);
+
+			const items = await service.getAgentCustomizationItems(testSessionType, CancellationToken.None);
+			assert.deepStrictEqual(items.map(item => ({ name: item.name, storage: item.storage })), [
+				{ name: 'matching', storage: PromptsStorage.local },
+				{ name: 'global', storage: PromptsStorage.local },
+			]);
+
+			const [matching] = items;
+			const matchingAgent = await matching.getCustomAgent(CancellationToken.None);
+			assert.strictEqual(matchingAgent?.name, 'matching');
+		});
+
+		test('uses provider items and exposes lazy agent resolution', async () => {
+			const testSessionType = 'test-session-type';
+			const emitter = new Emitter<void>();
+			store.add(emitter);
+			const service = new CustomizationHarnessServiceBase([{
+				id: testSessionType,
+				label: 'Test Extension',
+				icon: ThemeIcon.fromId('extensions'),
+				getStorageSourceFilter: () => ({ sources: [PromptsStorage.local] }),
+				itemProvider: {
+					onDidChange: emitter.event,
+					provideChatSessionCustomizations: async () => [
+						{ uri: URI.parse('file:///workspace/.test/agents/enabled.agent.md'), type: PromptsType.agent, name: 'enabled', extensionId: undefined, pluginUri: undefined },
+						{ uri: URI.parse('file:///workspace/.test/agents/disabled.agent.md'), type: PromptsType.agent, name: 'disabled', enabled: false, extensionId: undefined, pluginUri: undefined },
+						{ uri: URI.parse('file:///workspace/.test/skills/lint/SKILL.md'), type: PromptsType.skill, name: 'lint', extensionId: undefined, pluginUri: undefined },
+					],
+				},
+			}], testSessionType, new MockPromptsService());
+			store.add(service);
+
+			const items = await service.getAgentCustomizationItems(testSessionType, CancellationToken.None);
+			assert.deepStrictEqual(items.map(item => item.name), ['enabled']);
+
+			const [enabled] = items;
+			const agent = await enabled.getCustomAgent(CancellationToken.None);
+			assert.strictEqual(agent?.name, 'enabled');
+			assert.deepStrictEqual(agent?.sessionTypes, [testSessionType]);
+		});
 	});
 
 	suite('matchesWorkspaceSubpath', () => {

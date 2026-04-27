@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { timeout } from '../../../../../base/common/async.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -22,6 +23,7 @@ import { ChatModeKind } from '../../common/constants.js';
 import { IAgentSource, ICustomAgent, IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { MockPromptsService } from './promptSyntax/service/mockPromptsService.js';
 import { Target } from '../../common/promptSyntax/promptTypes.js';
+import { createVSCodeHarnessDescriptor, CustomizationHarnessServiceBase, ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 
 class TestChatAgentService implements Partial<IChatAgentService> {
 	_serviceBrand: undefined;
@@ -66,6 +68,16 @@ suite('ChatModeService', () => {
 		instantiationService.stub(ILogService, new NullLogService());
 		instantiationService.stub(IContextKeyService, new MockContextKeyService());
 		instantiationService.stub(IConfigurationService, configurationService);
+		// ChatModeService now consumes the customization harness service. Use the
+		// real base implementation backed by the local-storage Local harness so
+		// the mock prompts service drives change events through the harness.
+		const harnessService = new CustomizationHarnessServiceBase(
+			[createVSCodeHarnessDescriptor([])],
+			'local',
+			promptsService,
+		);
+		testDisposables.add(harnessService);
+		instantiationService.stub(ICustomizationHarnessService, harnessService);
 
 		chatModeService = testDisposables.add(instantiationService.createInstance(ChatModeService));
 	});
@@ -138,6 +150,8 @@ suite('ChatModeService', () => {
 		assert.strictEqual(testMode.label.get(), customMode.name);
 		assert.strictEqual(testMode.description.get(), customMode.description);
 		assert.strictEqual(testMode.kind, ChatModeKind.Agent);
+		// Heavy fields are populated lazily; trigger resolution before asserting.
+		await testMode.resolveDetails(CancellationToken.None);
 		assert.deepStrictEqual(testMode.customTools?.get(), customMode.tools);
 		assert.deepStrictEqual(testMode.modeInstructions?.get(), customMode.agentInstructions);
 		assert.deepStrictEqual(testMode.handOffs?.get(), customMode.handOffs);
@@ -214,6 +228,8 @@ suite('ChatModeService', () => {
 		const initialModes = chatModeService.getModes();
 		const initialCustomMode = initialModes.custom[0];
 		assert.strictEqual(initialCustomMode.description.get(), 'Initial description');
+		// Trigger heavy-detail resolution so the re-resolve path runs on update below.
+		await initialCustomMode.resolveDetails(CancellationToken.None);
 
 		// Update the mode data
 		const updatedMode: ICustomAgent = {
@@ -235,6 +251,8 @@ suite('ChatModeService', () => {
 
 		// But the observable properties should be updated
 		assert.strictEqual(updatedCustomMode.description.get(), 'Updated description');
+		// Heavy fields re-resolve in the background; await the new resolution.
+		await updatedCustomMode.resolveDetails(CancellationToken.None);
 		assert.deepStrictEqual(updatedCustomMode.customTools?.get(), ['tool1', 'tool2']);
 		assert.deepStrictEqual(updatedCustomMode.modeInstructions?.get(), { content: 'Updated body', toolReferences: [] });
 		assert.deepStrictEqual(updatedCustomMode.model?.get(), ['Updated model']);

@@ -136,7 +136,7 @@ suite('PromptValidator', () => {
 			}
 		});
 
-		const customChatMode = new CustomChatMode({
+		const customChatMode = CustomChatMode.fromAgent({
 			uri: URI.parse('myFs://test/test/chatmode.md'),
 			name: 'BeastMode',
 			agentInstructions: { content: 'Beast mode instructions', toolReferences: [] },
