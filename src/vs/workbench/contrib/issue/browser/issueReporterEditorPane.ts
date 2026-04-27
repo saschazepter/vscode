@@ -147,7 +147,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire screenshot capture
 		this.inputDisposables.add(this.wizard.onDidRequestScreenshot(async () => {
 			try {
-				this.logService.info('[IssueReporter] Screenshot: step 1 - hide bar');
 				// Conditionally hide the floating bar based on user setting
 				const shouldHide = this.wizard?.shouldHideToolbarForCapture ?? true;
 				if (shouldHide) {
@@ -157,21 +156,17 @@ export class IssueReporterEditorPane extends EditorPane {
 					await new Promise(r => setTimeout(r, 100));
 				}
 
-				this.logService.info('[IssueReporter] Screenshot: step 2 - capture');
 				const dataUrl = await this.screenshotService.captureScreenshot();
 
-				this.logService.info('[IssueReporter] Screenshot: step 3 - show bar');
 				// Show bar again after capture
 				if (shouldHide) {
 					setTimeout(() => this.wizard?.showFloatingBar(), 1000);
 				}
 
 				if (!dataUrl || !this.wizard) {
-					this.logService.info('[IssueReporter] Screenshot: no dataUrl or wizard');
 					return;
 				}
 
-				this.logService.info('[IssueReporter] Screenshot: step 4 - create img element');
 				const img = await new Promise<HTMLImageElement>((resolve, reject) => {
 					const image = mainWindow.document.createElement('img');
 					image.onload = () => resolve(image);
@@ -179,9 +174,7 @@ export class IssueReporterEditorPane extends EditorPane {
 					image.src = dataUrl;
 				});
 
-				this.logService.info('[IssueReporter] Screenshot: step 5 - addScreenshot');
 				this.wizard.addScreenshot({ dataUrl, width: img.naturalWidth, height: img.naturalHeight });
-				this.logService.info('[IssueReporter] Screenshot: step 6 - done');
 			} catch (err) {
 				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
 				this.logService.error('[IssueReporterEditorPane] Screenshot failed:', err);
