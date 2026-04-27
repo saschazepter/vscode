@@ -43,7 +43,7 @@ import { handleExitPlanMode } from './exitPlanModeHandler';
 import { type McCommand, type McEvent, type McSessionCreateResult, MissionControlApiClient } from './missionControlApiClient';
 import { handleMcpPermission, handleReadPermission, handleShellPermission, handleWritePermission, type PermissionRequest, type PermissionRequestResult, showInteractivePermissionPrompt } from './permissionHelpers';
 import { TodoSqlQuery } from './todoSqlQuery';
-import { IQuestion, IUserQuestionHandler } from './userInputHelpers';
+import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from './userInputHelpers';
 
 /**
  * Known commands that can be sent to a CopilotCLI session instead of a free-form prompt.
@@ -67,6 +67,7 @@ interface McSharedState {
 	mcEventBuffer: McEvent[];
 	mcCompletedCommandIds: string[];
 	mcPendingPermissionRequests: Map<string, { resolve(result: PermissionRequestResult): void }>;
+	mcPendingUserInputRequests?: Set<McPendingUserInputRequest>;
 	mcFlushInterval: ReturnType<typeof setInterval> | undefined;
 	mcPollInterval: ReturnType<typeof setInterval> | undefined;
 	mcLastEventId: string | null;
@@ -88,6 +89,35 @@ interface McPermissionResponseCommandData {
 	readonly promptId?: string;
 	readonly approved?: boolean;
 	readonly scope?: 'once' | 'session';
+}
+
+interface UserInputResponse {
+	readonly answer: string;
+	readonly wasFreeform: boolean;
+}
+
+interface McPendingUserInputRequest {
+	readonly requestId: string;
+	readonly toolCallId?: string;
+	resolve(result: UserInputResponse | undefined): void;
+}
+
+interface McAskUserResponsePayload {
+	readonly requestId?: string;
+	readonly promptId?: string;
+	readonly toolCallId?: string;
+	readonly answer?: string;
+	readonly wasFreeform?: boolean;
+	readonly freeText?: string | null;
+	readonly selected?: readonly string[];
+	readonly skipped?: boolean;
+	readonly response?: {
+		readonly answer?: string;
+		readonly wasFreeform?: boolean;
+		readonly freeText?: string | null;
+		readonly selected?: readonly string[];
+		readonly skipped?: boolean;
+	};
 }
 
 const skippedMissionControlEventTypes = new Set([
@@ -183,6 +213,67 @@ function getMissionControlEventData(event: { type?: string; data?: unknown }): R
 function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set<string> {
 	state.mcPendingCommandCompletionIds ??= new Set();
 	return state.mcPendingCommandCompletionIds;
+}
+
+function getMissionControlPendingUserInputRequests(state: McSharedState): Set<McPendingUserInputRequest> {
+	state.mcPendingUserInputRequests ??= new Set();
+	return state.mcPendingUserInputRequests;
+}
+
+function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
+	const pendingRequests = [...getMissionControlPendingUserInputRequests(state)];
+	const identifiers = [
+		payload?.requestId,
+		payload?.promptId,
+		payload?.toolCallId,
+	].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+	if (identifiers.length > 0) {
+		return pendingRequests.find(request =>
+			identifiers.includes(request.requestId) ||
+			(typeof request.toolCallId === 'string' && identifiers.includes(request.toolCallId))
+		);
+	}
+
+	return pendingRequests.length === 1 ? pendingRequests[0] : undefined;
+}
+
+function toSdkUserInputResponse(answer: IQuestionAnswer | undefined): UserInputResponse {
+	if (!answer) {
+		return { answer: '', wasFreeform: false };
+	}
+
+	if (answer.freeText) {
+		return { answer: answer.freeText, wasFreeform: true };
+	}
+
+	return { answer: answer.selected.join(', '), wasFreeform: false };
+}
+
+function getMcAskUserResponse(payload: McAskUserResponsePayload | undefined, rawContent: string): UserInputResponse | undefined {
+	const response = payload?.response ?? payload;
+	const answer = typeof response?.answer === 'string'
+		? response.answer
+		: typeof response?.freeText === 'string'
+			? response.freeText
+			: Array.isArray(response?.selected)
+				? response.selected.filter((value): value is string => typeof value === 'string').join(', ')
+				: response?.skipped
+					? ''
+					: payload === undefined
+						? rawContent
+						: undefined;
+
+	if (answer === undefined) {
+		return undefined;
+	}
+
+	return {
+		answer,
+		wasFreeform: typeof response?.wasFreeform === 'boolean'
+			? response.wasFreeform
+			: typeof response?.freeText === 'string',
+	};
 }
 
 function maybeAcknowledgeMissionControlCommandFromEvent(state: McSharedState, event: { type?: string; data?: unknown }): void {
@@ -708,17 +799,22 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					allowFreeformInput: event.data.allowFreeform,
 					header: event.data.question,
 				};
-				const answer = await this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, token);
-				flushPendingInvocationMessages();
-				if (!answer) {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: '', wasFreeform: false });
-					return;
-				}
-				if (answer.freeText) {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: answer.freeText, wasFreeform: true });
+				let response: UserInputResponse;
+				if (this._mcState) {
+					const userInputResolutionTokenSource = new CancellationTokenSource(token);
+					try {
+						response = await Promise.race([
+							this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, userInputResolutionTokenSource.token).then(toSdkUserInputResponse),
+							this._waitForMcUserInputResponse(this._mcState, event.data.requestId, event.data.toolCallId, userInputResolutionTokenSource.token).then(result => result ?? { answer: '', wasFreeform: false }),
+						]);
+					} finally {
+						userInputResolutionTokenSource.dispose(true);
+					}
 				} else {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: answer.selected.join(', '), wasFreeform: false });
+					response = toSdkUserInputResponse(await this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, token));
 				}
+				flushPendingInvocationMessages();
+				this._sdkSession.respondToUserInput(event.data.requestId, response);
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('session.title_changed', (event) => {
 				this._title = event.data.title;
@@ -1370,6 +1466,10 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			pendingRequest.resolve({ kind: 'denied-interactively-by-user' });
 		}
 		state.mcPendingPermissionRequests.clear();
+		for (const pendingRequest of getMissionControlPendingUserInputRequests(state)) {
+			pendingRequest.resolve(undefined);
+		}
+		getMissionControlPendingUserInputRequests(state).clear();
 
 		state.mcEventBuffer.push(this._createMcEvent('session.remote_steerable_changed', {
 			remoteSteerable: false,
@@ -1556,6 +1656,39 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		});
 	}
 
+	private _waitForMcUserInputResponse(
+		state: McSharedState,
+		requestId: string,
+		toolCallId: string | undefined,
+		token: CancellationToken,
+	): Promise<UserInputResponse | undefined> {
+		return new Promise<UserInputResponse | undefined>(resolve => {
+			let settled = false;
+			let pendingRequest: McPendingUserInputRequest | undefined;
+			const complete = (result: UserInputResponse | undefined) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				if (pendingRequest) {
+					getMissionControlPendingUserInputRequests(state).delete(pendingRequest);
+				}
+				cancellationListener?.dispose();
+				resolve(result);
+			};
+			pendingRequest = {
+				requestId,
+				toolCallId,
+				resolve: complete,
+			};
+			const cancellationListener = token.onCancellationRequested(() => {
+				complete(undefined);
+			});
+
+			getMissionControlPendingUserInputRequests(state).add(pendingRequest);
+		});
+	}
+
 	/**
 	 * Flush buffered events to the Mission Control API.
 	 */
@@ -1659,8 +1792,45 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 				switch (cmd.type) {
 					case 'abort':
+						for (const pendingRequest of state.mcPendingPermissionRequests.values()) {
+							pendingRequest.resolve({ kind: 'denied-interactively-by-user' });
+						}
+						state.mcPendingPermissionRequests.clear();
+						for (const pendingRequest of getMissionControlPendingUserInputRequests(state)) {
+							pendingRequest.resolve(undefined);
+						}
+						getMissionControlPendingUserInputRequests(state).clear();
 						state.mcSdkSession.abort();
 						break;
+					case 'ask_user_response': {
+						let responsePayload: McAskUserResponsePayload | undefined;
+						const trimmedContent = cmd.content.trim();
+						if (trimmedContent.startsWith('{')) {
+							try {
+								const parsed = JSON.parse(trimmedContent) as unknown;
+								if (parsed && typeof parsed === 'object') {
+									responsePayload = parsed as McAskUserResponsePayload;
+								}
+							} catch (error) {
+								logService.warn(`[CopilotCLISession] Failed to parse MC ask_user_response payload (${cmd.id}): ${error}`);
+							}
+						}
+
+						const pendingRequest = getMissionControlPendingUserInputRequest(state, responsePayload);
+						if (!pendingRequest) {
+							logService.warn(`[CopilotCLISession] No pending MC ask_user request found for command ${cmd.id}`);
+							break;
+						}
+
+						const response = getMcAskUserResponse(responsePayload, trimmedContent);
+						if (!response) {
+							logService.warn(`[CopilotCLISession] MC ask_user response missing answer payload (${cmd.id})`);
+							break;
+						}
+
+						pendingRequest.resolve(response);
+						break;
+					}
 					case 'permission_response': {
 						const responseData = CopilotCLISession._parseMcJsonCommand<McPermissionResponseCommandData>(cmd, logService);
 						const promptId = responseData?.promptId;

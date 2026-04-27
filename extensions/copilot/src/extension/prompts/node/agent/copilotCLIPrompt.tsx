@@ -123,9 +123,11 @@ export async function generateUserPrompt(request: ChatRequest, prompt: string | 
 		request: prompt ?? request.prompt,
 		editedFileEvents: request.editedFileEvents,
 	});
-	if (messages.length === 1 && messages[0].role === ChatRole.User) {
-		const textParts = messages[0].content.filter(part => part.type === ChatCompletionContentPartKind.Text);
-		if (textParts.length === messages[0].content.length) {
+
+	const userMessages = messages.filter(message => message.role === ChatRole.User);
+	if (userMessages.length > 0) {
+		const textParts = userMessages.flatMap(message => message.content);
+		if (textParts.every(part => part.type === ChatCompletionContentPartKind.Text)) {
 			return textParts.map(part => part.text).join('');
 		}
 	}

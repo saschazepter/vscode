@@ -52,6 +52,32 @@ suite('generateUserPrompt', () => {
 		);
 	});
 
+	test('joins text parts across multiple generated user messages', async () => {
+		renderPromptElementMock.mockResolvedValue({
+			messages: [
+				{
+					role: ChatRole.User,
+					content: [
+						{ type: ChatCompletionContentPartKind.Text, text: '<current_datetime>2026-04-27T13:29:45.461-06:00</current_datetime>\n\n' },
+					],
+				},
+				{
+					role: ChatRole.User,
+					content: [
+						{ type: ChatCompletionContentPartKind.Text, text: '[CopilotCLISession] Unexpected generated prompt structure.\n\n' },
+						{ type: ChatCompletionContentPartKind.Text, text: '<reminder>\n<sql_tables>Available tables: todos, todo_deps, inbox_entries</sql_tables>\n</reminder>' },
+					],
+				},
+			],
+		} as Awaited<ReturnType<typeof renderPromptElement>>);
+
+		await expect(generateUserPrompt(request, undefined, chatVariables, instantiationService)).resolves.toBe(
+			'<current_datetime>2026-04-27T13:29:45.461-06:00</current_datetime>\n\n' +
+			'[CopilotCLISession] Unexpected generated prompt structure.\n\n' +
+			'<reminder>\n<sql_tables>Available tables: todos, todo_deps, inbox_entries</sql_tables>\n</reminder>'
+		);
+	});
+
 	test('rejects non-text generated user prompt content', async () => {
 		renderPromptElementMock.mockResolvedValue({
 			messages: [{

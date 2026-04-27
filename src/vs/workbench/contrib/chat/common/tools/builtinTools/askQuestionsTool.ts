@@ -222,7 +222,31 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		this.logService.trace(`[AskQuestionsTool] request=${request.id} terminalExecutionId=${request.terminalExecutionId ?? 'undefined'} carousel.terminalId=${carousel.terminalId ?? 'undefined'}`);
 		this.chatService.appendProgress(request, carousel);
 
-		const answerResult = await raceCancellation(carousel.completion.p, token);
+		let answerResult: { answers: IChatQuestionAnswers | undefined } | undefined;
+		try {
+			answerResult = await raceCancellation(carousel.completion.p, token);
+		} catch (error) {
+			if (error instanceof CancellationError && !carousel.isUsed) {
+				carousel.data = {};
+				carousel.isUsed = true;
+				carousel.draftAnswers = undefined;
+				carousel.draftCurrentIndex = undefined;
+				carousel.draftCollapsed = undefined;
+				await carousel.completion.complete({ answers: undefined });
+			}
+			throw error;
+		}
+		if (!answerResult) {
+			if (!carousel.isUsed) {
+				carousel.data = {};
+				carousel.isUsed = true;
+				carousel.draftAnswers = undefined;
+				carousel.draftCurrentIndex = undefined;
+				carousel.draftCollapsed = undefined;
+				await carousel.completion.complete({ answers: undefined });
+			}
+			throw new CancellationError();
+		}
 		if (token.isCancellationRequested) {
 			throw new CancellationError();
 		}
