@@ -31,19 +31,19 @@ const TABBED_PICKER_WIDTH = 360;
 
 /**
  * Experimental tabbed variant of {@link WorkspacePicker}. Renders a Radio tab
- * bar above the picker list with three fixed categories: Folders,
- * Repositories and Tunnels. Each tab scopes the recents and browse actions
- * to its category so that the different sources stay visually separated,
- * mirroring the look of the agent quick input.
+ * bar above the picker list with three fixed categories: Local, GitHub and
+ * Remote. Each tab scopes the recents and browse actions to its category so
+ * that the different sources stay visually separated, mirroring the look of
+ * the agent quick input.
  *
  * Categorization rules:
  *   - **Remote**: any workspace whose owning provider is a remote agent host
  *     (tunnels, SSH hosts, etc.) plus that provider's browse actions.
- *   - **Repositories**: GitHub-backed workspaces (e.g.
+ *   - **Repositories** ("GitHub" tab): GitHub-backed workspaces (e.g.
  *     `github-remote-file://`) plus browse actions in the `repositories`
- *     group (or labelled "Repositories" when ungrouped).
- *   - **Folders**: anything else — local file:// folders and the providers'
- *     "Folders" browse actions.
+ *     group.
+ *   - **Folders** ("Local" tab): anything else — local file:// folders and
+ *     the providers' "Folders" browse actions.
  */
 export class TabbedWorkspacePicker extends WorkspacePicker {
 
@@ -53,14 +53,21 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 
 	override showPicker(force = false): void {
 		// Default the active tab to the category of the currently selected
-		// workspace, but only until the user explicitly picks a tab — after
-		// that, preserve their choice across re-shows (e.g. when switching
-		// tabs hides and re-shows the widget).
+		// workspace. The user-pick latch is reset whenever the selection
+		// changes (see `setSelectedWorkspace`), so picking a tab during one
+		// open of the picker doesn't permanently override auto-tab.
 		if (!this._userPickedTab && this.selectedProject) {
 			this._activeTab = this._categorizeWorkspace(this.selectedProject) ?? this._activeTab;
 		}
 		this._applyTabFilter(this._activeTab);
 		super.showPicker(force);
+	}
+
+	override setSelectedWorkspace(project: IWorkspaceSelection, fireEvent = true): void {
+		// Re-arm auto-tab so the next open follows the new selection's
+		// category instead of being stuck on the user's previous tab pick.
+		this._userPickedTab = false;
+		super.setSelectedWorkspace(project, fireEvent);
 	}
 
 	protected override _getPickerHeader(): HTMLElement | undefined {
@@ -146,6 +153,10 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 		// "Select Folders…" with several remote hosts behind it) into
 		// top-level items instead of nesting them under a submenu.
 		return this._activeTab === 'remote';
+	}
+
+	protected override _inlineBrowseItemClassName(): string | undefined {
+		return 'sessions-browse-inline-item';
 	}
 
 	private _applyTabFilter(category: WorkspaceCategory): void {

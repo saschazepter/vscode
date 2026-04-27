@@ -408,6 +408,16 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
+	 * Optional className applied to each row produced by the inline-grouped
+	 * browse-action path (see {@link _inlineGroupedBrowseActions}). Subclasses
+	 * use this to opt into custom styling without coupling the base class to a
+	 * specific stylesheet.
+	 */
+	protected _inlineBrowseItemClassName(): string | undefined {
+		return undefined;
+	}
+
+	/**
 	 * Builds the picker items list from recent workspaces.
 	 *
 	 * Items are shown in a flat recency-sorted list (most recently used first)
@@ -498,6 +508,7 @@ export class WorkspacePicker extends Disposable {
 				// inline when the subclass requests it (e.g. the Remote tab
 				// in the tabbed picker variant).
 				if (this._inlineGroupedBrowseActions()) {
+					const inlineClassName = this._inlineBrowseItemClassName();
 					for (const { action, index } of actions) {
 						const provider = allProviders.find(p => p.id === action.providerId);
 						const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
@@ -508,7 +519,7 @@ export class WorkspacePicker extends Disposable {
 							description: localize('workspacePicker.browseSelectAction', "Select {0}...", label),
 							group: { title: '', icon: action.icon ?? icon },
 							disabled: isUnavailable,
-							className: 'sessions-browse-inline-item',
+							className: inlineClassName,
 							item: { browseActionIndex: index },
 						});
 					}
