@@ -377,13 +377,6 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * Builds the picker items list from recent workspaces.
-	 *
-	 * Items are shown in a flat recency-sorted list (most recently used first)
-	 * without source grouping. Own recents come first, followed by VS Code
-	 * recent folders.
-	 */
-	/**
 	 * Optional predicates used by subclasses (e.g. {@link TabbedWorkspacePicker})
 	 * to scope the picker contents to a category. When unset, every entry is
 	 * included.

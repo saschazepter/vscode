@@ -24,7 +24,7 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfigurat
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental'],
-			description: localize('sessions.experimental.tabbedWorkspacePicker', "Whether to use the experimental tabbed layout for the workspace picker in the new session view, with one tab per session provider."),
+			description: localize('sessions.experimental.tabbedWorkspacePicker', "Whether to use the experimental tabbed layout for the workspace picker in the new session view, with separate Local, GitHub and Remote tabs."),
 		},
 	},
 });

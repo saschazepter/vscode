@@ -1052,7 +1052,7 @@ export class ActionListWidget<T> extends Disposable {
 				}
 			}
 
-			maxWidth = clamp(Math.max(...itemWidths, effectiveMinWidth));
+			maxWidth = clamp(Math.max(...itemWidths));
 
 			// Restore visible items
 			this._list.splice(0, allItems.length, visibleItems);
@@ -1070,7 +1070,7 @@ export class ActionListWidget<T> extends Disposable {
 				itemWidths.push(width + this._computeToolbarWidth(this._list.element(i)));
 			}
 		}
-		return clamp(Math.max(...itemWidths, effectiveMinWidth));
+		return clamp(Math.max(...itemWidths));
 	}
 
 	focusPrevious() {

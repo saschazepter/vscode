@@ -9,19 +9,8 @@ import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { localize } from '../../../../nls.js';
-import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { IMenuService } from '../../../../platform/actions/common/actions.js';
-import { IRemoteAgentHostService } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
-import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
 import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { GITHUB_REMOTE_FILE_SCHEME, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
-import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IWorkspaceSelection, WorkspacePicker } from './sessionWorkspacePicker.js';
 
 type WorkspaceCategory = 'folders' | 'repositories' | 'remote';
@@ -36,6 +25,9 @@ const TABS: readonly ITabDescriptor[] = [
 	{ id: 'repositories', label: localize('tabbedPicker.github', "GitHub") },
 	{ id: 'remote', label: localize('tabbedPicker.remote', "Remote") },
 ];
+
+/** Fixed picker width for the tabbed variant — keeps tab/list aligned. */
+const TABBED_PICKER_WIDTH = 360;
 
 /**
  * Experimental tabbed variant of {@link WorkspacePicker}. Renders a Radio tab
@@ -58,34 +50,6 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 	private readonly _tabDisposables = this._register(new DisposableStore());
 	private _activeTab: WorkspaceCategory = 'folders';
 	private _userPickedTab = false;
-
-	constructor(
-		@IActionWidgetService actionWidgetService: IActionWidgetService,
-		@IStorageService storageService: IStorageService,
-		@IUriIdentityService uriIdentityService: IUriIdentityService,
-		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService remoteAgentHostService: IRemoteAgentHostService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@ICommandService commandService: ICommandService,
-		@IWorkspacesService workspacesService: IWorkspacesService,
-		@IMenuService menuService: IMenuService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super(
-			actionWidgetService,
-			storageService,
-			uriIdentityService,
-			sessionsProvidersService,
-			remoteAgentHostService,
-			configurationService,
-			commandService,
-			workspacesService,
-			menuService,
-			contextKeyService,
-			instantiationService,
-		);
-	}
 
 	override showPicker(force = false): void {
 		// Default the active tab to the category of the currently selected
@@ -127,14 +91,22 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 			}
 		}));
 
-		// Keyboard nav: left/right arrows cycle tabs from anywhere in the
-		// popup (filter input or list). The list normally only consumes
-		// up/down, so left/right are safe to intercept here.
+		// Keyboard nav: left/right arrows cycle tabs when the focus is on the
+		// list itself. We deliberately scope this to the action-widget root and
+		// skip editable targets so the filter input keeps native caret movement.
 		this._tabDisposables.add(dom.addStandardDisposableListener(header.ownerDocument, 'keydown', e => {
 			if (!header.isConnected) {
 				return;
 			}
 			if (e.keyCode !== KeyCode.LeftArrow && e.keyCode !== KeyCode.RightArrow) {
+				return;
+			}
+			const target = e.target as HTMLElement | null;
+			if (!target || !target.closest('.action-widget')) {
+				return;
+			}
+			// Don't steal arrows from text inputs / editable areas.
+			if (target.closest('input, textarea, [contenteditable="true"]')) {
 				return;
 			}
 			const currentIndex = TABS.findIndex(t => t.id === this._activeTab);
@@ -153,13 +125,13 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 
 	protected override _getPickerMinWidth(): number | undefined {
 		// Fixed width across all tabs so switching doesn't shift the popup.
-		return 360;
+		return TABBED_PICKER_WIDTH;
 	}
 
 	protected override _getPickerMaxWidth(): number | undefined {
 		// Cap at the same value so long item labels truncate instead of
 		// growing the popup.
-		return 360;
+		return TABBED_PICKER_WIDTH;
 	}
 
 	protected override _includeManageSubmenu(): boolean {
@@ -199,7 +171,7 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 		if (this._isRemoteProvider(action.providerId)) {
 			return 'remote';
 		}
-		if (action.group === 'repositories' || (!action.group && /^repositor/i.test(action.label))) {
+		if (action.group === 'repositories') {
 			return 'repositories';
 		}
 		return 'folders';
