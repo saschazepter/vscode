@@ -9,8 +9,19 @@ import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { localize } from '../../../../nls.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
+import { IMenuService } from '../../../../platform/actions/common/actions.js';
+import { IRemoteAgentHostService } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
+import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
 import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { GITHUB_REMOTE_FILE_SCHEME, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
+import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IWorkspaceSelection, WorkspacePicker } from './sessionWorkspacePicker.js';
 
 type WorkspaceCategory = 'folders' | 'repositories' | 'remote';
@@ -51,13 +62,40 @@ export class TabbedWorkspacePicker extends WorkspacePicker {
 	private _activeTab: WorkspaceCategory = 'folders';
 	private _userPickedTab = false;
 
-	// Re-arm auto-tab whenever the workspace selection changes (from any
-	// source — user click, programmatic, browse-action) so the next open
-	// follows the new selection's category instead of staying stuck on the
-	// user's previous tab pick.
-	private readonly _resetUserPickedTab = this._register(this.onDidSelectWorkspace(() => {
-		this._userPickedTab = false;
-	}));
+	constructor(
+		@IActionWidgetService actionWidgetService: IActionWidgetService,
+		@IStorageService storageService: IStorageService,
+		@IUriIdentityService uriIdentityService: IUriIdentityService,
+		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+		@IRemoteAgentHostService remoteAgentHostService: IRemoteAgentHostService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@ICommandService commandService: ICommandService,
+		@IWorkspacesService workspacesService: IWorkspacesService,
+		@IMenuService menuService: IMenuService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IInstantiationService instantiationService: IInstantiationService,
+	) {
+		super(
+			actionWidgetService,
+			storageService,
+			uriIdentityService,
+			sessionsProvidersService,
+			remoteAgentHostService,
+			configurationService,
+			commandService,
+			workspacesService,
+			menuService,
+			contextKeyService,
+			instantiationService,
+		);
+		// Re-arm auto-tab whenever the workspace selection changes (from any
+		// source — user click, programmatic, browse-action) so the next open
+		// follows the new selection's category instead of staying stuck on the
+		// user's previous tab pick.
+		this._register(this.onDidSelectWorkspace(() => {
+			this._userPickedTab = false;
+		}));
+	}
 
 	override showPicker(force = false): void {
 		// Default the active tab to the category of the currently selected
