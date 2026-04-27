@@ -202,13 +202,32 @@ export async function trackIdleOnPrompt(
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
 	// cancelled in that state, causing a permanent hang. This scheduler is
 	// rescheduled on every data event while in the Executing state, so it only
-	// fires after 10s of data-idle — effectively downgrading from rich to basic
-	// behavior by treating the data-idle as completion.
-	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
-		if (state === TerminalState.Executing) {
-			state = TerminalState.PromptAfterExecuting;
-			scheduler.schedule();
+	// fires after 10s of data-idle. When it fires, it checks if the cursor line
+	// looks like a prompt before completing — if not, it reschedules to avoid
+	// prematurely completing long-running commands that pause without output.
+	const executingFallbackScheduler = store.add(new RunOnceScheduler(async () => {
+		if (state !== TerminalState.Executing) {
+			return;
 		}
+		// Check if the terminal looks like it's at a prompt before completing.
+		// Long-running commands can pause for extended periods without output
+		// (e.g. downloading, compiling), so we only complete if the cursor line
+		// matches a known prompt pattern.
+		const xterm = await instance.xtermReadyPromise;
+		if (xterm) {
+			const buffer = xterm.raw.buffer.active;
+			const line = buffer.getLine(buffer.baseY + buffer.cursorY);
+			if (line) {
+				const content = line.translateToString(true);
+				if (!detectsCommonPromptPattern(content).detected) {
+					// Doesn't look like a prompt — reschedule and check again later
+					executingFallbackScheduler.schedule();
+					return;
+				}
+			}
+		}
+		state = TerminalState.PromptAfterExecuting;
+		scheduler.schedule();
 	}, 10_000));
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
