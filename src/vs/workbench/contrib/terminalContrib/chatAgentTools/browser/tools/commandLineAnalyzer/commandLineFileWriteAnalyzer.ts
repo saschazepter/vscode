@@ -157,6 +157,11 @@ export class CommandLineFileWriteAnalyzer extends Disposable implements ICommand
 								(fileUri.path.startsWith(folder.uri.path + '/') || fileUri.path === folder.uri.path)
 							);
 							if (!isInsideWorkspace) {
+								// Allow /tmp/ writes when the user has opted into "Allow All
+								// Commands in this Session" via the confirmation.
+								if (options.hasSessionAutoApproval && fileUri.path.startsWith('/tmp/')) {
+									continue;
+								}
 								isAutoApproveAllowed = false;
 								this._log('File write blocked outside workspace', fileUri.toString());
 								break;
