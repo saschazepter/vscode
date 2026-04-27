@@ -33,7 +33,7 @@ interface ITabDescriptor {
 
 const TABS: readonly ITabDescriptor[] = [
 	{ id: 'folders', label: localize('tabbedPicker.local', "Local") },
-	{ id: 'repositories', label: localize('tabbedPicker.github', "GitHub") },
+	{ id: 'repositories', label: localize('tabbedPicker.cloud', "Cloud") },
 	{ id: 'remote', label: localize('tabbedPicker.remote', "Remote") },
 ];
 
