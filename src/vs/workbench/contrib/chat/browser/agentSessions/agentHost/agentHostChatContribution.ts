@@ -55,6 +55,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	private readonly _agentRegistrations = this._register(new DisposableMap<AgentProvider, DisposableStore>());
 	/** Model providers keyed by agent provider, for pushing model updates. */
 	private readonly _modelProviders = new Map<AgentProvider, AgentHostLanguageModelProvider>();
+	/** List controllers keyed by agent provider, for cache resets on reconnect. */
+	private readonly _listControllers = new Map<AgentProvider, AgentHostSessionListController>();
 
 	/** Dedupes redundant `authenticate` RPCs when the resolved token hasn't changed. */
 	private readonly _authTokenCache = new AgentHostAuthTokenCache();
@@ -100,8 +102,13 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 
 		// Clear the auth cache whenever the local agent host (re)starts so the
 		// first post-restart authenticate RPC is never skipped as "unchanged".
+		// Also reset each list controller's session cache so the next refresh
+		// re-fetches via listSessions() rather than serving a stale in-memory list.
 		this._register(this._agentHostService.onAgentHostStart(() => {
 			this._authTokenCache.clear();
+			for (const controller of this._listControllers.values()) {
+				controller.resetCache();
+			}
 		}));
 
 		// Process initial root state if already available
@@ -145,6 +152,14 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		const agentId = sessionType;
 		const vendor = sessionType;
 
+		// In the Agents app, the agent-host displayName is unambiguous because
+		// only agent-host sessions exist there. In VS Code, the same picker
+		// also lists the extension-host harness with the same displayName
+		// (e.g. "Copilot CLI"), so suffix with "- Agent Host" to disambiguate.
+		const displayName = this._isSessionsWindow
+			? agent.displayName
+			: localize('agentHost.displayName', "{0} - Agent Host", agent.displayName);
+
 		// Chat session contribution.
 		// In the Agents app, hide the delegation picker for local agent host
 		// sessions (matches behavior of remote agent host sessions). In VS Code,
@@ -152,7 +167,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		store.add(this._chatSessionsService.registerChatSessionContribution({
 			type: sessionType,
 			name: agentId,
-			displayName: agent.displayName,
+			displayName,
 			description: agent.description,
 			canDelegate: true,
 			requiresCustomModels: true,
@@ -164,6 +179,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 
 		// Session list controller
 		const listController = store.add(this._instantiationService.createInstance(AgentHostSessionListController, sessionType, agent.provider, this._loggedConnection!, undefined, 'local'));
+		this._listControllers.set(agent.provider, listController);
+		store.add({ dispose: () => this._listControllers.delete(agent.provider) });
 		store.add(this._chatSessionsService.registerChatSessionItemController(sessionType, listController));
 
 		// Customization sync provider + bundler + observable

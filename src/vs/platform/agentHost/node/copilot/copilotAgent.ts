@@ -23,7 +23,7 @@ import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentDeltaEvent, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
+import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentDeltaEvent, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, SessionHistoryEvent } from '../../common/agentService.js';
 import { AutoApproveLevel, ISchemaProperty, createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { ISessionDataService, SESSION_DB_FILENAME } from '../../common/sessionDataService.js';
@@ -31,7 +31,7 @@ import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from 
 import { ProtectedResourceMetadata, type ConfigSchema, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { CustomizationStatus, CustomizationRef, SessionInputResponseKind, type PendingMessage, type SessionInputAnswer, type ToolCallResult, type PolicyState } from '../../common/state/sessionState.js';
-import { IAgentHostGitService } from '../agentHostGitService.js';
+import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../agentHostGitService.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 import { CopilotAgentSession, SessionWrapperFactory, type IActiveClientSnapshot } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
@@ -121,7 +121,7 @@ function buildWorktreeAnnouncementText(branchName: string): string {
 	) + '\n\n';
 }
 
-type AgentMessageOrEvent = IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent;
+type AgentMessageOrEvent = SessionHistoryEvent;
 
 /**
  * Returns a copy of `messages` where `announcement` has been prepended to
@@ -727,7 +727,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// No SDK-level enqueue is needed.
 	}
 
-	async getSessionMessages(session: URI): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[]> {
+	async getSessionMessages(session: URI): Promise<SessionHistoryEvent[]> {
 		const sessionId = AgentSession.id(session);
 		const entry = this._sessions.get(sessionId) ?? await this._resumeSession(sessionId).catch(err => {
 			this._logService.warn(`[Copilot:${sessionId}] Failed to resume session for message lookup`, err);
@@ -1024,7 +1024,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._pendingFirstTurnAnnouncements.set(sessionId, buildWorktreeAnnouncementText(branchName));
 		const sessionUri = AgentSession.uri(this.id, sessionId);
 		try {
-			await this._writeWorktreeBranchMetadata(sessionUri, branchName);
+			await this._writeWorktreeBranchMetadata(sessionUri, branchName, baseBranch);
 		} catch (error) {
 			this._logService.warn(`[Copilot:${sessionId}] Failed to persist worktree branch metadata: ${error instanceof Error ? error.message : String(error)}`);
 		}
@@ -1054,10 +1054,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private static readonly _META_PROJECT_DISPLAY_NAME = 'copilot.project.displayName';
 	private static readonly _META_WORKTREE_BRANCH = 'copilot.worktree.branchName';
 
-	private async _writeWorktreeBranchMetadata(session: URI, branchName: string): Promise<void> {
+	private async _writeWorktreeBranchMetadata(session: URI, branchName: string, baseBranch: string | undefined): Promise<void> {
 		const dbRef = this._sessionDataService.openDatabase(session);
 		try {
-			await dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_BRANCH, branchName);
+			const work: Promise<void>[] = [dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_BRANCH, branchName)];
+			if (baseBranch) {
+				work.push(dbRef.object.setMetadata(META_DIFF_BASE_BRANCH, baseBranch));
+			}
+			await Promise.all(work);
 		} finally {
 			dbRef.dispose();
 		}

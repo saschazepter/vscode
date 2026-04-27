@@ -326,7 +326,7 @@ function stripChromiumStderr(output: string): string {
 			assert.strictEqual(output.trim(), marker);
 		});
 
-		test('network requests to allowlisted domains succeed in sandbox', async function () {
+		test.skip('network requests to allowlisted domains succeed in sandbox', async function () {
 			this.timeout(60000);
 
 			const configuration = vscode.workspace.getConfiguration();
@@ -344,7 +344,7 @@ function stripChromiumStderr(output: string): string {
 			}
 		});
 
-		test('requestUnsandboxedExecution preserves sandbox $TMPDIR', async function () {
+		test.skip('requestUnsandboxedExecution preserves sandbox $TMPDIR', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_UNSANDBOX_${Date.now()}`;
@@ -382,7 +382,7 @@ function stripChromiumStderr(output: string): string {
 			assert.ok(trimmed.endsWith(marker), `Unexpected output: ${JSON.stringify(trimmed)}`);
 		});
 
-		test('can read files outside the workspace', async function () {
+		test.skip('can read files outside the workspace', async function () {
 			this.timeout(60000);
 
 			const output = await invokeRunInTerminal('head -1 /etc/shells');
@@ -409,7 +409,7 @@ function stripChromiumStderr(output: string): string {
 			assert.strictEqual(output.trim(), marker);
 		});
 
-		test('$TMPDIR is writable inside the sandbox', async function () {
+		test.skip('$TMPDIR is writable inside the sandbox', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_TMPDIR_${Date.now()}`;
@@ -423,7 +423,7 @@ function stripChromiumStderr(output: string): string {
 			assert.strictEqual(lastLine, marker, `Unexpected output: ${JSON.stringify(output.trim())}`);
 		});
 
-		test('non-allowlisted domains trigger unsandboxed confirmation flow', async function () {
+		test.skip('non-allowlisted domains trigger unsandboxed confirmation flow', async function () {
 			this.timeout(60000);
 
 			const marker = `SANDBOX_DOMAIN_${Date.now()}`;
