@@ -70,6 +70,7 @@ export class IssueReporterOverlay {
 	private descriptionTextarea!: HTMLTextAreaElement;
 	private descriptionGuidance!: HTMLElement;
 	private titleInput!: InputBox;
+	private generateTitleBtn!: Button;
 	private readonly _onDidRequestGenerateTitle = new Emitter<string>();
 	readonly onDidRequestGenerateTitle: Event<string> = this._onDidRequestGenerateTitle.event;
 
@@ -547,12 +548,30 @@ export class IssueReporterOverlay {
 			}
 		}));
 
-		// Title input with AI generate button
+		// Title field with AI generate button next to label
 		const titleGroup = append(page, $('div.wizard-field.wizard-title-field'));
-		const titleLabel = append(titleGroup, $('label.wizard-field-label'));
+		const titleLabelRow = append(titleGroup, $('div.wizard-title-label-row'));
+		const titleLabel = append(titleLabelRow, $('label.wizard-field-label'));
 		titleLabel.textContent = localize('issueTitle', "Title");
-		const titleRow = append(titleGroup, $('div.wizard-title-row'));
-		this.titleInput = this.disposables.add(new InputBox(titleRow, undefined, {
+
+		const aiBtn = this.disposables.add(new Button(titleLabelRow, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
+		aiBtn.label = `$(sparkle) ${localize('generateTitleBtn', "Generate from description")}`;
+		aiBtn.element.classList.add('wizard-ai-title-btn');
+		aiBtn.element.title = localize('generateTitle', "Generate title from description");
+		this.disposables.add(aiBtn.onDidClick(() => {
+			const desc = this.descriptionTextarea.value.trim();
+			if (desc && !aiBtn.element.classList.contains('loading')) {
+				// Lock width to prevent layout shift during loading
+				aiBtn.element.style.minWidth = `${aiBtn.element.offsetWidth}px`;
+				aiBtn.enabled = false;
+				aiBtn.label = `$(loading~spin) ${localize('generatingTitle', "Generating...")}`;
+				aiBtn.element.classList.add('loading');
+				this._onDidRequestGenerateTitle.fire(desc);
+			}
+		}));
+		this.generateTitleBtn = aiBtn;
+
+		this.titleInput = this.disposables.add(new InputBox(titleGroup, undefined, {
 			placeholder: localize('issueTitlePlaceholder', "Brief summary of the issue"),
 			inputBoxStyles: defaultInputBoxStyles,
 		}));
@@ -561,17 +580,6 @@ export class IssueReporterOverlay {
 		}
 		this.disposables.add(this.titleInput.onDidChange(() => {
 			this.titleInput.element.classList.remove('invalid-input');
-		}));
-
-		const aiBtn = this.disposables.add(new Button(titleRow, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		aiBtn.label = `$(sparkle) ${localize('generateTitleBtn', "Generate")}`;
-		aiBtn.element.classList.add('wizard-ai-title-btn');
-		aiBtn.element.title = localize('generateTitle', "Generate title from description");
-		this.disposables.add(aiBtn.onDidClick(() => {
-			const desc = this.descriptionTextarea.value.trim();
-			if (desc) {
-				this._onDidRequestGenerateTitle.fire(desc);
-			}
 		}));
 
 		// Description field with guidance and auto-growing textarea
@@ -1437,6 +1445,14 @@ export class IssueReporterOverlay {
 	/** Set the title input value (e.g., from AI generation) */
 	setGeneratedTitle(title: string): void {
 		this.titleInput.value = title;
+		this.resetGenerateButton();
+	}
+
+	resetGenerateButton(): void {
+		this.generateTitleBtn.enabled = true;
+		this.generateTitleBtn.label = `$(sparkle) ${localize('generateTitleBtn', "Generate from description")}`;
+		this.generateTitleBtn.element.classList.remove('loading');
+		this.generateTitleBtn.element.style.minWidth = '';
 	}
 
 	/** Show a "Close" button next to the submit button after successful submission */

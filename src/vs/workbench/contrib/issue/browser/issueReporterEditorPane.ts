@@ -270,9 +270,10 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire AI title generation
 		this.inputDisposables.add(this.wizard.onDidRequestGenerateTitle(async (description) => {
 			try {
-				const modelIds = await this.languageModelsService.selectLanguageModels({});
+				const modelIds = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
 				if (modelIds.length === 0) {
 					this.logService.warn('[IssueReporterEditorPane] No language models available for title generation');
+					this.wizard?.resetGenerateButton();
 					return;
 				}
 				const modelId = modelIds[0];
@@ -292,9 +293,12 @@ export class IssueReporterEditorPane extends EditorPane {
 				const title = (await getTextResponseFromStream(response)).trim().replace(/^["']|["']$/g, '');
 				if (title && this.wizard) {
 					this.wizard.setGeneratedTitle(title);
+				} else {
+					this.wizard?.resetGenerateButton();
 				}
 			} catch (err) {
 				this.logService.error('[IssueReporterEditorPane] Title generation failed:', err);
+				this.wizard?.resetGenerateButton();
 			}
 		}));
 	}
