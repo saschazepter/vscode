@@ -1043,6 +1043,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 				this.pluginListWidget?.showBrowseMarketplace();
 			}
 		}
+
+		// Move focus to the search input so keyboard users can immediately
+		// filter without extra Tab traversal (parity with mouse-click flow).
+		this.focusActiveSectionSearch(section);
 	}
 
 	private ensureSectionsListReflectsActiveSection(section: AICustomizationManagementSection | undefined = this.selectedSection): void {
@@ -1070,6 +1074,18 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const focus = this.sectionsList.getFocus();
 		if (focus.length !== 1 || focus[0] !== index) {
 			this.sectionsList.setFocus([index]);
+		}
+	}
+
+	private focusActiveSectionSearch(section: AICustomizationManagementSection): void {
+		if (section === AICustomizationManagementSection.McpServers) {
+			this.mcpListWidget?.focusSearch();
+		} else if (section === AICustomizationManagementSection.Plugins) {
+			this.pluginListWidget?.focusSearch();
+		} else if (section === AICustomizationManagementSection.Models) {
+			this.modelsWidget?.focusSearch();
+		} else {
+			this.listWidget?.focusSearch();
 		}
 	}
 
@@ -1382,15 +1398,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.welcomePage?.focus();
 			return;
 		}
-		if (this.selectedSection === AICustomizationManagementSection.McpServers) {
-			this.mcpListWidget?.focusSearch();
-		} else if (this.selectedSection === AICustomizationManagementSection.Plugins) {
-			this.pluginListWidget?.focusSearch();
-		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
-			this.modelsWidget?.focusSearch();
-		} else {
-			this.listWidget?.focusSearch();
-		}
+		this.focusActiveSectionSearch(this.selectedSection);
 	}
 
 	/**
