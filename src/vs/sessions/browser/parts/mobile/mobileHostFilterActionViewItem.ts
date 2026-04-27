@@ -120,10 +120,13 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 				item.appendChild(checkSpan);
 			}
 
-			disposables.add(dom.addDisposableListener(item, dom.EventType.CLICK, () => {
+			disposables.add(Gesture.addTarget(item));
+			const selectHost = () => {
 				this._filterService.setSelectedProviderId(host.providerId);
 				dismiss();
-			}));
+			};
+			disposables.add(dom.addDisposableListener(item, dom.EventType.CLICK, selectHost));
+			disposables.add(dom.addDisposableListener(item, TouchEventType.Tap, selectHost));
 
 			panel.appendChild(item);
 		}

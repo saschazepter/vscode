@@ -642,7 +642,7 @@
 	position: fixed;
 	display: flex;
 	flex-direction: column;
-	background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+	background-color: var(--vscode-agentsChatInput-background, var(--vscode-input-background));
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
 	border-radius: 8px;
 	padding: 4px 0;
@@ -678,6 +678,7 @@
 	background: none;
 	color: var(--vscode-foreground);
 	font-size: 14px;
+	font-weight: normal;
 	font-family: inherit;
 	cursor: pointer;
 	touch-action: manipulation;
