@@ -958,7 +958,7 @@
 		"--notebook-editor-font-size",
 		"--notebook-editor-font-weight",
 		"--outline-element-color",
-		"--strip-index",
+		"--agents-aquarium-strip-index",
 		"--separator-border",
 		"--chat-bar-background",
 		"--chat-tab-active-foreground",

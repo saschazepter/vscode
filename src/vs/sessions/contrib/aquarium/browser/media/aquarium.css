@@ -24,6 +24,16 @@
 	position: relative;
 }
 
+/* Keep the chat bar UI (title + content) above the decorative water layer.
+ * Without explicit stacking, an absolutely-positioned `.agents-aquarium-water`
+ * (z-index: 0) would paint ON TOP of the non-positioned chat children since
+ * positioned elements paint after non-positioned ones. */
+.monaco-workbench .part.chatbar > .title,
+.monaco-workbench .part.chatbar > .content {
+	position: relative;
+	z-index: 1;
+}
+
 .agents-aquarium-water {
 	position: absolute;
 	inset: 0;
@@ -168,16 +178,16 @@
  * sine wave that travels along the body — the actual swimming motion.
  *
  * Per-strip color shading mirrors the real VS Code logo's depth: strips at
- * the front (left, --strip-index ~ 0) stay at the species color, while
- * strips at the back (right, --strip-index ~ NUM_BODY_STRIPS - 1) are
- * mixed toward white. Inherits `currentColor` from the fish element so
- * each species (Stable / Insiders / Exploration) keeps its own hue. */
+ * the front (left, --agents-aquarium-strip-index ~ 0) stay at the species
+ * color, while strips at the back (right, ~ NUM_BODY_STRIPS - 1) are mixed
+ * toward white. Inherits `currentColor` from the fish element so each
+ * species (Stable / Insiders / Exploration) keeps its own hue. */
 .agents-aquarium-fish-strip {
-	color: color-mix(in srgb, currentColor, white calc(var(--strip-index, 0) * 4%));
+	color: color-mix(in srgb, currentColor, white calc(var(--agents-aquarium-strip-index, 0) * 4%));
 	animation: agents-aquarium-body-wave 720ms linear infinite;
 	/* 720ms / 10 strips = ~72ms phase delay between strips. Negative delays
 	 * start each strip mid-cycle so the wave is fully formed at t=0. */
-	animation-delay: calc(var(--strip-index, 0) * -72ms);
+	animation-delay: calc(var(--agents-aquarium-strip-index, 0) * -72ms);
 }
 
 /* 5-keyframe approximation of a sine wave. Linear timing between keyframes

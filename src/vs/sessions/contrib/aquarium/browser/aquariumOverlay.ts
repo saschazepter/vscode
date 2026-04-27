@@ -175,7 +175,8 @@ export class AquariumOverlay extends Disposable {
 	}
 
 	private createToggleButton(): HTMLButtonElement {
-		const button = document.createElement('button');
+		const doc = getWindow(this.mainContainer).document;
+		const button = doc.createElement('button');
 		button.className = 'agents-aquarium-toggle';
 		button.type = 'button';
 		this.updateToggleButtonVisual(button, false);
@@ -202,7 +203,7 @@ export class AquariumOverlay extends Disposable {
 		// Build the icon as a real DOM child instead of innerHTML to satisfy
 		// the workbench Trusted Types policy.
 		button.replaceChildren();
-		const iconSpan = document.createElement('span');
+		const iconSpan = button.ownerDocument.createElement('span');
 		const iconClasses = ThemeIcon.asClassName(active ? Codicon.close : Codicon.smiley).split(/\s+/).filter(Boolean);
 		for (const cls of iconClasses) {
 			iconSpan.classList.add(cls);
@@ -231,6 +232,10 @@ export class AquariumOverlay extends Disposable {
 		if (this.activeRef.value) {
 			return;
 		}
+		// Cancel any in-flight exit from a previous deactivation so its
+		// delayed dispose can't tear down the new aquarium's shared SVG defs.
+		this.pendingExit?.dispose();
+		this.pendingExit = undefined;
 		let active: IActiveAquarium;
 		try {
 			active = createActiveAquarium(this.mainContainer, this.layoutService);
@@ -309,17 +314,18 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 	}
 
 	// --- DOM setup ---
-	const water = document.createElement('div');
+	const doc = targetWindow.document;
+	const water = doc.createElement('div');
 	water.className = 'agents-aquarium-water';
 	// Insert as the FIRST child so all subsequent chat bar content paints over it.
 	chatBar.insertBefore(water, chatBar.firstChild);
 	store.add(toDisposable(() => water.remove()));
 
-	const fishLayer = document.createElement('div');
+	const fishLayer = doc.createElement('div');
 	fishLayer.className = 'agents-aquarium-fish-layer';
 	water.appendChild(fishLayer);
 
-	const foodLayer = document.createElement('div');
+	const foodLayer = doc.createElement('div');
 	foodLayer.className = 'agents-aquarium-food-layer';
 	water.appendChild(foodLayer);
 
@@ -402,7 +408,7 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 		}
 		// Tear down the shared SVG defs container along with the last
 		// active aquarium so we don't leak it across reloads.
-		disposeSharedFishDefs();
+		disposeSharedFishDefs(targetWindow.document);
 	}));
 
 	// --- Food ---
@@ -428,15 +434,19 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 
 	let mouseX = -1e6;
 	let mouseY = -1e6;
+	const resetMousePosition = () => {
+		mouseX = -1e6;
+		mouseY = -1e6;
+	};
 	// Use the generic mouse helpers so this works under iOS pointer events too.
 	store.add(addDisposableGenericMouseMoveListener(mainContainer, (e: MouseEvent) => {
 		mouseX = e.clientX - waterScreenOffset.left;
 		mouseY = e.clientY - waterScreenOffset.top;
 	}));
-	store.add(addDisposableListener(mainContainer, EventType.MOUSE_LEAVE, () => {
-		mouseX = -1e6;
-		mouseY = -1e6;
-	}, { passive: true }));
+	// Listen to BOTH mouseleave and pointerleave so cursor reset works on
+	// touch/pointer-only platforms (where mouseleave never fires).
+	store.add(addDisposableListener(mainContainer, EventType.MOUSE_LEAVE, resetMousePosition, { passive: true }));
+	store.add(addDisposableListener(mainContainer, EventType.POINTER_LEAVE, resetMousePosition, { passive: true }));
 
 	store.add(addDisposableGenericMouseDownListener(mainContainer, (e: MouseEvent) => {
 		// Only spawn food on plain left clicks against background-ish surfaces.
@@ -463,7 +473,7 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 			const oldest = food[0];
 			removeFood(oldest);
 		}
-		const el = document.createElement('div');
+		const el = doc.createElement('div');
 		el.className = 'agents-aquarium-food';
 		el.style.transform = `translate(${fx}px, ${fy}px)`;
 		foodLayer.appendChild(el);

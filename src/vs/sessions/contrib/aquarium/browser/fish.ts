@@ -38,12 +38,14 @@ export function pickRandomSpecies(): FishSpecies {
 }
 
 /**
- * Tear down the shared SVG defs container. Call when no fish are active.
+ * Tear down the shared SVG defs container for the given document. Call when
+ * no fish are active in that document.
  */
-export function disposeSharedFishDefs(): void {
-	if (sharedDefsContainer) {
-		sharedDefsContainer.remove();
-		sharedDefsContainer = undefined;
+export function disposeSharedFishDefs(targetDocument: Document): void {
+	const container = sharedDefsByDocument.get(targetDocument);
+	if (container) {
+		container.remove();
+		sharedDefsByDocument.delete(targetDocument);
 	}
 }
 
@@ -103,7 +105,7 @@ export class Fish {
 		this.element.style.color = SPECIES_COLOR[opts.species];
 
 		// Inner element receives the directional flip so the body strip animations
-		// (driven by --strip-index) are unaffected by direction changes.
+		// (driven by --agents-aquarium-strip-index) are unaffected by direction changes.
 		this.innerElement = targetDocument.createElement('div');
 		this.innerElement.className = 'agents-aquarium-fish-inner';
 		this.innerElement.appendChild(buildFishSvg(targetDocument));
@@ -160,13 +162,18 @@ const BODY_X_END = 90;
  * these via `clip-path: url(#…)` and `<use href="#…">` instead of duplicating
  * the path data per strip per fish (which previously caused 50 fish * 10
  * strips = 500 path parses on every aquarium activation).
+ *
+ * Keyed by `Document` so multi-window scenarios (auxiliary windows) each get
+ * their own defs in their own document — `<use>` references can't cross
+ * document boundaries, so a single global would break in any window other
+ * than the first to activate.
  */
-let sharedDefsContainer: SVGSVGElement | undefined;
+const sharedDefsByDocument = new WeakMap<Document, SVGSVGElement>();
 
 const SHARED_LOGO_SYMBOL_ID = 'agents-aquarium-fish-logo';
 
 function ensureSharedDefs(targetDocument: Document): void {
-	if (sharedDefsContainer) {
+	if (sharedDefsByDocument.has(targetDocument)) {
 		return;
 	}
 	const stripWidth = (BODY_X_END - BODY_X_START) / NUM_BODY_STRIPS;
@@ -212,7 +219,7 @@ function ensureSharedDefs(targetDocument: Document): void {
 	}
 	container.appendChild(defs);
 	targetDocument.body.appendChild(container);
-	sharedDefsContainer = container;
+	sharedDefsByDocument.set(targetDocument, container);
 }
 
 /**
@@ -240,13 +247,13 @@ function buildFishSvg(targetDocument: Document): SVGSVGElement {
 
 	// Body: NUM_BODY_STRIPS overlapping references to the shared logo symbol,
 	// each clipped to its vertical band via shared clipPath defs. Each strip
-	// animates translateY with a phase offset driven by --strip-index.
+	// animates translateY with a phase offset driven by --agents-aquarium-strip-index.
 	const bodyGroup = targetDocument.createElementNS(SVG_NS, 'g');
 	bodyGroup.setAttribute('class', 'agents-aquarium-fish-body');
 	for (let i = 0; i < NUM_BODY_STRIPS; i++) {
 		const stripG = targetDocument.createElementNS(SVG_NS, 'g');
 		stripG.setAttribute('class', 'agents-aquarium-fish-strip');
-		stripG.style.setProperty('--strip-index', String(i));
+		stripG.style.setProperty('--agents-aquarium-strip-index', String(i));
 		const stripUse = targetDocument.createElementNS(SVG_NS, 'use');
 		stripUse.setAttribute('href', `#${SHARED_LOGO_SYMBOL_ID}`);
 		stripUse.setAttribute('clip-path', `url(#agents-aquarium-fish-clip-${i})`);
