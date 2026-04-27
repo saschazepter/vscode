@@ -197,6 +197,18 @@ export async function trackIdleOnPrompt(
 		scheduler.schedule();
 	}, 10_000));
 	initialFallbackScheduler.schedule();
+	// Fallback for when shell integration breaks mid-command: data arrives and
+	// C/D sequences transition us to Executing, but no A (prompt) sequence ever
+	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
+	// cancelled in that state, causing a permanent hang. This scheduler fires
+	// after 10s in the Executing state with no prompt, effectively downgrading
+	// from rich to basic behavior by treating the data-idle as completion.
+	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
+		if (state === TerminalState.Executing) {
+			state = TerminalState.PromptAfterExecuting;
+			scheduler.schedule();
+		}
+	}, 10_000));
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
 	// on an A without a C following shortly after is a very good indicator that the command is done
@@ -222,14 +234,20 @@ export async function trackIdleOnPrompt(
 					state = TerminalState.Prompt;
 				} else if (state === TerminalState.Executing) {
 					state = TerminalState.PromptAfterExecuting;
+					executingFallbackScheduler.cancel();
 				}
 			} else if (match.groups?.type === 'C' || match.groups?.type === 'D') {
 				state = TerminalState.Executing;
+				// Start the executing fallback — if no prompt (A) arrives within
+				// 10s, we treat the terminal as idle to avoid hanging forever
+				// when shell integration breaks mid-command.
+				executingFallbackScheduler.schedule();
 			}
 		}
 		// Re-schedule on every data event as we're tracking data idle
 		if (state === TerminalState.PromptAfterExecuting) {
 			promptFallbackScheduler.cancel();
+			executingFallbackScheduler.cancel();
 			scheduler.schedule();
 		} else {
 			scheduler.cancel();
