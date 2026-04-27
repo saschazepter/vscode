@@ -71,7 +71,6 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		const hoverBackgroundColor = theme.getColor('list-hoverBackground')?.toString() || '#f0f0f0';
 		const linkColor = theme.getColor('textLink-foreground')?.toString() || '#0066cc';
 		const descriptionColor = theme.getColor('descriptionForeground')?.toString() || '#999999';
-		const focusBorderColor = theme.getColor('focusBorder')?.toString() || '#007acc';
 
 		// --- Backdrop (transparent, dismiss on tap) ---
 		const backdrop = targetDocument.createElement('div');
