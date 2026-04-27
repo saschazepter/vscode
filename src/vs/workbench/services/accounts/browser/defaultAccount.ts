@@ -589,6 +589,14 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	private async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
 		const sessions = await this.getSessions(authProviderId);
 		console.log('[DefaultAccount] Got', sessions.length, 'total session(s) for provider:', authProviderId);
+
+		// When no scopes are configured (e.g. vscode.dev where product
+		// config may not include providerScopes), accept any session.
+		if (allScopes.length === 0 && sessions.length > 0) {
+			console.log('[DefaultAccount] No scopes configured, accepting all sessions');
+			return [...sessions];
+		}
+
 		const matchingSessions = [];
 		for (const session of sessions) {
 			console.log('[DefaultAccount] Checking session', session.id, 'account:', session.account.label, 'scopes:', session.scopes);
