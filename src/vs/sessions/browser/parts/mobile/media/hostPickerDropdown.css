@@ -33,13 +33,13 @@
 }
 
 @keyframes host-picker-dropdown-in {
-	from { opacity: 0; transform: translateY(-4px); }
-	to { opacity: 1; transform: translateY(0); }
+	from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+	to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 @keyframes host-picker-dropdown-out {
-	from { opacity: 1; transform: translateY(0); }
-	to { opacity: 0; transform: translateY(-4px); }
+	from { opacity: 1; transform: translateX(-50%) translateY(0); }
+	to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 }
 
 .host-picker-dropdown-item {
