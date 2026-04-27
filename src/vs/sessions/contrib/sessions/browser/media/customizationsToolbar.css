@@ -135,3 +135,35 @@
 	max-height: 0;
 	padding-bottom: 0;
 }
+
+/* Home button — reveals on hover to navigate to the customizations welcome page */
+.ai-customization-toolbar .ai-customization-home-btn {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0;
+	touch-action: manipulation;
+	font-size: 14px;
+	color: var(--vscode-agentsPanel-foreground, var(--vscode-foreground));
+}
+
+.ai-customization-toolbar .ai-customization-header:hover .ai-customization-home-btn,
+.ai-customization-toolbar .ai-customization-header:focus-within .ai-customization-home-btn {
+	opacity: 0.7;
+}
+
+.ai-customization-toolbar .ai-customization-home-btn:hover {
+	opacity: 1 !important;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.ai-customization-toolbar .ai-customization-home-btn:focus {
+	opacity: 1 !important;
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}

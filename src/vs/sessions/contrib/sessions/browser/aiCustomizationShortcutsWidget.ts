@@ -6,6 +6,7 @@
 import '../../../browser/media/sidebarActionButton.css';
 import './media/customizationsToolbar.css';
 import * as DOM from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, derived } from '../../../../base/common/observable.js';
@@ -21,6 +22,10 @@ import { IAICustomizationItemsModel } from '../../../../workbench/contrib/chat/b
 import { CUSTOMIZATION_ITEMS } from './customizationsToolbar.contribution.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
+import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
+import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
+import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 
 const $ = DOM.$;
 
@@ -42,6 +47,8 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		@IMcpService private readonly mcpService: IMcpService,
 		@IAgentPluginService private readonly agentPluginService: IAgentPluginService,
 		@IAICustomizationItemsModel private readonly itemsModel: IAICustomizationItemsModel,
+		@IEditorService private readonly editorService: IEditorService,
+		@IHoverService private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -138,6 +145,38 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		};
 
 		this._register(headerButton.onDidClick(() => toggleCollapse()));
+
+		// Home button — opens the customizations management welcome page
+		const homeButton = DOM.append(header, $('.ai-customization-home-btn'));
+		homeButton.classList.add(...ThemeIcon.asClassNameArray(Codicon.home));
+		homeButton.setAttribute('role', 'button');
+		homeButton.setAttribute('tabindex', '0');
+		homeButton.setAttribute('aria-label', localize('openCustomizationsWelcomePage', "Open Customizations Overview"));
+		this._register(Gesture.addTarget(homeButton));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap] as const) {
+			this._register(DOM.addDisposableListener(homeButton, eventType, () => {
+				this._openWelcomePage();
+			}));
+		}
+		this._register(DOM.addDisposableListener(homeButton, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				this._openWelcomePage();
+			}
+		}));
+		this._register(this.hoverService.setupDelayedHoverAtMouse(homeButton, () => ({
+			content: localize('openCustomizationsWelcomePage', "Open Customizations Overview"),
+			appearance: { compact: true, skipFadeInAnimation: true },
+		})));
+	}
+
+	private async _openWelcomePage(): Promise<void> {
+		const input = AICustomizationManagementEditorInput.getOrCreate();
+		const editor = await this.editorService.openEditor(input, { pinned: true });
+		if (editor?.getId() === AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID) {
+			const editorWithWelcome = editor as { showWelcomePage?(): void };
+			editorWithWelcome.showWelcomePage?.();
+		}
 	}
 
 	focus(): void {
