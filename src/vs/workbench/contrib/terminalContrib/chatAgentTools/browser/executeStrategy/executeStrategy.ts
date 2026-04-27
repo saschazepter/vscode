@@ -200,9 +200,10 @@ export async function trackIdleOnPrompt(
 	// Fallback for when shell integration breaks mid-command: data arrives and
 	// C/D sequences transition us to Executing, but no A (prompt) sequence ever
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
-	// cancelled in that state, causing a permanent hang. This scheduler fires
-	// after 10s in the Executing state with no prompt, effectively downgrading
-	// from rich to basic behavior by treating the data-idle as completion.
+	// cancelled in that state, causing a permanent hang. This scheduler is
+	// rescheduled on every data event while in the Executing state, so it only
+	// fires after 10s of data-idle — effectively downgrading from rich to basic
+	// behavior by treating the data-idle as completion.
 	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing) {
 			state = TerminalState.PromptAfterExecuting;
@@ -255,6 +256,11 @@ export async function trackIdleOnPrompt(
 				promptFallbackScheduler.schedule();
 			} else {
 				promptFallbackScheduler.cancel();
+				// Re-schedule the executing fallback on every data event so it
+				// only fires after 10s of data-idle while in the Executing
+				// state. Without this, long-running commands that produce
+				// output for more than 10s would be prematurely completed.
+				executingFallbackScheduler.schedule();
 			}
 		}
 	}));
