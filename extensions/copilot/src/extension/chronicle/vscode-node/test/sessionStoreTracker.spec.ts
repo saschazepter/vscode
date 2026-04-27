@@ -14,8 +14,8 @@ function makeSpan(overrides: Partial<ICompletedSpanData> = {}): ICompletedSpanDa
 		name: 'test',
 		traceId: 'trace-1',
 		spanId: 'span-1',
-		startTime: [0, 0],
-		endTime: [0, 1],
+		startTime: 0,
+		endTime: 1,
 		attributes: {},
 		events: [],
 		status: { code: 0 },
@@ -45,7 +45,7 @@ function makeAgentSpan(sessionId: string, agentName = 'copilot'): ICompletedSpan
 		},
 		events: [{
 			name: 'user_message',
-			time: [0, 0],
+			timestamp: 0,
 			attributes: { content: 'Test message' },
 		}],
 	});
