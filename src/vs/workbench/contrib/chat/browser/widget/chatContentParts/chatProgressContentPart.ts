@@ -24,7 +24,7 @@ import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
 import { AccessibilityWorkbenchSettingId } from '../../../../accessibility/browser/accessibilityConfiguration.js';
-import { ChatConfiguration, isChatProgressBorderActive } from '../../../common/constants.js';
+import { ChatConfiguration } from '../../../common/constants.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../../base/browser/ui/hover/hover.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
@@ -189,7 +189,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		super();
 		this.explicitContent = workingProgress.content;
 		const persistentProgressEnabled = configurationService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& !isChatProgressBorderActive(configurationService, accessibilityService);
+			&& (configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true || accessibilityService.isMotionReduced());
 		if (persistentProgressEnabled) {
 			const pool = buildPhrasePool(defaultThinkingMessages, configurationService);
 			this.label = pool[Math.floor(Math.random() * pool.length)];

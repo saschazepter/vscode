@@ -65,7 +65,7 @@ import { IChatSlashCommandService } from '../../common/participants/chatSlashCom
 import { IChatTodoListService } from '../../common/tools/chatTodoListService.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isWorkspaceVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { ChatViewModel, IChatResponseViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatProgressBorderActive, ThinkingDisplayMode } from '../../common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, ThinkingDisplayMode } from '../../common/constants.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
@@ -676,7 +676,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!inputContainer) {
 			return;
 		}
-		const enabled = isChatProgressBorderActive(this.configurationService, this.accessibilityService);
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true
+			&& !this.accessibilityService.isMotionReduced();
 		const inProgress = !!this.viewModel?.model.requestInProgress.get();
 		inputContainer.classList.toggle('working', enabled && inProgress);
 	}

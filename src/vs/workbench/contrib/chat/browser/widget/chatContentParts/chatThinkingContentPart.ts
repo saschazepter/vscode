@@ -10,7 +10,7 @@ import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js
 import { IChatMarkdownContent, IChatTerminalToolInvocationData, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized } from '../../../common/chatService/chatService.js';
 import { IChatContentPartRenderContext, IChatContentPart } from './chatContentParts.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
-import { ChatConfiguration, isChatProgressBorderActive, ThinkingDisplayMode } from '../../../common/constants.js';
+import { ChatConfiguration, ThinkingDisplayMode } from '../../../common/constants.js';
 import { ChatTreeItem } from '../../chat.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -307,7 +307,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.content = content;
 		this.allThinkingParts.push(content);
 		this.showProgressDetails = this.configurationService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& !isChatProgressBorderActive(this.configurationService, accessibilityService);
+			&& (this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true || accessibilityService.isMotionReduced());
 		const configuredMode = this.configurationService.getValue<ThinkingDisplayMode>('chat.agent.thinkingStyle') ?? ThinkingDisplayMode.Collapsed;
 
 		this.fixedScrollingMode = configuredMode === ThinkingDisplayMode.FixedScrolling;
