@@ -91,7 +91,7 @@ export class ChatInputNotificationContribution extends Disposable {
 
 	private _computeQuotaWarning(): IQuotaWarning | undefined {
 		const info = this._chatQuotaService.quotaInfo;
-		if (!info || info.unlimited || info.overageEnabled) {
+		if (!info || info.unlimited || info.additionalUsageEnabled) {
 			return undefined;
 		}
 		return this._checkThreshold(info, this._shownQuotaThresholds);

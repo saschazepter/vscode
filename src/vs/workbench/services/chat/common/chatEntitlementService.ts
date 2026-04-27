@@ -615,7 +615,7 @@ export interface IQuotaSnapshot {
 	readonly percentRemaining: number;
 	readonly unlimited: boolean;
 	readonly resetAt?: number;
-	readonly tokenBasedBilling?: boolean;
+	readonly usageBasedBilling?: boolean;
 }
 
 interface IQuotas {
@@ -625,8 +625,8 @@ interface IQuotas {
 	readonly chat?: IQuotaSnapshot;
 	readonly completions?: IQuotaSnapshot;
 	readonly premiumChat?: IQuotaSnapshot;
-	readonly overageEnabled?: boolean;
-	readonly overageCount?: number;
+	readonly additionalUsageEnabled?: boolean;
+	readonly additionalUsageCount?: number;
 }
 
 export class ChatEntitlementRequests extends Disposable {
@@ -790,7 +790,7 @@ export class ChatEntitlementRequests extends Disposable {
 				const quotaSnapshot: IQuotaSnapshot = {
 					percentRemaining: Math.min(100, Math.max(0, rawQuotaSnapshot.percent_remaining)),
 					unlimited: rawQuotaSnapshot.unlimited,
-					tokenBasedBilling: rawQuotaSnapshot.token_based_billing,
+					usageBasedBilling: rawQuotaSnapshot.usage_based_billing,
 					resetAt: rawQuotaSnapshot.quota_reset_at || undefined,
 				};
 
@@ -808,8 +808,8 @@ export class ChatEntitlementRequests extends Disposable {
 			}
 
 			const overageSource = entitlementsData.quota_snapshots['premium_interactions'];
-			quotas.overageEnabled = overageSource?.overage_permitted ?? false;
-			quotas.overageCount = overageSource?.overage_count ?? 0;
+			quotas.additionalUsageEnabled = overageSource?.overage_permitted ?? false;
+			quotas.additionalUsageCount = overageSource?.overage_count ?? 0;
 		}
 		return quotas;
 	}

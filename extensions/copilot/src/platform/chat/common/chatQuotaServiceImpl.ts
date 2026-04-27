@@ -38,14 +38,14 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 		if (!this._quotaInfo) {
 			return false;
 		}
-		return this._quotaInfo.percentRemaining <= 0 && !this._quotaInfo.overageEnabled && !this._quotaInfo.unlimited;
+		return this._quotaInfo.percentRemaining <= 0 && !this._quotaInfo.additionalUsageEnabled && !this._quotaInfo.unlimited;
 	}
 
-	get overagesEnabled(): boolean {
+	get additionalUsageEnabled(): boolean {
 		if (!this._quotaInfo) {
 			return false;
 		}
-		return this._quotaInfo.overageEnabled;
+		return this._quotaInfo.additionalUsageEnabled;
 	}
 
 	clearQuota(): void {
@@ -85,8 +85,8 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 				quota: entitlement,
 				unlimited: entitlement === -1,
 				percentRemaining: snapshot.percent_remaining,
-				overageUsed: snapshot.overage_count,
-				overageEnabled: snapshot.overage_permitted,
+				additionalUsageUsed: snapshot.overage_count,
+				additionalUsageEnabled: snapshot.overage_permitted,
 				resetDate
 			};
 			this._onDidChange.fire();
@@ -102,8 +102,8 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 
 			// Extract values with fallbacks to ensure type safety
 			const entitlement = parseInt(params.get('ent') || '0', 10);
-			const overageUsed = parseFloat(params.get('ov') || '0.0');
-			const overageEnabled = params.get('ovPerm') === 'true';
+			const additionalUsageUsed = parseFloat(params.get('ov') || '0.0');
+			const additionalUsageEnabled = params.get('ovPerm') === 'true';
 			const percentRemaining = parseFloat(params.get('rem') || '0.0');
 			const resetDateString = params.get('rst');
 
@@ -120,8 +120,8 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 				quota: entitlement,
 				unlimited: entitlement === -1,
 				percentRemaining,
-				overageUsed,
-				overageEnabled,
+				additionalUsageUsed,
+				additionalUsageEnabled,
 				resetDate
 			};
 		} catch (error) {
@@ -136,8 +136,8 @@ export class ChatQuotaService extends Disposable implements IChatQuotaService {
 		}
 		this._quotaInfo = {
 			unlimited: quotaInfo.quota_snapshots.premium_interactions.unlimited,
-			overageEnabled: quotaInfo.quota_snapshots.premium_interactions.overage_permitted,
-			overageUsed: quotaInfo.quota_snapshots.premium_interactions.overage_count,
+			additionalUsageEnabled: quotaInfo.quota_snapshots.premium_interactions.overage_permitted,
+			additionalUsageUsed: quotaInfo.quota_snapshots.premium_interactions.overage_count,
 			quota: quotaInfo.quota_snapshots.premium_interactions.entitlement,
 			resetDate: new Date(quotaInfo.quota_reset_date),
 			percentRemaining: quotaInfo.quota_snapshots.premium_interactions.percent_remaining,
