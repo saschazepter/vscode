@@ -6,7 +6,7 @@
 /**
  * VS Code logo "fish" used by the Agents window aquarium. Each fish is a small
  * SVG element styled with `color:` so the silhouette inherits via `currentColor`,
- * with a tail group running a CSS wiggle animation.
+ * with animated body strips providing the swimming motion.
  */
 
 /** VS Code logo silhouette path (extracted from sessions/contrib/chat/browser/media/vscode-icon.svg). */
@@ -74,8 +74,19 @@ export class Fish {
 	/** Timestamp until which this fish is in "panic" mode (faster, scattering). */
 	panicUntil = 0;
 
-	/** Last facing direction; only flip the element when it changes. */
-	private facingRight = true;
+	/**
+	 * The fish's preferred swim heading in radians. Drifts smoothly each frame
+	 * via a small random delta — much less jittery than randomizing per-axis
+	 * acceleration every frame.
+	 */
+	wanderAngle: number;
+
+	/**
+	 * Smoothed facing in [-1, 1] (1 = right, -1 = left). Eased toward
+	 * sign(vx) each frame so direction changes look like a turn instead of
+	 * a snap-flip.
+	 */
+	private facing = 1;
 
 	constructor(opts: IFishOptions, targetDocument: Document) {
 		this.x = opts.x;
@@ -83,17 +94,16 @@ export class Fish {
 		this.vx = opts.vx;
 		this.vy = opts.vy;
 		this.size = opts.size;
+		this.wanderAngle = Math.atan2(opts.vy, opts.vx);
 
 		this.element = targetDocument.createElement('div');
 		this.element.className = 'agents-aquarium-fish';
 		this.element.style.width = `${opts.size}px`;
 		this.element.style.height = `${opts.size}px`;
 		this.element.style.color = SPECIES_COLOR[opts.species];
-		// Stagger the wiggle so fish aren't synchronized.
-		this.element.style.setProperty('--fish-wiggle-delay', `${(Math.random() * -1).toFixed(2)}s`);
 
-		// Inner element receives the directional flip so the wiggle keyframes
-		// (applied to the tail) are unaffected by direction changes.
+		// Inner element receives the directional flip so the body strip animations
+		// (driven by --strip-index) are unaffected by direction changes.
 		this.innerElement = targetDocument.createElement('div');
 		this.innerElement.className = 'agents-aquarium-fish-inner';
 		this.innerElement.appendChild(buildFishSvg(targetDocument));
@@ -102,16 +112,31 @@ export class Fish {
 		this.applyTransform();
 	}
 
-	/** Write the current position/facing to the DOM. */
-	applyTransform(): void {
-		// Translate is on the outer element; flip is on the inner element so the
-		// tail's CSS animation keeps spinning around its local origin.
-		this.element.style.transform = `translate(${this.x.toFixed(1)}px, ${this.y.toFixed(1)}px)`;
-		const wantFacingRight = this.vx >= 0;
-		if (wantFacingRight !== this.facingRight) {
-			this.facingRight = wantFacingRight;
-			this.innerElement.style.transform = wantFacingRight ? '' : 'scaleX(-1)';
+	/**
+	 * Write the current position/facing to the DOM.
+	 *
+	 * @param dt seconds since last frame, used to ease facing toward velocity
+	 *           direction. Pass 0 for the initial paint.
+	 */
+	applyTransform(dt: number = 0): void {
+		// Translate is on the outer element. Sub-pixel precision (2 decimals)
+		// avoids visible 0.1 px stepping when fish move slowly.
+		this.element.style.transform = `translate(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px)`;
+
+		// Ease `facing` toward sign(vx) so the flip looks like a turn instead
+		// of an instant mirror. Time-constant ~120 ms (turnRate = 8/s).
+		const target = this.vx >= 0 ? 1 : -1;
+		if (dt > 0) {
+			const turnRate = 8;
+			const k = 1 - Math.exp(-turnRate * dt);
+			this.facing += (target - this.facing) * k;
+		} else {
+			this.facing = target;
 		}
+		// scaleX through 0 in the middle of a turn flattens the fish for one
+		// frame, mimicking a body roll. Floor at 0.05 to avoid zero-width.
+		const scaleX = Math.sign(this.facing) * Math.max(Math.abs(this.facing), 0.05);
+		this.innerElement.style.transform = `scaleX(${scaleX.toFixed(3)})`;
 	}
 }
 
@@ -130,11 +155,15 @@ const BODY_X_START = 5;
 const BODY_X_END = 90;
 
 /**
- * Lazily-built shared SVG element holding the strip clipPath defs. All fish
- * reference these via `clip-path: url(#...)` instead of redefining their own.
- * Saves ~NUM_BODY_STRIPS * (FISH_COUNT - 1) clipPath nodes.
+ * Lazily-built shared SVG element holding both the strip clipPath defs AND
+ * a single `<symbol>` containing the VS Code logo path. All fish reference
+ * these via `clip-path: url(#…)` and `<use href="#…">` instead of duplicating
+ * the path data per strip per fish (which previously caused 50 fish * 10
+ * strips = 500 path parses on every aquarium activation).
  */
 let sharedDefsContainer: SVGSVGElement | undefined;
+
+const SHARED_LOGO_SYMBOL_ID = 'agents-aquarium-fish-logo';
 
 function ensureSharedDefs(targetDocument: Document): void {
 	if (sharedDefsContainer) {
@@ -151,6 +180,21 @@ function ensureSharedDefs(targetDocument: Document): void {
 	container.style.height = '0';
 	container.style.overflow = 'hidden';
 	container.style.pointerEvents = 'none';
+
+	// One `<symbol>` containing the VS Code logo path. All strips reference
+	// this via `<use href="#agents-aquarium-fish-logo">`, so the path data
+	// is parsed exactly ONCE per session instead of FISH_COUNT * NUM_STRIPS.
+	const symbol = targetDocument.createElementNS(SVG_NS, 'symbol');
+	symbol.setAttribute('id', SHARED_LOGO_SYMBOL_ID);
+	symbol.setAttribute('viewBox', '0 0 96 96');
+	symbol.setAttribute('overflow', 'visible');
+	const logoPath = targetDocument.createElementNS(SVG_NS, 'path');
+	logoPath.setAttribute('d', VSCODE_LOGO_PATH);
+	logoPath.setAttribute('fill', 'currentColor');
+	logoPath.setAttribute('fill-rule', 'evenodd');
+	symbol.appendChild(logoPath);
+	container.appendChild(symbol);
+
 	const defs = targetDocument.createElementNS(SVG_NS, 'defs');
 	for (let i = 0; i < NUM_BODY_STRIPS; i++) {
 		const clip = targetDocument.createElementNS(SVG_NS, 'clipPath');
@@ -179,7 +223,8 @@ function ensureSharedDefs(targetDocument: Document): void {
  * Colors come from `currentColor` on the parent element. Built with
  * `document.createElementNS` (no innerHTML) to satisfy Trusted Types.
  *
- * The strip clipPath defs are shared across all fish via {@link ensureSharedDefs}.
+ * The strip clipPath defs and the logo symbol are shared across all fish via
+ * {@link ensureSharedDefs}.
  */
 function buildFishSvg(targetDocument: Document): SVGSVGElement {
 	ensureSharedDefs(targetDocument);
@@ -193,23 +238,19 @@ function buildFishSvg(targetDocument: Document): SVGSVGElement {
 	// edges on the (potentially upscaled) logo paths.
 	svg.setAttribute('shape-rendering', 'geometricPrecision');
 
-	// Body: NUM_BODY_STRIPS overlapping copies of the full logo, each clipped
-	// to its vertical band via shared clipPath defs. Each strip animates
-	// translateY with a phase offset driven by --strip-index.
+	// Body: NUM_BODY_STRIPS overlapping references to the shared logo symbol,
+	// each clipped to its vertical band via shared clipPath defs. Each strip
+	// animates translateY with a phase offset driven by --strip-index.
 	const bodyGroup = targetDocument.createElementNS(SVG_NS, 'g');
 	bodyGroup.setAttribute('class', 'agents-aquarium-fish-body');
 	for (let i = 0; i < NUM_BODY_STRIPS; i++) {
 		const stripG = targetDocument.createElementNS(SVG_NS, 'g');
 		stripG.setAttribute('class', 'agents-aquarium-fish-strip');
 		stripG.style.setProperty('--strip-index', String(i));
-		const stripPath = targetDocument.createElementNS(SVG_NS, 'path');
-		stripPath.setAttribute('d', VSCODE_LOGO_PATH);
-		stripPath.setAttribute('fill', 'currentColor');
-		// Use even-odd fill so the inner chevron sub-path of the VS Code logo
-		// becomes a visible cutout (the iconic open V shape).
-		stripPath.setAttribute('fill-rule', 'evenodd');
-		stripPath.setAttribute('clip-path', `url(#agents-aquarium-fish-clip-${i})`);
-		stripG.appendChild(stripPath);
+		const stripUse = targetDocument.createElementNS(SVG_NS, 'use');
+		stripUse.setAttribute('href', `#${SHARED_LOGO_SYMBOL_ID}`);
+		stripUse.setAttribute('clip-path', `url(#agents-aquarium-fish-clip-${i})`);
+		stripG.appendChild(stripUse);
 		bodyGroup.appendChild(stripG);
 	}
 	svg.appendChild(bodyGroup);

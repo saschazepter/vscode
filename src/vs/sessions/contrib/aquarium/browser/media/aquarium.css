@@ -34,42 +34,88 @@
 	border-radius: 12px;
 	opacity: 0;
 	transition: opacity 320ms ease-out;
-	background:
-		radial-gradient(circle at 30% 20%, rgba(36, 191, 165, 0.10), transparent 55%),
-		radial-gradient(circle at 75% 65%, rgba(0, 122, 204, 0.10), transparent 60%),
-		radial-gradient(circle at 50% 90%, rgba(188, 63, 188, 0.08), transparent 65%);
+	/* Simple linear gradient base. Linear gradients band far less than
+	 * radial ones because the alpha changes on a single axis at uniform
+	 * speed — no concentric "rings" to perceive. */
+	background: linear-gradient(160deg,
+			rgba(36, 191, 165, 0.06) 0%,
+			rgba(0, 122, 204, 0.05) 55%,
+			rgba(188, 63, 188, 0.05) 100%);
 }
 
 .agents-aquarium-water.visible {
 	opacity: 1;
 }
 
-/* Soft caustics shimmer overlay. */
+/* Floating accent circles. Three blurred radial sources slowly drift around
+ * to give the water a subtle living quality. They're positioned via CSS
+ * transforms (GPU-accelerated) and the blur keeps any individual edge from
+ * being visible — the eye reads the result as a soft moving glow rather than
+ * three discrete circles. */
+/* Floating accent circles. Two soft radial sources slowly drift around to
+ * give the water a subtle living quality.
+ *
+ * Pixelation gotchas (and how we avoid them):
+ *  - The blur filter is rasterized; if its edge is clipped by the parent's
+ *    `overflow: hidden`, the clip happens BEFORE the blur smears, leaving
+ *    a visible hard edge. We use radial-gradients with a soft falloff
+ *    INSIDE the circles instead of relying on `filter: blur(...)` so the
+ *    edge softness is part of the gradient itself, not a post-process.
+ *  - GPU-accelerate the animations via translate3d so the whole layer
+ *    composites once and isn't re-rasterized every frame.
+ *  - Make the circles much larger than the visible area so even the
+ *    softest part of the falloff has somewhere to go (no concentric ring
+ *    cutting off at the edge).
+ */
+.agents-aquarium-water::before,
 .agents-aquarium-water::after {
 	content: '';
 	position: absolute;
-	inset: -10%;
+	width: 140%;
+	aspect-ratio: 1;
+	border-radius: 50%;
 	pointer-events: none;
-	background:
-		radial-gradient(ellipse 30% 20% at 20% 30%, rgba(255, 255, 255, 0.06), transparent 70%),
-		radial-gradient(ellipse 25% 18% at 70% 60%, rgba(255, 255, 255, 0.05), transparent 70%),
-		radial-gradient(ellipse 22% 16% at 50% 80%, rgba(255, 255, 255, 0.04), transparent 70%);
-	animation: agents-aquarium-caustics 9s ease-in-out infinite alternate;
-	mix-blend-mode: screen;
+	will-change: transform;
 }
 
-@keyframes agents-aquarium-caustics {
+.agents-aquarium-water::before {
+	top: -70%;
+	left: -50%;
+	background: radial-gradient(closest-side, rgba(36, 191, 165, 0.10), rgba(36, 191, 165, 0.05) 35%, transparent 75%);
+	animation: agents-aquarium-float-a 18s ease-in-out infinite alternate;
+}
+
+.agents-aquarium-water::after {
+	bottom: -70%;
+	right: -50%;
+	background: radial-gradient(closest-side, rgba(0, 122, 204, 0.10), rgba(0, 122, 204, 0.05) 35%, transparent 75%);
+	animation: agents-aquarium-float-b 22s ease-in-out infinite alternate;
+}
+
+/* Use translate3d so the GPU composites the moving layer instead of
+ * re-rasterizing it each frame (which can introduce visible pixelation
+ * on large soft elements). */
+@keyframes agents-aquarium-float-a {
 	0% {
-		transform: translate(0, 0) scale(1);
-		opacity: 0.7;
+		transform: translate3d(0, 0, 0) scale(1);
 	}
 	50% {
-		transform: translate(2%, -1%) scale(1.05);
-		opacity: 1;
+		transform: translate3d(8%, 6%, 0) scale(1.05);
 	}
 	100% {
-		transform: translate(-1%, 2%) scale(0.98);
-		opacity: 0.8;
+		transform: translate3d(-5%, 10%, 0) scale(0.97);
+	}
+}
+
+@keyframes agents-aquarium-float-b {
+	0% {
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	50% {
+		transform: translate3d(-6%, -8%, 0) scale(1.03);
+	}
+	100% {
+		transform: translate3d(5%, -4%, 0) scale(1.07);
 	}
 }
 
@@ -86,18 +132,28 @@
 	position: absolute;
 	top: 0;
 	left: 0;
-	will-change: transform;
+	will-change: transform, opacity;
 	pointer-events: none;
+	opacity: 0;
+	transition: opacity 360ms ease-out;
 	/* No drop-shadow / blur filter: those break GPU compositing and force
 	 * a software rasterization pass per fish per frame. Worth ~10x in paint
 	 * cost when scaled to 50 fish. */
+}
+
+/* Stagger-friendly fade-in: the JS sets transition-delay per-fish before
+ * adding `.visible` so the school appears progressively. The fade-out is
+ * driven by inline styles in the exit handler (see aquariumOverlay.ts). */
+.agents-aquarium-fish.visible {
+	opacity: 1;
 }
 
 .agents-aquarium-fish-inner {
 	width: 100%;
 	height: 100%;
 	transform-origin: center;
-	transition: transform 180ms ease-out;
+	/* No CSS transition: facing is eased in JS each frame via Fish.applyTransform
+	 * so it stays perfectly in sync with the swim direction. */
 }
 
 .agents-aquarium-fish svg {
@@ -109,20 +165,39 @@
 
 /* Body strips: each strip is a clipped vertical slice of the VS Code logo.
  * Strips animate translateY with a per-strip phase offset, producing a
- * sine wave that travels along the body — the actual swimming motion. */
+ * sine wave that travels along the body — the actual swimming motion.
+ *
+ * Per-strip color shading mirrors the real VS Code logo's depth: strips at
+ * the front (left, --strip-index ~ 0) stay at the species color, while
+ * strips at the back (right, --strip-index ~ NUM_BODY_STRIPS - 1) are
+ * mixed toward white. Inherits `currentColor` from the fish element so
+ * each species (Stable / Insiders / Exploration) keeps its own hue. */
 .agents-aquarium-fish-strip {
-	animation: agents-aquarium-body-wave 720ms ease-in-out infinite;
+	color: color-mix(in srgb, currentColor, white calc(var(--strip-index, 0) * 4%));
+	animation: agents-aquarium-body-wave 720ms linear infinite;
 	/* 720ms / 10 strips = ~72ms phase delay between strips. Negative delays
 	 * start each strip mid-cycle so the wave is fully formed at t=0. */
 	animation-delay: calc(var(--strip-index, 0) * -72ms);
 }
 
+/* 5-keyframe approximation of a sine wave. Linear timing between keyframes
+ * lands much closer to a true sinusoid than the previous 2-keyframe
+ * ease-in-out (which over-emphasized the extremes). */
 @keyframes agents-aquarium-body-wave {
-	0%, 100% {
-		transform: translateY(-3.5px);
+	0% {
+		transform: translateY(0);
+	}
+	25% {
+		transform: translateY(3.5px);
 	}
 	50% {
-		transform: translateY(3.5px);
+		transform: translateY(0);
+	}
+	75% {
+		transform: translateY(-3.5px);
+	}
+	100% {
+		transform: translateY(0);
 	}
 }
 
@@ -173,12 +248,19 @@
 	background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
 }
 
-/* Use the same `.monaco-workbench` prefix as the workbench's own
- * `button:focus` rule so we win the cascade by source order without
- * resorting to !important. */
-.monaco-workbench button.agents-aquarium-toggle:focus,
-.monaco-workbench button.agents-aquarium-toggle:focus-visible {
+/* Suppress the workbench's default `button:focus` outline when the user
+ * isn't doing keyboard navigation, but keep an explicit `:focus-visible`
+ * indicator so the button remains usable with a keyboard / screen magnifier.
+ * Using the same `.monaco-workbench` prefix as the workbench's own rule
+ * ensures we win the cascade without resorting to !important. */
+.monaco-workbench button.agents-aquarium-toggle:focus {
 	outline: none;
+}
+
+.monaco-workbench button.agents-aquarium-toggle:focus-visible {
+	opacity: 1;
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
 }
 
 .agents-aquarium-toggle.active {
@@ -194,10 +276,12 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.agents-aquarium-fish-strip,
+	.agents-aquarium-water::before,
 	.agents-aquarium-water::after {
 		animation: none;
 	}
-	.agents-aquarium-water {
+	.agents-aquarium-water,
+	.agents-aquarium-fish {
 		transition: none;
 	}
 }

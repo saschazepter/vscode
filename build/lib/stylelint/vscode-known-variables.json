@@ -941,7 +941,6 @@
 		"--chat-current-response-min-height",
 		"--chat-smooth-delay",
 		"--chat-smooth-duration",
-		"--fish-wiggle-delay",
 		"--inline-chat-frame-progress",
 		"--insert-border-color",
 		"--last-tab-margin-right",
