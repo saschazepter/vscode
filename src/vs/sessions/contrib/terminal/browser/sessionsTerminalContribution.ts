@@ -152,11 +152,28 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 			}
 		}));
 
-		// When a session is archived or removed, close all terminals for its cwd
+		// Close terminals for archived/removed sessions, but only when no other
+		// live session still owns that cwd. Terminals are reused across sessions
+		// at the same cwd, so a plain cwd match would kill a terminal still in use
+		// (e.g. the committed session from `onDidReplaceSession`).
+		// TODO: Consider removing the logic for trying to "delete/clean-up" terminal.
+		// Or consider tag terminals by sessionId + refcount instead of guarding here.
+
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
-			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
+			const removedIds = new Set(e.removed.map(s => s.sessionId));
+			const liveCwdKeys = new Set<string>();
+			for (const session of this._sessionsManagementService.getSessions()) {
+				if (removedIds.has(session.sessionId) || session.isArchived.get()) {
+					continue;
+				}
 				const info = getSessionTerminalInfo(session);
 				if (info) {
+					liveCwdKeys.add(info.cwd.fsPath.toLowerCase());
+				}
+			}
+			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
+				const info = getSessionTerminalInfo(session);
+				if (info && !liveCwdKeys.has(info.cwd.fsPath.toLowerCase())) {
 					this._closeTerminalsForPath(info.cwd.fsPath);
 				}
 			}
