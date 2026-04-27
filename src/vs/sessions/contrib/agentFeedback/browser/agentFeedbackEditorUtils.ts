@@ -46,15 +46,19 @@ export interface IAgentFeedbackContext {
 	readonly diffHunks?: string;
 }
 
-export function changeMatchesResource(change: ISessionFileChange, resourceUri: URI): boolean {
-	if (isIChatSessionFileChange2(change)) {
-		return change.uri.fsPath === resourceUri.fsPath
-			|| change.modifiedUri?.fsPath === resourceUri.fsPath
-			|| change.originalUri?.fsPath === resourceUri.fsPath;
+export function changeMatchesResource(change: ISessionFileChange, resourceUri: URI | undefined): boolean {
+	if (!resourceUri) {
+		return false;
 	}
 
-	return change.modifiedUri.fsPath === resourceUri.fsPath
-		|| change.originalUri?.fsPath === resourceUri.fsPath;
+	if (isIChatSessionFileChange2(change)) {
+		return isEqual(change.uri, resourceUri)
+			|| isEqual(change.modifiedUri, resourceUri)
+			|| isEqual(change.originalUri, resourceUri);
+	}
+
+	return isEqual(change.modifiedUri, resourceUri)
+		|| isEqual(change.originalUri, resourceUri);
 }
 
 export function getSessionChangeForResource(
