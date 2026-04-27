@@ -14,7 +14,6 @@ import { DisposableStore, MutableDisposable } from '../../../../base/common/life
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { AgentHostFilterConnectionStatus, IAgentHostFilterService } from '../../../contrib/remoteAgentHost/common/agentHostFilter.js';
 import { HostFilterActionViewItem } from '../../../contrib/remoteAgentHost/browser/hostFilterActionViewItem.js';
 import './media/hostPickerDropdown.css';
@@ -34,7 +33,6 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		@IAgentHostFilterService filterService: IAgentHostFilterService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IHoverService hoverService: IHoverService,
-		@IThemeService private readonly _themeService: IThemeService,
 	) {
 		super(action, filterService, contextMenuService, hoverService);
 	}
@@ -63,14 +61,11 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		const hosts = this._filterService.hosts;
 		const selectedId = this._filterService.selectedProviderId;
 
-		// Get current theme colors
-		const theme = this._themeService.getColorTheme();
-		const backgroundColor = theme.getColor('input-background')?.toString() || '#ffffff';
-		const foregroundColor = theme.getColor('foreground')?.toString() || '#000000';
-		const borderColor = theme.getColor('input-border')?.toString() || '#e0e0e0';
-		const hoverBackgroundColor = theme.getColor('list-hoverBackground')?.toString() || '#f0f0f0';
-		const linkColor = theme.getColor('textLink-foreground')?.toString() || '#0066cc';
-		const descriptionColor = theme.getColor('descriptionForeground')?.toString() || '#999999';
+		// Append inside the workbench container so CSS theme variables are inherited.
+		// The workbench element sets all --vscode-* custom properties; rendering
+		// outside it (e.g. on document.body) leaves them undefined.
+		const workbenchContainer = targetDocument.body.querySelector('.monaco-workbench') as HTMLElement
+			?? targetDocument.body;
 
 		// --- Backdrop (transparent, dismiss on tap) ---
 		const backdrop = targetDocument.createElement('div');
@@ -84,8 +79,6 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		panel.className = 'host-picker-dropdown';
 		panel.setAttribute('role', 'listbox');
 		panel.setAttribute('aria-label', localize('agentHostFilter.dropdown.aria', "Select Agent Host"));
-		panel.style.backgroundColor = backgroundColor;
-		panel.style.borderColor = borderColor;
 
 		// Prevent taps on the panel from dismissing
 		disposables.add(dom.addDisposableListener(panel, dom.EventType.CLICK, e => e.stopPropagation()));
@@ -104,10 +97,8 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			item.className = 'host-picker-dropdown-item';
 			item.setAttribute('role', 'option');
 			item.setAttribute('aria-selected', String(selectedId === host.providerId));
-			item.style.color = foregroundColor;
 			if (selectedId === host.providerId) {
 				item.classList.add('selected');
-				item.style.color = linkColor;
 			}
 
 			const iconSpan = targetDocument.createElement('span');
@@ -120,45 +111,35 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			labelSpan.textContent = host.label;
 			item.appendChild(labelSpan);
 
-		if (host.status !== AgentHostFilterConnectionStatus.Connected) {
-			const statusSpan = targetDocument.createElement('span');
-			statusSpan.className = 'host-picker-dropdown-item-status';
-			statusSpan.style.color = descriptionColor;
-			statusSpan.textContent = host.status === AgentHostFilterConnectionStatus.Connecting
-				? localize('agentHostFilter.dropdown.connecting', "connecting…")
-				: localize('agentHostFilter.dropdown.disconnected', "disconnected");
-			item.appendChild(statusSpan);
-		}
+			if (host.status !== AgentHostFilterConnectionStatus.Connected) {
+				const statusSpan = targetDocument.createElement('span');
+				statusSpan.className = 'host-picker-dropdown-item-status';
+				statusSpan.textContent = host.status === AgentHostFilterConnectionStatus.Connecting
+					? localize('agentHostFilter.dropdown.connecting', "connecting…")
+					: localize('agentHostFilter.dropdown.disconnected', "disconnected");
+				item.appendChild(statusSpan);
+			}
 
-		if (selectedId === host.providerId) {
-			const checkSpan = targetDocument.createElement('span');
-			checkSpan.className = 'host-picker-dropdown-item-check';
-			checkSpan.style.color = linkColor;
-			checkSpan.append(...renderLabelWithIcons(`$(${Codicon.check.id})`));
-			item.appendChild(checkSpan);
-		}
+			if (selectedId === host.providerId) {
+				const checkSpan = targetDocument.createElement('span');
+				checkSpan.className = 'host-picker-dropdown-item-check';
+				checkSpan.append(...renderLabelWithIcons(`$(${Codicon.check.id})`));
+				item.appendChild(checkSpan);
+			}
 
-		disposables.add(Gesture.addTarget(item));
-		const selectHost = () => {
-			this._filterService.setSelectedProviderId(host.providerId);
-			dismiss();
-		};
-		disposables.add(dom.addDisposableListener(item, dom.EventType.CLICK, selectHost));
-		disposables.add(dom.addDisposableListener(item, TouchEventType.Tap, selectHost));
+			disposables.add(Gesture.addTarget(item));
+			const selectHost = () => {
+				this._filterService.setSelectedProviderId(host.providerId);
+				dismiss();
+			};
+			disposables.add(dom.addDisposableListener(item, dom.EventType.CLICK, selectHost));
+			disposables.add(dom.addDisposableListener(item, TouchEventType.Tap, selectHost));
 
-		// Set hover background via event listeners
-		disposables.add(dom.addDisposableListener(item, dom.EventType.MOUSE_ENTER, () => {
-			item.style.backgroundColor = hoverBackgroundColor;
-		}));
-		disposables.add(dom.addDisposableListener(item, dom.EventType.MOUSE_LEAVE, () => {
-			item.style.backgroundColor = '';
-		}));
-
-		panel.appendChild(item);
+			panel.appendChild(item);
 		}
 
 		backdrop.appendChild(panel);
-		targetDocument.body.appendChild(backdrop);
+		workbenchContainer.appendChild(backdrop);
 		disposables.add({ dispose: () => backdrop.remove() });
 
 		// Dismiss on Escape

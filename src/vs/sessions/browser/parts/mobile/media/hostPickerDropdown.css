@@ -16,6 +16,8 @@
 	position: fixed;
 	display: flex;
 	flex-direction: column;
+	background-color: var(--vscode-input-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent));
 	border-radius: 8px;
 	padding: 4px 0;
 	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -48,6 +50,7 @@
 	padding: 6px 12px;
 	border: none;
 	background: none;
+	color: var(--vscode-foreground);
 	font-size: 14px;
 	font-weight: 400;
 	font-family: inherit;
@@ -57,9 +60,17 @@
 	width: 100%;
 }
 
+.host-picker-dropdown-item:active {
+	background: var(--vscode-list-hoverBackground);
+}
+
 .host-picker-dropdown-item:focus-visible {
 	outline: 2px solid var(--vscode-focusBorder);
 	outline-offset: -2px;
+}
+
+.host-picker-dropdown-item.selected {
+	color: var(--vscode-textLink-foreground);
 }
 
 .host-picker-dropdown-item-icon {
@@ -84,6 +95,7 @@
 
 .host-picker-dropdown-item-status {
 	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
 	flex-shrink: 0;
 }
 
@@ -91,6 +103,7 @@
 	display: flex;
 	align-items: center;
 	flex-shrink: 0;
+	color: var(--vscode-textLink-foreground);
 }
 
 .host-picker-dropdown-item-check .codicon {
