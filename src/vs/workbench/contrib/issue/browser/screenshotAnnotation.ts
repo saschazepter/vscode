@@ -41,6 +41,9 @@ const FONT_FAMILIES = [
 ];
 
 const FONT_SIZES = [12, 16, 20, 24, 32, 48];
+const DEFAULT_TEXT_BOX_WIDTH = 240;
+const MIN_TEXT_BOX_WIDTH = 48;
+const TEXT_DRAG_THRESHOLD = 4;
 
 interface DrawAction {
 	readonly type: AnnotationTool;
@@ -55,6 +58,7 @@ interface DrawAction {
 	arrowEnd?: { x: number; y: number };
 	text?: string;
 	textPos?: { x: number; y: number };
+	textWidth?: number;
 }
 
 export class ScreenshotAnnotationEditor {
@@ -111,14 +115,34 @@ export class ScreenshotAnnotationEditor {
 	// Selection (Select tool)
 	private selectedActionIndex = -1;
 	private isDraggingSelected = false;
+	private isResizingSelectedText = false;
 	private dragStart = { x: 0, y: 0 };
+	private selectedTextResizeStartWidth = DEFAULT_TEXT_BOX_WIDTH;
 
 	// Text configuration
 	private activeFontSize = 16;
 	private activeFontFamily = FONT_FAMILIES[0].value;
+	private textPlacementState: {
+		start: { x: number; y: number };
+		current: { x: number; y: number };
+		pointerId: number;
+	} | null = null;
+	private textEditState: {
+		pos: { x: number; y: number };
+		text: string;
+		caretIndex: number;
+		color: string;
+		fontSize: number;
+		fontFamily: string;
+		width: number;
+		showBoxOutline: boolean;
+	} | null = null;
+	private textEditor: HTMLTextAreaElement | null = null;
+	private textCaretVisible = true;
+	private textCaretInterval: number | null = null;
 
 	// Crop undo history
-	private readonly imageHistory: { element: HTMLImageElement; width: number; height: number }[] = [];
+	private readonly imageHistory: { element: HTMLImageElement; width: number; height: number; currentCrop: { x: number; y: number; width: number; height: number } | null }[] = [];
 
 	// Tool buttons (for active state management)
 	private readonly toolButtons: { element: HTMLElement; tool: AnnotationTool }[] = [];
@@ -194,6 +218,10 @@ export class ScreenshotAnnotationEditor {
 			this.disposables.add(addDisposableListener(swatch, EventType.CLICK, e => {
 				e.stopPropagation();
 				this.activeColor = color;
+				if (this.textEditState) {
+					this.textEditState.color = color;
+					this.redraw();
+				}
 				colorIndicator.style.backgroundColor = color;
 				for (const s of swatchElements) {
 					s.classList.remove('active');
@@ -224,6 +252,10 @@ export class ScreenshotAnnotationEditor {
 		fontFamilySelect.value = this.activeFontFamily;
 		this.disposables.add(addDisposableListener(fontFamilySelect, EventType.CHANGE, () => {
 			this.activeFontFamily = fontFamilySelect.value;
+			if (this.textEditState) {
+				this.textEditState.fontFamily = this.activeFontFamily;
+				this.redraw();
+			}
 		}));
 
 		// 7. Font size selector
@@ -238,6 +270,10 @@ export class ScreenshotAnnotationEditor {
 		fontSizeSelect.value = String(this.activeFontSize);
 		this.disposables.add(addDisposableListener(fontSizeSelect, EventType.CHANGE, () => {
 			this.activeFontSize = parseInt(fontSizeSelect.value);
+			if (this.textEditState) {
+				this.textEditState.fontSize = this.activeFontSize;
+				this.redraw();
+			}
 		}));
 
 		// 8. Separator
@@ -264,6 +300,7 @@ export class ScreenshotAnnotationEditor {
 		const discardBtn = this.disposables.add(new Button(toolbar, { ...defaultButtonStyles, secondary: true }));
 		discardBtn.label = localize('discard', "Discard");
 		this.disposables.add(discardBtn.onDidClick(() => {
+			this.cancelTextEdit();
 			this._onDidCancel.fire();
 			this.dispose();
 		}));
@@ -272,6 +309,7 @@ export class ScreenshotAnnotationEditor {
 		const saveBtn = this.disposables.add(new Button(toolbar, defaultButtonStyles));
 		saveBtn.label = localize('save', "Save");
 		this.disposables.add(saveBtn.onDidClick(() => {
+			this.commitTextEdit();
 			const dataUrl = this.compositeToDataUrl();
 			this._onDidSave.fire(dataUrl);
 			this.dispose();
@@ -350,6 +388,15 @@ export class ScreenshotAnnotationEditor {
 
 		// Keyboard shortcuts
 		this.disposables.add(addDisposableListener(this.container, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (this.textEditState) {
+				return;
+			}
+			if (this.textPlacementState && e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+				this.cancelTextPlacement();
+				return;
+			}
 			if (e.key === 'Escape') {
 				if (this.cropMode) {
 					e.preventDefault();
@@ -406,6 +453,13 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private setActiveTool(tool: AnnotationTool): void {
+		if (this.textEditState && tool !== AnnotationTool.Text) {
+			this.commitTextEdit();
+		}
+		if (this.textPlacementState && tool !== AnnotationTool.Text) {
+			this.cancelTextPlacement();
+		}
+
 		// Special handling for Crop: enter crop mode (don't change activeTool to Crop persistently)
 		if (tool === AnnotationTool.Crop) {
 			this.enterCropMode();
@@ -486,6 +540,7 @@ export class ScreenshotAnnotationEditor {
 				element: this.preCropState.element,
 				width: this.preCropState.width,
 				height: this.preCropState.height,
+				currentCrop: this.preCropState.currentCrop,
 			});
 		}
 		// Crop the original image to the new region
@@ -608,10 +663,19 @@ export class ScreenshotAnnotationEditor {
 			const hitIndex = this.hitTest(pos);
 			this.selectedActionIndex = hitIndex;
 			if (hitIndex >= 0) {
-				this.isDraggingSelected = true;
-				this.dragStart = { x: pos.x, y: pos.y };
-				this.canvas.setPointerCapture(e.pointerId);
-				this.canvas.style.cursor = 'move';
+				const hitAction = this.actions[hitIndex];
+				if (hitAction.type === AnnotationTool.Text && this.isNearTextResizeHandle(pos, hitAction)) {
+					this.isResizingSelectedText = true;
+					this.dragStart = { x: pos.x, y: pos.y };
+					this.selectedTextResizeStartWidth = hitAction.textWidth ?? DEFAULT_TEXT_BOX_WIDTH;
+					this.canvas.setPointerCapture(e.pointerId);
+					this.canvas.style.cursor = 'ew-resize';
+				} else {
+					this.isDraggingSelected = true;
+					this.dragStart = { x: pos.x, y: pos.y };
+					this.canvas.setPointerCapture(e.pointerId);
+					this.canvas.style.cursor = 'move';
+				}
 			}
 			this.redraw();
 			return;
@@ -620,9 +684,16 @@ export class ScreenshotAnnotationEditor {
 		// Deselect when using other tools
 		this.selectedActionIndex = -1;
 
-		// Text tool: don't capture pointer — we need to focus the text input
+		// Text tool: drag to define width, then enter text editing.
 		if (this.activeTool === AnnotationTool.Text) {
-			this.showInlineTextInput(pos);
+			this.commitTextEdit();
+			this.textPlacementState = {
+				start: pos,
+				current: pos,
+				pointerId: e.pointerId,
+			};
+			this.canvas.setPointerCapture(e.pointerId);
+			this.redraw();
 			return;
 		}
 
@@ -690,6 +761,17 @@ export class ScreenshotAnnotationEditor {
 			return;
 		}
 
+		// Select tool: resize selected text
+		if (this.isResizingSelectedText && this.selectedActionIndex >= 0) {
+			const pos = this.canvasCoords(e);
+			const action = this.actions[this.selectedActionIndex];
+			if (action.type === AnnotationTool.Text) {
+				action.textWidth = Math.max(MIN_TEXT_BOX_WIDTH, this.selectedTextResizeStartWidth + (pos.x - this.dragStart.x));
+				this.redraw();
+			}
+			return;
+		}
+
 		// Select tool: move selected element
 		if (this.isDraggingSelected && this.selectedActionIndex >= 0) {
 			const pos = this.canvasCoords(e);
@@ -711,6 +793,23 @@ export class ScreenshotAnnotationEditor {
 			this.clampPan();
 			this.canvas.style.transform = `translate(${this.panX}px, ${this.panY}px)`;
 			return;
+		}
+
+		if (this.textPlacementState) {
+			const pos = this.canvasCoords(e);
+			this.textPlacementState.current = pos;
+			this.redraw();
+			return;
+		}
+
+		if (this.activeTool === AnnotationTool.Select && this.selectedActionIndex >= 0) {
+			const pos = this.canvasCoords(e);
+			const action = this.actions[this.selectedActionIndex];
+			if (action.type === AnnotationTool.Text && this.isNearTextResizeHandle(pos, action)) {
+				this.canvas.style.cursor = 'ew-resize';
+			} else if (this.selectedActionIndex >= 0) {
+				this.canvas.style.cursor = 'default';
+			}
 		}
 
 		if (!this.isDrawing) {
@@ -767,6 +866,14 @@ export class ScreenshotAnnotationEditor {
 		}
 
 		// Select tool: end drag
+		if (this.isResizingSelectedText) {
+			this.isResizingSelectedText = false;
+			this.canvas.releasePointerCapture(e.pointerId);
+			this.canvas.style.cursor = 'default';
+			return;
+		}
+
+		// Select tool: end drag
 		if (this.isDraggingSelected) {
 			this.isDraggingSelected = false;
 			this.canvas.releasePointerCapture(e.pointerId);
@@ -779,6 +886,24 @@ export class ScreenshotAnnotationEditor {
 			this.isPanning = false;
 			this.canvas.releasePointerCapture(e.pointerId);
 			this.canvas.style.cursor = this.activeTool === AnnotationTool.Pan ? 'grab' : 'crosshair';
+			return;
+		}
+
+		if (this.textPlacementState) {
+			const { start, current, pointerId } = this.textPlacementState;
+			if (pointerId === e.pointerId) {
+				this.canvas.releasePointerCapture(e.pointerId);
+			}
+			const dx = current.x - start.x;
+			const didDrag = Math.abs(dx) >= TEXT_DRAG_THRESHOLD;
+			const x = didDrag ? Math.min(start.x, current.x) : start.x;
+			const rawWidth = didDrag ? Math.abs(dx) : this.getMaxTextWidthFrom(start.x);
+			const width = didDrag
+				? Math.max(1, Math.min(rawWidth, this.getTextImageRight() - x))
+				: rawWidth;
+			const y = start.y;
+			this.textPlacementState = null;
+			this.startTextEdit({ x, y }, width, didDrag);
 			return;
 		}
 
@@ -798,6 +923,14 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private undo(): void {
+		if (this.textPlacementState) {
+			this.cancelTextPlacement();
+			return;
+		}
+		if (this.textEditState) {
+			this.cancelTextEdit();
+			return;
+		}
 		const action = this.actions.pop();
 		if (action) {
 			this.undoneActions.push(action);
@@ -808,6 +941,7 @@ export class ScreenshotAnnotationEditor {
 			this.imageElement = prev.element;
 			this.imageWidth = prev.width;
 			this.imageHeight = prev.height;
+			this.currentCrop = prev.currentCrop;
 			this.hasUserZoomed = false;
 			this.panX = 0;
 			this.panY = 0;
@@ -818,6 +952,12 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private redo(): void {
+		if (this.textPlacementState) {
+			return;
+		}
+		if (this.textEditState) {
+			return;
+		}
 		const action = this.undoneActions.pop();
 		if (action) {
 			this.actions.push(action);
@@ -927,75 +1067,157 @@ export class ScreenshotAnnotationEditor {
 		};
 	}
 
-	private showInlineTextInput(pos: { x: number; y: number }): void {
-		const canvasContainer = this.canvas.parentElement;
-		if (!canvasContainer) {
-			console.warn('[IssueReporter] showInlineTextInput: no canvas container');
-			return;
-		}
-		const canvasRect = this.canvas.getBoundingClientRect();
-		const containerRect = canvasContainer.getBoundingClientRect();
+	private startTextEdit(pos: { x: number; y: number }, width: number, showBoxOutline: boolean): void {
+		this.commitTextEdit();
 
-		const input = $('input') as HTMLInputElement;
-		input.type = 'text';
-		input.className = 'annotation-text-input';
-		const leftPos = canvasRect.left - containerRect.left + (pos.x - this.cropOffsetX) * this.scale;
-		const topPos = canvasRect.top - containerRect.top + (pos.y - this.cropOffsetY) * this.scale - 10;
-		input.style.left = `${leftPos}px`;
-		input.style.top = `${topPos}px`;
-		input.style.color = this.activeColor;
-		input.style.fontSize = `${Math.max(12, this.activeFontSize * this.scale)}px`;
-		input.style.fontFamily = this.activeFontFamily;
-		input.placeholder = localize('typeText', "Type text...");
-		canvasContainer.appendChild(input);
+		const editor = mainWindow.document.createElement('textarea');
+		editor.setAttribute('aria-label', localize('typeText', "Type text"));
+		editor.setAttribute('wrap', 'off');
+		editor.style.position = 'fixed';
+		editor.style.left = '-10000px';
+		editor.style.top = '0';
+		editor.style.width = '1px';
+		editor.style.height = '1px';
+		editor.style.opacity = '0';
+		editor.style.pointerEvents = 'none';
+		editor.style.padding = '0';
+		editor.style.border = '0';
+		editor.style.margin = '0';
+		editor.style.resize = 'none';
+		editor.style.overflow = 'hidden';
+		this.container.appendChild(editor);
 
-		console.log(`[IssueReporter] Text input created at (${leftPos}, ${topPos}), color: ${this.activeColor}`);
+		this.textEditState = {
+			pos,
+			text: '',
+			caretIndex: 0,
+			color: this.activeColor,
+			fontSize: this.activeFontSize,
+			fontFamily: this.activeFontFamily,
+			width,
+			showBoxOutline,
+		};
+		this.textEditor = editor;
+		this.startTextCaretBlink();
 
-		// Delay focus to ensure the pointer event is fully handled
-		setTimeout(() => {
-			input.focus();
-			console.log('[IssueReporter] Text input focused, activeElement:', canvasContainer.ownerDocument.activeElement === input);
-		}, 50);
-
-		let committed = false;
-		const commit = () => {
-			if (committed) {
+		const sync = () => {
+			if (!this.textEditState || this.textEditor !== editor) {
 				return;
 			}
-			committed = true;
-			const text = input.value.trim();
-			console.log(`[IssueReporter] Text commit: "${text}"`);
-			if (text) {
-				this.actions.push({
-					type: AnnotationTool.Text,
-					color: this.activeColor,
-					lineWidth: 1,
-					fontSize: this.activeFontSize,
-					fontFamily: this.activeFontFamily,
-					text,
-					textPos: pos,
-				});
-				this.undoneActions.length = 0;
-				this.redraw();
-			}
-			input.remove();
+			this.textEditState.text = editor.value;
+			this.textEditState.caretIndex = editor.selectionStart ?? editor.value.length;
+			this.textCaretVisible = true;
+			this.redraw();
 		};
 
-		input.addEventListener('keydown', e => {
-			e.stopPropagation(); // Prevent Escape from closing the whole editor
-			if (e.key === 'Enter') {
+		editor.addEventListener('input', sync);
+		editor.addEventListener('keyup', sync);
+		editor.addEventListener('click', sync);
+		editor.addEventListener('select', sync);
+		editor.addEventListener('keydown', e => {
+			e.stopPropagation();
+			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
 				e.preventDefault();
-				commit();
+				this.commitTextEdit();
 			} else if (e.key === 'Escape') {
 				e.preventDefault();
-				committed = true;
-				input.remove();
+				this.cancelTextEdit();
 			}
 		});
-		input.addEventListener('blur', () => {
-			// Small delay to allow click-to-commit on mobile
-			setTimeout(() => commit(), 100);
+		editor.addEventListener('blur', () => {
+			if (this.textEditor === editor) {
+				this.commitTextEdit();
+			}
 		});
+
+		setTimeout(() => {
+			if (this.textEditor === editor) {
+				editor.focus();
+				editor.setSelectionRange(editor.value.length, editor.value.length);
+			}
+		}, 0);
+
+		this.redraw();
+	}
+
+	private startTextCaretBlink(): void {
+		if (this.textCaretInterval !== null) {
+			getWindow(this.container).clearInterval(this.textCaretInterval);
+		}
+		this.textCaretVisible = true;
+		this.textCaretInterval = getWindow(this.container).setInterval(() => {
+			if (!this.textEditState) {
+				return;
+			}
+			this.textCaretVisible = !this.textCaretVisible;
+			this.redraw();
+		}, 500);
+	}
+
+	private stopTextCaretBlink(): void {
+		if (this.textCaretInterval !== null) {
+			getWindow(this.container).clearInterval(this.textCaretInterval);
+			this.textCaretInterval = null;
+		}
+		this.textCaretVisible = true;
+	}
+
+	private commitTextEdit(): void {
+		if (!this.textEditState) {
+			return;
+		}
+
+		const { text, pos, color, fontFamily, fontSize, width } = this.textEditState;
+		this.cleanupTextEditor();
+		if (text.trim()) {
+			this.actions.push({
+				type: AnnotationTool.Text,
+				color,
+				lineWidth: 1,
+				fontSize,
+				fontFamily,
+				text,
+				textPos: pos,
+				textWidth: width,
+			});
+			this.undoneActions.length = 0;
+		}
+		this.redraw();
+	}
+
+	private cancelTextEdit(): void {
+		if (!this.textEditState) {
+			return;
+		}
+		this.cleanupTextEditor();
+		this.redraw();
+	}
+
+	private cancelTextPlacement(): void {
+		if (!this.textPlacementState) {
+			return;
+		}
+		if (this.canvas.hasPointerCapture(this.textPlacementState.pointerId)) {
+			this.canvas.releasePointerCapture(this.textPlacementState.pointerId);
+		}
+		this.textPlacementState = null;
+		this.redraw();
+	}
+
+	private getTextImageRight(): number {
+		return this.cropOffsetX + this.imageWidth;
+	}
+
+	private getMaxTextWidthFrom(startX: number): number {
+		return Math.max(1, this.getTextImageRight() - startX);
+	}
+
+	private cleanupTextEditor(): void {
+		this.stopTextCaretBlink();
+		this.textEditor?.remove();
+		this.textEditor = null;
+		this.textEditState = null;
+		this.container.focus();
 	}
 
 	private redraw(): void {
@@ -1024,6 +1246,14 @@ export class ScreenshotAnnotationEditor {
 		// Draw current in-progress annotation
 		if (this.currentAction) {
 			this.drawAction(this.currentAction);
+		}
+
+		if (this.textEditState) {
+			this.drawTextEditState();
+		}
+
+		if (this.textPlacementState) {
+			this.drawTextPlacementState();
 		}
 
 		this.ctx.restore();
@@ -1080,7 +1310,7 @@ export class ScreenshotAnnotationEditor {
 		this.ctx.save();
 		this.ctx.strokeStyle = action.color;
 		this.ctx.fillStyle = action.color;
-		this.ctx.lineWidth = action.lineWidth;
+		this.ctx.lineWidth = action.lineWidth * this.scale;
 		this.ctx.lineCap = 'round';
 		this.ctx.lineJoin = 'round';
 
@@ -1135,13 +1365,184 @@ export class ScreenshotAnnotationEditor {
 				if (action.text && action.textPos) {
 					const fontSize = (action.fontSize || 16) * this.scale;
 					const fontFamily = action.fontFamily || 'sans-serif';
+					const width = (action.textWidth ?? DEFAULT_TEXT_BOX_WIDTH) * this.scale;
 					this.ctx.font = `${fontSize}px ${fontFamily}`;
-					this.ctx.fillText(action.text, action.textPos.x * this.scale, action.textPos.y * this.scale);
+					this.ctx.textBaseline = 'alphabetic';
+					this.drawWrappedText(action.text, action.textPos.x * this.scale, action.textPos.y * this.scale, width, fontSize, fontFamily);
 				}
 				break;
 		}
 
 		this.ctx.restore();
+	}
+
+	private drawTextEditState(): void {
+		if (!this.textEditState) {
+			return;
+		}
+
+		const { pos, text, color, fontFamily, fontSize, caretIndex, width, showBoxOutline } = this.textEditState;
+		const scaledFontSize = fontSize * this.scale;
+		const scaledWidth = width * this.scale;
+		this.ctx.save();
+		this.ctx.fillStyle = color;
+		this.ctx.strokeStyle = color;
+		this.ctx.lineWidth = Math.max(1, this.scale);
+		this.ctx.font = `${scaledFontSize}px ${fontFamily}`;
+		this.ctx.textBaseline = 'alphabetic';
+		const layout = this.drawWrappedText(text, pos.x * this.scale, pos.y * this.scale, scaledWidth, scaledFontSize, fontFamily);
+
+		if (showBoxOutline) {
+			this.ctx.setLineDash([4, 4]);
+			this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+			this.ctx.strokeRect(
+				pos.x * this.scale,
+				pos.y * this.scale - scaledFontSize,
+				scaledWidth,
+				Math.max(layout.height, scaledFontSize * 1.2),
+			);
+			this.ctx.setLineDash([]);
+		}
+
+		if (this.textCaretVisible) {
+			const caret = this.getTextCaretMetrics(text, caretIndex, scaledWidth, scaledFontSize, fontFamily);
+			const caretX = pos.x * this.scale + caret.x;
+			const baselineY = pos.y * this.scale + caret.baselineOffsetY;
+			this.ctx.beginPath();
+			this.ctx.moveTo(caretX, baselineY - scaledFontSize);
+			this.ctx.lineTo(caretX, baselineY + Math.max(2, this.scale));
+			this.ctx.stroke();
+		}
+		this.ctx.restore();
+	}
+
+	private drawTextPlacementState(): void {
+		if (!this.textPlacementState) {
+			return;
+		}
+		const { start, current } = this.textPlacementState;
+		const dx = current.x - start.x;
+		const didDrag = Math.abs(dx) >= TEXT_DRAG_THRESHOLD;
+		if (!didDrag) {
+			return;
+		}
+		const x = Math.min(start.x, current.x);
+		const width = Math.max(1, Math.min(Math.abs(dx), this.getTextImageRight() - x));
+		const y = (start.y - this.activeFontSize) * this.scale;
+		const height = this.activeFontSize * this.scale * 1.2;
+		this.ctx.save();
+		this.ctx.setLineDash([4, 4]);
+		this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+		this.ctx.lineWidth = Math.max(1, this.scale);
+		this.ctx.strokeRect(x * this.scale, y, width * this.scale, height);
+		this.ctx.setLineDash([]);
+		this.ctx.restore();
+	}
+
+	private drawWrappedText(text: string, x: number, baselineY: number, maxWidth: number, fontSize: number, fontFamily: string): { width: number; height: number; lineHeight: number } {
+		const layout = this.measureWrappedText(text, maxWidth, fontSize, fontFamily);
+		const lineHeight = layout.lineHeight;
+		for (let i = 0; i < layout.lines.length; i++) {
+			const line = layout.lines[i];
+			this.ctx.fillText(line.text, x, baselineY + i * lineHeight);
+		}
+		return {
+			width: layout.width,
+			height: layout.height,
+			lineHeight,
+		};
+	}
+
+	private getTextCaretMetrics(text: string, caretIndex: number, maxWidth: number, fontSize: number, fontFamily: string): { x: number; baselineOffsetY: number } {
+		const layout = this.measureWrappedText(text, maxWidth, fontSize, fontFamily);
+		const line = [...layout.lines].reverse().find(candidate => candidate.startIndex <= caretIndex) ?? layout.lines[0];
+		const safeCaretIndex = Math.min(Math.max(caretIndex, line.startIndex), line.endIndex);
+		const beforeCaret = line.text.slice(0, safeCaretIndex - line.startIndex);
+		this.ctx.save();
+		this.ctx.font = `${fontSize}px ${fontFamily}`;
+		const x = this.ctx.measureText(beforeCaret).width;
+		this.ctx.restore();
+		return {
+			x,
+			baselineOffsetY: line.lineIndex * layout.lineHeight,
+		};
+	}
+
+	private measureWrappedText(text: string, maxWidth: number, fontSize: number, fontFamily: string): { lines: { text: string; startIndex: number; endIndex: number; lineIndex: number }[]; width: number; height: number; lineHeight: number } {
+		this.ctx.save();
+		this.ctx.font = `${fontSize}px ${fontFamily}`;
+		const lineHeight = fontSize * 1.2;
+		const lines: { text: string; startIndex: number; endIndex: number; lineIndex: number }[] = [];
+		const paragraphs = text.split('\n');
+		let globalIndex = 0;
+		let lineIndex = 0;
+		let maxLineWidth = 0;
+
+		for (let p = 0; p < paragraphs.length; p++) {
+			const paragraph = paragraphs[p];
+			const paragraphStart = globalIndex;
+			const paragraphEnd = paragraphStart + paragraph.length;
+
+			if (paragraph.length === 0) {
+				lines.push({ text: '', startIndex: paragraphStart, endIndex: paragraphStart, lineIndex });
+				lineIndex++;
+			} else {
+				let lineStart = paragraphStart;
+				while (lineStart < paragraphEnd) {
+					let bestEnd = lineStart + 1;
+					let lastWhitespaceBreak = -1;
+					for (let i = lineStart + 1; i <= paragraphEnd; i++) {
+						const candidate = text.slice(lineStart, i);
+						if (this.ctx.measureText(candidate).width <= maxWidth) {
+							bestEnd = i;
+							if (/\s/.test(text[i - 1])) {
+								lastWhitespaceBreak = i;
+							}
+						} else {
+							break;
+						}
+					}
+
+					let lineEnd = bestEnd;
+					if (bestEnd < paragraphEnd && lastWhitespaceBreak > lineStart) {
+						lineEnd = lastWhitespaceBreak;
+					}
+					if (lineEnd <= lineStart) {
+						lineEnd = lineStart + 1;
+					}
+
+					const rawLineText = text.slice(lineStart, lineEnd);
+					const lineText = rawLineText.replace(/\s+$/u, '');
+					lines.push({ text: lineText, startIndex: lineStart, endIndex: lineEnd, lineIndex });
+					maxLineWidth = Math.max(maxLineWidth, this.ctx.measureText(lineText).width);
+					lineIndex++;
+
+					lineStart = lineEnd;
+					while (lineStart < paragraphEnd && /\s/u.test(text[lineStart])) {
+						lineStart++;
+					}
+				}
+			}
+
+			globalIndex = paragraphEnd + 1;
+		}
+
+		if (lines.length === 0) {
+			lines.push({ text: '', startIndex: 0, endIndex: 0, lineIndex: 0 });
+		}
+
+		if (maxLineWidth === 0) {
+			for (const line of lines) {
+				maxLineWidth = Math.max(maxLineWidth, this.ctx.measureText(line.text).width);
+			}
+		}
+		this.ctx.restore();
+		return {
+			lines,
+			width: Math.max(maxLineWidth, maxWidth),
+			height: lines.length * lineHeight,
+			lineHeight,
+		};
 	}
 
 	private hitTest(pos: { x: number; y: number }): number {
@@ -1202,16 +1603,14 @@ export class ScreenshotAnnotationEditor {
 				return false;
 			case AnnotationTool.Text:
 				if (action.text && action.textPos) {
-					const fontSize = action.fontSize || 16;
-					const fontFamily = action.fontFamily || 'sans-serif';
-					this.ctx.save();
-					this.ctx.font = `${fontSize}px ${fontFamily}`;
-					const metrics = this.ctx.measureText(action.text);
-					this.ctx.restore();
+					const bounds = this.getActionBounds(action);
+					if (!bounds) {
+						return false;
+					}
 					return pos.x >= action.textPos.x - threshold &&
-						pos.x <= action.textPos.x + metrics.width + threshold &&
-						pos.y >= action.textPos.y - fontSize - threshold &&
-						pos.y <= action.textPos.y + threshold;
+						pos.x <= bounds.x + bounds.width + threshold &&
+						pos.y >= bounds.y - threshold &&
+						pos.y <= bounds.y + bounds.height + threshold;
 				}
 				return false;
 		}
@@ -1287,9 +1686,30 @@ export class ScreenshotAnnotationEditor {
 				(bounds.width + pad * 2) * this.scale,
 				(bounds.height + pad * 2) * this.scale,
 			);
+			if (action.type === AnnotationTool.Text) {
+				const handleSize = 8;
+				const handleX = (bounds.x + bounds.width + pad) * this.scale;
+				const handleY = (bounds.y + bounds.height / 2) * this.scale;
+				this.ctx.fillStyle = '#007acc';
+				this.ctx.fillRect(handleX - handleSize / 2, handleY - handleSize / 2, handleSize, handleSize);
+			}
 		}
 		this.ctx.setLineDash([]);
 		this.ctx.restore();
+	}
+
+	private isNearTextResizeHandle(pos: { x: number; y: number }, action: DrawAction): boolean {
+		if (action.type !== AnnotationTool.Text) {
+			return false;
+		}
+		const bounds = this.getActionBounds(action);
+		if (!bounds) {
+			return false;
+		}
+		const threshold = 8;
+		const handleX = bounds.x + bounds.width;
+		const handleY = bounds.y + bounds.height / 2;
+		return Math.abs(pos.x - handleX) <= threshold && Math.abs(pos.y - handleY) <= threshold * 2;
 	}
 
 	private getActionBounds(action: DrawAction): { x: number; y: number; width: number; height: number } | null {
@@ -1341,15 +1761,13 @@ export class ScreenshotAnnotationEditor {
 				if (action.text && action.textPos) {
 					const fontSize = action.fontSize || 16;
 					const fontFamily = action.fontFamily || 'sans-serif';
-					this.ctx.save();
-					this.ctx.font = `${fontSize}px ${fontFamily}`;
-					const metrics = this.ctx.measureText(action.text);
-					this.ctx.restore();
+					const textWidth = action.textWidth ?? DEFAULT_TEXT_BOX_WIDTH;
+					const layout = this.measureWrappedText(action.text, textWidth, fontSize, fontFamily);
 					return {
 						x: action.textPos.x,
 						y: action.textPos.y - fontSize,
-						width: metrics.width,
-						height: fontSize,
+						width: textWidth,
+						height: layout.height,
 					};
 				}
 				return null;
@@ -1358,7 +1776,7 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private drawArrow(fromX: number, fromY: number, toX: number, toY: number): void {
-		const headLength = 12;
+		const headLength = 12 * this.scale;
 		const angle = Math.atan2(toY - fromY, toX - fromX);
 
 		this.ctx.beginPath();
@@ -1433,6 +1851,8 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	dispose(): void {
+		this.cancelTextPlacement();
+		this.cleanupTextEditor();
 		this.container.remove();
 		this.disposables.dispose();
 		this._onDidSave.dispose();

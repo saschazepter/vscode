@@ -1148,20 +1148,6 @@
 	cursor: crosshair;
 }
 
-.issue-reporter-annotation-overlay .annotation-text-input {
-	position: absolute;
-	font-size: 16px;
-	font-family: inherit;
-	background: rgba(0, 0, 0, .5);
-	border: 1px solid var(--vscode-focusBorder, #007acc);
-	border-radius: 2px;
-	padding: 3px 6px;
-	outline: none;
-	min-width: 100px;
-	color: inherit;
-	z-index: 1;
-}
-
 /* ── Toolbar selects (font family / size) ── */
 .issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select {
 	height: 26px;
