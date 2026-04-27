@@ -630,89 +630,54 @@
 	touch-action: manipulation;
 }
 
-/* ---- Mobile Bottom Sheet Host Picker ---- */
+/* ---- Mobile Host Picker Dropdown ---- */
 
-.host-picker-sheet-backdrop {
+.host-picker-dropdown-backdrop {
 	position: fixed;
 	inset: 0;
 	z-index: 10000;
-	background: rgba(0, 0, 0, 0.4);
-	animation: host-picker-backdrop-in 200ms ease-out;
 }
 
-.host-picker-sheet-backdrop.dismissing {
-	animation: host-picker-backdrop-out 200ms ease-in forwards;
-}
-
-@keyframes host-picker-backdrop-in {
-	from { opacity: 0; }
-	to { opacity: 1; }
-}
-
-@keyframes host-picker-backdrop-out {
-	from { opacity: 1; }
-	to { opacity: 0; }
-}
-
-.host-picker-sheet {
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-	border-radius: 16px 16px 0 0;
-	padding: 8px 0 calc(16px + env(safe-area-inset-bottom)) 0;
-	animation: host-picker-sheet-in 250ms ease-out;
-	max-height: 70vh;
-	overflow-y: auto;
-	-webkit-overflow-scrolling: touch;
-}
-
-.host-picker-sheet.dismissing {
-	animation: host-picker-sheet-out 200ms ease-in forwards;
-}
-
-@keyframes host-picker-sheet-in {
-	from { transform: translateY(100%); }
-	to { transform: translateY(0); }
-}
-
-@keyframes host-picker-sheet-out {
-	from { transform: translateY(0); }
-	to { transform: translateY(100%); }
-}
-
-.host-picker-sheet-handle {
-	width: 36px;
-	height: 5px;
-	background: var(--vscode-foreground);
-	opacity: 0.3;
-	border-radius: 3px;
-	margin: 4px auto 12px auto;
-}
-
-.host-picker-sheet-title {
-	font-size: 16px;
-	font-weight: 600;
-	color: var(--vscode-foreground);
-	padding: 0 20px 12px 20px;
-}
-
-.host-picker-sheet-list {
+.host-picker-dropdown {
+	position: fixed;
 	display: flex;
 	flex-direction: column;
+	background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+	border-radius: 8px;
+	padding: 4px 0;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+	max-height: 60vh;
+	max-width: calc(100vw - 16px);
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	animation: host-picker-dropdown-in 150ms ease-out;
 }
 
-.host-picker-sheet-item {
+.host-picker-dropdown.dismissing {
+	animation: host-picker-dropdown-out 120ms ease-in forwards;
+}
+
+@keyframes host-picker-dropdown-in {
+	from { opacity: 0; transform: translateY(-4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes host-picker-dropdown-out {
+	from { opacity: 1; transform: translateY(0); }
+	to { opacity: 0; transform: translateY(-4px); }
+}
+
+.host-picker-dropdown-item {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	min-height: 52px;
-	padding: 10px 20px;
+	gap: 10px;
+	min-height: 44px;
+	padding: 6px 12px;
 	border: none;
 	background: none;
 	color: var(--vscode-foreground);
-	font-size: 16px;
+	font-size: 14px;
 	font-family: inherit;
 	cursor: pointer;
 	touch-action: manipulation;
@@ -720,35 +685,31 @@
 	width: 100%;
 }
 
-.host-picker-sheet-item:active {
+.host-picker-dropdown-item:active {
 	background: var(--vscode-list-hoverBackground);
 }
 
-.host-picker-sheet-item:focus-visible {
+.host-picker-dropdown-item:focus-visible {
 	outline: 2px solid var(--vscode-focusBorder);
 	outline-offset: -2px;
 }
 
-.host-picker-sheet-item.selected {
+.host-picker-dropdown-item.selected {
 	color: var(--vscode-textLink-foreground);
 }
 
-.host-picker-sheet-item-icon {
+.host-picker-dropdown-item-icon {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
-	border-radius: 50%;
-	background: var(--vscode-toolbar-hoverBackground);
 	flex-shrink: 0;
 }
 
-.host-picker-sheet-item-icon .codicon {
-	font-size: 18px;
+.host-picker-dropdown-item-icon .codicon {
+	font-size: 16px;
 }
 
-.host-picker-sheet-item-label {
+.host-picker-dropdown-item-label {
 	flex: 1;
 	min-width: 0;
 	overflow: hidden;
@@ -756,20 +717,20 @@
 	white-space: nowrap;
 }
 
-.host-picker-sheet-item-status {
-	font-size: 13px;
+.host-picker-dropdown-item-status {
+	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 	flex-shrink: 0;
 }
 
-.host-picker-sheet-item-check {
+.host-picker-dropdown-item-check {
 	display: flex;
 	align-items: center;
 	flex-shrink: 0;
 	color: var(--vscode-textLink-foreground);
 }
 
-.host-picker-sheet-item-check .codicon {
-	font-size: 16px;
+.host-picker-dropdown-item-check .codicon {
+	font-size: 14px;
 }
 }

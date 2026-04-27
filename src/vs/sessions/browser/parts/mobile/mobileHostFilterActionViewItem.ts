@@ -20,12 +20,12 @@ import { HostFilterActionViewItem } from '../../../contrib/remoteAgentHost/brows
 /**
  * Mobile variant of {@link HostFilterActionViewItem}.
  *
- * Overrides the host picker to show a mobile-native bottom sheet instead
- * of the desktop context menu when in phone layout.
+ * Overrides the host picker to show a dropdown panel anchored below the
+ * trigger element instead of the desktop context menu.
  */
 export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 
-	private readonly _bottomSheet = this._register(new MutableDisposable<DisposableStore>());
+	private readonly _dropdown = this._register(new MutableDisposable<DisposableStore>());
 
 	constructor(
 		action: IAction,
@@ -46,58 +46,48 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			return;
 		}
 
-		this._showBottomSheet();
+		this._showDropdown();
 	}
 
-	private _showBottomSheet(): void {
-		// Dismiss any existing bottom sheet before opening a new one
-		this._bottomSheet.clear();
+	private _showDropdown(): void {
+		this._dropdown.clear();
 
 		const disposables = new DisposableStore();
-		this._bottomSheet.value = disposables;
+		this._dropdown.value = disposables;
 
 		const targetWindow = dom.getWindow(this.element);
 		const targetDocument = targetWindow.document;
 		const hosts = this._filterService.hosts;
 		const selectedId = this._filterService.selectedProviderId;
 
-		// --- Backdrop ---
+		// --- Backdrop (transparent, dismiss on tap) ---
 		const backdrop = targetDocument.createElement('div');
-		backdrop.className = 'host-picker-sheet-backdrop';
+		backdrop.className = 'host-picker-dropdown-backdrop';
 		disposables.add(dom.addDisposableListener(backdrop, dom.EventType.CLICK, () => dismiss()));
 		disposables.add(Gesture.addTarget(backdrop));
 		disposables.add(dom.addDisposableListener(backdrop, TouchEventType.Tap, () => dismiss()));
 
-		// --- Sheet container ---
-		const sheet = targetDocument.createElement('div');
-		sheet.className = 'host-picker-sheet';
-		sheet.setAttribute('role', 'dialog');
-		sheet.setAttribute('aria-label', localize('agentHostFilter.sheet.aria', "Select Agent Host"));
+		// --- Dropdown panel anchored below trigger ---
+		const panel = targetDocument.createElement('div');
+		panel.className = 'host-picker-dropdown';
+		panel.setAttribute('role', 'listbox');
+		panel.setAttribute('aria-label', localize('agentHostFilter.dropdown.aria', "Select Agent Host"));
 
-		// Prevent taps on the sheet from bubbling to the backdrop dismiss handler
-		disposables.add(dom.addDisposableListener(sheet, dom.EventType.CLICK, e => e.stopPropagation()));
-		disposables.add(Gesture.addTarget(sheet));
-		disposables.add(dom.addDisposableListener(sheet, TouchEventType.Tap, e => dom.EventHelper.stop(e, true)));
+		// Prevent taps on the panel from dismissing
+		disposables.add(dom.addDisposableListener(panel, dom.EventType.CLICK, e => e.stopPropagation()));
+		disposables.add(Gesture.addTarget(panel));
+		disposables.add(dom.addDisposableListener(panel, TouchEventType.Tap, e => dom.EventHelper.stop(e, true)));
 
-		// Drag handle
-		const handle = targetDocument.createElement('div');
-		handle.className = 'host-picker-sheet-handle';
-		sheet.appendChild(handle);
-
-		// Title
-		const title = targetDocument.createElement('div');
-		title.className = 'host-picker-sheet-title';
-		title.textContent = localize('agentHostFilter.sheet.title', "Select Host");
-		sheet.appendChild(title);
-
-		// Host items
-		const list = targetDocument.createElement('div');
-		list.className = 'host-picker-sheet-list';
-		list.setAttribute('role', 'listbox');
+		// Position below the trigger element
+		const triggerRect = this.element!.getBoundingClientRect();
+		const gap = 4;
+		panel.style.top = `${triggerRect.bottom + gap}px`;
+		panel.style.left = `${triggerRect.left}px`;
+		panel.style.minWidth = `${Math.max(triggerRect.width, 200)}px`;
 
 		for (const host of hosts) {
 			const item = targetDocument.createElement('button');
-			item.className = 'host-picker-sheet-item';
+			item.className = 'host-picker-dropdown-item';
 			item.setAttribute('role', 'option');
 			item.setAttribute('aria-selected', String(selectedId === host.providerId));
 			if (selectedId === host.providerId) {
@@ -105,27 +95,27 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			}
 
 			const iconSpan = targetDocument.createElement('span');
-			iconSpan.className = 'host-picker-sheet-item-icon';
+			iconSpan.className = 'host-picker-dropdown-item-icon';
 			iconSpan.append(...renderLabelWithIcons(`$(${Codicon.remote.id})`));
 			item.appendChild(iconSpan);
 
 			const labelSpan = targetDocument.createElement('span');
-			labelSpan.className = 'host-picker-sheet-item-label';
+			labelSpan.className = 'host-picker-dropdown-item-label';
 			labelSpan.textContent = host.label;
 			item.appendChild(labelSpan);
 
 			if (host.status !== AgentHostFilterConnectionStatus.Connected) {
 				const statusSpan = targetDocument.createElement('span');
-				statusSpan.className = 'host-picker-sheet-item-status';
+				statusSpan.className = 'host-picker-dropdown-item-status';
 				statusSpan.textContent = host.status === AgentHostFilterConnectionStatus.Connecting
-					? localize('agentHostFilter.sheet.connecting', "connecting…")
-					: localize('agentHostFilter.sheet.disconnected', "disconnected");
+					? localize('agentHostFilter.dropdown.connecting', "connecting…")
+					: localize('agentHostFilter.dropdown.disconnected', "disconnected");
 				item.appendChild(statusSpan);
 			}
 
 			if (selectedId === host.providerId) {
 				const checkSpan = targetDocument.createElement('span');
-				checkSpan.className = 'host-picker-sheet-item-check';
+				checkSpan.className = 'host-picker-dropdown-item-check';
 				checkSpan.append(...renderLabelWithIcons(`$(${Codicon.check.id})`));
 				item.appendChild(checkSpan);
 			}
@@ -135,11 +125,10 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 				dismiss();
 			}));
 
-			list.appendChild(item);
+			panel.appendChild(item);
 		}
 
-		sheet.appendChild(list);
-		backdrop.appendChild(sheet);
+		backdrop.appendChild(panel);
 		targetDocument.body.appendChild(backdrop);
 		disposables.add({ dispose: () => backdrop.remove() });
 
@@ -151,8 +140,8 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 			}
 		}));
 
-		// Focus first item for keyboard accessibility
-		const firstItem = list.querySelector<HTMLElement>('.host-picker-sheet-item');
+		// Focus first item
+		const firstItem = panel.querySelector<HTMLElement>('.host-picker-dropdown-item');
 		firstItem?.focus();
 
 		let isDismissing = false;
@@ -161,15 +150,12 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 				return;
 			}
 			isDismissing = true;
-			sheet.classList.add('dismissing');
-			backdrop.classList.add('dismissing');
+			panel.classList.add('dismissing');
 			const onEnd = () => {
-				this._bottomSheet.clear();
+				this._dropdown.clear();
 			};
-			sheet.addEventListener('animationend', onEnd, { once: true });
-			// Fallback: clear after the animation duration in case animationend
-			// does not fire (e.g., reduced-motion, display change).
-			setTimeout(onEnd, 300);
+			panel.addEventListener('animationend', onEnd, { once: true });
+			setTimeout(onEnd, 200);
 		};
 	}
 }
