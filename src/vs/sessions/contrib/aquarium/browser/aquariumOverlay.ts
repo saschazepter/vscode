@@ -267,6 +267,12 @@ export class AquariumOverlay extends Disposable {
 		if (!active) {
 			return;
 		}
+		// Re-register the orphaned aquarium with the overlay so the lifecycle
+		// tracker still sees a parent for it (clearAndLeak detaches the
+		// disposable from its previous parent). The exit timer disposes it
+		// when the animation completes; the _register here is purely a
+		// backstop in case the overlay itself is disposed mid-exit.
+		this._register(active);
 		this.activeContextKey.set(false);
 		this.updateToggleButtonVisual(this.toggleButton, false);
 		// Run the exit animation, then dispose. Stash on the overlay so a
