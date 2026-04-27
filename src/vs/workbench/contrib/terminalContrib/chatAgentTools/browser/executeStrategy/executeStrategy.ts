@@ -200,37 +200,13 @@ export async function trackIdleOnPrompt(
 	// Fallback for when shell integration breaks mid-command: data arrives and
 	// C/D sequences transition us to Executing, but no A (prompt) sequence ever
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
-	// cancelled in that state, causing a permanent hang.
-	//
-	// Two complementary fallbacks handle this:
-	// 1. executingIdleFallback: fires after 10s of data-idle in the Executing
-	//    state. If the cursor line looks like a prompt, complete immediately.
-	//    This handles the common case where the command finished but the prompt
-	//    sequence was lost.
-	// 2. executingHardCap: fires 30s after entering the Executing state,
-	//    regardless of data activity. This is the ultimate safety net — if shell
-	//    integration is broken, the terminal won't look like a prompt either,
-	//    so the idle check alone would never complete.
-	const executingIdleFallback = store.add(new RunOnceScheduler(async () => {
-		if (state !== TerminalState.Executing) {
-			return;
-		}
-		const xterm = await instance.xtermReadyPromise;
-		if (xterm) {
-			const buffer = xterm.raw.buffer.active;
-			const line = buffer.getLine(buffer.baseY + buffer.cursorY);
-			if (line) {
-				const content = line.translateToString(true);
-				if (detectsCommonPromptPattern(content).detected) {
-					state = TerminalState.PromptAfterExecuting;
-					scheduler.schedule();
-					return;
-				}
-			}
-		}
-		// Doesn't look like a prompt — let the hard cap handle it
-	}, 10_000));
-	const executingHardCap = store.add(new RunOnceScheduler(() => {
+	// cancelled in that state, causing a permanent hang. This scheduler is
+	// rescheduled on every data event while in the Executing state, so it only
+	// fires after 30s of data-idle — long enough that actively-outputting
+	// commands won't be cut off, but short enough to prevent indefinite hangs
+	// when shell integration breaks. When shell integration is working,
+	// onCommandFinished in the rich strategy's race wins before this fires.
+	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing) {
 			state = TerminalState.PromptAfterExecuting;
 			scheduler.schedule();
@@ -261,23 +237,17 @@ export async function trackIdleOnPrompt(
 					state = TerminalState.Prompt;
 				} else if (state === TerminalState.Executing) {
 					state = TerminalState.PromptAfterExecuting;
-					executingIdleFallback.cancel();
-					executingHardCap.cancel();
+					executingFallbackScheduler.cancel();
 				}
 			} else if (match.groups?.type === 'C' || match.groups?.type === 'D') {
 				state = TerminalState.Executing;
-				// Start both executing fallbacks — the idle fallback checks for
-				// a prompt after 10s of no data, and the hard cap ensures we
-				// never hang longer than 30s even if no prompt is detected.
-				executingIdleFallback.schedule();
-				executingHardCap.schedule();
+				executingFallbackScheduler.schedule();
 			}
 		}
 		// Re-schedule on every data event as we're tracking data idle
 		if (state === TerminalState.PromptAfterExecuting) {
 			promptFallbackScheduler.cancel();
-			executingIdleFallback.cancel();
-			executingHardCap.cancel();
+			executingFallbackScheduler.cancel();
 			scheduler.schedule();
 		} else {
 			scheduler.cancel();
@@ -285,10 +255,9 @@ export async function trackIdleOnPrompt(
 				promptFallbackScheduler.schedule();
 			} else {
 				promptFallbackScheduler.cancel();
-				// Re-schedule the idle fallback on every data event so it only
-				// fires after 10s of data-idle. The hard cap is NOT rescheduled
-				// — it's an absolute 30s limit from the first C/D sequence.
-				executingIdleFallback.schedule();
+				// Re-schedule on every data event so it only fires after 30s
+				// of data-idle while in the Executing state.
+				executingFallbackScheduler.schedule();
 			}
 		}
 	}));
