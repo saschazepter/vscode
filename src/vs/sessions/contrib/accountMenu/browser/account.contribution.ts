@@ -34,16 +34,18 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isWindows, isMacintosh } from '../../../../base/common/platform.js';
 import { UpdateHoverWidget } from './updateHoverWidget.js';
-import { ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
+import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusDashboard.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { getAccountProfileImageUrl, getAccountTitleBarBadgeKey, getAccountTitleBarState } from './accountTitleBarState.js';
+import { getAccountProfileImageUrl, getAccountTitleBarBadgeKey, getAccountTitleBarState } from '../../../browser/accountTitleBarState.js';
 import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IAuthenticationAccessService } from '../../../../workbench/services/authentication/browser/authenticationAccessService.js';
 import { IAuthenticationUsageService } from '../../../../workbench/services/authentication/browser/authenticationUsageService.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
+import { IChatDashboardService } from '../../../browser/chatDashboardService.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 
 // --- Account Menu Items --- //
 const AccountMenu = Menus.AccountMenu;
@@ -827,3 +829,32 @@ class AccountWidgetContribution extends Disposable implements IWorkbenchContribu
 }
 
 registerWorkbenchContribution2(AccountWidgetContribution.ID, AccountWidgetContribution, WorkbenchPhase.BlockRestore);
+
+// --- Chat Dashboard Service (real implementation for mobile account sheet) --- //
+
+class ChatDashboardServiceImpl implements IChatDashboardService {
+	readonly _serviceBrand: undefined;
+
+	constructor(
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
+	) { }
+
+	createDashboardElement(store: DisposableStore): HTMLElement | undefined {
+		const dashboardElement = ChatStatusDashboard.instantiateInContents(this.instantiationService, store, {
+			disableInlineSuggestionsSettings: true,
+			disableModelSelection: true,
+			disableProviderOptions: true,
+			disableCompletionsSnooze: true,
+		});
+
+		store.add(disposableWindowInterval(mainWindow, () => {
+			if (!dashboardElement.isConnected) {
+				store.dispose();
+			}
+		}, 2000));
+
+		return dashboardElement;
+	}
+}
+
+registerSingleton(IChatDashboardService, ChatDashboardServiceImpl, InstantiationType.Delayed);

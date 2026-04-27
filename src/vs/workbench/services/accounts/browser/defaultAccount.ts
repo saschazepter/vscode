@@ -334,9 +334,9 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			this.logService.error('[DefaultAccount] Error while waiting for installed extensions to be registered', getErrorMessage(error));
 		}
 
-		console.log('[DefaultAccount] Starting initialization');
+		this.logService.debug('[DefaultAccount] Starting initialization');
 		await this.doUpdateDefaultAccount();
-		console.log('[DefaultAccount] Initialization complete. Account:', this._defaultAccount?.defaultAccount.accountName ?? 'null');
+		this.logService.debug('[DefaultAccount] Initialization complete');
 
 		this._register(this.onDidChangeDefaultAccount(account => {
 			this.telemetryService.publicLog2<DefaultAccountStatusTelemetry, DefaultAccountStatusTelemetryClassification>('defaultaccount:status', { status: account ? 'available' : 'unavailable', initial: false });
@@ -434,7 +434,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 		const declaredProvider = this.authenticationService.declaredProviders.find(provider => provider.id === defaultAccountProvider.id);
 		if (!declaredProvider) {
-			console.log(`[DefaultAccount] Authentication provider is not declared.`, defaultAccountProvider);
+			this.logService.info(`[DefaultAccount] Authentication provider is not declared.`, defaultAccountProvider);
 			return null;
 		}
 
@@ -517,15 +517,13 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, options?: { forceRefresh?: boolean }): Promise<IDefaultAccountData | null> {
 		try {
-			console.log('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
+			this.logService.debug('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
 			const sessions = await this.findMatchingProviderSession(authenticationProvider.id, this.defaultAccountConfig.authenticationProvider.scopes);
 
 			if (!sessions?.length) {
-				console.log('[DefaultAccount] No matching session found for provider:', authenticationProvider.id, 'Expected scopes:', JSON.stringify(this.defaultAccountConfig.authenticationProvider.scopes));
+				this.logService.debug('[DefaultAccount] No matching session found for provider:', authenticationProvider.id);
 				return null;
 			}
-
-			console.log('[DefaultAccount] Found', sessions.length, 'matching session(s). Account:', sessions[0].account.label, 'Scopes:', sessions[0].scopes);
 			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, options);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
@@ -588,25 +586,25 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 	private async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
 		const sessions = await this.getSessions(authProviderId);
-		console.log('[DefaultAccount] Got', sessions.length, 'total session(s) for provider:', authProviderId);
 
-		// When no scopes are configured (e.g. vscode.dev where product
-		// config may not include providerScopes), accept any session.
-		if (allScopes.length === 0 && sessions.length > 0) {
-			console.log('[DefaultAccount] No scopes configured, accepting all sessions');
+		// When no scopes are configured on web (e.g. vscode.dev where
+		// product config may not include providerScopes), accept any
+		// session. This only applies to web — on desktop, scopes should
+		// always be configured via product.json.
+		if (isWeb && allScopes.length === 0 && sessions.length > 0) {
+			this.logService.debug('[DefaultAccount] No scopes configured on web, accepting all sessions');
 			return [...sessions];
 		}
 
 		const matchingSessions = [];
 		for (const session of sessions) {
-			console.log('[DefaultAccount] Checking session', session.id, 'account:', session.account.label, 'scopes:', session.scopes);
+			this.logService.debug('[DefaultAccount] Checking session with scopes', session.scopes);
 			for (const scopes of allScopes) {
 				if (this.scopesMatch(session.scopes, scopes)) {
 					matchingSessions.push(session);
 				}
 			}
 		}
-		console.log('[DefaultAccount] Matching sessions:', matchingSessions.length);
 		return matchingSessions.length > 0 ? matchingSessions : undefined;
 	}
 

@@ -5,8 +5,7 @@
 
 import './mobileChatShell.css';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { $, addDisposableListener, append, disposableWindowInterval, EventType } from '../../../../base/browser/dom.js';
-import { mainWindow } from '../../../../base/browser/window.js';
+import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -25,8 +24,8 @@ import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { SideBarVisibleContext } from '../../../../workbench/common/contextkeys.js';
 import { Menus } from '../../menus.js';
 import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
-import { getAccountTitleBarState, getAccountProfileImageUrl, getAccountTitleBarBadgeKey } from '../../../contrib/accountMenu/browser/accountTitleBarState.js';
-import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusDashboard.js';
+import { getAccountTitleBarState, getAccountProfileImageUrl, getAccountTitleBarBadgeKey } from '../../accountTitleBarState.js';
+import { IChatDashboardService } from '../../chatDashboardService.js';
 
 /**
  * Mobile titlebar — prepended above the workbench grid on phone viewports
@@ -34,8 +33,8 @@ import { ChatStatusDashboard } from '../../../../workbench/contrib/chat/browser/
  *
  * Layout (contextual right slot):
  *
- *  - **In a chat session** → `[☰]  [session title]  [+]`
- *  - **Welcome / new session** → `[☰]  [host widget | title]  [account]`
+ *  - **In a chat session** → `[toggle sidebar]  [session title]  [+]`
+ *  - **Welcome / new session** → `[toggle sidebar]  [host widget | title]  [account]`
  *
  * The center slot switches content based on whether the sessions welcome
  * (home/empty) screen is visible:
@@ -94,13 +93,14 @@ export class MobileTitlebarPart extends Disposable {
 
 	constructor(
 		parent: HTMLElement,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IInstantiationService instantiationService: IInstantiationService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@IMenuService private readonly menuService: IMenuService,
+		@IChatDashboardService private readonly chatDashboardService: IChatDashboardService,
 	) {
 		super();
 
@@ -382,6 +382,7 @@ export class MobileTitlebarPart extends Disposable {
 		panelStore.add({
 			dispose: () => {
 				this.isAccountMenuVisible = false;
+				this.copilotDashboardStore.clear();
 				this.renderAccountState();
 			}
 		});
@@ -441,18 +442,10 @@ export class MobileTitlebarPart extends Disposable {
 			const dashboardSection = append(content, $('div.mobile-account-sheet-section'));
 			const store = new DisposableStore();
 			this.copilotDashboardStore.value = store;
-			const dashboardElement = ChatStatusDashboard.instantiateInContents(this.instantiationService, store, {
-				disableInlineSuggestionsSettings: true,
-				disableModelSelection: true,
-				disableProviderOptions: true,
-				disableCompletionsSnooze: true,
-			});
-			store.add(disposableWindowInterval(mainWindow, () => {
-				if (!dashboardElement.isConnected) {
-					store.dispose();
-				}
-			}, 2000));
-			append(dashboardSection, dashboardElement);
+			const dashboardElement = this.chatDashboardService.createDashboardElement(store);
+			if (dashboardElement) {
+				append(dashboardSection, dashboardElement);
+			}
 		}
 
 		// Actions list

@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Codicon } from '../../../../base/common/codicons.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
-import { localize } from '../../../../nls.js';
-import { ChatEntitlement, IChatSentiment, IQuotaSnapshot } from '../../../../workbench/services/chat/common/chatEntitlementService.js';
+import { Codicon } from '../../base/common/codicons.js';
+import { ThemeIcon } from '../../base/common/themables.js';
+import { localize } from '../../nls.js';
+import { ChatEntitlement, IQuotaSnapshot } from '../../workbench/services/chat/common/chatEntitlementService.js';
 
 export type AccountTitleBarStateSource = 'account' | 'copilot';
 export type AccountTitleBarStateKind = 'default' | 'accent' | 'warning' | 'prominent';
@@ -16,7 +16,7 @@ export interface IAccountTitleBarStateContext {
 	readonly accountName?: string;
 	readonly accountProviderLabel?: string;
 	readonly entitlement: ChatEntitlement;
-	readonly sentiment: Pick<IChatSentiment, 'hidden' | 'disabled' | 'untrusted'>;
+	readonly sentiment: { readonly hidden?: boolean; readonly disabled?: boolean; readonly untrusted?: boolean };
 	readonly quotas: {
 		readonly chat?: IQuotaSnapshot;
 		readonly completions?: IQuotaSnapshot;
@@ -91,7 +91,7 @@ export function getAccountTitleBarState(context: IAccountTitleBarStateContext): 
 
 function getCopilotPresentation(
 	entitlement: ChatEntitlement,
-	sentiment: Pick<IChatSentiment, 'hidden' | 'disabled' | 'untrusted'>,
+	sentiment: { readonly hidden?: boolean; readonly disabled?: boolean; readonly untrusted?: boolean },
 	quotas: { readonly chat?: IQuotaSnapshot; readonly completions?: IQuotaSnapshot }
 ): IAccountTitleBarState | undefined {
 	if (sentiment.hidden) {
