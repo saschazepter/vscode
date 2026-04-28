@@ -22,7 +22,7 @@ import { sessionReducer } from '../../../../../../platform/agentHost/common/stat
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import { ToolCallConfirmationReason, ToolResultContentType } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { IChatAgentService } from '../../../common/participants/chatAgents.js';
-import { IChatService, ToolConfirmKind } from '../../../common/chatService/chatService.js';
+import { IChatProgress, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../../common/chatService/chatService.js';
 import { IChatEditingService } from '../../../common/editing/chatEditingService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
@@ -600,6 +600,57 @@ suite('AgentHostClientTools', () => {
 			assert.ok(connection.dispatchedActions.some(action => isSessionAction(action)
 				&& action.type === ActionType.SessionToolCallComplete
 				&& action.toolCallId === 'tool-call-1'));
+		});
+
+		test('reconnecting to an active turn with owned client tool completes the initial snapshot invocation', async () => {
+			const { handler, connection } = createHandlerWithMocks(disposables, [testRunTaskTool]);
+			const sessionResource = URI.parse('agent-host-copilot:/session-1');
+			const backendSession = AgentSession.uri('copilot', 'session-1').toString();
+
+			connection.applySessionAction({
+				type: ActionType.SessionTurnStarted,
+				session: backendSession,
+				turnId: 'turn-1',
+				userMessage: { text: 'run the task' },
+			} as SessionAction);
+			connection.applySessionAction({
+				type: ActionType.SessionToolCallStart,
+				session: backendSession,
+				turnId: 'turn-1',
+				toolCallId: 'tool-call-1',
+				toolName: 'runTask',
+				displayName: 'Run Task',
+				toolClientId: connection.clientId,
+			} as SessionAction);
+			connection.applySessionAction({
+				type: ActionType.SessionToolCallReady,
+				session: backendSession,
+				turnId: 'turn-1',
+				toolCallId: 'tool-call-1',
+				invocationMessage: 'Run Task',
+				toolInput: '{"task":"build"}',
+				confirmed: ToolCallConfirmationReason.NotNeeded,
+			} as SessionAction);
+
+			const session = await handler.provideChatSessionContent(sessionResource, CancellationToken.None);
+
+			// activeTurnToProgress creates a generic ChatToolInvocation for
+			// the running client tool which appears in the session's progress
+			// observable. Grab it before _reconnectToActiveTurn replaces it.
+			const snapshotInvocation = (session as unknown as { progressObs: { get(): IChatProgress[] } })
+				.progressObs.get()
+				.find((p): p is ChatToolInvocation => p instanceof ChatToolInvocation && p.toolCallId === 'tool-call-1');
+			assert.ok(snapshotInvocation, 'activeTurnToProgress should have created a snapshot invocation');
+
+			await timeout(0);
+			await timeout(0);
+
+			// The snapshot invocation from activeTurnToProgress should have
+			// been completed (via didExecuteTool) so it does not remain
+			// orphaned in the UI while the replacement from
+			// _beginClientToolInvocation takes over.
+			assert.ok(IChatToolInvocation.isComplete(snapshotInvocation),
+				'the initial snapshot invocation should be completed, not orphaned');
 		});
 	});
 });

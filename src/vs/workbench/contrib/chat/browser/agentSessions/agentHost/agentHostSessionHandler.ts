@@ -2072,6 +2072,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			const tc = tcState?.kind === ResponsePartKind.ToolCall ? tcState.toolCall : undefined;
 
 			if (tc && tc.toolClientId === this._config.connection.clientId && !IChatToolInvocation.isComplete(invocation)) {
+				// Complete the snapshot invocation from activeTurnToProgress
+				// so it does not remain orphaned in the UI — the replacement
+				// created by _beginClientToolInvocation takes over.
+				invocation.didExecuteTool(undefined);
 				this._beginClientToolInvocation(tc, ctx);
 				this._tryInvokeClientTool(tc, ctx);
 				continue;

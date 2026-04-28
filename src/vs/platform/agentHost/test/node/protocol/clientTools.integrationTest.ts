@@ -61,9 +61,10 @@ suite('Protocol WebSocket — Client Tools', function () {
 		dispatchTurnStarted(client, sessionUri, 'turn-ct', 'client-tool', 1);
 
 		// Wait for toolCallStart
-		const toolStartNotif = await client.waitForNotification(
-			n => isActionNotification(n, 'session/toolCallStart'),
-		);
+		const [toolStartNotif, toolReadyNotif] = await Promise.all([
+			client.waitForNotification(n => isActionNotification(n, 'session/toolCallStart')),
+			client.waitForNotification(n => isActionNotification(n, 'session/toolCallReady')),
+		]);
 		const toolStartAction = getActionEnvelope(toolStartNotif).action as {
 			toolCallId: string;
 			toolClientId?: string;
@@ -71,11 +72,6 @@ suite('Protocol WebSocket — Client Tools', function () {
 		assert.strictEqual(toolStartAction.toolCallId, 'tc-client-1');
 		assert.strictEqual(toolStartAction.toolClientId, 'test-client-tool');
 
-		// The SDK handler fires tool_ready for non-permission client tools
-		// so the tool transitions from Streaming to Running.
-		const toolReadyNotif = await client.waitForNotification(
-			n => isActionNotification(n, 'session/toolCallReady'),
-		);
 		const toolReadyAction = getActionEnvelope(toolReadyNotif).action as {
 			toolCallId: string;
 			confirmed?: string;
