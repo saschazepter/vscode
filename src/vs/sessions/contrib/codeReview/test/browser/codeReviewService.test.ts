@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { IObservable, observableValue } from '../../../../../base/common/observable.js';
@@ -17,8 +18,12 @@ import { ILogService, NullLogService } from '../../../../../platform/log/common/
 import { InMemoryStorageService, IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IChatSessionFileChange, IChatSessionFileChange2 } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IGitHubService } from '../../../github/browser/githubService.js';
-import { ISession } from '../../../../services/sessions/common/session.js';
-import { ICodeReviewService, CodeReviewService, CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion } from '../../browser/codeReviewService.js';
+import { GitHubPRFetcher } from '../../../github/browser/fetchers/githubPRFetcher.js';
+import { GitHubPullRequestModel } from '../../../github/browser/models/githubPullRequestModel.js';
+import { GitHubPullRequestReviewThreadsModel } from '../../../github/browser/models/githubPullRequestReviewThreadsModel.js';
+import { IGitHubPRComment, IGitHubPullRequestReviewThread } from '../../../github/common/types.js';
+import { IGitHubInfo, ISession, ISessionWorkspace } from '../../../../services/sessions/common/session.js';
+import { ICodeReviewService, CodeReviewService, CodeReviewStateKind, PRReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion } from '../../browser/codeReviewService.js';
 import { IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 
 suite('CodeReviewService', () => {
@@ -27,6 +32,7 @@ suite('CodeReviewService', () => {
 	let instantiationService: TestInstantiationService;
 	let service: ICodeReviewService;
 	let commandService: MockCommandService;
+	let gitHubService: MockGitHubService;
 	let storageService: InMemoryStorageService;
 	let sessionsManagement: MockSessionsManagementService;
 
@@ -100,6 +106,7 @@ suite('CodeReviewService', () => {
 
 	class MockSessionsManagementService extends mock<ISessionsManagementService>() {
 		private readonly _onDidChangeSessions: Emitter<ISessionsChangeEvent>;
+		private readonly _activeSession: ReturnType<typeof observableValue<IActiveSession | undefined>>;
 		override readonly onDidChangeSessions: Event<ISessionsChangeEvent>;
 		override readonly activeSession: IObservable<IActiveSession | undefined>;
 
@@ -109,7 +116,8 @@ suite('CodeReviewService', () => {
 			super();
 			this._onDidChangeSessions = disposables.add(new Emitter<ISessionsChangeEvent>());
 			this.onDidChangeSessions = this._onDidChangeSessions.event;
-			this.activeSession = observableValue<IActiveSession | undefined>('test.activeSession', undefined);
+			this._activeSession = observableValue<IActiveSession | undefined>('test.activeSession', undefined);
+			this.activeSession = this._activeSession;
 		}
 
 		override getSession(resource: URI): ISession | undefined {
@@ -121,15 +129,34 @@ suite('CodeReviewService', () => {
 				(changes ?? []).map(c => ({ modifiedUri: c.modifiedUri ?? c.uri, originalUri: c.originalUri, insertions: c.insertions, deletions: c.deletions }))
 			);
 			const isArchivedObs = observableValue<boolean>('test.isArchived', archived);
+			const gitHubInfoObs = observableValue<IGitHubInfo | undefined>('test.gitHubInfo', undefined);
+			const workspaceObs = observableValue<ISessionWorkspace | undefined>('test.workspace', {
+				label: 'workspace',
+				icon: Codicon.folder,
+				repositories: [{ uri: URI.file('/workspace'), workingDirectory: undefined, detail: undefined, baseBranchName: undefined }],
+				requiresWorkspaceTrust: false,
+			});
 			const sessionData: ISession = {
 				sessionId: `test:${resource.toString()}`,
 				resource,
+				workspace: workspaceObs,
 				changes: changesObs,
 				isArchived: isArchivedObs,
-				gitHubInfo: observableValue('test.gitHubInfo', undefined),
+				gitHubInfo: gitHubInfoObs,
 			} as unknown as ISession;
 			this._sessions.set(resource.toString(), sessionData);
 			return sessionData;
+		}
+
+		setGitHubInfo(resource: URI, gitHubInfo: IGitHubInfo | undefined): void {
+			const session = this._sessions.get(resource.toString());
+			if (session) {
+				(session.gitHubInfo as ReturnType<typeof observableValue<IGitHubInfo | undefined>>).set(gitHubInfo, undefined);
+			}
+		}
+
+		setActiveSession(resource: URI | undefined): void {
+			this._activeSession.set(resource ? this._sessions.get(resource.toString()) as IActiveSession | undefined : undefined, undefined);
 		}
 
 		updateSessionChanges(resource: URI, changes: readonly IChatSessionFileChange2[] | undefined): void {
@@ -160,13 +187,61 @@ suite('CodeReviewService', () => {
 		}
 	}
 
+	class MockReviewThreadsFetcher {
+		nextThreads: IGitHubPullRequestReviewThread[] = [];
+		getReviewThreadsCalls = 0;
+		resolveThreadCalls: { threadId: string }[] = [];
+
+		async getReviewThreads(_owner: string, _repo: string, _prNumber: number): Promise<IGitHubPullRequestReviewThread[]> {
+			this.getReviewThreadsCalls++;
+			return this.nextThreads;
+		}
+
+		async postReviewComment(_owner: string, _repo: string, _prNumber: number, body: string, inReplyTo: number): Promise<IGitHubPRComment> {
+			return makePRComment(inReplyTo, body);
+		}
+
+		async resolveThread(_owner: string, _repo: string, threadId: string): Promise<void> {
+			this.resolveThreadCalls.push({ threadId });
+		}
+	}
+
+	class MockGitHubService extends mock<IGitHubService>() {
+		readonly legacyFetcher = new MockReviewThreadsFetcher();
+		readonly reviewThreadsFetcher = new MockReviewThreadsFetcher();
+
+		private readonly _pullRequestModel: GitHubPullRequestModel;
+		private readonly _reviewThreadsModel: GitHubPullRequestReviewThreadsModel;
+
+		getPullRequestCalls = 0;
+		getPullRequestReviewThreadsCalls = 0;
+
+		constructor(disposables: DisposableStore, logService: ILogService) {
+			super();
+			this._pullRequestModel = disposables.add(new GitHubPullRequestModel('owner', 'repo', 1, this.legacyFetcher as unknown as GitHubPRFetcher, logService));
+			this._reviewThreadsModel = disposables.add(new GitHubPullRequestReviewThreadsModel('owner', 'repo', 1, this.reviewThreadsFetcher as unknown as GitHubPRFetcher, logService));
+		}
+
+		override getPullRequest(): GitHubPullRequestModel {
+			this.getPullRequestCalls++;
+			return this._pullRequestModel;
+		}
+
+		override getPullRequestReviewThreads(): GitHubPullRequestReviewThreadsModel {
+			this.getPullRequestReviewThreadsCalls++;
+			return this._reviewThreadsModel;
+		}
+	}
+
 	setup(() => {
 		instantiationService = store.add(new TestInstantiationService());
 
 		commandService = new MockCommandService();
 		instantiationService.stub(ICommandService, commandService);
-		instantiationService.stub(ILogService, new NullLogService());
-		instantiationService.stub(IGitHubService, new class extends mock<IGitHubService>() { }());
+		const logService = new NullLogService();
+		instantiationService.stub(ILogService, logService);
+		gitHubService = new MockGitHubService(store, logService);
+		instantiationService.stub(IGitHubService, gitHubService);
 
 		sessionsManagement = new MockSessionsManagementService(store);
 		instantiationService.stub(ISessionsManagementService, sessionsManagement);
@@ -204,6 +279,53 @@ suite('CodeReviewService', () => {
 		const obs1 = service.getReviewState(session);
 		const obs2 = service.getReviewState(session2);
 		assert.notStrictEqual(obs1, obs2);
+	});
+
+	test('PR review state uses dedicated review threads model', async () => {
+		sessionsManagement.addSession(session);
+		sessionsManagement.setGitHubInfo(session, makeGitHubInfo());
+		gitHubService.reviewThreadsFetcher.nextThreads = [makePRThread('thread-100', 'src/a.ts')];
+
+		sessionsManagement.setActiveSession(session);
+		await tick();
+		await tick();
+
+		const state = service.getPRReviewState(session).get();
+		assert.strictEqual(state.kind, PRReviewStateKind.Loaded);
+		if (state.kind === PRReviewStateKind.Loaded) {
+			assert.deepStrictEqual({
+				comments: state.comments.map(comment => ({ id: comment.id, uri: comment.uri.toString(), body: comment.body, author: comment.author })),
+				getPullRequestCalls: gitHubService.getPullRequestCalls,
+				getPullRequestReviewThreadsCalls: gitHubService.getPullRequestReviewThreadsCalls,
+				legacyThreadRefreshes: gitHubService.legacyFetcher.getReviewThreadsCalls,
+				reviewThreadRefreshes: gitHubService.reviewThreadsFetcher.getReviewThreadsCalls,
+			}, {
+				comments: [{ id: 'thread-100', uri: 'file:///workspace/src/a.ts', body: 'Comment on src/a.ts', author: 'reviewer' }],
+				getPullRequestCalls: 0,
+				getPullRequestReviewThreadsCalls: 1,
+				legacyThreadRefreshes: 0,
+				reviewThreadRefreshes: 1,
+			});
+		}
+	});
+
+	test('resolvePRReviewThread uses dedicated review threads model', async () => {
+		sessionsManagement.addSession(session);
+		sessionsManagement.setGitHubInfo(session, makeGitHubInfo());
+
+		await service.resolvePRReviewThread(session, 'thread-100');
+
+		assert.deepStrictEqual({
+			getPullRequestCalls: gitHubService.getPullRequestCalls,
+			getPullRequestReviewThreadsCalls: gitHubService.getPullRequestReviewThreadsCalls,
+			legacyResolveThreadCalls: gitHubService.legacyFetcher.resolveThreadCalls,
+			reviewResolveThreadCalls: gitHubService.reviewThreadsFetcher.resolveThreadCalls,
+		}, {
+			getPullRequestCalls: 0,
+			getPullRequestReviewThreadsCalls: 1,
+			legacyResolveThreadCalls: [],
+			reviewResolveThreadCalls: [{ threadId: 'thread-100' }],
+		});
 	});
 
 	// --- hasReview ---
@@ -1027,6 +1149,41 @@ suite('CodeReviewService', () => {
 		}
 	});
 });
+
+function makeGitHubInfo(): IGitHubInfo {
+	return {
+		owner: 'owner',
+		repo: 'repo',
+		pullRequest: {
+			number: 1,
+			uri: URI.parse('https://github.com/owner/repo/pull/1'),
+		},
+	};
+}
+
+function makePRThread(id: string, path: string): IGitHubPullRequestReviewThread {
+	return {
+		id,
+		isResolved: false,
+		path,
+		line: 10,
+		comments: [makePRComment(100, `Comment on ${path}`, id)],
+	};
+}
+
+function makePRComment(id: number, body: string, threadId: string = String(id)): IGitHubPRComment {
+	return {
+		id,
+		body,
+		author: { login: 'reviewer', avatarUrl: '' },
+		createdAt: '2024-01-01T00:00:00Z',
+		updatedAt: '2024-01-01T00:00:00Z',
+		path: undefined,
+		line: undefined,
+		threadId,
+		inReplyToId: undefined,
+	};
+}
 
 function tick(): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, 0));

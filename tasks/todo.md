@@ -19,10 +19,10 @@
 
 ## Phase 2: Consumer Rewire
 
-- [ ] Task 3: Rewire `CodeReviewService`
-  - [ ] Use review-threads model for observable thread state.
-  - [ ] Use review-threads model for initial fetch and polling.
-  - [ ] Use review-threads model for resolving PR review threads.
+- [x] Task 3: Rewire `CodeReviewService`
+  - [x] Use review-threads model for observable thread state.
+  - [x] Use review-threads model for initial fetch and polling.
+  - [x] Use review-threads model for resolving PR review threads.
 
 - [ ] Task 4: Make `GitHubPullRequestModel` lightweight
   - [ ] Remove review-thread observable and thread-specific APIs.

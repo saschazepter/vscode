@@ -599,9 +599,9 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		const session = this._sessionsManagementService.getSession(sessionResource);
 		const gitHubInfo = session?.gitHubInfo.get();
 		if (gitHubInfo?.pullRequest) {
-			const prModel = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+			const reviewThreadsModel = this._gitHubService.getPullRequestReviewThreads(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
 			try {
-				await prModel.resolveThread(threadId);
+				await reviewThreadsModel.resolveThread(threadId);
 			} catch (err) {
 				this._logService.warn('[CodeReviewService] Failed to resolve PR thread on GitHub:', err);
 			}
@@ -667,12 +667,12 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		data.initialized = true;
 		data.state.set({ kind: PRReviewStateKind.Loading }, undefined);
 
-		const prModel = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+		const reviewThreadsModel = this._gitHubService.getPullRequestReviewThreads(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
 		const workspace = session?.workspace.get();
 
-		// Watch the PR model's review threads and map to local state
+		// Watch the PR review threads model and map to local state
 		data.disposables.add(autorun(reader => {
-			const threads = prModel.reviewThreads.read(reader);
+			const threads = reviewThreadsModel.reviewThreads.read(reader);
 			const converted = this._convertedPRCommentsBySession.get(sessionResource.toString());
 			const comments: IPRReviewComment[] = [];
 
@@ -704,11 +704,12 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		}));
 
 		// Start polling and initial fetch
-		prModel.refreshThreads().catch(err => {
+		reviewThreadsModel.refresh().catch(err => {
 			this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
 			data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
 		});
-		prModel.startPolling();
+		reviewThreadsModel.startPolling();
+		data.disposables.add({ dispose: () => reviewThreadsModel.stopPolling() });
 	}
 
 	private _disposePRReview(sessionResource: URI): void {
