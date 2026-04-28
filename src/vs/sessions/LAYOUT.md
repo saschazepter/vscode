@@ -126,6 +126,7 @@ The Run Script action:
 The Open... action:
 - Displayed as a split button via `Menus.OpenSubMenu` on `Menus.TitleBarRight`
 - Contains "Open Terminal" (opens terminal at session worktree) and "Open in VS Code" (opens worktree in new VS Code window)
+- The "Open in VS Code" titlebar widget mirrors the core "Open in Agents" affordance: the product icon is greyscale at rest, returns to full color on hover/focus while respecting reduced-motion preferences, uses secondary-button hover chrome, and draws a separator before the adjacent Run split button
 - Registered in `contrib/chat/browser/chat.contribution.ts`
 
 ### 3.5 Panel Title Actions
@@ -664,6 +665,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-28 | Updated the sessions "Open in VS Code" titlebar widget to match the core "Open in Agents" affordance more closely: the product icon is greyscale by default, animates back to full color on hover/focus when motion is enabled, uses secondary-button hover chrome instead of quality-tinted backgrounds, and draws a separator before the Run split button. |
 | 2026-04-27 | Made the sessions shell gradient background the default treatment by removing the `sessions.experimental.shellGradientBackground` opt-in, always applying the root shell gradient layer, and renaming the workbench CSS hook to `shell-gradient-background`. |
 | 2026-04-23 | Updated mobile layout policy platform detection to use shared `platform.isMobile`, and reduced phone-layout CSS `!important` usage where selector specificity already provides stable overrides. |
 | 2026-04-22 | Increased the sessions titlebar account widget's GitHub profile image from `16px × 16px` to `18px × 18px` while keeping the existing `22px × 22px` control footprint and avatar border treatment. |
