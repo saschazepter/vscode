@@ -126,7 +126,8 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 		}
 
 		const startTime = Date.now();
-		let outcome: string = 'noEmbeddingType';
+		type TryInitOutcome = 'success' | 'noEmbeddingType' | 'alreadyInitialized' | 'error';
+		let outcome: TryInitOutcome = 'noEmbeddingType';
 		try {
 			const best = await this._availableEmbeddingTypes.getPreferredType(silent);
 			// Double check that we haven't initialized in the meantime
