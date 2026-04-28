@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { addDisposableListener, Dimension, $ } from '../../../../base/browser/dom.js';
+import { addDisposableListener, Dimension, $, getWindow } from '../../../../base/browser/dom.js';
 import * as aria from '../../../../base/browser/ui/aria/aria.js';
 import { renderMarkdown, renderAsPlaintext } from '../../../../base/browser/markdownRenderer.js';
 import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
@@ -185,11 +185,25 @@ export class InlineChatZoneWidget extends ZoneWidget {
 					override render(container: HTMLElement): void {
 						super.render(container);
 						container.classList.add('status-placeholder');
-						this._store.add(autorun(r => {
+						// Defer the DOM-based widget lookup to the next animation frame
+						// because actionbar calls render() before appending the element
+						// to the DOM, so closest() would fail during render().
+						const targetWindow = getWindow(container);
+						let handle = targetWindow.requestAnimationFrame(() => {
+							handle = 0;
 							const widget = InlineChatZoneWidget.#findByDom(container);
-							const value = widget?.status.read(r) ?? '';
-							this.action.label = value;
-							this.updateLabel();
+							if (widget) {
+								this._store.add(autorun(r => {
+									const value = widget.status.read(r) ?? '';
+									this.action.label = value;
+									this.updateLabel();
+								}));
+							}
+						});
+						this._store.add(toDisposable(() => {
+							if (handle) {
+								targetWindow.cancelAnimationFrame(handle);
+							}
 						}));
 					}
 				}(undefined, action, { ...options, icon: false, label: true });
