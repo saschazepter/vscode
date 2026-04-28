@@ -274,7 +274,7 @@ export interface IChatEndpoint extends IEndpoint {
 	readonly restrictedToSkus?: string[];
 	/**
 	 * Normalized token pricing in AICs per million tokens.
-	 * Computed from the raw billing token_prices by dividing by 100_000_000_000
+	 * Computed from the raw billing token_prices by dividing by 1_000_000_000
 	 * and normalizing to per-million-token rates based on batch_size.
 	 */
 	readonly tokenPricing?: IChatEndpointTokenPricing;

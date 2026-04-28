@@ -48,7 +48,7 @@ export class ChatInputNotificationWidget extends Disposable {
 	) {
 		super();
 
-		this.domNode = $('.chat-input-notification-container');
+		this.domNode = $('.chat-input-notification-widget');
 		this.domNode.setAttribute('role', 'status');
 		this.domNode.setAttribute('aria-live', 'polite');
 
