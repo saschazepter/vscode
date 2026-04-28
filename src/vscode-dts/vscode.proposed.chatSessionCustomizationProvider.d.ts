@@ -123,10 +123,21 @@ declare module 'vscode' {
 		readonly badgeTooltip?: string;
 
 		/**
-		 * Whether this customization is currently enabled.
-		 * Defaults to `true` when omitted.
+		 * Marks that this customization is currently disabled.
+		 *
+		 * When set, the item appears grayed-out in the management UI with
+		 * the {@link ChatSessionCustomizationItemDisabled.reason reason}
+		 * shown on hover.
+		 *
+		 * When omitted, the item is considered enabled.
 		 */
-		readonly enabled?: boolean;
+		readonly disabled?: {
+			/**
+			 * Human-readable description of why this customization is
+			 * currently disabled. Displayed in the management UI.
+			 */
+			readonly reason: string;
+		};
 
 		/**
 		 * Controls which disablement actions are available for this item.
@@ -146,16 +157,6 @@ declare module 'vscode' {
 		 * re-queries the updated state.
 		 */
 		readonly enablementCommand?: string;
-
-		/**
-		 * Optional human-readable reason why this item cannot be toggled.
-		 *
-		 * Shown in the UI when neither {@link enablementCommand} nor a built-in
-		 * toggle is available. For example, a plugin-contributed item
-		 * might set this to explain that disabling requires uninstalling
-		 * the plugin.
-		 */
-		readonly enablementDisabledReason?: string;
 	}
 
 	/**

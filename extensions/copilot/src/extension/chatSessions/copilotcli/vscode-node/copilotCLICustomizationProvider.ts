@@ -126,7 +126,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			vscodeOwned: !!extensionId,
 			// Only extension-contributed agents (owned by VS Code) support CLI-side disablement
 			...(extensionId ? {
-				enabled: !this._disablementStore.isDisabled(sourceUri, 'agent'),
+				disabled: this._disablementStore.isDisabled(sourceUri, 'agent') ? { reason: l10n.t('Disabled') } : undefined,
 				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
 				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			} : {
@@ -193,7 +193,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			// Only extension-contributed instructions support CLI-side disablement
 			const hasEnablement = !!instruction.extensionId;
 			const enablementProps = hasEnablement ? {
-				enabled: !this._disablementStore.isDisabled(uri, 'instructions'),
+				disabled: this._disablementStore.isDisabled(uri, 'instructions') ? { reason: l10n.t('Disabled') } : undefined,
 				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
 				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			} : {
@@ -247,7 +247,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name,
 					vscodeOwned: true,
-					enabled: !this._disablementStore.isDisabled(s.uri, 'skill'),
+					disabled: this._disablementStore.isDisabled(s.uri, 'skill') ? { reason: l10n.t('Disabled') } : undefined,
 					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
 					enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 				};
@@ -286,7 +286,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				uri: p.uri,
 				type: vscode.ChatSessionCustomizationType.Plugins,
 				name,
-				enabled: enabledPlugins[name] !== false,
+				disabled: enabledPlugins[name] === false ? { reason: l10n.t('Disabled') } : undefined,
 				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
 				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			};

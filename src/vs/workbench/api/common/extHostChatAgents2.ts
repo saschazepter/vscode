@@ -836,12 +836,12 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				groupKey: item.groupKey,
 				badge: item.badge,
 				badgeTooltip: item.badgeTooltip,
-				enabled: item.enabled,
+				enabled: item.disabled ? false : undefined,
 				enablementScope: item.enablementScopeHint !== undefined
 					? ExtHostChatAgents2._enablementScopeMap[item.enablementScopeHint]
 					: item.enablementCommand ? 'global' : undefined,
 				enablementCommand: item.enablementCommand,
-				enablementMessage: item.enablementDisabledReason,
+				enablementMessage: item.disabled?.reason,
 			} satisfies IChatSessionCustomizationItemDto);
 
 			return items.map(convertItem);

@@ -154,7 +154,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					uri: skill.uri,
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
-					enabled: override !== 'off',
+					disabled: override === 'off' ? { reason: vscode.l10n.t('Disabled via skill overrides') } : undefined,
 					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Workspace,
 					enablementCommand: ClaudeCustomizationProvider.enablementCommandId,
 				};
@@ -166,7 +166,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
 					vscodeOwned: true,
-					enabled: !this._disablementStore.isDisabled(skill.uri, 'skill'),
+					disabled: this._disablementStore.isDisabled(skill.uri, 'skill') ? { reason: vscode.l10n.t('Disabled') } : undefined,
 					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
 					enablementCommand: ClaudeCustomizationProvider.enablementCommandId,
 				});
@@ -238,7 +238,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
 					enablementScopeHint: itemEnablementScope,
-					enabled: !excluded,
+					disabled: excluded ? { reason: vscode.l10n.t('Excluded via settings') } : undefined,
 					enablementCommand: itemEnablementScope !== vscode.ChatSessionCustomizationEnablementScope.None
 						? ClaudeCustomizationProvider.enablementCommandId
 						: undefined,
@@ -297,7 +297,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								type: vscode.ChatSessionCustomizationType.Hook,
 								name: `${eventId}${matcherLabel}`,
 								description,
-								enabled: !disableAllHooks,
+								disabled: disableAllHooks ? { reason: vscode.l10n.t('All hooks disabled') } : undefined,
 								// TODO: There isn't a great way to toggle enablement for individual hooks
 								enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 							});
