@@ -388,6 +388,15 @@ steps:
             VSCODE_ARCH: $(VSCODE_ARCH)
           displayName: Build snap package
 
+    - script: |
+        set -e
+        echo "Disk usage before package cleanup:"
+        df -h /
+        sudo docker system prune -af || true
+        echo "Disk usage after package cleanup:"
+        df -h /
+      displayName: Free root disk space (post-packaging)
+
     - task: UseDotNet@2
       inputs:
         version: 6.x
