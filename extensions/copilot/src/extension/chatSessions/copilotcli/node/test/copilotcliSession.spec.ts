@@ -1251,7 +1251,7 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[0] as { data: { toolName: string } }).data.toolName).toBe('bash');
 	});
 
-	it('suppresses command-sourced user message echoes and acknowledges the command', async () => {
+	it('forwards command-sourced user messages with source and acknowledges the command', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -1280,6 +1280,16 @@ describe('CopilotCLISession', () => {
 		});
 		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
 		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'hey', source: 'command-mc-command-1' },
+		}));
 
 		(session as any)._bufferMcEvent({
 			type: 'assistant.message',
@@ -1289,12 +1299,12 @@ describe('CopilotCLISession', () => {
 			data: { content: 'Hello! How can I help you today?' },
 		});
 
-		expect(remoteState.mcEventBuffer).toHaveLength(1);
-		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('assistant.message');
-		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
+		expect(remoteState.mcEventBuffer).toHaveLength(2);
+		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('assistant.message');
+		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
 	});
 
-	it('suppresses command-sourced user message echoes by pending command content when SDK source is absent', async () => {
+	it('synthesizes command source for user messages by pending command content when SDK source is absent', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -1323,6 +1333,16 @@ describe('CopilotCLISession', () => {
 		});
 		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
 		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color', source: 'command-mc-command-1' },
+		}));
 
 		(session as any)._bufferMcEvent({
 			type: 'user_input.requested',
@@ -1332,9 +1352,9 @@ describe('CopilotCLISession', () => {
 			data: { requestId: 'user-input-1', question: 'What is your favorite color?' },
 		});
 
-		expect(remoteState.mcEventBuffer).toHaveLength(1);
-		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
-		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
+		expect(remoteState.mcEventBuffer).toHaveLength(2);
+		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
+		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
 
 		(session as any)._bufferMcEvent({
 			type: 'assistant.message',
@@ -1351,8 +1371,8 @@ describe('CopilotCLISession', () => {
 			data: { content: 'ask me my favorite color' },
 		});
 
-		expect(remoteState.mcEventBuffer).toHaveLength(2);
-		expect((remoteState.mcEventBuffer[1] as { type: string }).type).toBe('assistant.message');
+		expect(remoteState.mcEventBuffer).toHaveLength(3);
+		expect((remoteState.mcEventBuffer[2] as { type: string }).type).toBe('assistant.message');
 	});
 
 	it('does not double-buffer duplicated local request events', async () => {

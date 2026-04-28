@@ -184,20 +184,20 @@ function getMissionControlSessionTitleFromEvent(event: { type?: string; data?: u
 	return typeof title === 'string' && title.trim().length > 0 ? title : undefined;
 }
 
-function getMissionControlEventData(event: { type?: string; data?: unknown }): Record<string, unknown> {
+function getMissionControlEventData(event: { type?: string; data?: unknown }, source?: string): Record<string, unknown> {
 	if (!event.data || typeof event.data !== 'object') {
-		return {};
+		return source ? { source } : {};
 	}
 
 	const data = event.data as Record<string, unknown>;
 	if (event.type === 'user.message') {
 		const content = data.content;
 		if (typeof content !== 'string') {
-			return data;
+			return source ? { ...data, source } : data;
 		}
 
 		const sanitizedContent = stripReminders(content);
-		return sanitizedContent === content ? data : { ...data, content: sanitizedContent };
+		return sanitizedContent === content && !source ? data : { ...data, content: sanitizedContent, ...(source ? { source } : undefined) };
 	}
 
 	if (event.type !== 'tool.execution_start') {
@@ -262,8 +262,8 @@ function getMissionControlUserMessageContent(event: { type?: string; data?: unkn
 	return typeof content === 'string' ? stripReminders(content).trim() : undefined;
 }
 
-function rememberMissionControlLocalUserMessage(state: McSharedState, event: { type?: string; data?: unknown }): void {
-	if (getMissionControlCommandIdFromEvent(event)) {
+function rememberMissionControlLocalUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId?: string): void {
+	if (commandId || getMissionControlCommandIdFromEvent(event)) {
 		return;
 	}
 
@@ -311,15 +311,15 @@ function rememberMissionControlSuppressedCommandPromptEcho(state: McSharedState,
 	getMissionControlSuppressedCommandPromptEchoes(state).set(content, Date.now());
 }
 
-function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }): string {
+function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }, data = getMissionControlEventData(event)): string {
 	if (event.id) {
 		return `id:${event.id}`;
 	}
 
-	return `${event.type ?? 'unknown'}:${JSON.stringify(getMissionControlEventData(event))}`;
+	return `${event.type ?? 'unknown'}:${JSON.stringify(data)}`;
 }
 
-function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: string; data?: unknown; id?: string }): boolean {
+function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, data?: Record<string, unknown>): boolean {
 	const now = Date.now();
 	const signatures = getMissionControlBufferedEventSignatures(state);
 	for (const [signature, timestamp] of signatures) {
@@ -328,7 +328,7 @@ function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: s
 		}
 	}
 
-	const signature = getMissionControlEventSignature(event);
+	const signature = getMissionControlEventSignature(event, data);
 	if (signatures.has(signature)) {
 		return false;
 	}
@@ -337,44 +337,66 @@ function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: s
 	return true;
 }
 
-function shouldSuppressMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }): boolean {
+function getMissionControlCommandIdForUserMessage(state: McSharedState, event: { type?: string; data?: unknown }): string | undefined {
 	if (event.type !== 'user.message') {
+		return undefined;
+	}
+
+	const commandId = getMissionControlCommandIdFromEvent(event);
+	if (commandId) {
+		return commandId;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (!content) {
+		return undefined;
+	}
+
+	for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
+		if (pendingPrompt === content) {
+			return pendingCommandId;
+		}
+	}
+
+	return undefined;
+}
+
+function shouldSuppressMissionControlLateCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, commandId: string | undefined): boolean {
+	if (event.type !== 'user.message' || commandId) {
 		return false;
 	}
 
-	let commandId = getMissionControlCommandIdFromEvent(event);
 	const content = getMissionControlUserMessageContent(event);
-	if (!commandId) {
-		if (!content) {
-			return false;
-		}
-		if (hasRecentMissionControlSuppressedCommandPromptEcho(state, content)) {
-			if (event.id) {
-				getMissionControlSuppressedEventIds(state).add(event.id);
-			}
-			return true;
-		}
-		for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
-			if (pendingPrompt === content) {
-				commandId = pendingCommandId;
-				break;
-			}
-		}
-	}
-	if (!commandId) {
+	if (!content || !hasRecentMissionControlSuppressedCommandPromptEcho(state, content)) {
 		return false;
 	}
-	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
-		getMissionControlPendingCommandPrompts(state).delete(commandId);
-		state.mcCompletedCommandIds.push(commandId);
-	}
-	if (content) {
-		rememberMissionControlSuppressedCommandPromptEcho(state, content);
-	}
+
 	if (event.id) {
 		getMissionControlSuppressedEventIds(state).add(event.id);
 	}
 	return true;
+}
+
+function maybeAcknowledgeMissionControlCommand(state: McSharedState, commandId: string | undefined): void {
+	if (!commandId) {
+		return;
+	}
+
+	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
+		getMissionControlPendingCommandPrompts(state).delete(commandId);
+		state.mcCompletedCommandIds.push(commandId);
+	}
+}
+
+function rememberMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId: string | undefined): void {
+	if (!commandId) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		rememberMissionControlSuppressedCommandPromptEcho(state, content);
+	}
 }
 
 function getMissionControlParentId(state: McSharedState, event: { parentId?: string | null }): string | null {
@@ -439,18 +461,6 @@ function getMcAskUserResponse(payload: McAskUserResponsePayload | undefined, raw
 			? response.wasFreeform
 			: typeof response?.freeText === 'string',
 	};
-}
-
-function maybeAcknowledgeMissionControlCommandFromEvent(state: McSharedState, event: { type?: string; data?: unknown }): void {
-	const commandId = getMissionControlCommandIdFromEvent(event);
-	if (!commandId) {
-		return;
-	}
-
-	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
-		getMissionControlPendingCommandPrompts(state).delete(commandId);
-		state.mcCompletedCommandIds.push(commandId);
-	}
 }
 
 export { builtinSlashCommands as builtinSlashSCommands } from '../../common/builtinSlashCommands';
@@ -1540,11 +1550,17 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				if (updatedTitle) {
 					this._title = updatedTitle;
 				}
-				maybeAcknowledgeMissionControlCommandFromEvent(state, e);
-				if (shouldSuppressMissionControlCommandUserMessage(state, e) || !shouldBufferMissionControlEvent(state, e)) {
+				const commandId = getMissionControlCommandIdForUserMessage(state, e);
+				if (shouldSuppressMissionControlLateCommandUserMessage(state, e, commandId)) {
 					return;
 				}
-				rememberMissionControlLocalUserMessage(state, e);
+				maybeAcknowledgeMissionControlCommand(state, commandId);
+				rememberMissionControlCommandUserMessage(state, e, commandId);
+				const eventData = getMissionControlEventData(e, commandId ? `command-${commandId}` : undefined);
+				if (!shouldBufferMissionControlEvent(state, e, eventData)) {
+					return;
+				}
+				rememberMissionControlLocalUserMessage(state, e, commandId);
 				if (e.id && e.timestamp) {
 					state.mcEventBuffer.push({
 						id: e.id,
@@ -1552,7 +1568,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						parentId: getMissionControlParentId(state, e),
 						ephemeral: e.ephemeral,
 						type: eventType,
-						data: getMissionControlEventData(e),
+						data: eventData,
 					});
 					state.mcLastEventId = e.id;
 				} else {
@@ -1562,7 +1578,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						timestamp: new Date().toISOString(),
 						parentId: state.mcLastEventId ?? null,
 						type: eventType,
-						data: getMissionControlEventData(e),
+						data: eventData,
 					});
 					state.mcLastEventId = id;
 				}
@@ -1729,11 +1745,17 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (updatedTitle) {
 			this._title = updatedTitle;
 		}
-		maybeAcknowledgeMissionControlCommandFromEvent(state, event);
-		if (shouldSuppressMissionControlCommandUserMessage(state, event) || !shouldBufferMissionControlEvent(state, event)) {
+		const commandId = getMissionControlCommandIdForUserMessage(state, event);
+		if (shouldSuppressMissionControlLateCommandUserMessage(state, event, commandId)) {
 			return;
 		}
-		rememberMissionControlLocalUserMessage(state, event);
+		maybeAcknowledgeMissionControlCommand(state, commandId);
+		rememberMissionControlCommandUserMessage(state, event, commandId);
+		const eventData = getMissionControlEventData(event, commandId ? `command-${commandId}` : undefined);
+		if (!shouldBufferMissionControlEvent(state, event, eventData)) {
+			return;
+		}
+		rememberMissionControlLocalUserMessage(state, event, commandId);
 		this.logService.trace(`[CopilotCLISession] MC buffered event: ${eventType}`);
 
 		// If the SDK event already has a UUID id, pass it through directly
@@ -1745,12 +1767,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				parentId: getMissionControlParentId(state, event),
 				ephemeral: event.ephemeral,
 				type: eventType,
-				data: getMissionControlEventData(event),
+				data: eventData,
 			};
 			state.mcLastEventId = event.id;
 			state.mcEventBuffer.push(mcEvent);
 		} else {
-			state.mcEventBuffer.push(this._createMcEvent(eventType, getMissionControlEventData(event)));
+			state.mcEventBuffer.push(this._createMcEvent(eventType, eventData));
 		}
 	}
 
