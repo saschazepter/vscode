@@ -157,9 +157,9 @@ export class CommandLineFileWriteAnalyzer extends Disposable implements ICommand
 								(fileUri.path.startsWith(folder.uri.path + '/') || fileUri.path === folder.uri.path)
 							);
 							if (!isInsideWorkspace) {
-								// Allow /tmp/ writes when the user has opted into "Allow All
-								// Commands in this Session" via the confirmation.
-								if (options.hasSessionAutoApproval && fileUri.path.startsWith('/tmp/')) {
+								// Allow writes to OS temp locations when the user has opted into
+								// "Allow All Commands in this Session" via the confirmation.
+								if (options.hasSessionAutoApproval && this._isInTempDirectory(fileUri.path, options.os)) {
 									continue;
 								}
 								isAutoApproveAllowed = false;
@@ -197,5 +197,19 @@ export class CommandLineFileWriteAnalyzer extends Disposable implements ICommand
 			isAutoApproveAllowed,
 			disclaimers,
 		};
+	}
+
+	/**
+	 * Returns true if the given URI path points inside an OS temporary directory.
+	 * On posix systems this matches `/tmp/`. On Windows this matches the typical
+	 * user temp (`...\AppData\Local\Temp\`), system temp (`C:\Windows\Temp\`),
+	 * and a top-level `\tmp\`
+	 */
+	private _isInTempDirectory(uriPath: string, os: OperatingSystem | undefined): boolean {
+		if (os === OperatingSystem.Windows) {
+			// URI.file('C:\\Users\\foo\\AppData\\Local\\Temp\\x') -> path '/C:/Users/foo/AppData/Local/Temp/x'
+			return /(?:^|\/)(?:AppData\/Local\/Temp|Windows\/Temp|tmp)\//i.test(uriPath);
+		}
+		return uriPath.startsWith('/tmp/');
 	}
 }
