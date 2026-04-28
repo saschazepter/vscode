@@ -673,6 +673,17 @@
 	display: none;
 }
 
+/* On phone the label / actions slots are intentionally left empty (the
+ * desktop header content is replaced by the mobile filter chips and the
+ * (+) button in MobileTitlebarPart). When the find widget opens the row
+ * becomes visible, but these two empty flex children would still occupy
+ * leading space because of `gap` between siblings. Collapse them so the
+ * find input sits flush with the row's leading edge. */
+.agent-sessions-workbench.phone-layout .agent-sessions-header-row > .agent-sessions-header-label,
+.agent-sessions-workbench.phone-layout .agent-sessions-header-row > .agent-sessions-header-actions {
+	display: none;
+}
+
 /* -- Phone: Find widget mobile-friendly UX ----------------------------- */
 /* When the user opens find on phone, the desktop type-filter widget is normally a tiny floating input with a 24px tall input box and a 22x22 close button — designed for a mouse cursor. On phone, expand it to a full-width row with thumb-sized targets and a single visible search input. */
 
