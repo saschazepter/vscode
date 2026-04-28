@@ -152,6 +152,31 @@
 	box-sizing: border-box;
 }
 
+.monaco-button.wizard-segmented-main {
+	display: inline-flex;
+	width: auto;
+	flex: 0 0 auto;
+	padding: 4px 10px;
+	height: 26px;
+	border-radius: 4px 0 0 4px;
+	border-right: none !important;
+	font-size: 12px;
+	line-height: 18px;
+	min-width: 0;
+	position: relative;
+}
+
+/* Thin white divider between the two segments */
+.monaco-button.wizard-segmented-main::after {
+	content: '';
+	position: absolute;
+	right: 0;
+	top: 4px;
+	bottom: 4px;
+	width: 1px;
+	background: rgba(255, 255, 255, 0.3);
+}
+
 .wizard-segmented-main:hover {
 	background: var(--vscode-button-hoverBackground, #1177bb);
 }
@@ -179,6 +204,17 @@
 	box-sizing: border-box;
 }
 
+.monaco-button.wizard-segmented-dropdown {
+	display: inline-flex;
+	width: auto;
+	flex: 0 0 auto;
+	padding: 4px 6px;
+	height: 26px;
+	border-radius: 0 4px 4px 0;
+	border-left: none !important;
+	min-width: 0;
+}
+
 .wizard-segmented-dropdown:hover {
 	background: var(--vscode-button-hoverBackground, #1177bb);
 }
@@ -197,7 +233,9 @@
 
 /* Disabled state for segmented buttons when max attachments reached */
 .wizard-segmented-main.disabled,
-.wizard-segmented-dropdown.disabled {
+.wizard-segmented-dropdown.disabled,
+.monaco-button.wizard-segmented-main.disabled,
+.monaco-button.wizard-segmented-dropdown.disabled {
 	opacity: 0.4;
 	cursor: default;
 }
@@ -335,7 +373,7 @@
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
 }
 
-/* ── Category Buttons (Step 1) — radio button style ── */
+/* ── Category Buttons (Step 1) ── */
 .wizard-type-buttons {
 	display: flex;
 	gap: 10px;
@@ -343,22 +381,32 @@
 	margin-top: 8px;
 }
 
-.wizard-type-btn {
-	display: flex;
+.monaco-button.wizard-type-btn {
+	display: inline-flex;
+	flex: 0 0 auto;
+	width: auto;
 	align-items: center;
 	gap: 8px;
 	padding: 8px 16px;
-	border-radius: 4px;
+	background: transparent !important;
+	color: var(--vscode-foreground, #ccc) !important;
 	border: 1px solid var(--vscode-input-border, #555);
-	background: transparent;
-	cursor: pointer;
+	border-radius: 4px;
 	font-size: 13px;
-	color: var(--vscode-foreground, #ccc);
-	transition: border-color 0.15s ease;
-	user-select: none;
+	line-height: normal;
+	transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.wizard-type-btn::before {
+.monaco-button.wizard-type-btn:hover {
+	border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.monaco-button.wizard-type-btn .codicon {
+	margin-right: 0;
+}
+
+/* Radio circle before each category button */
+.monaco-button.wizard-type-btn::before {
 	content: '';
 	display: inline-block;
 	width: 14px;
@@ -370,24 +418,23 @@
 	transition: border-color 0.15s ease;
 }
 
-.wizard-type-btn:hover {
+.monaco-button.wizard-type-btn:hover::before {
 	border-color: var(--vscode-focusBorder, #007acc);
 }
 
-.wizard-type-btn:hover::before {
-	border-color: var(--vscode-focusBorder, #007acc);
-}
-
-.wizard-type-btn.selected {
-	border-color: var(--vscode-focusBorder, #007acc);
-	background: transparent;
-	color: var(--vscode-foreground, #ccc);
-}
-
-.wizard-type-btn.selected::before {
+.monaco-button.wizard-type-btn.selected::before {
 	border-color: var(--vscode-focusBorder, #007acc);
 	background: var(--vscode-focusBorder, #007acc);
 	box-shadow: inset 0 0 0 2px var(--vscode-editor-background, #1e1e1e);
+}
+
+.monaco-button.wizard-type-btn.selected {
+	border-color: var(--vscode-focusBorder, #007acc);
+	background: var(--vscode-list-activeSelectionBackground, rgba(0, 122, 204, 0.1)) !important;
+}
+
+.wizard-type-buttons.invalid-input .monaco-button.wizard-type-btn {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100);
 }
 
 /* Shortcut badge — shared style for keyboard shortcut indicators */
@@ -533,19 +580,12 @@
 }
 
 .wizard-delay-select {
-	height: 28px;
-	font-size: 12px;
-	font-family: inherit;
-	color: var(--vscode-foreground, #ccc);
-	background: var(--vscode-dropdown-background, #3c3c3c);
-	border: 1px solid var(--vscode-dropdown-border, #555);
-	border-radius: 4px;
-	padding: 0 6px;
-	outline: none;
+	min-width: 120px;
 }
 
-.wizard-delay-select:focus {
-	border-color: var(--vscode-focusBorder, #007acc);
+.wizard-delay-select .monaco-select-box {
+	height: 28px;
+	padding: 2px 23px 2px 8px;
 }
 
 .wizard-capture-btn {
@@ -998,7 +1038,7 @@
 
 /* ── Annotation Editor Buttons ── */
 .issue-reporter-annotation-overlay .monaco-button {
-	border-radius: 2px;
+	border-radius: 4px;
 	height: 28px;
 	font-size: 13px;
 	min-width: 80px;

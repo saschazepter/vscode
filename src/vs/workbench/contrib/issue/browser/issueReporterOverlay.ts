@@ -9,6 +9,7 @@ import { Button } from '../../../../base/browser/ui/button/button.js';
 import { IContextMenuProvider } from '../../../../base/browser/contextmenu.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
+import { ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { Action, Separator } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -19,7 +20,7 @@ import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
-import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IssueReporterData, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
 import { RecordingState } from './recordingService.js';
@@ -65,7 +66,7 @@ export class IssueReporterOverlay {
 	private readonly stepPages: HTMLElement[] = [];
 
 	// Step 1: Describe (category + description + title)
-	private readonly issueTypeButtons: HTMLElement[] = [];
+	private readonly issueTypeButtons: Button[] = [];
 	private selectedIssueType: IssueType | undefined;
 	private typeButtonGroup!: HTMLElement;
 	private descriptionTextarea!: HTMLTextAreaElement;
@@ -199,25 +200,23 @@ export class IssueReporterOverlay {
 
 		const actions = append(page, $('div.wizard-screenshot-actions'));
 
-		// Delay dropdown
+		// Delay dropdown - Monaco SelectBox
 		const delayGroup = append(actions, $('div.wizard-delay-group'));
 		const delaySelectLabel = append(delayGroup, $('label.wizard-delay-label'));
 		delaySelectLabel.textContent = localize('delayLabel', "Capture delay:");
-		const delaySelect = append(delayGroup, $('select.wizard-delay-select')) as HTMLSelectElement;
-		const delayOptions = [
-			{ label: localize('noDelay', "No delay"), value: 0 },
-			{ label: localize('threeSeconds', "3 seconds"), value: 3 },
-			{ label: localize('fiveSeconds', "5 seconds"), value: 5 },
-			{ label: localize('tenSeconds', "10 seconds"), value: 10 },
-		];
-		for (const opt of delayOptions) {
-			const option = $('option') as HTMLOptionElement;
-			option.value = String(opt.value);
-			option.textContent = opt.label;
-			delaySelect.appendChild(option);
-		}
-		this.disposables.add(addDisposableListener(delaySelect, EventType.CHANGE, () => {
-			this.screenshotDelay = parseInt(delaySelect.value);
+		const delayOptions = this.getScreenshotDelayOptions();
+		const delaySelectContainer = append(delayGroup, $('div.wizard-delay-select'));
+		const delaySelectItems: ISelectOptionItem[] = delayOptions.map(option => ({ text: option.label }));
+		const delaySelect = this.disposables.add(new SelectBox(
+			delaySelectItems,
+			Math.max(0, delayOptions.findIndex(o => o.value === this.screenshotDelay)),
+			this.contextViewService,
+			defaultSelectBoxStyles,
+			{ ariaLabel: localize('delayLabel', "Capture delay:"), useCustomDrawn: true }
+		));
+		delaySelect.render(delaySelectContainer);
+		this.disposables.add(delaySelect.onDidSelect(({ index }) => {
+			this.screenshotDelay = delayOptions[index].value;
 		}));
 
 		this.captureBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles }));
@@ -287,8 +286,8 @@ export class IssueReporterOverlay {
 		this.createFloatingCaptureBar();
 	}
 
-	private captureStripCaptureBtn: HTMLElement | undefined;
-	private captureStripDelayBtn: HTMLElement | undefined;
+	private captureStripCaptureBtn: Button | undefined;
+	private captureStripDelayBtn: Button | undefined;
 	private captureStripRecordBtn: Button | undefined;
 
 	private createFloatingCaptureBar(): void {
@@ -301,36 +300,28 @@ export class IssueReporterOverlay {
 		const dragArea = append(this.floatingBar, $('div.wizard-floating-drag'));
 		dragArea.appendChild(renderIcon(Codicon.gripper));
 
-		// Segmented screenshot button: [📷 Screenshot | ▾ delay]
+		// Segmented screenshot button: [Screenshot | options]
 		const segmented = append(this.floatingBar, $('div.wizard-segmented-btn'));
+		const floatingButtonStyles = this.getFloatingBarButtonStyles(targetWindow);
 
-		const captureBtn = append(segmented, $('div.wizard-segmented-main.primary'));
+		const captureBtn = this.disposables.add(new Button(segmented, { ...floatingButtonStyles, supportIcons: true }));
+		captureBtn.element.classList.add('wizard-segmented-main');
+		captureBtn.label = `$(device-camera) ${localize('screenshot', "Screenshot")}`;
 		this.captureStripCaptureBtn = captureBtn;
-		captureBtn.setAttribute('role', 'button');
-		captureBtn.setAttribute('tabindex', '0');
-		const cameraIcon = append(captureBtn, $('span'));
-		cameraIcon.appendChild(renderIcon(Codicon.deviceCamera));
-		const captureLbl = append(captureBtn, $('span'));
-		captureLbl.textContent = localize('screenshot', "Screenshot");
 
-		// Delay dropdown using VS Code's DropdownMenu
-		const delayOptions = [
-			{ label: localize('noDelay', "No delay"), value: 0 },
-			{ label: localize('threeSecDelay', "3 second delay"), value: 3 },
-			{ label: localize('fiveSecDelay', "5 second delay"), value: 5 },
-			{ label: localize('tenSecDelay', "10 second delay"), value: 10 },
-		];
-		const delayDropdownContainer = append(segmented, $('div.wizard-segmented-dropdown.primary'));
-		this.captureStripDelayBtn = delayDropdownContainer;
-		delayDropdownContainer.setAttribute('role', 'button');
-		delayDropdownContainer.setAttribute('tabindex', '0');
-		append(delayDropdownContainer, $('span')).appendChild(renderIcon(Codicon.chevronDown));
+		// Delay/options dropdown using VS Code's context menu
+		const delayOptions = this.getScreenshotDelayOptions();
+		const delayDropdownButton = this.disposables.add(new Button(segmented, { ...floatingButtonStyles, supportIcons: true }));
+		delayDropdownButton.element.classList.add('wizard-segmented-dropdown');
+		delayDropdownButton.element.title = localize('captureOptions', "Capture options");
+		delayDropdownButton.element.setAttribute('aria-label', localize('captureOptions', "Capture options"));
+		delayDropdownButton.label = '$(chevron-down)';
+		this.captureStripDelayBtn = delayDropdownButton;
 
 		if (this.contextMenuProvider) {
 			let menuOpen = false;
-			this.disposables.add(addDisposableListener(delayDropdownContainer, EventType.CLICK, (e) => {
-				e.stopPropagation();
-				if (delayDropdownContainer.classList.contains('disabled') || menuOpen) {
+			this.disposables.add(delayDropdownButton.onDidClick(() => {
+				if (!delayDropdownButton.enabled || menuOpen) {
 					return;
 				}
 				// Hide-toolbar-in-screenshots toggle (first)
@@ -380,37 +371,36 @@ export class IssueReporterOverlay {
 			}));
 		}
 
-		this.disposables.add(addDisposableListener(captureBtn, EventType.CLICK, () => {
-			if (this.getTotalAttachments() < MAX_ATTACHMENTS && !captureBtn.classList.contains('disabled')) {
-				if (this.screenshotDelay > 0) {
-					// Lock width so button doesn't shrink during countdown
-					captureBtn.style.minWidth = `${captureBtn.offsetWidth}px`;
-					captureBtn.style.textAlign = 'center';
-					captureBtn.classList.add('disabled');
-					this.delayedScreenshotPending = true;
-					this.updateScreenshotThumbnails();
-					this.updateAttachmentButtons();
-					let remaining = this.screenshotDelay;
-					captureLbl.textContent = `${remaining}...`;
-					const interval = setInterval(() => {
-						remaining--;
-						if (remaining > 0) {
-							captureLbl.textContent = `${remaining}...`;
-						} else {
-							clearInterval(interval);
-							captureLbl.textContent = localize('screenshot', "Screenshot");
-							captureBtn.classList.remove('disabled');
-							captureBtn.style.minWidth = '';
-							captureBtn.style.textAlign = '';
-							this.delayedScreenshotPending = false;
-							this.updateScreenshotThumbnails();
-							this.updateAttachmentButtons();
-							this._onDidRequestScreenshot.fire();
-						}
-					}, 1000);
-				} else {
-					this._onDidRequestScreenshot.fire();
-				}
+		this.disposables.add(captureBtn.onDidClick(() => {
+			if (this.getTotalAttachments() >= MAX_ATTACHMENTS || !captureBtn.enabled) {
+				return;
+			}
+			if (this.screenshotDelay > 0) {
+				// Lock width so button doesn't shrink during countdown
+				captureBtn.element.style.minWidth = `${captureBtn.element.offsetWidth}px`;
+				captureBtn.enabled = false;
+				this.delayedScreenshotPending = true;
+				this.updateScreenshotThumbnails();
+				this.updateAttachmentButtons();
+				let remaining = this.screenshotDelay;
+				captureBtn.label = `${remaining}...`;
+				const interval = setInterval(() => {
+					remaining--;
+					if (remaining > 0) {
+						captureBtn.label = `${remaining}...`;
+					} else {
+						clearInterval(interval);
+						captureBtn.label = `$(device-camera) ${localize('screenshot', "Screenshot")}`;
+						captureBtn.element.style.minWidth = '';
+						captureBtn.enabled = true;
+						this.delayedScreenshotPending = false;
+						this.updateScreenshotThumbnails();
+						this.updateAttachmentButtons();
+						this._onDidRequestScreenshot.fire();
+					}
+				}, 1000);
+			} else {
+				this._onDidRequestScreenshot.fire();
 			}
 		}));
 
@@ -505,30 +495,21 @@ export class IssueReporterOverlay {
 			this.model.update({ issueType: type });
 			this.typeButtonGroup.classList.remove('invalid-input');
 			for (const b of this.issueTypeButtons) {
-				b.classList.toggle('selected', b.getAttribute('data-type') === String(type));
+				const isSelected = b.element.getAttribute('data-type') === String(type);
+				b.element.classList.toggle('selected', isSelected);
+				b.element.setAttribute('aria-pressed', String(isSelected));
 			}
 			this.updateDescriptionGuidance();
 		};
 
 		for (const { type, label, icon } of types) {
-			const btn = append(this.typeButtonGroup, $('div.wizard-type-btn'));
-			btn.setAttribute('role', 'button');
-			btn.setAttribute('tabindex', '0');
-			btn.setAttribute('data-type', String(type));
-
-			const iconEl = append(btn, $('span.wizard-type-icon'));
-			iconEl.appendChild(renderIcon(icon));
-			const labelEl = append(btn, $('span'));
-			labelEl.textContent = label;
-
+			const btn = this.disposables.add(new Button(this.typeButtonGroup, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
+			btn.element.classList.add('wizard-type-btn');
+			btn.element.setAttribute('data-type', String(type));
+			btn.element.setAttribute('aria-pressed', 'false');
+			btn.label = `$(${icon.id}) ${label}`;
 			this.issueTypeButtons.push(btn);
-			this.disposables.add(addDisposableListener(btn, EventType.CLICK, () => selectType(type)));
-			this.disposables.add(addDisposableListener(btn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					btn.click();
-				}
-			}));
+			this.disposables.add(btn.onDidClick(() => selectType(type)));
 		}
 
 		// Number key shortcuts for category selection (1, 2, 3)
@@ -1166,6 +1147,27 @@ export class IssueReporterOverlay {
 		return this.screenshots.length + this.recordings.length;
 	}
 
+	private getScreenshotDelayOptions(): { label: string; value: number }[] {
+		return [
+			{ label: localize('noDelay', "No delay"), value: 0 },
+			{ label: localize('threeSeconds', "3 seconds"), value: 3 },
+			{ label: localize('fiveSeconds', "5 seconds"), value: 5 },
+			{ label: localize('tenSeconds', "10 seconds"), value: 10 },
+		];
+	}
+
+	private getFloatingBarButtonStyles(targetWindow: Window): typeof defaultButtonStyles {
+		const containerStyles = targetWindow.getComputedStyle(this.container);
+		const cssVar = (name: string, fallback: string): string => containerStyles.getPropertyValue(name).trim() || fallback;
+		return {
+			...defaultButtonStyles,
+			buttonForeground: cssVar('--vscode-button-foreground', '#fff'),
+			buttonBackground: cssVar('--vscode-button-background', '#0e639c'),
+			buttonHoverBackground: cssVar('--vscode-button-hoverBackground', '#1177bb'),
+			buttonBorder: cssVar('--vscode-button-border', 'transparent'),
+		};
+	}
+
 	addScreenshot(screenshot: IScreenshot): void {
 		if (this.getTotalAttachments() >= MAX_ATTACHMENTS) {
 			return;
@@ -1205,13 +1207,13 @@ export class IssueReporterOverlay {
 
 		// Floating bar buttons
 		if (this.captureStripCaptureBtn) {
-			this.captureStripCaptureBtn.classList.toggle('disabled', screenshotDisabled);
-			this.captureStripCaptureBtn.title = screenshotDisabled ? maxMsg : '';
+			this.captureStripCaptureBtn.enabled = !screenshotDisabled;
+			this.captureStripCaptureBtn.element.title = screenshotDisabled ? maxMsg : localize('screenshot', "Screenshot");
 		}
 		if (this.captureStripDelayBtn) {
 			// Delay dropdown also disabled while countdown is running
-			this.captureStripDelayBtn.classList.toggle('disabled', screenshotDisabled);
-			this.captureStripDelayBtn.title = screenshotDisabled ? maxMsg : '';
+			this.captureStripDelayBtn.enabled = !screenshotDisabled;
+			this.captureStripDelayBtn.element.title = screenshotDisabled ? maxMsg : localize('captureOptions', "Capture options");
 		}
 		if (this.captureStripRecordBtn) {
 			if (this.currentRecordingState !== RecordingState.Recording) {
