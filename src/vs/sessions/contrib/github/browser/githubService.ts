@@ -33,6 +33,11 @@ export interface IGitHubService {
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel;
 
 	/**
+	 * Dispose and remove cached models associated with a GitHub pull request, if they exist.
+	 */
+	disposePullRequest(owner: string, repo: string, prNumber: number): void;
+
+	/**
 	 * Get or create a reactive model for review threads on a GitHub pull request.
 	 * The model is cached by owner/repo/prNumber key and disposed when the service is disposed.
 	 */
@@ -40,9 +45,9 @@ export interface IGitHubService {
 
 	/**
 	 * Get or create a reactive model for CI checks on a pull request head ref.
-	 * The model is cached by owner/repo/headRef key and disposed when the service is disposed.
+	 * The model is cached by owner/repo/prNumber/headRef key and disposed when the service is disposed.
 	 */
-	getPullRequestCI(owner: string, repo: string, headRef: string): GitHubPullRequestCIModel;
+	getPullRequestCI(owner: string, repo: string, prNumber: number, headRef: string): GitHubPullRequestCIModel;
 
 	/**
 	 * List files changed between two refs using the GitHub compare API.
@@ -67,7 +72,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 	private readonly _repositories = this._register(new DisposableMap<string, GitHubRepositoryModel>());
 	private readonly _pullRequests = this._register(new DisposableMap<string, GitHubPullRequestModel>());
 	private readonly _pullRequestReviewThreads = this._register(new DisposableMap<string, GitHubPullRequestReviewThreadsModel>());
-	private readonly _ciModels = this._register(new DisposableMap<string, GitHubPullRequestCIModel>());
+	private readonly _ciModels = this._register(new DisposableMap<string, DisposableMap<string, GitHubPullRequestCIModel>>());
 
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
@@ -94,7 +99,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 	}
 
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
-		const key = `${owner}/${repo}/${prNumber}`;
+		const key = this._pullRequestKey(owner, repo, prNumber);
 		let model = this._pullRequests.get(key);
 		if (!model) {
 			this._logService.trace(`${LOG_PREFIX} Creating PR model for ${key}`);
@@ -104,8 +109,16 @@ export class GitHubService extends Disposable implements IGitHubService {
 		return model;
 	}
 
+	disposePullRequest(owner: string, repo: string, prNumber: number): void {
+		const pullRequestKey = this._pullRequestKey(owner, repo, prNumber);
+
+		this._pullRequests.deleteAndDispose(pullRequestKey);
+		this._pullRequestReviewThreads.deleteAndDispose(pullRequestKey);
+		this._ciModels.deleteAndDispose(pullRequestKey);
+	}
+
 	getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
-		const key = `${owner}/${repo}/${prNumber}`;
+		const key = this._pullRequestKey(owner, repo, prNumber);
 		let model = this._pullRequestReviewThreads.get(key);
 		if (!model) {
 			this._logService.trace(`${LOG_PREFIX} Creating PR review threads model for ${key}`);
@@ -115,18 +128,29 @@ export class GitHubService extends Disposable implements IGitHubService {
 		return model;
 	}
 
-	getPullRequestCI(owner: string, repo: string, headRef: string): GitHubPullRequestCIModel {
-		const key = `${owner}/${repo}/${headRef}`;
-		let model = this._ciModels.get(key);
+	getPullRequestCI(owner: string, repo: string, prNumber: number, headRef: string): GitHubPullRequestCIModel {
+		const key = this._pullRequestKey(owner, repo, prNumber);
+		let models = this._ciModels.get(key);
+		if (!models) {
+			models = new DisposableMap<string, GitHubPullRequestCIModel>();
+			this._ciModels.set(key, models);
+		}
+
+		let model = models.get(headRef);
 		if (!model) {
-			this._logService.trace(`${LOG_PREFIX} Creating CI model for ${key}`);
+			models.clearAndDisposeAll();
+			this._logService.trace(`${LOG_PREFIX} Creating CI model for ${key}/${headRef}`);
 			model = new GitHubPullRequestCIModel(owner, repo, headRef, this._ciFetcher, this._logService);
-			this._ciModels.set(key, model);
+			models.set(headRef, model);
 		}
 		return model;
 	}
 
 	getChangedFiles(owner: string, repo: string, base: string, head: string): Promise<readonly IGitHubChangedFile[]> {
 		return this._changesFetcher.getChangedFiles(owner, repo, base, head);
+	}
+
+	private _pullRequestKey(owner: string, repo: string, prNumber: number): string {
+		return `${owner}/${repo}/${prNumber}`;
 	}
 }
