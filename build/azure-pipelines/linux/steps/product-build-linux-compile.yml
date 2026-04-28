@@ -69,6 +69,12 @@ steps:
       sudo service xvfb start
     displayName: Setup system services
 
+  - script: |
+      set -e
+      echo "Disk usage after system setup:"
+      df -h
+    displayName: Check disk space (after system setup)
+
   - script: node build/setup-npm-registry.ts $NPM_REGISTRY
     condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
     displayName: Setup NPM Registry
@@ -120,6 +126,12 @@ steps:
     displayName: Install build dependencies
     condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
 
+  - script: |
+      set -e
+      echo "Disk usage after build dependencies install:"
+      df -h
+    displayName: Check disk space (after build dependencies)
+
   # Step will be used by both verify glibcxx version for remote server and building rpm package,
   # hence avoid adding it behind NODE_MODULES_RESTORED condition.
   - script: |
@@ -134,6 +146,12 @@ steps:
       VSCODE_ARCH: $(VSCODE_ARCH)
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Download vscode sysroots
+
+  - script: |
+      set -e
+      echo "Disk usage after sysroots download:"
+      df -h
+    displayName: Check disk space (after sysroots)
 
   - script: |
       set -e
@@ -160,6 +178,12 @@ steps:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Install dependencies
     condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
+
+  - script: |
+      set -e
+      echo "Disk usage after root dependencies install:"
+      df -h
+    displayName: Check disk space (after install dependencies)
 
   - script: node build/azure-pipelines/distro/mixin-npm.ts
     condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
@@ -233,6 +257,12 @@ steps:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Build client
 
+  - script: |
+      set -e
+      echo "Disk usage after client build:"
+      df -h
+    displayName: Check disk space (after build client)
+
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
     - script: npx deemon --attach -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
       env:
@@ -277,6 +307,12 @@ steps:
 
   - script: |
       set -e
+      echo "Disk usage after server build:"
+      df -h
+    displayName: Check disk space (after build server)
+
+  - script: |
+      set -e
       npm run gulp vscode-reh-web-linux-$(VSCODE_ARCH)-min-ci
       mv ../vscode-reh-web-linux-$(VSCODE_ARCH) ../vscode-server-linux-$(VSCODE_ARCH)-web # TODO@joaomoreno
       ARCHIVE_PATH=".build/linux/web/vscode-server-linux-$(VSCODE_ARCH)-web.tar.gz"
@@ -286,6 +322,12 @@ steps:
     env:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Build server (web)
+
+  - script: |
+      set -e
+      echo "Disk usage after web server build:"
+      df -h
+    displayName: Check disk space (after build server web)
 
   - ${{ if or(eq(parameters.VSCODE_ARCH, 'x64'), eq(parameters.VSCODE_ARCH, 'arm64')) }}:
     - script: |
@@ -337,6 +379,12 @@ steps:
         echo "##vso[task.setvariable variable=DEB_PACKAGE_NAME]$(basename $(ls .build/linux/deb/*.deb))"
       displayName: Build deb package
 
+    - script: |
+        set -e
+        echo "Disk usage after deb package build:"
+        df -h
+      displayName: Check disk space (after deb package build)
+
     - script:  |
         set -e
         TRIPLE=""
@@ -362,6 +410,12 @@ steps:
         echo "##vso[task.setvariable variable=RPM_PATH]$(ls .build/linux/rpm/*.rpm)"
         echo "##vso[task.setvariable variable=RPM_PACKAGE_NAME]$(basename $(ls .build/linux/rpm/*.rpm))"
       displayName: Build rpm package
+
+    - script: |
+        set -e
+        echo "Disk usage after rpm package build:"
+        df -h
+      displayName: Check disk space (after rpm package build)
 
     - ${{ if eq(parameters.VSCODE_ARCH, 'x64') }}:
       - task: Docker@1
