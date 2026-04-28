@@ -4677,7 +4677,7 @@
 					},
 					"github.copilot.chat.cli.planExitMode.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.planExitMode.enabled%",
 						"tags": [
 							"advanced"
@@ -4685,7 +4685,7 @@
 					},
 					"github.copilot.chat.cli.autoModel.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.autoModel.enabled%",
 						"tags": [
 							"advanced"
@@ -4693,7 +4693,7 @@
 					},
 					"github.copilot.chat.cli.planCommand.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.planCommand.enabled%",
 						"tags": [
 							"advanced"
@@ -4717,7 +4717,7 @@
 					},
 					"github.copilot.chat.cli.forkSessions.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.forkSessions.enabled%",
 						"tags": [
 							"advanced"
@@ -4742,7 +4742,7 @@
 					},
 					"github.copilot.chat.cli.sessionController.enabled": {
 						"type": "boolean",
-						"default": true,
+						"default": false,
 						"markdownDescription": "%github.copilot.config.cli.sessionController.enabled%",
 						"tags": [
 							"advanced"
