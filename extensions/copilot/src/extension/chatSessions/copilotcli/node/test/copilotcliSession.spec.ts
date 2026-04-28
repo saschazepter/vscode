@@ -1251,7 +1251,7 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[0] as { data: { toolName: string } }).data.toolName).toBe('bash');
 	});
 
-	it('forwards command-sourced user messages and acknowledges the command with the echoed turn', async () => {
+	it('forwards command-sourced user messages with source and acknowledges the command', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -1264,6 +1264,7 @@ describe('CopilotCLISession', () => {
 			mcLastSubmitAttemptTimeMs: Date.now(),
 			mcProcessedCommandIds: new Set<string>(),
 			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'hey']]),
 			mcSdkSession: sdkSession as unknown as Session,
 			mcEventListenerDispose: undefined,
 			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
@@ -1278,6 +1279,17 @@ describe('CopilotCLISession', () => {
 			data: { content: 'hey', source: 'command-mc-command-1' },
 		});
 		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'hey', source: 'command-mc-command-1' },
+		}));
 
 		(session as any)._bufferMcEvent({
 			type: 'assistant.message',
@@ -1288,10 +1300,216 @@ describe('CopilotCLISession', () => {
 		});
 
 		expect(remoteState.mcEventBuffer).toHaveLength(2);
-		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user.message');
-		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('hey');
 		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('assistant.message');
 		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
+	});
+
+	it('synthesizes command source for user messages by pending command content when SDK source is absent', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'ask me my favorite color']]),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'remote-command-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color' },
+		});
+		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color', source: 'command-mc-command-1' },
+		}));
+
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			id: 'ask-user',
+			timestamp: '2026-01-01T00:00:01.000Z',
+			parentId: 'remote-command-message',
+			data: { requestId: 'user-input-1', question: 'What is your favorite color?' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(2);
+		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
+		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
+
+		(session as any)._bufferMcEvent({
+			type: 'assistant.message',
+			id: 'assistant-reply',
+			timestamp: '2026-01-01T00:00:02.000Z',
+			parentId: 'ask-user',
+			data: { content: 'Nice, blue is a great choice!' },
+		});
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'late-remote-command-message',
+			timestamp: '2026-01-01T00:00:03.000Z',
+			parentId: 'assistant-reply',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(3);
+		expect((remoteState.mcEventBuffer[2] as { type: string }).type).toBe('assistant.message');
+	});
+
+	it('does not double-buffer duplicated local request events', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		const event = {
+			type: 'user.message',
+			data: { content: 'ask me my favorite color' },
+		};
+		(session as any)._bufferMcEvent(event);
+		(session as any)._bufferMcEvent(event);
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('ask me my favorite color');
+	});
+
+	it('still forwards ask-user requests when the persistent Mission Control listener is active', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: vi.fn(),
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			data: {
+				requestId: 'user-input-1',
+				question: 'What is your favorite color?',
+				allowFreeform: true,
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user_input.requested');
+	});
+
+	it('suppresses Mission Control user message commands that echo recently forwarded local prompts', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'ask me my favorite color', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			pendingCommandCompletionIds: remoteState.mcPendingCommandCompletionIds ? [...remoteState.mcPendingCommandCompletionIds] : [],
+		}).toEqual({
+			completedCommandIds: ['mc-command-1'],
+			pendingCommandCompletionIds: [],
+		});
+	});
+
+	it('does not suppress Mission Control user message commands that are not local prompt echoes', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'what is next?', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			processedCommandIds: [...remoteState.mcProcessedCommandIds],
+		}).toEqual({
+			completedCommandIds: [],
+			processedCommandIds: ['mc-command-1'],
+		});
 	});
 
 	it('forwards remote command source to the SDK send options', async () => {

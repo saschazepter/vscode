@@ -74,6 +74,11 @@ interface McSharedState {
 	mcLastSubmitAttemptTimeMs: number;
 	mcProcessedCommandIds: Set<string>;
 	mcPendingCommandCompletionIds?: Set<string>;
+	mcPendingCommandPrompts?: Map<string, string>;
+	mcLocalUserMessageEchoes?: Map<string, number>;
+	mcSuppressedCommandPromptEchoes?: Map<string, number>;
+	mcBufferedEventSignatures?: Map<string, number>;
+	mcSuppressedEventIds?: Set<string>;
 	/** Reference to the SDK session for steering from the command poller. */
 	mcSdkSession: Session;
 	/** Dispose function for the persistent on('*') listener for MC events. */
@@ -84,6 +89,9 @@ interface McSharedState {
 const mcStateBySessionId = new Map<string, McSharedState>();
 
 const MISSION_CONTROL_KEEPALIVE_INTERVAL_MS = 10_000;
+const MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS = 10_000;
 
 interface McPermissionResponseCommandData {
 	readonly promptId?: string;
@@ -176,20 +184,34 @@ function getMissionControlSessionTitleFromEvent(event: { type?: string; data?: u
 	return typeof title === 'string' && title.trim().length > 0 ? title : undefined;
 }
 
+<<<<<<< HEAD
 function getMissionControlEventData(event: { type?: string; data?: unknown }): Record<string, unknown> {
 	if (!event.data || typeof event.data !== 'object') {
 		return {};
+=======
+function getMissionControlEventData(event: { type?: string; data?: unknown }, source?: string): Record<string, unknown> {
+	if (!event.data || typeof event.data !== 'object') {
+		return source ? { source } : {};
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 	}
 
 	const data = event.data as Record<string, unknown>;
 	if (event.type === 'user.message') {
 		const content = data.content;
 		if (typeof content !== 'string') {
+<<<<<<< HEAD
 			return data;
 		}
 
 		const sanitizedContent = stripReminders(content);
 		return sanitizedContent === content ? data : { ...data, content: sanitizedContent };
+=======
+			return source ? { ...data, source } : data;
+		}
+
+		const sanitizedContent = stripReminders(content);
+		return sanitizedContent === content && !source ? data : { ...data, content: sanitizedContent, ...(source ? { source } : undefined) };
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 	}
 
 	if (event.type !== 'tool.execution_start') {
@@ -215,11 +237,20 @@ function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set
 	return state.mcPendingCommandCompletionIds;
 }
 
+<<<<<<< HEAD
+=======
+function getMissionControlPendingCommandPrompts(state: McSharedState): Map<string, string> {
+	state.mcPendingCommandPrompts ??= new Map();
+	return state.mcPendingCommandPrompts;
+}
+
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 function getMissionControlPendingUserInputRequests(state: McSharedState): Set<McPendingUserInputRequest> {
 	state.mcPendingUserInputRequests ??= new Set();
 	return state.mcPendingUserInputRequests;
 }
 
+<<<<<<< HEAD
 function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
 	const pendingRequests = [...getMissionControlPendingUserInputRequests(state)];
 	const identifiers = [
@@ -277,14 +308,236 @@ function getMcAskUserResponse(payload: McAskUserResponsePayload | undefined, raw
 }
 
 function maybeAcknowledgeMissionControlCommandFromEvent(state: McSharedState, event: { type?: string; data?: unknown }): void {
+=======
+function getMissionControlLocalUserMessageEchoes(state: McSharedState): Map<string, number> {
+	state.mcLocalUserMessageEchoes ??= new Map();
+	return state.mcLocalUserMessageEchoes;
+}
+
+function getMissionControlSuppressedCommandPromptEchoes(state: McSharedState): Map<string, number> {
+	state.mcSuppressedCommandPromptEchoes ??= new Map();
+	return state.mcSuppressedCommandPromptEchoes;
+}
+
+function getMissionControlBufferedEventSignatures(state: McSharedState): Map<string, number> {
+	state.mcBufferedEventSignatures ??= new Map();
+	return state.mcBufferedEventSignatures;
+}
+
+function getMissionControlSuppressedEventIds(state: McSharedState): Set<string> {
+	state.mcSuppressedEventIds ??= new Set();
+	return state.mcSuppressedEventIds;
+}
+
+function getMissionControlUserMessageContent(event: { type?: string; data?: unknown }): string | undefined {
+	if (event.type !== 'user.message' || !event.data || typeof event.data !== 'object' || !('content' in event.data)) {
+		return undefined;
+	}
+
+	const content = event.data.content;
+	return typeof content === 'string' ? stripReminders(content).trim() : undefined;
+}
+
+function rememberMissionControlLocalUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId?: string): void {
+	if (commandId || getMissionControlCommandIdFromEvent(event)) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		getMissionControlLocalUserMessageEchoes(state).set(content, Date.now());
+	}
+}
+
+function isMissionControlLocalUserMessageEcho(state: McSharedState, command: McCommand): boolean {
+	if (command.type && command.type !== 'user_message') {
+		return false;
+	}
+
+	const now = Date.now();
+	const echoes = getMissionControlLocalUserMessageEchoes(state);
+	for (const [content, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS) {
+			echoes.delete(content);
+		}
+	}
+
+	const content = stripReminders(command.content).trim();
+	if (!content || !echoes.has(content)) {
+		return false;
+	}
+
+	echoes.delete(content);
+	return true;
+}
+
+function hasRecentMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): boolean {
+	const now = Date.now();
+	const echoes = getMissionControlSuppressedCommandPromptEchoes(state);
+	for (const [echoContent, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS) {
+			echoes.delete(echoContent);
+		}
+	}
+
+	return echoes.has(content);
+}
+
+function rememberMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): void {
+	getMissionControlSuppressedCommandPromptEchoes(state).set(content, Date.now());
+}
+
+function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }, data = getMissionControlEventData(event)): string {
+	if (event.id) {
+		return `id:${event.id}`;
+	}
+
+	return `${event.type ?? 'unknown'}:${JSON.stringify(data)}`;
+}
+
+function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, data?: Record<string, unknown>): boolean {
+	const now = Date.now();
+	const signatures = getMissionControlBufferedEventSignatures(state);
+	for (const [signature, timestamp] of signatures) {
+		if (now - timestamp > MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS) {
+			signatures.delete(signature);
+		}
+	}
+
+	const signature = getMissionControlEventSignature(event, data);
+	if (signatures.has(signature)) {
+		return false;
+	}
+
+	signatures.set(signature, now);
+	return true;
+}
+
+function getMissionControlCommandIdForUserMessage(state: McSharedState, event: { type?: string; data?: unknown }): string | undefined {
+	if (event.type !== 'user.message') {
+		return undefined;
+	}
+
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 	const commandId = getMissionControlCommandIdFromEvent(event);
+	if (commandId) {
+		return commandId;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (!content) {
+		return undefined;
+	}
+
+	for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
+		if (pendingPrompt === content) {
+			return pendingCommandId;
+		}
+	}
+
+	return undefined;
+}
+
+function shouldSuppressMissionControlLateCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, commandId: string | undefined): boolean {
+	if (event.type !== 'user.message' || commandId) {
+		return false;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (!content || !hasRecentMissionControlSuppressedCommandPromptEcho(state, content)) {
+		return false;
+	}
+
+	if (event.id) {
+		getMissionControlSuppressedEventIds(state).add(event.id);
+	}
+	return true;
+}
+
+function maybeAcknowledgeMissionControlCommand(state: McSharedState, commandId: string | undefined): void {
 	if (!commandId) {
 		return;
 	}
 
 	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
+		getMissionControlPendingCommandPrompts(state).delete(commandId);
 		state.mcCompletedCommandIds.push(commandId);
 	}
+}
+
+function rememberMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId: string | undefined): void {
+	if (!commandId) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		rememberMissionControlSuppressedCommandPromptEcho(state, content);
+	}
+}
+
+function getMissionControlParentId(state: McSharedState, event: { parentId?: string | null }): string | null {
+	const parentId = event.parentId ?? state.mcLastEventId ?? null;
+	if (parentId && getMissionControlSuppressedEventIds(state).has(parentId)) {
+		return state.mcLastEventId ?? null;
+	}
+	return parentId;
+}
+
+function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
+	const pendingRequests = [...getMissionControlPendingUserInputRequests(state)];
+	const identifiers = [
+		payload?.requestId,
+		payload?.promptId,
+		payload?.toolCallId,
+	].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+	if (identifiers.length > 0) {
+		return pendingRequests.find(request =>
+			identifiers.includes(request.requestId) ||
+			(typeof request.toolCallId === 'string' && identifiers.includes(request.toolCallId))
+		);
+	}
+
+	return pendingRequests.length === 1 ? pendingRequests[0] : undefined;
+}
+
+function toSdkUserInputResponse(answer: IQuestionAnswer | undefined): UserInputResponse {
+	if (!answer) {
+		return { answer: '', wasFreeform: false };
+	}
+
+	if (answer.freeText) {
+		return { answer: answer.freeText, wasFreeform: true };
+	}
+
+	return { answer: answer.selected.join(', '), wasFreeform: false };
+}
+
+function getMcAskUserResponse(payload: McAskUserResponsePayload | undefined, rawContent: string): UserInputResponse | undefined {
+	const response = payload?.response ?? payload;
+	const answer = typeof response?.answer === 'string'
+		? response.answer
+		: typeof response?.freeText === 'string'
+			? response.freeText
+			: Array.isArray(response?.selected)
+				? response.selected.filter((value): value is string => typeof value === 'string').join(', ')
+				: response?.skipped
+					? ''
+					: payload === undefined
+						? rawContent
+						: undefined;
+
+	if (answer === undefined) {
+		return undefined;
+	}
+
+	return {
+		answer,
+		wasFreeform: typeof response?.wasFreeform === 'boolean'
+			? response.wasFreeform
+			: typeof response?.freeText === 'string',
+	};
 }
 
 export { builtinSlashCommands as builtinSlashSCommands } from '../../common/builtinSlashCommands';
@@ -1374,15 +1627,29 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				if (updatedTitle) {
 					this._title = updatedTitle;
 				}
-				maybeAcknowledgeMissionControlCommandFromEvent(state, e);
+				const commandId = getMissionControlCommandIdForUserMessage(state, e);
+				if (shouldSuppressMissionControlLateCommandUserMessage(state, e, commandId)) {
+					return;
+				}
+				maybeAcknowledgeMissionControlCommand(state, commandId);
+				rememberMissionControlCommandUserMessage(state, e, commandId);
+				const eventData = getMissionControlEventData(e, commandId ? `command-${commandId}` : undefined);
+				if (!shouldBufferMissionControlEvent(state, e, eventData)) {
+					return;
+				}
+				rememberMissionControlLocalUserMessage(state, e, commandId);
 				if (e.id && e.timestamp) {
 					state.mcEventBuffer.push({
 						id: e.id,
 						timestamp: e.timestamp,
-						parentId: e.parentId ?? state.mcLastEventId ?? null,
+						parentId: getMissionControlParentId(state, e),
 						ephemeral: e.ephemeral,
 						type: eventType,
+<<<<<<< HEAD
 						data: getMissionControlEventData(e),
+=======
+						data: eventData,
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 					});
 					state.mcLastEventId = e.id;
 				} else {
@@ -1392,7 +1659,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						timestamp: new Date().toISOString(),
 						parentId: state.mcLastEventId ?? null,
 						type: eventType,
+<<<<<<< HEAD
 						data: getMissionControlEventData(e),
+=======
+						data: eventData,
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 					});
 					state.mcLastEventId = id;
 				}
@@ -1559,7 +1830,17 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (updatedTitle) {
 			this._title = updatedTitle;
 		}
-		maybeAcknowledgeMissionControlCommandFromEvent(state, event);
+		const commandId = getMissionControlCommandIdForUserMessage(state, event);
+		if (shouldSuppressMissionControlLateCommandUserMessage(state, event, commandId)) {
+			return;
+		}
+		maybeAcknowledgeMissionControlCommand(state, commandId);
+		rememberMissionControlCommandUserMessage(state, event, commandId);
+		const eventData = getMissionControlEventData(event, commandId ? `command-${commandId}` : undefined);
+		if (!shouldBufferMissionControlEvent(state, event, eventData)) {
+			return;
+		}
+		rememberMissionControlLocalUserMessage(state, event, commandId);
 		this.logService.trace(`[CopilotCLISession] MC buffered event: ${eventType}`);
 
 		// If the SDK event already has a UUID id, pass it through directly
@@ -1568,15 +1849,23 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const mcEvent: McEvent = {
 				id: event.id,
 				timestamp: event.timestamp,
-				parentId: event.parentId ?? state.mcLastEventId ?? null,
+				parentId: getMissionControlParentId(state, event),
 				ephemeral: event.ephemeral,
 				type: eventType,
+<<<<<<< HEAD
 				data: getMissionControlEventData(event),
+=======
+				data: eventData,
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 			};
 			state.mcLastEventId = event.id;
 			state.mcEventBuffer.push(mcEvent);
 		} else {
+<<<<<<< HEAD
 			state.mcEventBuffer.push(this._createMcEvent(eventType, getMissionControlEventData(event)));
+=======
+			state.mcEventBuffer.push(this._createMcEvent(eventType, eventData));
+>>>>>>> a00ef590 (Cherry-pick: Fix Copilot CLI /remote session prompt handling (#312874) (#312959))
 		}
 	}
 
@@ -1851,10 +2140,16 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					}
 					case 'user_message':
 					default: {
+						if (isMissionControlLocalUserMessageEcho(state, cmd)) {
+							state.mcCompletedCommandIds.push(cmd.id);
+							break;
+						}
+
 						// Route steering messages through the VS Code chat UI so
 						// they appear in the chat panel with proper rendering.
 						const vsCodeApi = require('vscode') as typeof import('vscode');
 						getMissionControlPendingCommandCompletionIds(state).add(cmd.id);
+						getMissionControlPendingCommandPrompts(state).set(cmd.id, stripReminders(cmd.content).trim());
 						setPendingCopilotCLIRequestContext(sessionId, {
 							prompt: cmd.content,
 							attachments: [],
