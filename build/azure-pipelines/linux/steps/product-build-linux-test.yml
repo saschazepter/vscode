@@ -107,7 +107,8 @@ steps:
       ps -ef
       cat /proc/sys/fs/inotify/max_user_watches
       lsof | wc -l
-    displayName: Diagnostics before smoke test run (processes, max_user_watches, number of opened file handles)
+      df -hT
+    displayName: Diagnostics before smoke test run (processes, max_user_watches, number of opened file handles, disk usage)
     continueOnError: true
     condition: succeededOrFailed()
 
@@ -137,7 +138,8 @@ steps:
       ps -ef
       cat /proc/sys/fs/inotify/max_user_watches
       lsof | wc -l
-    displayName: Diagnostics after smoke test run (processes, max_user_watches, number of opened file handles)
+      df -hT
+    displayName: Diagnostics after smoke test run (processes, max_user_watches, number of opened file handles, disk usage)
     continueOnError: true
     condition: succeededOrFailed()
 
