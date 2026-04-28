@@ -120,12 +120,22 @@ export class ChatStatusDashboard extends DomWidget {
 			completions?.unlimited === false ||
 			isAnonymousWithSentiment;
 		const contributedEntries = [...this.chatStatusItemService.getEntries()];
-		const hasQuickSettingsContent =
+		// Quick Settings (inline suggestion toggles, snooze, etc.) are only meaningful
+		// once the user has completed setup, is signed in, and has not disabled Chat.
+		// In setup states (new user / signed out / disabled) the controls would be
+		// non-functional, so suppress the section entirely and only show the setup CTA.
+		const isSetupState =
+			isNewUser(this.chatEntitlementService) ||
+			this.chatEntitlementService.entitlement === ChatEntitlement.Unknown ||
+			this.chatEntitlementService.sentiment.disabled ||
+			this.chatEntitlementService.sentiment.untrusted;
+		const hasQuickSettingsContent = !isSetupState && (
 			!this.options?.disableInlineSuggestionsSettings ||
 			!this.options?.disableModelSelection ||
 			!this.options?.disableProviderOptions ||
 			!this.options?.disableCompletionsSnooze ||
-			contributedEntries.length > 0;
+			contributedEntries.length > 0
+		);
 
 		// Title header with plan name, CTA buttons, and manage action
 		let headerAdditionalSpendButton: Button | undefined;
@@ -323,7 +333,10 @@ export class ChatStatusDashboard extends DomWidget {
 			return;
 		}
 
-		this.element.appendChild($('hr'));
+		// Only insert a separator when there is content above (e.g. usage or quick settings)
+		if (this.element.firstChild) {
+			this.element.appendChild($('hr'));
+		}
 
 		let descriptionText: string | MarkdownString;
 		let descriptionClass = '.description';
