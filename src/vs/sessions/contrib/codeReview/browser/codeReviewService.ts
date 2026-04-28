@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { autorun, IObservable, observableValue, transaction } from '../../../../base/common/observable.js';
+import { autorun, derivedOpts, IObservable, observableValue, transaction } from '../../../../base/common/observable.js';
+import { isEqual } from '../../../../base/common/resources.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { IRange, Range } from '../../../../editor/common/core/range.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
@@ -235,9 +236,12 @@ interface ISessionReviewData {
 	readonly state: ReturnType<typeof observableValue<ICodeReviewState>>;
 }
 
+type IPullRequestReviewThreadsModel = ReturnType<IGitHubService['getPullRequestReviewThreads']>;
+
 interface IPRSessionReviewData {
 	readonly state: ReturnType<typeof observableValue<IPRReviewState>>;
 	readonly disposables: DisposableStore;
+	reviewThreadsModel?: IPullRequestReviewThreadsModel;
 	initialized: boolean;
 }
 
@@ -308,6 +312,7 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 	private readonly _reviewsBySession = new Map<string, ISessionReviewData>();
 	private readonly _prReviewBySession = new Map<string, IPRSessionReviewData>();
+	private _polledPRReviewThreadsModel: IPullRequestReviewThreadsModel | undefined;
 	/** PR review comment IDs that have been converted to agent feedback (per session). */
 	private readonly _convertedPRCommentsBySession = new Map<string, Set<string>>();
 
@@ -322,24 +327,17 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		this._loadFromStorage();
 		this._registerSessionListeners();
 
-		this._register(autorun(reader => {
-			const activeSession = this._sessionsManagementService.activeSession.read(reader);
-			if (activeSession) {
-				this._ensurePRReviewInitialized(activeSession.resource);
-			}
-		}));
+		const activeSessionResourceObs = derivedOpts({ equalsFn: isEqual }, reader => {
+			return this._sessionsManagementService.activeSession.read(reader)?.resource;
+		});
 
-		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
-			const archived = e.changed.filter(s => s.isArchived.get());
-			const nonArchived = e.changed.filter(s => !s.isArchived.get());
-			// Initialize PR review for new/changed sessions
-			for (const session of [...e.added, ...nonArchived]) {
-				this._ensurePRReviewInitialized(session.resource);
+		this._register(autorun(reader => {
+			const activeSessionResource = activeSessionResourceObs.read(reader);
+			if (activeSessionResource) {
+				this._ensurePRReviewInitialized(activeSessionResource);
 			}
-			// Dispose PR review for removed and archived sessions
-			for (const session of [...e.removed, ...archived]) {
-				this._disposePRReview(session.resource);
-			}
+
+			this._updatePRReviewPolling(activeSessionResource);
 		}));
 	}
 
@@ -540,20 +538,28 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 	}
 
 	private _registerSessionListeners(): void {
-		// Clean up when sessions change (archived/removed sessions, stale review versions)
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
+			const archived = e.changed.filter(s => s.isArchived.get());
+			const nonArchived = e.changed.filter(s => !s.isArchived.get());
+			let changed = false;
+
+			for (const session of [...e.added, ...nonArchived]) {
+				this._ensurePRReviewInitialized(session.resource);
+			}
+
 			// Clean up reviews for removed/archived sessions
-			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
+			for (const session of [...e.removed, ...archived]) {
+				this._disposePRReview(session.resource);
+
 				const key = session.resource.toString();
 				const data = this._reviewsBySession.get(key);
 				if (data) {
 					data.state.set({ kind: CodeReviewStateKind.Idle }, undefined);
-					this._saveToStorage();
+					changed = true;
 				}
 			}
 
 			// Check for stale review versions when sessions change
-			let changed = false;
 			for (const [key, data] of this._reviewsBySession) {
 				const state = data.state.get();
 				if (state.kind !== CodeReviewStateKind.Result) {
@@ -588,6 +594,8 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			if (changed) {
 				this._saveToStorage();
 			}
+
+			this._updatePRReviewPolling(this._sessionsManagementService.activeSession.get()?.resource);
 		}));
 	}
 
@@ -669,6 +677,7 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 		const reviewThreadsModel = this._gitHubService.getPullRequestReviewThreads(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
 		const workspace = session?.workspace.get();
+		data.reviewThreadsModel = reviewThreadsModel;
 
 		// Watch the PR review threads model and map to local state
 		data.disposables.add(autorun(reader => {
@@ -708,8 +717,18 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
 			data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
 		});
-		reviewThreadsModel.startPolling();
 		data.disposables.add({ dispose: () => reviewThreadsModel.stopPolling() });
+	}
+
+	private _updatePRReviewPolling(activeSessionResource: URI | undefined): void {
+		const activeReviewThreadsModel = activeSessionResource ? this._prReviewBySession.get(activeSessionResource.toString())?.reviewThreadsModel : undefined;
+		if (this._polledPRReviewThreadsModel === activeReviewThreadsModel) {
+			return;
+		}
+
+		this._polledPRReviewThreadsModel?.stopPolling();
+		this._polledPRReviewThreadsModel = activeReviewThreadsModel;
+		this._polledPRReviewThreadsModel?.startPolling();
 	}
 
 	private _disposePRReview(sessionResource: URI): void {
@@ -717,6 +736,9 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		this._convertedPRCommentsBySession.delete(key);
 		const data = this._prReviewBySession.get(key);
 		if (data) {
+			if (data.reviewThreadsModel === this._polledPRReviewThreadsModel) {
+				this._polledPRReviewThreadsModel = undefined;
+			}
 			data.disposables.dispose();
 			this._prReviewBySession.delete(key);
 		}

@@ -59,7 +59,6 @@ suite('CodeReviewService', () => {
 					this.executeDeferred = { resolve: resolve as (v: unknown) => void, reject };
 				});
 			}
-
 			return this.result as T;
 		}
 
@@ -206,12 +205,28 @@ suite('CodeReviewService', () => {
 		}
 	}
 
+	class MockGitHubPullRequestReviewThreadsModel extends GitHubPullRequestReviewThreadsModel {
+		startPollingCalls = 0;
+		stopPollingCalls = 0;
+
+		override startPolling(intervalMs?: number): void {
+			this.startPollingCalls++;
+			super.startPolling(intervalMs);
+		}
+
+		override stopPolling(): void {
+			this.stopPollingCalls++;
+			super.stopPolling();
+		}
+	}
+
 	class MockGitHubService extends mock<IGitHubService>() {
 		readonly legacyFetcher = new MockReviewThreadsFetcher();
 		readonly reviewThreadsFetcher = new MockReviewThreadsFetcher();
 
 		private readonly _pullRequestModel: GitHubPullRequestModel;
-		private readonly _reviewThreadsModel: GitHubPullRequestReviewThreadsModel;
+		private readonly _reviewThreadsModels = new Map<string, MockGitHubPullRequestReviewThreadsModel>();
+		private readonly _reviewThreadsFetchers = new Map<string, MockReviewThreadsFetcher>();
 
 		getPullRequestCalls = 0;
 		getPullRequestReviewThreadsCalls = 0;
@@ -219,7 +234,7 @@ suite('CodeReviewService', () => {
 		constructor(disposables: DisposableStore, logService: ILogService) {
 			super();
 			this._pullRequestModel = disposables.add(new GitHubPullRequestModel('owner', 'repo', 1, this.legacyFetcher as unknown as GitHubPRFetcher, logService));
-			this._reviewThreadsModel = disposables.add(new GitHubPullRequestReviewThreadsModel('owner', 'repo', 1, this.reviewThreadsFetcher as unknown as GitHubPRFetcher, logService));
+			this._reviewThreadsFetchers.set(this._key('owner', 'repo', 1), this.reviewThreadsFetcher);
 		}
 
 		override getPullRequest(): GitHubPullRequestModel {
@@ -227,9 +242,33 @@ suite('CodeReviewService', () => {
 			return this._pullRequestModel;
 		}
 
-		override getPullRequestReviewThreads(): GitHubPullRequestReviewThreadsModel {
+		override getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
 			this.getPullRequestReviewThreadsCalls++;
-			return this._reviewThreadsModel;
+			return this.getReviewThreadsModel(owner, repo, prNumber);
+		}
+
+		getReviewThreadsFetcher(owner: string, repo: string, prNumber: number): MockReviewThreadsFetcher {
+			const key = this._key(owner, repo, prNumber);
+			let fetcher = this._reviewThreadsFetchers.get(key);
+			if (!fetcher) {
+				fetcher = new MockReviewThreadsFetcher();
+				this._reviewThreadsFetchers.set(key, fetcher);
+			}
+			return fetcher;
+		}
+
+		getReviewThreadsModel(owner: string, repo: string, prNumber: number): MockGitHubPullRequestReviewThreadsModel {
+			const key = this._key(owner, repo, prNumber);
+			let model = this._reviewThreadsModels.get(key);
+			if (!model) {
+				model = store.add(new MockGitHubPullRequestReviewThreadsModel(owner, repo, prNumber, this.getReviewThreadsFetcher(owner, repo, prNumber) as unknown as GitHubPRFetcher, new NullLogService()));
+				this._reviewThreadsModels.set(key, model);
+			}
+			return model;
+		}
+
+		private _key(owner: string, repo: string, prNumber: number): string {
+			return `${owner}/${repo}#${prNumber}`;
 		}
 	}
 
@@ -307,6 +346,65 @@ suite('CodeReviewService', () => {
 				reviewThreadRefreshes: 1,
 			});
 		}
+	});
+
+	test('only active session PR review model is polled', async () => {
+		const session2 = URI.parse('test://session/2');
+		sessionsManagement.addSession(session);
+		sessionsManagement.setGitHubInfo(session, makeGitHubInfo(1));
+		sessionsManagement.addSession(session2);
+		sessionsManagement.setGitHubInfo(session2, makeGitHubInfo(2));
+		gitHubService.getReviewThreadsFetcher('owner', 'repo', 1).nextThreads = [makePRThread('thread-100', 'src/a.ts')];
+		gitHubService.getReviewThreadsFetcher('owner', 'repo', 2).nextThreads = [makePRThread('thread-200', 'src/b.ts')];
+
+		sessionsManagement.setActiveSession(session);
+		await tick();
+		await tick();
+
+		const session1Model = gitHubService.getReviewThreadsModel('owner', 'repo', 1);
+		const session2Model = gitHubService.getReviewThreadsModel('owner', 'repo', 2);
+		assert.deepStrictEqual({
+			session1StartPollingCalls: session1Model.startPollingCalls,
+			session1StopPollingCalls: session1Model.stopPollingCalls,
+			session2StartPollingCalls: session2Model.startPollingCalls,
+			session2StopPollingCalls: session2Model.stopPollingCalls,
+		}, {
+			session1StartPollingCalls: 1,
+			session1StopPollingCalls: 0,
+			session2StartPollingCalls: 0,
+			session2StopPollingCalls: 0,
+		});
+
+		sessionsManagement.setActiveSession(session2);
+		await tick();
+		await tick();
+
+		assert.deepStrictEqual({
+			session1StartPollingCalls: session1Model.startPollingCalls,
+			session1StopPollingCalls: session1Model.stopPollingCalls,
+			session2StartPollingCalls: session2Model.startPollingCalls,
+			session2StopPollingCalls: session2Model.stopPollingCalls,
+		}, {
+			session1StartPollingCalls: 1,
+			session1StopPollingCalls: 1,
+			session2StartPollingCalls: 1,
+			session2StopPollingCalls: 0,
+		});
+
+		sessionsManagement.setActiveSession(undefined);
+		await tick();
+
+		assert.deepStrictEqual({
+			session1StartPollingCalls: session1Model.startPollingCalls,
+			session1StopPollingCalls: session1Model.stopPollingCalls,
+			session2StartPollingCalls: session2Model.startPollingCalls,
+			session2StopPollingCalls: session2Model.stopPollingCalls,
+		}, {
+			session1StartPollingCalls: 1,
+			session1StopPollingCalls: 1,
+			session2StartPollingCalls: 1,
+			session2StopPollingCalls: 1,
+		});
 	});
 
 	test('resolvePRReviewThread uses dedicated review threads model', async () => {
@@ -1150,13 +1248,13 @@ suite('CodeReviewService', () => {
 	});
 });
 
-function makeGitHubInfo(): IGitHubInfo {
+function makeGitHubInfo(prNumber = 1): IGitHubInfo {
 	return {
 		owner: 'owner',
 		repo: 'repo',
 		pullRequest: {
-			number: 1,
-			uri: URI.parse('https://github.com/owner/repo/pull/1'),
+			number: prNumber,
+			uri: URI.parse(`https://github.com/owner/repo/pull/${prNumber}`),
 		},
 	};
 }
