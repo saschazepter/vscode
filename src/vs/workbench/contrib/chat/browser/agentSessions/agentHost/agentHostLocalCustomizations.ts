@@ -10,6 +10,7 @@ import { basename, isEqualOrParent } from '../../../../../../base/common/resourc
 import { URI } from '../../../../../../base/common/uri.js';
 import { type URI as ProtocolURI } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type CustomizationRef } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { AICustomizationPromptsStorage, BUILTIN_STORAGE } from '../../../common/aiCustomizationWorkspaceService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { IPromptPath, IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 import { type ICustomizationSyncProvider, type ICustomizationItem, type ICustomizationItemProvider } from '../../../common/customizationHarnessService.js';
@@ -45,7 +46,7 @@ export const SYNCABLE_STORAGE_SOURCES: readonly PromptsStorage[] = [
 export interface ILocalCustomizationFile {
 	readonly uri: URI;
 	readonly type: PromptsType;
-	readonly storage: PromptsStorage;
+	readonly storage: AICustomizationPromptsStorage;
 	readonly disabled: boolean;
 }
 
@@ -56,6 +57,12 @@ export interface ILocalCustomizationFile {
  * This is the single source of truth used by both the AI Customization view
  * (to render disable affordances) and the agent host wire (to compute the
  * `customizations` set published via `activeClientChanged`).
+ *
+ * Built-in skills bundled with the Agents app (only present when the
+ * sessions-aware prompts service is in play) are also enumerated so that
+ * `/create-pr`, `/merge`, etc. are available to every agent host without
+ * any per-provider plumbing. In the regular VS Code workbench window the
+ * built-in lookup returns nothing and this is a no-op.
  */
 export async function enumerateLocalCustomizationsForHarness(
 	promptsService: IPromptsService,
@@ -79,6 +86,28 @@ export async function enumerateLocalCustomizationsForHarness(
 			}
 		}
 	}
+
+	// Built-in skills (e.g. `/create-pr`, `/merge`) are exposed via
+	// `BUILTIN_STORAGE`, which is not a member of the core `PromptsStorage`
+	// enum; cast through the wider `AICustomizationPromptsStorage` union to
+	// satisfy `listPromptFilesForStorage`. The base `PromptsService`
+	// returns an empty array for unknown storage values, so this is safe in
+	// the regular workbench window where the agentic prompts service is
+	// not registered.
+	const builtinSkills = await promptsService.listPromptFilesForStorage(
+		PromptsType.skill,
+		BUILTIN_STORAGE as unknown as PromptsStorage,
+		token,
+	);
+	for (const file of builtinSkills) {
+		result.push({
+			uri: file.uri,
+			type: PromptsType.skill,
+			storage: BUILTIN_STORAGE,
+			disabled: syncProvider.isDisabled(file.uri),
+		});
+	}
+
 	return result;
 }
 
@@ -118,7 +147,10 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
 			uri: file.uri,
 			type: file.type,
 			name: getFriendlyName(basename(file.uri)),
-			storage: file.storage,
+			// Cast through the wider storage union: built-in skills use
+			// `BUILTIN_STORAGE`, which is not a `PromptsStorage` enum
+			// member but is recognized by the AI Customization view.
+			storage: file.storage as PromptsStorage,
 			enabled: !file.disabled,
 			extensionId: undefined,
 			pluginUri: undefined,
