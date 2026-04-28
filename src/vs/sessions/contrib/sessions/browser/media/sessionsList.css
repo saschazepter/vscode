@@ -388,6 +388,18 @@
 	animation: session-title-shimmer 3s linear infinite;
 }
 
+.vs-dark .monaco-list-row:not(.selected) .session-item.in-progress .session-title,
+.hc-black .monaco-list-row:not(.selected) .session-item.in-progress .session-title {
+	background: linear-gradient(
+		90deg,
+		var(--vscode-strongForeground) 0%,
+		var(--vscode-strongForeground) 30%,
+		var(--vscode-descriptionForeground) 50%,
+		var(--vscode-strongForeground) 70%,
+		var(--vscode-strongForeground) 100%
+	);
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.monaco-list-row:not(.selected) .session-item.in-progress .session-title {
 		animation: none;
