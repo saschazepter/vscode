@@ -25,7 +25,7 @@ steps:
   - script: |
       set -e
       echo "Disk usage at start:"
-      df -h /
+      df -h
     displayName: Check disk space (pre-checkout)
 
   - template: ../../common/checkout.yml@self
@@ -33,7 +33,7 @@ steps:
   - script: |
       set -e
       echo "Disk usage at start:"
-      df -h /
+      df -h
     displayName: Check disk space (start)
 
   - task: NodeTool@0
@@ -197,7 +197,7 @@ steps:
   - script: |
       set -e
       echo "Disk usage after Compile:"
-      df -h /
+      df -h
     displayName: Check disk space (after Compile)
 
   - ${{ if eq(parameters.VSCODE_ARCH, 'x64') }}:
@@ -433,7 +433,7 @@ steps:
   - script: |
       set -e
       echo "Disk usage before cleanup:"
-      df -h /
+      df -h
       # Remove build intermediates no longer needed after tests
       rm -rf .build/sysroots
       rm -rf .build/electron
@@ -444,7 +444,7 @@ steps:
       rm -rf out-vscode-reh-web-min
       rm -rf ~/.cache/ms-playwright
       echo "Disk usage after cleanup:"
-      df -h /
+      df -h
     displayName: Free disk space
     condition: succeededOrFailed()
 
