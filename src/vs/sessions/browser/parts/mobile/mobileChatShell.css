@@ -629,3 +629,19 @@
 	min-height: 44px;
 	touch-action: manipulation;
 }
+
+/* -- Phone: Collapsible tool-card touch targets ------------------------- */
+/* Enlarge thinking/tool collapse buttons for comfortable thumb interaction. */
+
+.agent-sessions-workbench.phone-layout .interactive-session .chat-used-context-label {
+touch-action: manipulation;
+}
+
+.agent-sessions-workbench.phone-layout .interactive-session .chat-used-context-label .monaco-button {
+min-height: 44px;
+touch-action: manipulation;
+}
+
+.agent-sessions-workbench.phone-layout .chat-collapsible-hover-chevron {
+opacity: 1 !important; /* Always show chevron on touch — no hover state */
+}

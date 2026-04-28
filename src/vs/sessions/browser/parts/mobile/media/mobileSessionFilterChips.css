@@ -1,0 +1,60 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.mobile-session-filter-chips {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px 8px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	flex-shrink: 0;
+}
+
+.mobile-session-filter-chips::-webkit-scrollbar {
+	display: none;
+}
+
+.mobile-session-filter-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	border-radius: 12px;
+	font-size: 12px;
+	line-height: 18px;
+	white-space: nowrap;
+	cursor: pointer;
+	-webkit-user-select: none;
+	user-select: none;
+	touch-action: manipulation;
+	min-height: 28px;
+	border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 15%, transparent));
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+	transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.mobile-session-filter-chip:active {
+	opacity: 0.7;
+}
+
+.mobile-session-filter-chip.active {
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border-color: var(--vscode-badge-background);
+}
+
+.mobile-session-filter-chip .chip-icon {
+	font-size: 14px;
+	display: flex;
+	align-items: center;
+}
+
+.mobile-session-filter-chip .chip-label {
+	flex-shrink: 0;
+}

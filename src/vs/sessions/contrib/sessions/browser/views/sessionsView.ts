@@ -38,6 +38,8 @@ import { logSessionsInteraction } from '../../../../common/sessionsTelemetry.js'
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { Menus } from '../../../../browser/menus.js';
+import { MobileSessionFilterChips } from '../../../../browser/parts/mobile/mobileSessionFilterChips.js';
+import { isPhoneLayout } from '../../../../browser/parts/mobile/mobileLayout.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'sessions.workbench.view.sessionsView';
@@ -161,6 +163,12 @@ export class SessionsView extends ViewPane {
 		const findWidgetContainer = this.findWidgetContainer = DOM.append(headerRow, $('.agent-sessions-find-widget-container'));
 		findWidgetContainer.style.display = 'none';
 
+		// Reserve DOM slot for mobile filter chips (phone layout only).
+		// The actual widget is created after sessionsControl is available.
+		const filterChipsContainer = isPhoneLayout(this.layoutService)
+			? DOM.append(sessionsContent, $('.mobile-session-filter-chips-slot'))
+			: undefined;
+
 		// Sessions List Control
 		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
 		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(SessionsList, this.sessionsControlContainer, {
@@ -230,6 +238,12 @@ export class SessionsView extends ViewPane {
 				sessionsControl.clearFocus();
 			}
 		}));
+
+		// Mobile filter chips (phone layout only) — created after sessionsControl
+		// so we can wire it as the filter host.
+		if (filterChipsContainer) {
+			this._register(new MobileSessionFilterChips(filterChipsContainer, sessionsControl));
+		}
 
 		// AI Customization toolbar (bottom, fixed height)
 		this._customizationsWidget = this._register(this.instantiationService.createInstance(AICustomizationShortcutsWidget, sessionsContainer, {
