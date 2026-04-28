@@ -214,7 +214,7 @@
 		font-size: 13px;
 	}
 
-	&:not(.archived) .session-title {
+	.session-title {
 		color: var(--vscode-strongForeground);
 	}
 
