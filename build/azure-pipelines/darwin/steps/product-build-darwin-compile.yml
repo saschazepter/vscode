@@ -129,6 +129,11 @@ steps:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Compile
 
+  - script: |
+      echo "Disk usage after Compile:"
+      df -h /
+    displayName: Check disk space (after Compile)
+
   - script: node build/azure-pipelines/common/extract-telemetry.ts
     displayName: Generate lists of telemetry events
 

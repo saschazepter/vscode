@@ -128,6 +128,11 @@ steps:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Compile
 
+  - powershell: |
+      Write-Host "Disk usage after Compile:"
+      Get-PSDrive C | Format-List -Property Name,@{Name="Size(GB)";Expression={[math]::Round($_.Used+$_.Free)/1GB}},@{Name="Used(GB)";Expression={[math]::Round($_.Used)/1GB}},@{Name="Free(GB)";Expression={[math]::Round($_.Free)/1GB}}
+    displayName: Check disk space (after Compile)
+
   - script: node build/azure-pipelines/common/extract-telemetry.ts
     displayName: Generate lists of telemetry events
 
