@@ -54,7 +54,7 @@ suite('Protocol WebSocket — Client Tools', function () {
 
 	// ---- Client tool: tool_start with toolClientId --------------------------
 
-	test('client tool_start emits only toolCallStart (no auto-ready)', async function () {
+	test('client tool_start emits toolCallStart then toolCallReady (auto-confirmed)', async function () {
 		this.timeout(10_000);
 
 		const sessionUri = await createAndSubscribeSession(client, 'test-client-tool');
@@ -71,12 +71,17 @@ suite('Protocol WebSocket — Client Tools', function () {
 		assert.strictEqual(toolStartAction.toolCallId, 'tc-client-1');
 		assert.strictEqual(toolStartAction.toolClientId, 'test-client-tool');
 
-		// Verify that no auto-ready was emitted alongside the toolCallStart.
-		// The client tool flow should NOT fire an immediate toolCallReady.
-		const autoReadyNotifs = client.receivedNotifications(
+		// The SDK handler fires tool_ready for non-permission client tools
+		// so the tool transitions from Streaming to Running.
+		const toolReadyNotif = await client.waitForNotification(
 			n => isActionNotification(n, 'session/toolCallReady'),
 		);
-		assert.strictEqual(autoReadyNotifs.length, 0, 'should not have auto-ready for client tools');
+		const toolReadyAction = getActionEnvelope(toolReadyNotif).action as {
+			toolCallId: string;
+			confirmed?: string;
+		};
+		assert.strictEqual(toolReadyAction.toolCallId, 'tc-client-1');
+		assert.strictEqual(toolReadyAction.confirmed, 'not-needed');
 
 		// Complete the client tool call
 		client.notify('dispatchAction', {

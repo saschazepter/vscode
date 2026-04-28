@@ -2040,27 +2040,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const throttler = new Throttler();
 		reconnectDisposables.add(throttler);
 
-		// Wire up awaitConfirmation for tool calls that were already pending
-		// confirmation at snapshot time so the user can approve/deny them.
-		// Also start observing any subagent tools that were already running.
 		const cts = new CancellationTokenSource();
 		reconnectDisposables.add(toDisposable(() => cts.dispose(true)));
-		for (const [toolCallId, invocation] of activeToolInvocations) {
-			if (!IChatToolInvocation.isComplete(invocation)) {
-				// Look up the tool call state to forward protocol options on reconnection
-				const tcState = currentState?.activeTurn?.responseParts.find(
-					rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === toolCallId
-				);
-				const tcOptions = tcState?.kind === ResponsePartKind.ToolCall && tcState.toolCall.status === ToolCallStatus.PendingConfirmation
-					? tcState.toolCall.options
-					: undefined;
-				this._awaitToolConfirmation(invocation, toolCallId, backendSession, turnId, cts.token, tcOptions);
-			}
-			if (invocation.toolSpecificData?.kind === 'subagent' && !observedSubagentToolIds.has(toolCallId)) {
-				observedSubagentToolIds.add(toolCallId);
-				this._observeSubagentSession(backendSession, toolCallId, (parts) => chatSession.appendProgress(parts), reconnectDisposables, observedSubagentToolIds);
-			}
-		}
 
 		// Track live input request carousels for reconnection
 		const activeInputRequests = new Map<string, ChatQuestionCarouselData>();
@@ -2079,6 +2060,34 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			progress: parts => chatSession.appendProgress(parts),
 			cancellationToken: cts.token,
 		};
+
+		// Wire up tool calls from the initial progress snapshot.
+		// Client-owned tool calls are re-created through the client tool
+		// path so _tryInvokeClientTool can execute them. Server tool calls
+		// get confirmation wiring and subagent observation as before.
+		for (const [toolCallId, invocation] of activeToolInvocations) {
+			const tcState = currentState?.activeTurn?.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === toolCallId
+			);
+			const tc = tcState?.kind === ResponsePartKind.ToolCall ? tcState.toolCall : undefined;
+
+			if (tc && tc.toolClientId === this._config.connection.clientId && !IChatToolInvocation.isComplete(invocation)) {
+				this._beginClientToolInvocation(tc, ctx);
+				this._tryInvokeClientTool(tc, ctx);
+				continue;
+			}
+
+			if (!IChatToolInvocation.isComplete(invocation)) {
+				const tcOptions = tc?.status === ToolCallStatus.PendingConfirmation
+					? tc.options
+					: undefined;
+				this._awaitToolConfirmation(invocation, toolCallId, backendSession, turnId, cts.token, tcOptions);
+			}
+			if (invocation.toolSpecificData?.kind === 'subagent' && !observedSubagentToolIds.has(toolCallId)) {
+				observedSubagentToolIds.add(toolCallId);
+				this._observeSubagentSession(backendSession, toolCallId, (parts) => chatSession.appendProgress(parts), reconnectDisposables, observedSubagentToolIds);
+			}
+		}
 		const processStateChange = (sessionState: SessionState) => {
 			const isActive = this._processSessionState(sessionState, ctx);
 			this._syncInputRequests(activeInputRequests, sessionState.inputRequests, backendSession, cts.token, appendProgress);
