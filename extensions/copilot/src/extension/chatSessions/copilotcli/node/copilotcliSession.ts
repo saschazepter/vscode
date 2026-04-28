@@ -76,6 +76,7 @@ interface McSharedState {
 	mcPendingCommandCompletionIds?: Set<string>;
 	mcPendingCommandPrompts?: Map<string, string>;
 	mcLocalUserMessageEchoes?: Map<string, number>;
+	mcSuppressedCommandPromptEchoes?: Map<string, number>;
 	mcBufferedEventSignatures?: Map<string, number>;
 	mcSuppressedEventIds?: Set<string>;
 	/** Reference to the SDK session for steering from the command poller. */
@@ -89,6 +90,7 @@ const mcStateBySessionId = new Map<string, McSharedState>();
 
 const MISSION_CONTROL_KEEPALIVE_INTERVAL_MS = 10_000;
 const MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS = 30_000;
 const MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS = 10_000;
 
 interface McPermissionResponseCommandData {
@@ -236,6 +238,11 @@ function getMissionControlLocalUserMessageEchoes(state: McSharedState): Map<stri
 	return state.mcLocalUserMessageEchoes;
 }
 
+function getMissionControlSuppressedCommandPromptEchoes(state: McSharedState): Map<string, number> {
+	state.mcSuppressedCommandPromptEchoes ??= new Map();
+	return state.mcSuppressedCommandPromptEchoes;
+}
+
 function getMissionControlBufferedEventSignatures(state: McSharedState): Map<string, number> {
 	state.mcBufferedEventSignatures ??= new Map();
 	return state.mcBufferedEventSignatures;
@@ -288,6 +295,22 @@ function isMissionControlLocalUserMessageEcho(state: McSharedState, command: McC
 	return true;
 }
 
+function hasRecentMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): boolean {
+	const now = Date.now();
+	const echoes = getMissionControlSuppressedCommandPromptEchoes(state);
+	for (const [echoContent, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS) {
+			echoes.delete(echoContent);
+		}
+	}
+
+	return echoes.has(content);
+}
+
+function rememberMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): void {
+	getMissionControlSuppressedCommandPromptEchoes(state).set(content, Date.now());
+}
+
 function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }): string {
 	if (event.id) {
 		return `id:${event.id}`;
@@ -320,10 +343,16 @@ function shouldSuppressMissionControlCommandUserMessage(state: McSharedState, ev
 	}
 
 	let commandId = getMissionControlCommandIdFromEvent(event);
+	const content = getMissionControlUserMessageContent(event);
 	if (!commandId) {
-		const content = getMissionControlUserMessageContent(event);
 		if (!content) {
 			return false;
+		}
+		if (hasRecentMissionControlSuppressedCommandPromptEcho(state, content)) {
+			if (event.id) {
+				getMissionControlSuppressedEventIds(state).add(event.id);
+			}
+			return true;
 		}
 		for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
 			if (pendingPrompt === content) {
@@ -338,6 +367,9 @@ function shouldSuppressMissionControlCommandUserMessage(state: McSharedState, ev
 	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
 		getMissionControlPendingCommandPrompts(state).delete(commandId);
 		state.mcCompletedCommandIds.push(commandId);
+	}
+	if (content) {
+		rememberMissionControlSuppressedCommandPromptEcho(state, content);
 	}
 	if (event.id) {
 		getMissionControlSuppressedEventIds(state).add(event.id);

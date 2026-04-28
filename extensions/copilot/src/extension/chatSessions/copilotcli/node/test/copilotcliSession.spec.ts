@@ -1335,6 +1335,24 @@ describe('CopilotCLISession', () => {
 		expect(remoteState.mcEventBuffer).toHaveLength(1);
 		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
 		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
+
+		(session as any)._bufferMcEvent({
+			type: 'assistant.message',
+			id: 'assistant-reply',
+			timestamp: '2026-01-01T00:00:02.000Z',
+			parentId: 'ask-user',
+			data: { content: 'Nice, blue is a great choice!' },
+		});
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'late-remote-command-message',
+			timestamp: '2026-01-01T00:00:03.000Z',
+			parentId: 'assistant-reply',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(2);
+		expect((remoteState.mcEventBuffer[1] as { type: string }).type).toBe('assistant.message');
 	});
 
 	it('does not double-buffer duplicated local request events', async () => {
