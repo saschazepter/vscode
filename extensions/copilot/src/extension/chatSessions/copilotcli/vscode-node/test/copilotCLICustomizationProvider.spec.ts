@@ -669,7 +669,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
-			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(skillItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Global);
 		});
 
 		it('sets enablementScope to None for filesystem-discovered skills (no extensionId)', async () => {
@@ -678,7 +678,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
-			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(skillItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.None);
 			expect(skillItems[0].enabled).toBeUndefined();
 		});
 
@@ -687,8 +687,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
 
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				false, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -700,8 +700,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
 
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				true, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -713,8 +713,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
 
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				false, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -728,8 +728,8 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const skillUri = URI.file('/workspace/.github/skills/lint-check/SKILL.md');
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				false, 'global');
 
 			expect(fired).toBe(true);
 		});
@@ -771,7 +771,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const pluginItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Plugins);
-			expect(pluginItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(pluginItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Global);
 		});
 
 		it('disabling a plugin sets enabledPlugins to false', async () => {
@@ -779,8 +779,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
 
 			await provider.handleCustomizationEnablement(
-				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
-				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				pluginUri, FakeChatSessionCustomizationType.Plugins.id,
+				false, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -792,8 +792,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
 
 			await provider.handleCustomizationEnablement(
-				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
-				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				pluginUri, FakeChatSessionCustomizationType.Plugins.id,
+				true, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -805,8 +805,8 @@ describe('CopilotCLICustomizationProvider', () => {
 			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
 
 			await provider.handleCustomizationEnablement(
-				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
-				true, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				pluginUri, FakeChatSessionCustomizationType.Plugins.id,
+				true, 'global');
 
 			const written = mockCopilotCLISettingsService.getWrittenSettings();
 			expect(written).toBeDefined();
@@ -821,8 +821,8 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const pluginUri = URI.file('/workspace/.copilot/plugins/my-plugin');
 			await provider.handleCustomizationEnablement(
-				pluginUri, FakeChatSessionCustomizationType.Plugins as any,
-				false, FakeChatSessionCustomizationEnablementScope.Global, undefined!);
+				pluginUri, FakeChatSessionCustomizationType.Plugins.id,
+				false, 'global');
 
 			expect(fired).toBe(true);
 		});
@@ -835,7 +835,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const agentItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Agent);
-			expect(agentItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(agentItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Global);
 			expect(agentItems[0].enabled).toBe(true);
 		});
 
@@ -844,7 +844,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const agentItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Agent);
-			expect(agentItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(agentItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.None);
 			expect(agentItems[0].enabled).toBeUndefined();
 		});
 
@@ -854,7 +854,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
-			expect(instrItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Global);
+			expect(instrItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Global);
 			expect(instrItems[0].enabled).toBe(true);
 		});
 
@@ -864,7 +864,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
-			expect(instrItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(instrItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.None);
 			expect(instrItems[0].enabled).toBeUndefined();
 		});
 
@@ -874,7 +874,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instrItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
-			expect(instrItems[0].enablementScope).toBeUndefined();
+			expect(instrItems[0].enablementScopeHint).toBeUndefined();
 			expect(instrItems[0].enabled).toBeUndefined();
 		});
 
@@ -883,7 +883,7 @@ describe('CopilotCLICustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const hookItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Hook);
-			expect(hookItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(hookItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.None);
 			expect(hookItems[0].enabled).toBeUndefined();
 		});
 	});

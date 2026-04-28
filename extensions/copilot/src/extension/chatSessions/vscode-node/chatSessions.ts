@@ -164,7 +164,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 		chatParticipant.iconPath = new vscode.ThemeIcon('claude');
 		this._register(vscode.chat.registerChatSessionContentProvider(ClaudeSessionUri.scheme, chatSessionContentProvider, chatParticipant));
 		const claudeCustomizationProvider = this._register(claudeAgentInstaService.createInstance(ClaudeCustomizationProvider));
-		this._register(vscode.chat.registerChatSessionCustomizationProvider(ClaudeSessionUri.scheme, ClaudeCustomizationProvider.metadata, claudeCustomizationProvider, claudeCustomizationProvider));
+		this._register(vscode.chat.registerChatSessionCustomizationProvider(ClaudeSessionUri.scheme, ClaudeCustomizationProvider.metadata, claudeCustomizationProvider));
 
 		// #endregion
 
@@ -238,7 +238,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 		const copilotcliParticipant = vscode.chat.createChatParticipant(this.copilotcliSessionType, copilotcliChatSessionParticipant.createHandler());
 		this._register(vscode.chat.registerChatSessionContentProvider(this.copilotcliSessionType, copilotcliChatSessionContentProvider, copilotcliParticipant));
 		const copilotcliCustomizationProvider = this._register(copilotcliAgentInstaService.createInstance(CopilotCLICustomizationProvider));
-		this._register(vscode.chat.registerChatSessionCustomizationProvider(this.copilotcliSessionType, CopilotCLICustomizationProvider.metadata, copilotcliCustomizationProvider, copilotcliCustomizationProvider));
+		this._register(vscode.chat.registerChatSessionCustomizationProvider(this.copilotcliSessionType, CopilotCLICustomizationProvider.metadata, copilotcliCustomizationProvider));
 		this._register(registerCLIChatCommands(copilotCLISessionService, copilotCLIWorktreeManagerService, gitService, copilotCLIWorkspaceFolderSessions, copilotcliChatSessionContentProvider, folderRepositoryManager, copilotCLIFolderMruService, nativeEnvService, fileSystemService, sessionTracker, terminalIntegration, logService));
 		// #endregion
 
@@ -339,7 +339,7 @@ export class ChatSessionsContrib extends Disposable implements IExtensionContrib
 		const copilotcliParticipant = vscode.chat.createChatParticipant(this.copilotcliSessionType, copilotcliChatSessionParticipant.createHandler());
 		this._register(vscode.chat.registerChatSessionContentProvider(this.copilotcliSessionType, copilotcliChatSessionContentProvider, copilotcliParticipant));
 		const copilotcliCustomizationProvider = this._register(copilotcliAgentInstaService.createInstance(CopilotCLICustomizationProvider));
-		this._register(vscode.chat.registerChatSessionCustomizationProvider(this.copilotcliSessionType, CopilotCLICustomizationProvider.metadata, copilotcliCustomizationProvider, copilotcliCustomizationProvider));
+		this._register(vscode.chat.registerChatSessionCustomizationProvider(this.copilotcliSessionType, CopilotCLICustomizationProvider.metadata, copilotcliCustomizationProvider));
 		this._register(registerCLIChatCommandsV1(copilotcliSessionItemProvider, copilotCLISessionService, copilotCLIWorktreeManagerService, gitService, gitExtensionService, toolsService, copilotCLIWorkspaceFolderSessions, copilotcliChatSessionContentProvider, folderRepositoryManager, copilotFolderMruService, nativeEnvService, fileSystemService, logService));
 		// #endregion
 

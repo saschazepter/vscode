@@ -121,7 +121,6 @@ suite('aiCustomizationDisablement', () => {
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -136,7 +135,6 @@ suite('aiCustomizationDisablement', () => {
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'API Agent',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -152,7 +150,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'Local Agent',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 			});
 
@@ -170,7 +167,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'Agent', enablementScope: 'workspace',
 					enabled: false,
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -185,7 +181,6 @@ suite('aiCustomizationDisablement', () => {
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'Agent', enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -205,7 +200,6 @@ suite('aiCustomizationDisablement', () => {
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'Agent', enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 				promptsService: ps,
@@ -227,7 +221,6 @@ suite('aiCustomizationDisablement', () => {
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					enabled: false,
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -244,7 +237,6 @@ suite('aiCustomizationDisablement', () => {
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					enabled: true,
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -260,7 +252,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: skillUri, type: PromptsType.skill, name: 'Skill',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -284,7 +275,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'Agent',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				promptsService: ps,
 			});
@@ -301,7 +291,6 @@ suite('aiCustomizationDisablement', () => {
 				uri: instructionUri, type: PromptsType.instructions, name: 'Rule',
 				storage: PromptsStorage.local, enablementScope: 'workspace',
 				extensionId: undefined,
-				pluginUri: undefined
 			}];
 
 			// External harness reports item as disabled via enabled:false
@@ -330,12 +319,10 @@ suite('aiCustomizationDisablement', () => {
 					{
 						uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global', enabled: false,
 						extensionId: undefined,
-						pluginUri: undefined
 					},
 					{
 						uri: skillUri, type: PromptsType.agent, name: 'VS Code Agent', storage: PromptsStorage.local, enablementScope: 'workspace',
 						extensionId: undefined,
-						pluginUri: undefined
 					},
 				]),
 				enablementHandler: createMockEnablementHandler(),
@@ -358,12 +345,10 @@ suite('aiCustomizationDisablement', () => {
 					{
 						uri: agentUri, type: PromptsType.agent, name: 'API Agent', enablementScope: 'global',
 						extensionId: undefined,
-						pluginUri: undefined
 					},
 					{
 						uri: skillUri, type: PromptsType.agent, name: 'VS Code Agent', storage: PromptsStorage.local, enablementScope: 'workspace', enabled: false,
 						extensionId: undefined,
-						pluginUri: undefined
 					},
 				]),
 				enablementHandler: createMockEnablementHandler(),
@@ -462,7 +447,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'Pre-Disabled',
 					enabled: false, enablementScope: 'global',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -503,7 +487,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'My Agent',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				promptsService: ps,
 			});
@@ -527,7 +510,6 @@ suite('aiCustomizationDisablement', () => {
 					uri: agentUri, type: PromptsType.agent, name: 'My Agent',
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 			});
 
@@ -551,7 +533,6 @@ suite('aiCustomizationDisablement', () => {
 					enablementScope: 'global',
 					enabled: false,
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -576,7 +557,6 @@ suite('aiCustomizationDisablement', () => {
 					storage: PromptsStorage.local, enablementScope: 'workspace',
 					enabled: false,
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});
@@ -599,7 +579,6 @@ suite('aiCustomizationDisablement', () => {
 				itemProvider: createMockItemProvider([{
 					uri: agentUri, type: PromptsType.agent, name: 'No Scope Agent',
 					extensionId: undefined,
-					pluginUri: undefined
 				}]),
 				enablementHandler: createMockEnablementHandler(),
 			});

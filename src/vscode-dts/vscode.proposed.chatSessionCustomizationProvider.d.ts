@@ -130,24 +130,32 @@ declare module 'vscode' {
 
 		/**
 		 * Controls which disablement actions are available for this item.
+		 * Only takes effect when {@link enablementCommand} is set — without
+		 * a command, no toggle actions are shown regardless of this value.
 		 *
-		 * Defaults to {@link ChatSessionCustomizationEnablementScope.None} when
-		 * omitted — the item cannot be toggled unless the provider explicitly
-		 * sets a scope.
-		 *
-		 * Ignored when {@link pluginUri} is set — plugin items always use global-scope
-		 * enablement targeting the plugin itself.
+		 * Defaults to {@link ChatSessionCustomizationEnablementScope.Global} when
+		 * {@link enablementCommand} is set.
 		 */
-		readonly enablementScope?: ChatSessionCustomizationEnablementScope;
+		readonly enablementScopeHint?: ChatSessionCustomizationEnablementScope;
 
 		/**
-		 * Optional URI of the parent plugin of this customization item.
+		 * Optional command executed when the user sets this item's enablement.
 		 *
-		 * When set, all enable/disable actions for this item target the plugin
-		 * instead of the individual item, and the item's own
-		 * {@link enablementScope} is ignored.
+		 * The handler should persist the change and fire
+		 * {@link ChatSessionCustomizationProvider.onDidChange} so the UI
+		 * re-queries the updated state.
 		 */
-		readonly pluginUri?: Uri;
+		readonly enablementCommand?: string;
+
+		/**
+		 * Optional human-readable reason why this item cannot be toggled.
+		 *
+		 * Shown in the UI when neither {@link enablementCommand} nor a built-in
+		 * toggle is available. For example, a plugin-contributed item
+		 * might set this to explain that disabling requires uninstalling
+		 * the plugin.
+		 */
+		readonly enablementDisabledReason?: string;
 	}
 
 	/**
@@ -186,36 +194,6 @@ declare module 'vscode' {
 		provideChatSessionCustomizations(token: CancellationToken): ProviderResult<ChatSessionCustomizationItem[]>;
 	}
 
-	/**
-	 * A handler that persists enable/disable actions for chat customizations.
-	 *
-	 * When registered alongside a {@link ChatSessionCustomizationProvider},
-	 * the management UI delegates enable/disable actions to this handler.
-	 * Without a handler, items reported by the provider cannot be toggled.
-	 *
-	 * @see {@link chat.registerChatSessionCustomizationProvider}
-	 */
-	export interface ChatSessionCustomizationEnablementHandler {
-		/**
-		 * Called when the user enables or disables a customization in the
-		 * management UI. The handler should persist the change and fire
-		 * {@link ChatSessionCustomizationProvider.onDidChange} so the UI
-		 * re-queries the updated state.
-		 *
-		 * @param uri The URI of the customization item.
-		 * @param type The type of the customization.
-		 * @param enabled Whether the customization should be enabled (`true`) or disabled (`false`).
-		 * @param scope The scope at which enablement should be changed (e.g. {@link ChatSessionCustomizationEnablementScope.Global} or {@link ChatSessionCustomizationEnablementScope.Workspace}).
-		 */
-		handleCustomizationEnablement(
-			uri: Uri,
-			type: ChatSessionCustomizationType,
-			enabled: boolean,
-			scope: ChatSessionCustomizationEnablementScope,
-			token: CancellationToken
-		): Thenable<void>;
-	}
-
 	// #endregion
 
 	// #region Registration
@@ -230,14 +208,12 @@ declare module 'vscode' {
 		 * @param chatSessionType The session type this provider is for (e.g. `'cli'`, `'claude'`).
 		 * @param metadata Metadata describing the provider's capabilities and UI presentation.
 		 * @param provider The customization provider implementation.
-		 * @param enablementHandler Optional handler for enable/disable actions. When omitted, items reported by the provider cannot be toggled.
 		 * @returns A disposable that unregisters the provider when disposed.
 		 */
 		export function registerChatSessionCustomizationProvider(
 			chatSessionType: string,
 			metadata: ChatSessionCustomizationProviderMetadata,
 			provider: ChatSessionCustomizationProvider,
-			enablementHandler?: ChatSessionCustomizationEnablementHandler
 		): Disposable;
 	}
 

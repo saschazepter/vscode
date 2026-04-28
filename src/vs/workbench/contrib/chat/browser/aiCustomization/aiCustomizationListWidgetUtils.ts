@@ -53,11 +53,11 @@ export function extractExtensionIdFromPath(uriPath: string): string | undefined 
  * Used by the list widget renderer, context menu, and inline actions to
  * determine Enable/Disable button visibility.
  */
-export function computeItemEnablementKeys(item: { disabled: boolean; enablementScope?: string; plugin?: unknown }): {
+export function computeItemEnablementKeys(item: { disabled: boolean; enablementScope?: string; pluginUri?: unknown }): {
 	readonly enablementScope: string;
 	readonly isDisableable: boolean;
 } {
-	const enablementScope = item.plugin ? 'global' : (item.enablementScope ?? 'none');
-	const isDisableable = !!item.plugin || enablementScope !== 'none';
+	const enablementScope = item.pluginUri ? 'global' : (item.enablementScope ?? 'none');
+	const isDisableable = !!item.pluginUri || enablementScope !== 'none';
 	return { enablementScope, isDisableable };
 }

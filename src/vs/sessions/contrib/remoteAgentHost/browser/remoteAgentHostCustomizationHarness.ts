@@ -91,7 +91,6 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 				statusMessage: sc.statusMessage,
 				enabled: sc.enabled,
 				extensionId: undefined,
-				pluginUri: undefined
 			}));
 		}
 
@@ -102,7 +101,6 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 			name: ref.displayName,
 			description: ref.description,
 			extensionId: undefined,
-			pluginUri: undefined
 		}));
 	}
 }

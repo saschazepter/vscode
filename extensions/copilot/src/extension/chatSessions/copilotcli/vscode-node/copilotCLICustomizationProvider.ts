@@ -37,6 +37,8 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	private readonly _disablementStore: ExtensionDisablementStore;
 	private _lastVscodeOwnedUris = new Set<string>();
 
+	static readonly enablementCommandId = 'copilot.copilotcli.handleCustomizationEnablement';
+
 	static get metadata(): vscode.ChatSessionCustomizationProviderMetadata {
 		return {
 			label: 'Copilot CLI',
@@ -72,6 +74,9 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		this._register(this.promptsService.onDidChangePlugins(() => this._onDidChange.fire()));
 		this._register(this.copilotCLIAgents.onDidChangeAgents(() => this._onDidChange.fire()));
 		this._register(this.copilotCLISettingsService.onDidChange(() => this._onDidChange.fire()));
+
+		this._register(vscode.commands.registerCommand(CopilotCLICustomizationProvider.enablementCommandId,
+			(uri: vscode.Uri, type: string, enabled: boolean, scope: string) => this.handleCustomizationEnablement(uri, type, enabled, scope)));
 	}
 
 	async provideChatSessionCustomizations(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
@@ -122,9 +127,10 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			// Only extension-contributed agents (owned by VS Code) support CLI-side disablement
 			...(extensionId ? {
 				enabled: !this._disablementStore.isDisabled(sourceUri, 'agent'),
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			} : {
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 			}),
 		}));
 	}
@@ -188,9 +194,10 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			const hasEnablement = !!instruction.extensionId;
 			const enablementProps = hasEnablement ? {
 				enabled: !this._disablementStore.isDisabled(uri, 'instructions'),
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			} : {
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 			};
 
 			if (pattern !== undefined) {
@@ -241,18 +248,15 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					name,
 					vscodeOwned: true,
 					enabled: !this._disablementStore.isDisabled(s.uri, 'skill'),
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
-					extensionId: s.extensionId,
-					pluginUri: s.pluginUri,
+					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
+					enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 				};
 			}
 			return {
 				uri: s.uri,
 				type: vscode.ChatSessionCustomizationType.Skill,
 				name,
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
-				extensionId: s.extensionId,
-				pluginUri: s.pluginUri,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 			};
 		});
 	}
@@ -266,7 +270,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 			uri: h.uri,
 			type: vscode.ChatSessionCustomizationType.Hook,
 			name: basename(h.uri).replace(/\.json$/i, ''),
-			enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
+			enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 		}));
 	}
 
@@ -283,7 +287,8 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				type: vscode.ChatSessionCustomizationType.Plugins,
 				name,
 				enabled: enabledPlugins[name] !== false,
-				enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
+				enablementCommand: CopilotCLICustomizationProvider.enablementCommandId,
 			};
 		});
 	}
@@ -305,12 +310,12 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		return this.copilotCLISettingsService.getUris(CopilotCLISettingsLocationType.User)[0];
 	}
 
-	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, _scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
+	async handleCustomizationEnablement(uri: vscode.Uri, typeId: string, enabled: boolean, _scope: string): Promise<void> {
 		const settings = await this._readUserSettings();
 		let name: string;
 
-		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
-			if (this._isVscodeOwned(uri, type)) {
+		if (typeId === vscode.ChatSessionCustomizationType.Skill.id) {
+			if (this._isVscodeOwned(uri)) {
 				// VS Code extension-contributed skill
 				name = basename(dirname(uri));
 				await this._disablementStore.setDisabled(URI.from(uri), 'skill', !enabled, 'global');
@@ -326,7 +331,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 					settings.disabledSkills = [...currentList, name];
 				}
 			}
-		} else if (type.id === vscode.ChatSessionCustomizationType.Plugins?.id) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Plugins?.id) {
 			// Plugins use enabledPlugins map (Record<string, boolean>)
 			name = basename(uri);
 			const map = (settings.enabledPlugins && typeof settings.enabledPlugins === 'object' && !Array.isArray(settings.enabledPlugins))
@@ -338,25 +343,25 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 				map[name] = false;
 			}
 			settings.enabledPlugins = Object.keys(map).length > 0 ? map : undefined;
-		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id && this._isVscodeOwned(uri, type)) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Instructions.id && this._isVscodeOwned(uri)) {
 			name = basename(uri);
 			await this._disablementStore.setDisabled(URI.from(uri), 'instructions', !enabled, 'global');
 			this._onDidChange.fire();
 			return;
-		} else if (type.id === vscode.ChatSessionCustomizationType.Agent.id && this._isVscodeOwned(uri, type)) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Agent.id && this._isVscodeOwned(uri)) {
 			name = basename(uri);
 			await this._disablementStore.setDisabled(URI.from(uri), 'agent', !enabled, 'global');
 			this._onDidChange.fire();
 			return;
 		} else {
-			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
-			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', type.id));
+			this.logService.warn(`[CopilotCLICustomizationProvider] Per-item enablement not supported for type: ${typeId}`);
+			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', typeId));
 			return;
 		}
 
 		try {
 			await this.copilotCLISettingsService.writeSettingsFile(this._settingsUri, settings);
-			this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} "${name}" in ${this._settingsUri.toString()}`);
+			this.logService.debug(`[CopilotCLICustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${typeId} "${name}" in ${this._settingsUri.toString()}`);
 			this._onDidChange.fire();
 		} catch (err) {
 			void vscode.window.showErrorMessage(vscode.l10n.t('Failed to update Copilot settings: {0}', err instanceof Error ? err.message : String(err)));
@@ -367,7 +372,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Checks whether a customization item is owned by a VS Code extension
 	 * by looking for its URI in the last fetched items with `extensionId`.
 	 */
-	private _isVscodeOwned(uri: vscode.Uri, _type: vscode.ChatSessionCustomizationType): boolean {
+	private _isVscodeOwned(uri: vscode.Uri): boolean {
 		// Items with extensionId are tracked during provideChatSessionCustomizations
 		// via the vscodeOwned flag. Since the disablement store is keyed by URI,
 		// any URI in the store is vscode-owned by definition.

@@ -342,8 +342,9 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 			storage: item.storage,
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
-			plugin: item.plugin?.toString(),
+			plugin: item.pluginUri?.toString(),
 			providerEnablementScope: item.enablementScope,
+			enablementCommand: item.enablementCommand,
 		};
 
 		const descriptor = this.harnessService.getActiveDescriptor();
@@ -355,7 +356,7 @@ class HookFileHeaderRenderer implements IListRenderer<IHookFileEntry, IHookFileH
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
 			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
 			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
-			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.plugin],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.pluginUri],
 		];
 		if (item.storage) {
 			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, item.storage]);
@@ -682,8 +683,9 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			storage: element.storage,
 			pluginUri: element.pluginUri?.toString(),
 			itemId: element.id,
-			plugin: element.plugin?.toString(),
+			plugin: element.pluginUri?.toString(),
 			providerEnablementScope: element.enablementScope,
+			enablementCommand: element.enablementCommand,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
@@ -696,7 +698,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
 			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
 			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
-			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!element.plugin],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!element.pluginUri],
 		];
 		if (element.storage) {
 			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, element.storage]);
@@ -1058,8 +1060,9 @@ export class AICustomizationListWidget extends Disposable {
 			storage: item.storage,
 			pluginUri: item.pluginUri?.toString(),
 			itemId: item.id,
-			plugin: item.plugin?.toString(),
+			plugin: item.pluginUri?.toString(),
 			providerEnablementScope: item.enablementScope,
+			enablementCommand: item.enablementCommand,
 		};
 
 		// Create scoped context key service with item-specific keys for when-clause filtering
@@ -1072,7 +1075,7 @@ export class AICustomizationListWidget extends Disposable {
 			[AI_CUSTOMIZATION_SUPPORTS_TROUBLESHOOT_KEY, descriptor.supportsTroubleshoot ?? false],
 			[AI_CUSTOMIZATION_ENABLEMENT_SCOPE_KEY, itemEnablementScope],
 			[AI_CUSTOMIZATION_ITEM_DISABLEABLE_KEY, isDisableable],
-			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.plugin],
+			[AI_CUSTOMIZATION_ITEM_HAS_PLUGIN_KEY, !!item.pluginUri],
 		];
 		if (item.storage) {
 			overlayPairs.push([AI_CUSTOMIZATION_ITEM_STORAGE_KEY, item.storage]);

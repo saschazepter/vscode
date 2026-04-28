@@ -194,6 +194,16 @@ function extractPlugin(context: AICustomizationContext): URI | undefined {
 }
 
 /**
+ * Extracts the enablement command ID from context, if present.
+ */
+function extractEnablementCommand(context: AICustomizationContext): string | undefined {
+	if (URI.isUri(context) || typeof context === 'string') {
+		return undefined;
+	}
+	return typeof context.enablementCommand === 'string' ? context.enablementCommand : undefined;
+}
+
+/**
  * Extracts the item name from context.
  */
 function extractName(context: AICustomizationContext): string | undefined {
@@ -775,6 +785,14 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
+		// Extension-provided items with a command: execute the command
+		const command = extractEnablementCommand(context);
+		if (command) {
+			const commandService = accessor.get(ICommandService);
+			await commandService.executeCommand(command, uri, promptType, false, 'global');
+			return;
+		}
+
 		// Provider-managed items: delegate to the harness's enablement provider.
 		// All harnesses now own their disablement through enablementHandler.
 		const enablementHandler = harnessService.getActiveEnablementHandler();
@@ -798,6 +816,14 @@ registerAction2(class extends Action2 {
 		const uri = extractURI(context);
 		const promptType = extractPromptType(context);
 		if (!promptType) {
+			return;
+		}
+
+		// Extension-provided items with a command: execute the command
+		const command = extractEnablementCommand(context);
+		if (command) {
+			const commandService = accessor.get(ICommandService);
+			await commandService.executeCommand(command, uri, promptType, false, 'workspace');
 			return;
 		}
 
@@ -833,6 +859,14 @@ registerAction2(class extends Action2 {
 			if (enablementHandler) {
 				enablementHandler.handleCustomizationEnablement(plugin, 'plugins' as PromptsType, true, 'global');
 			}
+			return;
+		}
+
+		// Extension-provided items with a command: execute the command
+		const command = extractEnablementCommand(context);
+		if (command) {
+			const commandService = accessor.get(ICommandService);
+			await commandService.executeCommand(command, uri, promptType, true, 'global');
 			return;
 		}
 

@@ -56,6 +56,8 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 	private readonly _disablementStore: ExtensionDisablementStore;
 	private _lastVscodeOwnedUris = new Set<string>();
 
+	static readonly enablementCommandId = 'copilot.claude.handleCustomizationEnablement';
+
 	static get metadata(): vscode.ChatSessionCustomizationProviderMetadata {
 		return {
 			label: 'Claude',
@@ -88,6 +90,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this._onDidChange.fire()));
 		this._register(this.promptsService.onDidChangeSkills(() => this._onDidChange.fire()));
 		this._register(this.workspaceService.onDidChangeWorkspaceFolders(() => this._onDidChange.fire()));
+
+		this._register(vscode.commands.registerCommand(ClaudeCustomizationProvider.enablementCommandId,
+			(uri: vscode.Uri, type: string, enabled: boolean, scope: string) => this.handleCustomizationEnablement(uri, type, enabled, scope)));
 	}
 
 	async provideChatSessionCustomizations(token: vscode.CancellationToken): Promise<vscode.ChatSessionCustomizationItem[]> {
@@ -150,7 +155,8 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					type: vscode.ChatSessionCustomizationType.Skill,
 					name: skill.name,
 					enabled: override !== 'off',
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.Workspace
+					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Workspace,
+					enablementCommand: ClaudeCustomizationProvider.enablementCommandId,
 				};
 				skillItems.push(item);
 			} else if (skill.extensionId) {
@@ -161,7 +167,8 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					name: skill.name,
 					vscodeOwned: true,
 					enabled: !this._disablementStore.isDisabled(skill.uri, 'skill'),
-					enablementScope: vscode.ChatSessionCustomizationEnablementScope.Global,
+					enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.Global,
+					enablementCommand: ClaudeCustomizationProvider.enablementCommandId,
 				});
 			}
 		}
@@ -223,14 +230,18 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					}
 				}
 
+				const itemEnablementScope = excludedByUnknownPattern
+					? vscode.ChatSessionCustomizationEnablementScope.None
+					: vscode.ChatSessionCustomizationEnablementScope.Workspace;
 				items.push({
 					uri,
 					type: vscode.ChatSessionCustomizationType.Instructions,
 					name,
-					enablementScope: excludedByUnknownPattern
-						? vscode.ChatSessionCustomizationEnablementScope.None :
-						vscode.ChatSessionCustomizationEnablementScope.Workspace,
+					enablementScopeHint: itemEnablementScope,
 					enabled: !excluded,
+					enablementCommand: itemEnablementScope !== vscode.ChatSessionCustomizationEnablementScope.None
+						? ClaudeCustomizationProvider.enablementCommandId
+						: undefined,
 				});
 			}
 		}
@@ -288,7 +299,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 								description,
 								enabled: !disableAllHooks,
 								// TODO: There isn't a great way to toggle enablement for individual hooks
-								enablementScope: vscode.ChatSessionCustomizationEnablementScope.None,
+								enablementScopeHint: vscode.ChatSessionCustomizationEnablementScope.None,
 							});
 						}
 					}
@@ -350,9 +361,9 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 
 	// --- Enablement ---
 
-	async handleCustomizationEnablement(uri: vscode.Uri, type: vscode.ChatSessionCustomizationType, enabled: boolean, scope: vscode.ChatSessionCustomizationEnablementScope, _token: vscode.CancellationToken): Promise<void> {
+	async handleCustomizationEnablement(uri: vscode.Uri, typeId: string, enabled: boolean, scope: string): Promise<void> {
 		// TODO: should we support writing to settings.local.json files?
-		const location = scope === vscode.ChatSessionCustomizationEnablementScope.Workspace
+		const location = scope === 'workspace'
 			? ClaudeSettingsLocationType.Workspace
 			: ClaudeSettingsLocationType.User;
 
@@ -366,7 +377,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 			}
 		};
 
-		if (type.id === vscode.ChatSessionCustomizationType.Skill.id) {
+		if (typeId === vscode.ChatSessionCustomizationType.Skill.id) {
 			if (this._lastVscodeOwnedUris.has(uri.toString())) {
 				// VS Code extension-contributed skill
 				await this._disablementStore.setDisabled(URI.from(uri), 'skill', !enabled, 'global');
@@ -400,7 +411,7 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					}
 				}
 			}
-		} else if (type.id === vscode.ChatSessionCustomizationType.Instructions.id) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Instructions.id) {
 			if (this._lastVscodeOwnedUris.has(uri.toString())) {
 				// VS Code extension-contributed instruction
 				await this._disablementStore.setDisabled(URI.from(uri), 'instructions', !enabled, 'global');
@@ -437,12 +448,12 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 					}
 				}
 			}
-		} else if (type.id === vscode.ChatSessionCustomizationType.Agent.id && this._lastVscodeOwnedUris.has(uri.toString())) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Agent.id && this._lastVscodeOwnedUris.has(uri.toString())) {
 			// VS Code extension-contributed agent
 			await this._disablementStore.setDisabled(URI.from(uri), 'agent', !enabled, 'global');
 			this._onDidChange.fire();
 			return;
-		} else if (type.id === vscode.ChatSessionCustomizationType.Hook.id) {
+		} else if (typeId === vscode.ChatSessionCustomizationType.Hook.id) {
 			// Hooks are toggled via the disableAllHooks flag in the settings file
 			// that contains them. Toggling any hook toggles all hooks in that file.
 			for (const file of allSettingsFiles) {
@@ -457,12 +468,12 @@ export class ClaudeCustomizationProvider extends Disposable implements vscode.Ch
 				}
 			}
 		} else {
-			this.logService.warn(`[ClaudeCustomizationProvider] Per-item enablement not supported for type: ${type.id}`);
-			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', type.id));
+			this.logService.warn(`[ClaudeCustomizationProvider] Per-item enablement not supported for type: ${typeId}`);
+			void vscode.window.showErrorMessage(vscode.l10n.t('Toggling {0} customizations is not supported.', typeId));
 			return;
 		}
 
-		this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${type.id} in ${location}`);
+		this.logService.debug(`[ClaudeCustomizationProvider] ${enabled ? 'Enabled' : 'Disabled'} ${typeId} in ${location}`);
 		this._onDidChange.fire();
 	}
 

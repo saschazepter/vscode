@@ -490,11 +490,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		1: 'global', // ChatSessionCustomizationEnablementScope.Global
 		2: 'workspace', // ChatSessionCustomizationEnablementScope.Workspace
 	};
-	private static readonly _enablementScopeReverseMap: Record<string, number> = {
-		'global': 1, // ChatSessionCustomizationEnablementScope.Global
-		'workspace': 2, // ChatSessionCustomizationEnablementScope.Workspace
-	};
-	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider; enablementHandler?: vscode.ChatSessionCustomizationEnablementHandler }>();
+	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider }>();
 
 	private readonly _sessionDisposables: DisposableResourceMap<DisposableStore> = this._register(new DisposableResourceMap());
 	private readonly _completionDisposables: DisposableMap<number, DisposableStore> = this._register(new DisposableMap());
@@ -792,9 +788,9 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		return resources;
 	}
 
-	registerChatSessionCustomizationProvider(extension: IExtensionDescription, chatSessionType: string, metadata: vscode.ChatSessionCustomizationProviderMetadata, provider: vscode.ChatSessionCustomizationProvider, enablementHandler?: vscode.ChatSessionCustomizationEnablementHandler): vscode.Disposable {
+	registerChatSessionCustomizationProvider(extension: IExtensionDescription, chatSessionType: string, metadata: vscode.ChatSessionCustomizationProviderMetadata, provider: vscode.ChatSessionCustomizationProvider): vscode.Disposable {
 		const handle = ExtHostChatAgents2._customizationProviderIdPool++;
-		this._customizationProviders.set(handle, { extension, provider, enablementHandler });
+		this._customizationProviders.set(handle, { extension, provider });
 
 		const metadataDto: IChatSessionCustomizationProviderMetadataDto = {
 			label: metadata.label,
@@ -802,7 +798,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			supportedTypes: metadata.supportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
 		};
 
-		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier, !!enablementHandler);
+		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier);
 
 		const disposables = new DisposableStore();
 
@@ -841,28 +837,17 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				badge: item.badge,
 				badgeTooltip: item.badgeTooltip,
 				enabled: item.enabled,
-				enablementScope: item.enablementScope !== undefined ? ExtHostChatAgents2._enablementScopeMap[item.enablementScope] : undefined,
-				pluginUri: item.pluginUri,
+				enablementScope: item.enablementScopeHint !== undefined
+					? ExtHostChatAgents2._enablementScopeMap[item.enablementScopeHint]
+					: item.enablementCommand ? 'global' : undefined,
+				enablementCommand: item.enablementCommand,
+				enablementMessage: item.enablementDisabledReason,
 			} satisfies IChatSessionCustomizationItemDto);
 
 			return items.map(convertItem);
 		} catch (err) {
 			return undefined;
 		}
-	}
-
-	async $handleCustomizationEnablement(handle: number, uri: UriComponents, type: string, enabled: boolean, scope: 'global' | 'workspace'): Promise<void> {
-		const providerData = this._customizationProviders.get(handle);
-		if (!providerData?.enablementHandler) {
-			return;
-		}
-		await providerData.enablementHandler.handleCustomizationEnablement(
-			URI.revive(uri),
-			typeConvert.ChatSessionCustomizationType.to(type),
-			enabled,
-			ExtHostChatAgents2._enablementScopeReverseMap[scope] as vscode.ChatSessionCustomizationEnablementScope,
-			CancellationToken.None,
-		);
 	}
 
 	async $detectChatParticipant(handle: number, requestDto: Dto<IChatAgentRequest>, context: { history: IChatAgentHistoryEntryDto[] }, options: { location: ChatAgentLocation; participants?: vscode.ChatParticipantMetadata[] }, token: CancellationToken): Promise<vscode.ChatParticipantDetectionResult | null | undefined> {

@@ -52,8 +52,7 @@ export interface IAICustomizationListItem {
 	/** URI of the parent plugin, when this item comes from an installed plugin. */
 	readonly pluginUri?: URI;
 	/** When set, overrides the formatted name for display. */
-	readonly displayName?: string;
-	/** When set, shows a small inline badge next to the item name. */
+	readonly displayName?: string;	/** When set, shows a small inline badge next to the item name. */
 	readonly badge?: string;
 	/** Tooltip shown when hovering the badge. */
 	readonly badgeTooltip?: string;
@@ -69,8 +68,10 @@ export interface IAICustomizationListItem {
 	readonly statusMessage?: string;
 	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
 	readonly enablementScope?: 'none' | 'global' | 'workspace';
-	/** Optional reference to the parent plugin item. When present, enable/disable actions target the plugin and the item's own enablementScope is ignored. */
-	readonly plugin?: URI;
+	/** Command ID to execute when the user toggles this item's enablement. */
+	readonly enablementCommand?: string;
+	/** Human-readable message explaining why this item cannot be toggled. */
+	readonly enablementMessage?: string;
 	/** When true, this item can be selected for syncing to a remote harness. */
 	readonly syncable?: boolean;
 	/** When true, this syncable item is currently selected for syncing. */
@@ -312,7 +313,8 @@ export class AICustomizationItemNormalizer {
 			status: item.status,
 			statusMessage: item.statusMessage,
 			enablementScope: item.enablementScope,
-			plugin: item.pluginUri,
+			enablementCommand: item.enablementCommand,
+			enablementMessage: item.enablementMessage,
 			hookChildren: item.hookChildren,
 		};
 	}
@@ -580,7 +582,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				badgeTooltip: uiTooltip,
 				enablementScope: 'workspace',
 				extensionId: undefined,
-				pluginUri: undefined
 			};
 			appended.push(this.itemNormalizer.normalizeItem(builtinItem, promptType, uriUseCounts));
 		}
@@ -623,7 +624,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				enabled: !disabledUris.has(file.uri),
 				enablementScope: 'workspace' as const,
 				extensionId: undefined,
-				pluginUri: undefined
 			}));
 
 		return this.itemNormalizer.normalizeItems(providerItems, promptType)

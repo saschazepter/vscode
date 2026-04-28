@@ -474,7 +474,7 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const skillItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Skill);
-			expect(skillItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
+			expect(skillItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
 		});
 	});
 
@@ -678,8 +678,8 @@ describe('ClaudeCustomizationProvider', () => {
 			});
 
 			await provider.handleCustomizationEnablement(
-				settingsUri, FakeChatSessionCustomizationType.Hook as any,
-				false, 2 /* Workspace */, undefined!);
+				settingsUri, FakeChatSessionCustomizationType.Hook.id,
+				false, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
 			expect(written).toBeDefined();
@@ -697,8 +697,8 @@ describe('ClaudeCustomizationProvider', () => {
 			});
 
 			await provider.handleCustomizationEnablement(
-				settingsUri, FakeChatSessionCustomizationType.Hook as any,
-				true, 2 /* Workspace */, undefined!);
+				settingsUri, FakeChatSessionCustomizationType.Hook.id,
+				true, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
 			expect(written).toBeDefined();
@@ -716,8 +716,8 @@ describe('ClaudeCustomizationProvider', () => {
 			});
 
 			await provider.handleCustomizationEnablement(
-				settingsUri, FakeChatSessionCustomizationType.Hook as any,
-				false, 2 /* Workspace */, undefined!);
+				settingsUri, FakeChatSessionCustomizationType.Hook.id,
+				false, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(settingsUri);
 			expect(written!.permissions).toEqual({ allow: ['Read'] });
@@ -738,8 +738,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			// Disable hooks in the workspace file only
 			await provider.handleCustomizationEnablement(
-				wsUri, FakeChatSessionCustomizationType.Hook as any,
-				false, 2 /* Workspace */, undefined!);
+				wsUri, FakeChatSessionCustomizationType.Hook.id,
+				false, 'workspace');
 
 			expect(mockClaudeSettingsService.getWrittenFile(wsUri)!.disableAllHooks).toBe(true);
 			expect(mockClaudeSettingsService.getWrittenFile(userUri)).toBeUndefined();
@@ -757,8 +757,8 @@ describe('ClaudeCustomizationProvider', () => {
 			disposables.add(provider.onDidChange(() => { fired = true; }));
 
 			await provider.handleCustomizationEnablement(
-				settingsUri, FakeChatSessionCustomizationType.Hook as any,
-				false, 2 /* Workspace */, undefined!);
+				settingsUri, FakeChatSessionCustomizationType.Hook.id,
+				false, 'workspace');
 
 			expect(fired).toBe(true);
 		});
@@ -815,8 +815,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				false, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written).toBeDefined();
@@ -831,8 +831,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				true, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written).toBeDefined();
@@ -847,8 +847,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				true, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written!.skillOverrides).toEqual({ 'other-skill': 'off' });
@@ -865,8 +865,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const skillUri = URI.file('/workspace/.claude/skills/my-skill/SKILL.md');
 			await provider.handleCustomizationEnablement(
-				skillUri, FakeChatSessionCustomizationType.Skill as any,
-				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				skillUri, FakeChatSessionCustomizationType.Skill.id,
+				false, 'workspace');
 
 			expect(fired).toBe(true);
 		});
@@ -907,7 +907,7 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
-			expect(instructionItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
+			expect(instructionItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.Workspace);
 		});
 
 		it('sets enablementScope to None when excluded by glob pattern only', async () => {
@@ -921,7 +921,7 @@ describe('ClaudeCustomizationProvider', () => {
 			const items = await provider.provideChatSessionCustomizations(undefined!);
 			const instructionItems = items.filter(i => i.type === FakeChatSessionCustomizationType.Instructions);
 			expect(instructionItems[0].enabled).toBe(false);
-			expect(instructionItems[0].enablementScope).toBe(FakeChatSessionCustomizationEnablementScope.None);
+			expect(instructionItems[0].enablementScopeHint).toBe(FakeChatSessionCustomizationEnablementScope.None);
 		});
 
 		it('disables an instruction by adding to claudeMdExcludes', async () => {
@@ -932,8 +932,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
 			await provider.handleCustomizationEnablement(
-				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
-				false, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions.id,
+				false, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written).toBeDefined();
@@ -948,8 +948,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
 			await provider.handleCustomizationEnablement(
-				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
-				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions.id,
+				true, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written).toBeDefined();
@@ -966,8 +966,8 @@ describe('ClaudeCustomizationProvider', () => {
 
 			const claudeMdUri = URI.joinPath(URI.file('/workspace'), 'CLAUDE.md');
 			await provider.handleCustomizationEnablement(
-				claudeMdUri, FakeChatSessionCustomizationType.Instructions as any,
-				true, FakeChatSessionCustomizationEnablementScope.Workspace, undefined!);
+				claudeMdUri, FakeChatSessionCustomizationType.Instructions.id,
+				true, 'workspace');
 
 			const written = mockClaudeSettingsService.getWrittenFile(wsUri);
 			expect(written!.claudeMdExcludes).toEqual(['/workspace/CLAUDE.local.md']);

@@ -155,8 +155,6 @@ export interface ICustomizationItem {
 	readonly extensionLabel?: string;
 	/** The extension identifier that contributed this customization, if any. */
 	readonly extensionId: string | undefined;
-	/** The URI of the plugin that contributed this customization, if any. */
-	readonly pluginUri: URI | undefined;
 	/** Server-reported loading status for this customization. */
 	readonly status?: 'loading' | 'loaded' | 'degraded' | 'error';
 	/** Human-readable status detail (e.g. error message or warning). */
@@ -165,6 +163,10 @@ export interface ICustomizationItem {
 	readonly enabled?: boolean;
 	/** Per-item enablement scope override. Defaults to 'none' (not disableable) when absent. */
 	readonly enablementScope?: 'none' | 'global' | 'workspace';
+	/** Command ID to execute when the user toggles this item's enablement. */
+	readonly enablementCommand?: string;
+	/** Human-readable message explaining why this item cannot be toggled. */
+	readonly enablementMessage?: string;
 	/** When set, items with the same groupKey are displayed under a shared collapsible header. */
 	readonly groupKey?: string;
 	/** When set, shows a small inline badge next to the item name (e.g. an applyTo glob pattern). */
@@ -707,8 +709,6 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 		const getSource = (item: ICustomizationItem): IAgentSource => {
 			if (item.storage === PromptsStorage.extension && item.extensionId) {
 				return { storage: PromptsStorage.extension, extensionId: new ExtensionIdentifier(item.extensionId) };
-			} else if (item.storage === PromptsStorage.plugin && item.pluginUri) {
-				return { storage: PromptsStorage.plugin, pluginUri: item.pluginUri };
 			} else if (item.storage === PromptsStorage.user) {
 				return { storage: PromptsStorage.user };
 			}
