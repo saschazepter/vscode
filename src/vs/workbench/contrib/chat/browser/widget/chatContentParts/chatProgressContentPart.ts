@@ -166,26 +166,37 @@ export class ChatProgressSubPart extends Disposable {
 }
 
 /**
- * Picks a working-progress label, debounced so rapid re-instantiations during
- * streaming reuse the previous label instead of flickering. The dwell window
- * slides forward on each reuse, so the label only changes once renders space
- * out beyond {@link WORKING_LABEL_MIN_DWELL_MS}.
+ * Picks a working-progress label, debounced per response so rapid
+ * re-instantiations during streaming reuse the previous label instead of
+ * flickering. Each response gets its own dwell window keyed by
+ * `element.id`; stale entries are pruned opportunistically on each call.
  */
 const WORKING_LABEL_MIN_DWELL_MS = 1200;
-let lastPickedWorkingLabel: { label: string; pickedAt: number } | undefined;
+const lastPickedWorkingLabelByElement = new Map<string, { label: string; pickedAt: number }>();
 
-function pickWorkingLabel(configurationService: IConfigurationService): string {
+function pickWorkingLabel(elementId: string, configurationService: IConfigurationService): string {
 	const now = Date.now();
-	if (lastPickedWorkingLabel && now - lastPickedWorkingLabel.pickedAt < WORKING_LABEL_MIN_DWELL_MS) {
-		lastPickedWorkingLabel = { label: lastPickedWorkingLabel.label, pickedAt: now };
-		return lastPickedWorkingLabel.label;
+
+	// Prune entries older than the dwell window. The map only holds entries
+	// for actively-streaming responses, so this stays small.
+	for (const [id, entry] of lastPickedWorkingLabelByElement) {
+		if (now - entry.pickedAt >= WORKING_LABEL_MIN_DWELL_MS) {
+			lastPickedWorkingLabelByElement.delete(id);
+		}
 	}
+
+	const existing = lastPickedWorkingLabelByElement.get(elementId);
+	if (existing && now - existing.pickedAt < WORKING_LABEL_MIN_DWELL_MS) {
+		existing.pickedAt = now;
+		return existing.label;
+	}
+
 	const fun = maybePickFunWorkingMessage();
 	const label = fun ?? (() => {
 		const pool = buildPhrasePool(defaultThinkingMessages, configurationService);
 		return pool[Math.floor(Math.random() * pool.length)];
 	})();
-	lastPickedWorkingLabel = { label, pickedAt: now };
+	lastPickedWorkingLabelByElement.set(elementId, { label, pickedAt: now });
 	return label;
 }
 
@@ -209,7 +220,7 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 	) {
 		super();
 		this.explicitContent = workingProgress.content;
-		this.label = pickWorkingLabel(configurationService);
+		this.label = pickWorkingLabel(context.element.id, configurationService);
 
 		// Build the DOM
 		this.domNode = $('.progress-container');
