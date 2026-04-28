@@ -672,7 +672,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!inputContainer) {
 			return;
 		}
-		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true;
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true
+			&& !isInlineChat(this);
 		const inProgress = !!this.viewModel?.model.requestInProgress.get();
 		inputContainer.classList.toggle('working', enabled && inProgress);
 	}
