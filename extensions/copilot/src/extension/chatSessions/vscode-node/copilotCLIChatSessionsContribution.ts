@@ -45,7 +45,7 @@ import { emptyWorkspaceInfo, getWorkingDirectory, isIsolationEnabled, IWorkspace
 import { ICustomSessionTitleService } from '../copilotcli/common/customSessionTitleService';
 import { IChatDelegationSummaryService } from '../copilotcli/common/delegationSummaryService';
 import { getCopilotCLISessionDir } from '../copilotcli/node/cliHelpers';
-import { COPILOT_CLI_REASONING_EFFORT_PROPERTY, formatModelDetails, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isWelcomeView } from '../copilotcli/node/copilotCli';
+import { COPILOT_CLI_REASONING_EFFORT_PROPERTY, formatModelDetails, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isWelcomeView, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
 import { CopilotCLIPromptResolver } from '../copilotcli/node/copilotcliPromptResolver';
 import { builtinSlashSCommands, CopilotCLICommand, copilotCLICommands, ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
@@ -1554,32 +1554,19 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				this.logService.error(ex, 'Failed to get models');
 				return [];
 			});
-			const modelInfo = models.find(m => m.id === model?.model);
+			const selectedModelId = await session.object.getSelectedModelId().catch(ex => {
+				this.logService.error(ex, 'Failed to get selected model');
+				return undefined;
+			});
+			const modelInfo = [session.object.getLastResponseModelId(), selectedModelId, model?.model]
+				.map(modelId => modelId ? models.find(m => matchesCopilotCLIModel(m, modelId)) : undefined)
+				.find(modelInfo => !!modelInfo);
 			const result: vscode.ChatResult = modelInfo
 				? { details: formatModelDetails(modelInfo) }
 				: {};
 
 			if (isUntitled && !token.isCancellationRequested) {
-				// Its possible the user tried steering, in that case, we should NOT swap the session item because the session.
-				// Else the messages may get lost (wait CHECK_FOR_STEERING_DELAYms to check if we have pending steering requests)
-				await new Promise<void>(resolve => disposableTimeout(() => resolve(), CHECK_FOR_STEERING_DELAY, this._store));
-				const pendingRequests = this.pendingRequestsForUntitledSessions.get(id);
-				if (pendingRequests) {
-					pendingRequests.delete(request.id);
-					// If we have more requests, that means we had the original request as well as at least one another steering request.
-					// Lets not swap anything here, until all pending requests have been completed.
-					if (pendingRequests.size > 0) {
-						return result;
-					}
-				}
-
-				// Delete old information stored for untitled session id.
-				_sessionBranch.delete(id);
-				_sessionIsolation.delete(id);
-				this.sessionItemProvider.untitledSessionIdMapping.delete(id);
-				this.sessionItemProvider.sdkToUntitledUriMapping.delete(session.object.sessionId);
-				this.folderRepositoryManager.deleteNewSessionFolder(id);
-				this.sessionItemProvider.swap(chatSessionContext.chatSessionItem, { resource: SessionIdForCLI.getResource(session.object.sessionId), label: request.prompt });
+				this.scheduleUntitledSessionSwap(id, request.id, request.prompt, session.object.sessionId, chatSessionContext.chatSessionItem);
 			}
 
 			return result;
@@ -1605,6 +1592,31 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			}
 			disposables.dispose();
 		}
+	}
+
+	private scheduleUntitledSessionSwap(untitledSessionId: string, requestId: string, requestPrompt: string, sdkSessionId: string, chatSessionItem: vscode.ChatSessionItem): void {
+		// If the user tried steering, do not swap the session item yet or messages may get lost.
+		// Wait CHECK_FOR_STEERING_DELAYms to check if there are pending steering requests.
+		disposableTimeout(() => {
+			const pendingRequests = this.pendingRequestsForUntitledSessions.get(untitledSessionId);
+			if (pendingRequests) {
+				pendingRequests.delete(requestId);
+				// If we have more requests, there was the original request plus at least one steering request.
+				// Do not swap until all pending requests have been completed.
+				if (pendingRequests.size > 0) {
+					return;
+				}
+				this.pendingRequestsForUntitledSessions.delete(untitledSessionId);
+			}
+
+			// Delete old information stored for untitled session id.
+			_sessionBranch.delete(untitledSessionId);
+			_sessionIsolation.delete(untitledSessionId);
+			this.sessionItemProvider.untitledSessionIdMapping.delete(untitledSessionId);
+			this.sessionItemProvider.sdkToUntitledUriMapping.delete(sdkSessionId);
+			this.folderRepositoryManager.deleteNewSessionFolder(untitledSessionId);
+			this.sessionItemProvider.swap(chatSessionItem, { resource: SessionIdForCLI.getResource(sdkSessionId), label: requestPrompt });
+		}, CHECK_FOR_STEERING_DELAY, this._store);
 	}
 
 	private async lockRepoOptionForSession(context: vscode.ChatContext, token: vscode.CancellationToken) {

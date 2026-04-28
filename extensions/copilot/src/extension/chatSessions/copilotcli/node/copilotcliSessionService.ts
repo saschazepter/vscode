@@ -42,6 +42,7 @@ import { emptyWorkspaceInfo, getWorkingDirectory, IWorkspaceInfo } from '../../c
 import { buildChatHistoryFromEvents, RequestIdDetails, stripReminders } from '../common/copilotCLITools';
 import { ICustomSessionTitleService } from '../common/customSessionTitleService';
 import { IChatDelegationSummaryService } from '../common/delegationSummaryService';
+import { getCopilotCLIModelIdAliases } from '../common/copilotCLIModelIds';
 import { SessionIdForCLI } from '../common/utils';
 import { getCopilotCLISessionDir } from './cliHelpers';
 import { formatModelDetails, getAgentFileNameFromFilePath, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isEnabledForCopilotCLI } from './copilotCli';
@@ -1060,8 +1061,8 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			return mapping;
 		};
 
-		const lastResponseDetails = await this.getModelDetailsString(modelId);
-		const history = buildChatHistoryFromEvents(sessionId, modelId, events, getVSCodeRequestId, this._delegationSummaryService, this.logService, getWorkingDirectory(workspace), defaultModeInstructions, lastResponseDetails);
+		const modelDetailsById = await this.getModelDetailsById();
+		const history = buildChatHistoryFromEvents(sessionId, modelId, events, getVSCodeRequestId, this._delegationSummaryService, this.logService, getWorkingDirectory(workspace), defaultModeInstructions, modelDetailsById);
 
 		if (legacyMappings.length > 0) {
 			void this._chatSessionMetadataStore.updateRequestDetails(sessionId, legacyMappings).catch(error => {
@@ -1110,16 +1111,19 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		};
 	}
 
-	private async getModelDetailsString(modelId: string | undefined): Promise<string | undefined> {
-		if (!modelId) {
-			return undefined;
-		}
+	private async getModelDetailsById(): Promise<ReadonlyMap<string, string>> {
 		const models = await this._copilotCLIModels.getModels().catch(ex => {
 			this.logService.error(ex, 'Failed to get models');
 			return [];
 		});
-		const modelInfo = models.find(m => m.id === modelId);
-		return modelInfo ? formatModelDetails(modelInfo) : undefined;
+		const detailsById = new Map<string, string>();
+		for (const model of models) {
+			const details = formatModelDetails(model);
+			for (const alias of getCopilotCLIModelIdAliases(model.id)) {
+				detailsById.set(alias, details);
+			}
+		}
+		return detailsById;
 	}
 
 

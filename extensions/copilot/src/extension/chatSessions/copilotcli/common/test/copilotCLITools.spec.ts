@@ -163,10 +163,69 @@ describe('CopilotCLITools', () => {
 				{ type: 'user.message', data: { content: 'Hello', attachments: [] } },
 				{ type: 'assistant.message', data: { content: 'Hi there' } }
 			];
-			const turns = buildChatHistoryFromEvents('', 'base', events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, 'Base • 2x');
+			const turns = buildChatHistoryFromEvents('', 'base', events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, new Map([['base', 'Base • 2x']]));
 			expect(turns).toHaveLength(2);
 			const responseTurn = turns[1] as ChatResponseTurn2;
 			expect(responseTurn.result).toEqual({ details: 'Base • 2x' });
+		});
+
+		it('matches dotted Claude event model ids to dashed model detail ids', () => {
+			const events: any[] = [
+				{ type: 'session.start', data: { selectedModel: 'claude-opus-4.7' } },
+				{ type: 'user.message', data: { content: 'Hello', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Hi there' } }
+			];
+			const turns = buildChatHistoryFromEvents('', undefined, events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, new Map([['claude-opus-4-7', 'Claude Opus 4.7 • 4x']]));
+
+			expect(turns).toHaveLength(2);
+			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'Claude Opus 4.7 • 4x' });
+		});
+
+		it('uses session model changes for each rebuilt response turn', () => {
+			const modelDetails = new Map([
+				['opus-4.6', 'Opus 4.6 • 4x'],
+				['opus-4.7', 'Opus 4.7 • 4x'],
+				['gpt-5.4', 'GPT 5.4 • 2x'],
+				['gpt-5.3', 'GPT 5.3 • 1x'],
+			]);
+			const events: any[] = [
+				{ type: 'session.start', data: { selectedModel: 'opus-4.6' } },
+				{ type: 'user.message', id: 'u1', data: { content: 'First', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'One' } },
+				{ type: 'session.model_change', data: { previousModel: 'opus-4.6', newModel: 'opus-4.7' } },
+				{ type: 'user.message', id: 'u2', data: { content: 'Second', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Two' } },
+				{ type: 'session.model_change', data: { previousModel: 'opus-4.7', newModel: 'gpt-5.4' } },
+				{ type: 'user.message', id: 'u3', data: { content: 'Third', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Three' } },
+				{ type: 'session.model_change', data: { previousModel: 'gpt-5.4', newModel: 'gpt-5.3' } },
+				{ type: 'user.message', id: 'u4', data: { content: 'Fourth', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Four' } },
+			];
+
+			const turns = buildChatHistoryFromEvents('', undefined, events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, modelDetails);
+
+			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['opus-4.6', 'opus-4.7', 'gpt-5.4', 'gpt-5.3']);
+			expect(turns.filter(turn => turn instanceof ChatResponseTurn2).map(turn => (turn as ChatResponseTurn2).result)).toEqual([
+				{ details: 'Opus 4.6 • 4x' },
+				{ details: 'Opus 4.7 • 4x' },
+				{ details: 'GPT 5.4 • 2x' },
+				{ details: 'GPT 5.3 • 1x' },
+			]);
+		});
+
+		it('uses assistant usage model for the active rebuilt response turn', () => {
+			const events: any[] = [
+				{ type: 'user.message', id: 'u1', data: { content: 'Hello', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Hi' } },
+				{ type: 'assistant.usage', data: { model: 'gpt-5.4', inputTokens: 10, outputTokens: 5 } },
+			];
+
+			const turns = buildChatHistoryFromEvents('', undefined, events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, new Map([['gpt-5.4', 'GPT 5.4 • 2x']]));
+
+			expect(turns).toHaveLength(2);
+			expect((turns[0] as ChatRequestTurn2).modelId).toBe('gpt-5.4');
+			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 • 2x' });
 		});
 
 		it('converts file attachments to references on user messages', () => {
