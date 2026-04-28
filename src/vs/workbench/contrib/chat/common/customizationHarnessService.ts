@@ -178,12 +178,11 @@ export interface IAgentCustomizationItem {
 	readonly extensionId: string | undefined;
 	/** The URI of the plugin that contributed this customization, if any. */
 	readonly pluginUri: URI | undefined;
-	/** Where this agent was loaded from, ready for use as `IAgentSource`. */
-	readonly source: IAgentSource;
-	/** Target of the agent (Copilot, VS Code, Claude, ...). Available without resolving the full agent. */
-	readonly target: Target;
 	/** Visibility flags (user-invocable, agent-invocable). Available without resolving the full agent. */
 	readonly visibility: ICustomAgentVisibility;
+
+	/** Target of the agent (Copilot, VS Code, Claude, ...). Available without resolving the full agent. */
+	readonly target: Target;
 	/** Session types this agent applies to. Available without resolving the full agent. */
 	readonly sessionTypes: readonly string[] | undefined;
 
@@ -707,24 +706,12 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 			return [];
 		}
 
-		const getSource = (item: ICustomizationItem): IAgentSource => {
-			if (item.storage === PromptsStorage.extension && item.extensionId) {
-				return { storage: PromptsStorage.extension, extensionId: new ExtensionIdentifier(item.extensionId) };
-			} else if (item.storage === PromptsStorage.plugin && item.pluginUri) {
-				return { storage: PromptsStorage.plugin, pluginUri: item.pluginUri };
-			} else if (item.storage === PromptsStorage.user) {
-				return { storage: PromptsStorage.user };
-			}
-			return { storage: PromptsStorage.local };
-		};
-
 		// Default metadata for provider-backed agents until providers expose them explicitly.
 		const defaultVisibility: ICustomAgentVisibility = { userInvocable: true, agentInvocable: true };
 
 		return items
 			.filter(item => (item.enabled !== false) && item.type === PromptsType.agent)
 			.map(item => {
-				const source = getSource(item);
 				return {
 					uri: item.uri,
 					type: item.type,
@@ -733,7 +720,6 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 					storage: item.storage,
 					extensionId: item.extensionId,
 					pluginUri: item.pluginUri,
-					source,
 					target: Target.Undefined,
 					visibility: defaultVisibility,
 					sessionTypes: [sessionType],
@@ -745,7 +731,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 								description: item.description,
 								sessionTypes: [sessionType],
 								hooks: undefined,
-								source,
+								source: agentSourceFromAgent(item),
 								type: PromptsType.agent,
 							};
 							return CustomAgent.fromParsedPromptFile(promptFile, extra);
@@ -788,5 +774,16 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 	}
 }
 
+export function agentSourceFromAgent(item: { storage?: PromptsStorage; extensionId?: string; pluginUri?: URI }): IAgentSource {
+
+	if (item.storage === PromptsStorage.extension && item.extensionId) {
+		return { storage: PromptsStorage.extension, extensionId: new ExtensionIdentifier(item.extensionId) };
+	} else if (item.storage === PromptsStorage.plugin && item.pluginUri) {
+		return { storage: PromptsStorage.plugin, pluginUri: item.pluginUri };
+	} else if (item.storage === PromptsStorage.user) {
+		return { storage: PromptsStorage.user };
+	}
+	return { storage: PromptsStorage.local };
+}
 
 // #endregion

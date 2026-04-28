@@ -27,7 +27,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { hash } from '../../../../base/common/hash.js';
 import { isString } from '../../../../base/common/types.js';
 import { isTarget } from './promptSyntax/languageProviders/promptFileAttributes.js';
-import { IAgentCustomizationItem, ICustomizationHarnessService } from './customizationHarnessService.js';
+import { agentSourceFromAgent, IAgentCustomizationItem, ICustomizationHarnessService } from './customizationHarnessService.js';
 
 export const IChatModeService = createDecorator<IChatModeService>('chatModeService');
 export interface IChatModeService {
@@ -357,7 +357,6 @@ function agentToCustomizationItem(agent: ICustomAgent): IAgentCustomizationItem 
 		storage: agent.source.storage,
 		extensionId: agent.source.storage === PromptsStorage.extension ? agent.source.extensionId.value : undefined,
 		pluginUri: agent.source.storage === PromptsStorage.plugin ? agent.source.pluginUri : undefined,
-		source: agent.source,
 		target: agent.target,
 		visibility: agent.visibility,
 		sessionTypes: agent.sessionTypes,
@@ -461,7 +460,7 @@ export class CustomChatMode implements IChatMode {
 		this._uriObservable = observableValue('uri', item.uri);
 		this._targetObservable = observableValue('target', item.target);
 		this._visibilityObservable = observableValue('visibility', item.visibility);
-		this._source = item.source;
+		this._source = agentSourceFromAgent(item);
 		this._sessionTypes = item.sessionTypes;
 
 		// Heavy observables start empty; resolveDetails populates them on demand.
@@ -497,7 +496,7 @@ export class CustomChatMode implements IChatMode {
 			this._uriObservable.set(item.uri, tx);
 			this._targetObservable.set(item.target, tx);
 			this._visibilityObservable.set(item.visibility, tx);
-			this._source = item.source;
+			this._source = agentSourceFromAgent(item);
 			this._sessionTypes = item.sessionTypes;
 		});
 		// Re-resolve heavy fields if they were previously requested. The new
