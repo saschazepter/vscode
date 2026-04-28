@@ -486,16 +486,21 @@ export class RemoteAgentCustomizationItemProvider extends Disposable implements 
 			let uri = child.resource;
 			if (promptType === PromptsType.skill) {
 				const meta = skillMetadata![i];
-				const fallbackName = child.isDirectory ? child.name : stripPromptFileExtensions(child.name);
-				displayName = meta?.name ?? fallbackName;
-				description = meta?.description;
 				// For folder-style skills the canonical resource for the skill
 				// is its `SKILL.md`; downstream code (slash-command resolution,
 				// chat input decorations) calls `parseNew(item.uri)` and would
-				// otherwise try to read the directory as a file.
+				// otherwise try to read the directory as a file. If we couldn't
+				// read `SKILL.md`, skip the entry rather than emit a URI that
+				// will fail to parse downstream.
 				if (child.isDirectory) {
+					if (!meta) {
+						continue;
+					}
 					uri = joinPath(child.resource, SKILL_FILENAME);
 				}
+				const fallbackName = child.isDirectory ? child.name : stripPromptFileExtensions(child.name);
+				displayName = meta?.name ?? fallbackName;
+				description = meta?.description;
 			} else {
 				displayName = stripPromptFileExtensions(child.name);
 			}

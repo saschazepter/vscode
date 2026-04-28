@@ -131,7 +131,7 @@ export class LocalAgentHostCustomizationItemProvider extends Disposable implemen
 			let description: string | undefined;
 			if (file.type === PromptsType.skill) {
 				const parsed = skillByUri.get(file.uri);
-				name = parsed?.name ?? basename(dirname(file.uri)) ?? basename(file.uri);
+				name = parsed?.name ?? basename(dirname(file.uri));
 				description = parsed?.description;
 			} else {
 				name = getFriendlyName(basename(file.uri));
