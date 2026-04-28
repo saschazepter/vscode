@@ -392,7 +392,7 @@ steps:
         set -e
         echo "Disk usage before package cleanup:"
         df -h /
-        sudo docker system prune -af || true
+        sudo docker system prune -af
         echo "Disk usage after package cleanup:"
         df -h /
       displayName: Free root disk space (post-packaging)
