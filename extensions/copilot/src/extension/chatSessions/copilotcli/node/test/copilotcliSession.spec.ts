@@ -1264,6 +1264,7 @@ describe('CopilotCLISession', () => {
 			mcLastSubmitAttemptTimeMs: Date.now(),
 			mcProcessedCommandIds: new Set<string>(),
 			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'hey']]),
 			mcSdkSession: sdkSession as unknown as Session,
 			mcEventListenerDispose: undefined,
 			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
@@ -1278,6 +1279,7 @@ describe('CopilotCLISession', () => {
 			data: { content: 'hey', source: 'command-mc-command-1' },
 		});
 		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
 
 		(session as any)._bufferMcEvent({
 			type: 'assistant.message',
@@ -1289,6 +1291,49 @@ describe('CopilotCLISession', () => {
 
 		expect(remoteState.mcEventBuffer).toHaveLength(1);
 		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('assistant.message');
+		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
+	});
+
+	it('suppresses command-sourced user message echoes by pending command content when SDK source is absent', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'ask me my favorite color']]),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'remote-command-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color' },
+		});
+		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			id: 'ask-user',
+			timestamp: '2026-01-01T00:00:01.000Z',
+			parentId: 'remote-command-message',
+			data: { requestId: 'user-input-1', question: 'What is your favorite color?' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
 		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
 	});
 

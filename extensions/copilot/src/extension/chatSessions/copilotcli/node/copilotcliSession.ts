@@ -74,6 +74,7 @@ interface McSharedState {
 	mcLastSubmitAttemptTimeMs: number;
 	mcProcessedCommandIds: Set<string>;
 	mcPendingCommandCompletionIds?: Set<string>;
+	mcPendingCommandPrompts?: Map<string, string>;
 	mcLocalUserMessageEchoes?: Map<string, number>;
 	mcBufferedEventSignatures?: Map<string, number>;
 	mcSuppressedEventIds?: Set<string>;
@@ -220,6 +221,11 @@ function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set
 	return state.mcPendingCommandCompletionIds;
 }
 
+function getMissionControlPendingCommandPrompts(state: McSharedState): Map<string, string> {
+	state.mcPendingCommandPrompts ??= new Map();
+	return state.mcPendingCommandPrompts;
+}
+
 function getMissionControlPendingUserInputRequests(state: McSharedState): Set<McPendingUserInputRequest> {
 	state.mcPendingUserInputRequests ??= new Set();
 	return state.mcPendingUserInputRequests;
@@ -309,10 +315,30 @@ function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: s
 }
 
 function shouldSuppressMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }): boolean {
-	if (event.type !== 'user.message' || !getMissionControlCommandIdFromEvent(event)) {
+	if (event.type !== 'user.message') {
 		return false;
 	}
 
+	let commandId = getMissionControlCommandIdFromEvent(event);
+	if (!commandId) {
+		const content = getMissionControlUserMessageContent(event);
+		if (!content) {
+			return false;
+		}
+		for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
+			if (pendingPrompt === content) {
+				commandId = pendingCommandId;
+				break;
+			}
+		}
+	}
+	if (!commandId) {
+		return false;
+	}
+	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
+		getMissionControlPendingCommandPrompts(state).delete(commandId);
+		state.mcCompletedCommandIds.push(commandId);
+	}
 	if (event.id) {
 		getMissionControlSuppressedEventIds(state).add(event.id);
 	}
@@ -390,6 +416,7 @@ function maybeAcknowledgeMissionControlCommandFromEvent(state: McSharedState, ev
 	}
 
 	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
+		getMissionControlPendingCommandPrompts(state).delete(commandId);
 		state.mcCompletedCommandIds.push(commandId);
 	}
 }
@@ -1975,6 +2002,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						// they appear in the chat panel with proper rendering.
 						const vsCodeApi = require('vscode') as typeof import('vscode');
 						getMissionControlPendingCommandCompletionIds(state).add(cmd.id);
+						getMissionControlPendingCommandPrompts(state).set(cmd.id, stripReminders(cmd.content).trim());
 						setPendingCopilotCLIRequestContext(sessionId, {
 							prompt: cmd.content,
 							attachments: [],
