@@ -499,6 +499,7 @@ export class WorkspacePicker extends Disposable {
 				items.push({
 					kind: ActionListItemKind.Action,
 					label: localize(`workspacePicker.browseSelectAction`, "Select {0}...", label),
+					description: action.description,
 					group: { title: '', icon },
 					disabled: isUnavailable,
 					item: { browseActionIndex: index },

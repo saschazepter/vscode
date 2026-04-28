@@ -1016,7 +1016,8 @@ export class ActionListWidget<T> extends Disposable {
 	computeMaxWidth(minWidth: number): number {
 		const visibleCount = this._list.length;
 		const effectiveMinWidth = Math.max(minWidth, this._options?.minWidth ?? 0);
-		const maxWidthCap = this._options?.maxWidth ?? Number.POSITIVE_INFINITY;
+		const rawMaxWidthCap = this._options?.maxWidth ?? Number.POSITIVE_INFINITY;
+		const maxWidthCap = Math.max(rawMaxWidthCap, effectiveMinWidth);
 		const clamp = (w: number) => Math.min(Math.max(w, effectiveMinWidth), maxWidthCap);
 		let maxWidth = effectiveMinWidth;
 
