@@ -489,25 +489,36 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 	async provideChatSessionContent(sessionResource: URI, _token: CancellationToken): Promise<IChatSession> {
 
-		// For untitled (new) sessions, defer backend session creation until the
-		// first request arrives so the user-selected model is available.
-		// For existing sessions we resolve immediately to load history.
-		let resolvedSession: URI | undefined;
-		const isUntitled = sessionResource.path.substring(1).startsWith('untitled-');
+		// Try to resolve the backend session from the resource. For new
+		// (untitled) sessions the cache will be empty and the chat model
+		// will not yet exist, so this returns undefined — backend creation
+		// is deferred until the first request so the user-selected model
+		// is available. For existing sessions we resolve immediately to
+		// load history.
+		let resolvedSession = this._sessionToBackend.get(sessionResource);
+		if (!resolvedSession) {
+			// Attempt to resolve the backend URI and subscribe. If the
+			// subscription hydrates successfully the session exists on
+			// the server; otherwise it's a new session.
+			const candidate = this._resolveSessionUri(sessionResource);
+			const sub = this._ensureSessionSubscription(candidate.toString());
+			if (!this._getSessionState(candidate.toString())) {
+				await new Promise<void>(resolve => {
+					const d = sub.onDidChange(() => { d.dispose(); resolve(); });
+				});
+			}
+			if (this._getSessionState(candidate.toString())) {
+				resolvedSession = candidate;
+				this._sessionToBackend.set(sessionResource, resolvedSession);
+			} else {
+				this._releaseSessionSubscription(candidate.toString());
+			}
+		}
 		const history: IChatSessionHistoryItem[] = [];
 		let initialProgress: IChatProgress[] | undefined;
 		let activeTurnId: string | undefined;
-		if (!isUntitled) {
-			resolvedSession = this._resolveSessionUri(sessionResource);
-			this._sessionToBackend.set(sessionResource, resolvedSession);
+		if (resolvedSession) {
 			try {
-				const sub = this._ensureSessionSubscription(resolvedSession.toString());
-				// Wait for the subscription to hydrate from the server
-				if (!this._getSessionState(resolvedSession.toString())) {
-					await new Promise<void>(resolve => {
-						const d = sub.onDidChange(() => { d.dispose(); resolve(); });
-					});
-				}
 				const sessionState = this._getSessionState(resolvedSession.toString());
 				if (sessionState) {
 					const modelId = this._toLanguageModelId(sessionResource, sessionState.summary.model?.id);
@@ -669,7 +680,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
 
 		// Resolve or create backend session
-		let resolvedSession = this._sessionToBackend.get(request.sessionResource);
+		let resolvedSession = this._resolveBackendSession(request.sessionResource);
 		if (!resolvedSession) {
 			resolvedSession = await this._createAndSubscribe(request.sessionResource, this._createModelSelection(request.userSelectedModelId, request.modelConfiguration), undefined, request.agentHostSessionConfig, getAgentHostBranchNameHint(request.message));
 			this._sessionToBackend.set(request.sessionResource, resolvedSession);
@@ -2300,6 +2311,35 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	private _resolveSessionUri(sessionResource: URI): URI {
 		const rawId = sessionResource.path.substring(1);
 		return AgentSession.uri(this._config.provider, rawId);
+	}
+
+	/**
+	 * Resolves the backend session URI for the given UI session resource.
+	 *
+	 * 1. Returns the cached mapping from {@link _sessionToBackend} if present.
+	 * 2. If the chat model already has completed requests, the session was
+	 *    previously committed and its resource encodes the real backend
+	 *    session ID — re-derives and re-subscribes. This handles the case
+	 *    where the mapping was lost (e.g. handler recreated after tunnel
+	 *    reconnection).
+	 * 3. Returns `undefined` for new sessions with no cached mapping
+	 *    (the caller is expected to create a new backend session).
+	 */
+	private _resolveBackendSession(sessionResource: URI): URI | undefined {
+		const cached = this._sessionToBackend.get(sessionResource);
+		if (cached) {
+			return cached;
+		}
+
+		const chatModel = this._chatService.getSession(sessionResource);
+		if (chatModel && chatModel.getRequests().length > 0) {
+			const resolved = this._resolveSessionUri(sessionResource);
+			this._sessionToBackend.set(sessionResource, resolved);
+			this._ensureSessionSubscription(resolved.toString());
+			return resolved;
+		}
+
+		return undefined;
 	}
 
 	/**
