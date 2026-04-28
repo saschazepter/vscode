@@ -103,11 +103,20 @@ steps:
       timeoutInMinutes: 20
 
   - script: |
-      set -e
+      set +e
       ps -ef
       cat /proc/sys/fs/inotify/max_user_watches
       lsof | wc -l
+      echo '=== df -hT ==='
       df -hT
+      echo '=== top consumers on / (one level) ==='
+      sudo du -xh -d 1 / 2>/dev/null | sort -hr | head -20
+      echo '=== /var breakdown ==='
+      sudo du -xh -d 1 /var 2>/dev/null | sort -hr | head -15
+      echo '=== /usr breakdown ==='
+      sudo du -xh -d 1 /usr 2>/dev/null | sort -hr | head -15
+      echo '=== /home + /root + /tmp + caches ==='
+      sudo du -sxh /home /root /tmp /var/lib/docker /var/cache /var/log 2>/dev/null
     displayName: Diagnostics before smoke test run (processes, max_user_watches, number of opened file handles, disk usage)
     continueOnError: true
     condition: succeededOrFailed()
@@ -134,11 +143,20 @@ steps:
       displayName: 🧪 Run smoke tests (Remote)
 
   - script: |
-      set -e
+      set +e
       ps -ef
       cat /proc/sys/fs/inotify/max_user_watches
       lsof | wc -l
+      echo '=== df -hT ==='
       df -hT
+      echo '=== top consumers on / (one level) ==='
+      sudo du -xh -d 1 / 2>/dev/null | sort -hr | head -20
+      echo '=== /var breakdown ==='
+      sudo du -xh -d 1 /var 2>/dev/null | sort -hr | head -15
+      echo '=== /usr breakdown ==='
+      sudo du -xh -d 1 /usr 2>/dev/null | sort -hr | head -15
+      echo '=== /home + /root + /tmp + caches ==='
+      sudo du -sxh /home /root /tmp /var/lib/docker /var/cache /var/log 2>/dev/null
     displayName: Diagnostics after smoke test run (processes, max_user_watches, number of opened file handles, disk usage)
     continueOnError: true
     condition: succeededOrFailed()

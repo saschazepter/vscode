@@ -33,7 +33,18 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/extensions/copilot
     displayName: Run vitest unit tests
 
-  - script: df -hT
+  - script: |
+      set +e
+      echo '=== df -hT ==='
+      df -hT
+      echo '=== top consumers on / (one level) ==='
+      sudo du -xh -d 1 / 2>/dev/null | sort -hr | head -20
+      echo '=== /var breakdown ==='
+      sudo du -xh -d 1 /var 2>/dev/null | sort -hr | head -15
+      echo '=== /usr breakdown ==='
+      sudo du -xh -d 1 /usr 2>/dev/null | sort -hr | head -15
+      echo '=== /home + /root + /tmp ==='
+      sudo du -sxh /home /root /tmp /var/lib/docker /var/cache /var/log 2>/dev/null
     displayName: Disk usage (before simulate)
     condition: always()
 
@@ -41,7 +52,18 @@ steps:
     workingDirectory: $(Build.SourcesDirectory)/extensions/copilot
     displayName: Run simulation tests
 
-  - script: df -hT
+  - script: |
+      set +e
+      echo '=== df -hT ==='
+      df -hT
+      echo '=== top consumers on / (one level) ==='
+      sudo du -xh -d 1 / 2>/dev/null | sort -hr | head -20
+      echo '=== /var breakdown ==='
+      sudo du -xh -d 1 /var 2>/dev/null | sort -hr | head -15
+      echo '=== /usr breakdown ==='
+      sudo du -xh -d 1 /usr 2>/dev/null | sort -hr | head -15
+      echo '=== /home + /root + /tmp ==='
+      sudo du -sxh /home /root /tmp /var/lib/docker /var/cache /var/log 2>/dev/null
     displayName: Disk usage (after simulate)
     condition: always()
 
