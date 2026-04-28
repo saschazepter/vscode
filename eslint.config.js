@@ -1544,7 +1544,8 @@ export default tseslint.config(
 						'@xterm/xterm',
 						'yauzl',
 						'yazl',
-						'zlib'
+						'zlib',
+						'chrome-remote-interface'
 					]
 				},
 				{
