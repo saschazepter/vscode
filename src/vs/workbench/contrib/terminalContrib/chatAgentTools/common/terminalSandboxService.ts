@@ -730,6 +730,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		return value === true || value === AgentSandboxEnabledValue.On;
 	}
 
+	// for getting settings
 	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId, ...deprecatedSettingIds: (TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId)[]): T | undefined {
 		const setting = this._configurationService.inspect<T>(settingId);
 		if (setting.userValue !== undefined) {
