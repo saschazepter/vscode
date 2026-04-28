@@ -21,8 +21,8 @@ import { TestInstantiationService } from '../../../../../platform/instantiation/
 import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryServiceShape } from '../../../../../platform/telemetry/common/telemetryUtils.js';
+import { AICustomizationManagementEditor } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditor.js';
 import { AICustomizationManagementEditorInput } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
-import { AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { IAICustomizationItemsModel, ItemsModelSection } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemsModel.js';
 import { IAICustomizationListItem } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemSource.js';
 import { IAgentPluginService } from '../../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
@@ -63,29 +63,15 @@ class TestMenuService implements IMenuService {
 	resetHiddenStates() { }
 }
 
-class TestWelcomeEditor extends mock<IEditorPane>() {
-	override readonly onDidFocus = Event.None;
-	override readonly onDidBlur = Event.None;
-	override readonly onDidChangeControl = Event.None;
-	showWelcomePageCallCount = 0;
+type TestWelcomeEditor = AICustomizationManagementEditor & { showWelcomePageCallCount: number };
 
-	override getId(): string {
-		return AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID;
-	}
-
-	override getTitle(): string | undefined {
-		return undefined;
-	}
-
-	override hasFocus(): boolean {
-		return false;
-	}
-
-	override focus(): void { }
-
-	showWelcomePage(): void {
-		this.showWelcomePageCallCount++;
-	}
+function createTestWelcomeEditor(): TestWelcomeEditor {
+	const editor = Object.create(AICustomizationManagementEditor.prototype) as TestWelcomeEditor;
+	editor.showWelcomePageCallCount = 0;
+	editor.showWelcomePage = () => {
+		editor.showWelcomePageCallCount++;
+	};
+	return editor;
 }
 
 class TestEditorService extends mock<IEditorService>() {
@@ -95,7 +81,7 @@ class TestEditorService extends mock<IEditorService>() {
 
 	openEditorCallCount = 0;
 	lastInput: EditorInput | IUntypedEditorInput | undefined;
-	readonly editor = new TestWelcomeEditor();
+	readonly editor = createTestWelcomeEditor();
 
 	override openEditor(editor: IResourceEditorInput, group?: PreferredGroup): Promise<IEditorPane | undefined>;
 	override openEditor(editor: ITextResourceEditorInput | IUntitledTextResourceEditorInput, group?: PreferredGroup): Promise<IEditorPane | undefined>;

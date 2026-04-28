@@ -22,16 +22,12 @@ import { CUSTOMIZATION_ITEMS } from './customizationsToolbar.contribution.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
+import { AICustomizationManagementEditor } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditor.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 
 const $ = DOM.$;
 
 const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
-
-function isWelcomePageEditor(editor: unknown): editor is { showWelcomePage(): void } {
-	return typeof (editor as { showWelcomePage?: unknown })?.showWelcomePage === 'function';
-}
 
 export interface IAICustomizationShortcutsWidgetOptions {
 	readonly onDidChangeLayout?: () => void;
@@ -171,7 +167,7 @@ export class AICustomizationShortcutsWidget extends Disposable {
 	private async _openWelcomePage(): Promise<void> {
 		const input = AICustomizationManagementEditorInput.getOrCreate();
 		const editor = await this.editorService.openEditor(input, { pinned: true });
-		if (editor?.getId() === AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID && isWelcomePageEditor(editor)) {
+		if (editor instanceof AICustomizationManagementEditor) {
 			editor.showWelcomePage();
 		}
 	}
