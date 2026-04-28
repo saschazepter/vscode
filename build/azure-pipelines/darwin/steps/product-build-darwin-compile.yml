@@ -37,16 +37,16 @@ steps:
   - script: mkdir -p .build && node build/azure-pipelines/common/computeNodeModulesCacheKey.ts darwin $VSCODE_ARCH $(node -p process.arch) > .build/packagelockhash
     displayName: Prepare node_modules cache key
 
-  - task: Cache@2
-    inputs:
-      key: '"node_modules" | .build/packagelockhash'
-      path: .build/node_modules_cache
-      cacheHitVar: NODE_MODULES_RESTORED
-    displayName: Restore node_modules cache
+  # - task: Cache@2
+  #   inputs:
+  #     key: '"node_modules" | .build/packagelockhash'
+  #     path: .build/node_modules_cache
+  #     cacheHitVar: NODE_MODULES_RESTORED
+  #   displayName: Restore node_modules cache
 
-  - script: tar -xzf .build/node_modules_cache/cache.tgz
-    condition: and(succeeded(), eq(variables.NODE_MODULES_RESTORED, 'true'))
-    displayName: Extract node_modules cache
+  # - script: tar -xzf .build/node_modules_cache/cache.tgz
+  #   condition: and(succeeded(), eq(variables.NODE_MODULES_RESTORED, 'true'))
+  #   displayName: Extract node_modules cache
 
   - script: |
       set -e
