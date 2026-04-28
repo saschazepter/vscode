@@ -29,7 +29,12 @@ export const MOBILE_OPEN_DIFF_VIEW_COMMAND_ID = 'sessions.mobile.openDiffView';
  * Defined locally to avoid importing from vs/workbench/contrib in vs/sessions/browser.
  */
 export interface IFileDiffViewData {
-	readonly originalURI: URI;
+	/**
+	 * URI of the file before the change. `undefined` when the file is
+	 * newly added by the agent and there is no prior content; the diff
+	 * is rendered against an empty original (all lines as additions).
+	 */
+	readonly originalURI: URI | undefined;
 	readonly modifiedURI: URI;
 	readonly identical: boolean;
 	readonly added: number;
@@ -124,7 +129,9 @@ export class MobileDiffView extends Disposable {
 		loadingEl.textContent = localize('diffView.loading', "Loading…");
 
 		Promise.all([
-			this.textFileService.read(diff.originalURI, { acceptTextOnly: true }).then(m => m.value).catch(() => ''),
+			diff.originalURI
+				? this.textFileService.read(diff.originalURI, { acceptTextOnly: true }).then(m => m.value).catch(() => '')
+				: Promise.resolve(''),
 			this.textFileService.read(diff.modifiedURI, { acceptTextOnly: true }).then(m => m.value).catch(() => ''),
 		]).then(([originalText, modifiedText]) => {
 			if (this.disposed) {

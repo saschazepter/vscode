@@ -302,7 +302,11 @@ export class MobileTitlebarPart extends Disposable {
 			// is the presence of `uri` (required on the v2 shape, absent on v1).
 			const v2 = (change as { uri?: URI }).uri;
 			const modifiedURI = v2 ? (change.modifiedUri ?? v2) : change.modifiedUri!;
-			const originalURI = change.originalUri ?? modifiedURI;
+			// `originalURI` may legitimately be undefined for newly-added files;
+			// MobileDiffView treats that as an empty original (all-added diff).
+			// Do NOT fall back to modifiedURI here — that would self-diff and
+			// render "No changes in this file." for added files.
+			const originalURI = change.originalUri;
 			const added = change.insertions;
 			const removed = change.deletions;
 			return {

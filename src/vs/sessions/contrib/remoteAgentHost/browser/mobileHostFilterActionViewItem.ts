@@ -142,6 +142,10 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		};
 		renderBody();
 		disposables.add(this._filterService.onDidChange(renderBody));
+		// Also re-render when discovery starts/stops so the empty-state copy
+		// transitions between "Searching..." and "No hosts found yet." in
+		// response to the always-visible re-discover footer action.
+		disposables.add(this._filterService.onDidChangeDiscovering(renderBody));
 
 		// --- Footer (always-visible re-discover action) ---------------------
 		const footer = dom.append(sheet, $('div.host-picker-sheet-footer'));
