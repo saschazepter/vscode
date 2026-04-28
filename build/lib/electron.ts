@@ -230,8 +230,24 @@ function getElectron(arch: string): () => NodeJS.ReadWriteStream {
 
 async function main(arch: string = process.arch): Promise<void> {
 	const electronPath = path.join(root, '.build', 'electron');
+	const versionMarker = path.join(electronPath, '.version');
+	const expectedVersion = msBuildId ? `${electronVersion}-${msBuildId}-${arch}` : `${electronVersion}-${arch}`;
+
+	// Skip download if the correct version is already present
+	try {
+		const cachedVersion = fs.readFileSync(versionMarker, 'utf8').trim();
+		if (cachedVersion === expectedVersion) {
+			return;
+		}
+	} catch {
+		// Marker doesn't exist or can't be read, proceed with download
+	}
+
 	await util.rimraf(electronPath)();
 	await util.streamToPromise(getElectron(arch)());
+
+	// Write version marker after successful download
+	fs.writeFileSync(versionMarker, expectedVersion);
 }
 
 if (import.meta.main) {
