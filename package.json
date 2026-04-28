@@ -1,7 +1,12 @@
 {
   "name": "code-oss-dev",
+<<<<<<< HEAD
   "version": "1.119.0",
   "distro": "6de3b8c2129ba0b524b19a9151f1d7f8e2fa0baa",
+=======
+  "version": "1.118.0",
+  "distro": "b85ea484c93395a77703478557a49e35ac7c0841",
+>>>>>>> 8d0d0c4d (Update distro commit (release/1.118) (#312944))
   "author": {
     "name": "Microsoft Corporation"
   },
