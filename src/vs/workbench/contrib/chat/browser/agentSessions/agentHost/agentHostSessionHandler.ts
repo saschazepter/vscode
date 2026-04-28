@@ -10,7 +10,7 @@ import { BugIndicatingError, isCancellationError } from '../../../../../../base/
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableResourceMap, DisposableStore, IReference, MutableDisposable, toDisposable, type IDisposable } from '../../../../../../base/common/lifecycle.js';
-import { ResourceMap } from '../../../../../../base/common/map.js';
+import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
 import { autorun, derived, IObservable, observableValue, transaction } from '../../../../../../base/common/observable.js';
 import { extUriBiasedIgnorePathCase, isEqual } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -490,30 +490,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	async provideChatSessionContent(sessionResource: URI, _token: CancellationToken): Promise<IChatSession> {
 
 		// Try to resolve the backend session from the resource. For new
-		// (untitled) sessions the cache will be empty and the chat model
-		// will not yet exist, so this returns undefined — backend creation
-		// is deferred until the first request so the user-selected model
-		// is available. For existing sessions we resolve immediately to
-		// load history.
-		let resolvedSession = this._sessionToBackend.get(sessionResource);
-		if (!resolvedSession) {
-			// Attempt to resolve the backend URI and subscribe. If the
-			// subscription hydrates successfully the session exists on
-			// the server; otherwise it's a new session.
-			const candidate = this._resolveSessionUri(sessionResource);
-			const sub = this._ensureSessionSubscription(candidate.toString());
-			if (!this._getSessionState(candidate.toString())) {
-				await new Promise<void>(resolve => {
-					const d = sub.onDidChange(() => { d.dispose(); resolve(); });
-				});
-			}
-			if (this._getSessionState(candidate.toString())) {
-				resolvedSession = candidate;
-				this._sessionToBackend.set(sessionResource, resolvedSession);
-			} else {
-				this._releaseSessionSubscription(candidate.toString());
-			}
-		}
+		// (draft) sessions the backend has no record of the URI yet — backend
+		// creation is deferred until the first request so the user-selected
+		// model is available. For existing (committed) sessions we resolve
+		// immediately to load history.
+		let resolvedSession = await this._resolveBackendSession(sessionResource);
 		const history: IChatSessionHistoryItem[] = [];
 		let initialProgress: IChatProgress[] | undefined;
 		let activeTurnId: string | undefined;
@@ -680,7 +661,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
 
 		// Resolve or create backend session
-		let resolvedSession = this._resolveBackendSession(request.sessionResource);
+		let resolvedSession = await this._resolveBackendSession(request.sessionResource);
 		if (!resolvedSession) {
 			resolvedSession = await this._createAndSubscribe(request.sessionResource, this._createModelSelection(request.userSelectedModelId, request.modelConfiguration), undefined, request.agentHostSessionConfig, getAgentHostBranchNameHint(request.message));
 			this._sessionToBackend.set(request.sessionResource, resolvedSession);
@@ -2317,29 +2298,64 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 * Resolves the backend session URI for the given UI session resource.
 	 *
 	 * 1. Returns the cached mapping from {@link _sessionToBackend} if present.
-	 * 2. If the chat model already has completed requests, the session was
-	 *    previously committed and its resource encodes the real backend
-	 *    session ID — re-derives and re-subscribes. This handles the case
-	 *    where the mapping was lost (e.g. handler recreated after tunnel
-	 *    reconnection).
-	 * 3. Returns `undefined` for new sessions with no cached mapping
-	 *    (the caller is expected to create a new backend session).
+	 * 2. Otherwise asks the backend (via {@link _probeKnownBackendSessions})
+	 *    whether a session matching this resource exists. If it does, the
+	 *    session was previously committed and we re-bind to it — this
+	 *    handles the case where the mapping was lost (e.g. handler
+	 *    recreated after tunnel reconnection). If not, returns `undefined`
+	 *    so the caller creates a new backend session.
+	 *
+	 * The backend is the only authoritative source for session existence,
+	 * so we never inspect the URI shape (e.g. `untitled-` prefixes) to make
+	 * this decision.
 	 */
-	private _resolveBackendSession(sessionResource: URI): URI | undefined {
+	private async _resolveBackendSession(sessionResource: URI): Promise<URI | undefined> {
 		const cached = this._sessionToBackend.get(sessionResource);
 		if (cached) {
 			return cached;
 		}
 
-		const chatModel = this._chatService.getSession(sessionResource);
-		if (chatModel && chatModel.getRequests().length > 0) {
-			const resolved = this._resolveSessionUri(sessionResource);
-			this._sessionToBackend.set(sessionResource, resolved);
-			this._ensureSessionSubscription(resolved.toString());
-			return resolved;
+		const candidate = this._resolveSessionUri(sessionResource);
+		const known = await this._probeKnownBackendSessions();
+		if (!known.has(candidate)) {
+			return undefined;
 		}
 
-		return undefined;
+		this._sessionToBackend.set(sessionResource, candidate);
+		this._ensureSessionSubscription(candidate.toString());
+		return candidate;
+	}
+
+	/**
+	 * In-flight / freshly-completed `listSessions()` probe. Briefly cached so
+	 * a burst of resolutions (e.g. multiple chat tabs reconnecting at the
+	 * same time) shares a single backend round-trip without permanently
+	 * masking new server-side sessions.
+	 */
+	private _knownBackendSessionsProbe?: { promise: Promise<ResourceSet>; expiresAt: number };
+
+	/**
+	 * Returns the set of backend session URIs that the server reports it
+	 * knows about. Failures degrade to an empty set so resolution falls
+	 * back to creating a new session rather than throwing into the chat
+	 * pipeline.
+	 */
+	private _probeKnownBackendSessions(): Promise<ResourceSet> {
+		const now = Date.now();
+		if (this._knownBackendSessionsProbe && this._knownBackendSessionsProbe.expiresAt > now) {
+			return this._knownBackendSessionsProbe.promise;
+		}
+		const promise = (async () => {
+			try {
+				const list = await this._config.connection.listSessions();
+				return new ResourceSet(list.map(s => s.session));
+			} catch (err) {
+				this._logService.warn(`[AgentHost] listSessions probe failed: ${err}`);
+				return new ResourceSet();
+			}
+		})();
+		this._knownBackendSessionsProbe = { promise, expiresAt: now + 2000 };
+		return promise;
 	}
 
 	/**

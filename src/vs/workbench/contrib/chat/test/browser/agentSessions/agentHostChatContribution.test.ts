@@ -97,7 +97,22 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	public nextResolvedWorkingDirectory?: URI;
 
 	override async listSessions(): Promise<IAgentSessionMetadata[]> {
-		return [...this._sessions.values()];
+		// Merge sessions registered via `addSession`/`createSession` with
+		// sessions whose state was directly seeded via `sessionStates.set`,
+		// since on a real backend any session reachable through `subscribe`
+		// is also visible via `listSessions`.
+		const merged = new Map<string, IAgentSessionMetadata>();
+		for (const [id, meta] of this._sessions) {
+			merged.set(id, meta);
+		}
+		for (const resourceStr of this.sessionStates.keys()) {
+			const session = URI.parse(resourceStr);
+			const id = AgentSession.id(session);
+			if (!merged.has(id)) {
+				merged.set(id, { session, startTime: Date.now(), modifiedTime: Date.now() });
+			}
+		}
+		return [...merged.values()];
 	}
 
 	override async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
@@ -847,6 +862,15 @@ suite('AgentHostChatContribution', () => {
 		test('uses sessionId from agent-host scheme resource', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
 
+			// Seed the backend with the session so the listSessions probe
+			// finds it and the handler re-binds instead of creating a new
+			// SDK session.
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'existing-session-42'),
+				startTime: 1000,
+				modifiedTime: 2000,
+			});
+
 			const { turnPromise, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables, {
 				message: 'Hi',
 				sessionResource: URI.from({ scheme: 'agent-host-copilot', path: '/existing-session-42' }),
@@ -869,6 +893,74 @@ suite('AgentHostChatContribution', () => {
 
 			// Should create a new SDK session, not use "untitled-abc123" literally
 			assert.ok(AgentSession.id(URI.parse(session)).startsWith('sdk-session-'));
+		}));
+
+		test('recovers backend session for committed resource after handler recreation (tunnel reconnect)', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			// Simulates the tunnel-reconnect scenario: the handler is disposed
+			// and recreated, so its `_sessionToBackend` cache is empty. The
+			// existing chat tab still points at a URI whose id matches a
+			// session the backend already has. The handler should probe
+			// `listSessions` and re-bind to that backend session instead of
+			// creating a new one.
+			const { agentHostService, chatAgentService } = createTestServices(disposables);
+
+			// The backend remembers the session across the tunnel drop.
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'sdk-session-existing'),
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'recovered',
+			});
+			const committedResource = URI.from({ scheme: 'agent-host-copilot', path: '/sdk-session-existing' });
+
+			// Skip provideChatSessionContent and invoke the agent directly,
+			// mirroring what happens when ChatService dispatches a request
+			// into an already-open chat after the handler was recreated.
+			const registered = chatAgentService.registeredAgents.get('agent-host-copilot')!;
+			const turnPromise = registered.impl.invoke(
+				makeRequest({ message: 'Hello again', sessionResource: committedResource }),
+				() => { }, [], CancellationToken.None,
+			);
+			await timeout(10);
+
+			const dispatch = agentHostService.dispatchedActions.find(d => d.action.type === 'session/turnStarted');
+			assert.ok(dispatch, 'turnStarted should be dispatched');
+			const action = dispatch.action as ITurnStartedAction;
+			agentHostService.fireAction({ action, serverSeq: 1, origin: { clientId: agentHostService.clientId, clientSeq: dispatch.clientSeq } });
+			agentHostService.fireAction({ action: { type: 'session/turnComplete', session: action.session, turnId: action.turnId } as SessionAction, serverSeq: 2, origin: undefined });
+			await turnPromise;
+
+			// The backend session is recovered via the listSessions probe;
+			// no fresh SDK session is created.
+			assert.strictEqual(agentHostService.createSessionCalls.length, 0);
+			assert.strictEqual(AgentSession.id(URI.parse(action.session)), 'sdk-session-existing');
+		}));
+
+		test('does not recover backend session when listSessions probe finds no match', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			// If the URI's derived id is not among the backend's known
+			// sessions, resolution must fall through to creating a fresh
+			// session. This covers both brand-new chats and stale URIs whose
+			// backend session has been deleted server-side.
+			const { agentHostService, chatAgentService } = createTestServices(disposables);
+
+			const unknownResource = URI.from({ scheme: 'agent-host-copilot', path: '/sdk-session-not-on-backend' });
+			const registered = chatAgentService.registeredAgents.get('agent-host-copilot')!;
+			const turnPromise = registered.impl.invoke(
+				makeRequest({ message: 'Hi', sessionResource: unknownResource }),
+				() => { }, [], CancellationToken.None,
+			);
+			await timeout(10);
+
+			const dispatch = agentHostService.dispatchedActions.find(d => d.action.type === 'session/turnStarted');
+			assert.ok(dispatch, 'turnStarted should be dispatched');
+			const action = dispatch.action as ITurnStartedAction;
+			agentHostService.fireAction({ action, serverSeq: 1, origin: { clientId: agentHostService.clientId, clientSeq: dispatch.clientSeq } });
+			agentHostService.fireAction({ action: { type: 'session/turnComplete', session: action.session, turnId: action.turnId } as SessionAction, serverSeq: 2, origin: undefined });
+			await turnPromise;
+
+			// A fresh SDK session must be created.
+			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
+			assert.ok(AgentSession.id(URI.parse(action.session)).startsWith('sdk-session-'));
 		}));
 		test('passes raw model id extracted from language model identifier', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
