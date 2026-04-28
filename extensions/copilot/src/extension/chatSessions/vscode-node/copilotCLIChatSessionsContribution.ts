@@ -1529,11 +1529,14 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				const { prompt, attachments } = contextForRequest;
 				await session.object.handleRequest(request, { prompt }, attachments, model, authInfo, token);
 				await this.commitWorktreeChangesIfNeeded(request, session.object, token);
+			} else if (request.command && (copilotCLICommands as readonly string[]).includes(request.command) && !isUntitled) {
+				const { prompt, attachments } = request.prompt
+					? await this.promptResolver.resolvePrompt(request, undefined, [], session.object.workspace, [], token)
+					: { prompt: '', attachments: [] };
+				await session.object.handleRequest(request, { command: request.command as CopilotCLICommand, prompt }, attachments, model, authInfo, token);
+				await this.commitWorktreeChangesIfNeeded(request, session.object, token);
 			} else if (request.command && !request.prompt && !isUntitled) {
-				const input = (copilotCLICommands as readonly string[]).includes(request.command)
-					? { command: request.command as CopilotCLICommand, prompt: '' }
-					: { prompt: `/${request.command}` };
-				await session.object.handleRequest(request, input, [], model, authInfo, token);
+				await session.object.handleRequest(request, { prompt: `/${request.command}` }, [], model, authInfo, token);
 				await this.commitWorktreeChangesIfNeeded(request, session.object, token);
 			} else if (request.prompt && Object.values(builtinSlashSCommands).some(command => request.prompt.startsWith(command))) {
 				// Sessions app built-in slash commands
