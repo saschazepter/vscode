@@ -3,31 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ConfigurationScope, Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
-import { localize } from '../../../../nls.js';
+import { Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
-import { SessionsExperimentalShellGradientBackgroundSettingId, SessionsExperimentalTabbedWorkspacePickerSettingId } from '../../../common/configuration.js';
 import { ThemeSettingDefaults } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
-
-Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration({
-	id: 'sessions',
-	properties: {
-		[SessionsExperimentalShellGradientBackgroundSettingId]: {
-			type: 'boolean',
-			default: false,
-			scope: ConfigurationScope.APPLICATION,
-			tags: ['experimental'],
-			description: localize('sessions.experimental.shellGradientBackground', "Whether to enable the experimental accent-tinted shell background in the Sessions window."),
-		},
-		[SessionsExperimentalTabbedWorkspacePickerSettingId]: {
-			type: 'boolean',
-			default: false,
-			scope: ConfigurationScope.APPLICATION,
-			tags: ['experimental'],
-			description: localize('sessions.experimental.tabbedWorkspacePicker', "Whether to use the experimental tabbed layout for the workspace picker in the new session view, with separate Local, GitHub and Remote tabs."),
-		},
-	},
-});
 
 Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultConfigurations([{
 	overrides: {

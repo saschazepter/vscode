@@ -14,6 +14,8 @@ import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { IRemoteAgentHostService } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -23,6 +25,21 @@ import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.j
 import { GITHUB_REMOTE_FILE_SCHEME, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IWorkspaceSelection, WorkspacePicker } from './sessionWorkspacePicker.js';
+
+export const SessionsExperimentalTabbedWorkspacePickerSettingId = 'sessions.experimental.tabbedWorkspacePicker';
+
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
+	id: 'sessions',
+	properties: {
+		[SessionsExperimentalTabbedWorkspacePickerSettingId]: {
+			type: 'boolean',
+			default: false,
+			scope: ConfigurationScope.APPLICATION,
+			tags: ['experimental'],
+			description: localize('sessions.experimental.tabbedWorkspacePicker', "Whether to use the experimental tabbed layout for the workspace picker in the new session view, with separate Local, GitHub and Remote tabs."),
+		},
+	},
+});
 
 type WorkspaceCategory = 'folders' | 'repositories' | 'remote';
 

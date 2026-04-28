@@ -26,8 +26,7 @@ import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/co
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { WorkspacePicker, IWorkspaceSelection } from './sessionWorkspacePicker.js';
 import { ScopedWorkspacePicker } from './scopedWorkspacePicker.js';
-import { TabbedWorkspacePicker } from './tabbedWorkspacePicker.js';
-import { SessionsExperimentalTabbedWorkspacePickerSettingId } from '../../../common/configuration.js';
+import { SessionsExperimentalTabbedWorkspacePickerSettingId, TabbedWorkspacePicker } from './tabbedWorkspacePicker.js';
 import { NewChatInputWidget } from './newChatInput.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 
