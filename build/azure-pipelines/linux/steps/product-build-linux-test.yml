@@ -15,20 +15,13 @@ steps:
       echo '=== (1) sudo apt-get clean ==='
       time sudo apt-get clean
 
-      echo '=== (2) sudo docker system prune -af ==='
-      if command -v docker >/dev/null 2>&1; then
-        time sudo docker system prune -af 2>&1 | tail -10
-      else
-        echo 'docker not present, skipping'
-      fi
-
-      echo '=== (3) bind-mount /tmp -> /mnt/_tmp ==='
+      echo '=== (2) bind-mount /tmp -> /mnt/_tmp ==='
       sudo mkdir -p /mnt/_tmp
       sudo chmod 1777 /mnt/_tmp
       time sudo mount --bind /mnt/_tmp /tmp
       ls -la /tmp | head -5
 
-      echo '=== (4) bind-mount /var/log -> /mnt/_varlog ==='
+      echo '=== (3) bind-mount /var/log -> /mnt/_varlog ==='
       sudo mkdir -p /mnt/_varlog
       sudo rsync -a /var/log/ /mnt/_varlog/ 2>/dev/null
       sudo systemctl stop systemd-journald systemd-journald.socket 2>/dev/null
@@ -37,7 +30,7 @@ steps:
 
       echo '=== AFTER mitigation: df -hT ==='
       df -hT
-    displayName: "\U0001F9F9 Free up / partition (apt clean + docker prune + bind /tmp + bind /var/log)"
+    displayName: "\U0001F9F9 Free up / partition (apt clean + bind /tmp + bind /var/log)"
     condition: always()
 
   - script: npm exec -- npm-run-all2 -lp "electron $(VSCODE_ARCH)" "playwright-install"
