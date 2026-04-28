@@ -129,7 +129,7 @@ export async function startProfiling(options: StartOptions): Promise<ProfilingSe
 			// chrome that it will resume the runtime whenever a client
 			// disconnects. Because things are relatively short-lived
 			// we trade the leakage for being able to debug
-			return Promise.reject(new Error('runtime is paused'));
+			throw new Error('runtime is paused');
 		}
 	} else {
 		// resume form inspect-brk
