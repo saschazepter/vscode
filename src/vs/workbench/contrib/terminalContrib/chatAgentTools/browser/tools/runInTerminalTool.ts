@@ -1422,6 +1422,21 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				if (timeoutRacePromise) {
 					raceCandidates.push(timeoutRacePromise);
 				}
+				// Safety-net: if no model timeout was added, add a hard cap to prevent
+				// indefinite hangs when shell integration breaks and trackIdleOnPrompt
+				// fallback timers fail to fire (e.g. due to xterm write callback deferral
+				// in headless environments). 5 minutes is long enough for any legitimate
+				// foreground command while preventing 1-hour eval timeouts.
+				if (!timeoutRacePromise) {
+					const safetyNetTimeout = timeout(5 * 60 * 1000);
+					raceCleanup.add({ dispose: () => safetyNetTimeout.cancel() });
+					raceCandidates.push(safetyNetTimeout.then(
+						() => {
+							this._logService.info('RunInTerminalTool: Safety-net timeout (5 min) reached for foreground execution');
+							return { type: 'timeout' as const };
+						}
+					).catch(() => ({ type: 'timeout' as const })));
+				}
 				const raceResult = await Promise.race(raceCandidates);
 				raceCleanup.dispose();
 
