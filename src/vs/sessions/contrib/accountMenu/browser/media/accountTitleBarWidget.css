@@ -49,8 +49,8 @@
 .agent-sessions-workbench .sessions-account-titlebar-widget-avatar {
 	display: none;
 	flex: 0 0 auto;
-	width: 16px;
-	height: 16px;
+	width: 18px;
+	height: 18px;
 	border: 1px solid var(--vscode-commandCenter-border, transparent);
 	border-radius: 50%;
 	box-sizing: border-box;
@@ -272,7 +272,6 @@
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
-	padding-top: 4px;
 	border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-disabledForeground));
 }
 
@@ -313,7 +312,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 0;
-	padding: 4px 0;
+	padding: 2px 0;
 }
 
 .agent-sessions-workbench .sessions-account-titlebar-panel-separator {

@@ -3,31 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ConfigurationScope, Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
-import { localize } from '../../../../nls.js';
+import { Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
-import { SessionsExperimentalSendButtonGradientSettingId, SessionsExperimentalShellGradientBackgroundSettingId } from '../../../common/configuration.js';
 import { ThemeSettingDefaults } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
-
-Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration({
-	id: 'sessions',
-	properties: {
-		[SessionsExperimentalShellGradientBackgroundSettingId]: {
-			type: 'boolean',
-			default: false,
-			scope: ConfigurationScope.APPLICATION,
-			tags: ['experimental'],
-			description: localize('sessions.experimental.shellGradientBackground', "Whether to enable the experimental accent-tinted shell background in the Sessions window."),
-		},
-		[SessionsExperimentalSendButtonGradientSettingId]: {
-			type: 'boolean',
-			default: false,
-			scope: ConfigurationScope.APPLICATION,
-			tags: ['experimental'],
-			description: localize('sessions.experimental.sendButtonGradient', "Whether to show a colorful animated gradient on the chat send button in the Sessions window. The button shows a slowly rotating gradient ring at rest, fills with a cycling color on hover, and emits a color pulse on click."),
-		},
-	},
-});
 
 Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultConfigurations([{
 	overrides: {
@@ -71,12 +49,15 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'github.copilot.chat.cli.autoCommit.enabled': false,
 		'github.copilot.chat.cli.branchSupport.enabled': true,
 		'github.copilot.chat.cli.isolationOption.enabled': true,
+		'github.copilot.chat.cli.sessionController.enabled': false,
+		'github.copilot.chat.cli.lazyLoadSessionItem.enabled': false,
 		'github.copilot.chat.cli.mcp.enabled': true,
+		'github.copilot.chat.cli.remote.enabled': false,
 		'github.copilot.chat.githubMcpServer.enabled': true,
 		'github.copilot.chat.languageContext.typescript.enabled': true,
+		'github.copilot.chat.cli.showExternalSessions': false,
 
 		'inlineChat.affordance': 'editor',
-		'inlineChat.renderMode': 'hover',
 
 		'search.quickOpen.includeHistory': false,
 
@@ -84,14 +65,17 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 
 		'terminal.integrated.initialHint': false,
 
+		'workbench.browser.openLocalhostLinks': true,
+		'workbench.browser.enableChatTools': false,
+
 		'workbench.editor.doubleClickTabToToggleEditorGroupSizes': 'maximize',
 		'workbench.editor.restoreEditors': false,
 		'update.showReleaseNotes': false,
-		'workbench.notifications.position': 'top-right',
+		'workbench.notifications.position': 'bottom-right',
 		'workbench.startupEditor': 'none',
 		'workbench.tips.enabled': false,
 		'workbench.layoutControl.type': 'toggles',
-		'workbench.editor.useModal': 'some',
+		'workbench.editor.useModal': 'all',
 		'workbench.panel.showLabels': false,
 		'workbench.colorTheme': ThemeSettingDefaults.COLOR_THEME_DARK,
 

@@ -64,9 +64,9 @@ export function getModelHoverContent(model: ILanguageModel): MarkdownString {
 		markdown.appendText(`\n`);
 	}
 
-	if (model.metadata.multiplier) {
-		markdown.appendMarkdown(`${localize('models.cost', 'Multiplier')}: `);
-		markdown.appendMarkdown(model.metadata.multiplier);
+	if (model.metadata.pricing) {
+		markdown.appendMarkdown(`${localize('models.pricing', 'Pricing')}: `);
+		markdown.appendMarkdown(model.metadata.pricing);
 		markdown.appendText(`\n`);
 	}
 
@@ -588,6 +588,60 @@ class CacheCostColumnRenderer extends BaseCostColumnRenderer {
 			content: localize('cost.colTooltip', "{0}: {1} AIC per request", this.fullLabel, value),
 			appearance: { compact: true, skipFadeInAnimation: true }
 		})));
+	}
+}
+
+interface IPricingColumnTemplateData extends IModelTableColumnTemplateData {
+	readonly pricingElement: HTMLElement;
+}
+
+class PricingColumnRenderer extends ModelsTableColumnRenderer<IPricingColumnTemplateData> {
+	static readonly TEMPLATE_ID = 'pricing';
+
+	readonly templateId: string = PricingColumnRenderer.TEMPLATE_ID;
+
+	constructor(
+		@IHoverService private readonly hoverService: IHoverService
+	) {
+		super();
+	}
+
+	renderTemplate(container: HTMLElement): IPricingColumnTemplateData {
+		const disposables = new DisposableStore();
+		const elementDisposables = new DisposableStore();
+		const pricingElement = DOM.append(container, $('.model-pricing'));
+		return {
+			container,
+			pricingElement,
+			disposables,
+			elementDisposables
+		};
+	}
+
+	override renderElement(entry: IViewModelEntry, index: number, templateData: IPricingColumnTemplateData): void {
+		templateData.pricingElement.textContent = '';
+		super.renderElement(entry, index, templateData);
+	}
+
+	override renderGroupElement(element: ILanguageModelGroupEntry, index: number, templateData: IPricingColumnTemplateData): void {
+	}
+
+	override renderVendorElement(element: ILanguageModelProviderEntry, index: number, templateData: IPricingColumnTemplateData): void {
+	}
+
+	override renderModelElement(entry: ILanguageModelEntry, index: number, templateData: IPricingColumnTemplateData): void {
+		const pricingText = entry.model.metadata.pricing ?? '-';
+		templateData.pricingElement.textContent = pricingText;
+
+		if (pricingText !== '-') {
+			templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
+				content: localize('pricing.tooltip', "Pricing: {0}", pricingText),
+				appearance: {
+					compact: true,
+					skipFadeInAnimation: true
+				}
+			})));
+		}
 	}
 }
 
@@ -1132,7 +1186,7 @@ export class ChatModelsWidget extends Disposable {
 			{
 				label: localize('capabilities', 'Capabilities'),
 				tooltip: '',
-				weight: 0.2,
+				weight: 0.15,
 				minimumWidth: 180,
 				templateId: CapabilitiesColumnRenderer.TEMPLATE_ID,
 				project(row: IViewModelEntry): IViewModelEntry { return row; }
@@ -1210,9 +1264,9 @@ export class ChatModelsWidget extends Disposable {
 						if (e.model.metadata.capabilities) {
 							ariaLabels.push(localize('model.capabilities', 'Capabilities: {0}', Object.keys(e.model.metadata.capabilities).join(', ')));
 						}
-						const multiplierText = e.model.metadata.multiplier ?? '-';
-						if (multiplierText !== '-') {
-							ariaLabels.push(localize('multiplier.tooltip', "Every chat message counts {0} towards your premium model request quota", multiplierText));
+						const pricingText = e.model.metadata.pricing ?? '-';
+						if (pricingText !== '-') {
+							ariaLabels.push(localize('pricing.ariaLabel', "Pricing: {0}", pricingText));
 						}
 						if (e.model.visible) {
 							ariaLabels.push(localize('model.visible', 'This model is visible in the chat model picker'));

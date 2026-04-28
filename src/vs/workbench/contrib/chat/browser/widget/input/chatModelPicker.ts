@@ -93,6 +93,7 @@ function createModelItem(
 	action: IActionWidgetDropdownAction & { section?: string },
 	model?: ILanguageModelChatMetadataAndIdentifier,
 ): IActionListItem<IActionWidgetDropdownAction> {
+	const hoverContent = model ? getModelHoverContent(model) : undefined;
 	return {
 		item: action,
 		kind: ActionListItemKind.Action,
@@ -101,8 +102,9 @@ function createModelItem(
 		group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id) },
 		hideIcon: false,
 		section: action.section,
-		hover: model ? { content: getModelHoverContent(model) } : undefined,
-		submenuActions: action.toolbarActions,
+		hover: hoverContent ? { content: hoverContent } : undefined,
+		tooltip: action.tooltip,
+		submenuActions: action.toolbarActions?.length ? action.toolbarActions : undefined,
 	};
 }
 
@@ -197,91 +199,91 @@ function createModelAction(
     languageModelsService: ILanguageModelsService,
     section?: string,
 ): IActionWidgetDropdownAction & { section?: string } {
-    const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
+	const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
 
-    // Compute the model's current Thinking Effort on a 0..3 bulb scale.
-    const bulbsFilled = getModelThinkingEffort(model, languageModelsService);
+	// Compute the model's current Thinking Effort on a 0..3 bulb scale.
+	const bulbsFilled = getModelThinkingEffort(model, languageModelsService);
 
-    // Mock a Context Window configurable if none exists.
-    // Only Claude Opus is mocked as using 1M.
-    if (!toolbarActions.find(a => a.id.toLowerCase().includes('contextwindow'))) {
-        const isOpus = model.metadata.name.toLowerCase().includes('opus 4.6');
-        const ctxLabel = localize('contextWindow', "Context Window");
-        toolbarActions.unshift(new SubmenuAction('configureModel.mock.contextwindow', ctxLabel, [
-            { id: 'cw.200', label: localize('cw200k', "200K"), tooltip: localize('cw200ktip', "Default context window"), class: undefined, enabled: true, checked: !isOpus, run: async () => { } } as any,
-            { id: 'cw.1m', label: localize('cw1m', "1M"), class: undefined, enabled: true, tooltip: localize('cw1mtip', "Extended context window"), checked: isOpus, run: async () => { } } as any
-        ]));
-    }
+	// Mock a Context Window configurable if none exists.
+	// Only Claude Opus is mocked as using 1M.
+	if (!toolbarActions.find(a => a.id.toLowerCase().includes('contextwindow'))) {
+		const isOpus = model.metadata.name.toLowerCase().includes('opus 4.6');
+		const ctxLabel = localize('contextWindow', "Context Window");
+		toolbarActions.unshift(new SubmenuAction('configureModel.mock.contextwindow', ctxLabel, [
+			{ id: 'cw.200', label: localize('cw200k', "200K"), tooltip: localize('cw200ktip', "Default context window"), class: undefined, enabled: true, checked: !isOpus, run: async () => { } } as any,
+			{ id: 'cw.1m', label: localize('cw1m', "1M"), class: undefined, enabled: true, tooltip: localize('cw1mtip', "Extended context window"), checked: isOpus, run: async () => { } } as any
+		]));
+	}
 
-    // Add Lightbulb prefixes to Thinking Effort submenu items so the count is visible there too.
-    for (const action of toolbarActions) {
-        if (action instanceof SubmenuAction && action.id.toLowerCase().includes('thinkingeffort')) {
-            for (const sub of action.actions) {
-                const idLog = sub.id.toLowerCase();
-                // Strip any prior prefix/suffix appended by us (lightbulb + blank tokens around the label).
-                sub.label = sub.label
-                    .replace(/^(?:\s*\$\((?:lightbulb|blank)\))+\s*/g, '')
-                    .replace(/\s*(?:\$\((?:lightbulb|blank)\))+\s*$/g, '');
-                let count = 0;
-                if (idLog.includes('xhigh')) { count = 3; }
-                else if (idLog.includes('high')) { count = 3; }
-                else if (idLog.includes('medium')) { count = 2; }
-                else if (idLog.includes('low')) { count = 1; }
-                else if (idLog.includes('minimal')) { count = 0; }
-                const total = 3;
-                const filled = '$(lightbulb)'.repeat(count);
-                const empty = '$(blank)'.repeat(Math.max(0, total - count));
-                // Prepend filled+empty bulbs as icons so the dropdown row mirrors the model row indicator.
-                sub.label = filled + empty + ' ' + sub.label;
-            }
-        }
-    }
+	// Add Lightbulb prefixes to Thinking Effort submenu items so the count is visible there too.
+	for (const action of toolbarActions) {
+		if (action instanceof SubmenuAction && action.id.toLowerCase().includes('thinkingeffort')) {
+			for (const sub of action.actions) {
+				const idLog = sub.id.toLowerCase();
+				// Strip any prior prefix/suffix appended by us (lightbulb + blank tokens around the label).
+				sub.label = sub.label
+					.replace(/^(?:\s*\$\((?:lightbulb|blank)\))+\s*/g, '')
+					.replace(/\s*(?:\$\((?:lightbulb|blank)\))+\s*$/g, '');
+				let count = 0;
+				if (idLog.includes('xhigh')) { count = 3; }
+				else if (idLog.includes('high')) { count = 3; }
+				else if (idLog.includes('medium')) { count = 2; }
+				else if (idLog.includes('low')) { count = 1; }
+				else if (idLog.includes('minimal')) { count = 0; }
+				const total = 3;
+				const filled = '$(lightbulb)'.repeat(count);
+				const empty = '$(blank)'.repeat(Math.max(0, total - count));
+				// Prepend filled+empty bulbs as icons so the dropdown row mirrors the model row indicator.
+				sub.label = filled + empty + ' ' + sub.label;
+			}
+		}
+	}
 
-    const wrap = dom.$('span.chat-model-3-col-desc');
-    wrap.style.display = 'flex';
-    wrap.style.justifyContent = 'flex-end';
-    wrap.style.alignItems = 'center';
-    wrap.style.flex = '0 0 auto';
-    wrap.style.minWidth = '0';
-    wrap.style.paddingLeft = '12px';
-    wrap.style.gap = '0';
+	const wrap = dom.$('span.chat-model-3-col-desc');
+	wrap.style.display = 'flex';
+	wrap.style.justifyContent = 'flex-end';
+	wrap.style.alignItems = 'center';
+	wrap.style.flex = '0 0 auto';
+	wrap.style.minWidth = '0';
+	wrap.style.paddingLeft = '12px';
+	wrap.style.gap = '0';
 
-    const indicators = dom.$('span.chat-model-indicators');
-    indicators.style.display = 'inline-flex';
-    indicators.style.alignItems = 'center';
-    indicators.style.flex = '0 0 auto';
+	const indicators = dom.$('span.chat-model-indicators');
+	indicators.style.display = 'inline-flex';
+	indicators.style.alignItems = 'center';
+	indicators.style.flex = '0 0 auto';
 
-    // Context window chip — mock: only Claude Opus uses 1M (matches the mocked Context Window selection).
-    const costBucket = getCostBucket(model.metadata.name);
-    const modelNameLower = model.metadata.name.toLowerCase();
-    const is1M = modelNameLower.includes('opus 4.6');
-    if (is1M) {
-        const ctx = dom.$('span.chat-model-context');
-        ctx.textContent = '1M';
-        indicators.appendChild(ctx);
-    }
+	// Context window chip — mock: only Claude Opus uses 1M (matches the mocked Context Window selection).
+	const costBucket = getCostBucket(model.metadata.name);
+	const modelNameLower = model.metadata.name.toLowerCase();
+	const is1M = modelNameLower.includes('opus 4.6');
+	if (is1M) {
+		const ctx = dom.$('span.chat-model-context');
+		ctx.textContent = '1M';
+		indicators.appendChild(ctx);
+	}
 
-    if (bulbsFilled >= 0) {
-        indicators.appendChild(createBulbsElement(bulbsFilled, 3));
-    }
+	if (bulbsFilled >= 0) {
+		indicators.appendChild(createBulbsElement(bulbsFilled, 3));
+	}
 
-    indicators.appendChild(createCostElement(costBucket, 3));
+	indicators.appendChild(createCostElement(costBucket, 3));
 
-    wrap.appendChild(indicators);
+	wrap.appendChild(indicators);
 
-    return {
-        id: model.identifier,
-        enabled: true,
-        icon: model.metadata.statusIcon,
-        checked: model.identifier === selectedModelId,
-        class: undefined,
-        description: wrap as HTMLElement, // Indicators column
-        tooltip: model.metadata.name,
-        label: model.metadata.name,
-        section,
-        toolbarActions: toolbarActions && toolbarActions.length > 0 ? toolbarActions : undefined,
-        run: () => onSelect(model),
-    };
+	return {
+		id: model.identifier,
+		enabled: true,
+		icon: model.metadata.statusIcon,
+		checked: model.identifier === selectedModelId,
+		class: undefined,
+		description: wrap as HTMLElement, // Indicators column
+		tooltip: model.metadata.name,
+		label: model.metadata.name,
+		section,
+		toolbarActions: toolbarActions && toolbarActions.length > 0 ? toolbarActions : undefined,
+		run: () => onSelect(model),
+	};
 }
 
 function shouldShowManageModelsAction(chatEntitlementService: IChatEntitlementService): boolean {
@@ -380,7 +382,7 @@ export function buildModelPickerItems(
 			};
 
 			// --- 1. Auto ---
-			const autoModel = models.find(m => m.metadata.id === 'auto' && m.metadata.vendor === 'copilot');
+			const autoModel = models.find(m => isAutoModel(m));
 			if (autoModel) {
 				markPlaced(autoModel.identifier, autoModel.metadata.id);
 				items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel));
@@ -473,7 +475,7 @@ export function buildModelPickerItems(
 					if (item.kind === 'available') {
 						items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect, languageModelsService!), item.model));
 					} else {
-						items.push(createUnavailableModelItem(item.id, item.entry, item.reason, manageSettingsUrl, updateStateType));
+						items.push(createUnavailableModelItem(item.id, item.entry, item.reason, manageSettingsUrl, updateStateType, chatEntitlementService));
 					}
 				}
 			}
@@ -522,7 +524,7 @@ export function buildModelPickerItems(
 				for (const model of otherModels) {
 					const entry = controlModels[model.metadata.id] ?? controlModels[model.identifier];
 					if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-						items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', manageSettingsUrl, updateStateType, ModelPickerSection.Other));
+						items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', manageSettingsUrl, updateStateType, chatEntitlementService, ModelPickerSection.Other));
 					} else {
 						items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!, ModelPickerSection.Other), model));
 					}
@@ -544,7 +546,7 @@ export function buildModelPickerItems(
 		}
 	} else {
 		// Flat list: auto first, then all models sorted alphabetically
-		const autoModel = models.find(m => m.metadata.id === 'auto' && m.metadata.vendor === 'copilot');
+		const autoModel = models.find(m => isAutoModel(m));
 		if (autoModel) {
 			items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel));
 		}
@@ -590,6 +592,7 @@ function createUnavailableModelItem(
 	reason: 'upgrade' | 'update' | 'admin',
 	manageSettingsUrl: string | undefined,
 	updateStateType: StateType,
+	chatEntitlementService: IChatEntitlementService,
 	section?: string,
 ): IActionListItem<IActionWidgetDropdownAction> {
 	let description: string | MarkdownString | undefined;
@@ -607,7 +610,11 @@ function createUnavailableModelItem(
 	let hoverContent: MarkdownString;
 	if (reason === 'upgrade') {
 		hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-		hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "[Upgrade to GitHub Copilot Pro](command:workbench.action.chat.upgradePlan \" \") to use the best models."));
+		if (chatEntitlementService.entitlement === ChatEntitlement.Pro) {
+			hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHoverProPlus', "[Upgrade to GitHub Copilot Pro+](command:workbench.action.chat.upgradePlan \" \") to use the best models."));
+		} else {
+			hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "[Upgrade to GitHub Copilot Pro](command:workbench.action.chat.upgradePlan \" \") to use the best models."));
+		}
 	} else if (reason === 'update') {
 		hoverContent = getUpdateHoverContent(updateStateType);
 	} else {
@@ -919,19 +926,44 @@ export class ModelPickerWidget extends Disposable {
 }
 
 
-function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): MarkdownString {
+function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): MarkdownString | undefined {
+	const isAuto = isAutoModel(model);
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-	markdown.appendMarkdown(`**${model.metadata.name}**`);
+	let hasContent = false;
 
 	if (model.metadata.tooltip) {
-		markdown.appendMarkdown(`\n\n`);
 		if (model.metadata.statusIcon) {
 			markdown.appendMarkdown(`$(${model.metadata.statusIcon.id})&nbsp;`);
 		}
 		// Strip multiplier-related sentences from tooltip
 		const cleanTooltip = model.metadata.tooltip.replace(/\s*Rate is counted at \d+(\.\d+)?x\.?/gi, '').replace(/\s*Counted at \d+(\.\d+)?x\.?/gi, '').trim();
 		markdown.appendMarkdown(`${cleanTooltip}`);
+		hasContent = true;
 	}
 
-	return markdown;
+	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
+		if (hasContent) {
+			markdown.appendMarkdown(`\n\n`);
+		}
+		const totalTokens = (model.metadata.maxInputTokens ?? 0) + (model.metadata.maxOutputTokens ?? 0);
+		markdown.appendMarkdown(`${localize('models.contextSize', 'Context Size')}: `);
+		markdown.appendMarkdown(`${formatTokenCount(totalTokens)}`);
+		hasContent = true;
+	}
+
+	return hasContent ? markdown : undefined;
+}
+
+
+function formatTokenCount(count: number): string {
+	if (count >= 1000000) {
+		return `${(count / 1000000).toFixed(1)}M`;
+	} else if (count >= 1000) {
+		return `${(count / 1000).toFixed(0)}K`;
+	}
+	return count.toString();
+}
+
+function isAutoModel(model: ILanguageModelChatMetadataAndIdentifier): boolean {
+	return model.metadata.id === 'auto' && (model.metadata.vendor === 'copilot' || model.metadata.vendor === 'copilotcli');
 }

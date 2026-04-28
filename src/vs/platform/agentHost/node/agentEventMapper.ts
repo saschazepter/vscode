@@ -19,14 +19,14 @@ import type {
 } from '../common/agentService.js';
 import {
 	ActionType,
-	type ISessionAction,
-	type ISessionErrorAction,
-	type ISessionInputRequestedAction,
+	type SessionAction,
+	type SessionErrorAction,
+	type SessionInputRequestedAction,
 	type ITitleChangedAction,
 	type IToolCallCompleteAction,
 	type IToolCallReadyAction,
 	type IToolCallStartAction,
-	type ISessionToolCallContentChangedAction,
+	type SessionToolCallContentChangedAction,
 	type ITurnCompleteAction,
 	type IUsageAction
 } from '../common/state/sessionActions.js';
@@ -55,12 +55,12 @@ export class AgentEventMapper {
 
 	/**
 	 * Maps a flat {@link IAgentProgressEvent} from the agent host into
-	 * protocol {@link ISessionAction}(s) suitable for dispatch to the reducer.
+	 * protocol {@link SessionAction}(s) suitable for dispatch to the reducer.
 	 *
 	 * Returns `undefined` for events that have no corresponding action.
 	 * May return an array when a single SDK event maps to multiple protocol actions.
 	 */
-	mapProgressEventToActions(event: IAgentProgressEvent, session: URI, turnId: string): ISessionAction | ISessionAction[] | undefined {
+	mapProgressEventToActions(event: IAgentProgressEvent, session: URI, turnId: string): SessionAction | SessionAction[] | undefined {
 		switch (event.type) {
 			case 'delta': {
 				const e = event as IAgentDeltaEvent;
@@ -86,9 +86,15 @@ export class AgentEventMapper {
 			}
 
 			case 'tool_start': {
-				// A new tool call invalidates the current markdown part so the
-				// next text delta creates a fresh part after the tool call.
+				// A new tool call invalidates the current markdown and reasoning
+				// parts so the next text/reasoning delta creates fresh parts
+				// after the tool call. The Copilot SDK emits multiple rounds
+				// of (reasoning → message → tool calls) within a single chat
+				// turn; without this, every later round's reasoning would be
+				// appended onto the very first reasoning part and bunch at
+				// the top of the response on restore.
 				this._currentMarkdownPartId.delete(session);
+				this._currentReasoningPartId.delete(session);
 
 				// The Copilot SDK provides full parameters at tool_start time.
 				// We emit both toolCallStart (streaming → created) and toolCallReady
@@ -175,7 +181,7 @@ export class AgentEventMapper {
 					turnId,
 					toolCallId: e.toolCallId,
 					content: e.content,
-				} satisfies ISessionToolCallContentChangedAction;
+				} satisfies SessionToolCallContentChangedAction;
 			}
 
 			case 'idle':
@@ -196,7 +202,7 @@ export class AgentEventMapper {
 						message: e.message,
 						stack: e.stack,
 					},
-				} satisfies ISessionErrorAction;
+				} satisfies SessionErrorAction;
 			}
 
 			case 'usage': {
@@ -275,7 +281,7 @@ export class AgentEventMapper {
 					type: ActionType.SessionInputRequested,
 					session,
 					request: e.request,
-				} satisfies ISessionInputRequestedAction;
+				} satisfies SessionInputRequestedAction;
 			}
 
 			default:

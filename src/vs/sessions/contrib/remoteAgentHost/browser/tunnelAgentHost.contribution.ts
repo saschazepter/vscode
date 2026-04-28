@@ -18,6 +18,7 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { AuthenticationSessionsChangeEvent, IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { logTunnelConnectAttempt, logTunnelConnectResolved, TunnelConnectErrorCategory, TunnelConnectFailureReason } from '../../../common/sessionsTelemetry.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { IAgentHostFilterService } from '../common/agentHostFilter.js';
 import { RemoteAgentHostSessionsProvider } from './remoteAgentHostSessionsProvider.js';
 
 /** Minimum interval between silent status checks (5 minutes). */
@@ -82,11 +83,17 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 		@ILogService private readonly _logService: ILogService,
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IAgentHostFilterService agentHostFilterService: IAgentHostFilterService,
 	) {
 		super();
 
 		// Create providers for cached tunnels
 		this._reconcileProviders();
+
+		// Plug our silent status check into the shared host picker UX so
+		// the user-triggered "Re-discover hosts" action runs the same
+		// discovery routine.
+		this._register(agentHostFilterService.registerDiscoveryHandler(() => this._silentStatusCheck()));
 
 		// Update connection statuses when connections change
 		this._register(this._remoteAgentHostService.onDidChangeConnections(() => {
@@ -138,8 +145,11 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			this._reconnectTimeouts.clear();
 		}));
 
-		// Silently check status of cached tunnels on startup
-		this._silentStatusCheck();
+		// Silently check status of cached tunnels on startup. Routed
+		// through the filter service's `rediscover` so the host pill
+		// pulses while the initial automatic discovery is in flight,
+		// then switches to a static label once we know what hosts exist.
+		agentHostFilterService.rediscover();
 	}
 
 	/**
@@ -184,6 +194,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 			address,
 			name,
 			connectOnDemand: () => this._connectTunnel(address, { userInitiated: true }),
+			disconnectOnDemand: () => this._disconnectTunnel(address),
 		},
 		);
 		// Surface as "Connecting" until the first silent status check or an
@@ -326,6 +337,21 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 
 		this._pendingConnects.set(address, promise);
 		return promise;
+	}
+
+	/**
+	 * Tear down the active tunnel relay for {@link address} and cancel any
+	 * pending auto-reconnect. The cached tunnel entry is kept so the user
+	 * can re-connect later; only the live WebSocket is closed.
+	 */
+	private async _disconnectTunnel(address: string): Promise<void> {
+		this._cancelReconnect(address);
+		this._resetReconnectState(address);
+		// Mark as explicitly disconnected so `_handleConnectionChanges` does
+		// not treat the impending Connected→(removed) transition as a
+		// reconnect-worthy drop.
+		this._previousStatuses.delete(address);
+		await this._tunnelService.disconnect(address);
 	}
 
 	/**

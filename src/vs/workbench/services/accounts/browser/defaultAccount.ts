@@ -114,6 +114,7 @@ export class DefaultAccountService extends Disposable implements IDefaultAccount
 	declare _serviceBrand: undefined;
 
 	private defaultAccount: IDefaultAccount | null = null;
+	get currentDefaultAccount(): IDefaultAccount | null { return this.defaultAccount; }
 	get policyData(): IPolicyData | null { return this.defaultAccountProvider?.policyData ?? null; }
 	get copilotTokenInfo(): ICopilotTokenInfo | null { return this.defaultAccountProvider?.copilotTokenInfo ?? null; }
 
@@ -523,7 +524,6 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				this.logService.debug('[DefaultAccount] No matching session found for provider:', authenticationProvider.id);
 				return null;
 			}
-
 			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, options);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));

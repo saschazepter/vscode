@@ -23,9 +23,9 @@ import type {
 	IDeltaAction,
 	IReasoningAction,
 	IResponsePartAction,
-	ISessionAction,
-	ISessionErrorAction,
-	ISessionInputRequestedAction,
+	SessionAction,
+	SessionErrorAction,
+	SessionInputRequestedAction,
 	ITitleChangedAction,
 	IToolCallCompleteAction,
 	IToolCallReadyAction,
@@ -33,11 +33,11 @@ import type {
 	ITurnCompleteAction,
 	IUsageAction,
 } from '../../common/state/sessionActions.js';
-import { SessionInputQuestionKind, ToolCallConfirmationReason, ToolResultContentType, type IMarkdownResponsePart, type IReasoningResponsePart, type ISessionInputRequest } from '../../common/state/sessionState.js';
+import { SessionInputQuestionKind, ToolCallConfirmationReason, ToolResultContentType, type MarkdownResponsePart, type ReasoningResponsePart, type SessionInputRequest } from '../../common/state/sessionState.js';
 import { AgentEventMapper } from '../../node/agentEventMapper.js';
 
 /** Helper: flatten the result of mapProgressEventToActions into an array. */
-function mapToArray(result: ISessionAction | ISessionAction[] | undefined): ISessionAction[] {
+function mapToArray(result: SessionAction | SessionAction[] | undefined): SessionAction[] {
 	if (!result) {
 		return [];
 	}
@@ -78,7 +78,7 @@ suite('AgentEventMapper', () => {
 		const second: IAgentDeltaEvent = { session, type: 'delta', messageId: 'msg-1', content: 'world' };
 
 		const firstActions = mapToArray(mapper.mapProgressEventToActions(first, session.toString(), turnId));
-		const partId = ((firstActions[0] as IResponsePartAction).part as IMarkdownResponsePart).id;
+		const partId = ((firstActions[0] as IResponsePartAction).part as MarkdownResponsePart).id;
 
 		const secondActions = mapToArray(mapper.mapProgressEventToActions(second, session.toString(), turnId));
 		assert.strictEqual(secondActions.length, 1);
@@ -167,7 +167,7 @@ suite('AgentEventMapper', () => {
 
 		const actions = mapToArray(mapper.mapProgressEventToActions(event, session.toString(), turnId));
 		assert.strictEqual(actions.length, 1);
-		const errorAction = actions[0] as ISessionErrorAction;
+		const errorAction = actions[0] as SessionErrorAction;
 		assert.strictEqual(errorAction.type, 'session/error');
 		assert.strictEqual(errorAction.error.errorType, 'runtime');
 		assert.strictEqual(errorAction.error.message, 'Something went wrong');
@@ -228,7 +228,7 @@ suite('AgentEventMapper', () => {
 		const second: IAgentReasoningEvent = { session, type: 'reasoning', content: ' more thoughts' };
 
 		const firstActions = mapToArray(mapper.mapProgressEventToActions(first, session.toString(), turnId));
-		const partId = ((firstActions[0] as IResponsePartAction).part as IReasoningResponsePart).id;
+		const partId = ((firstActions[0] as IResponsePartAction).part as ReasoningResponsePart).id;
 
 		const secondActions = mapToArray(mapper.mapProgressEventToActions(second, session.toString(), turnId));
 		assert.strictEqual(secondActions.length, 1);
@@ -236,6 +236,63 @@ suite('AgentEventMapper', () => {
 		assert.strictEqual(reasoning.type, 'session/reasoning');
 		assert.strictEqual(reasoning.content, ' more thoughts');
 		assert.strictEqual(reasoning.partId, partId);
+	});
+
+	test('reasoning event after tool_start creates a fresh responsePart', () => {
+		// The Copilot SDK emits multiple rounds of (reasoning → message →
+		// tool calls) within a single chat turn. Each new reasoning batch
+		// after a tool call must produce a fresh Reasoning ResponsePart so
+		// it renders interleaved with the tool calls in the response.
+		// Otherwise the SessionReasoning reducer appends every later round
+		// onto the very first part, causing all reasoning to bunch at the
+		// top of the response when the session is later restored from state.
+		const first: IAgentReasoningEvent = { session, type: 'reasoning', content: 'Round 1 thoughts' };
+		mapper.mapProgressEventToActions(first, session.toString(), turnId);
+
+		const toolStart: IAgentToolStartEvent = {
+			session, type: 'tool_start',
+			toolCallId: 'tc-1', toolName: 'bash', displayName: 'Bash',
+			invocationMessage: 'Running', toolInput: 'ls',
+		};
+		mapper.mapProgressEventToActions(toolStart, session.toString(), turnId);
+
+		const second: IAgentReasoningEvent = { session, type: 'reasoning', content: 'Round 2 thoughts' };
+		const actions = mapToArray(mapper.mapProgressEventToActions(second, session.toString(), turnId));
+		assert.strictEqual(actions.length, 1);
+		assert.strictEqual(actions[0].type, 'session/responsePart');
+		const part = (actions[0] as IResponsePartAction).part;
+		assert.strictEqual(part.kind, 'reasoning');
+		assert.strictEqual(part.content, 'Round 2 thoughts');
+	});
+
+	test('reasoning event after tool_complete creates a fresh responsePart', () => {
+		// Symmetric to the tool_start case: after a tool call finishes,
+		// the next reasoning batch belongs to a new round and must not
+		// be appended onto the previous round's reasoning part.
+		const first: IAgentReasoningEvent = { session, type: 'reasoning', content: 'Round 1 thoughts' };
+		mapper.mapProgressEventToActions(first, session.toString(), turnId);
+
+		const toolStart: IAgentToolStartEvent = {
+			session, type: 'tool_start',
+			toolCallId: 'tc-1', toolName: 'bash', displayName: 'Bash',
+			invocationMessage: 'Running', toolInput: 'ls',
+		};
+		mapper.mapProgressEventToActions(toolStart, session.toString(), turnId);
+
+		const toolComplete: IAgentToolCompleteEvent = {
+			session, type: 'tool_complete',
+			toolCallId: 'tc-1',
+			result: { success: true, content: [{ type: ToolResultContentType.Text, text: 'ok' }], pastTenseMessage: 'Ran' },
+		};
+		mapper.mapProgressEventToActions(toolComplete, session.toString(), turnId);
+
+		const second: IAgentReasoningEvent = { session, type: 'reasoning', content: 'Round 2 thoughts' };
+		const actions = mapToArray(mapper.mapProgressEventToActions(second, session.toString(), turnId));
+		assert.strictEqual(actions.length, 1);
+		assert.strictEqual(actions[0].type, 'session/responsePart');
+		const part = (actions[0] as IResponsePartAction).part;
+		assert.strictEqual(part.kind, 'reasoning');
+		assert.strictEqual(part.content, 'Round 2 thoughts');
 	});
 
 	test('message event with no prior deltas creates responsePart', () => {
@@ -317,7 +374,7 @@ suite('AgentEventMapper', () => {
 	});
 
 	test('user_input_request event maps to session/inputRequested action', () => {
-		const request: ISessionInputRequest = {
+		const request: SessionInputRequest = {
 			id: 'req-1',
 			message: 'What is your name?',
 			questions: [{
@@ -335,7 +392,7 @@ suite('AgentEventMapper', () => {
 
 		const actions = mapToArray(mapper.mapProgressEventToActions(event, session.toString(), turnId));
 		assert.strictEqual(actions.length, 1);
-		const action = actions[0] as ISessionInputRequestedAction;
+		const action = actions[0] as SessionInputRequestedAction;
 		assert.strictEqual(action.type, 'session/inputRequested');
 		assert.strictEqual(action.session, session.toString());
 		assert.strictEqual(action.request, request);

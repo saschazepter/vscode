@@ -21,6 +21,10 @@ export interface IActionWidgetDropdownAction extends IAction {
 	icon?: ThemeIcon;
 	description?: string | IMarkdownString | HTMLElement;
 	/**
+	 * Optional detail text displayed as a second line below the label.
+	 */
+	detail?: string;
+	/**
 	 * Optional flyout hover configuration shown when focusing/hovering over the action.
 	 */
 	hover?: IActionListItemHover;
@@ -139,6 +143,7 @@ export class ActionWidgetDropdown extends BaseDropdown {
 					item: action,
 					tooltip: action.tooltip,
 					description: action.description,
+					detail: action.detail,
 					hover: action.hover,
 					toolbarActions: action.toolbarActions,
 					kind: ActionListItemKind.Action,
