@@ -33,7 +33,7 @@ import { IToolsService } from '../../../tools/common/toolsService';
 import { IChatSessionMetadataStore } from '../../common/chatSessionMetadataStore';
 import { ExternalEditTracker } from '../../common/externalEditTracker';
 import { getWorkingDirectory, isIsolationEnabled, IWorkspaceInfo } from '../../common/workspaceInfo';
-import { enrichToolInvocationWithSubagentMetadata, isCopilotCliEditToolCall, isCopilotCLIToolThatCouldRequirePermissions, isTodoRelatedSqlQuery, processToolExecutionComplete, processToolExecutionStart, ToolCall, updateTodoListFromSqlItems, clearTodoList } from '../common/copilotCLITools';
+import { clearTodoList, enrichToolInvocationWithSubagentMetadata, isCopilotCliEditToolCall, isCopilotCLIToolThatCouldRequirePermissions, isTodoRelatedSqlQuery, processToolExecutionComplete, processToolExecutionStart, stripReminders, ToolCall, updateTodoListFromSqlItems } from '../common/copilotCLITools';
 import { clearPendingCopilotCLIRequestContext, setPendingCopilotCLIRequestContext } from '../common/pendingRequestContext';
 import { getCopilotCLISessionDir } from './cliHelpers';
 import { SessionIdForCLI } from '../common/utils';
@@ -43,7 +43,7 @@ import { handleExitPlanMode } from './exitPlanModeHandler';
 import { type McCommand, type McEvent, type McSessionCreateResult, MissionControlApiClient } from './missionControlApiClient';
 import { handleMcpPermission, handleReadPermission, handleShellPermission, handleWritePermission, type PermissionRequest, type PermissionRequestResult, showInteractivePermissionPrompt } from './permissionHelpers';
 import { TodoSqlQuery } from './todoSqlQuery';
-import { IQuestion, IUserQuestionHandler } from './userInputHelpers';
+import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from './userInputHelpers';
 
 /**
  * Known commands that can be sent to a CopilotCLI session instead of a free-form prompt.
@@ -63,15 +63,22 @@ export const copilotCLICommands: readonly CopilotCLICommand[] = ['compact', 'pla
  */
 interface McSharedState {
 	mcSessionId: string;
+	mcFrontendUrl?: string;
 	mcEventBuffer: McEvent[];
 	mcCompletedCommandIds: string[];
 	mcPendingPermissionRequests: Map<string, { resolve(result: PermissionRequestResult): void }>;
+	mcPendingUserInputRequests?: Set<McPendingUserInputRequest>;
 	mcFlushInterval: ReturnType<typeof setInterval> | undefined;
 	mcPollInterval: ReturnType<typeof setInterval> | undefined;
 	mcLastEventId: string | null;
 	mcLastSubmitAttemptTimeMs: number;
 	mcProcessedCommandIds: Set<string>;
 	mcPendingCommandCompletionIds?: Set<string>;
+	mcPendingCommandPrompts?: Map<string, string>;
+	mcLocalUserMessageEchoes?: Map<string, number>;
+	mcSuppressedCommandPromptEchoes?: Map<string, number>;
+	mcBufferedEventSignatures?: Map<string, number>;
+	mcSuppressedEventIds?: Set<string>;
 	/** Reference to the SDK session for steering from the command poller. */
 	mcSdkSession: Session;
 	/** Dispose function for the persistent on('*') listener for MC events. */
@@ -82,11 +89,43 @@ interface McSharedState {
 const mcStateBySessionId = new Map<string, McSharedState>();
 
 const MISSION_CONTROL_KEEPALIVE_INTERVAL_MS = 10_000;
+const MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS = 10_000;
 
 interface McPermissionResponseCommandData {
 	readonly promptId?: string;
 	readonly approved?: boolean;
 	readonly scope?: 'once' | 'session';
+}
+
+interface UserInputResponse {
+	readonly answer: string;
+	readonly wasFreeform: boolean;
+}
+
+interface McPendingUserInputRequest {
+	readonly requestId: string;
+	readonly toolCallId?: string;
+	resolve(result: UserInputResponse | undefined): void;
+}
+
+interface McAskUserResponsePayload {
+	readonly requestId?: string;
+	readonly promptId?: string;
+	readonly toolCallId?: string;
+	readonly answer?: string;
+	readonly wasFreeform?: boolean;
+	readonly freeText?: string | null;
+	readonly selected?: readonly string[];
+	readonly skipped?: boolean;
+	readonly response?: {
+		readonly answer?: string;
+		readonly wasFreeform?: boolean;
+		readonly freeText?: string | null;
+		readonly selected?: readonly string[];
+		readonly skipped?: boolean;
+	};
 }
 
 const skippedMissionControlEventTypes = new Set([
@@ -145,20 +184,283 @@ function getMissionControlSessionTitleFromEvent(event: { type?: string; data?: u
 	return typeof title === 'string' && title.trim().length > 0 ? title : undefined;
 }
 
+function getMissionControlEventData(event: { type?: string; data?: unknown }, source?: string): Record<string, unknown> {
+	if (!event.data || typeof event.data !== 'object') {
+		return source ? { source } : {};
+	}
+
+	const data = event.data as Record<string, unknown>;
+	if (event.type === 'user.message') {
+		const content = data.content;
+		if (typeof content !== 'string') {
+			return source ? { ...data, source } : data;
+		}
+
+		const sanitizedContent = stripReminders(content);
+		return sanitizedContent === content && !source ? data : { ...data, content: sanitizedContent, ...(source ? { source } : undefined) };
+	}
+
+	if (event.type !== 'tool.execution_start') {
+		return data;
+	}
+
+	const toolName = data.toolName;
+	if (toolName !== 'bash' && toolName !== 'powershell' && toolName !== 'task') {
+		return data;
+	}
+
+	const args = data.arguments;
+	if (!args || typeof args !== 'object' || !('description' in args)) {
+		return data;
+	}
+
+	const { description: _description, ...sanitizedArgs } = args as Record<string, unknown>;
+	return { ...data, arguments: sanitizedArgs };
+}
+
 function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set<string> {
 	state.mcPendingCommandCompletionIds ??= new Set();
 	return state.mcPendingCommandCompletionIds;
 }
 
-function maybeAcknowledgeMissionControlCommandFromEvent(state: McSharedState, event: { type?: string; data?: unknown }): void {
+function getMissionControlPendingCommandPrompts(state: McSharedState): Map<string, string> {
+	state.mcPendingCommandPrompts ??= new Map();
+	return state.mcPendingCommandPrompts;
+}
+
+function getMissionControlPendingUserInputRequests(state: McSharedState): Set<McPendingUserInputRequest> {
+	state.mcPendingUserInputRequests ??= new Set();
+	return state.mcPendingUserInputRequests;
+}
+
+function getMissionControlLocalUserMessageEchoes(state: McSharedState): Map<string, number> {
+	state.mcLocalUserMessageEchoes ??= new Map();
+	return state.mcLocalUserMessageEchoes;
+}
+
+function getMissionControlSuppressedCommandPromptEchoes(state: McSharedState): Map<string, number> {
+	state.mcSuppressedCommandPromptEchoes ??= new Map();
+	return state.mcSuppressedCommandPromptEchoes;
+}
+
+function getMissionControlBufferedEventSignatures(state: McSharedState): Map<string, number> {
+	state.mcBufferedEventSignatures ??= new Map();
+	return state.mcBufferedEventSignatures;
+}
+
+function getMissionControlSuppressedEventIds(state: McSharedState): Set<string> {
+	state.mcSuppressedEventIds ??= new Set();
+	return state.mcSuppressedEventIds;
+}
+
+function getMissionControlUserMessageContent(event: { type?: string; data?: unknown }): string | undefined {
+	if (event.type !== 'user.message' || !event.data || typeof event.data !== 'object' || !('content' in event.data)) {
+		return undefined;
+	}
+
+	const content = event.data.content;
+	return typeof content === 'string' ? stripReminders(content).trim() : undefined;
+}
+
+function rememberMissionControlLocalUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId?: string): void {
+	if (commandId || getMissionControlCommandIdFromEvent(event)) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		getMissionControlLocalUserMessageEchoes(state).set(content, Date.now());
+	}
+}
+
+function isMissionControlLocalUserMessageEcho(state: McSharedState, command: McCommand): boolean {
+	if (command.type && command.type !== 'user_message') {
+		return false;
+	}
+
+	const now = Date.now();
+	const echoes = getMissionControlLocalUserMessageEchoes(state);
+	for (const [content, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS) {
+			echoes.delete(content);
+		}
+	}
+
+	const content = stripReminders(command.content).trim();
+	if (!content || !echoes.has(content)) {
+		return false;
+	}
+
+	echoes.delete(content);
+	return true;
+}
+
+function hasRecentMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): boolean {
+	const now = Date.now();
+	const echoes = getMissionControlSuppressedCommandPromptEchoes(state);
+	for (const [echoContent, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_SUPPRESSED_COMMAND_PROMPT_ECHO_TTL_MS) {
+			echoes.delete(echoContent);
+		}
+	}
+
+	return echoes.has(content);
+}
+
+function rememberMissionControlSuppressedCommandPromptEcho(state: McSharedState, content: string): void {
+	getMissionControlSuppressedCommandPromptEchoes(state).set(content, Date.now());
+}
+
+function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }, data = getMissionControlEventData(event)): string {
+	if (event.id) {
+		return `id:${event.id}`;
+	}
+
+	return `${event.type ?? 'unknown'}:${JSON.stringify(data)}`;
+}
+
+function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, data?: Record<string, unknown>): boolean {
+	const now = Date.now();
+	const signatures = getMissionControlBufferedEventSignatures(state);
+	for (const [signature, timestamp] of signatures) {
+		if (now - timestamp > MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS) {
+			signatures.delete(signature);
+		}
+	}
+
+	const signature = getMissionControlEventSignature(event, data);
+	if (signatures.has(signature)) {
+		return false;
+	}
+
+	signatures.set(signature, now);
+	return true;
+}
+
+function getMissionControlCommandIdForUserMessage(state: McSharedState, event: { type?: string; data?: unknown }): string | undefined {
+	if (event.type !== 'user.message') {
+		return undefined;
+	}
+
 	const commandId = getMissionControlCommandIdFromEvent(event);
+	if (commandId) {
+		return commandId;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (!content) {
+		return undefined;
+	}
+
+	for (const [pendingCommandId, pendingPrompt] of getMissionControlPendingCommandPrompts(state)) {
+		if (pendingPrompt === content) {
+			return pendingCommandId;
+		}
+	}
+
+	return undefined;
+}
+
+function shouldSuppressMissionControlLateCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }, commandId: string | undefined): boolean {
+	if (event.type !== 'user.message' || commandId) {
+		return false;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (!content || !hasRecentMissionControlSuppressedCommandPromptEcho(state, content)) {
+		return false;
+	}
+
+	if (event.id) {
+		getMissionControlSuppressedEventIds(state).add(event.id);
+	}
+	return true;
+}
+
+function maybeAcknowledgeMissionControlCommand(state: McSharedState, commandId: string | undefined): void {
 	if (!commandId) {
 		return;
 	}
 
 	if (getMissionControlPendingCommandCompletionIds(state).delete(commandId)) {
+		getMissionControlPendingCommandPrompts(state).delete(commandId);
 		state.mcCompletedCommandIds.push(commandId);
 	}
+}
+
+function rememberMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown }, commandId: string | undefined): void {
+	if (!commandId) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		rememberMissionControlSuppressedCommandPromptEcho(state, content);
+	}
+}
+
+function getMissionControlParentId(state: McSharedState, event: { parentId?: string | null }): string | null {
+	const parentId = event.parentId ?? state.mcLastEventId ?? null;
+	if (parentId && getMissionControlSuppressedEventIds(state).has(parentId)) {
+		return state.mcLastEventId ?? null;
+	}
+	return parentId;
+}
+
+function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
+	const pendingRequests = [...getMissionControlPendingUserInputRequests(state)];
+	const identifiers = [
+		payload?.requestId,
+		payload?.promptId,
+		payload?.toolCallId,
+	].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+	if (identifiers.length > 0) {
+		return pendingRequests.find(request =>
+			identifiers.includes(request.requestId) ||
+			(typeof request.toolCallId === 'string' && identifiers.includes(request.toolCallId))
+		);
+	}
+
+	return pendingRequests.length === 1 ? pendingRequests[0] : undefined;
+}
+
+function toSdkUserInputResponse(answer: IQuestionAnswer | undefined): UserInputResponse {
+	if (!answer) {
+		return { answer: '', wasFreeform: false };
+	}
+
+	if (answer.freeText) {
+		return { answer: answer.freeText, wasFreeform: true };
+	}
+
+	return { answer: answer.selected.join(', '), wasFreeform: false };
+}
+
+function getMcAskUserResponse(payload: McAskUserResponsePayload | undefined, rawContent: string): UserInputResponse | undefined {
+	const response = payload?.response ?? payload;
+	const answer = typeof response?.answer === 'string'
+		? response.answer
+		: typeof response?.freeText === 'string'
+			? response.freeText
+			: Array.isArray(response?.selected)
+				? response.selected.filter((value): value is string => typeof value === 'string').join(', ')
+				: response?.skipped
+					? ''
+					: payload === undefined
+						? rawContent
+						: undefined;
+
+	if (answer === undefined) {
+		return undefined;
+	}
+
+	return {
+		answer,
+		wasFreeform: typeof response?.wasFreeform === 'boolean'
+			? response.wasFreeform
+			: typeof response?.freeText === 'string',
+	};
 }
 
 export { builtinSlashCommands as builtinSlashSCommands } from '../../common/builtinSlashCommands';
@@ -673,17 +975,28 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					allowFreeformInput: event.data.allowFreeform,
 					header: event.data.question,
 				};
-				const answer = await this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, token);
-				flushPendingInvocationMessages();
-				if (!answer) {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: '', wasFreeform: false });
-					return;
-				}
-				if (answer.freeText) {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: answer.freeText, wasFreeform: true });
+				let response: UserInputResponse;
+				if (this._mcState) {
+					const userInputResolutionTokenSource = new CancellationTokenSource(token);
+					const localQuestionPromise = this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, userInputResolutionTokenSource.token, event.data.toolCallId);
+					const remoteQuestionPromise = this._waitForMcUserInputResponse(this._mcState, event.data.requestId, event.data.toolCallId, userInputResolutionTokenSource.token);
+					try {
+						const result = await Promise.race([
+							localQuestionPromise.then(answer => ({ source: 'local' as const, response: toSdkUserInputResponse(answer) })),
+							remoteQuestionPromise.then(result => ({ source: 'remote' as const, response: result })),
+						]);
+						if (result.source === 'remote' && result.response && event.data.toolCallId) {
+							await this._userQuestionHandler.notifyQuestionCarouselAnswer?.(event.data.toolCallId, userInputRequest, result.response);
+						}
+						response = result.response ?? { answer: '', wasFreeform: false };
+					} finally {
+						userInputResolutionTokenSource.dispose(true);
+					}
 				} else {
-					this._sdkSession.respondToUserInput(event.data.requestId, { answer: answer.selected.join(', '), wasFreeform: false });
+					response = toSdkUserInputResponse(await this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, token, event.data.toolCallId));
 				}
+				flushPendingInvocationMessages();
+				this._sdkSession.respondToUserInput(event.data.requestId, response);
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('session.title_changed', (event) => {
 				this._title = event.data.title;
@@ -1060,8 +1373,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	}
 
 	/**
-	 * Handle `/remote` command — enables or disables Mission Control remote
-	 * control for this session by calling the Copilot API directly.
+	 * Handle `/remote` command — prints status or enables/disables Mission
+	 * Control remote control for this session by calling the Copilot API directly.
 	 */
 	private async _handleRemoteControl(input: CopilotCLISessionInput): Promise<void> {
 		if (!this.configurationService.getConfig(ConfigKey.Advanced.CLIRemoteEnabled)) {
@@ -1071,10 +1384,25 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 		const args = ('prompt' in input ? input.prompt : '')?.trim().toLowerCase();
 		const isCurrentlyActive = !!this._mcState;
-		const enable = args === 'off' ? false : (args === 'on' ? true : !isCurrentlyActive);
+		if (!args) {
+			this._showRemoteControlStatus();
+			return;
+		}
+		if (args !== 'on' && args !== 'off') {
+			this._stream?.markdown(l10n.t('Usage: /remote, /remote on, /remote off'));
+			return;
+		}
+		if (args === 'on' && isCurrentlyActive) {
+			this._showRemoteControlStatus();
+			return;
+		}
+		if (args === 'off' && !isCurrentlyActive) {
+			this._showRemoteControlStatus();
+			return;
+		}
 
 		try {
-			if (!enable) {
+			if (args === 'off') {
 				await this._teardownRemoteControl();
 				this._stream?.markdown(l10n.t('Remote control disabled.'));
 				return;
@@ -1134,6 +1462,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			// so it persists across CopilotCLISession instances.
 			const sharedState: McSharedState = {
 				mcSessionId: mcData.id,
+				mcFrontendUrl: undefined,
 				mcEventBuffer: [],
 				mcCompletedCommandIds: [],
 				mcPendingPermissionRequests: new Map(),
@@ -1221,15 +1550,25 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				if (updatedTitle) {
 					this._title = updatedTitle;
 				}
-				maybeAcknowledgeMissionControlCommandFromEvent(state, e);
+				const commandId = getMissionControlCommandIdForUserMessage(state, e);
+				if (shouldSuppressMissionControlLateCommandUserMessage(state, e, commandId)) {
+					return;
+				}
+				maybeAcknowledgeMissionControlCommand(state, commandId);
+				rememberMissionControlCommandUserMessage(state, e, commandId);
+				const eventData = getMissionControlEventData(e, commandId ? `command-${commandId}` : undefined);
+				if (!shouldBufferMissionControlEvent(state, e, eventData)) {
+					return;
+				}
+				rememberMissionControlLocalUserMessage(state, e, commandId);
 				if (e.id && e.timestamp) {
 					state.mcEventBuffer.push({
 						id: e.id,
 						timestamp: e.timestamp,
-						parentId: e.parentId ?? state.mcLastEventId ?? null,
+						parentId: getMissionControlParentId(state, e),
 						ephemeral: e.ephemeral,
 						type: eventType,
-						data: (e.data ?? {}) as Record<string, unknown>,
+						data: eventData,
 					});
 					state.mcLastEventId = e.id;
 				} else {
@@ -1239,7 +1578,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						timestamp: new Date().toISOString(),
 						parentId: state.mcLastEventId ?? null,
 						type: eventType,
-						data: (e.data ?? {}) as Record<string, unknown>,
+						data: eventData,
 					});
 					state.mcLastEventId = id;
 				}
@@ -1247,6 +1586,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 			// Step 8: Construct and display the frontend URL
 			const frontendUrl = `https://github.com/${nwo.owner}/${nwo.repo}/tasks/${taskId}`;
+			sharedState.mcFrontendUrl = frontendUrl;
 			this.logService.info(`[CopilotCLISession] MC session created, URL: ${frontendUrl}`);
 
 			// Render a persistent inline info banner using the proposed
@@ -1274,6 +1614,26 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		}
 	}
 
+	private _showRemoteControlStatus(): void {
+		const state = this._mcState;
+		if (!state) {
+			this._stream?.markdown(l10n.t('Remote control is disabled. Use /remote on to enable it.'));
+			return;
+		}
+
+		const message = state.mcFrontendUrl
+			? l10n.t('Remote control is enabled. Use /remote off to disable it. Session URL: {0}', state.mcFrontendUrl)
+			: l10n.t('Remote control is enabled. Use /remote off to disable it.');
+		this._stream?.markdown(message);
+		if (state.mcFrontendUrl) {
+			this._stream?.button({
+				command: 'vscode.open',
+				arguments: [Uri.parse(state.mcFrontendUrl)],
+				title: l10n.t('Open on GitHub'),
+			});
+		}
+	}
+
 	/**
 	 * Disable remote control for an active Mission Control session.
 	 */
@@ -1298,6 +1658,10 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			pendingRequest.resolve({ kind: 'denied-interactively-by-user' });
 		}
 		state.mcPendingPermissionRequests.clear();
+		for (const pendingRequest of getMissionControlPendingUserInputRequests(state)) {
+			pendingRequest.resolve(undefined);
+		}
+		getMissionControlPendingUserInputRequests(state).clear();
 
 		state.mcEventBuffer.push(this._createMcEvent('session.remote_steerable_changed', {
 			remoteSteerable: false,
@@ -1381,7 +1745,17 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (updatedTitle) {
 			this._title = updatedTitle;
 		}
-		maybeAcknowledgeMissionControlCommandFromEvent(state, event);
+		const commandId = getMissionControlCommandIdForUserMessage(state, event);
+		if (shouldSuppressMissionControlLateCommandUserMessage(state, event, commandId)) {
+			return;
+		}
+		maybeAcknowledgeMissionControlCommand(state, commandId);
+		rememberMissionControlCommandUserMessage(state, event, commandId);
+		const eventData = getMissionControlEventData(event, commandId ? `command-${commandId}` : undefined);
+		if (!shouldBufferMissionControlEvent(state, event, eventData)) {
+			return;
+		}
+		rememberMissionControlLocalUserMessage(state, event, commandId);
 		this.logService.trace(`[CopilotCLISession] MC buffered event: ${eventType}`);
 
 		// If the SDK event already has a UUID id, pass it through directly
@@ -1390,15 +1764,15 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const mcEvent: McEvent = {
 				id: event.id,
 				timestamp: event.timestamp,
-				parentId: event.parentId ?? state.mcLastEventId ?? null,
+				parentId: getMissionControlParentId(state, event),
 				ephemeral: event.ephemeral,
 				type: eventType,
-				data: (event.data ?? {}) as Record<string, unknown>,
+				data: eventData,
 			};
 			state.mcLastEventId = event.id;
 			state.mcEventBuffer.push(mcEvent);
 		} else {
-			state.mcEventBuffer.push(this._createMcEvent(eventType, (event.data ?? {}) as Record<string, unknown>));
+			state.mcEventBuffer.push(this._createMcEvent(eventType, eventData));
 		}
 	}
 
@@ -1446,8 +1820,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const content = typeof event.data === 'object' && event.data !== null && 'content' in event.data
 				? event.data.content
 				: undefined;
-			if (typeof content === 'string' && content.trim().length > 0) {
-				return content.trim();
+			if (typeof content === 'string') {
+				const sanitizedContent = stripReminders(content).trim();
+				if (sanitizedContent.length > 0) {
+					return sanitizedContent;
+				}
 			}
 		}
 
@@ -1478,6 +1855,36 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			};
 
 			state.mcPendingPermissionRequests.set(promptId, { resolve: complete });
+		});
+	}
+
+	private _waitForMcUserInputResponse(
+		state: McSharedState,
+		requestId: string,
+		toolCallId: string | undefined,
+		token: CancellationToken,
+	): Promise<UserInputResponse | undefined> {
+		return new Promise<UserInputResponse | undefined>(resolve => {
+			let settled = false;
+			const complete = (result: UserInputResponse | undefined) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				getMissionControlPendingUserInputRequests(state).delete(pendingRequest);
+				cancellationListener?.dispose();
+				resolve(result);
+			};
+			const pendingRequest: McPendingUserInputRequest = {
+				requestId,
+				toolCallId,
+				resolve: complete,
+			};
+			const cancellationListener = token.onCancellationRequested(() => {
+				complete(undefined);
+			});
+
+			getMissionControlPendingUserInputRequests(state).add(pendingRequest);
 		});
 	}
 
@@ -1584,8 +1991,45 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 
 				switch (cmd.type) {
 					case 'abort':
+						for (const pendingRequest of state.mcPendingPermissionRequests.values()) {
+							pendingRequest.resolve({ kind: 'denied-interactively-by-user' });
+						}
+						state.mcPendingPermissionRequests.clear();
+						for (const pendingRequest of getMissionControlPendingUserInputRequests(state)) {
+							pendingRequest.resolve(undefined);
+						}
+						getMissionControlPendingUserInputRequests(state).clear();
 						state.mcSdkSession.abort();
 						break;
+					case 'ask_user_response': {
+						let responsePayload: McAskUserResponsePayload | undefined;
+						const trimmedContent = cmd.content.trim();
+						if (trimmedContent.startsWith('{')) {
+							try {
+								const parsed = JSON.parse(trimmedContent) as unknown;
+								if (parsed && typeof parsed === 'object') {
+									responsePayload = parsed as McAskUserResponsePayload;
+								}
+							} catch (error) {
+								logService.warn(`[CopilotCLISession] Failed to parse MC ask_user_response payload (${cmd.id}): ${error}`);
+							}
+						}
+
+						const pendingRequest = getMissionControlPendingUserInputRequest(state, responsePayload);
+						if (!pendingRequest) {
+							logService.warn(`[CopilotCLISession] No pending MC ask_user request found for command ${cmd.id}`);
+							break;
+						}
+
+						const response = getMcAskUserResponse(responsePayload, trimmedContent);
+						if (!response) {
+							logService.warn(`[CopilotCLISession] MC ask_user response missing answer payload (${cmd.id})`);
+							break;
+						}
+
+						pendingRequest.resolve(response);
+						break;
+					}
 					case 'permission_response': {
 						const responseData = CopilotCLISession._parseMcJsonCommand<McPermissionResponseCommandData>(cmd, logService);
 						const promptId = responseData?.promptId;
@@ -1603,10 +2047,16 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					}
 					case 'user_message':
 					default: {
+						if (isMissionControlLocalUserMessageEcho(state, cmd)) {
+							state.mcCompletedCommandIds.push(cmd.id);
+							break;
+						}
+
 						// Route steering messages through the VS Code chat UI so
 						// they appear in the chat panel with proper rendering.
 						const vsCodeApi = require('vscode') as typeof import('vscode');
 						getMissionControlPendingCommandCompletionIds(state).add(cmd.id);
+						getMissionControlPendingCommandPrompts(state).set(cmd.id, stripReminders(cmd.content).trim());
 						setPendingCopilotCLIRequestContext(sessionId, {
 							prompt: cmd.content,
 							attachments: [],

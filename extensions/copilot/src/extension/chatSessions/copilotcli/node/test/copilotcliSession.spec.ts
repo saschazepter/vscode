@@ -27,7 +27,7 @@ import { IWorkspaceInfo } from '../../../common/workspaceInfo';
 import { FakeToolsService, ToolCall } from '../../common/copilotCLITools';
 import { CopilotCLISession } from '../copilotcliSession';
 import { PermissionRequest } from '../permissionHelpers';
-import { IQuestion, IQuestionAnswer, IUserQuestionHandler } from '../userInputHelpers';
+import { IQuestion, IQuestionAnswer, IUserQuestionHandler, UserInputResponse } from '../userInputHelpers';
 import { NullICopilotCLIImageSupport } from './testHelpers';
 import { MockGitService } from '../../../../../platform/ignore/node/test/mockGitService';
 
@@ -47,8 +47,11 @@ class MockSdkSession {
 	public authInfo: unknown;
 	private _pendingPermissions = new Map<string, { resolve: (result: unknown) => void }>();
 	private _permissionCounter = 0;
+	private _pendingUserInputs = new Map<string, { resolve: (result: unknown) => void }>();
+	private _userInputCounter = 0;
 	private _pendingExitPlanMode = new Map<string, { resolve: (result: unknown) => void }>();
 	private _exitPlanModeCounter = 0;
+	public aborted = false;
 
 	on(event: string, handler: MockSdkEventHandler) {
 		if (!this.onHandlers.has(event)) {
@@ -82,6 +85,14 @@ class MockSdkSession {
 		}
 	}
 
+	async emitUserInputRequest(request: { question: string; choices?: string[]; allowFreeform?: boolean; toolCallId?: string }): Promise<unknown> {
+		const requestId = `user-input-${++this._userInputCounter}`;
+		return new Promise(resolve => {
+			this._pendingUserInputs.set(requestId, { resolve });
+			this.emit('user_input.requested', { requestId, ...request });
+		});
+	}
+
 	/**
 	 * Simulate the SDK emitting an exit_plan_mode.requested event and await the response.
 	 * The session's event handler will call respondToExitPlanMode() which resolves the returned promise.
@@ -102,8 +113,12 @@ class MockSdkSession {
 		}
 	}
 
-	respondToUserInput(_requestId: string, _response: unknown) {
-		// placeholder for user input responses
+	respondToUserInput(requestId: string, response: unknown) {
+		const pending = this._pendingUserInputs.get(requestId);
+		if (pending) {
+			pending.resolve(response);
+			this._pendingUserInputs.delete(requestId);
+		}
 	}
 
 	public lastSendOptions: { prompt: string; mode?: string; source?: string } | undefined;
@@ -120,7 +135,9 @@ class MockSdkSession {
 
 	async compactHistory() { return { success: true }; }
 
-	async abort() { }
+	async abort() {
+		this.aborted = true;
+	}
 
 	isAbortable(): boolean { return true; }
 
@@ -228,7 +245,7 @@ describe('CopilotCLISession', () => {
 	async function createSession(): Promise<CopilotCLISession> {
 		class FakeUserQuestionHandler implements IUserQuestionHandler {
 			_serviceBrand: undefined;
-			async askUserQuestion(question: IQuestion, toolInvocationToken: ChatParticipantToolToken, token: CancellationToken): Promise<IQuestionAnswer | undefined> {
+			async askUserQuestion(question: IQuestion, toolInvocationToken: ChatParticipantToolToken, token: CancellationToken, toolCallId?: string): Promise<IQuestionAnswer | undefined> {
 				return userQuestionAnswer;
 			}
 		}
@@ -790,6 +807,236 @@ describe('CopilotCLISession', () => {
 		expect(remoteState.mcPendingPermissionRequests.size).toBe(0);
 	});
 
+	it('uses remote ask user responses when Mission Control is active', async () => {
+		let userInputResult: unknown;
+		const notifiedAnswers: Array<{ toolCallId: string; question: IQuestion; response: UserInputResponse }> = [];
+		sdkSession.send = async () => {
+			userInputResult = await sdkSession.emitUserInputRequest({
+				question: 'What is your favorite VS Code feature or extension?',
+				allowFreeform: true,
+				toolCallId: 'ask-user-tool',
+			});
+		};
+		const session = await createSession();
+		let localPromptToken: CancellationToken | undefined;
+		Object.defineProperty(session, '_userQuestionHandler', {
+			value: {
+				_serviceBrand: undefined,
+				async askUserQuestion(_question: IQuestion, _toolInvocationToken: ChatParticipantToolToken, token: CancellationToken, _toolCallId?: string): Promise<IQuestionAnswer | undefined> {
+					localPromptToken = token;
+					return await new Promise<IQuestionAnswer | undefined>(resolve => {
+						token.onCancellationRequested(() => resolve(undefined));
+					});
+				},
+				async notifyQuestionCarouselAnswer(toolCallId: string, question: IQuestion, response: UserInputResponse): Promise<void> {
+					notifiedAnswers.push({ toolCallId, question, response });
+				},
+			} satisfies IUserQuestionHandler,
+			configurable: true,
+		});
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		const requestPromise = session.handleRequest(
+			{ id: '', toolInvocationToken: {} as never },
+			{ prompt: 'Ask me about VS Code' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+		await new Promise(r => setTimeout(r, 0));
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic(
+			session.sessionId,
+			remoteState,
+			{
+				getPendingCommands: async () => [{
+					id: 'mc-command-ask-user',
+					content: JSON.stringify({ requestId: 'user-input-1', answer: 'none', wasFreeform: true }),
+					state: 'in_progress',
+					type: 'ask_user_response',
+				}],
+			},
+			logger,
+		);
+
+		await requestPromise;
+
+		expect(userInputResult).toEqual({ answer: 'none', wasFreeform: true });
+		expect(notifiedAnswers).toEqual([{
+			toolCallId: 'ask-user-tool',
+			question: {
+				question: 'What is your favorite VS Code feature or extension?',
+				options: [],
+				allowFreeformInput: true,
+				header: 'What is your favorite VS Code feature or extension?',
+			},
+			response: { answer: 'none', wasFreeform: true },
+		}]);
+		expect(localPromptToken?.isCancellationRequested).toBe(true);
+		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-ask-user']);
+	});
+
+	it('aborts pending remote ask user requests when Mission Control stop is requested', async () => {
+		let userInputResult: unknown;
+		sdkSession.send = async () => {
+			userInputResult = await sdkSession.emitUserInputRequest({
+				question: 'What is your favorite VS Code feature or extension?',
+				allowFreeform: true,
+				toolCallId: 'ask-user-tool',
+			});
+			if (sdkSession.aborted) {
+				return;
+			}
+			sdkSession.emit('assistant.turn_start', {});
+			sdkSession.emit('assistant.turn_end', {});
+		};
+		const session = await createSession();
+		let localPromptToken: CancellationToken | undefined;
+		Object.defineProperty(session, '_userQuestionHandler', {
+			value: {
+				_serviceBrand: undefined,
+				async askUserQuestion(_question: IQuestion, _toolInvocationToken: ChatParticipantToolToken, token: CancellationToken): Promise<IQuestionAnswer | undefined> {
+					localPromptToken = token;
+					return await new Promise<IQuestionAnswer | undefined>(resolve => {
+						token.onCancellationRequested(() => resolve(undefined));
+					});
+				},
+			} satisfies IUserQuestionHandler,
+			configurable: true,
+		});
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		const requestPromise = session.handleRequest(
+			{ id: '', toolInvocationToken: {} as never },
+			{ prompt: 'Ask me about VS Code' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+		await new Promise(r => setTimeout(r, 0));
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic(
+			session.sessionId,
+			remoteState,
+			{
+				getPendingCommands: async () => [{
+					id: 'mc-command-abort',
+					content: '',
+					state: 'in_progress',
+					type: 'abort',
+				}],
+			},
+			logger,
+		);
+
+		await requestPromise;
+
+		expect(sdkSession.aborted).toBe(true);
+		expect(userInputResult).toEqual({ answer: '', wasFreeform: false });
+		expect(localPromptToken?.isCancellationRequested).toBe(true);
+		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-abort']);
+	});
+
+	it('reports remote control status when /remote is invoked without arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: '' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Remote control is disabled. Use /remote on to enable it.');
+	});
+
+	it('reports enabled remote control status when /remote is invoked without arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcFrontendUrl: 'https://github.com/microsoft/vscode/tasks/123',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: '' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Remote control is enabled. Use /remote off to disable it. Session URL: https://github.com/microsoft/vscode/tasks/123');
+	});
+
+	it('shows /remote usage for unsupported arguments', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIRemoteEnabled, true);
+		const session = await createSession();
+		const stream = new MockChatResponseStream();
+		session.attachStream(stream);
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ command: 'remote', prompt: 'wat' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(stream.output.join('\n')).toContain('Usage: /remote, /remote on, /remote off');
+	});
+
 	it('forwards session.idle to Mission Control so remote running state clears', async () => {
 		const session = await createSession();
 		const remoteState = {
@@ -857,6 +1104,117 @@ describe('CopilotCLISession', () => {
 		await expect((session as any)._getMissionControlSessionTitle()).resolves.toBe('hey');
 	});
 
+	it('sanitizes hidden prompt markup when deriving the Mission Control title', async () => {
+		const session = await createSession();
+		vi.spyOn(sdkSession, 'getEvents').mockReturnValue([
+			{
+				type: 'user.message',
+				data: {
+					content: '/remote <reminder>IMPORTANT: hidden context</reminder><attachments><attachment id="microsoft/vscode-tools">repo</attachment></attachments><userRequest></userRequest>',
+				}
+			},
+		] as any);
+
+		await expect((session as any)._getMissionControlSessionTitle()).resolves.toBe('/remote');
+	});
+
+	it('sanitizes hidden prompt markup before forwarding user messages to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'remote-command-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: {
+				content: '/remote <reminder>IMPORTANT: hidden context</reminder><attachments><attachment id="microsoft/vscode-tools">repo</attachment></attachments><userRequest></userRequest>',
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('/remote');
+	});
+
+	it('strips shell tool descriptions before forwarding tool starts to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: {
+				toolCallId: 'bash-1',
+				toolName: 'bash',
+				arguments: { command: 'echo hello', description: 'Simple echo command.' },
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			data: { arguments: { command: string; description?: string } };
+		}).data.arguments).toEqual({ command: 'echo hello' });
+	});
+
+	it('strips task descriptions before forwarding tool starts to Mission Control', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'tool.execution_start',
+			data: {
+				toolCallId: 'task-1',
+				toolName: 'task',
+				arguments: { description: 'Simple task.', prompt: 'Run echo', agent_type: 'task' },
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			data: { arguments: { prompt: string; agent_type: string; description?: string } };
+		}).data.arguments).toEqual({ prompt: 'Run echo', agent_type: 'task' });
+	});
+
 	it('does not forward report_intent tool events to Mission Control', async () => {
 		const session = await createSession();
 		const remoteState = {
@@ -893,7 +1251,7 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[0] as { data: { toolName: string } }).data.toolName).toBe('bash');
 	});
 
-	it('forwards command-sourced user messages and acknowledges the command with the echoed turn', async () => {
+	it('forwards command-sourced user messages with source and acknowledges the command', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -906,6 +1264,7 @@ describe('CopilotCLISession', () => {
 			mcLastSubmitAttemptTimeMs: Date.now(),
 			mcProcessedCommandIds: new Set<string>(),
 			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'hey']]),
 			mcSdkSession: sdkSession as unknown as Session,
 			mcEventListenerDispose: undefined,
 			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
@@ -920,6 +1279,17 @@ describe('CopilotCLISession', () => {
 			data: { content: 'hey', source: 'command-mc-command-1' },
 		});
 		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'hey', source: 'command-mc-command-1' },
+		}));
 
 		(session as any)._bufferMcEvent({
 			type: 'assistant.message',
@@ -930,10 +1300,216 @@ describe('CopilotCLISession', () => {
 		});
 
 		expect(remoteState.mcEventBuffer).toHaveLength(2);
-		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user.message');
-		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('hey');
 		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('assistant.message');
 		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
+	});
+
+	it('synthesizes command source for user messages by pending command content when SDK source is absent', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(['mc-command-1']),
+			mcPendingCommandPrompts: new Map<string, string>([['mc-command-1', 'ask me my favorite color']]),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'remote-command-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color' },
+		});
+		expect(remoteState.mcCompletedCommandIds).toEqual(['mc-command-1']);
+		expect(remoteState.mcPendingCommandPrompts).toEqual(new Map());
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as {
+			type: string;
+			parentId: string | null;
+			data: { content: string; source: string };
+		})).toEqual(expect.objectContaining({
+			type: 'user.message',
+			parentId: 'visible-root-message',
+			data: { content: 'ask me my favorite color', source: 'command-mc-command-1' },
+		}));
+
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			id: 'ask-user',
+			timestamp: '2026-01-01T00:00:01.000Z',
+			parentId: 'remote-command-message',
+			data: { requestId: 'user-input-1', question: 'What is your favorite color?' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(2);
+		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('user_input.requested');
+		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
+
+		(session as any)._bufferMcEvent({
+			type: 'assistant.message',
+			id: 'assistant-reply',
+			timestamp: '2026-01-01T00:00:02.000Z',
+			parentId: 'ask-user',
+			data: { content: 'Nice, blue is a great choice!' },
+		});
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'late-remote-command-message',
+			timestamp: '2026-01-01T00:00:03.000Z',
+			parentId: 'assistant-reply',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(3);
+		expect((remoteState.mcEventBuffer[2] as { type: string }).type).toBe('assistant.message');
+	});
+
+	it('does not double-buffer duplicated local request events', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		const event = {
+			type: 'user.message',
+			data: { content: 'ask me my favorite color' },
+		};
+		(session as any)._bufferMcEvent(event);
+		(session as any)._bufferMcEvent(event);
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('ask me my favorite color');
+	});
+
+	it('still forwards ask-user requests when the persistent Mission Control listener is active', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: vi.fn(),
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			data: {
+				requestId: 'user-input-1',
+				question: 'What is your favorite color?',
+				allowFreeform: true,
+			},
+		});
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user_input.requested');
+	});
+
+	it('suppresses Mission Control user message commands that echo recently forwarded local prompts', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'ask me my favorite color', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			pendingCommandCompletionIds: remoteState.mcPendingCommandCompletionIds ? [...remoteState.mcPendingCommandCompletionIds] : [],
+		}).toEqual({
+			completedCommandIds: ['mc-command-1'],
+			pendingCommandCompletionIds: [],
+		});
+	});
+
+	it('does not suppress Mission Control user message commands that are not local prompt echoes', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'what is next?', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			processedCommandIds: [...remoteState.mcProcessedCommandIds],
+		}).toEqual({
+			completedCommandIds: [],
+			processedCommandIds: ['mc-command-1'],
+		});
 	});
 
 	it('forwards remote command source to the SDK send options', async () => {
