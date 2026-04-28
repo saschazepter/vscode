@@ -22,14 +22,12 @@ import { IChatContentPart, IChatContentPartRenderContext } from './chatContentPa
 import { getToolApprovalMessage } from './toolInvocationParts/chatToolPartUtilities.js';
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
-import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
 import { AccessibilityWorkbenchSettingId } from '../../../../accessibility/browser/accessibilityConfiguration.js';
-import { ChatConfiguration } from '../../../common/constants.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../../base/browser/ui/hover/hover.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
 import { isEqual } from '../../../../../../base/common/resources.js';
-import { buildPhrasePool, defaultThinkingMessages } from './chatThinkingContentPart.js';
+import { buildPhrasePool, defaultThinkingMessages, maybePickFunWorkingMessage } from './chatThinkingContentPart.js';
 
 export class ChatProgressContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
@@ -167,6 +165,30 @@ export class ChatProgressSubPart extends Disposable {
 	}
 }
 
+/**
+ * Picks a working-progress label, debounced so rapid re-instantiations during
+ * streaming reuse the previous label instead of flickering. The dwell window
+ * slides forward on each reuse, so the label only changes once renders space
+ * out beyond {@link WORKING_LABEL_MIN_DWELL_MS}.
+ */
+const WORKING_LABEL_MIN_DWELL_MS = 1200;
+let lastPickedWorkingLabel: { label: string; pickedAt: number } | undefined;
+
+function pickWorkingLabel(configurationService: IConfigurationService): string {
+	const now = Date.now();
+	if (lastPickedWorkingLabel && now - lastPickedWorkingLabel.pickedAt < WORKING_LABEL_MIN_DWELL_MS) {
+		lastPickedWorkingLabel = { label: lastPickedWorkingLabel.label, pickedAt: now };
+		return lastPickedWorkingLabel.label;
+	}
+	const fun = maybePickFunWorkingMessage();
+	const label = fun ?? (() => {
+		const pool = buildPhrasePool(defaultThinkingMessages, configurationService);
+		return pool[Math.floor(Math.random() * pool.length)];
+	})();
+	lastPickedWorkingLabel = { label, pickedAt: now };
+	return label;
+}
+
 export class ChatWorkingProgressContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
 	private readonly labelElement: HTMLElement;
@@ -184,18 +206,10 @@ export class ChatWorkingProgressContentPart extends Disposable implements IChatC
 		@IChatMarkdownAnchorService chatMarkdownAnchorService: IChatMarkdownAnchorService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@ILanguageModelToolsService languageModelToolsService: ILanguageModelToolsService,
-		@IAccessibilityService accessibilityService: IAccessibilityService,
 	) {
 		super();
 		this.explicitContent = workingProgress.content;
-		const persistentProgressEnabled = configurationService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& (configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true || accessibilityService.isMotionReduced());
-		if (persistentProgressEnabled) {
-			const pool = buildPhrasePool(defaultThinkingMessages, configurationService);
-			this.label = pool[Math.floor(Math.random() * pool.length)];
-		} else {
-			this.label = localize('workingMessage', "Working");
-		}
+		this.label = pickWorkingLabel(configurationService);
 
 		// Build the DOM
 		this.domNode = $('.progress-container');
