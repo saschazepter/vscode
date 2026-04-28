@@ -131,6 +131,7 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 			const best = await this._availableEmbeddingTypes.getPreferredType(silent);
 			// Double check that we haven't initialized in the meantime
 			if (this._impl) {
+				outcome = 'alreadyInitialized';
 				return this._impl;
 			}
 
@@ -152,7 +153,7 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 					"owner": "mjbvz",
 					"comment": "Tracks cold workspace chunk search initialization duration and outcome. Not fired for fast paths (no auth, already initialized).",
 					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time in milliseconds for getPreferredType and initialization" },
-					"outcome": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The outcome: success, noEmbeddingType, or error" },
+					"outcome": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The outcome: success, noEmbeddingType, alreadyInitialized, or error" },
 					"silent": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Whether this was a silent initialization attempt" }
 				}
 			*/

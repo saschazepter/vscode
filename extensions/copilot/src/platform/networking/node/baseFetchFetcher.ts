@@ -48,9 +48,11 @@ export abstract class BaseFetchFetcher implements IFetcher {
 		if (options.signal && !(options.signal instanceof AbortSignal)) {
 			throw new Error(`Illegal arguments! 'signal' must be an instance of AbortSignal!`);
 		}
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		if (options.timeout !== undefined && options.timeout > 0) {
-			const timeoutSignal = AbortSignal.timeout(options.timeout);
-			signal = AbortSignal.any([signal, timeoutSignal]);
+			const timeoutController = new AbortController();
+			timeoutId = setTimeout(() => timeoutController.abort(), options.timeout);
+			signal = AbortSignal.any([signal, timeoutController.signal]);
 		}
 
 		const internalId = generateUuid();
@@ -64,6 +66,10 @@ export abstract class BaseFetchFetcher implements IFetcher {
 			const outcome = e && !isAbortError(e) ? 'error' as const : 'cancel' as const;
 			this._reportEvent({ internalId, timestamp: Date.now(), outcome, phase: 'requestResponse', fetcher: this._fetcherId, hostname, reason: e });
 			throw e;
+		} finally {
+			if (timeoutId !== undefined) {
+				clearTimeout(timeoutId);
+			}
 		}
 	}
 

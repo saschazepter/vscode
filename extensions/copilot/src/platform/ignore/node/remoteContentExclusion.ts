@@ -108,8 +108,8 @@ export class RemoteContentExclusion implements IDisposable {
 		// This is critical for performance when there are many files in a workspace
 		let repoMetadata = this.findCachedRepoMetadataForFile(file);
 
-		// Check the no-repo directory cache (exact match on parent directory)
-		const fileParentDir = file.path.substring(0, file.path.lastIndexOf('/'));
+		// Check the no-repo directory cache (exact match on parent directory, case-insensitive)
+		const fileParentDir = file.path.substring(0, file.path.lastIndexOf('/')).toLowerCase();
 		if (!repoMetadata && this._noRepoDirCache.has(fileParentDir)) {
 			repoMetadata = { repoRootPath: '', fetchUrls: [NON_GIT_FILE_KEY] };
 		}
