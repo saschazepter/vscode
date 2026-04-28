@@ -385,6 +385,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 */
 	private readonly _clientToolCalls = new Map<string, IClientToolCallEntry>();
 
+	private _knownBackendSessionsProbe?: { promise: Promise<ResourceSet>; expiresAt: number };
+
+
 	constructor(
 		config: IAgentHostSessionHandlerConfig,
 		@IChatAgentService private readonly _chatAgentService: IChatAgentService,
@@ -2325,14 +2328,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		this._ensureSessionSubscription(candidate.toString());
 		return candidate;
 	}
-
-	/**
-	 * In-flight / freshly-completed `listSessions()` probe. Briefly cached so
-	 * a burst of resolutions (e.g. multiple chat tabs reconnecting at the
-	 * same time) shares a single backend round-trip without permanently
-	 * masking new server-side sessions.
-	 */
-	private _knownBackendSessionsProbe?: { promise: Promise<ResourceSet>; expiresAt: number };
 
 	/**
 	 * Returns the set of backend session URIs that the server reports it
