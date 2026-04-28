@@ -127,6 +127,51 @@ suite('CommandLineFileWriteAnalyzer', () => {
 			test('multiple inside workspace - block', () => t('echo hello > file1.txt && echo world > file2.txt', 'all', false, 1));
 		});
 
+		suite('hasSessionAutoApproval', () => {
+			async function tWithAutoApproval(commandLine: string, blockDetectedFileWrites: 'never' | 'outsideWorkspace' | 'all', hasSessionAutoApproval: boolean, expectedAutoApprove: boolean, expectedDisclaimers: number = 1) {
+				configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.BlockDetectedFileWrites, blockDetectedFileWrites);
+
+				const workspace = new Workspace('test', [toWorkspaceFolder(cwd)]);
+				workspaceContextService.setWorkspace(workspace);
+
+				const options: ICommandLineAnalyzerOptions = {
+					commandLine,
+					cwd,
+					shell: 'bash',
+					os: OperatingSystem.Linux,
+					treeSitterLanguage: TreeSitterCommandParserLanguage.Bash,
+					terminalToolSessionId: 'test',
+					chatSessionResource: undefined,
+					hasSessionAutoApproval,
+				};
+
+				const result = await analyzer.analyze(options);
+				strictEqual(result.isAutoApproveAllowed, expectedAutoApprove, `Expected auto approve to be ${expectedAutoApprove} for: ${commandLine}`);
+				strictEqual((result.disclaimers || []).length, expectedDisclaimers, `Expected ${expectedDisclaimers} disclaimers for: ${commandLine}`);
+			}
+
+			suite('blockDetectedFileWrites: outsideWorkspace', () => {
+				// /tmp writes are allowed only when session auto-approval is enabled
+				test('/tmp - allow when auto-approval enabled', () => tWithAutoApproval('echo hello > /tmp/file.txt', 'outsideWorkspace', true, true));
+				test('/tmp subdirectory - allow when auto-approval enabled', () => tWithAutoApproval('echo hello > /tmp/sub/file.txt', 'outsideWorkspace', true, true));
+				test('/tmp - block when auto-approval disabled', () => tWithAutoApproval('echo hello > /tmp/file.txt', 'outsideWorkspace', false, false));
+
+				// Other outside-workspace paths remain blocked even with auto-approval enabled
+				test('/etc - block even when auto-approval enabled', () => tWithAutoApproval('echo hello > /etc/config.txt', 'outsideWorkspace', true, false));
+				test('/home - block even when auto-approval enabled', () => tWithAutoApproval('echo hello > /home/user/file.txt', 'outsideWorkspace', true, false));
+				test('root - block even when auto-approval enabled', () => tWithAutoApproval('echo hello > /file.txt', 'outsideWorkspace', true, false));
+
+				// Mixed writes: /tmp allowed, but other outside paths still block
+				test('mixed /tmp and /etc - block even when auto-approval enabled', () => tWithAutoApproval('echo hello > /tmp/a.txt && echo world > /etc/b.txt', 'outsideWorkspace', true, false));
+				test('mixed inside-workspace and /tmp - allow when auto-approval enabled', () => tWithAutoApproval('echo hello > file.txt && echo world > /tmp/b.txt', 'outsideWorkspace', true, true));
+			});
+
+			suite('blockDetectedFileWrites: all', () => {
+				// `all` setting still blocks /tmp writes regardless of session auto-approval
+				test('/tmp - block when auto-approval enabled', () => tWithAutoApproval('echo hello > /tmp/file.txt', 'all', true, false));
+			});
+		});
+
 		suite('complex scenarios', () => {
 			test('pipeline with redirection inside workspace', () => t('cat file.txt | grep "test" > output.txt', 'outsideWorkspace', true, 1));
 			test('multiple redirections mixed inside/outside', () => t('echo hello > file.txt && echo world > /tmp/file.txt', 'outsideWorkspace', false, 1));
