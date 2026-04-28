@@ -26,7 +26,6 @@ import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/co
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { WorkspacePicker, IWorkspaceSelection } from './sessionWorkspacePicker.js';
 import { ScopedWorkspacePicker } from './scopedWorkspacePicker.js';
-import { SessionsExperimentalTabbedWorkspacePickerSettingId, TabbedWorkspacePicker } from './tabbedWorkspacePicker.js';
 import { NewChatInputWidget } from './newChatInput.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 
@@ -46,13 +45,9 @@ class NewChatWidget extends Disposable {
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
-		@IConfigurationService configurationService: IConfigurationService,
 	) {
 		super();
-		const tabbedEnabled = configurationService.getValue<boolean>(SessionsExperimentalTabbedWorkspacePickerSettingId) === true;
-		const pickerCtor = isWeb
-			? ScopedWorkspacePicker
-			: tabbedEnabled ? TabbedWorkspacePicker : WorkspacePicker;
+		const pickerCtor = isWeb ? ScopedWorkspacePicker : WorkspacePicker;
 		this._workspacePicker = this._register(this.instantiationService.createInstance(pickerCtor));
 		this._register(this._pendingSessionTypeWait);
 

@@ -9,10 +9,12 @@ import { IAction, SubmenuAction, toAction } from '../../../../base/common/action
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { disposableTimeout } from '../../../../base/common/async.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { autorun } from '../../../../base/common/observable.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
+import { Radio } from '../../../../base/browser/ui/radio/radio.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
@@ -26,7 +28,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { ISessionWorkspace, ISessionWorkspaceBrowseAction } from '../../../services/sessions/common/session.js';
+import { ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionWorkspaceCategory } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IAgentHostSessionsProvider, isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { getStatusHover, getStatusLabel, showRemoteHostOptions } from '../../remoteAgentHost/browser/remoteHostOptions.js';
@@ -39,6 +41,23 @@ const LEGACY_STORAGE_KEY_RECENT_PROJECTS = 'sessions.recentlyPickedProjects';
 const STORAGE_KEY_RECENT_WORKSPACES = 'sessions.recentlyPickedWorkspaces';
 const FILTER_THRESHOLD = 10;
 const MAX_RECENT_WORKSPACES = 10;
+
+/**
+ * Fixed picker width when the categorical tab bar is shown. Keeps the tab
+ * row and the list aligned and prevents horizontal jitter when switching
+ * tabs.
+ */
+const TABBED_PICKER_WIDTH = 360;
+
+/** Canonical order in which category tabs are rendered. */
+const TAB_ORDER: readonly SessionWorkspaceCategory[] = ['local', 'cloud', 'remote'];
+
+/** Localized labels for each category tab. */
+const TAB_LABELS: Record<SessionWorkspaceCategory, () => string> = {
+	local: () => localize('workspacePicker.tab.local', "Local"),
+	cloud: () => localize('workspacePicker.tab.cloud', "Cloud"),
+	remote: () => localize('workspacePicker.tab.remote', "Remote"),
+};
 
 /**
  * Grace period for a restored remote workspace's provider to reach Connected
@@ -111,6 +130,16 @@ export class WorkspacePicker extends Disposable {
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 
+	/** Currently active workspace category tab. */
+	private _activeTab: SessionWorkspaceCategory = 'local';
+
+	/**
+	 * Whether the user explicitly clicked a tab while the picker was open.
+	 * Reset on each fresh open so the picker re-defaults to the selected
+	 * workspace's category between opens.
+	 */
+	private _userPickedTab = false;
+
 	/** Cached VS Code recent folder URIs, resolved lazily. */
 	private _vsCodeRecentFolderUris: URI[] = [];
 
@@ -172,6 +201,18 @@ export class WorkspacePicker extends Disposable {
 		// Load VS Code recent folders eagerly and refresh on changes
 		this._loadVSCodeRecentFolders();
 		this._register(this.workspacesService.onDidChangeRecentlyOpened(() => this._loadVSCodeRecentFolders()));
+
+		// Re-arm auto-tab whenever the workspace selection changes to a new
+		// value, but only while the picker is closed. This way picking a tab
+		// and then a workspace within the same open keeps that tab active for
+		// the current session, while the next fresh open follows the latest
+		// selection's category. Clears (`undefined`) are ignored so the
+		// previously-active tab is preserved.
+		this._register(this.onDidSelectWorkspace(selection => {
+			if (selection && !this.actionWidgetService.isVisible) {
+				this._userPickedTab = false;
+			}
+		}));
 	}
 
 	/**
@@ -215,11 +256,10 @@ export class WorkspacePicker extends Disposable {
 	 * Shows the workspace picker dropdown anchored to the trigger element.
 	 *
 	 * @param force When true, re-show even if the picker is already visible.
-	 *              Used by subclasses (e.g. {@link TabbedWorkspacePicker}) to
-	 *              swap items in place when the active tab changes. The
-	 *              underlying context view replaces its content in-place when
-	 *              `show()` is called while visible, so no manual hide is
-	 *              required and there is no visible flicker.
+	 *              Used internally when swapping items in place after a tab
+	 *              change. The underlying context view replaces its content
+	 *              in-place when `show()` is called while visible, so no
+	 *              manual hide is required and there is no visible flicker.
 	 */
 	showPicker(force = false): void {
 		if (!this._triggerElement) {
@@ -227,6 +267,20 @@ export class WorkspacePicker extends Disposable {
 		}
 		if (!force && this.actionWidgetService.isVisible) {
 			return;
+		}
+
+		// Default the active tab to the category of the currently selected
+		// workspace. The user-pick latch is reset on every selection change,
+		// so picking a tab during one open of the picker doesn't permanently
+		// override auto-tab.
+		const availableCategories = this._getAvailableCategories();
+		if (this._showTabs() && availableCategories.length > 0) {
+			if (!this._userPickedTab && this._selectedWorkspace?.workspace.category) {
+				this._activeTab = this._selectedWorkspace.workspace.category;
+			}
+			if (!availableCategories.includes(this._activeTab)) {
+				this._activeTab = availableCategories[0];
+			}
 		}
 
 		const items = this._buildItems();
@@ -254,9 +308,11 @@ export class WorkspacePicker extends Disposable {
 			},
 		};
 
+		const tabbed = this._showTabs() && availableCategories.length > 1;
+		const pickerWidth = tabbed ? TABBED_PICKER_WIDTH : undefined;
 		const listOptions = showFilter
-			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: this._getPickerMinWidth(), maxWidth: this._getPickerMaxWidth() }
-			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: this._getPickerMinWidth(), maxWidth: this._getPickerMaxWidth() };
+			? { showFilter: true, filterPlaceholder: localize('workspacePicker.filter', "Search Workspaces..."), reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: pickerWidth, maxWidth: pickerWidth }
+			: { reserveSubmenuSpace: false, inlineDescription: true, showGroupTitleOnFirstItem: true, minWidth: pickerWidth, maxWidth: pickerWidth };
 		triggerElement.setAttribute('aria-expanded', 'true');
 
 		this.actionWidgetService.show<IWorkspacePickerItem>(
@@ -272,33 +328,91 @@ export class WorkspacePicker extends Disposable {
 				getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 			},
 			listOptions,
-			this._getPickerHeader(),
+			tabbed ? widget => this._renderTabBar(widget, availableCategories) : undefined,
 		);
 	}
 
 	/**
-	 * Hook for subclasses to provide an element rendered above the filter and
-	 * list inside the action widget (e.g. a tab bar). Returning `undefined`
-	 * keeps the default headerless layout.
+	 * Subclasses may opt out of the categorical tab bar (e.g. when scoped to
+	 * a single host).
 	 */
-	protected _getPickerHeader(): HTMLElement | undefined {
-		return undefined;
+	protected _showTabs(): boolean {
+		return true;
 	}
 
-	/**
-	 * Hook for subclasses to enforce a minimum picker width so that, for
-	 * example, a tab header is never wider than the list content.
-	 */
-	protected _getPickerMinWidth(): number | undefined {
-		return undefined;
+	private _getAvailableCategories(): SessionWorkspaceCategory[] {
+		const seen = new Set<SessionWorkspaceCategory>();
+		for (const provider of this.sessionsProvidersService.getProviders()) {
+			for (const action of provider.browseActions) {
+				if (action.category) {
+					seen.add(action.category);
+				}
+			}
+		}
+		for (const { workspace } of this._getRecentWorkspaces()) {
+			if (workspace.category) {
+				seen.add(workspace.category);
+			}
+		}
+		return TAB_ORDER.filter(c => seen.has(c));
 	}
 
-	/**
-	 * Hook for subclasses to enforce a maximum picker width so that long item
-	 * labels are truncated rather than expanding the popup.
-	 */
-	protected _getPickerMaxWidth(): number | undefined {
-		return undefined;
+	private _renderTabBar(widget: HTMLElement, categories: readonly SessionWorkspaceCategory[]): IDisposable {
+		const disposables = new DisposableStore();
+
+		const header = dom.$('.sessions-workspace-picker-tabbar');
+		const radio = disposables.add(new Radio({
+			items: categories.map(c => ({ text: TAB_LABELS[c](), tooltip: TAB_LABELS[c](), isActive: c === this._activeTab })),
+		}));
+		header.appendChild(radio.domNode);
+		widget.insertBefore(header, widget.firstChild);
+		disposables.add({ dispose: () => header.remove() });
+
+		const activateTab = (next: SessionWorkspaceCategory) => {
+			if (next === this._activeTab) {
+				return;
+			}
+			this._activeTab = next;
+			this._userPickedTab = true;
+			this.showPicker(true);
+		};
+
+		disposables.add(radio.onDidSelect(index => {
+			const next = categories[index];
+			if (next) {
+				activateTab(next);
+			}
+		}));
+
+		// Keyboard nav: left/right arrows cycle tabs when focus is inside the
+		// action widget. Skip editable targets so the filter input keeps
+		// native caret movement.
+		disposables.add(dom.addStandardDisposableListener(header.ownerDocument, 'keydown', e => {
+			if (!header.isConnected) {
+				return;
+			}
+			if (e.keyCode !== KeyCode.LeftArrow && e.keyCode !== KeyCode.RightArrow) {
+				return;
+			}
+			const target = e.target as HTMLElement | null;
+			if (!target || !target.closest('.action-widget')) {
+				return;
+			}
+			if (target.closest('input, textarea, [contenteditable="true"]')) {
+				return;
+			}
+			const currentIndex = categories.indexOf(this._activeTab);
+			if (currentIndex < 0) {
+				return;
+			}
+			const delta = e.keyCode === KeyCode.RightArrow ? 1 : -1;
+			const nextIndex = (currentIndex + delta + categories.length) % categories.length;
+			e.preventDefault();
+			e.stopPropagation();
+			activateTab(categories[nextIndex]);
+		}));
+
+		return disposables;
 	}
 
 	/**
@@ -367,54 +481,46 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * Collects browse actions from all registered providers.
+	 * Collects browse actions from all registered providers, scoped to the
+	 * currently active tab when tabs are shown.
 	 */
 	protected _getAllBrowseActions(): ISessionWorkspaceBrowseAction[] {
-		const include = this._includeBrowseAction;
-		return this.sessionsProvidersService.getProviders()
-			.flatMap(p => p.browseActions)
-			.filter(a => !include || include(a));
+		const all = this.sessionsProvidersService.getProviders().flatMap(p => p.browseActions);
+		if (!this._isCategoryFiltered()) {
+			return all;
+		}
+		return all.filter(a => a.category === this._activeTab);
+	}
+
+	/** True when the picker is currently scoped to a single category tab. */
+	protected _isCategoryFiltered(): boolean {
+		return this._showTabs() && this._getAvailableCategories().length > 1;
 	}
 
 	/**
-	 * Optional predicates used by subclasses (e.g. {@link TabbedWorkspacePicker})
-	 * to scope the picker contents to a category. When unset, every entry is
-	 * included.
-	 */
-	protected _includeWorkspace?: (selection: IWorkspaceSelection) => boolean;
-	protected _includeBrowseAction?: (action: ISessionWorkspaceBrowseAction) => boolean;
-
-	/** True when the picker is currently filtered down to a subset. */
-	protected get _isFiltered(): boolean {
-		return !!(this._includeWorkspace || this._includeBrowseAction);
-	}
-
-	/**
-	 * Whether the bottom "Manage…" submenu should be included. Defaults to
-	 * hiding it whenever the picker is filtered (subclass overrides can
-	 * re-enable it for specific filters).
+	 * Whether the bottom "Manage…" submenu should be included. Hidden
+	 * outside the Remote tab because the contributed actions (Tunnels…,
+	 * SSH…, remote provider list) are remote-specific.
 	 */
 	protected _includeManageSubmenu(): boolean {
-		return !this._isFiltered;
+		if (!this._isCategoryFiltered()) {
+			return true;
+		}
+		return this._activeTab === 'remote';
 	}
 
 	/**
-	 * Whether grouped browse actions with multiple providers should be
-	 * expanded into top-level items instead of nested under a submenu.
-	 * Defaults to `false` (submenu).
+	 * In the Remote tab, expand multi-provider browse groups (e.g.
+	 * "Select Folders…" with several remote hosts behind it) into
+	 * top-level items instead of nesting them under a submenu.
 	 */
 	protected _inlineGroupedBrowseActions(): boolean {
-		return false;
+		return this._isCategoryFiltered() && this._activeTab === 'remote';
 	}
 
-	/**
-	 * Optional className applied to each row produced by the inline-grouped
-	 * browse-action path (see {@link _inlineGroupedBrowseActions}). Subclasses
-	 * use this to opt into custom styling without coupling the base class to a
-	 * specific stylesheet.
-	 */
+	/** Class applied to inline-grouped browse rows (see CSS). */
 	protected _inlineBrowseItemClassName(): string | undefined {
-		return undefined;
+		return 'sessions-browse-inline-item';
 	}
 
 	/**
@@ -430,15 +536,17 @@ export class WorkspacePicker extends Disposable {
 		// Collect recent workspaces from picker storage across all providers
 		const allProviders = this.sessionsProvidersService.getProviders();
 		const providerIds = new Set(allProviders.map(p => p.id));
-		const includeWs = this._includeWorkspace;
+		const categoryFilter = this._isCategoryFiltered()
+			? (w: IWorkspaceSelection) => w.workspace.category === this._activeTab
+			: undefined;
 		const ownRecentWorkspaces = this._getRecentWorkspaces()
 			.filter(w => providerIds.has(w.providerId))
-			.filter(w => !includeWs || includeWs({ providerId: w.providerId, workspace: w.workspace }));
+			.filter(w => !categoryFilter || categoryFilter({ providerId: w.providerId, workspace: w.workspace }));
 
 		// Merge VS Code recent folders (resolved through providers, deduplicated)
 		const vsCodeRecents = this._getVSCodeRecentWorkspaces()
 			.filter(w => providerIds.has(w.providerId))
-			.filter(w => !includeWs || includeWs({ providerId: w.providerId, workspace: w.workspace }));
+			.filter(w => !categoryFilter || categoryFilter({ providerId: w.providerId, workspace: w.workspace }));
 		const ownRecentCount = ownRecentWorkspaces.length;
 		const recentWorkspaces = [...ownRecentWorkspaces, ...vsCodeRecents];
 

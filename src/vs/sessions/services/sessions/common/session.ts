@@ -116,6 +116,13 @@ export interface ISessionWorkspace {
 	readonly description?: string;
 	/** Optional group name for categorizing this workspace in pickers (e.g., "Copilot Chat", "Local"). */
 	readonly group?: string;
+	/**
+	 * High-level category used by the workspace picker to sort entries into
+	 * top-level tabs (Local / Cloud / Remote). Providers tag workspaces they
+	 * produce with the appropriate category so the picker doesn't need to
+	 * inspect URIs or provider internals.
+	 */
+	readonly category?: SessionWorkspaceCategory;
 	/** Icon for the workspace. */
 	readonly icon: ThemeIcon;
 	/** Repositories in this workspace. */
@@ -268,6 +275,12 @@ export interface ISessionWorkspaceBrowseAction {
 	 * the merged entry (e.g. "Folders").
 	 */
 	readonly group?: string;
+	/**
+	 * High-level category used by the workspace picker to sort browse actions
+	 * into top-level tabs (Local / Cloud / Remote). Providers tag the actions
+	 * they contribute so the picker doesn't need to inspect provider internals.
+	 */
+	readonly category?: SessionWorkspaceCategory;
 	/** Icon for the browse action. */
 	readonly icon: ThemeIcon;
 	/** The provider that owns this action. */
@@ -275,3 +288,11 @@ export interface ISessionWorkspaceBrowseAction {
 	/** Execute the browse action and return the selected workspace, or undefined if cancelled. */
 	run(): Promise<ISessionWorkspace | undefined>;
 }
+
+/**
+ * High-level workspace category used by the workspace picker to sort
+ * workspaces and browse actions into top-level tabs. Providers contribute
+ * the category for each workspace and browse action they expose so that
+ * categorization stays a provider concern, not picker logic.
+ */
+export type SessionWorkspaceCategory = 'local' | 'cloud' | 'remote';

@@ -1124,6 +1124,7 @@ class AgentSessionAdapter implements ICopilotChatSession {
 		return {
 			label: getRepositoryName(session) ?? basename(repository.uri),
 			icon: repoUri?.scheme === GITHUB_REMOTE_FILE_SCHEME ? Codicon.repo : Codicon.folder,
+			category: repoUri?.scheme === GITHUB_REMOTE_FILE_SCHEME ? 'cloud' : 'local',
 			repositories: [repository],
 			requiresWorkspaceTrust: session.providerType !== AgentSessionProviders.Cloud,
 		};
@@ -1263,6 +1264,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 				label: localize('folders', "Folders"),
 				description: localize('local', "Local"),
 				group: 'folders',
+				category: 'local',
 				icon: Codicon.folderOpened,
 				providerId: this.id,
 				run: () => this._browseForFolder(),
@@ -1271,6 +1273,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 				label: localize('repositories', "Repositories"),
 				description: localize('github', "GitHub"),
 				group: 'repositories',
+				category: 'cloud',
 				icon: Codicon.library,
 				providerId: this.id,
 				run: () => this._browseForRepo(),
@@ -2158,6 +2161,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			return {
 				label: this._labelFromUri(uri),
 				icon: this._iconFromUri(uri),
+				category: 'local',
 				repositories: [{ uri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined }],
 				requiresWorkspaceTrust: true
 			};
@@ -2172,6 +2176,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			return {
 				label: this._labelFromUri(uri),
 				icon: this._iconFromUri(uri),
+				category: 'cloud',
 				repositories: [{ uri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined }],
 				requiresWorkspaceTrust: false,
 			};
@@ -2189,6 +2194,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			group: repositoryUri.scheme === GITHUB_REMOTE_FILE_SCHEME
 				? localize('copilotProvider.workspaceGroupRepositories', "Repositories")
 				: localize('copilotProvider.workspaceGroupFolders', "Folders"),
+			category: repositoryUri.scheme === GITHUB_REMOTE_FILE_SCHEME ? 'cloud' : 'local',
 			icon: this._iconFromUri(repositoryUri),
 			repositories: [{ uri: repositoryUri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined }],
 			requiresWorkspaceTrust: repositoryUri.scheme !== GITHUB_REMOTE_FILE_SCHEME

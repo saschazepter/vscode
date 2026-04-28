@@ -216,6 +216,7 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 			label: localize('folders', "Folders"),
 			description: displayName,
 			group: 'folders',
+			category: 'remote',
 			icon: Codicon.remote,
 			providerId: this.id,
 			run: () => this._browseForFolder(),
@@ -510,7 +511,7 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 	// -- Workspaces ----------------------------------------------------------
 
 	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string | undefined, gitState: ISessionGitState | undefined, description?: string, branchProtectionPatterns?: readonly string[]): ISessionWorkspace | undefined {
-		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false, description, branchProtectionPatterns }, gitState);
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false, description, branchProtectionPatterns, category: 'remote' }, gitState);
 	}
 
 	private _buildWorkspaceFromUri(uri: URI): ISessionWorkspace {
@@ -519,6 +520,7 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 			label: this.isWebPlatform ? folderName : `${folderName} [${this.label}]`,
 			description: this._labelService.getUriLabel(dirname(uri), { relative: false }),
 			group: this.label,
+			category: 'remote',
 			icon: Codicon.remote,
 			repositories: [{ uri, workingDirectory: undefined, detail: undefined, baseBranchName: undefined }],
 			requiresWorkspaceTrust: true,
