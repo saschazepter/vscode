@@ -69,9 +69,12 @@ export class IssueReporterOverlay {
 	private readonly issueTypeButtons: Button[] = [];
 	private selectedIssueType: IssueType | undefined;
 	private typeButtonGroup!: HTMLElement;
+	private typeError!: HTMLElement;
 	private descriptionTextarea!: HTMLTextAreaElement;
 	private descriptionGuidance!: HTMLElement;
+	private descriptionError!: HTMLElement;
 	private titleInput!: InputBox;
+	private titleError!: HTMLElement;
 	private generateTitleBtn!: Button;
 	private readonly _onDidRequestGenerateTitle = new Emitter<string>();
 	readonly onDidRequestGenerateTitle: Event<string> = this._onDidRequestGenerateTitle.event;
@@ -493,7 +496,7 @@ export class IssueReporterOverlay {
 		const selectType = (type: IssueType) => {
 			this.selectedIssueType = type;
 			this.model.update({ issueType: type });
-			this.typeButtonGroup.classList.remove('invalid-input');
+			this.setFieldError(this.typeButtonGroup, this.typeError, false);
 			for (const b of this.issueTypeButtons) {
 				const isSelected = b.element.getAttribute('data-type') === String(type);
 				b.element.classList.toggle('selected', isSelected);
@@ -511,6 +514,7 @@ export class IssueReporterOverlay {
 			this.issueTypeButtons.push(btn);
 			this.disposables.add(btn.onDidClick(() => selectType(type)));
 		}
+		this.typeError = this.createFieldError(page, localize('categoryRequired', "Select a category to continue."));
 
 		// Number key shortcuts for category selection (1, 2, 3)
 		this.disposables.add(addDisposableListener(this.wizardPanel, EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -560,8 +564,11 @@ export class IssueReporterOverlay {
 			this.titleInput.value = this.data.issueTitle;
 		}
 		this.disposables.add(this.titleInput.onDidChange(() => {
-			this.titleInput.element.classList.remove('invalid-input');
+			if (this.titleInput.value.trim()) {
+				this.setFieldError(this.titleInput.element, this.titleError, false);
+			}
 		}));
+		this.titleError = this.createFieldError(titleGroup, localize('titleRequired', "Enter a title to continue."));
 
 		// Description field with guidance and auto-growing textarea
 		const descriptionGroup = append(page, $('div.wizard-field'));
@@ -570,9 +577,6 @@ export class IssueReporterOverlay {
 
 		this.descriptionGuidance = append(descriptionGroup, $('p.wizard-subtitle.wizard-description-guidance'));
 		this.updateDescriptionGuidance();
-
-		const mdHint = append(descriptionGroup, $('p.wizard-subtitle.wizard-md-hint'));
-		mdHint.textContent = localize('markdownSupported', "Markdown formatting is supported.");
 
 		this.descriptionTextarea = append(descriptionGroup, $('textarea.wizard-textarea')) as HTMLTextAreaElement;
 		this.descriptionTextarea.placeholder = localize('descriptionPlaceholder', "Describe the issue in detail...");
@@ -587,9 +591,12 @@ export class IssueReporterOverlay {
 		};
 		autoGrowTextarea();
 		this.disposables.add(addDisposableListener(this.descriptionTextarea, EventType.INPUT, () => {
-			this.descriptionTextarea.classList.remove('invalid-input');
+			if (this.descriptionTextarea.value.trim()) {
+				this.setFieldError(this.descriptionTextarea, this.descriptionError, false);
+			}
 			autoGrowTextarea();
 		}));
+		this.descriptionError = this.createFieldError(descriptionGroup, localize('descriptionRequired', "Enter a description to continue."));
 	}
 
 	/** Update the guidance text above the description based on selected category */
@@ -597,28 +604,41 @@ export class IssueReporterOverlay {
 		if (!this.descriptionGuidance) {
 			return;
 		}
+		const markdownHint = localize('markdownSupported', "Markdown formatting is supported.");
 		switch (this.selectedIssueType) {
 			case IssueType.Bug:
-				this.descriptionGuidance.textContent = localize('bugGuidance',
-					"Describe what happened, the steps to reproduce, what you expected, and what you observed instead.");
+				this.descriptionGuidance.textContent = `${localize('bugGuidance',
+					"Describe what happened, the steps to reproduce, what you expected, and what you observed instead.")}\n${markdownHint}`;
 				break;
 			case IssueType.FeatureRequest:
-				this.descriptionGuidance.textContent = localize('featureGuidance',
-					"Describe the feature you'd like to see, what problem it would solve, and any alternatives you've considered.");
+				this.descriptionGuidance.textContent = `${localize('featureGuidance',
+					"Describe the feature you'd like to see, what problem it would solve, and any alternatives you've considered.")}\n${markdownHint}`;
 				break;
 			case IssueType.PerformanceIssue:
-				this.descriptionGuidance.textContent = localize('perfGuidance',
-					"Describe what is slow, when it happens, whether it's consistent or intermittent, and any patterns you've noticed.");
+				this.descriptionGuidance.textContent = `${localize('perfGuidance',
+					"Describe what is slow, when it happens, whether it's consistent or intermittent, and any patterns you've noticed.")}\n${markdownHint}`;
 				break;
 			default:
-				this.descriptionGuidance.textContent = localize('defaultGuidance',
-					"Select a category above, then describe your feedback in detail.");
+				this.descriptionGuidance.textContent = `${localize('defaultGuidance',
+					"Select a category above, then describe your feedback in detail.")}\n${markdownHint}`;
 				break;
 		}
 	}
 
 	private hasDescriptionContent(): boolean {
 		return !!this.descriptionTextarea.value.trim();
+	}
+
+	private createFieldError(parent: HTMLElement, message: string): HTMLElement {
+		const error = append(parent, $('div.wizard-field-error.hidden'));
+		error.textContent = message;
+		error.setAttribute('role', 'alert');
+		return error;
+	}
+
+	private setFieldError(field: HTMLElement, error: HTMLElement, hasError: boolean): void {
+		field.classList.toggle('invalid-input', hasError);
+		error.classList.toggle('hidden', !hasError);
 	}
 
 	// ── Step 2: Review & Submit ──
@@ -678,22 +698,22 @@ export class IssueReporterOverlay {
 		}
 
 		if (this.currentStep === WizardStep.Describe) {
-			// Validate: category must be selected
-			if (this.selectedIssueType === undefined) {
-				this.typeButtonGroup.classList.add('invalid-input');
-				return;
-			}
-			// Validate: description must not be empty
-			if (!this.hasDescriptionContent()) {
-				this.descriptionTextarea.classList.add('invalid-input');
-				return;
-			}
-			this.descriptionTextarea.classList.remove('invalid-input');
-			// Validate: title must not be empty
+			const hasIssueType = this.selectedIssueType !== undefined;
+			const hasDescription = this.hasDescriptionContent();
 			const title = this.titleInput.value.trim();
-			if (!title) {
-				this.titleInput.element.classList.add('invalid-input');
-				this.titleInput.focus();
+
+			this.setFieldError(this.typeButtonGroup, this.typeError, !hasIssueType);
+			this.setFieldError(this.descriptionTextarea, this.descriptionError, !hasDescription);
+			this.setFieldError(this.titleInput.element, this.titleError, !title);
+
+			if (!hasIssueType || !hasDescription || !title) {
+				if (!hasIssueType) {
+					this.issueTypeButtons[0]?.element.focus();
+				} else if (!hasDescription) {
+					this.descriptionTextarea.focus();
+				} else {
+					this.titleInput.focus();
+				}
 				return;
 			}
 			this.model.update({ issueDescription: this.descriptionTextarea.value.trim() });
@@ -1464,6 +1484,9 @@ export class IssueReporterOverlay {
 	/** Set the title input value (e.g., from AI generation) */
 	setGeneratedTitle(title: string): void {
 		this.titleInput.value = title;
+		if (title.trim()) {
+			this.setFieldError(this.titleInput.element, this.titleError, false);
+		}
 		this.resetGenerateButton();
 	}
 

@@ -434,7 +434,11 @@
 }
 
 .wizard-type-buttons.invalid-input .monaco-button.wizard-type-btn {
-	border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
+}
+
+.wizard-type-buttons.invalid-input .monaco-button.wizard-type-btn::before {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 }
 
 /* Shortcut badge — shared style for keyboard shortcut indicators */
@@ -463,6 +467,16 @@
 
 .wizard-type-buttons.invalid-input .wizard-type-btn {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.wizard-field-error {
+	color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground, #f48771)) !important;
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.wizard-field-error.hidden {
+	display: none;
 }
 
 .wizard-type-icon {
@@ -629,9 +643,11 @@
 }
 
 .wizard-field .monaco-inputbox.invalid-input,
+.wizard-field .monaco-inputbox.invalid-input > .ibwrapper,
+.wizard-field .monaco-inputbox.invalid-input > .ibwrapper > .input,
 .wizard-field .monaco-inputbox.invalid-input .input {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
-	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
+	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1)) !important;
 }
 
 /* Title label row: label + AI generate button */
@@ -666,6 +682,7 @@
 	margin-bottom: 4px;
 	font-style: italic;
 	min-height: 1.4em;
+	white-space: pre-line;
 }
 
 .wizard-md-hint {
