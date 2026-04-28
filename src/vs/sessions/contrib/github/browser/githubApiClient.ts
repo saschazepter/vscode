@@ -91,7 +91,6 @@ export class GitHubApiClient extends Disposable {
 	}
 
 	private async _request<T>(method: string, url: string, pathForLogging: string, accept: string, callSite: string, options?: IGitHubApiRequestOptions): Promise<IGitHubApiResponse<T>> {
-		console.log(`${LOG_PREFIX} Preparing request: ${method} ${url} (call site: ${callSite})`);
 		const token = await this._getAuthToken();
 
 		this._logService.trace(`${LOG_PREFIX} ${method} ${pathForLogging}`);
@@ -109,6 +108,8 @@ export class GitHubApiClient extends Disposable {
 			data: options?.data !== undefined ? JSON.stringify(options.data) : undefined,
 			callSite
 		}, CancellationToken.None);
+
+		console.log(`${LOG_PREFIX} Request completed: ${method} ${url} (call site: ${callSite}) - Status: ${response.res.statusCode}`);
 
 		const rateLimitRemaining = parseRateLimitHeader(response.res.headers?.['x-ratelimit-remaining']);
 		if (rateLimitRemaining !== undefined && rateLimitRemaining < 100) {

@@ -312,7 +312,6 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 	private readonly _reviewsBySession = new Map<string, ISessionReviewData>();
 	private readonly _prReviewBySession = new Map<string, IPRSessionReviewData>();
-	private _polledPRReviewThreadsModel: IPullRequestReviewThreadsModel | undefined;
 	/** PR review comment IDs that have been converted to agent feedback (per session). */
 	private readonly _convertedPRCommentsBySession = new Map<string, Set<string>>();
 
@@ -333,11 +332,15 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 		this._register(autorun(reader => {
 			const activeSessionResource = activeSessionResourceObs.read(reader);
-			if (activeSessionResource) {
-				this._ensurePRReviewInitialized(activeSessionResource);
+			if (!activeSessionResource) {
+				return;
 			}
 
-			this._updatePRReviewPolling(activeSessionResource);
+			const data = this._ensurePRReviewInitialized(activeSessionResource);
+
+			// Start polling
+			data.reviewThreadsModel?.startPolling();
+			reader.store.add({ dispose: () => data.reviewThreadsModel?.stopPolling() });
 		}));
 	}
 
@@ -539,16 +542,10 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 	private _registerSessionListeners(): void {
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
-			const archived = e.changed.filter(s => s.isArchived.get());
-			const nonArchived = e.changed.filter(s => !s.isArchived.get());
 			let changed = false;
 
-			for (const session of [...e.added, ...nonArchived]) {
-				this._ensurePRReviewInitialized(session.resource);
-			}
-
 			// Clean up reviews for removed/archived sessions
-			for (const session of [...e.removed, ...archived]) {
+			for (const session of [...e.removed, ...e.changed.filter(s => s.isArchived.get())]) {
 				this._disposePRReview(session.resource);
 
 				const key = session.resource.toString();
@@ -594,8 +591,6 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			if (changed) {
 				this._saveToStorage();
 			}
-
-			this._updatePRReviewPolling(this._sessionsManagementService.activeSession.get()?.resource);
 		}));
 	}
 
@@ -660,16 +655,16 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		return data;
 	}
 
-	private _ensurePRReviewInitialized(sessionResource: URI): void {
+	private _ensurePRReviewInitialized(sessionResource: URI): IPRSessionReviewData {
 		const data = this._getOrCreatePRReviewData(sessionResource);
 		if (data.initialized) {
-			return;
+			return data;
 		}
 
 		const session = this._sessionsManagementService.getSession(sessionResource);
 		const gitHubInfo = session?.gitHubInfo.get();
 		if (!gitHubInfo?.pullRequest) {
-			return;
+			return data;
 		}
 
 		data.initialized = true;
@@ -712,23 +707,13 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			data.state.set({ kind: PRReviewStateKind.Loaded, comments }, undefined);
 		}));
 
-		// Start polling and initial fetch
+		// Initial fetch of review threads
 		reviewThreadsModel.refresh().catch(err => {
 			this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
 			data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
 		});
-		data.disposables.add({ dispose: () => reviewThreadsModel.stopPolling() });
-	}
 
-	private _updatePRReviewPolling(activeSessionResource: URI | undefined): void {
-		const activeReviewThreadsModel = activeSessionResource ? this._prReviewBySession.get(activeSessionResource.toString())?.reviewThreadsModel : undefined;
-		if (this._polledPRReviewThreadsModel === activeReviewThreadsModel) {
-			return;
-		}
-
-		this._polledPRReviewThreadsModel?.stopPolling();
-		this._polledPRReviewThreadsModel = activeReviewThreadsModel;
-		this._polledPRReviewThreadsModel?.startPolling();
+		return data;
 	}
 
 	private _disposePRReview(sessionResource: URI): void {
@@ -736,9 +721,6 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		this._convertedPRCommentsBySession.delete(key);
 		const data = this._prReviewBySession.get(key);
 		if (data) {
-			if (data.reviewThreadsModel === this._polledPRReviewThreadsModel) {
-				this._polledPRReviewThreadsModel = undefined;
-			}
 			data.disposables.dispose();
 			this._prReviewBySession.delete(key);
 		}

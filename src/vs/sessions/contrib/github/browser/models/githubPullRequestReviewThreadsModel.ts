@@ -11,7 +11,7 @@ import { IGitHubPRComment, IGitHubPullRequestReviewThread } from '../../common/t
 import { GitHubPRFetcher } from '../fetchers/githubPRFetcher.js';
 
 const LOG_PREFIX = '[GitHubPullRequestReviewThreadsModel]';
-const DEFAULT_POLL_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_POLL_INTERVAL_MS = 60_000;
 
 /**
  * Reactive model for GitHub pull request review threads. Review threads are
