@@ -1739,8 +1739,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	 * on a secondary prompt (e.g. heredoc continuation `> `), so the text
 	 * explicitly:
 	 *   1. Tells the model this note is NOT a signal to end the turn.
-	 *   2. Leads with `get_terminal_output` as the safe recovery action.
-	 *   3. Offers `send_to_terminal` / `vscode_askQuestions` only for real prompts.
+	 *   2. In auto-approve mode, leads with `send_to_terminal` for non-secret
+	 *      prompts to minimize round-trips, with a `get_terminal_output` fallback.
+	 *      Secret/credential prompts are always routed to `vscode_askQuestions`.
+	 *   3. In default mode, leads with `get_terminal_output` as the safe
+	 *      recovery action and offers `vscode_askQuestions` only for real prompts.
 	 * `kill_terminal` is only advertised on the timeout branch — suggesting it
 	 * in the general case leads the model to terminate valid interactive
 	 * sessions (e.g. `npm init`) instead of driving them.
@@ -1751,14 +1754,17 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		lines.push(`This note is not a signal to end the turn — pick one of the actions below and continue.`);
 		if (isAutoApproved) {
 			// In auto-approve mode, prioritize direct action to minimize round-trips.
-			lines.push(`  1. If the output clearly ends with a real input prompt (password:, Continue? (y/n), etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), determine the answer and immediately call ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time.`);
-			lines.push(`  2. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling.`);
+			// Secret prompts are always routed to askQuestions to avoid guessing credentials.
+			lines.push(`  1. If the output clearly ends with a non-secret input prompt (Continue? (y/n), Enter selection, etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), determine the answer and immediately call ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time. Never guess passwords, passphrases, tokens, or other secrets.`);
+			lines.push(`  2. If the prompt requests a password, passphrase, token, or other secret, call the vscode_askQuestions tool to ask the user, then send the answer using ${TerminalToolId.SendToTerminal} with id="${termId}".`);
+			lines.push(`  3. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling.`);
 		} else {
 			lines.push(`  1. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. This is the default and safest action when unsure.`);
 			lines.push(`  2. Only if the output clearly ends with a real input prompt (password:, Continue? (y/n), etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), call the vscode_askQuestions tool to ask the user, then send each answer using ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time.`);
 		}
 		if (mentionTimeout) {
-			lines.push(`  3. A timeout does not mean the command failed — call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. Only call ${TerminalToolId.KillTerminal} if the command is genuinely hung and you need to retry with a different approach.`);
+			const n = isAutoApproved ? 4 : 3;
+			lines.push(`  ${n}. A timeout does not mean the command failed — call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. Only call ${TerminalToolId.KillTerminal} if the command is genuinely hung and you need to retry with a different approach.`);
 		}
 		return lines.join('\n');
 	}
