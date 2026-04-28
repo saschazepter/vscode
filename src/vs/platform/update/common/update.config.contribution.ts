@@ -84,6 +84,13 @@ configurationRegistry.registerConfiguration({
 			scope: ConfigurationScope.APPLICATION,
 			description: localize('showPostInstallInfo', "Show a post-install update tooltip in the title bar instead of opening the release notes editor."),
 			tags: ['usesOnlineServices']
+		},
+		'update.postInstallInfoUrl': {
+			type: 'string',
+			default: '',
+			scope: ConfigurationScope.APPLICATION,
+			description: localize('postInstallInfoUrl', "Override the URL used to fetch post-install update info. When set, the widget fetches from this URL instead of the default. Useful for testing unpublished content."),
+			tags: ['usesOnlineServices']
 		}
 	}
 });

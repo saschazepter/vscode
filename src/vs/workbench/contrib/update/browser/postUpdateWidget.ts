@@ -114,7 +114,8 @@ export class PostUpdateWidgetContribution extends Disposable implements IWorkben
 	private async getUpdateInfo(input?: string | null): Promise<IParsedUpdateInfoInput | undefined> {
 		if (!input) {
 			try {
-				const url = getUpdateInfoUrl(this.productService.version);
+				const urlOverride = this.configurationService.getValue<string>('update.postInstallInfoUrl');
+				const url = urlOverride || getUpdateInfoUrl(this.productService.version);
 				const context = await this.requestService.request({ url, callSite: 'postUpdateWidget' }, CancellationToken.None);
 				input = await asTextOrError(context);
 			} catch { }
