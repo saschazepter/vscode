@@ -112,43 +112,6 @@
 	color: var(--vscode-textLink-foreground);
 }
 
-/* -- Segmented control ---------------------------------------------------------------- */
-
-.mobile-overlay-segment-bar {
-	display: flex;
-	align-items: center;
-	padding: 6px 12px;
-	gap: 4px;
-	border-bottom: 1px solid var(--vscode-panel-border, transparent);
-	flex-shrink: 0;
-	background: var(--vscode-sideBar-background, var(--vscode-editor-background));
-}
-
-.mobile-overlay-segment {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	height: 30px;
-	padding: 0 14px;
-	border-radius: 6px;
-	border: none;
-	background: transparent;
-	color: var(--vscode-descriptionForeground);
-	font-size: 13px;
-	cursor: pointer;
-	touch-action: manipulation;
-	white-space: nowrap;
-}
-
-.mobile-overlay-segment.active {
-	background: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-}
-
-.mobile-overlay-segment:active:not(.active) {
-	background: var(--vscode-toolbar-hoverBackground);
-}
-
 /* -- Body --------------------------------------------------------------------------------------- */
 
 .mobile-overlay-body {
@@ -258,8 +221,9 @@
 .mobile-diff-hunk-header {
 	display: block;
 	color: var(--vscode-descriptionForeground);
-	background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
-	padding: 2px 16px;
+	background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+	padding: 4px 16px;
+	font-size: 11px;
 	user-select: none;
 	-webkit-user-select: none;
 }
@@ -295,19 +259,25 @@
 	-webkit-user-select: text;
 }
 
+/* Added lines — soft green tint on the row, vibrant green text. The tint is intentionally very light (8%) so the text remains the loudest visual signal, matching the mockup. */
 .mobile-diff-line.added {
-	background: color-mix(in srgb, var(--vscode-diffEditor-insertedLineBackground, var(--vscode-gitDecoration-addedResourceForeground)) 25%, transparent);
+	background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 8%, transparent);
 }
 
-.mobile-diff-line.added .mobile-diff-gutter {
+.mobile-diff-line.added .mobile-diff-line-num,
+.mobile-diff-line.added .mobile-diff-gutter,
+.mobile-diff-line.added .mobile-diff-content {
 	color: var(--vscode-gitDecoration-addedResourceForeground);
 }
 
+/* Removed lines — same treatment with the deletion color. */
 .mobile-diff-line.removed {
-	background: color-mix(in srgb, var(--vscode-diffEditor-removedLineBackground, var(--vscode-gitDecoration-deletedResourceForeground)) 25%, transparent);
+	background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground) 8%, transparent);
 }
 
-.mobile-diff-line.removed .mobile-diff-gutter {
+.mobile-diff-line.removed .mobile-diff-line-num,
+.mobile-diff-line.removed .mobile-diff-gutter,
+.mobile-diff-line.removed .mobile-diff-content {
 	color: var(--vscode-gitDecoration-deletedResourceForeground);
 }
 

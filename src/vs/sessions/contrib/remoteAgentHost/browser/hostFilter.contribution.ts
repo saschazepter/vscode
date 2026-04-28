@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
@@ -54,13 +55,17 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 				// center slot while a new (empty) chat session is active,
 				// so users can still switch hosts and connect from the
 				// home screen.
+				//
+				// Unlike the desktop pill, the mobile entry is shown even
+				// when no hosts are known: tapping it opens a bottom sheet
+				// with a "Re-discover hosts" action so the user always has
+				// a way to retry discovery from the home screen.
 				id: Menus.MobileTitleBarCenter,
 				group: 'navigation',
 				order: 0,
 				when: ContextKeyExpr.and(
 					IsWebContext,
 					IsAuxiliaryWindowContext.toNegated(),
-					HasAgentHostsContext,
 					IsNewChatSessionContext,
 				),
 			}],
@@ -90,19 +95,36 @@ class AgentHostFilterContribution extends Disposable implements IWorkbenchContri
 
 		this._register(filterService.onDidChange(() => this._update(filterService)));
 
+		// One-shot emitter to nudge any toolbars that materialized BEFORE
+		// this contribution registered. Without this, toolbars that
+		// already cached the default `MenuEntryActionViewItem` (which
+		// renders the action's title "Select Agent Host" with no icon)
+		// stay stale until the host list or discovery state changes.
+		// `onDidChangeDiscovering` covers the steady-state case once
+		// discovery starts/finishes; `registered` covers the cold-start
+		// race.
+		const registered = this._register(new Emitter<void>());
+		const refreshSignal = Event.any(filterService.onDidChange, filterService.onDidChangeDiscovering, registered.event);
+
 		this._register(actionViewItemService.register(
 			Menus.TitleBarLeftLayout,
 			PICK_HOST_FILTER_ID,
 			(action, _options, instaService) => instaService.createInstance(HostFilterActionViewItem, action),
-			filterService.onDidChange,
+			refreshSignal,
 		));
 
 		this._register(actionViewItemService.register(
 			Menus.MobileTitleBarCenter,
 			PICK_HOST_FILTER_ID,
 			(action, _options, instaService) => instaService.createInstance(MobileHostFilterActionViewItem, action),
-			filterService.onDidChange,
+			refreshSignal,
 		));
+
+		// Fire the one-shot signal asynchronously so any toolbars that
+		// rendered the action with the default view item before our
+		// registration ran above re-evaluate and pick up our custom
+		// factory on their next tick.
+		queueMicrotask(() => registered.fire());
 	}
 
 	private _update(filterService: IAgentHostFilterService): void {

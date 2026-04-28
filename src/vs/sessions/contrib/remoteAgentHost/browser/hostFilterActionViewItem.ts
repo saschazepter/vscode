@@ -53,6 +53,7 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		super(undefined, action);
 
 		this._register(this._filterService.onDidChange(() => this._update()));
+		this._register(this._filterService.onDidChangeDiscovering(() => this._update()));
 	}
 
 	override render(container: HTMLElement): void {
@@ -117,7 +118,7 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 		this._update();
 	}
 
-	private _isInteractive(): boolean {
+	protected _isInteractive(): boolean {
 		return this._filterService.hosts.length > 1;
 	}
 
@@ -132,13 +133,23 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			? undefined
 			: hosts.find(h => h.providerId === selectedId);
 
-		const interactive = hosts.length > 1;
+		const interactive = this._isInteractive();
+		const discovering = this._filterService.isDiscovering;
 
 		// Dropdown label + aria
-		const text = selected ? selected.label : localize('agentHostFilter.none', "No Host");
+		const text = selected
+			? selected.label
+			: discovering
+				? localize('agentHostFilter.searching', "Searching…")
+				: localize('agentHostFilter.none', "No Host");
 		this._labelElement.textContent = text;
 
 		this.element.classList.toggle('single-host', !interactive);
+		// While discovery is running, suppress the label so the pill collapses
+		// to a small pulsing icon (a la "checking…"). Once discovery finishes,
+		// the label re-appears.
+		this._dropdownElement.classList.toggle('discovering', discovering);
+		this._dropdownElement.classList.toggle('no-hosts', hosts.length === 0);
 
 		if (interactive) {
 			this._dropdownElement.tabIndex = 0;

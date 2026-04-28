@@ -8,26 +8,9 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { ILayoutService } from '../../../../../platform/layout/browser/layoutService.js';
 import { ITextFileService } from '../../../../../workbench/services/textfile/common/textfiles.js';
 import { IChatTerminalToolInvocationData } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
-import { IEditSessionEntryDiff } from '../../../../../workbench/contrib/chat/common/editing/chatEditingService.js';
-import { openMobileTerminalView } from '../../../../../sessions/browser/parts/mobile/contributions/mobileTerminalView.js';
-import { openMobileDiffView } from '../../../../../sessions/browser/parts/mobile/contributions/mobileDiffView.js';
+import { IFileDiffViewData, MOBILE_OPEN_DIFF_VIEW_COMMAND_ID, openMobileDiffView } from '../../../../../sessions/browser/parts/mobile/contributions/mobileDiffView.js';
+import { MOBILE_OPEN_TERMINAL_VIEW_COMMAND_ID, openMobileTerminalView } from '../../../../../sessions/browser/parts/mobile/contributions/mobileTerminalView.js';
 import { IsPhoneLayoutContext } from '../../../../../sessions/common/contextkeys.js';
-
-/**
- * Command ID for opening the mobile terminal output view.
- *
- * Accepts {@link IChatTerminalToolInvocationData} as the single argument.
- * Phone-only: guarded by {@link IsPhoneLayoutContext}.
- */
-export const MOBILE_OPEN_TERMINAL_VIEW_COMMAND_ID = 'sessions.mobile.openTerminalView';
-
-/**
- * Command ID for opening the mobile diff view.
- *
- * Accepts {@link IEditSessionEntryDiff} as the single argument.
- * Phone-only: guarded by {@link IsPhoneLayoutContext}.
- */
-export const MOBILE_OPEN_DIFF_VIEW_COMMAND_ID = 'sessions.mobile.openDiffView';
 
 class MobileOpenTerminalViewAction extends Action2 {
 	constructor() {
@@ -55,7 +38,7 @@ class MobileOpenDiffViewAction extends Action2 {
 		});
 	}
 
-	run(accessor: ServicesAccessor, diff: IEditSessionEntryDiff): void {
+	run(accessor: ServicesAccessor, diff: IFileDiffViewData): void {
 		const layoutService = accessor.get(ILayoutService);
 		const textFileService = accessor.get(ITextFileService);
 		openMobileDiffView(layoutService.mainContainer, { diff }, textFileService);

@@ -13,10 +13,16 @@ import { localize } from '../../../../../nls.js';
 import { ITextFileService } from '../../../../../workbench/services/textfile/common/textfiles.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { basename } from '../../../../../base/common/resources.js';
+import { linesDiffComputers } from '../../../../../editor/common/diff/linesDiffComputers.js';
 
 const $ = DOM.$;
 
-type DiffTab = 'diff' | 'file';
+/**
+ * Command ID for opening the {@link MobileDiffView}.
+ *
+ * Accepts {@link IFileDiffViewData} as the single argument. Phone-only.
+ */
+export const MOBILE_OPEN_DIFF_VIEW_COMMAND_ID = 'sessions.mobile.openDiffView';
 
 /**
  * Minimal subset of diff entry fields consumed by the mobile diff view.
@@ -38,25 +44,22 @@ export interface IMobileDiffViewData {
 }
 
 /**
- * Full-screen overlay for viewing file changes produced by a coding agent session
- * on phone viewports.
+ * Full-screen overlay for viewing file changes produced by a coding agent
+ * session on phone viewports.
  *
- * The view provides two tabs:
- * - **Diff** — a unified diff with coloured +/- gutters and line numbers.
- * - **File** — the full modified file content with changed lines highlighted.
+ * Renders a unified diff with coloured +/- gutters and line numbers. Text is
+ * read from the file service via the modified/original URIs stored in
+ * {@link IFileDiffViewData}. This keeps the view lightweight — it avoids
+ * embedding a full Monaco diff editor while still giving users a readable
+ * view of what changed.
  *
- * Text is read from the file service via the modified/original URIs stored in
- * {@link IFileDiffViewData}.  This keeps the view lightweight — it avoids
- * embedding a full Monaco diff editor while still giving users a readable view
- * of what changed.
- *
- * Follows the account-sheet overlay pattern: appends to the workbench container,
- * disposes on back-button tap.
+ * Follows the account-sheet overlay pattern: appends to the workbench
+ * container, disposes on back-button tap.
  */
 export class MobileDiffView extends Disposable {
 
 	private readonly viewStore = this._register(new DisposableStore());
-	private activeTab: DiffTab = 'diff';
+	private disposed = false;
 
 	constructor(
 		workbenchContainer: HTMLElement,
@@ -102,81 +105,21 @@ export class MobileDiffView extends Disposable {
 			sub.textContent = parts.join('  ');
 		}
 
-		// -- Segmented control -------------------------------------
-		const segBar = DOM.append(overlay, $('div.mobile-overlay-segment-bar'));
-		const diffBtn = DOM.append(segBar, $('button.mobile-overlay-segment', { type: 'button' })) as HTMLButtonElement;
-		diffBtn.textContent = localize('diffView.tabDiff', "Diff");
-		const fileBtn = DOM.append(segBar, $('button.mobile-overlay-segment', { type: 'button' })) as HTMLButtonElement;
-		fileBtn.textContent = localize('diffView.tabFile', "File");
-
 		// -- Body -------------------------------------------------
 		const body = DOM.append(overlay, $('div.mobile-overlay-body'));
 		const scrollWrapper = DOM.append(body, $('div.mobile-overlay-scroll'));
 		const contentArea = DOM.append(scrollWrapper, $('div.mobile-diff-output'));
 
-		// Segment switching logic
-		const switchTab = (tab: DiffTab) => {
-			this.activeTab = tab;
-			diffBtn.classList.toggle('active', tab === 'diff');
-			fileBtn.classList.toggle('active', tab === 'file');
-			this.loadContent(contentArea, diff, tab);
-		};
-
-		this.viewStore.add(Gesture.addTarget(diffBtn));
-		this.viewStore.add(DOM.addDisposableListener(diffBtn, DOM.EventType.CLICK, () => switchTab('diff')));
-		this.viewStore.add(DOM.addDisposableListener(diffBtn, TouchEventType.Tap, () => switchTab('diff')));
-		this.viewStore.add(Gesture.addTarget(fileBtn));
-		this.viewStore.add(DOM.addDisposableListener(fileBtn, DOM.EventType.CLICK, () => switchTab('file')));
-		this.viewStore.add(DOM.addDisposableListener(fileBtn, TouchEventType.Tap, () => switchTab('file')));
-
-		// Initial render
-		switchTab('diff');
+		this.loadDiffContent(contentArea, diff);
 	}
 
-	private loadContent(container: HTMLElement, diff: IFileDiffViewData, tab: DiffTab): void {
-		DOM.clearNode(container);
-
+	private loadDiffContent(container: HTMLElement, diff: IFileDiffViewData): void {
 		if (diff.identical) {
 			const empty = DOM.append(container, $('div.mobile-diff-empty-state'));
 			empty.textContent = localize('diffView.noChanges', "No changes in this file.");
 			return;
 		}
 
-		if (tab === 'file') {
-			this.loadFileContent(container, diff);
-		} else {
-			this.loadDiffContent(container, diff);
-		}
-	}
-
-	private loadFileContent(container: HTMLElement, diff: IFileDiffViewData): void {
-		const loadingEl = DOM.append(container, $('div.mobile-diff-empty-state'));
-		loadingEl.textContent = localize('diffView.loading', "Loading…");
-
-		this.textFileService.read(diff.modifiedURI, { acceptTextOnly: true }).then(model => {
-			if (this.activeTab !== 'file') {
-				return; // navigated away
-			}
-			DOM.clearNode(container);
-			const lines = model.value.split('\n');
-			for (let i = 0; i < lines.length; i++) {
-				const row = DOM.append(container, $('div.mobile-diff-line'));
-				const numEl = DOM.append(row, $('span.mobile-diff-line-num'));
-				numEl.textContent = String(i + 1);
-				const content = DOM.append(row, $('span.mobile-diff-content'));
-				content.textContent = lines[i];
-			}
-		}).catch(() => {
-			if (this.activeTab !== 'file') {
-				return;
-			}
-			DOM.clearNode(container);
-			const errEl = DOM.append(container, $('div.mobile-diff-empty-state'));
-			errEl.textContent = localize('diffView.loadError', "Could not load file content.");
-		});
-	}
-
-	private loadDiffContent(container: HTMLElement, diff: IFileDiffViewData): void {
 		const loadingEl = DOM.append(container, $('div.mobile-diff-empty-state'));
 		loadingEl.textContent = localize('diffView.loading', "Loading…");
 
@@ -184,11 +127,11 @@ export class MobileDiffView extends Disposable {
 			this.textFileService.read(diff.originalURI, { acceptTextOnly: true }).then(m => m.value).catch(() => ''),
 			this.textFileService.read(diff.modifiedURI, { acceptTextOnly: true }).then(m => m.value).catch(() => ''),
 		]).then(([originalText, modifiedText]) => {
-			if (this.activeTab !== 'diff') {
-				return; // navigated away
+			if (this.disposed) {
+				return;
 			}
 			DOM.clearNode(container);
-			const hunks = computeSimpleUnifiedDiff(originalText, modifiedText);
+			const hunks = computeUnifiedDiff(originalText, modifiedText);
 			if (hunks.length === 0) {
 				const empty = DOM.append(container, $('div.mobile-diff-empty-state'));
 				empty.textContent = localize('diffView.noChanges', "No changes in this file.");
@@ -222,14 +165,15 @@ export class MobileDiffView extends Disposable {
 	}
 
 	override dispose(): void {
+		this.disposed = true;
 		this.viewStore.dispose();
 		super.dispose();
 	}
 }
 
-// -- Minimal unified diff engine -----------------------------------------------
-// A lightweight LCS-based diff for rendering in the mobile view. This avoids a
-// dependency on Monaco's diff engine while still producing readable output.
+// -- Unified diff hunk rendering ---------------------------------------------
+// Uses the workbench's `linesDiffComputers` so we get the same diff quality as
+// the diff editor — no in-tree diff algorithm to maintain.
 
 interface IDiffLine {
 	type: 'context' | 'added' | 'removed';
@@ -244,163 +188,78 @@ interface IDiffHunk {
 
 const CONTEXT_LINES = 3;
 
-function computeSimpleUnifiedDiff(original: string, modified: string): IDiffHunk[] {
-	const origLines = original.split('\n');
-	const modLines = modified.split('\n');
+function computeUnifiedDiff(original: string, modified: string): IDiffHunk[] {
+	const origLines = original.split(/\r?\n/);
+	const modLines = modified.split(/\r?\n/);
 
-	// Build LCS edit script
-	const edits = computeLcsEdits(origLines, modLines);
+	const result = linesDiffComputers.getDefault().computeDiff(origLines, modLines, {
+		ignoreTrimWhitespace: false,
+		maxComputationTimeMs: 1000,
+		computeMoves: false,
+	});
 
-	// Group into hunks with context
+	if (result.changes.length === 0) {
+		return [];
+	}
+
+	// Merge changes that are within 2*CONTEXT_LINES of each other into a
+	// single hunk so consecutive edits aren't visually fragmented.
+	type Group = { origStart: number; origEnd: number; modStart: number; modEnd: number };
+	const groups: Group[] = [];
+	for (const change of result.changes) {
+		const g: Group = {
+			origStart: change.original.startLineNumber,
+			origEnd: change.original.endLineNumberExclusive,
+			modStart: change.modified.startLineNumber,
+			modEnd: change.modified.endLineNumberExclusive,
+		};
+		const last = groups[groups.length - 1];
+		if (last && g.origStart - last.origEnd <= CONTEXT_LINES * 2) {
+			last.origEnd = g.origEnd;
+			last.modEnd = g.modEnd;
+		} else {
+			groups.push(g);
+		}
+	}
+
 	const hunks: IDiffHunk[] = [];
-	let hunkLines: IDiffLine[] = [];
-	let hunkOrigStart = 1;
-	let hunkModStart = 1;
-	let lastChangeIdx = -1;
+	for (const group of groups) {
+		const origLeading = Math.max(1, group.origStart - CONTEXT_LINES);
+		const modLeading = Math.max(1, group.modStart - CONTEXT_LINES);
+		const origTrailing = Math.min(origLines.length + 1, group.origEnd + CONTEXT_LINES);
+		const modTrailing = Math.min(modLines.length + 1, group.modEnd + CONTEXT_LINES);
 
-	const flushHunk = (origEnd: number, modEnd: number) => {
-		if (hunkLines.length === 0) {
-			return;
+		const lines: IDiffLine[] = [];
+
+		// Leading context (taken from original — same as modified in unchanged regions).
+		for (let i = origLeading; i < group.origStart; i++) {
+			lines.push({ type: 'context', lineNum: i, text: origLines[i - 1] ?? '' });
 		}
-		const origCount = hunkLines.filter(l => l.type !== 'added').length;
-		const modCount = hunkLines.filter(l => l.type !== 'removed').length;
+
+		// Removed lines (from original).
+		for (let i = group.origStart; i < group.origEnd; i++) {
+			lines.push({ type: 'removed', lineNum: i, text: origLines[i - 1] ?? '' });
+		}
+
+		// Added lines (from modified).
+		for (let i = group.modStart; i < group.modEnd; i++) {
+			lines.push({ type: 'added', lineNum: i, text: modLines[i - 1] ?? '' });
+		}
+
+		// Trailing context.
+		for (let i = group.origEnd; i < origTrailing; i++) {
+			lines.push({ type: 'context', lineNum: i, text: origLines[i - 1] ?? '' });
+		}
+
+		const origCount = origTrailing - origLeading;
+		const modCount = modTrailing - modLeading;
 		hunks.push({
-			header: `@@ -${hunkOrigStart},${origCount} +${hunkModStart},${modCount} @@`,
-			lines: [...hunkLines],
+			header: `@@ -${origLeading},${origCount} +${modLeading},${modCount} @@`,
+			lines,
 		});
-		hunkLines = [];
-	};
-
-	let origIdx = 0;
-	let modIdx = 0;
-
-	for (const edit of edits) {
-		if (edit.type === 'equal') {
-			// Add up to CONTEXT_LINES before a change (look ahead)
-			const lines = origLines.slice(origIdx, origIdx + edit.count);
-			for (let i = 0; i < lines.length; i++) {
-				const isNearChange = i < CONTEXT_LINES || edit.count - i <= CONTEXT_LINES;
-				if (isNearChange || lastChangeIdx !== -1) {
-					hunkLines.push({ type: 'context', lineNum: origIdx + i + 1, text: lines[i] });
-				}
-			}
-			origIdx += edit.count;
-			modIdx += edit.count;
-		} else if (edit.type === 'remove') {
-			if (hunkLines.length === 0) {
-				hunkOrigStart = Math.max(1, origIdx + 1 - CONTEXT_LINES);
-				hunkModStart = Math.max(1, modIdx + 1 - CONTEXT_LINES);
-			}
-			for (let i = 0; i < edit.count; i++) {
-				hunkLines.push({ type: 'removed', lineNum: origIdx + i + 1, text: origLines[origIdx + i] });
-			}
-			lastChangeIdx = hunkLines.length;
-			origIdx += edit.count;
-		} else {
-			if (hunkLines.length === 0) {
-				hunkOrigStart = Math.max(1, origIdx + 1 - CONTEXT_LINES);
-				hunkModStart = Math.max(1, modIdx + 1 - CONTEXT_LINES);
-			}
-			for (let i = 0; i < edit.count; i++) {
-				hunkLines.push({ type: 'added', lineNum: modIdx + i + 1, text: modLines[modIdx + i] });
-			}
-			lastChangeIdx = hunkLines.length;
-			modIdx += edit.count;
-		}
 	}
 
-	flushHunk(origIdx, modIdx);
 	return hunks;
-}
-
-interface IEdit {
-	type: 'equal' | 'remove' | 'add';
-	count: number;
-}
-
-function computeLcsEdits(a: string[], b: string[]): IEdit[] {
-	// Myers diff — O(ND) algorithm, well-suited for typical code diffs.
-	const n = a.length;
-	const m = b.length;
-	const max = n + m;
-	const v = new Int32Array(2 * max + 2);
-	const trace: Int32Array[] = [];
-
-	for (let d = 0; d <= max; d++) {
-		const snapshot = new Int32Array(v);
-		for (let k = -d; k <= d; k += 2) {
-			let x: number;
-			const ki = k + max;
-			if (k === -d || (k !== d && v[ki - 1] < v[ki + 1])) {
-				x = v[ki + 1];
-			} else {
-				x = v[ki - 1] + 1;
-			}
-			let y = x - k;
-			while (x < n && y < m && a[x] === b[y]) {
-				x++;
-				y++;
-			}
-			v[ki] = x;
-			if (x >= n && y >= m) {
-				trace.push(snapshot);
-				return backtrack(trace, a, b, max);
-			}
-		}
-		trace.push(new Int32Array(v));
-	}
-	return [{ type: 'remove', count: n }, { type: 'add', count: m }];
-}
-
-function backtrack(trace: Int32Array[], a: string[], b: string[], max: number): IEdit[] {
-	const edits: IEdit[] = [];
-	let x = a.length;
-	let y = b.length;
-
-	for (let d = trace.length - 1; d >= 0; d--) {
-		const v = trace[d];
-		const k = x - y;
-		const ki = k + max;
-		let prevK: number;
-		if (k === -d || (k !== d && v[ki - 1] < v[ki + 1])) {
-			prevK = k + 1;
-		} else {
-			prevK = k - 1;
-		}
-		const prevX = v[prevK + max];
-		const prevY = prevX - prevK;
-
-		while (x > prevX && y > prevY) {
-			pushEdit(edits, 'equal', 1);
-			x--;
-			y--;
-		}
-		if (x > prevX) {
-			pushEdit(edits, 'remove', 1);
-			x--;
-		} else if (y > prevY) {
-			pushEdit(edits, 'add', 1);
-			y--;
-		}
-	}
-
-	edits.reverse();
-	return mergeEdits(edits);
-}
-
-function pushEdit(edits: IEdit[], type: IEdit['type'], count: number): void {
-	const last = edits[edits.length - 1];
-	if (last && last.type === type) {
-		last.count += count;
-	} else {
-		edits.push({ type, count });
-	}
-}
-
-function mergeEdits(edits: IEdit[]): IEdit[] {
-	// Remap 'add' → 'add' for use in the unified diff hunk builder.
-	// The backtrack output uses 'add'; the hunk builder expects that.
-	return edits;
 }
 
 /**

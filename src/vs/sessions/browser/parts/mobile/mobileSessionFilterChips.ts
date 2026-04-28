@@ -37,16 +37,10 @@ export interface IMobileSessionFilterChipHost {
 }
 
 /**
- * The event fired when the user taps the "Sort & Filter" chip,
- * signaling the view to open the full filter surface.
- */
-export type MobileFilterChipSortFilterEvent = void;
-
-/**
  * Horizontally scrollable chip row for quick session status filtering on
- * phone-sized viewports. Shows three fixed status chips and a trailing
- * "Sort & Filter" chip that delegates to the host for the full filter
- * bottom sheet.
+ * phone-sized viewports. Shows three fixed status chips, a "Sort"
+ * chip that opens the full filter context menu, and a "Find" chip that
+ * opens the find widget.
  *
  * Architecture note: this widget is phone-only and created conditionally
  * in {@link SessionsView}. It does NOT branch on IsPhoneLayoutContext
@@ -55,16 +49,29 @@ export type MobileFilterChipSortFilterEvent = void;
 export class MobileSessionFilterChips extends Disposable {
 
 	private readonly container: HTMLElement;
+	/**
+	 * Inner horizontally scrollable region that hosts the status filter
+	 * chips and the "Sort" chip. The "Find" chip lives OUTSIDE
+	 * this scroll area, pinned to the right edge of {@link container} so
+	 * it's always reachable on phone-width viewports without scrolling.
+	 */
+	private readonly scrollContainer: HTMLElement;
 	private readonly chipElements = new Map<string, HTMLElement>();
 	private readonly chipDisposables = this._register(new DisposableStore());
 
-	private readonly _onDidRequestSortFilter = this._register(new Emitter<MobileFilterChipSortFilterEvent>());
+	private readonly _onDidRequestSortGroup = this._register(new Emitter<HTMLElement>());
 	/**
-	 * Fired when the user taps the "Sort & Filter" chip.
-	 * The host should open a bottom sheet / quick pick with the full filter
-	 * and sort surface.
+	 * Fired when the user taps the "Sort" chip. The argument is
+	 * the chip's DOM element so the host can anchor a sheet/menu to it.
 	 */
-	readonly onDidRequestSortFilter: Event<MobileFilterChipSortFilterEvent> = this._onDidRequestSortFilter.event;
+	readonly onDidRequestSortGroup: Event<HTMLElement> = this._onDidRequestSortGroup.event;
+
+	private readonly _onDidRequestFind = this._register(new Emitter<void>());
+	/**
+	 * Fired when the user taps the "Find" chip. The host should open the
+	 * sessions find widget.
+	 */
+	readonly onDidRequestFind: Event<void> = this._onDidRequestFind.event;
 
 	private static readonly CHIP_DEFS: readonly IFilterChipDef[] = [
 		{
@@ -91,6 +98,8 @@ export class MobileSessionFilterChips extends Disposable {
 		this.container.setAttribute('role', 'toolbar');
 		this.container.setAttribute('aria-label', localize('filterChipsLabel', "Session status filters"));
 
+		this.scrollContainer = DOM.append(this.container, $('.mobile-session-filter-chips-scroll'));
+
 		this.renderChips();
 
 		// Re-sync active state when the list updates (filters may have
@@ -101,18 +110,27 @@ export class MobileSessionFilterChips extends Disposable {
 	private renderChips(): void {
 		this.chipDisposables.clear();
 		this.chipElements.clear();
-		DOM.clearNode(this.container);
+		DOM.clearNode(this.scrollContainer);
+		// The Find chip lives directly on `container` (sibling of
+		// `scrollContainer`) so we need to remove it too on re-render.
+		// `scrollContainer` itself must be preserved.
+		for (const child of Array.from(this.container.children)) {
+			if (child !== this.scrollContainer) {
+				child.remove();
+			}
+		}
 
 		for (const def of MobileSessionFilterChips.CHIP_DEFS) {
 			this.createStatusChip(def);
 		}
 
-		this.createSortFilterChip();
+		this.createSortGroupChip();
+		this.createFindChip();
 		this.syncActiveStates();
 	}
 
 	private createStatusChip(def: IFilterChipDef): void {
-		const chip = DOM.append(this.container, $('.mobile-session-filter-chip'));
+		const chip = DOM.append(this.scrollContainer, $('.mobile-session-filter-chip'));
 		chip.setAttribute('role', 'button');
 		chip.setAttribute('tabindex', '0');
 		chip.setAttribute('aria-pressed', 'false');
@@ -141,31 +159,61 @@ export class MobileSessionFilterChips extends Disposable {
 		}));
 	}
 
-	private createSortFilterChip(): void {
-		const chip = DOM.append(this.container, $('.mobile-session-filter-chip'));
+	private createSortGroupChip(): void {
+		const chip = DOM.append(this.scrollContainer, $('.mobile-session-filter-chip.mobile-session-filter-chip-action'));
 		chip.setAttribute('role', 'button');
 		chip.setAttribute('tabindex', '0');
-		chip.setAttribute('aria-label', localize('sortFilterAriaLabel', "Sort and filter options"));
+		chip.setAttribute('aria-label', localize('sortGroupAriaLabel', "Sort and group options"));
 
 		const icon = DOM.append(chip, $('span.chip-icon'));
-		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.filter));
+		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.listFilter));
 
 		const label = DOM.append(chip, $('span.chip-label'));
-		label.textContent = localize('sortFilter', "Sort & Filter");
+		label.textContent = localize('sortGroup', "Sort");
+
+		const fire = () => this._onDidRequestSortGroup.fire(chip);
 
 		this.chipDisposables.add(Gesture.addTarget(chip));
 		this.chipDisposables.add(DOM.addDisposableListener(chip, EventType.CLICK, (e) => {
 			e.preventDefault();
-			this._onDidRequestSortFilter.fire();
+			fire();
 		}));
 		this.chipDisposables.add(DOM.addDisposableListener(chip, TouchEventType.Tap, () => {
-			this._onDidRequestSortFilter.fire();
+			fire();
 		}));
 
 		this.chipDisposables.add(DOM.addDisposableListener(chip, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
-				this._onDidRequestSortFilter.fire();
+				fire();
+			}
+		}));
+	}
+
+	private createFindChip(): void {
+		const chip = DOM.append(this.container, $('.mobile-session-filter-chip.mobile-session-filter-chip-action.icon-only'));
+		chip.setAttribute('role', 'button');
+		chip.setAttribute('tabindex', '0');
+		chip.setAttribute('aria-label', localize('findAriaLabel', "Find session"));
+
+		const icon = DOM.append(chip, $('span.chip-icon'));
+		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.search));
+
+		const fire = () => this._onDidRequestFind.fire();
+
+		this.chipDisposables.add(Gesture.addTarget(chip));
+		this.chipDisposables.add(DOM.addDisposableListener(chip, EventType.CLICK, (e) => {
+			e.preventDefault();
+			fire();
+		}));
+		this.chipDisposables.add(DOM.addDisposableListener(chip, TouchEventType.Tap, () => {
+			fire();
+		}));
+
+		this.chipDisposables.add(DOM.addDisposableListener(chip, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				fire();
 			}
 		}));
 	}

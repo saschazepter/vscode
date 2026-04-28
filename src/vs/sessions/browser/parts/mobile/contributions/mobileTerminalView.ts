@@ -14,6 +14,13 @@ import { localize } from '../../../../../nls.js';
 const $ = DOM.$;
 
 /**
+ * Command ID for opening the {@link MobileTerminalView}.
+ *
+ * Accepts a {@link ITerminalViewData}-shaped argument. Phone-only.
+ */
+export const MOBILE_OPEN_TERMINAL_VIEW_COMMAND_ID = 'sessions.mobile.openTerminalView';
+
+/**
  * Minimal subset of terminal invocation fields consumed by the mobile terminal view.
  * Defined locally to avoid importing from vs/workbench/contrib in vs/sessions/browser.
  */
