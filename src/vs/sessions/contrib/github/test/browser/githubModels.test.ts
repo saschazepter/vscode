@@ -147,38 +147,29 @@ suite('GitHubPullRequestModel', () => {
 		const model = store.add(new GitHubPullRequestModel('owner', 'repo', 1, mockFetcher as unknown as GitHubPRFetcher, logService));
 		assert.strictEqual(model.pullRequest.get(), undefined);
 		assert.strictEqual(model.mergeability.get(), undefined);
-		assert.deepStrictEqual(model.reviewThreads.get(), []);
 	});
 
-	test('refresh populates all observables', async () => {
+	test('refresh populates pull request and mergeability without fetching review threads', async () => {
 		const model = store.add(new GitHubPullRequestModel('owner', 'repo', 1, mockFetcher as unknown as GitHubPRFetcher, logService));
 		mockFetcher.nextPR = makePR();
 		mockFetcher.nextReviews = [];
 		mockFetcher.nextThreads = [makeThread('thread-100', 'src/a.ts')];
 
 		await model.refresh();
-		assert.strictEqual(model.pullRequest.get()?.number, 1);
-		assert.strictEqual(model.mergeability.get()?.canMerge, true);
-		assert.strictEqual(model.reviewThreads.get().length, 1);
-	});
 
-	test('refreshThreads only updates threads', async () => {
-		const model = store.add(new GitHubPullRequestModel('owner', 'repo', 1, mockFetcher as unknown as GitHubPRFetcher, logService));
-		mockFetcher.nextThreads = [makeThread('thread-100', 'src/a.ts'), makeThread('thread-200', 'src/b.ts')];
-
-		await model.refreshThreads();
-		assert.strictEqual(model.pullRequest.get(), undefined); // not refreshed
-		assert.strictEqual(model.reviewThreads.get().length, 2);
-	});
-
-	test('postReviewComment calls fetcher and refreshes threads', async () => {
-		const model = store.add(new GitHubPullRequestModel('owner', 'repo', 1, mockFetcher as unknown as GitHubPRFetcher, logService));
-		mockFetcher.nextThreads = [];
-
-		const comment = await model.postReviewComment('LGTM', 100);
-		assert.strictEqual(comment.body, 'LGTM');
-		assert.strictEqual(mockFetcher.postReviewCommentCalls.length, 1);
-		assert.strictEqual(mockFetcher.postReviewCommentCalls[0].body, 'LGTM');
+		assert.deepStrictEqual({
+			prNumber: model.pullRequest.get()?.number,
+			canMerge: model.mergeability.get()?.canMerge,
+			getPullRequestCalls: mockFetcher.getPullRequestCalls,
+			getReviewsCalls: mockFetcher.getReviewsCalls,
+			getReviewThreadsCalls: mockFetcher.getReviewThreadsCalls,
+		}, {
+			prNumber: 1,
+			canMerge: true,
+			getPullRequestCalls: 1,
+			getReviewsCalls: 1,
+			getReviewThreadsCalls: 0,
+		});
 	});
 
 	test('postIssueComment calls fetcher', async () => {

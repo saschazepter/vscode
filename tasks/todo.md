@@ -24,16 +24,16 @@
   - [x] Use review-threads model for initial fetch and polling.
   - [x] Use review-threads model for resolving PR review threads.
 
-- [ ] Task 4: Make `GitHubPullRequestModel` lightweight
-  - [ ] Remove review-thread observable and thread-specific APIs.
-  - [ ] Keep pull request, reviews, mergeability, and issue-comment behavior.
-  - [ ] Update tests and search for stale thread references.
+- [x] Task 4: Make `GitHubPullRequestModel` lightweight
+  - [x] Remove review-thread observable and thread-specific APIs.
+  - [x] Keep pull request, reviews, mergeability, and issue-comment behavior.
+  - [x] Update tests and search for stale thread references.
 
 ## Checkpoint: Consumer Rewire
 
-- [ ] Active-session PR refresh no longer calls GraphQL review-thread fetch.
-- [ ] PR review UI still loads and resolves unresolved review threads.
-- [ ] CI and PR icon consumers still work from `pullRequest` state.
+- [x] Active-session PR refresh no longer calls GraphQL review-thread fetch.
+- [x] PR review UI still loads and resolves unresolved review threads.
+- [x] CI and PR icon consumers still work from `pullRequest` state.
 
 ## Phase 3: Validation
 
