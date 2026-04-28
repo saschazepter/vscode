@@ -48,9 +48,13 @@ export class NodeFetcher implements IFetcher {
 			throw new Error(`Illegal arguments! 'method' must be 'GET', 'POST', or 'PUT'!`);
 		}
 
-		const signal = options.signal ?? new AbortController().signal;
-		if (signal && !(signal instanceof AbortSignal)) {
+		let signal: AbortSignal = options.signal instanceof AbortSignal ? options.signal : new AbortController().signal;
+		if (options.signal && !(options.signal instanceof AbortSignal)) {
 			throw new Error(`Illegal arguments! 'signal' must be an instance of AbortSignal!`);
+		}
+		if (options.timeout !== undefined && options.timeout > 0) {
+			const timeoutSignal = AbortSignal.timeout(options.timeout);
+			signal = AbortSignal.any([signal, timeoutSignal]);
 		}
 
 		const internalId = generateUuid();
