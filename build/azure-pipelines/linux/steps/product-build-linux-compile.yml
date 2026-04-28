@@ -22,6 +22,12 @@ parameters:
     default: false
 
 steps:
+  - script: |
+      set -e
+      echo "Disk usage at start:"
+      df -h /
+    displayName: Check disk space (pre-checkout)
+
   - template: ../../common/checkout.yml@self
 
   - script: |
