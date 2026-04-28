@@ -1447,6 +1447,7 @@ describe('CopilotCLISession', () => {
 			mcLastEventId: null,
 			mcLastSubmitAttemptTimeMs: Date.now(),
 			mcProcessedCommandIds: new Set<string>(),
+			mcPendingCommandCompletionIds: new Set<string>(),
 			mcSdkSession: sdkSession as unknown as Session,
 			mcEventListenerDispose: undefined,
 			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
