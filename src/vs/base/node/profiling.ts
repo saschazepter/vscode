@@ -132,7 +132,7 @@ export async function startProfiling(options: StartOptions): Promise<ProfilingSe
 			throw new Error('runtime is paused');
 		}
 	} else {
-		// resume form inspect-brk
+		// resume from inspect-brk
 		await Runtime.runIfWaitingForDebugger();
 	}
 
