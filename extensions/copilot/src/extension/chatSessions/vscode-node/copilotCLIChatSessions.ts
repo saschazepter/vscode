@@ -38,7 +38,7 @@ import { IChatDelegationSummaryService } from '../copilotcli/common/delegationSu
 import { clearPendingCopilotCLIRequestContext, setPendingCopilotCLIRequestContext, takePendingCopilotCLIRequestContext } from '../copilotcli/common/pendingRequestContext';
 import { SessionIdForCLI } from '../copilotcli/common/utils';
 import { getCopilotCLISessionDir } from '../copilotcli/node/cliHelpers';
-import { ICopilotCLISDK } from '../copilotcli/node/copilotCli';
+import { formatModelDetails, ICopilotCLIModels, ICopilotCLISDK, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
 import { CopilotCLIPromptResolver } from '../copilotcli/node/copilotcliPromptResolver';
 import { builtinSlashSCommands, CopilotCLICommand, copilotCLICommands, ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
@@ -661,6 +661,8 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 		@ISessionRequestLifecycle private readonly sessionRequestLifecycle: ISessionRequestLifecycle,
 		@IPullRequestDetectionService private readonly prDetectionService: IPullRequestDetectionService,
 		@ISessionOptionGroupBuilder private readonly _optionGroupBuilder: ISessionOptionGroupBuilder,
+		@ICopilotCLIModels private readonly copilotCLIModels: ICopilotCLIModels,
+		@IChatSessionMetadataStore private readonly chatSessionMetadataStore: IChatSessionMetadataStore,
 	) {
 		super();
 
@@ -855,12 +857,34 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 
 			if (request.command === 'delegate') {
 				await this.handleDelegationToCloud(session.object, request, context, stream, token);
+				return {};
 			} else {
 				const { input, attachments } = await this.resolveInput(request, session.object, isNewSession, token);
 				await session.object.handleRequest(request, input, attachments, model, authInfo, token);
 			}
 
-			return {};
+			const models = await this.copilotCLIModels.getModels().catch(ex => {
+				this.logService.error(ex, 'Failed to get models');
+				return [];
+			});
+			const selectedModelId = await session.object.getSelectedModelId().catch(ex => {
+				this.logService.error(ex, 'Failed to get selected model');
+				return undefined;
+			});
+			const lastResponseModelId = session.object.getLastResponseModelId();
+			const modelInfo = [lastResponseModelId, selectedModelId, model?.model]
+				.map(modelId => modelId ? models.find(m => matchesCopilotCLIModel(m, modelId)) : undefined)
+				.find(modelInfo => !!modelInfo);
+			const result: vscode.ChatResult = modelInfo
+				? { details: formatModelDetails(modelInfo) }
+				: {};
+
+			if (lastResponseModelId) {
+				this.chatSessionMetadataStore.updateRequestDetails(sdkSessionId, [{ vscodeRequestId: request.id, responseModelId: lastResponseModelId }])
+					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
+			}
+
+			return result;
 		} catch (ex) {
 			if (isCancellationError(ex)) {
 				return {};

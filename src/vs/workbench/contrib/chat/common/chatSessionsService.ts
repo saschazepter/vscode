@@ -11,7 +11,7 @@ import { IObservable } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-import { IChatAgentAttachmentCapabilities, IChatAgentRequest, IChatAgentResult } from './participants/chatAgents.js';
+import { IChatAgentAttachmentCapabilities, IChatAgentRequest } from './participants/chatAgents.js';
 import { IChatEditingSession } from './editing/chatEditingService.js';
 import { IChatRequestModeInstructions, IChatRequestVariableData, ISerializableChatModelInputState } from './model/chatModel.js';
 import { IChatProgress, IChatSessionTiming } from './chatService/chatService.js';
@@ -224,7 +224,7 @@ export interface IChatSession extends IDisposable {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		history: any[], // TODO: Nail down types
 		token: CancellationToken
-	) => Promise<IChatAgentResult | void>;
+	) => Promise<void>;
 
 	/**
 	 * Forks the session from the given request point.
