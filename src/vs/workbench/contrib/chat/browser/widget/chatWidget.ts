@@ -672,7 +672,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (!inputContainer) {
 			return;
 		}
+<<<<<<< HEAD
 		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true;
+=======
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.ProgressBorder) === true
+			&& !this.accessibilityService.isMotionReduced()
+			&& !isInlineChat(this);
+>>>>>>> ba3d653b (fix placeholder not showing up + inline chat progress border (#312979))
 		const inProgress = !!this.viewModel?.model.requestInProgress.get();
 		inputContainer.classList.toggle('working', enabled && inProgress);
 	}
