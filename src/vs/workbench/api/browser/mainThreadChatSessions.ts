@@ -33,7 +33,7 @@ import { ChatSessionOptionsMap, ChatSessionStatus, IChatNewSessionRequest, IChat
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
 import { getChatSessionType, isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
-import { IChatAgentRequest } from '../../contrib/chat/common/participants/chatAgents.js';
+import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IChatArtifactsService } from '../../contrib/chat/common/tools/chatArtifactsService.js';
 import { IChatTodoListService } from '../../contrib/chat/common/tools/chatTodoListService.js';
 import { IEditorGroupsService } from '../../services/editor/common/editorGroupsService.js';
@@ -84,7 +84,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 		progress: (progress: IChatProgress[]) => void,
 		history: any[],
 		token: CancellationToken
-	) => Promise<void>;
+	) => Promise<IChatAgentResult | void>;
 	forkSession?: (request: IChatSessionRequestHistoryItem | undefined, token: CancellationToken) => Promise<IChatSessionItem>;
 
 	private readonly _proxy: ExtHostChatSessionsShape;
@@ -237,13 +237,15 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 					});
 
 					try {
-						await this._proxy.$invokeChatSessionRequestHandler(this._providerHandle, this.sessionResource, request, history, token);
+						const result = await this._proxy.$invokeChatSessionRequestHandler(this._providerHandle, this.sessionResource, request, history, token);
 
 						// Only mark as complete if there's no active response callback
 						// Sessions with active response callbacks should only complete when explicitly told to via handleProgressComplete
 						if (!this._isCompleteObservable.get() && !this.interruptActiveResponseCallback) {
 							this._markComplete();
 						}
+
+						return result;
 					} catch (error) {
 						const errorProgress: IChatProgress = {
 							kind: 'progressMessage',

@@ -408,6 +408,28 @@ suite('ObservableChatSession', function () {
 		assert.ok(asSinonMethodStub(proxy.$invokeChatSessionRequestHandler).calledOnceWith(1, session.sessionResource, request, [], CancellationToken.None));
 	});
 
+	test('request handler returns proxy result', async function () {
+		const sessionContent = createSessionContent({ hasRequestHandler: true });
+		const session = disposables.add(await createInitializedSession(sessionContent));
+
+		assert.ok(session.requestHandler);
+
+		const request: IChatAgentRequest = {
+			requestId: 'req1',
+			sessionResource: LocalChatSessionUri.forSession('test-session'),
+			agentId: 'test-agent',
+			message: 'Test prompt',
+			location: ChatAgentLocation.Chat,
+			variables: { variables: [] }
+		};
+		const expectedResult: IChatAgentResult = { details: 'GPT-5.3-Codex - 1x' };
+		asSinonMethodStub(proxy.$invokeChatSessionRequestHandler).resolves(expectedResult);
+
+		const actualResult = await session.requestHandler!(request, sinon.stub(), [], CancellationToken.None);
+
+		assert.deepStrictEqual(actualResult, expectedResult);
+	});
+
 	test('request handler forwards progress updates to external callback', async function () {
 		const sessionContent = createSessionContent({ hasRequestHandler: true });
 		const session = disposables.add(await createInitializedSession(sessionContent));
