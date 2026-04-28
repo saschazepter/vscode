@@ -24,19 +24,14 @@ parameters:
 steps:
   - script: |
       set -e
-      echo "=== Disk layout ==="
-      lsblk
-      echo "=== Partition table (sda) ==="
-      sudo fdisk -l /dev/sda
-      echo "=== df -h ==="
-      df -h
-      echo "=== Disk usage before cleanup ==="
+      echo "Disk usage before cleanup:"
+      df -h /
       # Remove pre-installed software we don't need to free space on /dev/root (73GB)
       sudo rm -rf /usr/local/lib/android
       sudo rm -rf /opt/ghc
       sudo rm -rf /usr/local/share/boost
       sudo rm -rf /opt/hostedtoolcache
-      echo "=== Disk usage after cleanup ==="
+      echo "Disk usage after cleanup:"
       df -h /
     displayName: Free root disk space
 
@@ -364,6 +359,16 @@ steps:
       displayName: Build rpm package
 
     - ${{ if eq(parameters.VSCODE_ARCH, 'x64') }}:
+      - script: |
+          set -e
+          # Move Docker data to /mnt (1.1TB) to avoid filling /dev/root (73GB)
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker
+          sudo mv /var/lib/docker/* /mnt/docker/ || true
+          sudo mount --bind /mnt/docker /var/lib/docker
+          sudo systemctl start docker
+        displayName: Relocate Docker storage to /mnt
+
       - task: Docker@1
         inputs:
           azureSubscriptionEndpoint: vscode
