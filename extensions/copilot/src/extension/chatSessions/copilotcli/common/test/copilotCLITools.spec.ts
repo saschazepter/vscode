@@ -228,6 +228,39 @@ describe('CopilotCLITools', () => {
 			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 • 2x' });
 		});
 
+		it('uses persisted responseModelId to recover model details on reload for auto sessions', () => {
+			// Simulates a reloaded `auto` session: the SDK only persists `selectedModel: "auto"`
+			// (the `assistant.usage` event that carried the resolved model id is ephemeral and
+			// dropped from the persisted event log). The resolved model id was previously
+			// captured by the participant and stored via the chat session metadata store as
+			// `RequestDetails.responseModelId`, then surfaced through the `getVSCodeRequestId`
+			// callback. The reload path must use it to render the model footer details.
+			const events: any[] = [
+				{ type: 'session.start', data: { selectedModel: 'auto' } },
+				{ type: 'user.message', id: 'u1', data: { content: 'First', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'One' } },
+				{ type: 'user.message', id: 'u2', data: { content: 'Second', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Two' } },
+			];
+			const detailsByEventId: Record<string, RequestIdDetails> = {
+				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4' },
+				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'claude-opus-4.7' },
+			};
+			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
+
+			const turns = buildChatHistoryFromEvents('', 'auto', events, lookup, delegationSummary, logger, undefined, undefined, new Map([
+				['gpt-5.4', 'GPT 5.4 • 2x'],
+				['claude-opus-4-7', 'Claude Opus 4.7 • 4x'],
+			]));
+
+			expect(turns).toHaveLength(4);
+			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['gpt-5.4', 'claude-opus-4.7']);
+			expect(turns.filter(turn => turn instanceof ChatResponseTurn2).map(turn => (turn as ChatResponseTurn2).result)).toEqual([
+				{ details: 'GPT 5.4 • 2x' },
+				{ details: 'Claude Opus 4.7 • 4x' },
+			]);
+		});
+
 		it('converts file attachments to references on user messages', () => {
 			const events: any[] = [
 				{

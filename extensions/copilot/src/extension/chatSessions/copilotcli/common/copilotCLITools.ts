@@ -519,6 +519,7 @@ export interface RequestIdDetails {
 	readonly requestId: string;
 	readonly toolIdEditMap: Record<string, string>;
 	readonly modeInstructions?: StoredModeInstructions;
+	readonly responseModelId?: string;
 }
 
 /**
@@ -733,8 +734,12 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 					}
 				}
 
-				currentResponseModelId = currentModelId;
-				turns.push(new ChatRequestTurn2(`${commandPrefix}${prompt}`, undefined, references, '', [], undefined, details?.requestId ?? event.id, currentModelId, modeInstructions2));
+				// Prefer the persisted resolved model id (from `assistant.usage`) so that on reload
+				// `auto` sessions show the actual model used to produce the response. Falls back to
+				// the currently tracked model id (from `session.start`/`session.model_change`).
+				const resolvedRequestModelId = details?.responseModelId ?? currentModelId;
+				currentResponseModelId = resolvedRequestModelId;
+				turns.push(new ChatRequestTurn2(`${commandPrefix}${prompt}`, undefined, references, '', [], undefined, details?.requestId ?? event.id, resolvedRequestModelId, modeInstructions2));
 				currentRequestTurnIndex = turns.length - 1;
 				break;
 			}

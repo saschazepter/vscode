@@ -1558,12 +1558,21 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				this.logService.error(ex, 'Failed to get selected model');
 				return undefined;
 			});
-			const modelInfo = [session.object.getLastResponseModelId(), selectedModelId, model?.model]
+			const lastResponseModelId = session.object.getLastResponseModelId();
+			const modelInfo = [lastResponseModelId, selectedModelId, model?.model]
 				.map(modelId => modelId ? models.find(m => matchesCopilotCLIModel(m, modelId)) : undefined)
 				.find(modelInfo => !!modelInfo);
 			const result: vscode.ChatResult = modelInfo
 				? { details: formatModelDetails(modelInfo) }
 				: {};
+
+			// Persist the resolved model id so that on reload we can recover the model
+			// details for sessions that used `auto` (the SDK does not persist
+			// `assistant.usage`, which is the only source of the resolved model id).
+			if (lastResponseModelId) {
+				this.chatSessionMetadataStore.updateRequestDetails(sessionId, [{ vscodeRequestId: request.id, responseModelId: lastResponseModelId }])
+					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
+			}
 
 			if (isUntitled && !token.isCancellationRequested) {
 				this.scheduleUntitledSessionSwap(id, request.id, request.prompt, session.object.sessionId, chatSessionContext.chatSessionItem);
