@@ -103,6 +103,22 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	private _invocationContext: IToolInvocationContext | undefined;
 	private _currentMonitoringCts: CancellationTokenSource | undefined;
 
+	/**
+	 * Tracks whether onDidFinishCommand has fired so the event is delivered at
+	 * most once. The event must fire synchronously during dispose so consumers
+	 * awaiting `Event.toPromise(onDidFinishCommand)` are unblocked before the
+	 * underlying emitter is torn down by super.dispose().
+	 */
+	private _didFinish = false;
+
+	private _fireFinishedOnce(): void {
+		if (this._didFinish) {
+			return;
+		}
+		this._didFinish = true;
+		this._onDidFinishCommand.fire();
+	}
+
 	constructor(
 		private readonly _execution: IExecution,
 		private readonly _pollFn: ((execution: IExecution, token: CancellationToken, taskService: ITaskService) => Promise<IPollingResult | undefined>) | undefined,
@@ -123,11 +139,33 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// the async monitoring loop's token becomes isCancellationRequested=true and
 		// the loop exits promptly — CancellationTokenSource.dispose() alone does
 		// not set isCancellationRequested.
+		//
+		// Crucially, also fire onDidFinishCommand synchronously here so that
+		// consumers awaiting `Event.toPromise(monitor.onDidFinishCommand)` are
+		// released before super.dispose() tears down the emitter. Without this,
+		// if dispose races the async _startMonitoring, the finally block fires
+		// the event after the emitter is dead and the awaiting promise never
+		// resolves — the agent appears to hang on the run_in_terminal call.
 		const cts = new CancellationTokenSource(token);
 		this._currentMonitoringCts = cts;
 		this._register(toDisposable(() => {
 			this._currentMonitoringCts?.cancel();
 			this._currentMonitoringCts?.dispose();
+			// If the async monitoring loop has not reached its finally block yet,
+			// surface a synthetic Cancelled pollingResult so consumers that read
+			// `monitor.pollingResult` after awaiting onDidFinishCommand always see
+			// a defined value with the output collected so far. Also clear the
+			// idle input listener so we don't leak the FunctionDisposable.
+			if (!this._didFinish) {
+				this._pollingResult ??= {
+					state: OutputMonitorState.Cancelled,
+					output: this._execution.getOutput(),
+					pollDurationMs: 0,
+					resources: undefined,
+				};
+				this._userInputListener.clear();
+			}
+			this._fireFinishedOnce();
 		}));
 
 		// Start async to ensure listeners are set up.
@@ -231,7 +269,10 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 			};
 			// Clean up idle input listener if still active
 			this._userInputListener.clear();
-			this._onDidFinishCommand.fire();
+			// Fire at most once. If dispose() already fired the event synchronously
+			// (e.g. the monitor was torn down before this async loop reached its
+			// finally), skip firing on a potentially disposed emitter.
+			this._fireFinishedOnce();
 		}
 	}
 
