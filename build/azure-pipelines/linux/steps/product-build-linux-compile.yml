@@ -24,6 +24,12 @@ parameters:
 steps:
   - template: ../../common/checkout.yml@self
 
+  - script: |
+      set -e
+      echo "Disk usage at start:"
+      df -h /
+    displayName: Check disk space (start)
+
   - task: NodeTool@0
     inputs:
       versionSource: fromFile

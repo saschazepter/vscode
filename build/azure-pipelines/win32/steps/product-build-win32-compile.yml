@@ -18,6 +18,11 @@ parameters:
 steps:
   - template: ../../common/checkout.yml@self
 
+  - powershell: |
+      Write-Host "Disk usage at start:"
+      Get-PSDrive C | Format-List -Property Name,@{Name="Size(GB)";Expression={[math]::Round($_.Used+$_.Free)/1GB}},@{Name="Used(GB)";Expression={[math]::Round($_.Used)/1GB}},@{Name="Free(GB)";Expression={[math]::Round($_.Free)/1GB}}
+    displayName: Check disk space (start)
+
   - task: NodeTool@0
     inputs:
       versionSource: fromFile
@@ -273,6 +278,12 @@ steps:
         exec { npx deemon --attach -- npx zx build/azure-pipelines/win32/codesign.ts }
       condition: succeededOrFailed()
       displayName: "✍️ Post-job: Codesign"
+
+    - powershell: |
+        Write-Host "Disk usage before cleanup:"
+        Get-PSDrive C | Format-List -Property Name,@{Name="Size(GB)";Expression={[math]::Round($_.Used+$_.Free)/1GB}},@{Name="Used(GB)";Expression={[math]::Round($_.Used)/1GB}},@{Name="Free(GB)";Expression={[math]::Round($_.Free)/1GB}}
+      condition: succeededOrFailed()
+      displayName: Free disk space
 
     - powershell: |
         $ErrorActionPreference = "Stop"

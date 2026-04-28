@@ -16,6 +16,11 @@ parameters:
 steps:
   - template: ../../common/checkout.yml@self
 
+  - script: |
+      echo "Disk usage at start:"
+      df -h /
+    displayName: Check disk space (start)
+
   - task: NodeTool@0
     inputs:
       versionSource: fromFile
@@ -343,6 +348,12 @@ steps:
     - script: npx deemon --attach node build/azure-pipelines/darwin/codesign.ts
       condition: succeededOrFailed()
       displayName: "Post-job: ✍️ Codesign & Notarize"
+
+    - script: |
+        echo "Disk usage before cleanup:"
+        df -h /
+      condition: succeededOrFailed()
+      displayName: Free disk space
 
     - script: unzip $(Pipeline.Workspace)/vscode_client_darwin_$(VSCODE_ARCH)_archive/VSCode-darwin-$(VSCODE_ARCH).zip -d $(Build.ArtifactStagingDirectory)/VSCode-darwin-$(VSCODE_ARCH)
       displayName: Extract signed app
