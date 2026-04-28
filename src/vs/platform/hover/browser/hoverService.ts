@@ -642,6 +642,16 @@ export class HoverService extends Disposable implements IHoverService {
 			if (isMouseDown || hoverPreparation) {
 				return;
 			}
+			// If focus is returning from a hover that was just dismissed
+			// (e.g. Esc, window blur), don't re-show the hover.
+			if (hoverWidget?.isDisposed) {
+				hoverWidget = undefined;
+				return;
+			}
+			const fromHover = isHTMLElement(e.relatedTarget) && e.relatedTarget.closest('.monaco-hover');
+			if (fromHover || !e.relatedTarget) {
+				return;
+			}
 			if (!eventIsRelatedToTarget(e, targetElement)) {
 				return; // Do not show hover when the focus is on another hover target
 			}

@@ -13,6 +13,7 @@ import { TestInstantiationService } from '../../../instantiation/test/common/ins
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { HoverService } from '../../browser/hoverService.js';
+import { WorkbenchHoverDelegate } from '../../browser/hover.js';
 import { HoverWidget } from '../../browser/hoverWidget.js';
 import { IContextMenuService } from '../../../contextview/browser/contextView.js';
 import { IKeybindingService } from '../../../keybinding/common/keybinding.js';
@@ -500,6 +501,50 @@ suite('HoverService', () => {
 
 			hover.dispose();
 		});
+
+		test('should not re-show hover on focus when relatedTarget is from a dismissed hover', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const target = createTarget();
+			const delegate = store.add(instantiationService.createInstance(WorkbenchHoverDelegate, 'element', undefined, {}));
+			const hover = store.add(hoverService.setupManagedHover(delegate, target, 'Test'));
+
+			// Show hover explicitly
+			hover.show(true);
+			await timeout(0);
+			const hoversBefore = fixture.querySelectorAll('.monaco-hover');
+			assert.ok(hoversBefore.length > 0, 'Hover should be visible after show()');
+
+			// Dismiss via hide
+			hover.hide();
+			await timeout(0);
+
+			// Simulate focus returning from the hover element
+			const hoverElement = document.createElement('div');
+			hoverElement.classList.add('monaco-hover');
+			target.dispatchEvent(new FocusEvent('focus', { bubbles: true, relatedTarget: hoverElement }));
+			await timeout(0);
+
+			const hoversAfter = fixture.querySelectorAll('.monaco-hover');
+			assert.strictEqual(hoversAfter.length, 0, 'Hover should not re-show when focus comes from dismissed hover');
+		}));
+
+		test('should not re-show hover on focus when relatedTarget is null (window reactivation)', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const target = createTarget();
+			const delegate = store.add(instantiationService.createInstance(WorkbenchHoverDelegate, 'element', undefined, {}));
+			const hover = store.add(hoverService.setupManagedHover(delegate, target, 'Test'));
+
+			// Show and dismiss hover
+			hover.show(true);
+			await timeout(0);
+			hover.hide();
+			await timeout(0);
+
+			// Simulate focus from window reactivation (relatedTarget is null)
+			target.dispatchEvent(new FocusEvent('focus', { bubbles: true, relatedTarget: null }));
+			await timeout(0);
+
+			const hovers = fixture.querySelectorAll('.monaco-hover');
+			assert.strictEqual(hovers.length, 0, 'Hover should not re-show on window reactivation');
+		}));
 	});
 
 	suite('showDelayedHover', () => {
