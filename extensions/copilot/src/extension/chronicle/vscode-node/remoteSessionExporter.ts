@@ -15,7 +15,7 @@ import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/co
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
 import { Disposable, DisposableStore } from '../../../util/vs/base/common/lifecycle';
-import { autorun } from '../../../util/vs/base/common/observableInternal';
+import { autorun, observableFromEventOpts } from '../../../util/vs/base/common/observableInternal';
 import { IExtensionContribution } from '../../common/contributions';
 import { CircuitBreaker } from '../common/circuitBreaker';
 import {
@@ -133,11 +133,19 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Only set up span listener when both local index and cloud sync are enabled.
 		// Uses autorun to react if settings change at runtime.
 		const localEnabled = this._configService.getExperimentBasedConfigObservable(ConfigKey.LocalIndexEnabled, this._expService);
+		const cloudEnabled = observableFromEventOpts(
+			{ debugName: 'chat.sessionSync.enabled' },
+			handler => this._register(vscode.workspace.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration('chat.sessionSync.enabled')) {
+					handler(e);
+				}
+			})),
+			() => this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false,
+		);
 		const spanListenerStore = this._register(new DisposableStore());
 		this._register(autorun(reader => {
 			spanListenerStore.clear();
-			const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
-			if (!localEnabled.read(reader) || !cloudEnabled) {
+			if (!localEnabled.read(reader) || !cloudEnabled.read(reader)) {
 				return;
 			}
 
@@ -198,9 +206,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		});
 	}
 
-	// ── Delete cloud sessions (Command Palette) ─────────────────────────────────
+	// ── Delete sessions (Command Palette) ───────────────────────────────────────
 
 	private async _deleteCloudSessions(): Promise<void> {
+		const cloudEnabled = this._indexingPreference.hasCloudConsent();
+
 		// Query local SQLite store for sessions with their first user message as label
 		const rows = this._sessionStore.executeReadOnlyFallback(
 			`SELECT s.id, s.repository, s.created_at,
@@ -231,8 +241,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		];
 
 		const picked = await vscode.window.showQuickPick(sessionItems, {
-			title: vscode.l10n.t('Delete Cloud Session Data'),
-			placeHolder: vscode.l10n.t('Select sessions to delete from the cloud'),
+			title: vscode.l10n.t('Delete Session Data'),
+			placeHolder: vscode.l10n.t('Select sessions to delete'),
 			canPickMany: true,
 		});
 
@@ -245,9 +255,13 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			? rows
 			: picked.map(p => rows.find(r => r.id === p.sessionId)!).filter(Boolean);
 
-		// Confirmation
+		// Confirmation — message indicates where data will be deleted from
+		const confirmMessage = cloudEnabled
+			? vscode.l10n.t('Delete {0} session(s) locally and from the cloud? This cannot be undone.', sessionsToDelete.length)
+			: vscode.l10n.t('Delete {0} session(s) locally? This cannot be undone.', sessionsToDelete.length);
+
 		const confirm = await vscode.window.showWarningMessage(
-			vscode.l10n.t('Delete {0} session(s) from the cloud? This cannot be undone.', sessionsToDelete.length),
+			confirmMessage,
 			{ modal: true },
 			vscode.l10n.t('Delete'),
 		);
@@ -257,28 +271,71 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		// Execute deletions
-		let deleted = 0;
-		let notFound = 0;
-		let errors = 0;
+		let localDeleted = 0;
+		let cloudDeleted = 0;
+		let cloudNotFound = 0;
+		let cloudErrors = 0;
+
+		// Resolve local→cloud ID mapping when cloud is enabled.
+		// The delete API requires the cloud-assigned session ID, not our local
+		// agent_task_id, so we fetch the list once and build a lookup map.
+		const localToCloudId = new Map<string, string>();
+		if (cloudEnabled) {
+			const cloudSessions = await this._cloudClient.listSessions();
+			for (const cs of cloudSessions) {
+				if (cs.agent_task_id) {
+					localToCloudId.set(cs.agent_task_id, cs.id);
+				}
+			}
+		}
 
 		await vscode.window.withProgress(
-			{ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Deleting cloud sessions...') },
+			{ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Deleting sessions...') },
 			async () => {
 				for (const session of sessionsToDelete) {
-					const result = await this._cloudClient.deleteSession(session.id);
-					switch (result) {
-						case 'deleted': deleted++; break;
-						case 'not_found': notFound++; break;
-						case 'error': errors++; break;
+					// Always delete locally
+					try {
+						this._sessionStore.deleteSession(session.id);
+						localDeleted++;
+					} catch {
+						// Best effort — continue with cloud even if local fails
+					}
+
+					// Delete from cloud when session sync is enabled
+					if (cloudEnabled) {
+						const cloudId = localToCloudId.get(session.id);
+						if (cloudId) {
+							const result = await this._cloudClient.deleteSession(cloudId);
+							switch (result) {
+								case 'deleted': cloudDeleted++; break;
+								case 'not_found': cloudNotFound++; break;
+								case 'error': cloudErrors++; break;
+							}
+						} else {
+							// Session was never synced to cloud
+							cloudNotFound++;
+						}
 					}
 				}
 			},
 		);
 
-		if (errors > 0) {
-			vscode.window.showWarningMessage(vscode.l10n.t('Deleted {0}, not found {1}, errors {2}.', deleted, notFound, errors));
+		// Build result message
+		const parts: string[] = [];
+		parts.push(vscode.l10n.t('{0} deleted locally', localDeleted));
+		if (cloudEnabled) {
+			if (cloudDeleted > 0) {
+				parts.push(vscode.l10n.t('{0} deleted from cloud', cloudDeleted));
+			}
+			if (cloudNotFound > 0) {
+				parts.push(vscode.l10n.t('{0} not found in cloud', cloudNotFound));
+			}
+		}
+
+		if (cloudErrors > 0) {
+			vscode.window.showWarningMessage(parts.join(', ') + '. ' + vscode.l10n.t('{0} cloud deletion(s) failed.', cloudErrors));
 		} else {
-			vscode.window.showInformationMessage(vscode.l10n.t('{0} session(s) deleted from the cloud.', deleted) + (notFound > 0 ? ' ' + vscode.l10n.t('{0} not found in cloud (local-only or already deleted).', notFound) : ''));
+			vscode.window.showInformationMessage(parts.join(', ') + '.');
 		}
 	}
 

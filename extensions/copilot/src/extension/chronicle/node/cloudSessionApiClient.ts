@@ -133,6 +133,35 @@ export class CloudSessionApiClient {
 	}
 
 	/**
+	 * List all cloud sessions for the authenticated user (for diagnostics).
+	 */
+	async listSessions(): Promise<Array<{ id: string; agent_task_id?: string; state: string; created_at: string }>> {
+		try {
+			const { url, headers } = await this._buildRequest(SESSIONS_PATH);
+			if (!url) {
+				return [];
+			}
+
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.cloudListSessions',
+				method: 'GET',
+				headers,
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+
+			if (!res.ok) {
+				return [];
+			}
+
+			const data = await res.json();
+			const sessions = Array.isArray(data) ? data : (data as Record<string, unknown>).sessions;
+			return Array.isArray(sessions) ? sessions : [];
+		} catch {
+			return [];
+		}
+	}
+
+	/**
 	 * Delete a session from the cloud.
 	 * Returns 'deleted' if queued for deletion (202), 'not_found' if the session
 	 * doesn't exist in the cloud (404, treated as success), or 'error' on failure.
