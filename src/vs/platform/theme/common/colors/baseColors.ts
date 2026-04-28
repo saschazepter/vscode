@@ -16,7 +16,7 @@ export const foreground = registerColor('foreground',
 
 export const strongForeground = registerColor('strongForeground',
 	{ dark: '#FFFFFF', light: '#000000', hcDark: '#FFFFFF', hcLight: '#000000' },
-	nls.localize('strongForeground', "Highest-contrast foreground color, intended for text or icons that need maximum legibility against the editor background. This color is only used if not overridden by a component."));
+	nls.localize('strongForeground', "Highest-contrast foreground color, intended for text or icons that need maximum legibility across various backgrounds. This color is only used if not overridden by a component."));
 
 export const disabledForeground = registerColor('disabledForeground',
 	{ dark: '#CCCCCC80', light: '#61616180', hcDark: '#A5A5A5', hcLight: '#7F7F7F' },
