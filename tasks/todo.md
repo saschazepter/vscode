@@ -7,15 +7,15 @@
   - [x] Add refresh, mutation refresh, independent polling, and disposal behavior.
   - [x] Add focused model tests.
 
-- [ ] Task 2: Add `IGitHubService.getPullRequestReviewThreads()`
-  - [ ] Cache review-thread models by owner/repo/prNumber.
-  - [ ] Dispose cached review-thread models through `GitHubService`.
-  - [ ] Add service caching tests.
+- [x] Task 2: Add `IGitHubService.getPullRequestReviewThreads()`
+  - [x] Cache review-thread models by owner/repo/prNumber.
+  - [x] Dispose cached review-thread models through `GitHubService`.
+  - [x] Add service caching tests.
 
 ## Checkpoint: Foundation
 
-- [ ] New model and service API reviewed before consumer rewiring.
-- [ ] Tests cover review-thread fetch without pull request metadata fetch.
+- [x] New model and service API reviewed before consumer rewiring.
+- [x] Tests cover review-thread fetch without pull request metadata fetch.
 
 ## Phase 2: Consumer Rewire
 

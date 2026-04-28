@@ -52,6 +52,18 @@ suite('GitHubService', () => {
 		assert.notStrictEqual(model1, model2);
 	});
 
+	test('getPullRequestReviewThreads returns cached model for same key', () => {
+		const model1 = service.getPullRequestReviewThreads('owner', 'repo', 1);
+		const model2 = service.getPullRequestReviewThreads('owner', 'repo', 1);
+		assert.strictEqual(model1, model2);
+	});
+
+	test('getPullRequestReviewThreads returns different models for different PRs', () => {
+		const model1 = service.getPullRequestReviewThreads('owner', 'repo', 1);
+		const model2 = service.getPullRequestReviewThreads('owner', 'repo', 2);
+		assert.notStrictEqual(model1, model2);
+	});
+
 	test('getPullRequestCI returns cached model for same key', () => {
 		const model1 = service.getPullRequestCI('owner', 'repo', 'abc123');
 		const model2 = service.getPullRequestCI('owner', 'repo', 'abc123');
@@ -67,6 +79,7 @@ suite('GitHubService', () => {
 	test('disposing service does not throw', () => {
 		service.getRepository('owner', 'repo');
 		service.getPullRequest('owner', 'repo', 1);
+		service.getPullRequestReviewThreads('owner', 'repo', 1);
 		service.getPullRequestCI('owner', 'repo', 'abc');
 
 		// Disposing the service should not throw and should clean up models

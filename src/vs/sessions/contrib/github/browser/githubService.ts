@@ -13,6 +13,7 @@ import { GitHubPRFetcher } from './fetchers/githubPRFetcher.js';
 import { GitHubPRCIFetcher } from './fetchers/githubPRCIFetcher.js';
 import { GitHubRepositoryModel } from './models/githubRepositoryModel.js';
 import { GitHubPullRequestModel } from './models/githubPullRequestModel.js';
+import { GitHubPullRequestReviewThreadsModel } from './models/githubPullRequestReviewThreadsModel.js';
 import { GitHubPullRequestCIModel } from './models/githubPullRequestCIModel.js';
 import { GitHubChangesFetcher } from './fetchers/githubChangesFetcher.js';
 
@@ -30,6 +31,12 @@ export interface IGitHubService {
 	 * The model is cached by owner/repo/prNumber key and disposed when the service is disposed.
 	 */
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel;
+
+	/**
+	 * Get or create a reactive model for review threads on a GitHub pull request.
+	 * The model is cached by owner/repo/prNumber key and disposed when the service is disposed.
+	 */
+	getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel;
 
 	/**
 	 * Get or create a reactive model for CI checks on a pull request head ref.
@@ -59,6 +66,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 
 	private readonly _repositories = this._register(new DisposableMap<string, GitHubRepositoryModel>());
 	private readonly _pullRequests = this._register(new DisposableMap<string, GitHubPullRequestModel>());
+	private readonly _pullRequestReviewThreads = this._register(new DisposableMap<string, GitHubPullRequestReviewThreadsModel>());
 	private readonly _ciModels = this._register(new DisposableMap<string, GitHubPullRequestCIModel>());
 
 	constructor(
@@ -92,6 +100,17 @@ export class GitHubService extends Disposable implements IGitHubService {
 			this._logService.trace(`${LOG_PREFIX} Creating PR model for ${key}`);
 			model = new GitHubPullRequestModel(owner, repo, prNumber, this._prFetcher, this._logService);
 			this._pullRequests.set(key, model);
+		}
+		return model;
+	}
+
+	getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
+		const key = `${owner}/${repo}/${prNumber}`;
+		let model = this._pullRequestReviewThreads.get(key);
+		if (!model) {
+			this._logService.trace(`${LOG_PREFIX} Creating PR review threads model for ${key}`);
+			model = new GitHubPullRequestReviewThreadsModel(owner, repo, prNumber, this._prFetcher, this._logService);
+			this._pullRequestReviewThreads.set(key, model);
 		}
 		return model;
 	}
