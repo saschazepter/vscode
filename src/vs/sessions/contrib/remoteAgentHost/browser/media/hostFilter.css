@@ -95,7 +95,9 @@
 	max-width: 0;
 	opacity: 0;
 	margin-left: 0;
-	flex: 0 0 auto;
+	flex: 0 0 0;
+	width: 0;
+	overflow: hidden;
 }
 
 .agent-host-filter-combo.loading .agent-host-filter-chevron,
