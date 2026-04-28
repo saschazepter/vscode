@@ -52,6 +52,11 @@ steps:
     displayName: Install build dependencies
     condition: and(succeeded(), ne(variables.BUILD_CACHE_RESTORED, 'true'))
 
+  - script: npm ci --ignore-scripts
+    workingDirectory: $(Build.SourcesDirectory)
+    displayName: Install vscode dependencies
+    condition: and(succeeded(), ne(variables.BUILD_CACHE_RESTORED, 'true'))
+
   - script: npm ci
     workingDirectory: $(Build.SourcesDirectory)
     displayName: Install vscode dependencies
