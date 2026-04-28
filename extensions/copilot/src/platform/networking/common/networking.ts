@@ -173,6 +173,8 @@ export interface IMakeChatRequestOptions {
 	useWebSocket?: boolean;
 	/** Disable Responses API stateful marker reuse, preventing previous_response_id-based history slicing. */
 	ignoreStatefulMarker?: boolean;
+	/** Indicates whether the request's mode instructions changed from the previous turn. */
+	modeChanged?: boolean;
 	/** Streaming callback for each response part. */
 	finishedCb: FinishedCallback | undefined;
 	/** Location where the chat message is being sent. */

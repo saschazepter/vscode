@@ -220,10 +220,11 @@ suite('defaultIntentRequestHandler', () => {
 		await handler.getResult();
 
 		expect(requestSpy).toHaveBeenCalledOnce();
-		expect(requestSpy.mock.calls[0][0].ignoreStatefulMarker).toBe(true);
+		expect(requestSpy.mock.calls[0][0].modeChanged).toBe(true);
+		expect(requestSpy.mock.calls[0][0].ignoreStatefulMarker).toBeUndefined();
 	});
 
-	test('does not ignore stateful marker when mode instructions are unchanged on responses api requests', async () => {
+	test('preserves default stateful marker behavior when mode instructions are unchanged on responses api requests', async () => {
 		const request = new TestChatRequest();
 		(request as any).modeInstructions2 = { name: 'Agent', content: 'agent instructions', isBuiltin: true };
 		(endpoint as any).apiType = 'responses';
@@ -239,7 +240,8 @@ suite('defaultIntentRequestHandler', () => {
 		await handler.getResult();
 
 		expect(requestSpy).toHaveBeenCalledOnce();
-		expect(requestSpy.mock.calls[0][0].ignoreStatefulMarker).toBe(false);
+		expect(requestSpy.mock.calls[0][0].modeChanged).toBe(false);
+		expect(requestSpy.mock.calls[0][0].ignoreStatefulMarker).toBeUndefined();
 	});
 
 	test('makes a tool call turn', async () => {
