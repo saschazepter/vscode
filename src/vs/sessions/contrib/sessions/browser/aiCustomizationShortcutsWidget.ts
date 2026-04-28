@@ -6,7 +6,6 @@
 import '../../../browser/media/sidebarActionButton.css';
 import './media/customizationsToolbar.css';
 import * as DOM from '../../../../base/browser/dom.js';
-import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, derived } from '../../../../base/common/observable.js';
@@ -23,13 +22,16 @@ import { CUSTOMIZATION_ITEMS } from './customizationsToolbar.contribution.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentPluginService } from '../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 
 const $ = DOM.$;
 
 const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
+
+function isWelcomePageEditor(editor: unknown): editor is { showWelcomePage(): void } {
+	return typeof (editor as { showWelcomePage?: unknown })?.showWelcomePage === 'function';
+}
 
 export interface IAICustomizationShortcutsWidgetOptions {
 	readonly onDidChangeLayout?: () => void;
@@ -48,7 +50,6 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		@IAgentPluginService private readonly agentPluginService: IAgentPluginService,
 		@IAICustomizationItemsModel private readonly itemsModel: IAICustomizationItemsModel,
 		@IEditorService private readonly editorService: IEditorService,
-		@IHoverService private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -88,6 +89,26 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		const chevron = DOM.append(chevronContainer, $('.ai-customization-chevron'));
 		const headerTotalCount = DOM.append(chevronContainer, $('span.ai-customization-header-total.hidden'));
 		chevron.classList.add(...ThemeIcon.asClassNameArray(isCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+		const headerActions = DOM.append(header, $('.ai-customization-header-actions'));
+		const openOverviewLabel = localize('openCustomizationsOverview', "Open Customizations Overview");
+		const openOverviewButton = this._register(new Button(headerActions, {
+			...defaultButtonStyles,
+			secondary: true,
+			title: openOverviewLabel,
+			ariaLabel: openOverviewLabel,
+			supportIcons: true,
+			buttonSecondaryBackground: 'transparent',
+			buttonSecondaryHoverBackground: undefined,
+			buttonSecondaryForeground: undefined,
+			buttonSecondaryBorder: undefined,
+		}));
+		openOverviewButton.element.classList.add('ai-customization-overview-button');
+		openOverviewButton.label = `$(${Codicon.home.id})`;
+		this._register(openOverviewButton.onDidClick(e => {
+			e?.preventDefault();
+			this._openWelcomePage();
+		}));
 
 		// Toolbar container
 		const toolbarContainer = DOM.append(container, $('.ai-customization-toolbar-content.sidebar-action-list'));
@@ -145,43 +166,13 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		};
 
 		this._register(headerButton.onDidClick(() => toggleCollapse()));
-
-		// Footer link — appended inside the collapsible content so it
-		// collapses/expands together with the section list. Provides a
-		// dedicated entrypoint to the Customizations welcome page.
-		const footer = DOM.append(toolbarContainer, $('.ai-customization-footer'));
-		const footerLink = DOM.append(footer, $('a.ai-customization-footer-link'));
-		footerLink.setAttribute('role', 'button');
-		footerLink.setAttribute('tabindex', '0');
-		footerLink.setAttribute('href', '#');
-		footerLink.textContent = localize('manageCustomizations', "Manage customizations");
-		const footerArrow = DOM.append(footerLink, $('span.ai-customization-footer-arrow'));
-		footerArrow.classList.add(...ThemeIcon.asClassNameArray(Codicon.arrowRight));
-		this._register(Gesture.addTarget(footerLink));
-		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap] as const) {
-			this._register(DOM.addDisposableListener(footerLink, eventType, (e: Event) => {
-				e.preventDefault();
-				this._openWelcomePage();
-			}));
-		}
-		this._register(DOM.addDisposableListener(footerLink, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				this._openWelcomePage();
-			}
-		}));
-		this._register(this.hoverService.setupDelayedHoverAtMouse(footerLink, () => ({
-			content: localize('openCustomizationsWelcomePage', "Open Customizations Overview"),
-			appearance: { compact: true, skipFadeInAnimation: true },
-		})));
 	}
 
 	private async _openWelcomePage(): Promise<void> {
 		const input = AICustomizationManagementEditorInput.getOrCreate();
 		const editor = await this.editorService.openEditor(input, { pinned: true });
-		if (editor?.getId() === AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID) {
-			const editorWithWelcome = editor as { showWelcomePage?(): void };
-			editorWithWelcome.showWelcomePage?.();
+		if (editor?.getId() === AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID && isWelcomePageEditor(editor)) {
+			editor.showWelcomePage();
 		}
 	}
 
