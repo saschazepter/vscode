@@ -725,7 +725,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				this.logService.trace(`[CopilotCLISession] CopilotCLI Event: ${JSON.stringify(event, null, 2)}`);
 				this.logService.info(`[CopilotCLISession] on(*) fired: ${event.type}`);
 				// Forward events to Mission Control if remote control is active
-				this._bufferMcEvent(event);
+				if (!this._mcState?.mcEventListenerDispose) {
+					this._bufferMcEvent(event);
+				}
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('permission.requested', async (event) => {
 				const permissionRequest = event.data.permissionRequest;

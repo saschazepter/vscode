@@ -1294,6 +1294,36 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
 	});
 
+	it('does not double-buffer request events when the persistent Mission Control listener is active', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: vi.fn(),
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		await session.handleRequest(
+			{ id: '', toolInvocationToken: undefined as never },
+			{ prompt: 'ask me my favorite color' },
+			[],
+			undefined,
+			authInfo,
+			CancellationToken.None
+		);
+
+		expect(remoteState.mcEventBuffer).toEqual([]);
+	});
+
 	it('suppresses Mission Control user message commands that echo recently forwarded local prompts', async () => {
 		const session = await createSession();
 		const remoteState = {
