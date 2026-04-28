@@ -133,14 +133,39 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			: hosts.find(h => h.providerId === selectedId);
 
 		const interactive = hosts.length > 1;
+		const isLoading = this._filterService.isLoadingHosts;
+		const isEmpty = hosts.length === 0;
+
+		// Three rendering modes:
+		//  1. Loading + no hosts known yet → only the host icon, blinking.
+		//  2. Loaded + zero hosts          → only the host icon, grayed out.
+		//  3. Loaded + ≥1 host             → icon + label + (chevron) + connect.
+		this.element.classList.toggle('single-host', !interactive);
+		this.element.classList.toggle('loading', isLoading && isEmpty);
+		this.element.classList.toggle('empty', !isLoading && isEmpty);
 
 		// Dropdown label + aria
-		const text = selected ? selected.label : localize('agentHostFilter.none', "No Host");
+		const text = selected ? selected.label : '';
 		this._labelElement.textContent = text;
 
-		this.element.classList.toggle('single-host', !interactive);
-
-		if (interactive) {
+		if (isEmpty) {
+			// Placeholder mode: dropdown is non-interactive, hide chevron and
+			// connect button, and announce status to screen readers via the
+			// icon's aria-label on the dropdown.
+			this._dropdownElement.removeAttribute('tabindex');
+			this._dropdownElement.removeAttribute('role');
+			this._dropdownElement.removeAttribute('aria-haspopup');
+			this._dropdownElement.setAttribute('aria-label', isLoading
+				? localize('agentHostFilter.aria.loading', "Loading agent hosts…")
+				: localize('agentHostFilter.aria.empty', "No agent hosts available."));
+			this._dropdownHover.value = this._hoverService.setupManagedHover(
+				getDefaultHoverDelegate('element'),
+				this._dropdownElement,
+				() => isLoading
+					? localize('agentHostFilter.hover.loading', "Loading agent hosts…")
+					: localize('agentHostFilter.hover.empty', "No agent hosts available"),
+			);
+		} else if (interactive) {
 			this._dropdownElement.tabIndex = 0;
 			this._dropdownElement.role = 'button';
 			this._dropdownElement.setAttribute('aria-haspopup', 'menu');
@@ -162,7 +187,7 @@ export class HostFilterActionViewItem extends BaseActionViewItem {
 			this._dropdownHover.clear();
 		}
 
-		this._updateConnectButton(selected);
+		this._updateConnectButton(isEmpty ? undefined : selected);
 	}
 
 	private _updateConnectButton(selected: IAgentHostFilterEntry | undefined): void {

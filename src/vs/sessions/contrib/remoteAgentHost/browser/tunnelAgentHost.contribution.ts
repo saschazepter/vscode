@@ -18,6 +18,7 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { AuthenticationSessionsChangeEvent, IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { logTunnelConnectAttempt, logTunnelConnectResolved, TunnelConnectErrorCategory, TunnelConnectFailureReason } from '../../../common/sessionsTelemetry.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { IAgentHostFilterService } from '../common/agentHostFilter.js';
 import { RemoteAgentHostSessionsProvider } from './remoteAgentHostSessionsProvider.js';
 
 /** Minimum interval between silent status checks (5 minutes). */
@@ -82,6 +83,7 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 		@ILogService private readonly _logService: ILogService,
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
 	) {
 		super();
 
@@ -139,7 +141,9 @@ export class TunnelAgentHostContribution extends Disposable implements IWorkbenc
 		}));
 
 		// Silently check status of cached tunnels on startup
-		this._silentStatusCheck();
+		this._silentStatusCheck().finally(() => {
+			this._agentHostFilterService.notifyInitialDiscoveryComplete();
+		});
 	}
 
 	/**

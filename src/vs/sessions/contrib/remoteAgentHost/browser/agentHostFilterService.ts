@@ -47,6 +47,7 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 
 	private _selectedProviderId: string | undefined;
 	private _hosts: readonly IAgentHostFilterEntry[] = [];
+	private _isLoadingHosts: boolean = true;
 
 	/**
 	 * Subscriptions to the `connectionStatus` observable of every currently
@@ -74,6 +75,18 @@ export class AgentHostFilterService extends Disposable implements IAgentHostFilt
 
 	get hosts(): readonly IAgentHostFilterEntry[] {
 		return this._hosts;
+	}
+
+	get isLoadingHosts(): boolean {
+		return this._isLoadingHosts;
+	}
+
+	notifyInitialDiscoveryComplete(): void {
+		if (!this._isLoadingHosts) {
+			return;
+		}
+		this._isLoadingHosts = false;
+		this._onDidChange.fire();
 	}
 
 	setSelectedProviderId(providerId: string): void {

@@ -40,7 +40,7 @@ export const IAgentHostFilterService = createDecorator<IAgentHostFilterService>(
 export interface IAgentHostFilterService {
 	readonly _serviceBrand: undefined;
 
-	/** Fires when {@link selectedProviderId} or {@link hosts} changes. */
+	/** Fires when {@link selectedProviderId}, {@link hosts}, or {@link isLoadingHosts} changes. */
 	readonly onDidChange: Event<void>;
 
 	/** The currently selected providerId, or `undefined` when no hosts are known. */
@@ -48,6 +48,19 @@ export interface IAgentHostFilterService {
 
 	/** All known hosts the user can switch between. */
 	readonly hosts: readonly IAgentHostFilterEntry[];
+
+	/**
+	 * `true` until the first host discovery pass completes (regardless of
+	 * outcome). Used by UI surfaces to render a loading affordance instead
+	 * of an empty / disabled state on startup.
+	 */
+	readonly isLoadingHosts: boolean;
+
+	/**
+	 * Marks the initial host discovery pass as complete. Idempotent — only
+	 * the first call has an effect. Drives {@link isLoadingHosts}.
+	 */
+	notifyInitialDiscoveryComplete(): void;
 
 	/**
 	 * Update the selection. Ignored if `providerId` does not match a

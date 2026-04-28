@@ -73,6 +73,45 @@
 	white-space: nowrap;
 	flex: 1 1 auto;
 	min-width: 0;
+	max-width: 240px;
+	opacity: 1;
+	transition: max-width 220ms ease, opacity 220ms ease, margin-left 220ms ease;
+}
+
+/* --- Loading mode: blink the host icon ---------------------------------- */
+
+.agent-host-filter-combo.loading .agent-host-filter-dropdown,
+.agent-host-filter-combo.empty .agent-host-filter-dropdown {
+	cursor: default;
+}
+
+.agent-host-filter-combo.loading .agent-host-filter-dropdown:hover,
+.agent-host-filter-combo.empty .agent-host-filter-dropdown:hover {
+	background-color: transparent;
+}
+
+.agent-host-filter-combo.loading .agent-host-filter-label,
+.agent-host-filter-combo.empty .agent-host-filter-label {
+	max-width: 0;
+	opacity: 0;
+	margin-left: 0;
+	flex: 0 0 auto;
+}
+
+.agent-host-filter-combo.loading .agent-host-filter-chevron,
+.agent-host-filter-combo.empty .agent-host-filter-chevron {
+	display: none;
+}
+
+.agent-host-filter-combo.loading .agent-host-filter-icon .codicon {
+	animation: agent-host-filter-pulse 1.2s ease-in-out infinite;
+}
+
+/* --- Empty mode: grayed-out icon, no affordance ------------------------- */
+
+.agent-host-filter-combo.empty .agent-host-filter-icon .codicon {
+	color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+	opacity: 0.6;
 }
 
 /* --- Single-host mode: static label, no dropdown affordance ------------- */

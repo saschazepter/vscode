@@ -7,7 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
@@ -17,13 +17,6 @@ import { Menus } from '../../../browser/menus.js';
 import { IAgentHostFilterService } from '../common/agentHostFilter.js';
 import { HostFilterActionViewItem } from './hostFilterActionViewItem.js';
 
-/**
- * Context key that is `true` when at least one remote agent host is known
- * (configured or connected). Controls the visibility of the host filter
- * dropdown in the titlebar.
- */
-const HasAgentHostsContext = new RawContextKey<boolean>('sessions.hasAgentHosts', false);
-
 const PICK_HOST_FILTER_ID = 'sessions.agentHostFilter.pick';
 
 /**
@@ -31,6 +24,11 @@ const PICK_HOST_FILTER_ID = 'sessions.agentHostFilter.pick';
  * is actually handled by {@link HostFilterActionViewItem}, so the action's
  * `run` is a no-op. Gated on `isWeb` via its menu `when` clause so the
  * combo only shows up in the web build.
+ *
+ * Note: the combo is always shown on web (no `HasAgentHostsContext`
+ * gating). When there are no hosts (or the initial discovery is still
+ * in flight) the action view item renders a placeholder icon — see
+ * {@link HostFilterActionViewItem}.
  */
 registerAction2(class PickAgentHostFilterAction extends Action2 {
 	constructor() {
@@ -45,7 +43,6 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 				when: ContextKeyExpr.and(
 					IsWebContext,
 					IsAuxiliaryWindowContext.toNegated(),
-					HasAgentHostsContext,
 				),
 			}, {
 				// On phone/mobile layouts the desktop titlebar is replaced
@@ -59,7 +56,6 @@ registerAction2(class PickAgentHostFilterAction extends Action2 {
 				when: ContextKeyExpr.and(
 					IsWebContext,
 					IsAuxiliaryWindowContext.toNegated(),
-					HasAgentHostsContext,
 					IsNewChatSessionContext,
 				),
 			}],
@@ -75,19 +71,11 @@ class AgentHostFilterContribution extends Disposable implements IWorkbenchContri
 
 	static readonly ID = 'sessions.contrib.agentHostFilter';
 
-	private readonly _hasAgentHostsContext: IContextKey<boolean>;
-
 	constructor(
 		@IAgentHostFilterService filterService: IAgentHostFilterService,
 		@IActionViewItemService actionViewItemService: IActionViewItemService,
-		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
-
-		this._hasAgentHostsContext = HasAgentHostsContext.bindTo(contextKeyService);
-		this._update(filterService);
-
-		this._register(filterService.onDidChange(() => this._update(filterService)));
 
 		this._register(actionViewItemService.register(
 			Menus.TitleBarLeftLayout,
@@ -102,10 +90,6 @@ class AgentHostFilterContribution extends Disposable implements IWorkbenchContri
 			(action, _options, instaService) => instaService.createInstance(HostFilterActionViewItem, action),
 			filterService.onDidChange,
 		));
-	}
-
-	private _update(filterService: IAgentHostFilterService): void {
-		this._hasAgentHostsContext.set(filterService.hosts.length > 0);
 	}
 }
 
