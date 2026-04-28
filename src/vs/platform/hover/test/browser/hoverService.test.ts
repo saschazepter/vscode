@@ -13,7 +13,7 @@ import { TestInstantiationService } from '../../../instantiation/test/common/ins
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { HoverService } from '../../browser/hoverService.js';
-import { WorkbenchHoverDelegate } from '../../browser/hover.js';
+import { IHoverService, WorkbenchHoverDelegate } from '../../browser/hover.js';
 import { HoverWidget } from '../../browser/hoverWidget.js';
 import { IContextMenuService } from '../../../contextview/browser/contextView.js';
 import { IKeybindingService } from '../../../keybinding/common/keybinding.js';
@@ -80,6 +80,7 @@ suite('HoverService', () => {
 		});
 
 		hoverService = store.add(instantiationService.createInstance(HoverService));
+		instantiationService.stub(IHoverService, hoverService);
 	});
 
 	// #region Helper functions
