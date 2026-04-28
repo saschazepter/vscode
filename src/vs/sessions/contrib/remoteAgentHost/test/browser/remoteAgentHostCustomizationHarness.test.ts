@@ -320,6 +320,13 @@ suite('RemoteAgentHostCustomizationHarness', () => {
 					return { success: false, stat: undefined } as unknown as IFileStatResult;
 				});
 			}
+			override async readFile(resource: URI): Promise<IFileContent> {
+				if (resource.path.endsWith('/my-skill/SKILL.md')) {
+					const content = '---\n---\n';
+					return { resource, name: 'SKILL.md', value: VSBuffer.fromString(content), mtime: 0, ctime: 0, etag: '', size: content.length, readonly: false, locked: false, executable: false };
+				}
+				throw new Error('ENOENT');
+			}
 		};
 
 		const provider = disposables.add(new RemoteAgentCustomizationItemProvider(
