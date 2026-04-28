@@ -201,14 +201,17 @@ export class CommandLineFileWriteAnalyzer extends Disposable implements ICommand
 
 	/**
 	 * Returns true if the given URI path points inside an OS temporary directory.
-	 * On posix systems this matches `/tmp/`. On Windows this matches the typical
+	 * On posix systems this matches `/tmp/`. On Windows this matches any `temp`
+	 * or `tmp` directory segment (case-insensitive), which covers the canonical
 	 * user temp (`...\AppData\Local\Temp\`), system temp (`C:\Windows\Temp\`),
-	 * and a top-level `\tmp\`
+	 * and common dev conventions like `C:\Temp\` and `C:\tmp\`.
 	 */
 	private _isInTempDirectory(uriPath: string, os: OperatingSystem | undefined): boolean {
 		if (os === OperatingSystem.Windows) {
-			// URI.file('C:\\Users\\foo\\AppData\\Local\\Temp\\x') -> path '/C:/Users/foo/AppData/Local/Temp/x'
-			return /(?:^|\/)(?:AppData\/Local\/Temp|Windows\/Temp|tmp)\//i.test(uriPath);
+			// Windows paths from URI.with({path}) keep their original backslashes,
+			// so accept either separator. Require content after the segment so the
+			// directory itself is not matched.
+			return /[\\/]te?mp[\\/].+/i.test(uriPath);
 		}
 		return uriPath.startsWith('/tmp/');
 	}

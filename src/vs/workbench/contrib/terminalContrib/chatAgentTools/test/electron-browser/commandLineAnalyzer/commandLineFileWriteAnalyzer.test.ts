@@ -373,6 +373,9 @@ suite('CommandLineFileWriteAnalyzer', () => {
 				test('\\tmp - allow when auto-approval enabled', () => tWithAutoApproval('Write-Host "hello" > C:\\tmp\\file.txt', 'outsideWorkspace', true, true));
 				test('\\tmp - block when auto-approval disabled', () => tWithAutoApproval('Write-Host "hello" > C:\\tmp\\file.txt', 'outsideWorkspace', false, false));
 
+				// Top-level \Temp\ (common dev convention) - allow only when auto-approval is enabled
+				test('\\Temp - allow when auto-approval enabled', () => tWithAutoApproval('Write-Host "hello" > C:\\Temp\\file.txt', 'outsideWorkspace', true, true));
+
 				// Case-insensitive matching (Windows paths are case-insensitive)
 				test('user TEMP lowercase - allow when auto-approval enabled', () => tWithAutoApproval('Write-Host "hello" > C:\\users\\foo\\appdata\\local\\temp\\file.txt', 'outsideWorkspace', true, true));
 
