@@ -51,7 +51,7 @@ export {
 	type SessionInputRequestedAction,
 	type SessionInputCompletedAction,
 	type SessionIsReadChangedAction,
-	type SessionIsDoneChangedAction,
+	type SessionIsArchivedChangedAction,
 	type SessionToolCallContentChangedAction,
 	type StateAction,
 } from './protocol/actions.js';
@@ -92,7 +92,8 @@ import type {
 	SessionPendingMessageRemovedAction,
 	SessionQueuedMessagesReorderedAction,
 	SessionIsReadChangedAction,
-	SessionIsDoneChangedAction,
+	SessionIsArchivedChangedAction,
+	RootConfigChangedAction,
 } from './protocol/actions.js';
 
 import type { ProtocolNotification } from './protocol/notifications.js';
@@ -108,6 +109,7 @@ export type ClientTerminalAction = IClientTerminalAction_;
 // Root actions
 export type IAgentsChangedAction = RootAgentsChangedAction;
 export type IActiveSessionsChangedAction = RootActiveSessionsChangedAction;
+export type IRootConfigChangedAction = RootConfigChangedAction;
 
 // Session actions — short aliases
 export type ITurnStartedAction = SessionTurnStartedAction;
@@ -134,7 +136,7 @@ export type IPendingMessageSetAction = SessionPendingMessageSetAction;
 export type IPendingMessageRemovedAction = SessionPendingMessageRemovedAction;
 export type IQueuedMessagesReorderedAction = SessionQueuedMessagesReorderedAction;
 export type IIsReadChangedAction = SessionIsReadChangedAction;
-export type IIsDoneChangedAction = SessionIsDoneChangedAction;
+export type IIsArchivedChangedAction = SessionIsArchivedChangedAction;
 
 // Notifications
 export type INotification = ProtocolNotification;

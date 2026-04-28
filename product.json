@@ -96,7 +96,7 @@
 		"publicCodeMatchesUrl": "https://aka.ms/github-copilot-match-public-code",
 		"manageSettingsUrl": "https://aka.ms/github-copilot-settings",
 		"managePlanUrl": "https://aka.ms/github-copilot-manage-plan",
-		"manageOverageUrl": "https://aka.ms/github-copilot-manage-overage",
+		"manageAdditionalSpendUrl": "https://aka.ms/github-copilot-manage-overage",
 		"upgradePlanUrl": "https://aka.ms/github-copilot-upgrade-plan",
 		"signUpUrl": "https://aka.ms/github-sign-up",
 		"provider": {
@@ -139,7 +139,6 @@
 		"completionsQuotaExceededContext": "github.copilot.completions.quotaExceeded",
 		"walkthroughCommand": "github.copilot.open.walkthrough",
 		"completionsMenuCommand": "github.copilot.toggleStatusMenu",
-		"completionsRefreshTokenCommand": "github.copilot.signIn",
 		"chatRefreshTokenCommand": "github.copilot.refreshToken",
 		"generateCommitMessageCommand": "github.copilot.git.generateCommitMessage",
 		"resolveMergeConflictsCommand": "github.copilot.git.resolveMergeConflicts",
