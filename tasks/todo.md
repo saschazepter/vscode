@@ -37,14 +37,14 @@
 
 ## Phase 3: Validation
 
-- [ ] Task 5: Validate types, tests, layers, and hygiene
-  - [ ] Check `VS Code - Build` task output or run `npm run compile-check-ts-native`.
-  - [ ] Run focused GitHub model/service unit tests.
-  - [ ] Run `npm run valid-layers-check`.
-  - [ ] Run hygiene for touched files.
+- [x] Task 5: Validate types, tests, layers, and hygiene
+  - [x] Check `VS Code - Build` task output or run `npm run compile-check-ts-native`.
+  - [x] Run focused GitHub model/service unit tests.
+  - [x] Run `npm run valid-layers-check`.
+  - [x] Run hygiene for touched files.
 
 ## Final Checkpoint
 
-- [ ] Review-thread state and polling live in the extracted model.
-- [ ] Pull request metadata and mergeability polling remain lightweight.
-- [ ] Validation results are captured in the implementation summary.
+- [x] Review-thread state and polling live in the extracted model.
+- [x] Pull request metadata and mergeability polling remain lightweight.
+- [x] Validation results are captured in the implementation summary.
