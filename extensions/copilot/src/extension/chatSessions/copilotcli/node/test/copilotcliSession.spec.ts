@@ -1294,6 +1294,82 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
 	});
 
+	it('suppresses Mission Control user message commands that echo recently forwarded local prompts', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'ask me my favorite color', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			pendingCommandCompletionIds: remoteState.mcPendingCommandCompletionIds ? [...remoteState.mcPendingCommandCompletionIds] : [],
+		}).toEqual({
+			completedCommandIds: ['mc-command-1'],
+			pendingCommandCompletionIds: [],
+		});
+	});
+
+	it('does not suppress Mission Control user message commands that are not local prompt echoes', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		(session as any)._bufferMcEvent({
+			type: 'user.message',
+			id: 'local-user-message',
+			timestamp: '2026-01-01T00:00:00.000Z',
+			data: { content: 'ask me my favorite color' },
+		});
+
+		await (CopilotCLISession as any)._pollMcCommandsStatic('mock-session-id', remoteState, {
+			getPendingCommands: vi.fn(async () => [{ id: 'mc-command-1', content: 'what is next?', state: 'in_progress' }]),
+		}, logger);
+
+		expect({
+			completedCommandIds: remoteState.mcCompletedCommandIds,
+			processedCommandIds: [...remoteState.mcProcessedCommandIds],
+		}).toEqual({
+			completedCommandIds: [],
+			processedCommandIds: ['mc-command-1'],
+		});
+	});
+
 	it('forwards remote command source to the SDK send options', async () => {
 		const session = await createSession();
 		const stream = new MockChatResponseStream();

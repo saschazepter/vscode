@@ -74,6 +74,7 @@ interface McSharedState {
 	mcLastSubmitAttemptTimeMs: number;
 	mcProcessedCommandIds: Set<string>;
 	mcPendingCommandCompletionIds?: Set<string>;
+	mcLocalUserMessageEchoes?: Map<string, number>;
 	/** Reference to the SDK session for steering from the command poller. */
 	mcSdkSession: Session;
 	/** Dispose function for the persistent on('*') listener for MC events. */
@@ -84,6 +85,7 @@ interface McSharedState {
 const mcStateBySessionId = new Map<string, McSharedState>();
 
 const MISSION_CONTROL_KEEPALIVE_INTERVAL_MS = 10_000;
+const MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS = 30_000;
 
 interface McPermissionResponseCommandData {
 	readonly promptId?: string;
@@ -218,6 +220,53 @@ function getMissionControlPendingCommandCompletionIds(state: McSharedState): Set
 function getMissionControlPendingUserInputRequests(state: McSharedState): Set<McPendingUserInputRequest> {
 	state.mcPendingUserInputRequests ??= new Set();
 	return state.mcPendingUserInputRequests;
+}
+
+function getMissionControlLocalUserMessageEchoes(state: McSharedState): Map<string, number> {
+	state.mcLocalUserMessageEchoes ??= new Map();
+	return state.mcLocalUserMessageEchoes;
+}
+
+function getMissionControlUserMessageContent(event: { type?: string; data?: unknown }): string | undefined {
+	if (event.type !== 'user.message' || !event.data || typeof event.data !== 'object' || !('content' in event.data)) {
+		return undefined;
+	}
+
+	const content = event.data.content;
+	return typeof content === 'string' ? stripReminders(content).trim() : undefined;
+}
+
+function rememberMissionControlLocalUserMessage(state: McSharedState, event: { type?: string; data?: unknown }): void {
+	if (getMissionControlCommandIdFromEvent(event)) {
+		return;
+	}
+
+	const content = getMissionControlUserMessageContent(event);
+	if (content) {
+		getMissionControlLocalUserMessageEchoes(state).set(content, Date.now());
+	}
+}
+
+function isMissionControlLocalUserMessageEcho(state: McSharedState, command: McCommand): boolean {
+	if (command.type && command.type !== 'user_message') {
+		return false;
+	}
+
+	const now = Date.now();
+	const echoes = getMissionControlLocalUserMessageEchoes(state);
+	for (const [content, timestamp] of echoes) {
+		if (now - timestamp > MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS) {
+			echoes.delete(content);
+		}
+	}
+
+	const content = stripReminders(command.content).trim();
+	if (!content || !echoes.has(content)) {
+		return false;
+	}
+
+	echoes.delete(content);
+	return true;
 }
 
 function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
@@ -1375,6 +1424,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					this._title = updatedTitle;
 				}
 				maybeAcknowledgeMissionControlCommandFromEvent(state, e);
+				rememberMissionControlLocalUserMessage(state, e);
 				if (e.id && e.timestamp) {
 					state.mcEventBuffer.push({
 						id: e.id,
@@ -1560,6 +1610,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			this._title = updatedTitle;
 		}
 		maybeAcknowledgeMissionControlCommandFromEvent(state, event);
+		rememberMissionControlLocalUserMessage(state, event);
 		this.logService.trace(`[CopilotCLISession] MC buffered event: ${eventType}`);
 
 		// If the SDK event already has a UUID id, pass it through directly
@@ -1851,6 +1902,11 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					}
 					case 'user_message':
 					default: {
+						if (isMissionControlLocalUserMessageEcho(state, cmd)) {
+							state.mcCompletedCommandIds.push(cmd.id);
+							break;
+						}
+
 						// Route steering messages through the VS Code chat UI so
 						// they appear in the chat panel with proper rendering.
 						const vsCodeApi = require('vscode') as typeof import('vscode');
