@@ -68,31 +68,6 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		const header = DOM.append(container, $('.ai-customization-header'));
 		header.classList.toggle('collapsed', isCollapsed);
 
-		// Home button — opens the customizations management welcome page.
-		// Placed at the start of the header (before the toggle pill) so it
-		// reads as a clear, discoverable entrypoint.
-		const homeButton = DOM.append(header, $('.ai-customization-home-btn'));
-		homeButton.classList.add(...ThemeIcon.asClassNameArray(Codicon.home));
-		homeButton.setAttribute('role', 'button');
-		homeButton.setAttribute('tabindex', '0');
-		homeButton.setAttribute('aria-label', localize('openCustomizationsWelcomePage', "Open Customizations Overview"));
-		this._register(Gesture.addTarget(homeButton));
-		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap] as const) {
-			this._register(DOM.addDisposableListener(homeButton, eventType, () => {
-				this._openWelcomePage();
-			}));
-		}
-		this._register(DOM.addDisposableListener(homeButton, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				this._openWelcomePage();
-			}
-		}));
-		this._register(this.hoverService.setupDelayedHoverAtMouse(homeButton, () => ({
-			content: localize('openCustomizationsWelcomePage', "Open Customizations Overview"),
-			appearance: { compact: true, skipFadeInAnimation: true },
-		})));
-
 		const headerButtonContainer = DOM.append(header, $('.customization-link-button-container'));
 		const headerButton = this._register(new Button(headerButtonContainer, {
 			...defaultButtonStyles,
@@ -170,6 +145,35 @@ export class AICustomizationShortcutsWidget extends Disposable {
 		};
 
 		this._register(headerButton.onDidClick(() => toggleCollapse()));
+
+		// Footer link — appended inside the collapsible content so it
+		// collapses/expands together with the section list. Provides a
+		// dedicated entrypoint to the Customizations welcome page.
+		const footer = DOM.append(toolbarContainer, $('.ai-customization-footer'));
+		const footerLink = DOM.append(footer, $('a.ai-customization-footer-link'));
+		footerLink.setAttribute('role', 'button');
+		footerLink.setAttribute('tabindex', '0');
+		footerLink.setAttribute('href', '#');
+		footerLink.textContent = localize('manageCustomizations', "Manage customizations");
+		const footerArrow = DOM.append(footerLink, $('span.ai-customization-footer-arrow'));
+		footerArrow.classList.add(...ThemeIcon.asClassNameArray(Codicon.arrowRight));
+		this._register(Gesture.addTarget(footerLink));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap] as const) {
+			this._register(DOM.addDisposableListener(footerLink, eventType, (e: Event) => {
+				e.preventDefault();
+				this._openWelcomePage();
+			}));
+		}
+		this._register(DOM.addDisposableListener(footerLink, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				this._openWelcomePage();
+			}
+		}));
+		this._register(this.hoverService.setupDelayedHoverAtMouse(footerLink, () => ({
+			content: localize('openCustomizationsWelcomePage', "Open Customizations Overview"),
+			appearance: { compact: true, skipFadeInAnimation: true },
+		})));
 	}
 
 	private async _openWelcomePage(): Promise<void> {

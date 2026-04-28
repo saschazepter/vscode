@@ -86,22 +86,9 @@
 	position: relative;
 }
 
-/* Customizations header label uses heavier weight and the strong
- * foreground color, so the entire `<home> Customizations` row reads as
- * the section title. */
+/* Customizations header label uses heavier weight */
 .ai-customization-toolbar .ai-customization-header .customization-link-button {
 	font-weight: 500;
-	/* Drop the leading padding so "Customizations" sits exactly 10px
-	 * after the home icon — matching the icon→label distance of the
-	 * section rows below. */
-	padding-left: 0;
-	color: var(--vscode-agentsPanel-foreground, var(--vscode-foreground));
-}
-
-/* Section rows below the header use a lighter foreground so the header
- * remains the most prominent element in the section. */
-.ai-customization-toolbar .ai-customization-toolbar-content .customization-link-button {
-	color: var(--vscode-descriptionForeground);
 }
 
 /* Counts - floating right inside the button */
@@ -149,32 +136,46 @@
 	padding-bottom: 0;
 }
 
-/* Home button — leading entrypoint to the customizations welcome page.
- * Mirrors `.sidebar-action-button` padding so the home icon's left edge
- * lands at the same x as the Agents/Skills icons. The right padding is
- * 10px because the adjacent header button drops its own left padding,
- * yielding exactly the same icon→label gap as the section rows. */
-.ai-customization-toolbar .ai-customization-home-btn {
-	flex-shrink: 0;
-	box-sizing: border-box;
+/* Footer link — "Manage customizations →" entrypoint to the welcome page.
+ * Sits below the section list, separated by a subtle top border. */
+.ai-customization-toolbar .ai-customization-footer {
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px solid var(--vscode-agentsPanel-border, transparent);
+}
+
+.ai-customization-toolbar .ai-customization-footer-link {
 	display: flex;
 	align-items: center;
-	padding: 4px 10px 4px 8px;
+	gap: 4px;
+	padding: 4px 8px;
 	border-radius: 4px;
 	cursor: pointer;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	text-decoration: none;
 	touch-action: manipulation;
+}
+
+.ai-customization-toolbar .ai-customization-footer-link:hover {
 	color: var(--vscode-agentsPanel-foreground, var(--vscode-foreground));
-}
-
-.ai-customization-toolbar .ai-customization-home-btn .codicon {
-	margin: 0;
-}
-
-.ai-customization-toolbar .ai-customization-home-btn:hover {
 	background-color: var(--vscode-toolbar-hoverBackground);
+	text-decoration: none;
 }
 
-.ai-customization-toolbar .ai-customization-home-btn:focus {
+.ai-customization-toolbar .ai-customization-footer-link:focus {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
+	text-decoration: none;
+}
+
+.ai-customization-toolbar .ai-customization-footer-arrow {
+	font-size: 12px;
+	opacity: 0.7;
+	transition: transform 0.15s ease-out;
+}
+
+.ai-customization-toolbar .ai-customization-footer-link:hover .ai-customization-footer-arrow {
+	transform: translateX(2px);
+	opacity: 1;
 }
