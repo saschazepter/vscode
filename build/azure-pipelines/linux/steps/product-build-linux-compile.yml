@@ -24,13 +24,16 @@ parameters:
 steps:
   - script: |
       set -e
-      echo "Disk usage before resize:"
+      echo "Disk usage before cleanup:"
       df -h /
-      sudo lvextend -L 200G /dev/rootvg/rootlv || true
-      sudo resize2fs /dev/rootvg/rootlv || sudo xfs_growfs / || true
-      echo "Disk usage after resize:"
+      # Remove pre-installed software we don't need to free space on /dev/root (73GB)
+      sudo rm -rf /usr/local/lib/android
+      sudo rm -rf /opt/ghc
+      sudo rm -rf /usr/local/share/boost
+      sudo rm -rf /opt/hostedtoolcache
+      echo "Disk usage after cleanup:"
       df -h /
-    displayName: Resize root partition
+    displayName: Free root disk space
 
   - template: ../../common/checkout.yml@self
 
