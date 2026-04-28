@@ -102,7 +102,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	private _command = '';
 	private _invocationContext: IToolInvocationContext | undefined;
 	private _currentMonitoringCts: CancellationTokenSource | undefined;
-
 	/**
 	 * Tracks whether onDidFinishCommand has fired so the event is delivered at
 	 * most once. The event must fire synchronously during dispose so consumers
@@ -117,6 +116,30 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		}
 		this._didFinish = true;
 		this._onDidFinishCommand.fire();
+	}
+
+	override dispose(): void {
+		// Deliver onDidFinishCommand to consumers BEFORE super.dispose() tears
+		// down the emitter. Field-initialized disposables (including
+		// _onDidFinishCommand) are registered before any disposable added in
+		// the constructor body and are disposed first by DisposableStore in
+		// insertion order. Without this override, consumers awaiting
+		// `Event.toPromise(onDidFinishCommand)` would race with emitter
+		// teardown and hang when dispose lands while _startMonitoring is still
+		// in flight.
+		if (!this._didFinish) {
+			// Synthesize a Cancelled pollingResult so consumers that read
+			// `monitor.pollingResult` after awaiting onDidFinishCommand always
+			// see a defined value with the output collected so far.
+			this._pollingResult ??= {
+				state: OutputMonitorState.Cancelled,
+				output: this._execution.getOutput(),
+				pollDurationMs: 0,
+				resources: undefined,
+			};
+		}
+		this._fireFinishedOnce();
+		super.dispose();
 	}
 
 	constructor(
@@ -139,33 +162,11 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// the async monitoring loop's token becomes isCancellationRequested=true and
 		// the loop exits promptly — CancellationTokenSource.dispose() alone does
 		// not set isCancellationRequested.
-		//
-		// Crucially, also fire onDidFinishCommand synchronously here so that
-		// consumers awaiting `Event.toPromise(monitor.onDidFinishCommand)` are
-		// released before super.dispose() tears down the emitter. Without this,
-		// if dispose races the async _startMonitoring, the finally block fires
-		// the event after the emitter is dead and the awaiting promise never
-		// resolves — the agent appears to hang on the run_in_terminal call.
 		const cts = new CancellationTokenSource(token);
 		this._currentMonitoringCts = cts;
 		this._register(toDisposable(() => {
 			this._currentMonitoringCts?.cancel();
 			this._currentMonitoringCts?.dispose();
-			// If the async monitoring loop has not reached its finally block yet,
-			// surface a synthetic Cancelled pollingResult so consumers that read
-			// `monitor.pollingResult` after awaiting onDidFinishCommand always see
-			// a defined value with the output collected so far. Also clear the
-			// idle input listener so we don't leak the FunctionDisposable.
-			if (!this._didFinish) {
-				this._pollingResult ??= {
-					state: OutputMonitorState.Cancelled,
-					output: this._execution.getOutput(),
-					pollDurationMs: 0,
-					resources: undefined,
-				};
-				this._userInputListener.clear();
-			}
-			this._fireFinishedOnce();
 		}));
 
 		// Start async to ensure listeners are set up.
