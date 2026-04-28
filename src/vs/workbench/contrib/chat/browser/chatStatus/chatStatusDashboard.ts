@@ -338,7 +338,7 @@ export class ChatStatusDashboard extends DomWidget {
 			this.element.appendChild($('hr'));
 		}
 
-		let descriptionText: string | MarkdownString;
+		let descriptionText: string | MarkdownString | undefined;
 		let descriptionClass = '.description';
 		if (newUser && anonymousUser) {
 			descriptionText = new MarkdownString(localize({ key: 'activeDescriptionAnonymous', comment: ['{Locked="]({2})"}', '{Locked="]({3})"}'] }, "By continuing with {0} Copilot, you agree to {1}'s [Terms]({2}) and [Privacy Statement]({3})", defaultChat.provider.default.name, defaultChat.provider.default.name, defaultChat.termsStatementUrl, defaultChat.privacyStatementUrl), { isTrusted: true });
@@ -349,8 +349,6 @@ export class ChatStatusDashboard extends DomWidget {
 			descriptionText = localize('enableMoreDescription', "Sign in to enable more Copilot AI features.");
 		} else if (disabled) {
 			descriptionText = localize('enableDescription', "Enable Copilot to use AI features.");
-		} else {
-			descriptionText = localize('signInDescription', "Sign in to use Copilot AI features.");
 		}
 
 		let buttonLabel: string;
@@ -373,7 +371,7 @@ export class ChatStatusDashboard extends DomWidget {
 
 		if (typeof descriptionText === 'string') {
 			this.element.appendChild($(`div${descriptionClass}`, undefined, descriptionText));
-		} else {
+		} else if (descriptionText) {
 			this.element.appendChild($(`div${descriptionClass}`, undefined, this._store.add(this.markdownRendererService.render(descriptionText)).element));
 		}
 

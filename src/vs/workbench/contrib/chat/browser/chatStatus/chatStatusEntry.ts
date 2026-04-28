@@ -130,9 +130,9 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 		if (this.chatEntitlementService.entitlement === ChatEntitlement.Unresolved) {
 			return {
 				name: localize('chatStatus', "Copilot Status"),
-				text: '$(loading~spin)',
+				text: '$(copilot-in-progress)',
 				ariaLabel: localize('chatLoadingAria', "Copilot, getting things ready"),
-				tooltip: localize('gettingThingsReady', "Getting things ready..."),
+				tooltip: localize('gettingThingsReady', "Getting Copilot ready..."),
 				showInAllWindows: true,
 			};
 		}
@@ -140,6 +140,7 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 		let text = '$(copilot)';
 		let ariaLabel = localize('chatStatusAria', "Copilot status");
 		let kind: StatusbarEntryKind | undefined;
+		let directSignIn = false;
 
 		if (isNewUser(this.chatEntitlementService)) {
 			const entitlement = this.chatEntitlementService.entitlement;
@@ -181,6 +182,7 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 				const signIn = localize('signIn', "Sign In");
 				text = `$(copilot) ${signIn}`;
 				ariaLabel = signIn;
+				directSignIn = true;
 			}
 
 			// Free Quota Exceeded
@@ -216,10 +218,10 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 			name: localize('chatStatus', "Copilot Status"),
 			text,
 			ariaLabel,
-			command: ShowTooltipCommand,
+			command: directSignIn ? 'workbench.action.chat.triggerSetup' : ShowTooltipCommand,
 			showInAllWindows: true,
 			kind,
-			tooltip: {
+			tooltip: directSignIn ? localize('signInTooltip', "Sign in to use Copilot AI features") : {
 				element: (token: CancellationToken) => {
 					const store = new DisposableStore();
 					store.add(token.onCancellationRequested(() => {
