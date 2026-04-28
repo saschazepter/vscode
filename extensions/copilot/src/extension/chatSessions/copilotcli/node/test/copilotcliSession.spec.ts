@@ -1251,7 +1251,7 @@ describe('CopilotCLISession', () => {
 		expect((remoteState.mcEventBuffer[0] as { data: { toolName: string } }).data.toolName).toBe('bash');
 	});
 
-	it('forwards command-sourced user messages and acknowledges the command with the echoed turn', async () => {
+	it('suppresses command-sourced user message echoes and acknowledges the command', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -1287,14 +1287,41 @@ describe('CopilotCLISession', () => {
 			data: { content: 'Hello! How can I help you today?' },
 		});
 
-		expect(remoteState.mcEventBuffer).toHaveLength(2);
-		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user.message');
-		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('hey');
-		expect((remoteState.mcEventBuffer[1] as { type: string; parentId: string | null }).type).toBe('assistant.message');
-		expect((remoteState.mcEventBuffer[1] as { parentId: string | null }).parentId).toBe('remote-command-message');
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string; parentId: string | null }).type).toBe('assistant.message');
+		expect((remoteState.mcEventBuffer[0] as { parentId: string | null }).parentId).toBeNull();
 	});
 
-	it('does not double-buffer request events when the persistent Mission Control listener is active', async () => {
+	it('does not double-buffer duplicated local request events', async () => {
+		const session = await createSession();
+		const remoteState = {
+			mcSessionId: 'mc-session',
+			mcEventBuffer: [],
+			mcCompletedCommandIds: [],
+			mcPendingPermissionRequests: new Map(),
+			mcFlushInterval: undefined,
+			mcPollInterval: undefined,
+			mcLastEventId: null,
+			mcLastSubmitAttemptTimeMs: Date.now(),
+			mcProcessedCommandIds: new Set<string>(),
+			mcSdkSession: sdkSession as unknown as Session,
+			mcEventListenerDispose: undefined,
+			mcSessionResource: Uri.file('/workspace') as unknown as import('vscode').Uri,
+		};
+		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
+
+		const event = {
+			type: 'user.message',
+			data: { content: 'ask me my favorite color' },
+		};
+		(session as any)._bufferMcEvent(event);
+		(session as any)._bufferMcEvent(event);
+
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { data: { content: string } }).data.content).toBe('ask me my favorite color');
+	});
+
+	it('still forwards ask-user requests when the persistent Mission Control listener is active', async () => {
 		const session = await createSession();
 		const remoteState = {
 			mcSessionId: 'mc-session',
@@ -1312,16 +1339,17 @@ describe('CopilotCLISession', () => {
 		};
 		Object.defineProperty(session, '_mcState', { value: remoteState, configurable: true });
 
-		await session.handleRequest(
-			{ id: '', toolInvocationToken: undefined as never },
-			{ prompt: 'ask me my favorite color' },
-			[],
-			undefined,
-			authInfo,
-			CancellationToken.None
-		);
+		(session as any)._bufferMcEvent({
+			type: 'user_input.requested',
+			data: {
+				requestId: 'user-input-1',
+				question: 'What is your favorite color?',
+				allowFreeform: true,
+			},
+		});
 
-		expect(remoteState.mcEventBuffer).toEqual([]);
+		expect(remoteState.mcEventBuffer).toHaveLength(1);
+		expect((remoteState.mcEventBuffer[0] as { type: string }).type).toBe('user_input.requested');
 	});
 
 	it('suppresses Mission Control user message commands that echo recently forwarded local prompts', async () => {

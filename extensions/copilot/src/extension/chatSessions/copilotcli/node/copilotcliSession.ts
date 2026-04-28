@@ -75,6 +75,8 @@ interface McSharedState {
 	mcProcessedCommandIds: Set<string>;
 	mcPendingCommandCompletionIds?: Set<string>;
 	mcLocalUserMessageEchoes?: Map<string, number>;
+	mcBufferedEventSignatures?: Map<string, number>;
+	mcSuppressedEventIds?: Set<string>;
 	/** Reference to the SDK session for steering from the command poller. */
 	mcSdkSession: Session;
 	/** Dispose function for the persistent on('*') listener for MC events. */
@@ -86,6 +88,7 @@ const mcStateBySessionId = new Map<string, McSharedState>();
 
 const MISSION_CONTROL_KEEPALIVE_INTERVAL_MS = 10_000;
 const MISSION_CONTROL_LOCAL_MESSAGE_ECHO_TTL_MS = 30_000;
+const MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS = 10_000;
 
 interface McPermissionResponseCommandData {
 	readonly promptId?: string;
@@ -227,6 +230,16 @@ function getMissionControlLocalUserMessageEchoes(state: McSharedState): Map<stri
 	return state.mcLocalUserMessageEchoes;
 }
 
+function getMissionControlBufferedEventSignatures(state: McSharedState): Map<string, number> {
+	state.mcBufferedEventSignatures ??= new Map();
+	return state.mcBufferedEventSignatures;
+}
+
+function getMissionControlSuppressedEventIds(state: McSharedState): Set<string> {
+	state.mcSuppressedEventIds ??= new Set();
+	return state.mcSuppressedEventIds;
+}
+
 function getMissionControlUserMessageContent(event: { type?: string; data?: unknown }): string | undefined {
 	if (event.type !== 'user.message' || !event.data || typeof event.data !== 'object' || !('content' in event.data)) {
 		return undefined;
@@ -267,6 +280,51 @@ function isMissionControlLocalUserMessageEcho(state: McSharedState, command: McC
 
 	echoes.delete(content);
 	return true;
+}
+
+function getMissionControlEventSignature(event: { type?: string; data?: unknown; id?: string }): string {
+	if (event.id) {
+		return `id:${event.id}`;
+	}
+
+	return `${event.type ?? 'unknown'}:${JSON.stringify(getMissionControlEventData(event))}`;
+}
+
+function shouldBufferMissionControlEvent(state: McSharedState, event: { type?: string; data?: unknown; id?: string }): boolean {
+	const now = Date.now();
+	const signatures = getMissionControlBufferedEventSignatures(state);
+	for (const [signature, timestamp] of signatures) {
+		if (now - timestamp > MISSION_CONTROL_BUFFERED_EVENT_SIGNATURE_TTL_MS) {
+			signatures.delete(signature);
+		}
+	}
+
+	const signature = getMissionControlEventSignature(event);
+	if (signatures.has(signature)) {
+		return false;
+	}
+
+	signatures.set(signature, now);
+	return true;
+}
+
+function shouldSuppressMissionControlCommandUserMessage(state: McSharedState, event: { type?: string; data?: unknown; id?: string }): boolean {
+	if (event.type !== 'user.message' || !getMissionControlCommandIdFromEvent(event)) {
+		return false;
+	}
+
+	if (event.id) {
+		getMissionControlSuppressedEventIds(state).add(event.id);
+	}
+	return true;
+}
+
+function getMissionControlParentId(state: McSharedState, event: { parentId?: string | null }): string | null {
+	const parentId = event.parentId ?? state.mcLastEventId ?? null;
+	if (parentId && getMissionControlSuppressedEventIds(state).has(parentId)) {
+		return state.mcLastEventId ?? null;
+	}
+	return parentId;
 }
 
 function getMissionControlPendingUserInputRequest(state: McSharedState, payload: McAskUserResponsePayload | undefined): McPendingUserInputRequest | undefined {
@@ -725,9 +783,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 				this.logService.trace(`[CopilotCLISession] CopilotCLI Event: ${JSON.stringify(event, null, 2)}`);
 				this.logService.info(`[CopilotCLISession] on(*) fired: ${event.type}`);
 				// Forward events to Mission Control if remote control is active
-				if (!this._mcState?.mcEventListenerDispose) {
-					this._bufferMcEvent(event);
-				}
+				this._bufferMcEvent(event);
 			})));
 			disposables.add(toDisposable(this._sdkSession.on('permission.requested', async (event) => {
 				const permissionRequest = event.data.permissionRequest;
@@ -1426,12 +1482,15 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 					this._title = updatedTitle;
 				}
 				maybeAcknowledgeMissionControlCommandFromEvent(state, e);
+				if (shouldSuppressMissionControlCommandUserMessage(state, e) || !shouldBufferMissionControlEvent(state, e)) {
+					return;
+				}
 				rememberMissionControlLocalUserMessage(state, e);
 				if (e.id && e.timestamp) {
 					state.mcEventBuffer.push({
 						id: e.id,
 						timestamp: e.timestamp,
-						parentId: e.parentId ?? state.mcLastEventId ?? null,
+						parentId: getMissionControlParentId(state, e),
 						ephemeral: e.ephemeral,
 						type: eventType,
 						data: getMissionControlEventData(e),
@@ -1612,6 +1671,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			this._title = updatedTitle;
 		}
 		maybeAcknowledgeMissionControlCommandFromEvent(state, event);
+		if (shouldSuppressMissionControlCommandUserMessage(state, event) || !shouldBufferMissionControlEvent(state, event)) {
+			return;
+		}
 		rememberMissionControlLocalUserMessage(state, event);
 		this.logService.trace(`[CopilotCLISession] MC buffered event: ${eventType}`);
 
@@ -1621,7 +1683,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			const mcEvent: McEvent = {
 				id: event.id,
 				timestamp: event.timestamp,
-				parentId: event.parentId ?? state.mcLastEventId ?? null,
+				parentId: getMissionControlParentId(state, event),
 				ephemeral: event.ephemeral,
 				type: eventType,
 				data: getMissionControlEventData(event),
