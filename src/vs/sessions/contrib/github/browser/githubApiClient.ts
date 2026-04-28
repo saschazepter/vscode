@@ -91,6 +91,7 @@ export class GitHubApiClient extends Disposable {
 	}
 
 	private async _request<T>(method: string, url: string, pathForLogging: string, accept: string, callSite: string, options?: IGitHubApiRequestOptions): Promise<IGitHubApiResponse<T>> {
+		console.log(`${LOG_PREFIX} Preparing request: ${method} ${url} (call site: ${callSite})`);
 		const token = await this._getAuthToken();
 
 		this._logService.trace(`${LOG_PREFIX} ${method} ${pathForLogging}`);
