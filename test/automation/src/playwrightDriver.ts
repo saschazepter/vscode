@@ -567,17 +567,19 @@ export class PlaywrightDriver {
 	async click(selector: string, xoffset?: number | undefined, yoffset?: number | undefined) {
 		if (xoffset === undefined && yoffset === undefined) {
 			// Prefer Playwright's native click which atomically resolves the selector to a
-			// position and dispatches the click. This avoids a TOCTOU race where the element
-			// shifts between the position lookup and the actual mouse dispatch (e.g. due to
-			// a status bar layout reflow caused by a new item being inserted between the two
-			// operations). `force: true` skips most actionability checks; the per-attempt
-			// timeout is small so the outer waitAndClick poll keeps its retry budget.
+			// position and dispatches the click, AND waits for the element to be stable
+			// (bounding box unchanged across 2 frames) before clicking. This fixes a TOCTOU
+			// race where the element shifts between the position lookup and the actual mouse
+			// dispatch (e.g. due to a status bar layout reflow caused by a new item being
+			// inserted between the two operations).
 			//
-			// Fall back to the legacy getElementXY + mouse.click path for elements that
-			// Playwright refuses to interact with even with force (e.g. Monaco's hidden
-			// .native-edit-context contenteditable, which has a degenerate bounding box).
+			// The per-attempt timeout is small so the outer waitAndClick poll keeps its
+			// retry budget. Fall back to the legacy getElementXY + mouse.click path for
+			// elements that Playwright's actionability checks refuse to interact with
+			// (e.g. Monaco's hidden .native-edit-context contenteditable, which is positioned
+			// behind other content via z-index: -10).
 			try {
-				await this.page.click(selector, { force: true, timeout: 100 });
+				await this.page.click(selector, { timeout: 100 });
 				return;
 			} catch {
 				// fall through to legacy path
