@@ -254,11 +254,11 @@ export async function trackIdleOnPrompt(
 	// fires, so this is purely a fallback for the broken-handshake path.
 	const hardCapScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Initial || state === TerminalState.Prompt) {
-			log?.(`Hard cap fired after 5 minutes in state ${stateNames[state]} (dataEvents=${dataEventCount})`);
+			log?.(`Hard cap fired after 60s in state ${stateNames[state]} (dataEvents=${dataEventCount})`);
 			setState(TerminalState.PromptAfterExecuting, 'hardCap');
 			scheduler.schedule();
 		}
-	}, 5 * 60_000));
+	}, 60_000));
 	hardCapScheduler.schedule();
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
