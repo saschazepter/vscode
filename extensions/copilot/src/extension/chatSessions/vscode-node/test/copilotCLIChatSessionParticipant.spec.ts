@@ -1056,9 +1056,9 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 		manager.sessions.set(sessionId, sdkSession);
 		models.getModels = vi.fn(async () => [
 			{ id: 'base', name: 'Base', maxContextWindowTokens: 128000, supportsVision: false },
-			{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
+			{ id: 'claude-opus-4.7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
 		] as CopilotCLIModelInfo[]);
-		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4-7';
+		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4.7';
 		const request = new TestChatRequest('my prompt');
 		const context = createChatContext(sessionId, false, request);
 		const stream = new MockChatResponseStream();
@@ -1075,9 +1075,9 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 		const sdkSession = new MockCliSdkSession(sessionId, new Date());
 		manager.sessions.set(sessionId, sdkSession);
 		models.getModels = vi.fn(async () => [
-			{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
+			{ id: 'claude-opus-4.7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
 		] as CopilotCLIModelInfo[]);
-		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4-7';
+		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4.7';
 		const request = new TestChatRequest('my prompt');
 		const context = createChatContext(sessionId, false, request);
 		const stream = new MockChatResponseStream();
@@ -1092,9 +1092,9 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 	it('returns live response details before swapping an untitled session', async () => {
 		(itemProvider.isNewSession as ReturnType<typeof vi.fn>).mockImplementation((sessionId: string) => sessionId.startsWith('untitled:'));
 		models.getModels = vi.fn(async () => [
-			{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
+			{ id: 'claude-opus-4.7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
 		] as CopilotCLIModelInfo[]);
-		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4-7';
+		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4.7';
 		const request = new TestChatRequest('my prompt');
 		const context = createChatContext('untitled:live-model', true, request);
 		const stream = new MockChatResponseStream();

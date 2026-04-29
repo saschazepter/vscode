@@ -232,17 +232,17 @@ describe('CopilotCLITools', () => {
 			];
 			const detailsByEventId: Record<string, RequestIdDetails> = {
 				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4' },
-				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'claude-opus-4-7' },
+				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'claude-opus-4.7' },
 			};
 			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
 
 			const turns = buildChatHistoryFromEvents('', 'auto', events, lookup, delegationSummary, logger, undefined, undefined, new Map([
 				['gpt-5.4', 'GPT 5.4 • 2x'],
-				['claude-opus-4-7', 'Claude Opus 4.7 • 4x'],
+				['claude-opus-4.7', 'Claude Opus 4.7 • 4x'],
 			]));
 
 			expect(turns).toHaveLength(4);
-			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['gpt-5.4', 'claude-opus-4-7']);
+			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['gpt-5.4', 'claude-opus-4.7']);
 			expect(turns.filter(turn => turn instanceof ChatResponseTurn2).map(turn => (turn as ChatResponseTurn2).result)).toEqual([
 				{ details: 'GPT 5.4 • 2x' },
 				{ details: 'Claude Opus 4.7 • 4x' },
