@@ -4008,6 +4008,14 @@
 			{
 				"id": "advanced",
 				"properties": {
+					"github.copilot.chat.inlineEdits.xtabProvider.modelConfiguration": {
+						"type": "object",
+						"markdownDescription": "Advanced model configuration for the next edit suggestions xtab provider.\n\n**Note**: This is an advanced setting.",
+						"tags": [
+							"advanced",
+							"experimental"
+						]
+					},
 					"github.copilot.chat.reasoningEffortOverride": {
 						"type": [
 							"string",
