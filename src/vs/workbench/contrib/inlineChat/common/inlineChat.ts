@@ -68,10 +68,8 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfigurat
 export const INLINE_CHAT_ID = 'editor.contrib.inlineChatController';
 
 // --- CONTEXT
-
-
 export const CTX_INLINE_CHAT_POSSIBLE = new RawContextKey<boolean>('inlineChatPossible', false, localize('inlineChatHasPossible', "Whether a provider for inline chat exists and whether an editor for inline chat is open"));
-export const CTX_INLINE_CHAT_HAS_AGENT2 = new RawContextKey<boolean>('inlineChatHasEditsAgent', false, localize('inlineChatHasEditsAgent', "Whether an agent for inline for interactive editors exists"));
+export const CTX_INLINE_CHAT_HAS_AGENT = new RawContextKey<boolean>('inlineChatHasEditsAgent', false, localize('inlineChatHasEditsAgent', "Whether an agent for inline for interactive editors exists"));
 export const CTX_INLINE_CHAT_HAS_NOTEBOOK_INLINE = new RawContextKey<boolean>('inlineChatHasNotebookInline', false, localize('inlineChatHasNotebookInline', "Whether an agent for notebook cells exists"));
 export const CTX_INLINE_CHAT_HAS_NOTEBOOK_AGENT = new RawContextKey<boolean>('inlineChatHasNotebookAgent', false, localize('inlineChatHasNotebookAgent', "Whether an agent for notebook cells exists"));
 export const CTX_INLINE_CHAT_VISIBLE = new RawContextKey<boolean>('inlineChatVisible', false, localize('inlineChatVisible', "Whether the interactive editor input is visible"));
@@ -85,12 +83,8 @@ export const CTX_INLINE_CHAT_FILE_BELONGS_TO_CHAT = new RawContextKey<boolean>('
 export const CTX_INLINE_CHAT_TERMINATED = new RawContextKey<boolean>('inlineChatTerminated', false, localize('inlineChatTerminated', "Whether the current inline chat session is terminated"));
 export const CTX_INLINE_CHAT_AFFORDANCE_VISIBLE = new RawContextKey<boolean>('inlineChatAffordanceVisible', false, localize('inlineChatAffordanceVisible', "Whether an inline chat affordance widget is visible"));
 
-export const CTX_INLINE_CHAT_V1_ENABLED = ContextKeyExpr.or(
-	ContextKeyExpr.and(NOTEBOOK_IS_ACTIVE_EDITOR, CTX_INLINE_CHAT_HAS_NOTEBOOK_INLINE)
-);
-
 export const CTX_INLINE_CHAT_V2_ENABLED = ContextKeyExpr.or(
-	CTX_INLINE_CHAT_HAS_AGENT2,
+	CTX_INLINE_CHAT_HAS_AGENT,
 	ContextKeyExpr.and(NOTEBOOK_IS_ACTIVE_EDITOR, CTX_INLINE_CHAT_HAS_NOTEBOOK_AGENT)
 );
 
