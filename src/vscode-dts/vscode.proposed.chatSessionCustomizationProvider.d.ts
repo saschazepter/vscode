@@ -97,7 +97,7 @@ declare module 'vscode' {
 		/**
 		 * The URI of the plugin that contributed this customization, if any.
 		 */
-		readonly pluginUri?: URI;
+		readonly pluginUri?: Uri;
 
 		/**
 		 * Optional group key for display grouping. Items sharing the same

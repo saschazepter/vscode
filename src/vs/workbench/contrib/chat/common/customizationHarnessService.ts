@@ -696,23 +696,13 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 	}
 
 	public async resolvePromptSlashCommand(name: string, sessionType: string, token: CancellationToken): Promise<IResolvedChatPromptSlashCommand | undefined> {
-		const harness = this.findHarnessById(sessionType);
-		if (!harness || !harness.itemProvider) {
-			return this.promptsService.resolvePromptSlashCommand(name, sessionType, token);
-		}
-
-		const items = await harness.itemProvider.provideChatSessionCustomizations(token);
-		const item = items?.find(cmd => cmd.name === name);
-		if (item) {
-			const parsedPromptFile = await this.promptsService.parseNew(item.uri, token);
+		const commands = await this.getSlashCommands(sessionType, token);
+		const command = commands.find(cmd => cmd.name === name);
+		if (command) {
+			const parsedPromptFile = await this.promptsService.parseNew(command.uri, token);
 			return {
-				uri: item.uri,
-				type: item.type as PromptsType.prompt | PromptsType.skill,
-				name: item.name,
-				description: item.description,
-				userInvocable: parsedPromptFile.header?.userInvocable ?? true,
-				storage: item.storage ?? PromptsStorage.local,
-				sessionTypes: [sessionType],
+				...command,
+				userInvocable: parsedPromptFile.header?.userInvocable ?? command.userInvocable,
 				parsedPromptFile,
 			};
 		}
