@@ -254,6 +254,27 @@ suite('Filters', () => {
 		filterOk(matchesWords, 'foo:bar', 'foo:bar');
 	});
 
+	test('matchesWords performance (#309582)', function () {
+		// Searching for a term containing a word separator (e.g. `.`) against
+		// command-id-like targets used to cause catastrophic backtracking and
+		// freeze the Keyboard Shortcuts editor.
+		const targets = [
+			'workbench.action.terminal.focusNextLine',
+			'editor.action.clipboardCopyAction',
+			'workbench.action.editor.changeLanguageMode',
+			'editor.action.smartSelect.expand',
+			'workbench.action.files.saveAll',
+		];
+		const start = Date.now();
+		for (let i = 0; i < 1000; i++) {
+			for (const t of targets) {
+				matchesWords('editor.action', t);
+			}
+		}
+		const elapsed = Date.now() - start;
+		assert.ok(elapsed < 1000, `matchesWords too slow: ${elapsed}ms`);
+	});
+
 	function assertMatches(pattern: string, word: string, decoratedWord: string | undefined, filter: FuzzyScorer, opts: { patternPos?: number; wordPos?: number; firstMatchCanBeWeak?: boolean } = {}) {
 		const r = filter(pattern, pattern.toLowerCase(), opts.patternPos || 0, word, word.toLowerCase(), opts.wordPos || 0, { firstMatchCanBeWeak: opts.firstMatchCanBeWeak ?? false, boostFullMatch: true });
 		assert.ok(!decoratedWord === !r);
