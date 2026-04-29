@@ -112,18 +112,18 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 	}
 
 	private _renderAccountPolicyGate(card: HTMLElement, options: ISessionsBlockedOverlayOptions): void {
-		this.overlay.setAttribute('aria-label', localize('accountGate.aria', "Sign-in required by organization policy"));
+		this.overlay.setAttribute('aria-label', localize('accountGate.aria', "Sign-in required by your administrator"));
 
-		append(card, $('h2', undefined, localize('accountGate.title', "Sign-In Required")));
+		append(card, $('h2', undefined, localize('accountGate.title', "Sign-In Required by Your Administrator")));
 
 		const description = append(card, $('p'));
 		if (options.accountName) {
 			append(description, document.createTextNode(
-				localize('accountGate.descriptionWithAccount', "The account \"{0}\" is not a member of an approved organization. Sign into an approved GitHub account to use Agents.", options.accountName)
+				localize('accountGate.descriptionWithAccount', "The account \"{0}\" is not a member of an organization that your administrator allows for Agents.", options.accountName)
 			));
 		} else {
 			append(description, document.createTextNode(
-				localize('accountGate.descriptionNoAccount', "Sign in with a GitHub account from an approved organization to use Agents.")
+				localize('accountGate.descriptionNoAccount', "Your administrator restricts Agents to members of the organizations below.")
 			));
 		}
 
@@ -132,7 +132,7 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		if (hasConcreteOrgs) {
 			const orgSection = append(card, $('div.sessions-policy-blocked-orgs'));
 			append(orgSection, $('p.sessions-policy-blocked-orgs-label', undefined,
-				localize('accountGate.approvedOrgs', "Approved organizations:")
+				localize('accountGate.approvedOrgs', "Allowed organizations:")
 			));
 			const orgList = append(orgSection, $('ul'));
 			for (const org of approvedOrgs) {
@@ -141,8 +141,6 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		}
 
 		const footer = append(card, $('p.sessions-policy-blocked-footer'));
-		append(footer, document.createTextNode(localize('accountGate.contactAdmin', "Contact your administrator for more information.")));
-		append(footer, document.createTextNode(' '));
 		const learnMore = append(footer, $('a.sessions-policy-blocked-link')) as HTMLAnchorElement;
 		learnMore.textContent = localize('accountGate.learnMore', "Learn more");
 		learnMore.href = 'https://code.visualstudio.com/docs/enterprise/overview';
