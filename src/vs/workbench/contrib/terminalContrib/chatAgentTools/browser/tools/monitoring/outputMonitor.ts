@@ -604,6 +604,16 @@ export function detectsHighConfidenceInputPattern(cursorLine: string): boolean {
 		/password:? +$/i,
 		// "Press a key" or "Press any key"
 		/press a(?:ny)? key/i,
+		// Interactive prompt libraries (prompts, enquirer, inquirer) prefix the prompt with
+		// '? ' and end the line with a distinctive chevron character followed by optional
+		// trailing whitespace where the cursor is awaiting input. Requiring a '?' earlier
+		// on the line avoids false positives from random output that happens to contain a
+		// chevron (e.g. git log decorations).
+		// Examples:
+		//   "? Do you want to install jsdom? <chevron>"  (prompts)
+		//   "? Pick a color <chevron> "                  (inquirer / enquirer)
+		// allow-any-unicode-next-line
+		/\?.*[›❯▸▶]\s*$/,
 	].some(e => e.test(cursorLine));
 }
 

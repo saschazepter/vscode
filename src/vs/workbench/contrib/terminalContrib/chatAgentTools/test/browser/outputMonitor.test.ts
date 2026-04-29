@@ -354,6 +354,36 @@ suite('OutputMonitor', () => {
 			assert.strictEqual(detectsInputRequiredPattern('license: (ISC) '), true);
 		});
 
+		test('detects chevron prompts from prompts/enquirer/inquirer libraries', () => {
+			// vitest / npm-style "prompts" library uses U+203A SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Do you want to install jsdom? ›'), true);
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Do you want to install jsdom? › '), true);
+			// inquirer / enquirer uses U+276F HEAVY RIGHT-POINTING ANGLE QUOTATION MARK
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Pick a color ❯ '), true);
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Pick a color ❯'), true);
+			// Other chevron variants prefixed with '?'
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Project name ▸ '), true);
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Choose ▶ '), true);
+
+			// No match if the user has already typed a response after the chevron
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Do you want to install jsdom? › yes'), false);
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('? Pick a color ❯ red'), false);
+
+			// No match for chevrons in normal output without a leading '?'
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('  feature/foo ❯ main'), false);
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('Project name ▸ '), false);
+		});
+
 		test('detects trailing questions', () => {
 			assert.strictEqual(detectsInputRequiredPattern('Continue? '), true);
 			assert.strictEqual(detectsInputRequiredPattern('Proceed?   '), true);
