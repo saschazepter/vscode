@@ -272,25 +272,18 @@ export class Code {
 	}
 
 	/**
-	 * Polls the element's click position via getElementXY until two consecutive samples
-	 * (separated by `intervalMs`) return identical coordinates. Used to defeat TOCTOU
-	 * races where a sibling element is inserted asynchronously and shifts the target's
-	 * position between the position lookup and the actual click dispatch.
+	 * Like {@link waitAndClick} but defeats a TOCTOU race: tries Playwright's
+	 * actionability-checked `page.click` first (which re-verifies `elementFromPoint`
+	 * right before dispatching, so the element can't shift under the click). Falls
+	 * back to clicking at stabilized coordinates if actionability checks fail — the
+	 * known case is Monaco's `.native-edit-context` overlay (z-index: -10) which
+	 * `elementFromPoint` returns instead of the intended target, causing Playwright
+	 * to refuse the click. The fallback resets input state first so any partial
+	 * hover/mousedown from the failed attempt doesn't corrupt subsequent events.
 	 */
-	async waitForStableElementRect(selector: string, intervalMs: number = 100, retryCount: number = 50): Promise<void> {
-		let last: { x: number; y: number } | undefined;
-		await this.poll(
-			async () => {
-				const current = await this.driver.getElementXY(selector);
-				const stable = !!last && last.x === current.x && last.y === current.y;
-				last = current;
-				return stable;
-			},
-			stable => stable,
-			`stable element rect '${selector}'`,
-			retryCount,
-			intervalMs,
-		);
+	async robustClick(selector: string): Promise<void> {
+		await this.waitForElement(selector);
+		await this.driver.robustClick(selector);
 	}
 
 	async waitForSetValue(selector: string, value: string): Promise<void> {

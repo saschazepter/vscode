@@ -21,10 +21,6 @@ export interface IElectronConfiguration {
 export async function resolveElectronConfiguration(options: LaunchOptions): Promise<IElectronConfiguration> {
 	const { codePath, workspacePath, extensionsPath, userDataDir, remote, logger, logsPath, crashesPath, extraArgs } = options;
 	const env = { ...process.env };
-	// ELECTRON_RUN_AS_NODE makes Electron act as a plain Node.js binary, causing it to reject
-	// Chromium flags like --remote-debugging-port that playwright injects. Unset it so the
-	// binary runs as a proper Electron app.
-	delete env['ELECTRON_RUN_AS_NODE'];
 
 	const args: string[] = [
 		'--skip-release-notes',

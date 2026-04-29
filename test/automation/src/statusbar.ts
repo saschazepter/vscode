@@ -16,6 +16,18 @@ export const enum StatusBarElement {
 	LANGUAGE_STATUS = 7
 }
 
+// Status bar items in the editor area can shift right when a new neighbor
+// (e.g. the language status `{}` provided by extensions) is inserted
+// asynchronously. Clicks on these items must use a stability-aware path to
+// avoid TOCTOU races between the position lookup and click dispatch.
+const EDITOR_AREA_ITEMS: ReadonlySet<StatusBarElement> = new Set([
+	StatusBarElement.SELECTION_STATUS,
+	StatusBarElement.INDENTATION_STATUS,
+	StatusBarElement.ENCODING_STATUS,
+	StatusBarElement.EOL_STATUS,
+	StatusBarElement.LANGUAGE_STATUS,
+]);
+
 export class StatusBar {
 
 	private readonly mainSelector = 'footer[id="workbench.parts.statusbar"]';
@@ -28,22 +40,11 @@ export class StatusBar {
 
 	async clickOn(element: StatusBarElement): Promise<void> {
 		const selector = this.getSelector(element);
-		// For status bar items in the editor area, wait for the bounding box to be stable
-		// before clicking. New items (e.g. the language status `{}` provided by extensions)
-		// can be inserted to the left of these items asynchronously, shifting them right
-		// between the position lookup and the click dispatch — which makes the click land
-		// on the wrong element. Polling for a stable rect avoids this TOCTOU race.
-		const editorAreaItems = new Set([
-			StatusBarElement.SELECTION_STATUS,
-			StatusBarElement.INDENTATION_STATUS,
-			StatusBarElement.ENCODING_STATUS,
-			StatusBarElement.EOL_STATUS,
-			StatusBarElement.LANGUAGE_STATUS,
-		]);
-		if (editorAreaItems.has(element)) {
-			await this.code.waitForStableElementRect(selector);
+		if (EDITOR_AREA_ITEMS.has(element)) {
+			await this.code.robustClick(selector);
+		} else {
+			await this.code.waitAndClick(selector);
 		}
-		await this.code.waitAndClick(selector);
 	}
 
 	async waitForEOL(eol: string): Promise<string> {

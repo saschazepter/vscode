@@ -575,6 +575,57 @@ export class PlaywrightDriver {
 		}
 	}
 
+	/**
+	 * Click an element via Playwright's actionability-checked path, with a fallback
+	 * to a stable-coordinates click if Playwright refuses to interact.
+	 *
+	 * The primary path (`page.click`) is preferred because Playwright re-checks
+	 * `elementFromPoint(x, y)` immediately before dispatching, eliminating the
+	 * TOCTOU window where a sibling element could shift the target between the
+	 * position lookup and the click. The fallback only kicks in when actionability
+	 * checks legitimately fail — the known case is Monaco's `.native-edit-context`
+	 * overlay (z-index: -10) which `elementFromPoint` returns instead of the
+	 * intended target, causing Playwright to refuse the click. The input state is
+	 * reset before the fallback so partial hover/mousedown side effects from the
+	 * failed attempt don't corrupt subsequent events.
+	 */
+	async robustClick(selector: string, timeoutMs: number = 2000): Promise<void> {
+		try {
+			await this.page.click(selector, { timeout: timeoutMs });
+			return;
+		} catch (err) {
+			// Reset input state so any hover/mousedown left by the failed
+			// page.click doesn't disrupt the fallback click.
+			await this.page.mouse.move(0, 0);
+			await new Promise(resolve => setTimeout(resolve, 50));
+			await this.clickAtStablePosition(selector);
+		}
+	}
+
+	/**
+	 * Fallback for {@link robustClick}: polls the element's click position via
+	 * getElementXY until two consecutive samples (separated by `intervalMs`) return
+	 * identical coordinates, then dispatches a mouse click at those exact stable
+	 * coordinates. Clicking the already-sampled {x,y} eliminates the re-sample
+	 * window, making the race window as small as possible (just the CDP round-trip).
+	 */
+	private async clickAtStablePosition(selector: string, intervalMs: number = 100, timeoutMs: number = 5000): Promise<void> {
+		let last: { x: number; y: number } | undefined;
+		const start = Date.now();
+		while (true) {
+			const current = await this.getElementXY(selector);
+			if (last && last.x === current.x && last.y === current.y) {
+				await this.page.mouse.click(current.x, current.y);
+				return;
+			}
+			last = current;
+			if (Date.now() - start > timeoutMs) {
+				throw new Error(`Element position never stabilized for '${selector}' within ${timeoutMs}ms`);
+			}
+			await new Promise(resolve => setTimeout(resolve, intervalMs));
+		}
+	}
+
 	async setValue(selector: string, text: string) {
 		return this.page.evaluate(([driver, selector, text]) => driver.setValue(selector, text), [await this.getDriverHandle(), selector, text] as const);
 	}
