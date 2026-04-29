@@ -77,7 +77,7 @@ import { clamp } from '../../../../../../base/common/numbers.js';
 import { IOutputAnalyzer } from './outputAnalyzer.js';
 import { SandboxOutputAnalyzer, outputLooksSandboxBlocked } from './sandboxOutputAnalyzer.js';
 import { IAgentSessionsService } from '../../../../chat/browser/agentSessions/agentSessionsService.js';
-import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxResolvedNetworkDomains } from '../../common/terminalSandboxService.js';
+import { isTerminalSandboxEnabled, ITerminalSandboxService, TerminalSandboxEnablement, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxResolvedNetworkDomains } from '../../common/terminalSandboxService.js';
 import { LanguageModelPartAudience } from '../../../../chat/common/languageModels.js';
 import { isSessionAutoApproveLevel, isTerminalAutoApproveAllowed, isToolEligibleForTerminalAutoApproval } from './terminalToolAutoApprove.js';
 import type { IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
@@ -277,13 +277,14 @@ export async function createRunInTerminalToolData(
 	const terminalSandboxService = accessor.get(ITerminalSandboxService);
 
 	const profileFetcher = instantiationService.createInstance(TerminalProfileFetcher);
-	const [shell, os, isSandboxEnabled] = await Promise.all([
+	const [shell, os, sandboxEnablement] = await Promise.all([
 		profileFetcher.getCopilotShell(),
 		profileFetcher.osBackend,
 		terminalSandboxService.isEnabled(),
 	]);
 
-	const networkDomains = isSandboxEnabled ? terminalSandboxService.getResolvedNetworkDomains() : undefined;
+	const isSandboxEnabled = isTerminalSandboxEnabled(sandboxEnablement);
+	const networkDomains = sandboxEnablement === TerminalSandboxEnablement.On ? terminalSandboxService.getResolvedNetworkDomains() : undefined;
 
 	let modelDescription: string;
 	if (shell && os && isPowerShell(shell, os)) {
@@ -528,8 +529,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	 * Controls whether this tool wires up sandbox-specific command-line
 	 * behavior, including both the {@link CommandLineSandboxRewriter} and the
 	 * {@link CommandLineSandboxAnalyzer}. This is separate from
-	 * ITerminalSandboxService.isEnabled(), which reports whether terminal
-	 * sandboxing is currently enabled for the running window.
+	 * ITerminalSandboxService.isEnabled(), which reports the current terminal
+	 * sandboxing enablement for the running window.
 	 */
 	protected get _enableCommandLineSandboxRewriting() {
 		return true;
@@ -1195,7 +1196,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		);
 
 		const didSandboxWrapCommand = toolSpecificData.commandLine.isSandboxWrapped === true;
-		const isSandboxEnabled = await this._terminalSandboxService.isEnabled();
+		const isSandboxEnabled = isTerminalSandboxEnabled(await this._terminalSandboxService.isEnabled());
 		const commandLineForMetadata = isSandboxEnabled
 			? toolSpecificData.commandLine.forDisplay ?? toolSpecificData.commandLine.original
 			: undefined;

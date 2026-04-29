@@ -22,6 +22,16 @@ export const enum TerminalSandboxPrerequisiteCheck {
 	Dependencies = 'dependencies',
 }
 
+export const enum TerminalSandboxEnablement {
+	Off = 'off',
+	On = 'on',
+	NetworkAllowed = 'networkAllowed',
+}
+
+export function isTerminalSandboxEnabled(enablement: TerminalSandboxEnablement): boolean {
+	return enablement !== TerminalSandboxEnablement.Off;
+}
+
 export interface ITerminalSandboxPrerequisiteCheckResult {
 	enabled: boolean;
 	sandboxConfigPath: string | undefined;
@@ -70,7 +80,7 @@ export interface ISandboxDependencyInstallResult {
 
 export interface ITerminalSandboxService {
 	readonly _serviceBrand: undefined;
-	isEnabled(): Promise<boolean>;
+	isEnabled(): Promise<TerminalSandboxEnablement>;
 	getOS(): Promise<OperatingSystem>;
 	checkForSandboxingPrereqs(forceRefresh?: boolean): Promise<ITerminalSandboxPrerequisiteCheckResult>;
 	wrapCommand(command: string, requestUnsandboxedExecution?: boolean, shell?: string, commandKeywords?: readonly string[], cwd?: URI): Promise<ITerminalSandboxWrapResult>;
@@ -85,8 +95,8 @@ export interface ITerminalSandboxService {
 export class NullTerminalSandboxService implements ITerminalSandboxService {
 	readonly _serviceBrand: undefined;
 
-	async isEnabled(): Promise<boolean> {
-		return false;
+	async isEnabled(): Promise<TerminalSandboxEnablement> {
+		return TerminalSandboxEnablement.Off;
 	}
 
 	async getOS(): Promise<OperatingSystem> {

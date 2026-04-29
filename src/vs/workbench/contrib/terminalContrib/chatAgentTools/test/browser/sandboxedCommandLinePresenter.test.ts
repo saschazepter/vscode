@@ -9,7 +9,7 @@ import { OperatingSystem } from '../../../../../../base/common/platform.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import type { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
-import { ITerminalSandboxService } from '../../common/terminalSandboxService.js';
+import { ITerminalSandboxService, TerminalSandboxEnablement } from '../../common/terminalSandboxService.js';
 
 suite('SandboxedCommandLinePresenter', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -19,7 +19,7 @@ suite('SandboxedCommandLinePresenter', () => {
 		instantiationService = workbenchInstantiationService({}, store);
 		instantiationService.stub(ITerminalSandboxService, {
 			_serviceBrand: undefined,
-			isEnabled: async () => enabled,
+			isEnabled: async () => enabled ? TerminalSandboxEnablement.On : TerminalSandboxEnablement.Off,
 			wrapCommand: async command => ({
 				command,
 				isSandboxWrapped: false,

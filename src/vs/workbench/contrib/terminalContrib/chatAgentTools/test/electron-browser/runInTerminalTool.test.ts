@@ -40,7 +40,7 @@ import { ChatAgentLocation, ChatPermissionLevel } from '../../../../chat/common/
 import { ChatModel } from '../../../../chat/common/model/chatModel.js';
 import { LocalChatSessionUri } from '../../../../chat/common/model/chatUri.js';
 import { ChatRequestTextPart } from '../../../../chat/common/requestParser/chatParserTypes.js';
-import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxPrerequisiteCheckResult } from '../../common/terminalSandboxService.js';
+import { ITerminalSandboxService, TerminalSandboxEnablement, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxPrerequisiteCheckResult } from '../../common/terminalSandboxService.js';
 import { ILanguageModelToolsService, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocationPreparationContext, ToolDataSource, ToolSet, type ToolConfirmationAction } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { ITerminalChatService, ITerminalService, type ITerminalInstance } from '../../../../terminal/browser/terminal.js';
 import { ITerminalProfileResolverService } from '../../../../terminal/common/terminal.js';
@@ -184,7 +184,7 @@ suite('RunInTerminalTool', () => {
 		});
 		terminalSandboxService = {
 			_serviceBrand: undefined,
-			isEnabled: async () => sandboxEnabled,
+			isEnabled: async () => sandboxEnabled ? TerminalSandboxEnablement.On : TerminalSandboxEnablement.Off,
 			wrapCommand: async (command: string, requestUnsandboxedExecution?: boolean) => ({
 				command: requestUnsandboxedExecution ? `unsandboxed:${command}` : `sandbox:${command}`,
 				isSandboxWrapped: !requestUnsandboxedExecution,
@@ -2413,7 +2413,7 @@ suite('ChatAgentToolsContribution - tool registration refresh', () => {
 
 		const terminalSandboxService: ITerminalSandboxService = {
 			_serviceBrand: undefined,
-			isEnabled: async () => sandboxEnabled,
+			isEnabled: async () => sandboxEnabled ? TerminalSandboxEnablement.On : TerminalSandboxEnablement.Off,
 			wrapCommand: async (command: string) => ({
 				command: `sandbox:${command}`,
 				isSandboxWrapped: true,

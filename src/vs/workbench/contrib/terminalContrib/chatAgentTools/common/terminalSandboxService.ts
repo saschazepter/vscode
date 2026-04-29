@@ -34,10 +34,10 @@ import { ChatModel } from '../../../chat/common/model/chatModel.js';
 import { ElicitationState, IChatService } from '../../../chat/common/chatService/chatService.js';
 import { SANDBOX_HELPER_CHANNEL_NAME, SandboxHelperChannelClient } from '../../../../../platform/sandbox/common/sandboxHelperIpc.js';
 import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
-import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ISandboxDependencyInstallOptions, type ISandboxDependencyInstallResult, type ITerminalSandboxPrerequisiteCheckResult, type ITerminalSandboxResolvedNetworkDomains, type ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
+import { isTerminalSandboxEnabled, ITerminalSandboxService, TerminalSandboxEnablement, TerminalSandboxPrerequisiteCheck, type ISandboxDependencyInstallOptions, type ISandboxDependencyInstallResult, type ITerminalSandboxPrerequisiteCheckResult, type ITerminalSandboxResolvedNetworkDomains, type ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 import { getTerminalSandboxReadAllowListForCommands } from './terminalSandboxReadAllowList.js';
 
-export { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
+export { isTerminalSandboxEnabled, ITerminalSandboxService, TerminalSandboxEnablement, TerminalSandboxPrerequisiteCheck } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 export type { ISandboxDependencyInstallOptions, ISandboxDependencyInstallResult, ISandboxDependencyInstallTerminal, ITerminalSandboxPrerequisiteCheckResult, ITerminalSandboxResolvedNetworkDomains, ITerminalSandboxWrapResult } from '../../../../../platform/sandbox/common/terminalSandboxService.js';
 
 /**
@@ -137,8 +137,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		}));
 	}
 
-	public async isEnabled(): Promise<boolean> {
-		return await this._isSandboxConfiguredEnabled();
+	public async isEnabled(): Promise<TerminalSandboxEnablement> {
+		return await this._getSandboxEnablement();
 	}
 
 	public async getOS(): Promise<OperatingSystem> {
@@ -160,6 +160,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			throw new Error('Sandbox config path or temp dir not initialized');
 		}
 
+		// Check if the command would attempt to access any blocked network domains before wrapping it in the sandbox.
 		const blockedDomainResult = requestUnsandboxedExecution ? { blockedDomains: [], deniedDomains: [] } : this._getBlockedDomains(command);
 		if (!requestUnsandboxedExecution && blockedDomainResult.blockedDomains.length > 0) {
 			return {
@@ -430,6 +431,10 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private _getBlockedDomains(command: string): { blockedDomains: string[]; deniedDomains: string[] } {
+		if (this._isSandboxAllowNetworkEnabled()) {
+			return { blockedDomains: [], deniedDomains: [] };
+		}
+
 		const domains = this._extractDomains(command);
 		if (domains.length === 0) {
 			return { blockedDomains: [], deniedDomains: [] };
@@ -503,11 +508,15 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private async _isSandboxConfiguredEnabled(): Promise<boolean> {
+		return isTerminalSandboxEnabled(await this._getSandboxEnablement());
+	}
+
+	private async _getSandboxEnablement(): Promise<TerminalSandboxEnablement> {
 		const os = await this.getOS();
 		if (os === OperatingSystem.Windows) {
-			return false;
+			return TerminalSandboxEnablement.Off;
 		}
-		return this._isSandboxEnabled(this._getSettingValue<AgentSandboxEnabledValue | boolean>(AgentSandboxSettingId.AgentSandboxEnabled, AgentSandboxSettingId.DeprecatedAgentSandboxEnabled) ?? AgentSandboxEnabledValue.Off);
+		return this._getSandboxEnablementFromValue(this._getSandboxConfiguredEnabledValue());
 	}
 
 	private async _resolveSrtPath(): Promise<void> {
@@ -526,12 +535,11 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
 
-		if (await this.isEnabled() && !this._tempDir) {
+		if (isTerminalSandboxEnabled(await this.isEnabled()) && !this._tempDir) {
 			await this._initTempDir();
 		}
 		if (this._tempDir) {
-			const allowedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains) ?? [];
-			const deniedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains) ?? [];
+			const allowNetwork = this._isSandboxAllowNetworkEnabled();
 			const linuxFileSystemSetting = this._os === OperatingSystem.Linux
 				? this._getSettingValue<ITerminalSandboxFileSystemSetting>(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxLinuxFileSystem) ?? {}
 				: {};
@@ -556,10 +564,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 				denyWritePaths = this._resolveLinuxFileSystemPaths(linuxFileSystemSetting.denyWrite);
 			}
 			const sandboxSettings = {
-				network: {
-					allowedDomains: allowedDomainsSetting,
-					deniedDomains: deniedDomainsSetting
-				},
+				network: allowNetwork ? { enabled: false } : this.getResolvedNetworkDomains(),
 				filesystem: {
 					denyRead: denyReadPaths,
 					allowRead: allowReadPaths,
@@ -567,12 +572,18 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 					denyWrite: denyWritePaths,
 				},
 			};
-			this._mergeAdditionalSandboxConfigProperties(sandboxSettings as Record<string, unknown>, runtimeSetting);
+			this._mergeAdditionalSandboxConfigProperties(sandboxSettings as Record<string, unknown>, allowNetwork ? this._withoutNetworkRuntimeSetting(runtimeSetting) : runtimeSetting);
 			this._sandboxConfigPath = configFileUri.path;
 			await this._fileService.createFile(configFileUri, VSBuffer.fromString(JSON.stringify(sandboxSettings, null, '\t')), { overwrite: true });
 			return this._sandboxConfigPath;
 		}
 		return undefined;
+	}
+
+	private _withoutNetworkRuntimeSetting(runtimeSetting: Record<string, unknown>): Record<string, unknown> {
+		const sanitizedRuntimeSetting = { ...runtimeSetting };
+		delete sanitizedRuntimeSetting.network;
+		return sanitizedRuntimeSetting;
 	}
 
 	private _mergeAdditionalSandboxConfigProperties(target: Record<string, unknown>, additional: Record<string, unknown>): void {
@@ -600,7 +611,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	};
 
 	private async _initTempDir(): Promise<void> {
-		if (await this.isEnabled()) {
+		if (isTerminalSandboxEnabled(await this.isEnabled())) {
 			this._needsForceUpdateConfigFile = true;
 			const remoteEnv = this._remoteEnvDetails || await this._remoteEnvDetailsPromise;
 			this._tempDir = this._getSandboxTempDirPath(remoteEnv);
@@ -726,8 +737,22 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 
-	private _isSandboxEnabled(value: AgentSandboxEnabledValue | boolean): boolean {
-		return value === true || value === AgentSandboxEnabledValue.On;
+	private _getSandboxConfiguredEnabledValue(): AgentSandboxEnabledValue | boolean {
+		return this._getSettingValue<AgentSandboxEnabledValue | boolean>(AgentSandboxSettingId.AgentSandboxEnabled, AgentSandboxSettingId.DeprecatedAgentSandboxEnabled) ?? AgentSandboxEnabledValue.Off;
+	}
+
+	private _isSandboxAllowNetworkEnabled(): boolean {
+		return this._getSandboxConfiguredEnabledValue() === AgentSandboxEnabledValue.AllowNetwork;
+	}
+
+	private _getSandboxEnablementFromValue(value: AgentSandboxEnabledValue | boolean): TerminalSandboxEnablement {
+		if (value === true || value === AgentSandboxEnabledValue.On) {
+			return TerminalSandboxEnablement.On;
+		}
+		if (value === AgentSandboxEnabledValue.AllowNetwork) {
+			return TerminalSandboxEnablement.NetworkAllowed;
+		}
+		return TerminalSandboxEnablement.Off;
 	}
 
 	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId, ...deprecatedSettingIds: (TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId | AgentSandboxSettingId)[]): T | undefined {

@@ -11,7 +11,7 @@ import { localize } from '../../../nls.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { AgentSandboxSettingId } from '../../sandbox/common/settings.js';
-import { ITerminalSandboxService } from '../../sandbox/common/terminalSandboxService.js';
+import { ITerminalSandboxService, TerminalSandboxEnablement } from '../../sandbox/common/terminalSandboxService.js';
 import { extractDomainFromUri, isDomainAllowed } from './domainMatcher.js';
 import { AgentNetworkDomainSettingId } from './settings.js';
 
@@ -22,7 +22,7 @@ export const IAgentNetworkFilterService = createDecorator<IAgentNetworkFilterSer
  * integrated browser) based on the configured allowed/denied domain lists.
  *
  * Filtering is active when the `chat.agent.networkFilter` setting is enabled,
- * or when the terminal sandbox service reports that sandboxing is enabled.
+ * or when the terminal sandbox service reports sandboxing is on.
  * When both domain lists are empty, all domains are denied.
  * When a domain appears on the denied list it is always blocked, even if it
  * also matches an entry on the allowed list.
@@ -98,7 +98,7 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 	}
 
 	private async updateTerminalSandboxEnabled(): Promise<void> {
-		const enabled = await this.terminalSandboxService.isEnabled();
+		const enabled = (await this.terminalSandboxService.isEnabled()) === TerminalSandboxEnablement.On;
 		if (this.terminalSandboxEnabled === enabled) {
 			return;
 		}

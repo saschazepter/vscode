@@ -12,20 +12,20 @@ import { TestConfigurationService } from '../../../configuration/test/common/tes
 import { AgentNetworkFilterService } from '../../common/networkFilterService.js';
 import { AgentNetworkDomainSettingId } from '../../common/settings.js';
 import { AgentSandboxSettingId } from '../../../sandbox/common/settings.js';
-import { ITerminalSandboxService, NullTerminalSandboxService } from '../../../sandbox/common/terminalSandboxService.js';
+import { ITerminalSandboxService, NullTerminalSandboxService, TerminalSandboxEnablement } from '../../../sandbox/common/terminalSandboxService.js';
 
 suite('AgentNetworkFilterService', () => {
 
 	let disposables: DisposableStore;
 	let configService: TestConfigurationService;
-	let terminalSandboxEnabled: boolean;
+	let terminalSandboxEnablement: TerminalSandboxEnablement;
 	let terminalSandboxService: ITerminalSandboxService;
 
 	setup(() => {
 		disposables = new DisposableStore();
 		configService = new TestConfigurationService();
-		terminalSandboxEnabled = false;
-		terminalSandboxService = Object.assign(new NullTerminalSandboxService(), { isEnabled: async () => terminalSandboxEnabled });
+		terminalSandboxEnablement = TerminalSandboxEnablement.Off;
+		terminalSandboxService = Object.assign(new NullTerminalSandboxService(), { isEnabled: async () => terminalSandboxEnablement });
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, true);
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, []);
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains, []);
@@ -62,13 +62,24 @@ suite('AgentNetworkFilterService', () => {
 
 	test('network filter disabled with sandbox enabled activates filtering', async () => {
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
-		terminalSandboxEnabled = true;
+		terminalSandboxEnablement = TerminalSandboxEnablement.On;
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
 
 		const service = await createService();
 
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
+	});
+
+	test('network filter disabled with sandbox network allowed does not activate filtering', async () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
+		terminalSandboxEnablement = TerminalSandboxEnablement.NetworkAllowed;
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
+
+		const service = await createService();
+
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), true);
 	});
 
 	test('denies all domains when both lists are empty', async () => {
@@ -152,7 +163,7 @@ suite('AgentNetworkFilterService', () => {
 		let fired = false;
 		disposables.add(service.onDidChange(() => { fired = true; }));
 
-		terminalSandboxEnabled = true;
+		terminalSandboxEnablement = TerminalSandboxEnablement.On;
 		fireConfigChange(AgentSandboxSettingId.AgentSandboxEnabled);
 		await Promise.resolve();
 

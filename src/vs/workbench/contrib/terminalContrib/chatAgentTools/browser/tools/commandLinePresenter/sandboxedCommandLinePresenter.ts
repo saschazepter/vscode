@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ITerminalSandboxService } from '../../../common/terminalSandboxService.js';
+import { isTerminalSandboxEnabled, ITerminalSandboxService } from '../../../common/terminalSandboxService.js';
 import type { ICommandLinePresenter, ICommandLinePresenterOptions, ICommandLinePresenterResult } from './commandLinePresenter.js';
 
 /**
@@ -19,7 +19,7 @@ export class SandboxedCommandLinePresenter implements ICommandLinePresenter {
 	}
 
 	async present(options: ICommandLinePresenterOptions): Promise<ICommandLinePresenterResult | undefined> {
-		if (!(await this._sandboxService.isEnabled())) {
+		if (!isTerminalSandboxEnabled(await this._sandboxService.isEnabled())) {
 			return undefined;
 		}
 		return {
