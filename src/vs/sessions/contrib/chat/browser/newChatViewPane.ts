@@ -6,7 +6,6 @@
 import './media/chatWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { Emitter } from '../../../../base/common/event.js';
 import { derived } from '../../../../base/common/observable.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -22,7 +21,6 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { localize } from '../../../../nls.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { IChat, ISession } from '../../../services/sessions/common/session.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
@@ -30,6 +28,8 @@ import { WorkspacePicker, IWorkspaceSelection } from './sessionWorkspacePicker.j
 import { ScopedWorkspacePicker } from './scopedWorkspacePicker.js';
 import { NewChatInputWidget } from './newChatInput.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
+import { IChat, ISession } from '../../../services/sessions/common/session.js';
+import { Emitter } from '../../../../base/common/event.js';
 
 // #region --- New Chat Widget ---
 
@@ -37,6 +37,13 @@ export class NewChatWidget extends Disposable {
 
 	private readonly _workspacePicker: WorkspacePicker;
 	private readonly _newChatInput: NewChatInputWidget;
+
+	private _session: ISession | undefined;
+	private readonly _onDidCreateChat = this._register(new Emitter<IChat>());
+	readonly onDidCreateChat = this._onDidCreateChat.event;
+
+	/** Tracks an in-flight wait for a provider's session types to become available. */
+	private readonly _pendingSessionTypeWait = new MutableDisposable<IDisposable>();
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
