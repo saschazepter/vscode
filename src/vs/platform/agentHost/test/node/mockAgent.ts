@@ -12,7 +12,7 @@ import { type ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, type AgentProvider, type IAgent, type IAgentAttachment, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentModelInfo, type IAgentProgressEvent, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type SessionHistoryEvent } from '../../common/agentService.js';
 import { ProtectedResourceMetadata, type ModelSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { CustomizationStatus, ToolResultContentType, type CustomizationRef, type PendingMessage, type ToolCallResult } from '../../common/state/sessionState.js';
+import { CustomizationStatus, ToolResultContentType, type CustomizationRef, type PendingMessage, type SessionCustomization, type ToolCallResult } from '../../common/state/sessionState.js';
 
 /** Well-known auto-generated title used by the 'with-title' prompt. */
 export const MOCK_AUTO_TITLE = 'Automatically generated title';
@@ -46,6 +46,9 @@ export class MockAgent implements IAgent {
 	readonly setCustomizationEnabledCalls: { uri: string; enabled: boolean }[] = [];
 	/** Configurable return value for getCustomizations. */
 	customizations: CustomizationRef[] = [];
+	private readonly _onDidCustomizationsChange = new Emitter<void>();
+	readonly onDidCustomizationsChange = this._onDidCustomizationsChange.event;
+	getSessionCustomizations?: (session: URI) => Promise<readonly SessionCustomization[]>;
 
 	/** Configurable return value for getSessionMessages. */
 	sessionMessages: SessionHistoryEvent[] = [];
@@ -161,8 +164,13 @@ export class MockAgent implements IAgent {
 		this._onDidSessionProgress.fire(event);
 	}
 
+	fireCustomizationsChange(): void {
+		this._onDidCustomizationsChange.fire();
+	}
+
 	dispose(): void {
 		this._onDidSessionProgress.dispose();
+		this._onDidCustomizationsChange.dispose();
 	}
 }
 
@@ -456,8 +464,10 @@ export class ScriptedMockAgent implements IAgent {
 			}
 
 			case 'client-tool': {
-				// Fires tool_start with toolClientId to simulate a client-provided tool.
-				// The server waits for the client to dispatch toolCallComplete.
+				// Fires tool_start with toolClientId followed by tool_ready
+				// (without confirmationTitle) to simulate a client-provided tool
+				// that is ready for execution. The real SDK handler fires
+				// tool_ready once its deferred is in place.
 				(async () => {
 					await timeout(10);
 					this._onDidSessionProgress.fire({
@@ -468,6 +478,14 @@ export class ScriptedMockAgent implements IAgent {
 						displayName: 'Run Tests',
 						invocationMessage: 'Running tests...',
 						toolClientId: 'test-client-tool',
+					});
+					await timeout(5);
+					this._onDidSessionProgress.fire({
+						type: 'tool_ready',
+						session,
+						toolCallId: 'tc-client-1',
+						invocationMessage: 'Running tests...',
+						toolInput: '{}',
 					});
 				})();
 				// The tool stays pending — the client is responsible for dispatching toolCallComplete.
@@ -569,6 +587,29 @@ export class ScriptedMockAgent implements IAgent {
 			}
 
 			default:
+				if (prompt.startsWith('terminal-edit:')) {
+					// Test prompt: simulate a terminal command that edits a file on disk
+					// without emitting any ToolResultFileEditContent. The test relies on the
+					// git-driven diff path to pick this up. Format: `terminal-edit:<absPath>`.
+					const filePath = prompt.slice('terminal-edit:'.length);
+					void (async () => {
+						this._onDidSessionProgress.fire({ type: 'tool_start', session, toolCallId: 'tc-term-edit-1', toolName: 'bash', displayName: 'Run Command', invocationMessage: 'Edit file via shell' });
+						const fs = await import('fs/promises');
+						await fs.writeFile(filePath, 'edited-from-terminal\n');
+						this._fireSequence(session, [
+							{ type: 'tool_complete', session, toolCallId: 'tc-term-edit-1', result: { pastTenseMessage: 'Edited file', content: [{ type: ToolResultContentType.Text, text: 'ok' }], success: true } },
+							{ type: 'idle', session },
+						]);
+					})().catch(err => {
+						// Surface failures deterministically — an unhandled rejection
+						// would make the test suite flaky.
+						this._fireSequence(session, [
+							{ type: 'delta', session, messageId: 'msg-err', content: 'terminal-edit failed: ' + (err instanceof Error ? err.message : String(err)) },
+							{ type: 'idle', session },
+						]);
+					});
+					break;
+				}
 				this._fireSequence(session, [
 					{ type: 'delta', session, messageId: 'msg-1', content: 'Unknown prompt: ' + prompt },
 					{ type: 'idle', session },
@@ -596,7 +637,14 @@ export class ScriptedMockAgent implements IAgent {
 
 	setClientTools(): void { }
 
+	private didCompleteToolCalls = new Set<string>();
+
 	onClientToolCallComplete(session: URI, toolCallId: string, result: ToolCallResult): void {
+		const key = `${session.toString()}:${toolCallId}`;
+		if (this.didCompleteToolCalls.has(key)) {
+			return;
+		}
+		this.didCompleteToolCalls.add(key);
 		// Fire tool_complete and resolve any pending callback.
 		this._onDidSessionProgress.fire({
 			type: 'tool_complete',
