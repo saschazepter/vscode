@@ -566,22 +566,30 @@ export class PlaywrightDriver {
 
 	async click(selector: string, xoffset?: number | undefined, yoffset?: number | undefined) {
 		if (xoffset === undefined && yoffset === undefined) {
-			// Use Playwright's native click which waits for element stability before clicking.
-			// This avoids a TOCTOU race where the element shifts between the position lookup
-			// and the actual mouse dispatch (e.g. due to a status bar layout reflow caused by
-			// a new item being inserted between the two operations).
-			// Keep the per-attempt timeout small so the outer poll loop in waitAndClick
-			// retains its intended retry budget (default 200 × 100ms = 20s).
-			await this.page.click(selector, { timeout: 100 });
-		} else {
-			const { x, y } = await this.getElementXY(selector, xoffset, yoffset);
-			// getElementXY already incorporates both offsets (relative to the element's
-			// top-left corner) when both are provided, so don't add them again.
-			if (xoffset !== undefined && yoffset !== undefined) {
-				await this.page.mouse.click(x, y);
-			} else {
-				await this.page.mouse.click(x + (xoffset ?? 0), y + (yoffset ?? 0));
+			// Prefer Playwright's native click which atomically resolves the selector to a
+			// position and dispatches the click. This avoids a TOCTOU race where the element
+			// shifts between the position lookup and the actual mouse dispatch (e.g. due to
+			// a status bar layout reflow caused by a new item being inserted between the two
+			// operations). `force: true` skips most actionability checks; the per-attempt
+			// timeout is small so the outer waitAndClick poll keeps its retry budget.
+			//
+			// Fall back to the legacy getElementXY + mouse.click path for elements that
+			// Playwright refuses to interact with even with force (e.g. Monaco's hidden
+			// .native-edit-context contenteditable, which has a degenerate bounding box).
+			try {
+				await this.page.click(selector, { force: true, timeout: 100 });
+				return;
+			} catch {
+				// fall through to legacy path
 			}
+		}
+		const { x, y } = await this.getElementXY(selector, xoffset, yoffset);
+		// getElementXY already incorporates both offsets (relative to the element's
+		// top-left corner) when both are provided, so don't add them again.
+		if (xoffset !== undefined && yoffset !== undefined) {
+			await this.page.mouse.click(x, y);
+		} else {
+			await this.page.mouse.click(x + (xoffset ?? 0), y + (yoffset ?? 0));
 		}
 	}
 
