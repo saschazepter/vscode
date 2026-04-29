@@ -373,7 +373,9 @@
 	opacity: 1;
 }
 
-/* Tabbed workspace picker — tab bar rendered above the action widget list. */
+/* Tabbed workspace picker — tab bar rendered above the action widget
+ * list. Owned by the picker layer; the action widget service exposes a
+ * generic header slot that the picker fills in. */
 .action-widget .sessions-workspace-picker-tabbar {
 	display: flex;
 	align-items: center;

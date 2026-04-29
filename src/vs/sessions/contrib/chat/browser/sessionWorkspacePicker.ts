@@ -320,7 +320,7 @@ export class WorkspacePicker extends Disposable {
 			false,
 			items,
 			delegate,
-			this._triggerElement,
+			triggerElement,
 			undefined,
 			[],
 			{
@@ -328,7 +328,7 @@ export class WorkspacePicker extends Disposable {
 				getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 			},
 			listOptions,
-			tabbed ? widget => this._renderTabBar(widget, availableCategories) : undefined,
+			tabbed ? header => this._renderTabBar(header, availableCategories) : undefined,
 		);
 	}
 
@@ -357,16 +357,30 @@ export class WorkspacePicker extends Disposable {
 		return TAB_ORDER.filter(c => seen.has(c));
 	}
 
-	private _renderTabBar(widget: HTMLElement, categories: readonly SessionWorkspaceCategory[]): IDisposable {
+	/**
+	 * Renders the categorical tab bar as a floating element anchored to the
+	 * trigger button and returns it so the action widget can use it as its
+	 * anchor (so the dropdown appears directly below the tabs).
+	 *
+	 * The tab bar lifecycle is owned by the picker: it is created here and
+	 * torn down when the dropdown hides (see `delegate.onHide`) or when the
+	 * picker is re-shown for a tab change. The action widget service knows
+	 * nothing about the tab bar.
+	 */
+	/**
+	 * Renders the categorical tab bar into the action widget's header slot.
+	 * The picker owns the tab bar element and event listeners; the action
+	 * widget owns the slot and ties the returned disposable to the popup
+	 * lifecycle, so the service stays generic.
+	 */
+	private _renderTabBar(header: HTMLElement, categories: readonly SessionWorkspaceCategory[]): IDisposable {
 		const disposables = new DisposableStore();
 
-		const header = dom.$('.sessions-workspace-picker-tabbar');
+		header.classList.add('sessions-workspace-picker-tabbar');
 		const radio = disposables.add(new Radio({
 			items: categories.map(c => ({ text: TAB_LABELS[c](), tooltip: TAB_LABELS[c](), isActive: c === this._activeTab })),
 		}));
 		header.appendChild(radio.domNode);
-		widget.insertBefore(header, widget.firstChild);
-		disposables.add({ dispose: () => header.remove() });
 
 		const activateTab = (next: SessionWorkspaceCategory) => {
 			if (next === this._activeTab) {
