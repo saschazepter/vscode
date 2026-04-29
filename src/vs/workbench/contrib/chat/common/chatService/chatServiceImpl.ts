@@ -43,7 +43,7 @@ import { chatAgentLeader, ChatRequestAgentPart, ChatRequestAgentSubcommandPart, 
 import { ChatRequestParser } from '../requestParser/chatRequestParser.js';
 import { ChatMcpServersStarting, ChatPendingRequestChangeClassification, ChatPendingRequestChangeEvent, ChatPendingRequestChangeEventName, ChatRequestQueueKind, ChatSendResult, ChatSendResultQueued, ChatSendResultSent, ChatStopCancellationNoopClassification, ChatStopCancellationNoopEvent, ChatStopCancellationNoopEventName, IChatCompleteResponse, IChatDetail, IChatFollowup, IChatModelReference, IChatProgress, IChatQuestionAnswers, IChatSendRequestOptions, IChatSendRequestResponseState, IChatService, IChatSessionStartOptions, IChatUserActionEvent, ResponseModelState } from './chatService.js';
 import { ChatRequestTelemetry, ChatServiceTelemetry } from './chatServiceTelemetry.js';
-import { IChatSessionsService, localChatSessionType } from '../chatSessionsService.js';
+import { IChatSessionsService, isAgentHostTarget, localChatSessionType } from '../chatSessionsService.js';
 import { ChatSessionStore, IChatSessionEntryMetadata } from '../model/chatSessionStore.js';
 import { IChatSlashCommandService } from '../participants/chatSlashCommands.js';
 import { IChatTransferService } from '../model/chatTransferService.js';
@@ -656,6 +656,39 @@ export class ChatService extends Disposable implements IChatService {
 			providedSession.dispose();
 		}));
 
+		// For agent host sessions (local `agent-host-*` and remote `remote-*`),
+		// re-run the request parser on restored history so that decorated parts
+		// (slash commands, prompt slash commands, agent mentions) are revived
+		// in the UI. Other contributed sessions still get a single text part.
+		const isAgentHostSession = isAgentHostTarget(chatSessionType);
+		const requestParser = isAgentHostSession ? this.instantiationService.createInstance(ChatRequestParser) : undefined;
+		const parseAgentHostHistoryPrompt = (text: string, agent: IChatAgentData | undefined): IParsedChatRequest => {
+			if (requestParser) {
+				try {
+					const parsed = requestParser.parseChatRequestWithReferences(
+						[],
+						new Map(),
+						text,
+						location,
+						{ sessionType: chatSessionType, forcedAgent: agent, attachmentCapabilities: agent?.capabilities },
+					);
+					if (parsed.parts.length > 0) {
+						return parsed;
+					}
+				} catch (e) {
+					this.logService.warn(`ChatService#loadRemoteSession: failed to re-parse historical prompt for ${chatSessionType}`, e);
+				}
+			}
+			return {
+				text,
+				parts: [new ChatRequestTextPart(
+					new OffsetRange(0, text.length),
+					{ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: text.length + 1 },
+					text
+				)]
+			};
+		};
+
 		let lastRequest: ChatRequestModel | undefined;
 		for (const message of providedSession.history) {
 			if (message.type === 'request') {
@@ -664,19 +697,11 @@ export class ChatService extends Disposable implements IChatService {
 				}
 
 				const requestText = message.prompt;
-
-				const parsedRequest: IParsedChatRequest = {
-					text: requestText,
-					parts: [new ChatRequestTextPart(
-						new OffsetRange(0, requestText.length),
-						{ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: requestText.length + 1 },
-						requestText
-					)]
-				};
 				const agent =
 					message.participant
 						? this.chatAgentService.getAgent(message.participant) // TODO(jospicer): Remove and always hardcode?
 						: this.chatAgentService.getAgent(chatSessionType);
+				const parsedRequest = parseAgentHostHistoryPrompt(requestText, agent);
 				const modeInfo = message.modeInstructions ? {
 					kind: ChatModeKind.Agent,
 					isBuiltin: message.modeInstructions.isBuiltin ?? false,
@@ -755,16 +780,8 @@ export class ChatService extends Disposable implements IChatService {
 					}
 
 					// Create a new request in the model
-					const requestText = prompt;
-					const parsedRequest: IParsedChatRequest = {
-						text: requestText,
-						parts: [new ChatRequestTextPart(
-							new OffsetRange(0, requestText.length),
-							{ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: requestText.length + 1 },
-							requestText
-						)]
-					};
 					const agent = this.chatAgentService.getAgent(chatSessionType);
+					const parsedRequest = parseAgentHostHistoryPrompt(prompt, agent);
 					lastRequest = model.addRequest(parsedRequest, { variables: [] }, 0, undefined, agent);
 
 					// Reset progress tracking for the new turn
