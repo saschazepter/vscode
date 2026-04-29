@@ -333,10 +333,25 @@
 	text-align: right;
 	-webkit-appearance: none;
 	appearance: none;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23888' d='M0 2l4 4 4-4z'/%3E%3C/svg%3E");
-	background-repeat: no-repeat;
-	background-position: right center;
 	padding-right: 14px;
+}
+
+.chat-status-bar-entry-tooltip .model-selection,
+.chat-status-bar-entry-tooltip .suggest-option-selection {
+	position: relative;
+}
+
+.chat-status-bar-entry-tooltip select.inline-select + .inline-select-chevron {
+	position: absolute;
+	right: 2px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 8px;
+	height: 8px;
+	background-color: var(--vscode-descriptionForeground);
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z'/%3E%3C/svg%3E");
+	pointer-events: none;
 }
 
 .chat-status-bar-entry-tooltip select.inline-select:focus-visible {

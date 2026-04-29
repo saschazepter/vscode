@@ -131,8 +131,7 @@ export class ChatStatusDashboard extends DomWidget {
 			!this.options?.disableInlineSuggestionsSettings ||
 			!this.options?.disableModelSelection ||
 			!this.options?.disableProviderOptions ||
-			!this.options?.disableCompletionsSnooze ||
-			contributedEntries.length > 0;
+			!this.options?.disableCompletionsSnooze;
 
 		// Title header with plan name, CTA buttons, and manage action
 		let headerAdditionalSpendButton: Button | undefined;
@@ -359,8 +358,9 @@ export class ChatStatusDashboard extends DomWidget {
 
 			disclosureHeader.appendChild($('span.collapsible-label', undefined, headerLabel));
 
+			// Use renderLabelWithIcons for header status (plain text + icons only, no links inside button)
 			const statusEl = disclosureHeader.appendChild($('span.collapsible-status'));
-			this.renderTextPlus(statusEl, item.description, this._store);
+			statusEl.append(...renderLabelWithIcons(item.description));
 
 			const collapsibleContent = this.element.appendChild($('div.collapsible-content'));
 			const collapsibleInner = collapsibleContent.appendChild($('div.collapsible-inner'));
@@ -378,27 +378,54 @@ export class ChatStatusDashboard extends DomWidget {
 
 			this._store.add(addDisposableListener(disclosureHeader, EventType.CLICK, () => toggle()));
 
-			// Description with Learn More
+			// Use a single disposable store for all contributed section content
+			const sectionDisposables = this._store.add(new MutableDisposable());
+			const sectionStore = new DisposableStore();
+			sectionDisposables.value = sectionStore;
+
+			// Description with Learn More (use contributed data, not hardcoded text)
+			let descriptionEl: HTMLElement | undefined;
 			if (headerLink) {
-				const descriptionEl = collapsibleInner.appendChild($('div.section-description'));
-				this.renderTextPlus(descriptionEl, localize('indexDescription', "Indexes your codebase for more relevant AI results.") + ' ' + `[${localize('learnMore', "Learn More")}](${headerLink})`, this._store);
+				descriptionEl = collapsibleInner.appendChild($('div.section-description'));
+				this.renderTextPlus(descriptionEl, `[${localize('learnMore', "Learn More")}](${headerLink})`, sectionStore);
 			}
 
 			// Detail content (action links like "Build index", etc.)
+			let detailEl: HTMLElement | undefined;
 			if (item.detail) {
-				const detailEl = collapsibleInner.appendChild($('div.section-detail'));
-				this.renderTextPlus(detailEl, item.detail, this._store);
+				detailEl = collapsibleInner.appendChild($('div.section-detail'));
+				this.renderTextPlus(detailEl, item.detail, sectionStore);
 			}
 
 			// Listen for updates to re-render status and detail
-			const itemDisposables = this._store.add(new MutableDisposable());
 			this._store.add(this.chatStatusItemService.onDidChange(e => {
 				if (e.entry.id === item.id) {
-					// Update status in header
+					// Update status in header (plain text + icons only)
 					statusEl.textContent = '';
-					const statusDisposables = new DisposableStore();
-					itemDisposables.value = statusDisposables;
-					this.renderTextPlus(statusEl, e.entry.description, statusDisposables);
+					statusEl.append(...renderLabelWithIcons(e.entry.description));
+
+					// Re-render detail content
+					const newStore = new DisposableStore();
+					sectionDisposables.value = newStore;
+
+					if (detailEl) {
+						detailEl.textContent = '';
+						if (e.entry.detail) {
+							this.renderTextPlus(detailEl, e.entry.detail, newStore);
+						}
+					} else if (e.entry.detail) {
+						detailEl = collapsibleInner.appendChild($('div.section-detail'));
+						this.renderTextPlus(detailEl, e.entry.detail, newStore);
+					}
+
+					// Re-render Learn More link if needed
+					if (descriptionEl) {
+						const updatedLink = typeof e.entry.label === 'string' ? undefined : e.entry.label.link;
+						descriptionEl.textContent = '';
+						if (updatedLink) {
+							this.renderTextPlus(descriptionEl, `[${localize('learnMore', "Learn More")}](${updatedLink})`, newStore);
+						}
+					}
 				}
 			}));
 		}
@@ -481,6 +508,8 @@ export class ChatStatusDashboard extends DomWidget {
 					modelContainer.appendChild($('span.model-text', undefined, localize('modelLabel', "Model")));
 
 					const select = modelContainer.appendChild($('select.inline-select')) as HTMLSelectElement;
+					select.ariaLabel = localize('selectModel', "Select Model");
+					modelContainer.appendChild($('span.inline-select-chevron'));
 					for (const model of modelInfo.models) {
 						const option = document.createElement('option');
 						option.value = model.id;
@@ -511,6 +540,8 @@ export class ChatStatusDashboard extends DomWidget {
 							optionContainer.appendChild($('span.suggest-option-text', undefined, option.label));
 
 							const select = optionContainer.appendChild($('select.inline-select')) as HTMLSelectElement;
+							select.ariaLabel = localize('selectOption', "Select {0}", option.label);
+							optionContainer.appendChild($('span.inline-select-chevron'));
 							for (const value of option.values) {
 								const optEl = document.createElement('option');
 								optEl.value = value.id;
@@ -808,10 +839,11 @@ export class ChatStatusDashboard extends DomWidget {
 			if (state === 'mixed') {
 				// Remove the language key to inherit from *
 				const { [modeId]: _, ...rest } = result;
+				const inheritedEnablement = typeof rest['*'] === 'boolean' ? (rest['*'] ? 'enabled' : 'disabled') : 'enabled';
 				this.telemetryService.publicLog2<ChatSettingChangedEvent, ChatSettingChangedClassification>('chatStatus.settingChanged', {
 					settingIdentifier: settingId,
 					settingMode: modeId,
-					settingEnablement: 'enabled' // inheriting
+					settingEnablement: inheritedEnablement
 				});
 				this.configurationService.updateValue(settingId, rest);
 			} else {
