@@ -55,6 +55,35 @@
 	align-items: center;
 }
 
+.chat-status-bar-entry-tooltip .collapsible-status {
+	margin-left: auto;
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--vscode-descriptionForeground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.chat-status-bar-entry-tooltip .section-description {
+	font-size: 12px;
+	line-height: 16px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-status-bar-entry-tooltip .section-description .monaco-link {
+	white-space: nowrap;
+}
+
+.chat-status-bar-entry-tooltip .section-detail {
+	font-size: 12px;
+	line-height: 16px;
+	color: var(--vscode-descriptionForeground);
+}
+
 .chat-status-bar-entry-tooltip .collapsible-content {
 	display: grid;
 	grid-template-rows: 1fr;
@@ -262,6 +291,12 @@
 	color: var(--vscode-disabledForeground);
 }
 
+.chat-status-bar-entry-tooltip .settings .setting .setting-overridden {
+	font-style: italic;
+	color: var(--vscode-descriptionForeground);
+	margin-left: 4px;
+}
+
 /* Model Selection */
 
 .chat-status-bar-entry-tooltip .model-selection {
@@ -281,6 +316,37 @@
 
 .chat-status-bar-entry-tooltip .model-selection .model-action-bar .codicon {
 	color: var(--vscode-descriptionForeground);
+}
+
+/* Inline Select (native dropdown) */
+
+.chat-status-bar-entry-tooltip select.inline-select {
+	margin-left: auto;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	border: none;
+	font-size: inherit;
+	font-family: inherit;
+	cursor: pointer;
+	padding: 0 2px;
+	outline: none;
+	text-align: right;
+	-webkit-appearance: none;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23888' d='M0 2l4 4 4-4z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right center;
+	padding-right: 14px;
+}
+
+.chat-status-bar-entry-tooltip select.inline-select:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.chat-status-bar-entry-tooltip select.inline-select option {
+	background: var(--vscode-editorWidget-background);
+	color: var(--vscode-foreground);
 }
 
 /* Provider Options */
