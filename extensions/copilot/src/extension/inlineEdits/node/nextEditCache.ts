@@ -63,6 +63,12 @@ export interface CachedEdit {
 	 * @see CachedEditOpts.cursorOffset
 	 */
 	cursorOffsetAtCacheTime?: number;
+	/**
+	 * Set to `true` once this cached suggestion has been rendered as an inline
+	 * (ghost text at cursor) suggestion. Used by the "mimic ghost text behavior"
+	 * gating to suppress re-serving the same suggestion in a non-inline form.
+	 */
+	wasRenderedAsInlineSuggestion?: boolean;
 }
 
 export type CachedOrRebasedEdit = CachedEdit & { rebasedEdit?: StringReplacement; rebasedEditIndex?: number; isFromSpeculativeRequest?: boolean };
