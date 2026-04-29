@@ -114,7 +114,7 @@ export interface IBrowserViewWorkbenchService {
 	readonly _serviceBrand: undefined;
 
 	/**
-	 * Fires when the set of known browser views changes.
+	 * Fires when the set of known browser views changes, or a model is created for an existing input.
 	 */
 	readonly onDidChangeBrowserViews: Event<void>;
 
