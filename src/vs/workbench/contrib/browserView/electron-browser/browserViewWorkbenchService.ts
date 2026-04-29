@@ -197,6 +197,8 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		// Sanity: both pass and assign the model to be sure. It will no-op if already set.
 		this.getOrCreateLazy(id, {}, model).model = model;
 
+		this._onDidChangeBrowserViews.fire();
+
 		return model;
 	}
 

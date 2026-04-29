@@ -4,10 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
-import { IBrowserViewWorkbenchService, IBrowserViewCDPService, IBrowserViewModel } from '../common/browserView.js';
+import { IBrowserViewWorkbenchService, IBrowserViewCDPService, IBrowserViewModel, IBrowserEditorViewState } from '../common/browserView.js';
 import { Event } from '../../../../base/common/event.js';
 import { CDPEvent, CDPRequest, CDPResponse } from '../../../../platform/browserView/common/cdp/types.js';
-import { IBrowserViewState } from '../../../../platform/browserView/common/browserView.js';
 import { BrowserEditorInput } from '../common/browserEditorInput.js';
 
 class WebBrowserViewWorkbenchService implements IBrowserViewWorkbenchService {
@@ -23,7 +22,7 @@ class WebBrowserViewWorkbenchService implements IBrowserViewWorkbenchService {
 		return this._known;
 	}
 
-	getOrCreateLazy(_id: string, _state: IBrowserViewState): BrowserEditorInput {
+	getOrCreateLazy(_id: string, _state: IBrowserEditorViewState): BrowserEditorInput {
 		throw new Error('Integrated Browser is not available in web.');
 	}
 
