@@ -1509,6 +1509,7 @@ export default tseslint.config(
 						'fs/promises',
 						'http',
 						'https',
+						'inspector',
 						'minimist',
 						'node:module',
 						'native-keymap',
@@ -1518,6 +1519,7 @@ export default tseslint.config(
 						// 'path', NOT allowed: use src/vs/base/common/path.ts instead
 						'perf_hooks',
 						'readline',
+						'ssh2',
 						'stream',
 						'string_decoder',
 						'tas-client',
@@ -1526,7 +1528,6 @@ export default tseslint.config(
 						'undici-types',
 						'url',
 						'util',
-						'v8-inspect-profiler',
 						'vscode-regexpp',
 						'vscode-textmate',
 						'worker_threads',
@@ -1542,7 +1543,8 @@ export default tseslint.config(
 						'@xterm/xterm',
 						'yauzl',
 						'yazl',
-						'zlib'
+						'zlib',
+						'chrome-remote-interface'
 					]
 				},
 				{

@@ -90,11 +90,6 @@ const TOOL_REFERENCE_NAME = 'runInTerminal';
 const LEGACY_TOOL_REFERENCE_FULL_NAMES = ['runCommands/runInTerminal'];
 const INPUT_NEEDED_NOTIFICATION_THROTTLE_MS = 5000;
 
-type IRunInTerminalToolInvocationData = IChatTerminalToolInvocationData & {
-	/** Whether prepareToolInvocation showed/required the normal tool confirmation. */
-	requiresConfirmationForRetry?: boolean;
-};
-
 function createPowerShellModelDescription(shell: string, isSandboxEnabled: boolean, networkDomains?: ITerminalSandboxResolvedNetworkDomains): string {
 	const isWinPwsh = isWindowsPowerShell(shell);
 	const parts = [
@@ -572,7 +567,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			this._register(this._instantiationService.createInstance(CommandLinePwshChainOperatorRewriter, this._treeSitterCommandParser)),
 		];
 		if (this._enableCommandLineSandboxRewriting) {
-			this._commandLineRewriters.push(this._register(this._instantiationService.createInstance(CommandLineSandboxRewriter)));
+			this._commandLineRewriters.push(this._register(this._instantiationService.createInstance(CommandLineSandboxRewriter, this._treeSitterCommandParser)));
 		}
 		// BackgroundDetachRewriter must come after SandboxRewriter so that nohup/Start-Process
 		// wraps the entire sandbox runtime, keeping both the sandbox and the child process alive
@@ -753,6 +748,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			terminalToolSessionId,
 			chatSessionResource,
 			requiresUnsandboxConfirmation,
+			hasSessionAutoApproval: !!chatSessionResource && this._terminalChatService.hasChatSessionAutoApproval(chatSessionResource),
 		};
 
 		// In Autopilot/Bypass Approvals modes, do not interact with terminal auto-approve rules.
@@ -878,7 +874,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 
 		// If forceConfirmationReason is set, always show confirmation regardless of auto-approval
 		const shouldShowConfirmation = (!isFinalAutoApproved && !isSessionAutoApproved) || context.forceConfirmationReason !== undefined;
-		(toolSpecificData as IRunInTerminalToolInvocationData).requiresConfirmationForRetry = (!isAutoApprovedByRules && !isSessionAutoApproved) || context.forceConfirmationReason !== undefined;
 		const explanation = args.explanation || localize('runInTerminal.defaultExplanation', "No explanation provided");
 		const goal = args.goal || localize('runInTerminal.defaultGoal', "No goal provided");
 		const confirmationMessage = requiresUnsandboxConfirmation
@@ -1000,11 +995,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		};
 	}
 
-	private async _confirmAutomaticUnsandboxRetry(sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, requiresConfirmationForRetry: boolean | undefined, token: CancellationToken): Promise<boolean> {
-		if (requiresConfirmationForRetry === false) {
-			return true;
-		}
-
+	private async _confirmAutomaticUnsandboxRetry(sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, token: CancellationToken): Promise<boolean> {
 		const chatModel = sessionResource && this._chatService.getSession(sessionResource);
 		if (!(chatModel instanceof ChatModel)) {
 			return false;
@@ -1644,7 +1635,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			});
 			const rewrittenRetryReason = retryRewriteResult.requestUnsandboxedExecutionReason ?? retryReason;
 			const retryConfirmationCommand = toolSpecificData.presentationOverrides?.commandLine ?? command;
-			const shouldRetry = await this._confirmAutomaticUnsandboxRetry(invocation.context.sessionResource, retryConfirmationCommand, shell, retryRewriteResult.blockedDomains, (toolSpecificData as IRunInTerminalToolInvocationData).requiresConfirmationForRetry, token);
+			const shouldRetry = await this._confirmAutomaticUnsandboxRetry(invocation.context.sessionResource, retryConfirmationCommand, shell, retryRewriteResult.blockedDomains, token);
 			if (shouldRetry) {
 				const retryToolSpecificData: IChatTerminalToolInvocationData = {
 					...toolSpecificData,
@@ -1749,22 +1740,28 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	 * on a secondary prompt (e.g. heredoc continuation `> `), so the text
 	 * explicitly:
 	 *   1. Tells the model this note is NOT a signal to end the turn.
-	 *   2. Leads with `get_terminal_output` as the safe recovery action.
-	 *   3. Offers `send_to_terminal` / `vscode_askQuestions` only for real prompts.
+	 *   2. In auto-approve mode, leads with `send_to_terminal` for non-secret
+	 *      prompts to minimize round-trips, with a `get_terminal_output` fallback.
+	 *   3. In default mode, leads with `get_terminal_output` as the safe
+	 *      recovery action and offers `vscode_askQuestions` only for real prompts.
 	 * `kill_terminal` is only advertised on the timeout branch — suggesting it
 	 * in the general case leads the model to terminate valid interactive
 	 * sessions (e.g. `npm init`) instead of driving them.
 	 */
 	private _buildInputNeededSteeringText(chatSessionResource: URI, termId: string, mentionTimeout: boolean): string {
 		const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
-		const realInputBranch = isAutoApproved
-			? `determine the answer and call ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time.`
-			: `call the vscode_askQuestions tool to ask the user, then send each answer using ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time.`;
-		const lines = [
-			`This note is not a signal to end the turn — pick one of the actions below and continue.`,
-			`  1. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. This is the default and safest action when unsure.`,
-			`  2. Only if the output clearly ends with a real input prompt (password:, Continue? (y/n), etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), ${realInputBranch}`,
-		];
+		const lines: string[] = [];
+		lines.push(`This note is not a signal to end the turn — pick one of the actions below and continue.`);
+		if (isAutoApproved) {
+			// In auto-approve mode, prioritize direct action to minimize round-trips.
+			// askQuestions auto-responds in autopilot, so secret prompts should not be
+			// routed there — the model should skip secrets it cannot answer.
+			lines.push(`  1. If the output clearly ends with a non-secret input prompt (Continue? (y/n), Enter selection, etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), determine the answer and immediately call ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time. Never guess passwords, passphrases, tokens, or other secrets — if the prompt requires a secret you do not have, inform the user and stop.`);
+			lines.push(`  2. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling.`);
+		} else {
+			lines.push(`  1. If the command may still be producing output or the shell prompt has not returned, call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. This is the default and safest action when unsure.`);
+			lines.push(`  2. Only if the output clearly ends with a real input prompt (password:, Continue? (y/n), etc. — a normal shell prompt like \`$\` or \`#\` does NOT count), call the vscode_askQuestions tool to ask the user, then send each answer using ${TerminalToolId.SendToTerminal} with id="${termId}" (which returns the next few lines of output). Repeat one prompt at a time.`);
+		}
 		if (mentionTimeout) {
 			lines.push(`  3. A timeout does not mean the command failed — call ${TerminalToolId.GetTerminalOutput} with id="${termId}" to continue polling. Only call ${TerminalToolId.KillTerminal} if the command is genuinely hung and you need to retry with a different approach.`);
 		}

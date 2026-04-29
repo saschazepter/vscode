@@ -21,6 +21,7 @@ import { IsNewChatInSessionContext, IsNewChatSessionContext } from '../../../com
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
 import { RunScriptContribution } from './runScriptAction.js';
 import './nullInlineChatSessionService.js';
+import './openInVSCodeWidget.js';
 import './nullChatTipService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -43,6 +44,7 @@ import { AccessibleViewRegistry } from '../../../../platform/accessibility/brows
 import { SessionsChatAccessibilityHelp } from './sessionsChatAccessibilityHelp.js';
 import { SessionsOpenerParticipantContribution } from './sessionsOpenerParticipant.js';
 import { NewChatEditor, NewChatEditorInput, NEW_CHAT_EDITOR_ID } from './newChatEditor.js';
+import '../../sessions/browser/mobile/mobileOverlayContribution.js';
 
 export const OPEN_NEW_CHAT_EDITOR_COMMAND_ID = 'workbench.action.sessions.openNewChatEditor';
 
