@@ -90,6 +90,16 @@ declare module 'vscode' {
 		readonly description?: string;
 
 		/**
+		 * The extension identifier that contributed this customization, if any.
+		 */
+		readonly extensionId?;
+
+		/**
+		 * The URI of the plugin that contributed this customization, if any.
+		 */
+		readonly pluginUri?: URI;
+
+		/**
 		 * Optional group key for display grouping. Items sharing the same
 		 * `groupKey` are placed under a shared collapsible header in the
 		 * management UI.

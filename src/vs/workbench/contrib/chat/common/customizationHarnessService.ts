@@ -20,6 +20,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { SessionType } from './chatSessionsService.js';
 import { CustomAgent } from './promptSyntax/service/promptsServiceImpl.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
+import { getCanonicalPluginCommandId } from './plugins/agentPluginService.js';
 
 export const ICustomizationHarnessService = createDecorator<ICustomizationHarnessService>('customizationHarnessService');
 
@@ -164,8 +165,6 @@ export interface ICustomizationItem {
 	readonly description?: string;
 	/** Storage origin (local, user, extension, plugin). Set by providers that know the source. */
 	readonly storage?: PromptsStorage;
-	/** Display name of the contributing extension (e.g. "GitHub Copilot Chat"). */
-	readonly extensionLabel?: string;
 	/** The extension identifier that contributed this customization, if any. */
 	readonly extensionId: string | undefined;
 	/** The URI of the plugin that contributed this customization, if any. */
@@ -644,7 +643,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 				result.push({
 					uri: item.uri,
 					type: item.type as PromptsType.prompt | PromptsType.skill,
-					name: item.name,
+					name: item.pluginUri ? getCanonicalPluginCommandId({ uri: item.pluginUri }, item.name) : item.name,
 					description: item.description,
 					userInvocable: true, // todo we need a way for providers to specify this if some items aren't user-invocable`
 					storage: item.storage ?? PromptsStorage.local,
