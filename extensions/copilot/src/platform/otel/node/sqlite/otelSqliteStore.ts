@@ -100,6 +100,44 @@ export interface SessionRow {
 	total_cached_tokens: number;
 }
 
+/** Per-model rollup row returned from {@link OTelSqliteStore.getUsageSummary}. */
+export interface UsageModelRow {
+	model: string;
+	calls: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_tokens: number;
+	reasoning_tokens: number;
+}
+
+/** Per-tool rollup row returned from {@link OTelSqliteStore.getUsageSummary}. */
+export interface UsageToolRow {
+	tool_name: string;
+	calls: number;
+	error_calls: number;
+}
+
+/** Aggregate totals for a usage window. */
+export interface UsageTotals {
+	session_count: number;
+	llm_calls: number;
+	tool_calls: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_tokens: number;
+	reasoning_tokens: number;
+	duration_ms: number;
+}
+
+/** Result of {@link OTelSqliteStore.getUsageSummary}. */
+export interface UsageSummary {
+	since_ms: number;
+	totals: UsageTotals;
+	models: UsageModelRow[];
+	tools: UsageToolRow[];
+	sessions: SessionRow[];
+}
+
 // ── Store implementation ────────────────────────────────────────────────────────
 
 /**
@@ -246,6 +284,75 @@ export class OTelSqliteStore {
 		return this._ensureDb().prepare(
 			'SELECT * FROM sessions WHERE started_at >= ? ORDER BY started_at DESC'
 		).all(sinceMs) as unknown as SessionRow[];
+	}
+
+	/**
+	 * Build an aggregate usage summary over all spans started at or after `sinceMs`.
+	 *
+	 * Combines totals (across LLM `chat` spans and tool `execute_tool` spans),
+	 * a per-model rollup (grouped by `response_model`), a per-tool rollup
+	 * (grouped by `tool_name`), and the per-session breakdown via the existing
+	 * `sessions` view.
+	 *
+	 * Designed to back the `/usage` slash command — a single call returns
+	 * everything the renderer needs, so the intent stays a thin formatter.
+	 */
+	getUsageSummary(sinceMs: number): UsageSummary {
+		const db = this._ensureDb();
+
+		const totalsRow = db.prepare(`
+			SELECT
+				COUNT(DISTINCT COALESCE(conversation_id, chat_session_id)) AS session_count,
+				SUM(CASE WHEN operation_name = 'chat' THEN 1 ELSE 0 END) AS llm_calls,
+				SUM(CASE WHEN operation_name = 'execute_tool' THEN 1 ELSE 0 END) AS tool_calls,
+				SUM(CASE WHEN operation_name = 'chat' THEN COALESCE(input_tokens, 0) ELSE 0 END) AS input_tokens,
+				SUM(CASE WHEN operation_name = 'chat' THEN COALESCE(output_tokens, 0) ELSE 0 END) AS output_tokens,
+				SUM(CASE WHEN operation_name = 'chat' THEN COALESCE(cached_tokens, 0) ELSE 0 END) AS cached_tokens,
+				SUM(CASE WHEN operation_name = 'chat' THEN COALESCE(reasoning_tokens, 0) ELSE 0 END) AS reasoning_tokens,
+				SUM(end_time_ms - start_time_ms) AS duration_ms
+			FROM spans
+			WHERE start_time_ms >= ?
+		`).get(sinceMs) as unknown as Partial<UsageTotals> | undefined;
+
+		const totals: UsageTotals = {
+			session_count: Number(totalsRow?.session_count ?? 0),
+			llm_calls: Number(totalsRow?.llm_calls ?? 0),
+			tool_calls: Number(totalsRow?.tool_calls ?? 0),
+			input_tokens: Number(totalsRow?.input_tokens ?? 0),
+			output_tokens: Number(totalsRow?.output_tokens ?? 0),
+			cached_tokens: Number(totalsRow?.cached_tokens ?? 0),
+			reasoning_tokens: Number(totalsRow?.reasoning_tokens ?? 0),
+			duration_ms: Number(totalsRow?.duration_ms ?? 0),
+		};
+
+		const models = db.prepare(`
+			SELECT
+				COALESCE(response_model, request_model, '(unknown)') AS model,
+				COUNT(*) AS calls,
+				SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+				SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+				SUM(COALESCE(cached_tokens, 0)) AS cached_tokens,
+				SUM(COALESCE(reasoning_tokens, 0)) AS reasoning_tokens
+			FROM spans
+			WHERE start_time_ms >= ? AND operation_name = 'chat'
+			GROUP BY COALESCE(response_model, request_model, '(unknown)')
+			ORDER BY calls DESC
+		`).all(sinceMs) as unknown as UsageModelRow[];
+
+		const tools = db.prepare(`
+			SELECT
+				tool_name,
+				COUNT(*) AS calls,
+				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_calls
+			FROM spans
+			WHERE start_time_ms >= ? AND operation_name = 'execute_tool' AND tool_name IS NOT NULL
+			GROUP BY tool_name
+			ORDER BY calls DESC
+		`).all(sinceMs) as unknown as UsageToolRow[];
+
+		const sessions = this.getSessionsSince(sinceMs);
+
+		return { since_ms: sinceMs, totals, models, tools, sessions };
 	}
 
 	cleanup(maxAgeMs: number = DEFAULT_MAX_AGE_MS): number {

@@ -1,0 +1,48 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatUsageMarkdown > renders a friendly empty-state message when no usage was recorded 1`] = `
+"## Copilot usage — last 7 days
+
+No usage data recorded in this window. Usage telemetry begins collecting as you chat with Copilot.
+---
+_Usage data is collected locally from OpenTelemetry spans and retained for up to 7 days._"
+`;
+
+exports[`formatUsageMarkdown > renders totals, top models, top tools, and session breakdown 1`] = `
+"## Copilot usage — last 7 days
+
+| | |
+|---|---:|
+| Conversations | 3 |
+| Model calls | 12 |
+| Tool calls | 7 |
+| Input tokens | 4,500 |
+| Output tokens | 1,200 |
+| Total tokens | 5,700 |
+| Cached tokens | 800 |
+| Active duration | 1m 5s |
+
+### Models
+
+| Model | Calls | Input | Output |
+|---|---:|---:|---:|
+| gpt-4o | 8 | 3,000 | 800 |
+| claude-3.5 | 4 | 1,500 | 400 |
+
+### Tools
+
+| Tool | Calls | Errors |
+|---|---:|---:|
+| read_file | 5 | 0 |
+| run_in_terminal | 2 | 1 |
+
+### Recent conversations
+
+| Started | Agent | Model | LLM | Tools | Tokens | Duration |
+|---|---|---|---:|---:|---:|---:|
+| 1m ago | editor | gpt-4o | 6 | 4 | 3,200 | 55.0s |
+| 5m ago | — | claude-3.5 | 4 | 2 | 1,900 | 4m 0s |
+
+---
+_Usage data is collected locally from OpenTelemetry spans and retained for up to 7 days._"
+`;

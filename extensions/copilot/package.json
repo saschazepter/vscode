@@ -1521,6 +1521,22 @@
 						"when": "github.copilot.sessionSearch.enabled"
 					},
 					{
+						"name": "usage",
+						"description": "%copilot.usage.description%"
+					},
+					{
+						"name": "usage:today",
+						"description": "%copilot.usage.today.description%"
+					},
+					{
+						"name": "usage:week",
+						"description": "%copilot.usage.week.description%"
+					},
+					{
+						"name": "usage:month",
+						"description": "%copilot.usage.month.description%"
+					},
+					{
 						"name": "explain",
 						"description": "%copilot.workspace.explain.description%"
 					},

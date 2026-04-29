@@ -267,4 +267,90 @@ describe('OTelSqliteStore', () => {
 		const spans = store.getSpansByTraceId('trace-cli-both');
 		expect(spans[0].ttft_ms).toBe(500);
 	});
+
+	it('aggregates a usage summary over a time window', () => {
+		const now = 1_700_000_000_000;
+		// Conversation 1: chat + tool, recent
+		store.insertSpan(makeSpan({
+			spanId: 'c1-chat-1', traceId: 't1', name: 'chat',
+			startTime: now - 1000, endTime: now - 500,
+			attributes: {
+				'gen_ai.operation.name': 'chat',
+				'gen_ai.conversation.id': 'conv-1',
+				'gen_ai.response.model': 'gpt-4o',
+				'gen_ai.usage.input_tokens': 100,
+				'gen_ai.usage.output_tokens': 50,
+				'gen_ai.usage.cache_read.input_tokens': 20,
+			},
+		}));
+		store.insertSpan(makeSpan({
+			spanId: 'c1-tool-1', traceId: 't1', parentSpanId: 'c1-chat-1', name: 'execute_tool read_file',
+			startTime: now - 400, endTime: now - 300,
+			attributes: {
+				'gen_ai.operation.name': 'execute_tool',
+				'gen_ai.conversation.id': 'conv-1',
+				'gen_ai.tool.name': 'read_file',
+			},
+		}));
+		// Conversation 2: chat with a different model
+		store.insertSpan(makeSpan({
+			spanId: 'c2-chat-1', traceId: 't2', name: 'chat',
+			startTime: now - 2000, endTime: now - 1500,
+			attributes: {
+				'gen_ai.operation.name': 'chat',
+				'gen_ai.conversation.id': 'conv-2',
+				'gen_ai.response.model': 'claude-3.5',
+				'gen_ai.usage.input_tokens': 200,
+				'gen_ai.usage.output_tokens': 80,
+			},
+		}));
+		// Older span — outside the window
+		store.insertSpan(makeSpan({
+			spanId: 'old-chat', traceId: 't-old', name: 'chat',
+			startTime: now - 1_000_000, endTime: now - 999_500,
+			attributes: {
+				'gen_ai.operation.name': 'chat',
+				'gen_ai.conversation.id': 'conv-old',
+				'gen_ai.response.model': 'gpt-4o',
+				'gen_ai.usage.input_tokens': 9999,
+				'gen_ai.usage.output_tokens': 9999,
+			},
+		}));
+
+		const summary = store.getUsageSummary(now - 10_000);
+
+		expect(summary).toMatchObject({
+			totals: {
+				session_count: 2,
+				llm_calls: 2,
+				tool_calls: 1,
+				input_tokens: 300,
+				output_tokens: 130,
+				cached_tokens: 20,
+				reasoning_tokens: 0,
+			},
+		});
+		expect(summary.totals.duration_ms).toBe(500 + 100 + 500); // 1100
+		expect(summary.models.map(m => m.model).sort()).toEqual(['claude-3.5', 'gpt-4o']);
+		expect(summary.tools).toHaveLength(1);
+		expect(summary.tools[0]).toMatchObject({ tool_name: 'read_file', calls: 1, error_calls: 0 });
+		expect(summary.sessions.map(s => s.session_id).sort()).toEqual(['conv-1', 'conv-2']);
+	});
+
+	it('returns zero totals when no spans fall within the window', () => {
+		const summary = store.getUsageSummary(Date.now() - 1000);
+		expect(summary.totals).toEqual({
+			session_count: 0,
+			llm_calls: 0,
+			tool_calls: 0,
+			input_tokens: 0,
+			output_tokens: 0,
+			cached_tokens: 0,
+			reasoning_tokens: 0,
+			duration_ms: 0,
+		});
+		expect(summary.models).toEqual([]);
+		expect(summary.tools).toEqual([]);
+		expect(summary.sessions).toEqual([]);
+	});
 });

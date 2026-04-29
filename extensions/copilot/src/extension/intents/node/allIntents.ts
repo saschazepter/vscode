@@ -26,6 +26,7 @@ import { TerminalExplainIntent } from './terminalExplainIntent';
 import { TerminalIntent } from './terminalIntent';
 import { TestsIntent } from './testIntent/testIntent';
 import { UnknownIntent } from './unknownIntent';
+import { UsageIntent } from './usageIntent';
 import { VscodeIntent } from './vscodeIntent';
 
 IntentRegistry.setIntents([
@@ -50,4 +51,5 @@ IntentRegistry.setIntents([
 	new SyncDescriptor(NotebookEditorIntent),
 	new SyncDescriptor(InlineChatIntent),
 	new SyncDescriptor(ChronicleIntent),
+	new SyncDescriptor(UsageIntent),
 ]);

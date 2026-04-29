@@ -30,6 +30,7 @@ export const enum Intent {
 	SearchKeywords = 'searchKeywords',
 	AskAgent = 'askAgent',
 	Chronicle = 'chronicle',
+	Usage = 'usage',
 }
 
 export const GITHUB_PLATFORM_AGENT = 'github.copilot-dynamic.platform';
@@ -51,6 +52,10 @@ export const agentsToCommands: Partial<Record<Intent, Record<string, Intent>>> =
 		'chronicle:standup': Intent.Chronicle,
 		'chronicle:tips': Intent.Chronicle,
 		'chronicle:reindex': Intent.Chronicle,
+		'usage': Intent.Usage,
+		'usage:today': Intent.Usage,
+		'usage:week': Intent.Usage,
+		'usage:month': Intent.Usage,
 	},
 	[Intent.VSCode]: {
 		'search': Intent.Search,
