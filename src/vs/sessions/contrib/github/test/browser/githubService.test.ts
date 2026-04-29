@@ -106,7 +106,7 @@ suite('GitHubService', () => {
 	test('getPullRequestCI uses prNumber before the head ref', () => {
 		const model = service.getPullRequestCI('owner', 'repo', 1, 'abc123');
 
-		assert.strictEqual(model.headRef, 'abc123');
+		assert.strictEqual(model.headSha, 'abc123');
 	});
 
 	test('getPullRequestCI returns different models for different refs', () => {

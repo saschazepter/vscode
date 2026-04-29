@@ -45,10 +45,10 @@ export interface IGitHubService {
 	getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel;
 
 	/**
-	 * Get or create a reactive model for CI checks on a pull request head ref.
-	 * The model is cached by owner/repo/prNumber/headRef key and disposed when the service is disposed.
+	 * Get or create a reactive model for CI checks on a pull request head SHA.
+	 * The model is cached by owner/repo/prNumber/headSha key and disposed when the service is disposed.
 	 */
-	getPullRequestCI(owner: string, repo: string, prNumber: number, headRef: string): GitHubPullRequestCIModel;
+	getPullRequestCI(owner: string, repo: string, prNumber: number, headSha: string): GitHubPullRequestCIModel;
 
 	/**
 	 * List files changed between two refs using the GitHub compare API.
@@ -122,7 +122,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 		return model;
 	}
 
-	getPullRequestCI(owner: string, repo: string, prNumber: number, headRef: string): GitHubPullRequestCIModel {
+	getPullRequestCI(owner: string, repo: string, prNumber: number, headSha: string): GitHubPullRequestCIModel {
 		const key = getPullRequestKey(owner, repo, prNumber);
 		let models = this._ciModels.get(key);
 		if (!models) {
@@ -130,12 +130,12 @@ export class GitHubService extends Disposable implements IGitHubService {
 			this._ciModels.set(key, models);
 		}
 
-		let model = models.get(headRef);
+		let model = models.get(headSha);
 		if (!model) {
 			models.clearAndDisposeAll();
-			this._logService.trace(`${LOG_PREFIX} Creating CI model for ${key}/${headRef}`);
-			model = new GitHubPullRequestCIModel(owner, repo, headRef, this._ciFetcher, this._logService);
-			models.set(headRef, model);
+			this._logService.trace(`${LOG_PREFIX} Creating CI model for ${key}/${headSha}`);
+			model = new GitHubPullRequestCIModel(owner, repo, headSha, this._ciFetcher, this._logService);
+			models.set(headSha, model);
 		}
 		return model;
 	}

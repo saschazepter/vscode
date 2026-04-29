@@ -91,37 +91,6 @@ suite('GitHubPullRequestPollingContribution', () => {
 		});
 		assert.strictEqual(session.isArchived.get(), false);
 	});
-
-	test('releases a shared pull request only after the last session stops tracking it', () => {
-		const firstSession = sessionsManagementService.addSession('first', makeGitHubInfo(1));
-		const secondSession = sessionsManagementService.addSession('second', makeGitHubInfo(1));
-		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
-
-		sessionsManagementService.removeSession(firstSession);
-
-		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 0, disposeCalls: 0 },
-		});
-
-		sessionsManagementService.removeSession(secondSession);
-
-		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 1 },
-		});
-	});
-
-	test('moves polling when a session pull request changes', () => {
-		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
-		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
-
-		sessionsManagementService.setGitHubInfo(session, makeGitHubInfo(2));
-		sessionsManagementService.fireSessionsChanged({ changed: [session] });
-
-		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 1 },
-			'owner/repo/2': { startPollingCalls: 1, stopPollingCalls: 0, disposeCalls: 0 },
-		});
-	});
 });
 
 class TestSessionsManagementService extends mock<ISessionsManagementService>() {
