@@ -25,6 +25,7 @@ import { AICustomizationManagementEditor } from '../../../../../workbench/contri
 import { AICustomizationManagementEditorInput } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
 import { IAICustomizationItemsModel, ItemsModelSection } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemsModel.js';
 import { IAICustomizationListItem } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationItemSource.js';
+import { ICustomizationHarnessService, IHarnessDescriptor } from '../../../../../workbench/contrib/chat/common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../../../../workbench/contrib/chat/common/plugins/agentPluginService.js';
 import { IMcpServer, IMcpService } from '../../../../../workbench/contrib/mcp/common/mcpTypes.js';
 import { IEditorService, PreferredGroup } from '../../../../../workbench/services/editor/common/editorService.js';
@@ -139,6 +140,18 @@ function createInstantiationService(disposables: DisposableStore, storageService
 	instantiationService.set(IStorageService, storageService);
 	instantiationService.set(IEditorService, editorService);
 	instantiationService.set(IAICustomizationItemsModel, createMockItemsModel());
+	instantiationService.set(ICustomizationHarnessService, new class extends mock<ICustomizationHarnessService>() {
+		private readonly _descriptor: IHarnessDescriptor = {
+			id: 'test',
+			label: 'Test',
+			icon: undefined as never,
+			getStorageSourceFilter: () => ({ sources: [] }),
+		};
+		override readonly activeHarness = observableValue('testActiveHarness', 'test');
+		override readonly availableHarnesses = observableValue<readonly IHarnessDescriptor[]>('testAvailableHarnesses', [this._descriptor]);
+		override findHarnessById(id: string) { return id === this._descriptor.id ? this._descriptor : undefined; }
+		override getActiveDescriptor() { return this._descriptor; }
+	}());
 	instantiationService.set(IMcpService, new class extends mock<IMcpService>() {
 		override readonly servers = observableValue<readonly IMcpServer[]>('emptyMcpServers', []);
 	}());
