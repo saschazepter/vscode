@@ -79,7 +79,7 @@ export async function enumerateLocalCustomizationsForHarness(
 					type,
 					storage,
 					pluginUri: file.pluginUri,
-					extensionId: file.extension?.id,
+					extensionId: file.extension?.identifier.value,
 					disabled: syncProvider.isDisabled(file.uri),
 				});
 			}
