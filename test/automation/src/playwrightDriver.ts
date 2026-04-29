@@ -582,11 +582,13 @@ export class PlaywrightDriver {
 	 * The primary path (`page.click`) is preferred because Playwright re-checks
 	 * `elementFromPoint(x, y)` immediately before dispatching, eliminating the
 	 * TOCTOU window where a sibling element could shift the target between the
-	 * position lookup and the click. The fallback only kicks in when actionability
-	 * checks legitimately fail — the known case is Monaco's `.native-edit-context`
-	 * overlay (z-index: -10) which `elementFromPoint` returns instead of the
-	 * intended target, causing Playwright to refuse the click. The input state is
-	 * reset before the fallback so partial hover/mousedown side effects from the
+	 * position lookup and the click. The fallback only kicks in when a known
+	 * actionability error occurs — specifically when an overlay element intercepts
+	 * pointer events (the known case is Monaco's `.native-edit-context`, z-index: -10,
+	 * which `elementFromPoint` returns instead of the intended target). Other errors
+	 * (e.g. selector not found, detached element, timeout on a genuinely missing
+	 * element) are rethrown so real failures aren't silently masked. The input state
+	 * is reset before the fallback so partial hover/mousedown side effects from the
 	 * failed attempt don't corrupt subsequent events.
 	 */
 	async robustClick(selector: string, timeoutMs: number = 2000): Promise<void> {
@@ -594,12 +596,31 @@ export class PlaywrightDriver {
 			await this.page.click(selector, { timeout: timeoutMs });
 			return;
 		} catch (err) {
+			if (!this.isPointerInterceptedError(err)) {
+				throw err;
+			}
 			// Reset input state so any hover/mousedown left by the failed
 			// page.click doesn't disrupt the fallback click.
 			await this.page.mouse.move(0, 0);
-			await new Promise(resolve => setTimeout(resolve, 50));
-			await this.clickAtStablePosition(selector);
+			await wait(50);
+			try {
+				await this.clickAtStablePosition(selector);
+			} catch (fallbackErr) {
+				const orig = err instanceof Error ? err.message : String(err);
+				const fb = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+				throw new Error(`robustClick fallback failed for '${selector}'. Original page.click error: ${orig}. Fallback error: ${fb}`);
+			}
 		}
+	}
+
+	/**
+	 * Returns true when the error is an actionability failure caused by an overlay
+	 * element intercepting pointer events (e.g. Monaco's `.native-edit-context`).
+	 * These are the only errors for which the stable-coordinates fallback is safe.
+	 */
+	private isPointerInterceptedError(err: unknown): boolean {
+		const message = err instanceof Error ? err.message : String(err);
+		return message.includes('intercepts pointer events');
 	}
 
 	/**
@@ -622,7 +643,7 @@ export class PlaywrightDriver {
 			if (Date.now() - start > timeoutMs) {
 				throw new Error(`Element position never stabilized for '${selector}' within ${timeoutMs}ms`);
 			}
-			await new Promise(resolve => setTimeout(resolve, intervalMs));
+			await wait(intervalMs);
 		}
 	}
 

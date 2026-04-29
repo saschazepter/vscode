@@ -272,14 +272,14 @@ export class Code {
 	}
 
 	/**
-	 * Like {@link waitAndClick} but defeats a TOCTOU race: tries Playwright's
-	 * actionability-checked `page.click` first (which re-verifies `elementFromPoint`
-	 * right before dispatching, so the element can't shift under the click). Falls
-	 * back to clicking at stabilized coordinates if actionability checks fail — the
-	 * known case is Monaco's `.native-edit-context` overlay (z-index: -10) which
-	 * `elementFromPoint` returns instead of the intended target, causing Playwright
-	 * to refuse the click. The fallback resets input state first so any partial
-	 * hover/mousedown from the failed attempt doesn't corrupt subsequent events.
+	 * Clicks an element using Playwright's actionability-checked `page.click` (which
+	 * re-verifies `elementFromPoint` right before dispatching, so the element can't
+	 * shift under the click), with a stable-coordinates fallback when actionability
+	 * checks fail due to an overlay intercepting pointer events. Unlike
+	 * {@link waitAndClick} this does not poll/retry the click — it waits for the
+	 * element to exist first, then attempts a single click. Use for elements that
+	 * may shift due to siblings being inserted asynchronously (e.g. status bar items
+	 * in the editor area when extensions register a language status item).
 	 */
 	async robustClick(selector: string): Promise<void> {
 		await this.waitForElement(selector);
