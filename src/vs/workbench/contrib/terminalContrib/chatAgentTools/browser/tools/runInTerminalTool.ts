@@ -2287,12 +2287,15 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// will never fire — the pty exited before shell integration could
 		// emit the end marker. Output captured here is whatever was buffered
 		// up until disposal.
+		// Capture the execution reference now — by the time onDisposed fires,
+		// onDidDisposeInstance listeners may have already removed it from
+		// _activeExecutions.
+		const executionForDisposal = RunInTerminalTool._activeExecutions.get(termId);
 		store.add(terminalInstance.onDisposed(() => {
 			if (handleSessionCancelled()) {
 				return;
 			}
-			const execution = RunInTerminalTool._activeExecutions.get(termId);
-			const currentOutput = execution?.getOutput() ?? '';
+			const currentOutput = executionForDisposal?.getOutput() ?? '';
 			const exitCode = terminalInstance.exitCode;
 			const exitCodeText = exitCode !== undefined ? ` with exit code ${exitCode}` : '';
 			disposeNotification();
