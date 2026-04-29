@@ -587,9 +587,7 @@ export class PlaywrightDriver {
 	 * pointer events (the known case is Monaco's `.native-edit-context`, z-index: -10,
 	 * which `elementFromPoint` returns instead of the intended target). Other errors
 	 * (e.g. selector not found, detached element, timeout on a genuinely missing
-	 * element) are rethrown so real failures aren't silently masked. The input state
-	 * is reset before the fallback so partial hover/mousedown side effects from the
-	 * failed attempt don't corrupt subsequent events.
+	 * element) are rethrown so real failures aren't silently masked.
 	 */
 	async robustClick(selector: string, timeoutMs: number = 2000): Promise<void> {
 		try {
@@ -599,10 +597,6 @@ export class PlaywrightDriver {
 			if (!this.isPointerInterceptedError(err)) {
 				throw err;
 			}
-			// Reset input state so any hover/mousedown left by the failed
-			// page.click doesn't disrupt the fallback click.
-			await this.page.mouse.move(0, 0);
-			await wait(50);
 			try {
 				await this.clickAtStablePosition(selector);
 			} catch (fallbackErr) {
