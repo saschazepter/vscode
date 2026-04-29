@@ -338,7 +338,13 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 			const data = this._ensurePRReviewInitialized(activeSessionResource);
 
-			// Start polling
+			// Initial fetch of review threads
+			data.reviewThreadsModel?.refresh().catch(err => {
+				this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
+				data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
+			});
+
+			// Start polling of review threads
 			data.reviewThreadsModel?.startPolling();
 			reader.store.add({ dispose: () => data.reviewThreadsModel?.stopPolling() });
 		}));
@@ -706,12 +712,6 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 			data.state.set({ kind: PRReviewStateKind.Loaded, comments }, undefined);
 		}));
-
-		// Initial fetch of review threads
-		reviewThreadsModel.refresh().catch(err => {
-			this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
-			data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
-		});
 
 		return data;
 	}

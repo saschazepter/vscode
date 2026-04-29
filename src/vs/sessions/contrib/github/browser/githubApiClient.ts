@@ -109,8 +109,6 @@ export class GitHubApiClient extends Disposable {
 			callSite
 		}, CancellationToken.None);
 
-		console.log(`${LOG_PREFIX} Request completed: ${method} ${url} (call site: ${callSite}) - Status: ${response.res.statusCode}`);
-
 		const rateLimitRemaining = parseRateLimitHeader(response.res.headers?.['x-ratelimit-remaining']);
 		if (rateLimitRemaining !== undefined && rateLimitRemaining < 100) {
 			this._logService.warn(`${LOG_PREFIX} GitHub API rate limit low: ${rateLimitRemaining} remaining`);

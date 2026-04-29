@@ -16,6 +16,7 @@ import { GitHubPullRequestModel } from './models/githubPullRequestModel.js';
 import { GitHubPullRequestReviewThreadsModel } from './models/githubPullRequestReviewThreadsModel.js';
 import { GitHubPullRequestCIModel } from './models/githubPullRequestCIModel.js';
 import { GitHubChangesFetcher } from './fetchers/githubChangesFetcher.js';
+import { getPullRequestKey } from '../common/utils.js';
 
 export interface IGitHubService {
 	readonly _serviceBrand: undefined;
@@ -81,6 +82,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 		super();
 
 		this._apiClient = this._register(instantiationService.createInstance(GitHubApiClient));
+
 		this._repoFetcher = new GitHubRepositoryFetcher(this._apiClient);
 		this._changesFetcher = new GitHubChangesFetcher(this._apiClient);
 		this._prFetcher = new GitHubPRFetcher(this._apiClient);
@@ -99,7 +101,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 	}
 
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
-		const key = this._pullRequestKey(owner, repo, prNumber);
+		const key = getPullRequestKey(owner, repo, prNumber);
 		let model = this._pullRequests.get(key);
 		if (!model) {
 			this._logService.trace(`${LOG_PREFIX} Creating PR model for ${key}`);
@@ -109,16 +111,8 @@ export class GitHubService extends Disposable implements IGitHubService {
 		return model;
 	}
 
-	disposePullRequest(owner: string, repo: string, prNumber: number): void {
-		const pullRequestKey = this._pullRequestKey(owner, repo, prNumber);
-
-		this._pullRequests.deleteAndDispose(pullRequestKey);
-		this._pullRequestReviewThreads.deleteAndDispose(pullRequestKey);
-		this._ciModels.deleteAndDispose(pullRequestKey);
-	}
-
 	getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
-		const key = this._pullRequestKey(owner, repo, prNumber);
+		const key = getPullRequestKey(owner, repo, prNumber);
 		let model = this._pullRequestReviewThreads.get(key);
 		if (!model) {
 			this._logService.trace(`${LOG_PREFIX} Creating PR review threads model for ${key}`);
@@ -129,7 +123,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 	}
 
 	getPullRequestCI(owner: string, repo: string, prNumber: number, headRef: string): GitHubPullRequestCIModel {
-		const key = this._pullRequestKey(owner, repo, prNumber);
+		const key = getPullRequestKey(owner, repo, prNumber);
 		let models = this._ciModels.get(key);
 		if (!models) {
 			models = new DisposableMap<string, GitHubPullRequestCIModel>();
@@ -150,7 +144,19 @@ export class GitHubService extends Disposable implements IGitHubService {
 		return this._changesFetcher.getChangedFiles(owner, repo, base, head);
 	}
 
-	private _pullRequestKey(owner: string, repo: string, prNumber: number): string {
-		return `${owner}/${repo}/${prNumber}`;
+	disposePullRequest(owner: string, repo: string, prNumber: number): void {
+		const key = getPullRequestKey(owner, repo, prNumber);
+
+		this._pullRequests.deleteAndDispose(key);
+		this._pullRequestReviewThreads.deleteAndDispose(key);
+		this._ciModels.deleteAndDispose(key);
+	}
+
+	override dispose(): void {
+		this._pullRequests.dispose();
+		this._pullRequestReviewThreads.dispose();
+		this._ciModels.dispose();
+
+		super.dispose();
 	}
 }

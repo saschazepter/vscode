@@ -36,7 +36,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 	test('starts polling existing and added pull request sessions', () => {
 		const existingSession = sessionsManagementService.addSession('existing', makeGitHubInfo(1));
 
-		store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		const addedSession = sessionsManagementService.addSession('added', makeGitHubInfo(2));
 		sessionsManagementService.fireSessionsChanged({ added: [addedSession] });
@@ -50,7 +50,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 
 	test('stops polling and disposes when a session is archived, then resumes when unarchived', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
-		store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		sessionsManagementService.setArchived(session, true);
 		sessionsManagementService.fireSessionsChanged({ changed: [session] });
@@ -69,7 +69,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 
 	test('does not poll archived sessions until they are unarchived', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1), true);
-		store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		assert.deepStrictEqual(gitHubService.snapshot(), {});
 
@@ -82,7 +82,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 
 	test('stops polling and disposes tracked pull requests when disposed', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
-		const contribution = store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		const contribution = store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		contribution.dispose();
 
@@ -95,7 +95,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 	test('releases a shared pull request only after the last session stops tracking it', () => {
 		const firstSession = sessionsManagementService.addSession('first', makeGitHubInfo(1));
 		const secondSession = sessionsManagementService.addSession('second', makeGitHubInfo(1));
-		store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		sessionsManagementService.removeSession(firstSession);
 
@@ -112,7 +112,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 
 	test('moves polling when a session pull request changes', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
-		store.add(new GitHubPullRequestPollingContribution(sessionsManagementService, gitHubService));
+		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		sessionsManagementService.setGitHubInfo(session, makeGitHubInfo(2));
 		sessionsManagementService.fireSessionsChanged({ changed: [session] });
