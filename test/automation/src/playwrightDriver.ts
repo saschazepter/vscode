@@ -565,8 +565,16 @@ export class PlaywrightDriver {
 	}
 
 	async click(selector: string, xoffset?: number | undefined, yoffset?: number | undefined) {
-		const { x, y } = await this.getElementXY(selector, xoffset, yoffset);
-		await this.page.mouse.click(x + (xoffset ? xoffset : 0), y + (yoffset ? yoffset : 0));
+		if (xoffset === undefined && yoffset === undefined) {
+			// Use Playwright's native click which waits for element stability before clicking.
+			// This avoids a TOCTOU race where the element shifts between the position lookup
+			// and the actual mouse dispatch (e.g. due to a status bar layout reflow caused by
+			// a new item being inserted between the two operations).
+			await this.page.click(selector, { timeout: 2000 });
+		} else {
+			const { x, y } = await this.getElementXY(selector, xoffset, yoffset);
+			await this.page.mouse.click(x + (xoffset ? xoffset : 0), y + (yoffset ? yoffset : 0));
+		}
 	}
 
 	async setValue(selector: string, text: string) {
