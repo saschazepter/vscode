@@ -14,8 +14,6 @@ import { NOTEBOOK_IS_ACTIVE_EDITOR } from '../../notebook/common/notebookContext
 // settings
 
 export const enum InlineChatConfigKeys {
-	/** @deprecated do not read on client */
-	EnableV2 = 'inlineChat.enableV2',
 	NotebookAgent = 'inlineChat.notebookAgent',
 	DefaultModel = 'inlineChat.defaultModel',
 	Affordance = 'inlineChat.affordance',
@@ -26,15 +24,6 @@ export const enum InlineChatConfigKeys {
 Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration({
 	id: 'editor',
 	properties: {
-		[InlineChatConfigKeys.EnableV2]: {
-			description: localize('enableV2', "Whether to use the next version of inline chat."),
-			default: false,
-			type: 'boolean',
-			tags: ['preview'],
-			experiment: {
-				mode: 'auto'
-			}
-		},
 		[InlineChatConfigKeys.NotebookAgent]: {
 			markdownDescription: localize('notebookAgent', "Enable agent-like behavior for inline chat widget in notebooks."),
 			default: false,
