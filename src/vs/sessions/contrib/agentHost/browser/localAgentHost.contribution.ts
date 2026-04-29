@@ -12,7 +12,6 @@ import { AgentHostContribution } from '../../../../workbench/contrib/chat/browse
 import { IAgentHostSessionWorkingDirectoryResolver } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostSessionWorkingDirectoryResolver.js';
 import { AgentHostTerminalContribution } from '../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostTerminalContribution.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import './agentHostSkillButtons.js';
 import { LocalAgentHostSessionsProvider } from './localAgentHostSessionsProvider.js';
 
 /**

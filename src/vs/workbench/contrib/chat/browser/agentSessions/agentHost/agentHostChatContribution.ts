@@ -174,11 +174,6 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			supportsDelegation: !this._isSessionsWindow,
 			capabilities: {
 				supportsCheckpoints: true,
-				// Required so that bundled built-in skills (e.g. `/create-pr`,
-				// `/merge`) typed in the chat input — including via the
-				// agent-host skill buttons in the changes view — parse as
-				// slash commands instead of literal prompt text when the
-				// chat is locked to this agent.
 				supportsPromptAttachments: true,
 			},
 		}));
