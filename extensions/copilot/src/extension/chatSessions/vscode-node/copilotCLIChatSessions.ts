@@ -38,7 +38,7 @@ import { IChatDelegationSummaryService } from '../copilotcli/common/delegationSu
 import { clearPendingCopilotCLIRequestContext, setPendingCopilotCLIRequestContext, takePendingCopilotCLIRequestContext } from '../copilotcli/common/pendingRequestContext';
 import { SessionIdForCLI } from '../copilotcli/common/utils';
 import { getCopilotCLISessionDir } from '../copilotcli/node/cliHelpers';
-import { formatModelDetails, ICopilotCLIModels, ICopilotCLISDK, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
+import { ICopilotCLIModels, ICopilotCLISDK } from '../copilotcli/node/copilotCli';
 import { CopilotCLIPromptResolver } from '../copilotcli/node/copilotcliPromptResolver';
 import { builtinSlashSCommands, CopilotCLICommand, copilotCLICommands, ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
@@ -48,6 +48,7 @@ import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotC
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { UNTRUSTED_FOLDER_MESSAGE } from './folderRepositoryManagerImpl';
 import { IPullRequestDetectionService } from './pullRequestDetectionService';
+import { getCopilotCLIResponseModelDetails } from './copilotCLIResponseModelDetails';
 import { getSelectedSessionOptions, ISessionOptionGroupBuilder, OPEN_REPOSITORY_COMMAND_ID, toRepositoryOptionItem, toWorkspaceFolderOptionItem } from './sessionOptionGroupBuilder';
 import { ISessionRequestLifecycle } from './sessionRequestLifecycle';
 import { ICopilotCLIChatSessionInitializer, SessionInitOptions } from '../copilotcli/vscode-node/copilotCLIChatSessionInitializer';
@@ -863,24 +864,9 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				await session.object.handleRequest(request, input, attachments, model, authInfo, token);
 			}
 
-			const models = await this.copilotCLIModels.getModels().catch(ex => {
-				this.logService.error(ex, 'Failed to get models');
-				return [];
-			});
-			const selectedModelId = await session.object.getSelectedModelId().catch(ex => {
-				this.logService.error(ex, 'Failed to get selected model');
-				return undefined;
-			});
-			const lastResponseModelId = session.object.getLastResponseModelId();
-			const modelInfo = [lastResponseModelId, selectedModelId, model?.model]
-				.map(modelId => modelId ? models.find(m => matchesCopilotCLIModel(m, modelId)) : undefined)
-				.find(modelInfo => !!modelInfo);
-			const result: vscode.ChatResult = modelInfo
-				? { details: formatModelDetails(modelInfo) }
-				: {};
-
-			if (lastResponseModelId) {
-				this.chatSessionMetadataStore.updateRequestDetails(sdkSessionId, [{ vscodeRequestId: request.id, responseModelId: lastResponseModelId }])
+			const { result, responseModelId } = await getCopilotCLIResponseModelDetails(session.object, model, this.copilotCLIModels, this.logService);
+			if (responseModelId) {
+				this.chatSessionMetadataStore.updateRequestDetails(sdkSessionId, [{ vscodeRequestId: request.id, responseModelId }])
 					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
 			}
 

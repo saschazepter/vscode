@@ -45,13 +45,14 @@ import { emptyWorkspaceInfo, getWorkingDirectory, isIsolationEnabled, IWorkspace
 import { ICustomSessionTitleService } from '../copilotcli/common/customSessionTitleService';
 import { IChatDelegationSummaryService } from '../copilotcli/common/delegationSummaryService';
 import { getCopilotCLISessionDir } from '../copilotcli/node/cliHelpers';
-import { COPILOT_CLI_REASONING_EFFORT_PROPERTY, formatModelDetails, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isWelcomeView, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
+import { COPILOT_CLI_REASONING_EFFORT_PROPERTY, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isWelcomeView } from '../copilotcli/node/copilotCli';
 import { CopilotCLIPromptResolver } from '../copilotcli/node/copilotcliPromptResolver';
 import { builtinSlashSCommands, CopilotCLICommand, copilotCLICommands, ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli/node/copilotcliSessionService';
 import { buildMcpServerMappings } from '../copilotcli/node/mcpHandler';
 import { ICopilotCLISessionTracker } from '../copilotcli/vscode-node/copilotCLISessionTracker';
 import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
+import { getCopilotCLIResponseModelDetails } from './copilotCLIResponseModelDetails';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { convertReferenceToVariable } from '../copilotcli/vscode-node/copilotCLIPromptReferences';
@@ -1550,27 +1551,13 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			// Build the result before the untitled-session swap below. After the swap,
 			// the chat UI reloads history from the SDK and discards the in-memory
 			// result, which would drop our `details` field on the first request.
-			const models = await this.copilotCLIModels.getModels().catch(ex => {
-				this.logService.error(ex, 'Failed to get models');
-				return [];
-			});
-			const selectedModelId = await session.object.getSelectedModelId().catch(ex => {
-				this.logService.error(ex, 'Failed to get selected model');
-				return undefined;
-			});
-			const lastResponseModelId = session.object.getLastResponseModelId();
-			const modelInfo = [lastResponseModelId, selectedModelId, model?.model]
-				.map(modelId => modelId ? models.find(m => matchesCopilotCLIModel(m, modelId)) : undefined)
-				.find(modelInfo => !!modelInfo);
-			const result: vscode.ChatResult = modelInfo
-				? { details: formatModelDetails(modelInfo) }
-				: {};
+			const { result, responseModelId } = await getCopilotCLIResponseModelDetails(session.object, model, this.copilotCLIModels, this.logService);
 
 			// Persist the resolved model id so that on reload we can recover the model
 			// details for sessions that used `auto` (the SDK does not persist
 			// `assistant.usage`, which is the only source of the resolved model id).
-			if (lastResponseModelId) {
-				this.chatSessionMetadataStore.updateRequestDetails(sessionId, [{ vscodeRequestId: request.id, responseModelId: lastResponseModelId }])
+			if (responseModelId) {
+				this.chatSessionMetadataStore.updateRequestDetails(sessionId, [{ vscodeRequestId: request.id, responseModelId }])
 					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
 			}
 

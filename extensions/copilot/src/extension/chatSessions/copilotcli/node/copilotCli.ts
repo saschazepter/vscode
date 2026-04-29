@@ -127,7 +127,7 @@ export class CopilotCLIModels extends Disposable implements ICopilotCLIModels {
 			return;
 		}
 		const defaultModel = models[0];
-		const preferredModelId = this.extensionContext.globalState.get<string>(COPILOT_CLI_MODEL_MEMENTO_KEY, defaultModel.id)?.trim()?.toLowerCase();
+		const preferredModelId = this.extensionContext.globalState.get<string>(COPILOT_CLI_MODEL_MEMENTO_KEY, defaultModel.id)?.trim()?.toLowerCase() ?? defaultModel.id;
 
 		return models.find(m => matchesCopilotCLIModel(m, preferredModelId))?.id ?? defaultModel.id;
 	}
