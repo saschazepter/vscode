@@ -363,7 +363,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			telemetryBuilder.setSubsequentEditOrder(cachedEdit.rebasedEditIndex ?? cachedEdit.subsequentN);
 			// back-date the recording bookmark of the cached edit to the bookmark of the original request.
 			logContext.recordingBookmark = req.log.recordingBookmark;
-			cacheEntry = cachedEdit;
+			cacheEntry = cachedEdit.baseCacheEntry ?? cachedEdit;
 
 		} else {
 			logger.trace(`fetching next edit with shouldExpandEditWindow=${shouldExpandEditWindow}`);
@@ -405,7 +405,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 						logContext.setResponseResults([suggestedNextEdit]); // TODO: other streamed edits?
 						edit = { actualEdit: suggestedNextEdit, isFromCursorJump: result.val.isFromCursorJump };
 						isFromSpeculativeRequest = result.val.isFromSpeculativeRequest ?? false;
-						cacheEntry = result.val;
+						cacheEntry = result.val.baseCacheEntry ?? result.val;
 					}
 				}
 			}
