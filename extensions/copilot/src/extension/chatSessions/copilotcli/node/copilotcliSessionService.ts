@@ -42,7 +42,6 @@ import { emptyWorkspaceInfo, getWorkingDirectory, IWorkspaceInfo } from '../../c
 import { buildChatHistoryFromEvents, RequestIdDetails, stripReminders } from '../common/copilotCLITools';
 import { ICustomSessionTitleService } from '../common/customSessionTitleService';
 import { IChatDelegationSummaryService } from '../common/delegationSummaryService';
-import { getCopilotCLIModelIdAliases } from '../common/copilotCLIModelIds';
 import { SessionIdForCLI } from '../common/utils';
 import { getCopilotCLISessionDir } from './cliHelpers';
 import { formatModelDetails, getAgentFileNameFromFilePath, ICopilotCLIAgents, ICopilotCLIModels, ICopilotCLISDK, isEnabledForCopilotCLI } from './copilotCli';
@@ -1120,10 +1119,7 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 		});
 		const detailsById = new Map<string, string>();
 		for (const model of models) {
-			const details = formatModelDetails(model);
-			for (const alias of getCopilotCLIModelIdAliases(model.id)) {
-				detailsById.set(alias, details);
-			}
+			detailsById.set(model.id.trim().toLowerCase(), formatModelDetails(model));
 		}
 		return detailsById;
 	}

@@ -23,7 +23,6 @@ import { ICopilotTool } from '../../../tools/common/toolsRegistry';
 import { IOnWillInvokeToolEvent, IToolsService, IToolValidationResult } from '../../../tools/common/toolsService';
 import { formatUriForFileWidget } from '../../../tools/common/toolUtils';
 import { StoredModeInstructions } from '../../common/chatSessionMetadataStore';
-import { getCopilotCLIModelIdAliases } from './copilotCLIModelIds';
 import { extractChatPromptReferences, getFolderAttachmentPath } from './copilotCLIPrompt';
 import { IChatDelegationSummaryService } from './delegationSummaryService';
 
@@ -543,13 +542,7 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 		if (!modelId || !modelDetailsById) {
 			return undefined;
 		}
-		for (const alias of getCopilotCLIModelIdAliases(modelId)) {
-			const details = modelDetailsById.get(alias);
-			if (details) {
-				return details;
-			}
-		}
-		return undefined;
+		return modelDetailsById.get(modelId.trim().toLowerCase());
 	}
 
 	function createResultForModel(modelId: string | undefined) {

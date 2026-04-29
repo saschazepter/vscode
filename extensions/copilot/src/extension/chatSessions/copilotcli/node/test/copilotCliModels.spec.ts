@@ -184,17 +184,6 @@ describe('CopilotCLIModels', () => {
 			expect(await models.resolveModel('GPT-3.5')).toBe('gpt-3.5');
 		});
 
-		it('resolves dotted Claude model ids to dashed SDK ids', async () => {
-			const { models } = createModels({
-				hasSession: true,
-				sdk: createMockSDK([
-					{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
-				])
-			});
-
-			expect(await models.resolveModel('claude-opus-4.7')).toBe('claude-opus-4-7');
-		});
-
 		it('returns undefined for unknown model', async () => {
 			const { models } = createModels({ hasSession: true });
 
@@ -235,20 +224,6 @@ describe('CopilotCLIModels', () => {
 			const result = await models.getDefaultModel();
 
 			expect(result).toBe('gpt-3.5');
-		});
-
-		it('returns dashed SDK id for dotted Claude preference', async () => {
-			const { models } = createModels({
-				hasSession: true,
-				sdk: createMockSDK([
-					{ id: 'gpt-4o', name: 'GPT-4o', maxContextWindowTokens: 128000, supportsVision: true },
-					{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
-				])
-			});
-
-			await models.setDefaultModel('claude-opus-4.7');
-
-			expect(await models.getDefaultModel()).toBe('claude-opus-4-7');
 		});
 
 		it('falls back to first model when stored preference is invalid', async () => {

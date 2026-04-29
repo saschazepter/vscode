@@ -14,8 +14,7 @@ export function getCopilotCLIModelIdAliases(modelId: string): readonly string[] 
 	addAlias(trimmed);
 
 	const normalized = trimmed.toLowerCase();
-	addAlias(normalized.replace(/^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)(?=$|-)/, '$1-$2'));
-	addAlias(normalized.replace(/^(claude-(?:opus|sonnet|haiku)-\d+)-(\d+)(?=$|-)/, '$1.$2'));
+	addAlias(normalized.replace(/(\d)([.-])(\d)(?=$|-)/g, (_match, before: string, separator: string, after: string) => `${before}${separator === '.' ? '-' : '.'}${after}`));
 
 	return [...aliases];
 }

@@ -169,18 +169,6 @@ describe('CopilotCLITools', () => {
 			expect(responseTurn.result).toEqual({ details: 'Base • 2x' });
 		});
 
-		it('matches dotted Claude event model ids to dashed model detail ids', () => {
-			const events: any[] = [
-				{ type: 'session.start', data: { selectedModel: 'claude-opus-4.7' } },
-				{ type: 'user.message', data: { content: 'Hello', attachments: [] } },
-				{ type: 'assistant.message', data: { content: 'Hi there' } }
-			];
-			const turns = buildChatHistoryFromEvents('', undefined, events, getVSCodeRequestId, delegationSummary, logger, undefined, undefined, new Map([['claude-opus-4-7', 'Claude Opus 4.7 • 4x']]));
-
-			expect(turns).toHaveLength(2);
-			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'Claude Opus 4.7 • 4x' });
-		});
-
 		it('uses session model changes for each rebuilt response turn', () => {
 			const modelDetails = new Map([
 				['opus-4.6', 'Opus 4.6 • 4x'],
@@ -244,7 +232,7 @@ describe('CopilotCLITools', () => {
 			];
 			const detailsByEventId: Record<string, RequestIdDetails> = {
 				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4' },
-				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'claude-opus-4.7' },
+				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'claude-opus-4-7' },
 			};
 			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
 
@@ -254,7 +242,7 @@ describe('CopilotCLITools', () => {
 			]));
 
 			expect(turns).toHaveLength(4);
-			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['gpt-5.4', 'claude-opus-4.7']);
+			expect(turns.filter(turn => turn instanceof ChatRequestTurn2).map(turn => (turn as ChatRequestTurn2).modelId)).toEqual(['gpt-5.4', 'claude-opus-4-7']);
 			expect(turns.filter(turn => turn instanceof ChatResponseTurn2).map(turn => (turn as ChatResponseTurn2).result)).toEqual([
 				{ details: 'GPT 5.4 • 2x' },
 				{ details: 'Claude Opus 4.7 • 4x' },

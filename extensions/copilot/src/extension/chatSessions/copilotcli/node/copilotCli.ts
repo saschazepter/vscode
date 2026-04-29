@@ -26,7 +26,6 @@ import { getCopilotLogger } from './logger';
 import { ensureRipgrepShim } from './ripgrepShim';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { getModelCapabilitiesDescription } from '../../../conversation/common/languageModelAccess';
-import { copilotCLIModelIdEquals } from '../common/copilotCLIModelIds';
 
 export const COPILOT_CLI_REASONING_EFFORT_PROPERTY = 'reasoningEffort';
 const COPILOT_CLI_MODEL_MEMENTO_KEY = 'github.copilot.cli.sessionModel';
@@ -67,7 +66,7 @@ export function formatModelDetails(model: CopilotCLIModelInfo): string {
 
 export function matchesCopilotCLIModel(model: Pick<CopilotCLIModelInfo, 'id' | 'name'>, modelId: string): boolean {
 	const normalizedModelId = modelId.trim().toLowerCase();
-	return copilotCLIModelIdEquals(model.id, normalizedModelId) || model.name.trim().toLowerCase() === normalizedModelId;
+	return model.id.trim().toLowerCase() === normalizedModelId || model.name.trim().toLowerCase() === normalizedModelId;
 }
 
 export const ICopilotCLISDK = createServiceIdentifier<ICopilotCLISDK>('ICopilotCLISDK');
