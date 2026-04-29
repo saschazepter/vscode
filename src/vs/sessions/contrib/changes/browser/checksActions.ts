@@ -18,7 +18,7 @@ import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/co
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { IGitHubService } from '../../github/browser/githubService.js';
-import { GitHubCheckConclusion, GitHubCheckStatus, IGitHubCICheck } from '../../github/common/types.js';
+import { GitHubCheckConclusion, GitHubCheckStatus, IGitHubCICheck, IGitHubPullRequest } from '../../github/common/types.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 
 export const hasActiveSessionFailedCIChecks = new RawContextKey<boolean>('sessions.hasActiveSessionFailedCIChecks', false);
@@ -64,6 +64,10 @@ export function getCheckStateLabel(check: IGitHubCICheck): string {
 
 export function getFailedChecks(checks: readonly IGitHubCICheck[]): readonly IGitHubCICheck[] {
 	return checks.filter(check => getCheckGroup(check) === CICheckGroup.Failed);
+}
+
+export function getPullRequestCIModelForPullRequest(gitHubService: IGitHubService, owner: string, repo: string, prNumber: number, pr: Pick<IGitHubPullRequest, 'headSha'>): ReturnType<IGitHubService['getPullRequestCI']> {
+	return gitHubService.getPullRequestCI(owner, repo, prNumber, pr.headSha);
 }
 
 export function buildFixChecksPrompt(failedChecks: ReadonlyArray<{ check: IGitHubCICheck; annotations: string }>): string {
@@ -122,7 +126,7 @@ class ActiveSessionFailedCIChecksContextContribution extends Disposable implemen
 			if (!pr) {
 				return undefined;
 			}
-			return gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number, pr.headRef);
+			return getPullRequestCIModelForPullRequest(gitHubService, gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number, pr);
 		});
 
 		this._register(bindContextKey(hasActiveSessionFailedCIChecks, contextKeyService, reader => {
@@ -178,7 +182,7 @@ class FixCIChecksAction extends Action2 {
 			return;
 		}
 
-		const ciModel = gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number, pr.headRef);
+		const ciModel = getPullRequestCIModelForPullRequest(gitHubService, gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number, pr);
 		const checks = ciModel.checks.get();
 		const failedChecks = getFailedChecks(checks);
 		if (failedChecks.length === 0) {
