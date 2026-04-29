@@ -894,6 +894,10 @@ export class ActionListWidget<T> extends Disposable {
 		this._focusCheckedOrFirst();
 	}
 
+	clearFocus(): void {
+		this._list.setFocus([]);
+	}
+
 	getFocusedElement(): IActionListItem<T> | undefined {
 		const focused = this._list.getFocus();
 		if (focused.length > 0) {
@@ -1298,7 +1302,9 @@ export class ActionListWidget<T> extends Disposable {
 			return;
 		}
 
-		this._submenuDisposables.clear();
+		// Navigated to an item with no hover/submenu — fully tear down any
+		// previous submenu so a blank panel doesn't linger.
+		this._hideSubmenu();
 	}
 
 	private _showSubmenuForItem(item: IActionListItem<T>): void {
@@ -1435,6 +1441,12 @@ export class ActionListWidget<T> extends Disposable {
 			));
 			this._submenuContainer.appendChild(submenuWidget.domNode);
 			this._currentSubmenuWidget = submenuWidget;
+
+			// The submenu widget's constructor focuses its first item by
+			// default; clear that until the user actually navigates into
+			// the submenu (via ArrowRight) so it doesn't render as if
+			// selected while the parent list still has focus.
+			submenuWidget.clearFocus();
 
 			totalHeight = submenuWidget.computeListHeight();
 			submenuWidget.layout(totalHeight);

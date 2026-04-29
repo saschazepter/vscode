@@ -475,32 +475,52 @@ export class WorkspacePicker extends Disposable {
 				widget.style.width = `${width}px`;
 				list.focus();
 
-				// Keyboard nav for tabs.
+				// Keyboard nav for the popup. We re-implement what the
+				// `IActionWidgetService` registers as global Action2
+				// keybindings (Escape / Enter / Up / Down / Left / Right)
+				// since our tabbed popup bypasses that service entirely.
 				renderDisposables.add(dom.addStandardDisposableListener(tabBar.ownerDocument, 'keydown', e => {
 					if (!tabBar.isConnected) {
 						return;
 					}
+					const target = e.target as HTMLElement | null;
+					const insidePopup = !!target && widget.contains(target);
+					if (!insidePopup) {
+						return;
+					}
+					const onTabBar = !!target?.closest('.sessions-workspace-picker-tabbar');
+					const onEditable = !!target?.closest('input, textarea, [contenteditable="true"]');
+
 					if (e.keyCode === KeyCode.Escape) {
 						dom.EventHelper.stop(e, true);
 						hide();
 						return;
 					}
 					if (e.keyCode === KeyCode.Enter) {
-						const target = e.target as HTMLElement | null;
-						if (target && !target.closest('input, textarea, [contenteditable="true"]') && !target.closest('.sessions-workspace-picker-tabbar')) {
+						if (!onTabBar) {
 							dom.EventHelper.stop(e, true);
 							list.acceptSelected();
+						}
+						return;
+					}
+					if (e.keyCode === KeyCode.UpArrow) {
+						if (!onTabBar) {
+							dom.EventHelper.stop(e, true);
+							list.focusPrevious();
+						}
+						return;
+					}
+					if (e.keyCode === KeyCode.DownArrow) {
+						if (!onTabBar) {
+							dom.EventHelper.stop(e, true);
+							list.focusNext();
 						}
 						return;
 					}
 					if (e.keyCode !== KeyCode.LeftArrow && e.keyCode !== KeyCode.RightArrow) {
 						return;
 					}
-					const target = e.target as HTMLElement | null;
-					if (!target || !widget.contains(target)) {
-						return;
-					}
-					if (target.closest('input, textarea, [contenteditable="true"]')) {
+					if (onEditable && !onTabBar) {
 						return;
 					}
 					const currentIndex = tabs.indexOf(this._activeTab ?? tabs[0]);
@@ -512,6 +532,20 @@ export class WorkspacePicker extends Disposable {
 					e.preventDefault();
 					e.stopPropagation();
 					activateTab(tabs[nextIndex]);
+				}));
+
+				// Dismiss when focus leaves the popup (mirrors the
+				// `IActionWidgetService` behavior for outside clicks /
+				// focus loss). The container element receives focus when
+				// the popup is shown, so this fires for any click that
+				// lands outside it.
+				const focusTracker = renderDisposables.add(dom.trackFocus(container));
+				renderDisposables.add(focusTracker.onDidBlur(() => {
+					const activeElement = dom.getActiveElement();
+					if (activeElement && (activeElement.closest('.action-widget-hover') || activeElement.closest('.action-list-submenu-panel'))) {
+						return;
+					}
+					hide();
 				}));
 
 				return renderDisposables;
