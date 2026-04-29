@@ -9,7 +9,7 @@ import { IAction, SubmenuAction, toAction } from '../../../../base/common/action
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { disposableTimeout } from '../../../../base/common/async.js';
-import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -60,6 +60,20 @@ const KNOWN_TAB_ORDER: readonly string[] = [
 	SESSION_WORKSPACE_GROUP_CLOUD,
 	SESSION_WORKSPACE_GROUP_REMOTE,
 ];
+const KNOWN_TAB_SET = new Set<string>(KNOWN_TAB_ORDER);
+
+/**
+ * Localized labels for well-known tab values. Custom group strings
+ * contributed by future providers fall through to the raw value.
+ */
+function localizeTabLabel(group: string): string {
+	switch (group) {
+		case SESSION_WORKSPACE_GROUP_LOCAL: return localize('workspacePicker.tab.local', "Local");
+		case SESSION_WORKSPACE_GROUP_CLOUD: return localize('workspacePicker.tab.cloud', "Cloud");
+		case SESSION_WORKSPACE_GROUP_REMOTE: return localize('workspacePicker.tab.remote', "Remote");
+		default: return group;
+	}
+}
 
 /**
  * Grace period for a restored remote workspace's provider to reach Connected
@@ -132,6 +146,14 @@ export class WorkspacePicker extends Disposable {
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 	private readonly _pickerDisposables = this._register(new MutableDisposable());
+
+	/**
+	 * True while we are tearing down a tabbed popup only to immediately
+	 * re-render it with a different active tab. Suppresses the trigger
+	 * re-focus and outside-click teardown cascades that would otherwise
+	 * dismiss the freshly-shown popup.
+	 */
+	private _swappingTab = false;
 
 	/**
 	 * Currently active workspace tab (a group label contributed by a
@@ -329,7 +351,7 @@ export class WorkspacePicker extends Disposable {
 			}
 		}
 		const known = KNOWN_TAB_ORDER.filter(g => seen.has(g));
-		const extra = [...seen].filter(g => !KNOWN_TAB_ORDER.includes(g));
+		const extra = [...seen].filter(g => !KNOWN_TAB_SET.has(g));
 		return [...known, ...extra];
 	}
 
@@ -354,6 +376,11 @@ export class WorkspacePicker extends Disposable {
 				}
 			},
 			onHide: () => {
+				// Suppressed during tab swaps so we don't move focus back to
+				// the trigger between hide and show.
+				if (this._swappingTab) {
+					return;
+				}
 				triggerElement.setAttribute('aria-expanded', 'false');
 				triggerElement.focus();
 			},
@@ -406,7 +433,16 @@ export class WorkspacePicker extends Disposable {
 		const items = this._buildItems();
 		const listOptions = this._buildListOptions(items, TABBED_PICKER_WIDTH);
 
-		const pickerDisposables = new DisposableStore();
+		// Tear down any previous tabbed popup before showing the new one.
+		// `_swappingTab` suppresses the cascading hide that would otherwise
+		// dismiss the popup we are about to show (see `_buildDelegate` and
+		// the focus-tracker block below).
+		const isSwap = !!this._pickerDisposables.value;
+		if (isSwap) {
+			this._swappingTab = true;
+			this._pickerDisposables.value = undefined;
+		}
+
 		const hide = () => {
 			this._pickerDisposables.value = undefined;
 		};
@@ -414,7 +450,7 @@ export class WorkspacePicker extends Disposable {
 
 		let listRef: ActionList<IWorkspacePickerItem> | undefined;
 		const accessibilityProvider = {
-			getAriaLabel: (item: IWorkspacePickerItem) => (item as IActionListItem<IWorkspacePickerItem>).label ?? '',
+			getAriaLabel: (item: IActionListItem<IWorkspacePickerItem>) => item.label ?? '',
 			getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 		};
 
@@ -432,7 +468,10 @@ export class WorkspacePicker extends Disposable {
 				// widget service or platform layer.
 				const tabBar = dom.append(widget, dom.$('.sessions-workspace-picker-tabbar'));
 				const radio = renderDisposables.add(new Radio({
-					items: tabs.map(t => ({ text: t, tooltip: t, isActive: t === this._activeTab })),
+					items: tabs.map(t => {
+						const label = localizeTabLabel(t);
+						return { text: label, tooltip: label, isActive: t === this._activeTab };
+					}),
 				}));
 				tabBar.appendChild(radio.domNode);
 
@@ -479,15 +518,10 @@ export class WorkspacePicker extends Disposable {
 				// `IActionWidgetService` registers as global Action2
 				// keybindings (Escape / Enter / Up / Down / Left / Right)
 				// since our tabbed popup bypasses that service entirely.
-				renderDisposables.add(dom.addStandardDisposableListener(tabBar.ownerDocument, 'keydown', e => {
-					if (!tabBar.isConnected) {
-						return;
-					}
+				// Bound to `widget` rather than the document so we don't
+				// observe unrelated keypresses while the popup is open.
+				renderDisposables.add(dom.addStandardDisposableListener(widget, 'keydown', e => {
 					const target = e.target as HTMLElement | null;
-					const insidePopup = !!target && widget.contains(target);
-					if (!insidePopup) {
-						return;
-					}
 					const onTabBar = !!target?.closest('.sessions-workspace-picker-tabbar');
 					const onEditable = !!target?.closest('input, textarea, [contenteditable="true"]');
 
@@ -536,11 +570,14 @@ export class WorkspacePicker extends Disposable {
 
 				// Dismiss when focus leaves the popup (mirrors the
 				// `IActionWidgetService` behavior for outside clicks /
-				// focus loss). The container element receives focus when
-				// the popup is shown, so this fires for any click that
-				// lands outside it.
+				// focus loss). Suppressed during tab swaps so the brief
+				// teardown of the previous popup doesn't take the new one
+				// down with it.
 				const focusTracker = renderDisposables.add(dom.trackFocus(container));
 				renderDisposables.add(focusTracker.onDidBlur(() => {
+					if (this._swappingTab) {
+						return;
+					}
 					const activeElement = dom.getActiveElement();
 					if (activeElement && (activeElement.closest('.action-widget-hover') || activeElement.closest('.action-list-submenu-panel'))) {
 						return;
@@ -553,20 +590,19 @@ export class WorkspacePicker extends Disposable {
 			onHide: () => {
 				delegate.onHide?.();
 				listRef = undefined;
-				// Clear our own tracker so re-show works.
-				if (this._pickerDisposables.value === pickerDisposables) {
-					this._pickerDisposables.value = undefined;
-				}
 			},
 			get anchorPosition() { return listRef?.anchorPosition; },
 		}, undefined, false);
 
-		pickerDisposables.add({
-			dispose: () => {
-				this.contextViewService.hideContextView();
-			},
+		// New popup is fully rendered — end the swap window so future
+		// outside-clicks / focus losses dismiss as expected.
+		if (isSwap) {
+			this._swappingTab = false;
+		}
+
+		this._pickerDisposables.value = toDisposable(() => {
+			this.contextViewService.hideContextView();
 		});
-		this._pickerDisposables.value = pickerDisposables;
 	}
 
 	/**
