@@ -374,8 +374,7 @@
 }
 
 /* Tabbed workspace picker — tab bar rendered above the action widget
- * list. Owned by the picker layer; the action widget service exposes a
- * generic header slot that the picker fills in. */
+ * list. Owned by the picker layer. */
 .action-widget .sessions-workspace-picker-tabbar {
 	display: flex;
 	align-items: center;
@@ -388,7 +387,7 @@
 }
 
 .action-widget .sessions-workspace-picker-tabbar .monaco-custom-radio > .monaco-button {
-	border-color: transparent;
+	border: none;
 	border-radius: 4px;
 }
 

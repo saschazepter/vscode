@@ -114,15 +114,13 @@ export interface ISessionWorkspace {
 	readonly label: string;
 	/** Optional description shown alongside the label (e.g., parent folder path "~/work"). */
 	readonly description?: string;
-	/** Optional group name for categorizing this workspace in pickers (e.g., "Copilot Chat", "Local"). */
-	readonly group?: string;
 	/**
-	 * High-level category used by the workspace picker to sort entries into
-	 * top-level tabs (Local / Cloud / Remote). Providers tag workspaces they
-	 * produce with the appropriate category so the picker doesn't need to
-	 * inspect URIs or provider internals.
+	 * Optional group label for categorizing this workspace in pickers. The
+	 * workspace picker uses this to bucket entries into top-level tabs
+	 * (e.g. `"Local"`, `"Cloud"`, `"Remote"`). Providers contribute the
+	 * label — the picker just renders whatever values are present.
 	 */
-	readonly category?: SessionWorkspaceCategory;
+	readonly group?: string;
 	/** Icon for the workspace. */
 	readonly icon: ThemeIcon;
 	/** Repositories in this workspace. */
@@ -263,24 +261,29 @@ export interface ISessionCapabilities {
 	readonly supportsMultipleChats: boolean;
 }
 
+/**
+ * Well-known workspace group labels used by the workspace picker to bucket
+ * recents and browse actions into top-level tabs. Providers contribute one
+ * of these (or any custom string) on each `ISessionWorkspace` and
+ * `ISessionWorkspaceBrowseAction`; the picker discovers tabs from the union
+ * of contributed values.
+ */
+export const SESSION_WORKSPACE_GROUP_LOCAL = 'Local';
+export const SESSION_WORKSPACE_GROUP_CLOUD = 'Cloud';
+export const SESSION_WORKSPACE_GROUP_REMOTE = 'Remote';
+
 export interface ISessionWorkspaceBrowseAction {
 	/** Display label for the browse action. */
 	readonly label: string;
 	/** Optional description shown alongside the label in the workspace picker. */
 	readonly description?: string;
 	/**
-	 * Optional non-localized group key used to merge actions in the workspace picker.
-	 * Actions sharing the same group key are combined into a single picker entry
-	 * with a submenu. The first action's label is used as the display text for
-	 * the merged entry (e.g. "Folders").
+	 * Optional group label used by the workspace picker to bucket browse
+	 * actions into top-level tabs (e.g. `"Local"`, `"Cloud"`, `"Remote"`).
+	 * Providers contribute the label — the picker dynamically renders tabs
+	 * for whichever values are present and filters items accordingly.
 	 */
 	readonly group?: string;
-	/**
-	 * High-level category used by the workspace picker to sort browse actions
-	 * into top-level tabs (Local / Cloud / Remote). Providers tag the actions
-	 * they contribute so the picker doesn't need to inspect provider internals.
-	 */
-	readonly category?: SessionWorkspaceCategory;
 	/** Icon for the browse action. */
 	readonly icon: ThemeIcon;
 	/** The provider that owns this action. */
@@ -288,11 +291,3 @@ export interface ISessionWorkspaceBrowseAction {
 	/** Execute the browse action and return the selected workspace, or undefined if cancelled. */
 	run(): Promise<ISessionWorkspace | undefined>;
 }
-
-/**
- * High-level workspace category used by the workspace picker to sort
- * workspaces and browse actions into top-level tabs. Providers contribute
- * the category for each workspace and browse action they expose so that
- * categorization stays a provider concern, not picker logic.
- */
-export type SessionWorkspaceCategory = 'local' | 'cloud' | 'remote';

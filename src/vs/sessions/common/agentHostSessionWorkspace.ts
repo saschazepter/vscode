@@ -10,7 +10,7 @@ import { ThemeIcon } from '../../base/common/themables.js';
 import { URI } from '../../base/common/uri.js';
 import type { ISessionGitState } from '../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
-import { ISessionWorkspace, SessionWorkspaceCategory } from '../services/sessions/common/session.js';
+import { ISessionWorkspace } from '../services/sessions/common/session.js';
 
 export interface IAgentHostSessionProjectSummary {
 	readonly uri: URI;
@@ -23,10 +23,10 @@ export interface IAgentHostSessionWorkspaceOptions {
 	readonly requiresWorkspaceTrust: boolean;
 	readonly description?: string;
 	/**
-	 * High-level workspace category for the workspace picker (Local /
-	 * Cloud / Remote tabs). Providers tag the workspaces they produce.
+	 * Group label used by the workspace picker to bucket the produced
+	 * workspace into a top-level tab (e.g. `"Local"`, `"Remote"`).
 	 */
-	readonly category?: SessionWorkspaceCategory;
+	readonly group?: string;
 	/**
 	 * Configured `git.branchProtection` glob patterns. Used to compute
 	 * `baseBranchProtected` on the resulting repository.
@@ -101,7 +101,7 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 			label: options.providerLabel ? `${project.displayName} [${options.providerLabel}]` : project.displayName,
 			description: options.description,
 			icon: Codicon.repo,
-			category: options.category,
+			group: options.group,
 			repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: undefined, ...gitFields }],
 			requiresWorkspaceTrust: options.requiresWorkspaceTrust,
 		};
@@ -116,7 +116,7 @@ export function buildAgentHostSessionWorkspace(project: IAgentHostSessionProject
 		label: options.providerLabel ? `${folderName} [${options.providerLabel}]` : folderName,
 		description: options.description,
 		icon: options.fallbackIcon,
-		category: options.category,
+		group: options.group,
 		repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: undefined, ...gitFields }],
 		requiresWorkspaceTrust: options.requiresWorkspaceTrust,
 	};
