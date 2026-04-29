@@ -124,8 +124,7 @@ export class ChatStatusDashboard extends DomWidget {
 			!this.options?.disableInlineSuggestionsSettings ||
 			!this.options?.disableModelSelection ||
 			!this.options?.disableProviderOptions ||
-			!this.options?.disableCompletionsSnooze ||
-			contributedEntries.length > 0;
+			!this.options?.disableCompletionsSnooze;
 
 		// Title header with plan name, CTA buttons, and manage action
 		let headerAdditionalSpendButton: Button | undefined;
@@ -188,8 +187,15 @@ export class ChatStatusDashboard extends DomWidget {
 		}
 
 		// Quick Settings — collapsible region
-		if (hasQuickSettingsContent) {
-			this.renderQuickSettings(contributedEntries);
+		if (hasQuickSettingsContent || contributedEntries.some(e => !e.collapsible)) {
+			this.renderQuickSettings(contributedEntries.filter(e => !e.collapsible));
+		}
+
+		// Collapsible contributions — each rendered as its own collapsible section
+		for (const item of contributedEntries) {
+			if (item.collapsible) {
+				this.renderCollapsibleContribution(item);
+			}
 		}
 
 		// New to Chat / Signed out
@@ -291,7 +297,7 @@ export class ChatStatusDashboard extends DomWidget {
 
 		this.renderInlineSuggestionsContent(collapsibleInner);
 
-		// Contributions
+		// Render non-collapsible contributed items inside Quick Settings
 		for (const item of contributedEntries) {
 			collapsibleInner.appendChild($('hr'));
 
@@ -312,6 +318,102 @@ export class ChatStatusDashboard extends DomWidget {
 				}
 			}));
 		}
+	}
+
+	private renderContributedChatStatusItem(item: ChatStatusEntry): { element: HTMLElement; disposables: DisposableStore } {
+		const disposables = new DisposableStore();
+
+		const itemElement = $('div.contribution');
+
+		const headerLabel = typeof item.label === 'string' ? item.label : item.label.label;
+		const headerLink = typeof item.label === 'string' ? undefined : item.label.link;
+		this.renderHeader(itemElement, disposables, headerLabel, headerLink ? toAction({
+			id: 'workbench.action.openChatStatusItemLink',
+			label: localize('learnMore', "Learn More"),
+			tooltip: localize('learnMore', "Learn More"),
+			class: ThemeIcon.asClassName(Codicon.linkExternal),
+			run: () => this.runCommandAndClose(() => this.openerService.open(URI.parse(headerLink))),
+		}) : undefined);
+
+		const itemBody = itemElement.appendChild($('div.body'));
+
+		const description = itemBody.appendChild($('span.description'));
+		this.renderTextPlus(description, item.description, disposables);
+
+		if (item.detail) {
+			const separator = itemBody.appendChild($('span.separator'));
+			separator.textContent = '\u2014';
+			const detail = itemBody.appendChild($('span.detail-item'));
+			this.renderTextPlus(detail, item.detail, disposables);
+		}
+
+		return { element: itemElement, disposables };
+	}
+
+	private renderCollapsibleContribution(item: ChatStatusEntry): void {
+		const storageKey = `chatStatusDashboard.collapsible.${item.id}`;
+		const collapsed = this.storageService.getBoolean(storageKey, StorageScope.PROFILE, true);
+
+		const headerLabel = typeof item.label === 'string' ? item.label : item.label.label;
+
+		const disclosureHeader = this.element.appendChild($('button.collapsible-header'));
+		disclosureHeader.setAttribute('aria-expanded', String(!collapsed));
+
+		const chevron = disclosureHeader.appendChild($('span.collapsible-chevron'));
+		chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+		disclosureHeader.appendChild($('span.collapsible-label', undefined, headerLabel));
+
+		// Badge in the header showing description (status at a glance)
+		const badge = disclosureHeader.appendChild($('span.collapsible-badge'));
+		const renderBadge = (entry: ChatStatusEntry) => {
+			badge.textContent = '';
+			const disposables = new DisposableStore();
+			this.renderTextPlus(badge, entry.description, disposables);
+			return disposables;
+		};
+		let badgeDisposables = this._store.add(renderBadge(item));
+
+		const collapsibleContent = this.element.appendChild($('div.collapsible-content'));
+		const collapsibleInner = collapsibleContent.appendChild($('div.collapsible-inner'));
+		if (collapsed) {
+			collapsibleContent.classList.add('collapsed');
+		}
+
+		// Render detail as the expandable body content
+		const bodyContainer = collapsibleInner.appendChild($('div.contribution'));
+		const renderBody = (entry: ChatStatusEntry) => {
+			bodyContainer.textContent = '';
+			if (entry.detail) {
+				const bodyDisposables = new DisposableStore();
+				const body = bodyContainer.appendChild($('div.body'));
+				const detail = body.appendChild($('span.detail-item'));
+				this.renderTextPlus(detail, entry.detail, bodyDisposables, /* dismissOnClick */ true);
+				return bodyDisposables;
+			}
+			return new DisposableStore();
+		};
+		let bodyDisposables = this._store.add(renderBody(item));
+
+		const toggle = () => {
+			const isCollapsed = collapsibleContent.classList.toggle('collapsed');
+			disclosureHeader.setAttribute('aria-expanded', String(!isCollapsed));
+			chevron.className = 'collapsible-chevron';
+			chevron.classList.add(...ThemeIcon.asClassNameArray(isCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
+			this.storageService.store(storageKey, isCollapsed, StorageScope.PROFILE, StorageTarget.USER);
+		};
+
+		this._store.add(addDisposableListener(disclosureHeader, EventType.CLICK, () => toggle()));
+
+		// Listen for updates
+		this._store.add(this.chatStatusItemService.onDidChange(e => {
+			if (e.entry.id === item.id) {
+				badgeDisposables.dispose();
+				badgeDisposables = this._store.add(renderBadge(e.entry));
+				bodyDisposables.dispose();
+				bodyDisposables = this._store.add(renderBody(e.entry));
+			}
+		}));
 	}
 
 	private renderSetupSection(): void {
@@ -467,43 +569,19 @@ export class ChatStatusDashboard extends DomWidget {
 		return header;
 	}
 
-	private renderContributedChatStatusItem(item: ChatStatusEntry): { element: HTMLElement; disposables: DisposableStore } {
-		const disposables = new DisposableStore();
-
-		const itemElement = $('div.contribution');
-
-		const headerLabel = typeof item.label === 'string' ? item.label : item.label.label;
-		const headerLink = typeof item.label === 'string' ? undefined : item.label.link;
-		this.renderHeader(itemElement, disposables, headerLabel, headerLink ? toAction({
-			id: 'workbench.action.openChatStatusItemLink',
-			label: localize('learnMore', "Learn More"),
-			tooltip: localize('learnMore', "Learn More"),
-			class: ThemeIcon.asClassName(Codicon.linkExternal),
-			run: () => this.runCommandAndClose(() => this.openerService.open(URI.parse(headerLink))),
-		}) : undefined);
-
-		const itemBody = itemElement.appendChild($('div.body'));
-
-		const description = itemBody.appendChild($('span.description'));
-		this.renderTextPlus(description, item.description, disposables);
-
-		if (item.detail) {
-			const separator = itemBody.appendChild($('span.separator'));
-			separator.textContent = '\u2014';
-			const detail = itemBody.appendChild($('span.detail-item'));
-			this.renderTextPlus(detail, item.detail, disposables);
-		}
-
-		return { element: itemElement, disposables };
-	}
-
-	private renderTextPlus(target: HTMLElement, text: string, store: DisposableStore): void {
+	private renderTextPlus(target: HTMLElement, text: string, store: DisposableStore, dismissOnClick?: boolean): void {
 		for (const node of parseLinkedText(text).nodes) {
 			if (typeof node === 'string') {
 				const parts = renderLabelWithIcons(node);
 				target.append(...parts);
 			} else {
-				store.add(new Link(target, node, undefined, this.hoverService, this.openerService));
+				const linkOptions = dismissOnClick ? {
+					opener: (href: string) => {
+						this.openerService.open(href, { allowCommands: true });
+						this.hoverService.hideHover(true);
+					}
+				} : undefined;
+				store.add(new Link(target, node, linkOptions, this.hoverService, this.openerService));
 			}
 		}
 	}

@@ -30,6 +30,7 @@ export class ExtHostChatStatus {
 			title: '',
 			description: '',
 			detail: '',
+			collapsible: false,
 		};
 
 		let disposed = false;
@@ -70,6 +71,14 @@ export class ExtHostChatStatus {
 			},
 			set detail(value: string | undefined) {
 				state.detail = value;
+				syncState();
+			},
+
+			get collapsible(): boolean {
+				return state.collapsible;
+			},
+			set collapsible(value: boolean) {
+				state.collapsible = value;
 				syncState();
 			},
 

@@ -15,6 +15,7 @@ import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/co
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
 import { Disposable, DisposableStore } from '../../../util/vs/base/common/lifecycle';
+import { Emitter } from '../../../util/vs/base/common/event';
 import { autorun, observableFromEventOpts } from '../../../util/vs/base/common/observableInternal';
 import { IExtensionContribution } from '../../common/contributions';
 import { CircuitBreaker } from '../common/circuitBreaker';
@@ -30,6 +31,7 @@ import { SessionIndexingPreference, type SessionIndexingLevel } from '../common/
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { CloudSessionApiClient } from '../node/cloudSessionApiClient';
+import { ISessionSyncStateService, type SessionSyncState } from '../common/sessionSyncStateService';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
 
@@ -57,13 +59,24 @@ const SOFT_BUFFER_CAP = 500;
  * - Lazy initialization: no work until the first real chat interaction
  *
  * All cloud operations are fire-and-forget — never blocks or slows the chat session.
+ *
+ * Also implements ISessionSyncStateService so that SessionSyncStatus can
+ * observe the current sync state via dependency injection.
  */
-export class RemoteSessionExporter extends Disposable implements IExtensionContribution {
+export class RemoteSessionExporter extends Disposable implements IExtensionContribution, ISessionSyncStateService {
+
+	declare readonly _serviceBrand: undefined;
 
 	// ── Per-session state ────────────────────────────────────────────────────────
 
 	/** Per-session cloud IDs (created lazily on first interaction). */
 	private readonly _cloudSessions = new Map<string, CloudSessionIds>();
+
+	/** Whether _cloudSessions has been fully populated from listSessions(). */
+	private _cloudSessionsFullyLoaded = false;
+
+	/** Running count of all cloud-synced sessions (survives session dispose, decremented on delete). */
+	private _totalSyncedCount = 0;
 
 	/** Per-session translation state (parentId chaining, session.start tracking). */
 	private readonly _translationStates = new Map<string, SessionTranslationState>();
@@ -97,6 +110,47 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	/** Whether the session sync suggestion notification has been shown. */
 	private _syncSuggestionShown = false;
+
+	// ── Sync state & status item ────────────────────────────────────────────────
+
+	private readonly _onDidChangeSyncState = this._register(new Emitter<SessionSyncState>());
+	readonly onDidChangeSyncState = this._onDidChangeSyncState.event;
+	private _syncState: SessionSyncState = { kind: 'not-enabled' };
+	get syncState(): SessionSyncState { return this._syncState; }
+
+	private _setSyncState(state: SessionSyncState): void {
+		this._syncState = state;
+		this._onDidChangeSyncState.fire(state);
+	}
+
+	/**
+	 * Fetch the total number of cloud sessions once and update the sync state.
+	 * Fire-and-forget — errors are silently swallowed.
+	 */
+	private async _loadTotalSyncedCount(): Promise<void> {
+		if (this._cloudSessionsFullyLoaded) {
+			return;
+		}
+		try {
+			const cloudSessions = await this._cloudClient.listSessions();
+			for (const cs of cloudSessions) {
+				if (cs.agent_task_id && !this._cloudSessions.has(cs.agent_task_id)) {
+					this._cloudSessions.set(cs.agent_task_id, {
+						cloudSessionId: cs.id,
+						cloudTaskId: cs.agent_task_id,
+					});
+				}
+			}
+			this._cloudSessionsFullyLoaded = true;
+			this._totalSyncedCount = this._cloudSessions.size;
+			// Update display if still in 'on' state (no activity yet)
+			if (this._syncState.kind === 'on') {
+				this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
+			}
+		} catch {
+			// Non-fatal — count will be populated lazily on first flush or delete
+		}
+	}
 
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
@@ -145,9 +199,19 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		const spanListenerStore = this._register(new DisposableStore());
 		this._register(autorun(reader => {
 			spanListenerStore.clear();
-			if (!localEnabled.read(reader) || !cloudEnabled.read(reader)) {
+			const isLocalEnabled = localEnabled.read(reader);
+			const isCloudEnabled = cloudEnabled.read(reader);
+
+			if (!isLocalEnabled || !isCloudEnabled) {
+				this._setSyncState({ kind: 'not-enabled' });
 				return;
 			}
+
+			// Cloud sync is active — set initial state
+			this._setSyncState({ kind: 'on' });
+
+			// Load total synced count from cloud (fire-and-forget)
+			this._loadTotalSyncedCount();
 
 			// Listen to completed OTel spans — deferred off the callback
 			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
@@ -234,7 +298,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 					: row.id.substring(0, 8);
 				const description = [
 					row.repository,
-					row.created_at ? new Date(row.created_at).toLocaleDateString() : undefined,
+					row.created_at ? new Date(row.created_at).toLocaleString() : undefined,
 				].filter(Boolean).join(' · ');
 				return { label, description, sessionId: row.id };
 			}),
@@ -278,16 +342,21 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		// Resolve local→cloud ID mapping when cloud is enabled.
 		// The delete API requires the cloud-assigned session ID, not our local
-		// agent_task_id, so we fetch the list once and build a lookup map.
+		// agent_task_id, so we first check the in-memory cache (_cloudSessions)
+		// and only call listSessions() for any remaining sessions not in the cache.
 		const localToCloudId = new Map<string, string>();
 		if (cloudEnabled) {
-			const cloudSessions = await this._cloudClient.listSessions();
-			for (const cs of cloudSessions) {
-				if (cs.agent_task_id) {
-					localToCloudId.set(cs.agent_task_id, cs.id);
+			// Use whatever cloud IDs are already cached (from startup load or session creation).
+			// If the startup load hasn't finished yet, we proceed with what we have — best effort.
+			for (const session of sessionsToDelete) {
+				const cached = this._cloudSessions.get(session.id);
+				if (cached) {
+					localToCloudId.set(session.id, cached.cloudSessionId);
 				}
 			}
 		}
+
+		this._setSyncState({ kind: 'deleting', sessionCount: sessionsToDelete.length });
 
 		await vscode.window.withProgress(
 			{ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Deleting sessions...') },
@@ -316,6 +385,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 							cloudNotFound++;
 						}
 					}
+
+					// Remove from in-memory caches
+					this._cloudSessions.delete(session.id);
+					this._translationStates.delete(session.id);
+					this._disabledSessions.delete(session.id);
+					this._totalSyncedCount = Math.max(0, this._totalSyncedCount - 1);
 				}
 			},
 		);
@@ -334,8 +409,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		if (cloudErrors > 0) {
 			vscode.window.showWarningMessage(parts.join(', ') + '. ' + vscode.l10n.t('{0} cloud deletion(s) failed.', cloudErrors));
+			this._setSyncState({ kind: 'error' });
 		} else {
 			vscode.window.showInformationMessage(parts.join(', ') + '.');
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
 		}
 	}
 
@@ -543,6 +620,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		};
 
 		this._cloudSessions.set(sessionId, cloudIds);
+		this._totalSyncedCount++;
 
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 			operation: 'createCloudSession',
@@ -679,6 +757,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		this._isFlushing = true;
 		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
+		const uniqueSessionsInBatch = new Set(batch.map(e => e.chatSessionId)).size;
+		this._setSyncState({ kind: 'syncing', sessionCount: uniqueSessionsInBatch });
 
 		try {
 			// Group events by chat session ID for correct cloud session routing
@@ -731,6 +811,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				}
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
+				this._setSyncState({ kind: 'error' });
+			}
+
+			if (allSuccess) {
+				this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
@@ -742,6 +827,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				success: 'false',
 				error: err instanceof Error ? err.message.substring(0, 100) : 'unknown',
 			}, { droppedEvents: batch.length });
+			this._setSyncState({ kind: 'error' });
 		} finally {
 			this._isFlushing = false;
 		}

@@ -3640,6 +3640,7 @@ export type ChatStatusItemDto = {
 	title: string | { label: string; link: string };
 	description: string;
 	detail: string | undefined;
+	collapsible: boolean;
 };
 
 export interface MainThreadChatStatusShape {
