@@ -445,8 +445,9 @@
 }
 
 .sessions-walkthrough-theme-grid {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
 	gap: 10px;
 	width: 100%;
 }
@@ -457,6 +458,9 @@
 	cursor: pointer;
 	overflow: hidden;
 	transition: border-color 100ms, transform 100ms;
+	width: calc(25% - 8px);
+	min-width: 120px;
+	box-sizing: border-box;
 }
 
 .sessions-walkthrough-theme-card:hover {
@@ -507,6 +511,41 @@
 	height: auto;
 }
 
+.sessions-walkthrough-vscode-theme-option {
+	display: flex;
+	justify-content: center;
+	margin-top: 16px;
+}
+
+.sessions-walkthrough-vscode-theme-radio {
+	padding: 8px 20px;
+	border-radius: 8px;
+	border: 2px solid var(--vscode-radio-inactiveBorder, var(--vscode-widget-border, rgba(255, 255, 255, 0.1)));
+	background: var(--vscode-radio-inactiveBackground, transparent);
+	color: var(--vscode-radio-inactiveForeground, var(--vscode-foreground));
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: border-color 100ms, background 100ms;
+	text-align: center;
+}
+
+.sessions-walkthrough-vscode-theme-radio:hover {
+	background: var(--vscode-radio-inactiveHoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+}
+
+.sessions-walkthrough-vscode-theme-radio.selected {
+	border-color: var(--vscode-focusBorder, #007acc);
+	box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+	background: var(--vscode-radio-activeBackground, transparent);
+	color: var(--vscode-radio-activeForeground, var(--vscode-foreground));
+}
+
+.sessions-walkthrough-vscode-theme-radio:focus-visible {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
 .sessions-walkthrough-theme-label {
 	padding: 4px 6px;
 	font-size: 12px;
@@ -518,11 +557,12 @@
 .sessions-walkthrough-theme-footer {
 	display: flex;
 	justify-content: center;
+	margin-top: 16px;
 }
 
 @media (max-width: 480px) {
-	.sessions-walkthrough-theme-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	.sessions-walkthrough-theme-card {
+		width: calc(50% - 8px);
 	}
 }
 

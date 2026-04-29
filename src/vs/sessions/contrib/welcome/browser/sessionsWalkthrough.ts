@@ -23,6 +23,7 @@ import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/co
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchThemeService } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
+import { IVSCodeThemeImporterService } from '../../../services/vscode/common/vsCodeThemeImporter.js';
 
 export type WalkthroughOutcome = 'completed' | 'dismissed';
 
@@ -55,6 +56,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	private _outcomeResolved = false;
 	private _isShowingWelcome = false;
 	private _isShowingSignIn = false;
+	private _isShowingThemeStep = false;
 
 	/**
 	 * Whether the overlay is currently displaying the signed-in welcome
@@ -96,6 +98,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IProductService private readonly productService: IProductService,
+		@IVSCodeThemeImporterService private readonly vsCodeThemeImporter: IVSCodeThemeImporterService,
 		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService,
 		@ILogService private readonly logService: ILogService,
 	) {
@@ -111,6 +114,13 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		this._register(toDisposable(() => this.overlay.remove()));
 		this._register(addDisposableListener(this.overlay, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
+				if (this._isShowingThemeStep) {
+					// Remove the theme setting to reset to default
+					this.themeService.setColorTheme(undefined, ConfigurationTarget.USER);
+					this._isShowingWelcome = false;
+					this._isShowingThemeStep = false;
+					this.complete();
+				}
 				e.preventDefault();
 				e.stopPropagation();
 				return;
@@ -329,19 +339,33 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	private _renderThemeStep(): void {
 		const stepDisposables = this.stepDisposables.value = new DisposableStore();
 		this._isShowingWelcome = true;
+		this._isShowingThemeStep = true;
+
+		// Start resolving the parent VS Code theme during the fade-out
+		const parentThemePromise = !isWeb
+			? this.vsCodeThemeImporter.getVSCodeTheme()
+			: Promise.resolve(undefined);
 
 		// Fade out current content, then render theme step
 		this.contentContainer.classList.add('sessions-walkthrough-fade-out');
-		stepDisposables.add(disposableTimeout(() => {
+		stepDisposables.add(disposableTimeout(async () => {
 			if (!this.overlay.isConnected) {
 				return;
 			}
+			const parentTheme = await parentThemePromise;
+			if (!this.overlay.isConnected) {
+				return;
+			}
+			// Only show the VS Code theme option if the parent theme is different from the 4 onboarding themes
+			const allOnboardingThemes = this.productService.onboardingThemes ?? [];
+			const shownThemes = allOnboardingThemes.filter(t => !t.id.startsWith('solarized'));
+			const parentThemeSettingsId = shownThemes.some(t => t.themeId === parentTheme) ? undefined : parentTheme;
 			this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
-			this._renderThemeStepContent(stepDisposables);
+			this._renderThemeStepContent(stepDisposables, parentThemeSettingsId);
 		}, fadeDuration));
 	}
 
-	private _renderThemeStepContent(stepDisposables: DisposableStore): void {
+	private _renderThemeStepContent(stepDisposables: DisposableStore, parentThemeSettingsId: string | undefined): void {
 		this.contentContainer.textContent = '';
 		this.footerContainer.textContent = '';
 		this.disclaimerElement.classList.add('hidden');
@@ -351,22 +375,73 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		append(header, $('h2', undefined, localize('walkthrough.theme.title', "Choose Your Theme")));
 		append(header, $('p', undefined, localize('walkthrough.theme.subtitle', "Pick a color theme to make it yours. You can always change it later.")));
 
-		// Theme grid — exclude solarized variants, show 4 cards
-		const allThemes = this.productService.onboardingThemes ?? [];
-		const themes = allThemes.filter(t => !t.id.startsWith('solarized'));
+		// Build theme list — exclude solarized variants for the base set
+		const allOnboardingThemes = this.productService.onboardingThemes ?? [];
+		const themes = allOnboardingThemes.filter(t => !t.id.startsWith('solarized'));
 
 		const themeGrid = append(this.contentContainer, $('.sessions-walkthrough-theme-grid'));
 		themeGrid.setAttribute('role', 'radiogroup');
 		themeGrid.setAttribute('aria-label', localize('walkthrough.theme.ariaLabel', "Choose a color theme"));
 
-		// Detect current theme to pre-select
+		// Pre-select the onboarding theme matching the current theme, or fall back to first
 		const currentTheme = this.themeService.getColorTheme();
 		let selectedThemeId = themes.find(t => t.themeId === currentTheme.settingsId)?.id ?? themes[0]?.id;
 
 		const themeCards: HTMLElement[] = [];
+		let vscodeThemeBtn: HTMLElement | undefined;
 		for (const theme of themes) {
-			const card = this._createThemeCard(stepDisposables, themeGrid, theme, themeCards, selectedThemeId, id => { selectedThemeId = id; });
+			const card = this._createThemeCard(stepDisposables, themeGrid, theme, themeCards, selectedThemeId, id => {
+				selectedThemeId = id;
+				if (vscodeThemeBtn) {
+					vscodeThemeBtn.classList.remove('selected');
+					vscodeThemeBtn.setAttribute('aria-checked', 'false');
+				}
+			});
 			themeCards.push(card);
+		}
+
+		// Show a VS Code theme option as a radio-style button below the grid
+		if (parentThemeSettingsId) {
+			const parentName = this.productService.embedded?.nameShort ?? 'VS Code';
+			const option = append(this.contentContainer, $('.sessions-walkthrough-vscode-theme-option'));
+			vscodeThemeBtn = append(option, $('div.sessions-walkthrough-vscode-theme-radio'));
+			vscodeThemeBtn.setAttribute('role', 'radio');
+			vscodeThemeBtn.setAttribute('aria-checked', 'false');
+			vscodeThemeBtn.setAttribute('tabindex', '0');
+			const labelText = localize(
+				'walkthrough.theme.useVSCodeTheme',
+				"Use My {0} Theme \u00b7 {1}",
+				parentName,
+				parentThemeSettingsId,
+			);
+			vscodeThemeBtn.textContent = labelText;
+			const selectVSCodeTheme = async () => {
+				for (const c of themeCards) {
+					c.classList.remove('selected');
+					c.setAttribute('aria-checked', 'false');
+				}
+				vscodeThemeBtn!.classList.add('selected');
+				vscodeThemeBtn!.setAttribute('aria-checked', 'true');
+
+				// Apply the theme immediately if it's already available (built-in)
+				const allThemes = await this.themeService.getColorThemes();
+				const match = allThemes.find(t => t.settingsId === parentThemeSettingsId);
+				if (match) {
+					this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
+				} else {
+					// Theme needs extension install
+					vscodeThemeBtn!.textContent = localize('walkthrough.theme.importing', "Importing theme\u2026");
+					await this.vsCodeThemeImporter.importVSCodeTheme();
+					vscodeThemeBtn!.textContent = labelText;
+				}
+			};
+			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.CLICK, selectVSCodeTheme));
+			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					vscodeThemeBtn!.click();
+				}
+			}));
 		}
 
 		// Footer with Continue button
@@ -375,10 +450,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		continueBtn.textContent = localize('walkthrough.theme.continue', "Continue");
 		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, () => {
 			this._isShowingWelcome = false;
+			this._isShowingThemeStep = false;
 			this.complete();
 		}));
 
-		this.currentFocusableElements = [...themeCards, continueBtn];
+		this.currentFocusableElements = [...themeCards, ...(vscodeThemeBtn ? [vscodeThemeBtn] : []), continueBtn];
 
 		stepDisposables.add(disposableTimeout(() => {
 			if (this.overlay.isConnected) {
