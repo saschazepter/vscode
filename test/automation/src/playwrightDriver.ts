@@ -570,10 +570,18 @@ export class PlaywrightDriver {
 			// This avoids a TOCTOU race where the element shifts between the position lookup
 			// and the actual mouse dispatch (e.g. due to a status bar layout reflow caused by
 			// a new item being inserted between the two operations).
-			await this.page.click(selector, { timeout: 2000 });
+			// Keep the per-attempt timeout small so the outer poll loop in waitAndClick
+			// retains its intended retry budget (default 200 × 100ms = 20s).
+			await this.page.click(selector, { timeout: 100 });
 		} else {
 			const { x, y } = await this.getElementXY(selector, xoffset, yoffset);
-			await this.page.mouse.click(x + (xoffset ? xoffset : 0), y + (yoffset ? yoffset : 0));
+			// getElementXY already incorporates both offsets (relative to the element's
+			// top-left corner) when both are provided, so don't add them again.
+			if (xoffset !== undefined && yoffset !== undefined) {
+				await this.page.mouse.click(x, y);
+			} else {
+				await this.page.mouse.click(x + (xoffset ?? 0), y + (yoffset ?? 0));
+			}
 		}
 	}
 
