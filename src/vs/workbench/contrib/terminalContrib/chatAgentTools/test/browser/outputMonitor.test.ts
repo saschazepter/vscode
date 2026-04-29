@@ -233,6 +233,25 @@ suite('OutputMonitor', () => {
 		});
 	});
 
+	test('extended timeout with isActive fires onDidDetectInputNeeded', async () => {
+		return runWithFakedTimers({}, async () => {
+			// Simulate a process that stays active with output that doesn't
+			// match any input-required pattern — the extended timeout should
+			// fire onDidDetectInputNeeded so the agent can assess the output.
+			execution.isActive = async () => true;
+			execution.getOutput = () => 'Some unrecognised prompt waiting for input';
+
+			monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
+
+			let inputNeededFired = false;
+			store.add(monitor.onDidDetectInputNeeded(() => { inputNeededFired = true; }));
+
+			await Event.toPromise(monitor.onDidFinishCommand);
+			assert.strictEqual(inputNeededFired, true, 'onDidDetectInputNeeded should fire on extended timeout with active process');
+			assert.strictEqual(monitor.pollingResult?.state, OutputMonitorState.Cancelled);
+		});
+	});
+
 	test('non-interactive help on the last line stops monitoring before custom polling', async () => {
 		return runWithFakedTimers({}, async () => {
 			execution.getOutput = () => 'Build complete successfully\npress h + enter to show help';
