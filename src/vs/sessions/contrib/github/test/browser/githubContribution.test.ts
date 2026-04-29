@@ -48,7 +48,7 @@ suite('GitHubPullRequestPollingContribution', () => {
 		assert.strictEqual(existingSession.isArchived.get(), false);
 	});
 
-	test('stops polling and disposes when a session is archived, then resumes when unarchived', () => {
+	test('stops polling when a session is archived, then resumes when unarchived', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
 		store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
@@ -56,14 +56,14 @@ suite('GitHubPullRequestPollingContribution', () => {
 		sessionsManagementService.fireSessionsChanged({ changed: [session] });
 
 		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 1 },
+			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 0 },
 		});
 
 		sessionsManagementService.setArchived(session, false);
 		sessionsManagementService.fireSessionsChanged({ changed: [session] });
 
 		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 2, stopPollingCalls: 1, disposeCalls: 1 },
+			'owner/repo/1': { startPollingCalls: 2, stopPollingCalls: 1, disposeCalls: 0 },
 		});
 	});
 
@@ -74,20 +74,21 @@ suite('GitHubPullRequestPollingContribution', () => {
 		assert.deepStrictEqual(gitHubService.snapshot(), {});
 
 		sessionsManagementService.setArchived(session, false);
+		sessionsManagementService.fireSessionsChanged({ changed: [session] });
 
 		assert.deepStrictEqual(gitHubService.snapshot(), {
 			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 0, disposeCalls: 0 },
 		});
 	});
 
-	test('stops polling and disposes tracked pull requests when disposed', () => {
+	test('stops polling tracked pull requests when disposed', () => {
 		const session = sessionsManagementService.addSession('session', makeGitHubInfo(1));
 		const contribution = store.add(new GitHubPullRequestPollingContribution(gitHubService, sessionsManagementService));
 
 		contribution.dispose();
 
 		assert.deepStrictEqual(gitHubService.snapshot(), {
-			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 1 },
+			'owner/repo/1': { startPollingCalls: 1, stopPollingCalls: 1, disposeCalls: 0 },
 		});
 		assert.strictEqual(session.isArchived.get(), false);
 	});

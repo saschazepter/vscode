@@ -65,6 +65,11 @@ export class GitHubPullRequestPollingContribution extends Disposable implements 
 	private _onDidChangeSessions(e: ISessionsChangeEvent): void {
 		// Added sessions
 		for (const session of e.added) {
+			// Archived
+			if (session.isArchived.get()) {
+				continue;
+			}
+
 			this._startPolling(session);
 		}
 
