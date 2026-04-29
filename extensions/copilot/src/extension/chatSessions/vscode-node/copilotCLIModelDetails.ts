@@ -9,7 +9,7 @@ import { IChatSessionMetadataStore } from '../common/chatSessionMetadataStore';
 import { ICopilotCLIModels, formatModelDetails, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
 import { ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 
-export interface CopilotCLIResponseModelDetails {
+export interface CopilotCLIModelDetails {
 	readonly result: vscode.ChatResult;
 	readonly responseModelId: string | undefined;
 }
@@ -17,7 +17,11 @@ export interface CopilotCLIResponseModelDetails {
 /**
  * Builds the chat result details for the model that produced the latest CLI response.
  */
-export async function getCopilotCLIResponseModelDetails(session: ICopilotCLISession, requestModel: { model: string; reasoningEffort?: string } | undefined, copilotCLIModels: ICopilotCLIModels, logService: ILogService): Promise<CopilotCLIResponseModelDetails> {
+export async function getCopilotCLIModelDetails(session: ICopilotCLISession, requestModel: { model: string; reasoningEffort?: string } | undefined, copilotCLIModels: ICopilotCLIModels, logService: ILogService, enabled: boolean): Promise<CopilotCLIModelDetails> {
+	if (!enabled) {
+		return { result: {}, responseModelId: undefined };
+	}
+
 	const models = await copilotCLIModels.getModels().catch(ex => {
 		logService.error(ex, 'Failed to get models');
 		return [];

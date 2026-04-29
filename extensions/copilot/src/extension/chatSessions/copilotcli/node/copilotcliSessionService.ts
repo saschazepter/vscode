@@ -1061,7 +1061,9 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			return mapping;
 		};
 
-		const modelDetailsById = await this.getModelDetailsById();
+		const modelDetailsById = this.configurationService.getConfig(ConfigKey.Advanced.CLIModelDetailsEnabled)
+			? await this.getModelDetailsById()
+			: undefined;
 		const history = buildChatHistoryFromEvents(sessionId, modelId, events, getVSCodeRequestId, this._delegationSummaryService, this.logService, getWorkingDirectory(workspace), defaultModeInstructions, modelDetailsById);
 
 		if (legacyMappings.length > 0) {

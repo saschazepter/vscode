@@ -1069,6 +1069,26 @@ describe('CopilotCLIChatSessionParticipant.handleRequest', () => {
 		expect(result).toEqual({ details: 'Claude Opus 4.7 • 4x' });
 	});
 
+	it('does not return live response details when model details are disabled', async () => {
+		await configurationService.setConfig(ConfigKey.Advanced.CLIModelDetailsEnabled, false);
+		const sessionId = 'existing-live-model-disabled';
+		const sdkSession = new MockCliSdkSession(sessionId, new Date());
+		manager.sessions.set(sessionId, sdkSession);
+		models.getModels = vi.fn(async () => [
+			{ id: 'claude-opus-4-7', name: 'Claude Opus 4.7', multiplier: 4, maxContextWindowTokens: 200000, supportsVision: true }
+		] as CopilotCLIModelInfo[]);
+		TestCopilotCLISession.lastResponseModelId = 'claude-opus-4.7';
+		const request = new TestChatRequest('my prompt');
+		const context = createChatContext(sessionId, false, request);
+		const stream = new MockChatResponseStream();
+		const token = disposables.add(new CancellationTokenSource()).token;
+
+		const result = await participant.createHandler()(request, context, stream, token);
+
+		expect(result).toEqual({});
+		expect(models.getModels).not.toHaveBeenCalled();
+	});
+
 	it('returns live response details before swapping an untitled session', async () => {
 		(itemProvider.isNewSession as ReturnType<typeof vi.fn>).mockImplementation((sessionId: string) => sessionId.startsWith('untitled:'));
 		models.getModels = vi.fn(async () => [

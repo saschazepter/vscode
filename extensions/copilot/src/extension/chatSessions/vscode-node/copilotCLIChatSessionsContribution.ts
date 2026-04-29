@@ -52,7 +52,7 @@ import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli
 import { buildMcpServerMappings } from '../copilotcli/node/mcpHandler';
 import { ICopilotCLISessionTracker } from '../copilotcli/vscode-node/copilotCLISessionTracker';
 import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
-import { getCopilotCLIResponseModelDetails, persistCopilotCLIResponseModelId } from './copilotCLIResponseModelDetails';
+import { getCopilotCLIModelDetails, persistCopilotCLIResponseModelId } from './copilotCLIModelDetails';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { convertReferenceToVariable } from '../copilotcli/vscode-node/copilotCLIPromptReferences';
@@ -1551,7 +1551,8 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			// Build the result before the untitled-session swap below. After the swap,
 			// the chat UI reloads history from the SDK and discards the in-memory
 			// result, which would drop our `details` field on the first request.
-			const { result, responseModelId } = await getCopilotCLIResponseModelDetails(session.object, model, this.copilotCLIModels, this.logService);
+			const modelDetailsEnabled = this.configurationService.getConfig(ConfigKey.Advanced.CLIModelDetailsEnabled);
+			const { result, responseModelId } = await getCopilotCLIModelDetails(session.object, model, this.copilotCLIModels, this.logService, modelDetailsEnabled);
 
 			persistCopilotCLIResponseModelId(sessionId, request.id, responseModelId, this.chatSessionMetadataStore, this.logService);
 

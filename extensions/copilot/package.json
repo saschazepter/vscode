@@ -4693,6 +4693,14 @@
 							"advanced"
 						]
 					},
+					"github.copilot.chat.cli.modelDetails.enabled": {
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "%github.copilot.config.cli.modelDetails.enabled%",
+						"tags": [
+							"advanced"
+						]
+					},
 					"github.copilot.chat.cli.planCommand.enabled": {
 						"type": "boolean",
 						"default": true,
