@@ -177,7 +177,7 @@ export async function handleWritePermission(
 		return { kind: 'approve-once' };
 	}
 	const result = await invokeConfirmationTool(toolParams, toolParentCallId, toolsService, toolInvocationToken, logService, token);
-	if (result.kind === 'approved' && editFile) {
+	if (result.kind === 'approve-once' && editFile) {
 		await trackEditIfNeeded(editTracker, toolCall, editFile, stream, logService);
 	}
 	return result;
