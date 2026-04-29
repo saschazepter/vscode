@@ -5,6 +5,7 @@
 
 import * as dom from '../../../../../../../base/browser/dom.js';
 import { Separator } from '../../../../../../../base/common/actions.js';
+import { CancellationTokenSource } from '../../../../../../../base/common/cancellation.js';
 import { RunOnceScheduler } from '../../../../../../../base/common/async.js';
 import { IMarkdownString, MarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { toDisposable } from '../../../../../../../base/common/lifecycle.js';
@@ -15,23 +16,27 @@ import { ElementSizeObserver } from '../../../../../../../editor/browser/config/
 import { ILanguageService } from '../../../../../../../editor/common/languages/language.js';
 import { localize } from '../../../../../../../nls.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../../../platform/keybinding/common/keybinding.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IMarkerData, IMarkerService, MarkerSeverity } from '../../../../../../../platform/markers/common/markers.js';
 import { IChatToolInvocation, ToolConfirmKind } from '../../../../common/chatService/chatService.js';
+import { ChatConfiguration } from '../../../../common/constants.js';
 import { createToolSchemaUri, ILanguageModelToolsService, IToolConfirmationMessages } from '../../../../common/tools/languageModelToolsService.js';
 import { ILanguageModelToolsConfirmationService } from '../../../../common/tools/languageModelToolsConfirmationService.js';
 import { AcceptToolConfirmationActionId, SkipToolConfirmationActionId } from '../../../actions/chatToolActions.js';
 import { IChatCodeBlockInfo, IChatWidgetService } from '../../../chat.js';
+import { IChatToolRiskAssessmentService, IToolRiskAssessment } from '../../../tools/chatToolRiskAssessmentService.js';
 import { renderFileWidgets } from '../chatInlineAnchorWidget.js';
 import { CodeBlockPart, ICodeBlockRenderOptions } from '../codeBlockPart.js';
 import { IChatContentPartRenderContext } from '../chatContentParts.js';
 import { IChatMarkdownAnchorService } from '../chatMarkdownAnchorService.js';
 import { ChatMarkdownContentPart } from '../chatMarkdownContentPart.js';
-import { AbstractToolConfirmationSubPart } from './abstractToolConfirmationSubPart.js';
+import { AbstractToolConfirmationSubPart, IAbstractToolPrimaryAction } from './abstractToolConfirmationSubPart.js';
 import { EditorPool } from '../chatContentCodePools.js';
+import { ToolRiskBadgeWidget } from './toolRiskBadgeWidget.js';
 
 const SHOW_MORE_MESSAGE_HEIGHT_TRIGGER = 100;
 
@@ -40,6 +45,9 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 	public get codeblocks(): IChatCodeBlockInfo[] {
 		return this.markdownParts.flatMap(part => part.codeblocks);
 	}
+
+	private _riskBadge: ToolRiskBadgeWidget | undefined;
+	private _riskAssessment: IToolRiskAssessment | undefined;
 
 	constructor(
 		toolInvocation: IChatToolInvocation,
@@ -58,6 +66,8 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 		@ILanguageModelToolsService languageModelToolsService: ILanguageModelToolsService,
 		@IChatMarkdownAnchorService private readonly chatMarkdownAnchorService: IChatMarkdownAnchorService,
 		@ILanguageModelToolsConfirmationService private readonly confirmationService: ILanguageModelToolsConfirmationService,
+		@IChatToolRiskAssessmentService private readonly riskAssessmentService: IChatToolRiskAssessmentService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		const state = toolInvocation.state.get();
 		if (state.type !== IChatToolInvocation.StateKind.WaitingForConfirmation || !state.confirmationMessages?.title) {
@@ -65,6 +75,11 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 		}
 
 		super(toolInvocation, context, instantiationService, keybindingService, contextKeyService, chatWidgetService, languageModelToolsService);
+
+		// Kick off the (cheap) risk assessment in parallel with rendering. The
+		// confirmation buttons remain immediately clickable; the badge updates
+		// asynchronously.
+		this._startRiskAssessment(state.parameters);
 
 		this.render({
 			allowActionId: AcceptToolConfirmationActionId,
@@ -74,6 +89,84 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 			partType: 'chatToolConfirmation',
 			subtitle: typeof toolInvocation.originMessage === 'string' ? toolInvocation.originMessage : toolInvocation.originMessage?.value,
 		});
+
+		// After render, attach the risk badge inline next to the confirmation title.
+		this._attachRiskBadgeToTitle(state.parameters);
+	}
+
+	private _attachRiskBadgeToTitle(parameters: unknown): void {
+		if (!this.riskAssessmentService.isEnabled()) {
+			return;
+		}
+		const tool = this.languageModelToolsService.getTool(this.toolInvocation.toolId);
+		if (!tool) {
+			return;
+		}
+		const widget = this._register(this.instantiationService.createInstance(ToolRiskBadgeWidget));
+		this._riskBadge = widget;
+		const cached = this._riskAssessment ?? this.riskAssessmentService.getCached(tool, parameters);
+		if (cached) {
+			widget.setAssessment(cached);
+		} else {
+			widget.setLoading();
+		}
+
+		// Slot the badge as a slim row between the title row and the message body
+		// of the confirmation widget. Defer until the next animation frame so the
+		// sub-part is mounted (and we can find the message scrollable to insert
+		// before).
+		const targetWindow = dom.getWindow(this.domNode);
+		const handle = dom.scheduleAtNextAnimationFrame(targetWindow, () => {
+			// eslint-disable-next-line no-restricted-syntax
+			const widgetRoot = this.domNode.querySelector('.chat-confirmation-widget2') as HTMLElement | null;
+			if (widgetRoot) {
+				const messageScrollable = Array.from(widgetRoot.children)
+					.find(c => c.classList.contains('chat-confirmation-widget-message-scrollable'));
+				if (messageScrollable) {
+					widgetRoot.insertBefore(widget.domNode, messageScrollable);
+					return;
+				}
+			}
+			// Fallback: append inside the title row.
+			// eslint-disable-next-line no-restricted-syntax
+			this.domNode.querySelector('.chat-confirmation-widget-title')?.appendChild(widget.domNode);
+		});
+		this._register(handle);
+	}
+
+	private _startRiskAssessment(parameters: unknown): void {
+		if (!this.riskAssessmentService.isEnabled()) {
+			return;
+		}
+		const tool = this.languageModelToolsService.getTool(this.toolInvocation.toolId);
+		if (!tool) {
+			return;
+		}
+		// Skip the network round-trip if we already have a cached result.
+		if (this.riskAssessmentService.getCached(tool, parameters)) {
+			return;
+		}
+		const cts = this._register(new CancellationTokenSource());
+		(async () => {
+			try {
+				const result = await this.riskAssessmentService.assess(tool, parameters, cts.token);
+				if (cts.token.isCancellationRequested) {
+					return;
+				}
+				if (!result) {
+					this._riskBadge?.setHidden();
+					return;
+				}
+				this._riskAssessment = result;
+				this._riskBadge?.setAssessment(result);
+				// Re-render the sub-part so suggested rules can be surfaced as primary actions.
+				if (result.suggestedRules.length > 0) {
+					this._onNeedsRerender.fire();
+				}
+			} catch {
+				this._riskBadge?.setHidden();
+			}
+		})();
 	}
 
 	protected override additionalPrimaryActions() {
@@ -121,6 +214,14 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 				});
 			}
 		}
+
+		// Append LLM-suggested auto-approve rules (when configured to do so).
+		const suggestedActions = this._buildSuggestedRuleActions(state.parameters);
+		if (suggestedActions.length > 0) {
+			actions.push(new Separator());
+			actions.push(...suggestedActions);
+		}
+
 		if (state.confirmationMessages?.confirmResults) {
 			actions.unshift(
 				{
@@ -137,6 +238,35 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 		return actions;
 	}
 
+	private _buildSuggestedRuleActions(parameters: unknown): IAbstractToolPrimaryAction[] {
+		if (this.configurationService.getValue<boolean>(ChatConfiguration.ToolRiskAssessmentSuggestRules) === false) {
+			return [];
+		}
+		const tool = this.languageModelToolsService.getTool(this.toolInvocation.toolId);
+		if (!tool) {
+			return [];
+		}
+		const cached = this._riskAssessment ?? this.riskAssessmentService.getCached(tool, parameters);
+		if (!cached || cached.suggestedRules.length === 0) {
+			return [];
+		}
+		const out: IAbstractToolPrimaryAction[] = [];
+		for (const rule of cached.suggestedRules) {
+			out.push({
+				label: rule.label,
+				tooltip: rule.rationale || undefined,
+				scope: rule.scope,
+				data: () => {
+					// MVP: accept this single call. Persisting the rule itself is delegated
+					// to the existing per-scope auto-approve flows; this surface acts as a
+					// hint plus a one-click confirm.
+					this.confirmWith(this.toolInvocation, { type: ToolConfirmKind.UserAction });
+				}
+			});
+		}
+		return out;
+	}
+
 	protected override useAllowOnceAsPrimary(): boolean {
 		const state = this.toolInvocation.state.get();
 		if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation) {
@@ -146,6 +276,14 @@ export class ToolConfirmationSubPart extends AbstractToolConfirmationSubPart {
 	}
 
 	protected createContentElement(): HTMLElement | string {
+		const state = this.toolInvocation.state.get();
+		if (state.type !== IChatToolInvocation.StateKind.WaitingForConfirmation) {
+			return '';
+		}
+		return this._createInnerContentElement();
+	}
+
+	private _createInnerContentElement(): HTMLElement | string {
 		const state = this.toolInvocation.state.get();
 		if (state.type !== IChatToolInvocation.StateKind.WaitingForConfirmation) {
 			return '';
