@@ -382,6 +382,14 @@ suite('OutputMonitor', () => {
 			assert.strictEqual(detectsInputRequiredPattern('  feature/foo ❯ main'), false);
 			// allow-any-unicode-next-line
 			assert.strictEqual(detectsInputRequiredPattern('Project name ▸ '), false);
+
+			// No match when '?' appears mid-line (not as a prompt prefix)
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('What happened? ›'), false);
+
+			// Match when prompt is prefixed with ANSI escape codes (colored output)
+			// allow-any-unicode-next-line
+			assert.strictEqual(detectsInputRequiredPattern('\x1b[32m? Choose a framework \x1b[0m›'), true);
 		});
 
 		test('detects trailing questions', () => {
