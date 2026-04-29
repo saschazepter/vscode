@@ -322,8 +322,10 @@ export class WorkspacePicker extends Disposable {
 	 * browse actions and recent workspaces. Well-known labels (Local /
 	 * Cloud / Remote) come first in canonical order; any custom labels
 	 * provider plug-ins might contribute follow in registration order.
+	 *
+	 * Visible to tests; not part of the public API.
 	 */
-	private _getAvailableTabs(): string[] {
+	protected _getAvailableTabs(): string[] {
 		const seen = new Set<string>();
 		for (const provider of this.sessionsProvidersService.getProviders()) {
 			for (const action of provider.browseActions) {
