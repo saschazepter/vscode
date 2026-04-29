@@ -82,6 +82,16 @@ export class AgentService extends Disposable implements IAgentService {
 	/** Manages PTY-backed terminals for the agent host protocol. */
 	private readonly _terminalManager: AgentHostTerminalManager;
 
+	/**
+	 * Authoritative server-side per-resource subscription refcount, keyed by
+	 * resource URI string and valued by the set of subscribed protocol
+	 * client IDs. Populated by {@link addSubscriber} and drained by
+	 * {@link removeSubscriber}. When a resource's set becomes empty, the
+	 * resource is dropped from the map and {@link _maybeEvictIdleRestoredSession}
+	 * is invoked to release any cached restored state for it.
+	 */
+	private readonly _resourceSubscribers = new Map<string, Set<string>>();
+
 	/** Exposes the terminal manager for use by agent providers. */
 	get terminalManager(): IAgentHostTerminalManager { return this._terminalManager; }
 
@@ -466,8 +476,81 @@ export class AgentService extends Disposable implements IAgentService {
 
 	unsubscribe(resource: URI): void {
 		this._logService.trace(`[AgentService] unsubscribe: ${resource.toString()}`);
-		// Server-side tracking of per-client subscriptions will be added
-		// in Phase 4 (multi-client). For now this is a no-op.
+		// In-process callers (tests, embedded use) that do not have a clientId
+		// hit this no-op overload. Protocol clients must go through
+		// {@link removeSubscriber} so that the per-resource refcount is decremented.
+	}
+
+	addSubscriber(resource: URI, clientId: string): void {
+		const key = resource.toString();
+		let set = this._resourceSubscribers.get(key);
+		if (!set) {
+			set = new Set();
+			this._resourceSubscribers.set(key, set);
+		}
+		set.add(clientId);
+	}
+
+	removeSubscriber(resource: URI, clientId: string): void {
+		const key = resource.toString();
+		const set = this._resourceSubscribers.get(key);
+		if (!set) {
+			return;
+		}
+		set.delete(clientId);
+		if (set.size > 0) {
+			return;
+		}
+		this._resourceSubscribers.delete(key);
+		this._maybeEvictIdleRestoredSession(resource);
+	}
+
+	/**
+	 * If `resource` names a restored, idle session and no client is still
+	 * subscribed to it (or, for a subagent URI, no sibling subagent under the
+	 * same parent is still subscribed), drop its cached state from the state
+	 * manager. Subagent URIs evict the parent session entry; the parent owns
+	 * the materialized turn tree that backs every subagent view.
+	 */
+	private _maybeEvictIdleRestoredSession(resource: URI): void {
+		const key = resource.toString();
+		if (this._resourceSubscribers.has(key)) {
+			return;
+		}
+		const parsed = parseSubagentSessionUri(key);
+		let evictionTarget: string;
+		if (parsed) {
+			evictionTarget = parsed.parentSession;
+			if (this._resourceSubscribers.has(evictionTarget)) {
+				return;
+			}
+			const parentPrefix = parsed.parentSession + '/subagent/';
+			for (const subscribedKey of this._resourceSubscribers.keys()) {
+				if (subscribedKey.startsWith(parentPrefix)) {
+					return;
+				}
+			}
+		} else {
+			evictionTarget = key;
+			const subagentPrefix = key + '/subagent/';
+			for (const subscribedKey of this._resourceSubscribers.keys()) {
+				if (subscribedKey.startsWith(subagentPrefix)) {
+					return;
+				}
+			}
+		}
+		if (!this._stateManager.isRestoredAndIdle(evictionTarget)) {
+			return;
+		}
+		this._logService.trace(`[AgentService] Evicting idle restored session: ${evictionTarget} (triggered by unsubscribe of ${key})`);
+		// Also evict any sibling subagent entries cached under the parent: their
+		// authoritative state is the parent's turn tree, and dropping the parent
+		// would leave them orphaned.
+		const subagentPrefix = evictionTarget + '/subagent/';
+		for (const cachedKey of this._stateManager.getSessionUrisWithPrefix(subagentPrefix)) {
+			this._stateManager.removeSession(cachedKey);
+		}
+		this._stateManager.removeSession(evictionTarget);
 	}
 
 	dispatchAction(action: RootAction | SessionAction | TerminalAction, clientId: string, clientSeq: number): void {

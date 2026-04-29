@@ -175,7 +175,10 @@ export class ProtocolServerHandler extends Disposable {
 				switch (msg.method) {
 					case 'unsubscribe':
 						if (client) {
-							client.subscriptions.delete(msg.params.resource);
+							const resource = msg.params.resource;
+							if (client.subscriptions.delete(resource)) {
+								this._agentService.removeSubscriber(URI.parse(resource), client.clientId);
+							}
 						}
 						break;
 					case 'dispatchAction':
@@ -202,6 +205,13 @@ export class ProtocolServerHandler extends Disposable {
 		disposables.add(transport.onClose(() => {
 			if (client && this._clients.get(client.clientId) === client) {
 				this._logService.info(`[ProtocolServer] Client disconnected: ${client.clientId}, subscriptions=${client.subscriptions.size}`);
+				// Treat disconnect as an implicit unsubscribe of every resource the
+				// client held, so the server-side refcount can drop to zero and any
+				// idle restored session state can be evicted.
+				for (const resource of client.subscriptions) {
+					this._agentService.removeSubscriber(URI.parse(resource), client.clientId);
+				}
+				client.subscriptions.clear();
 				this._clients.delete(client.clientId);
 				this._rejectPendingReverseRequests(client.clientId);
 				this._onDidChangeConnectionCount.fire(this._clients.size);
@@ -253,7 +263,9 @@ export class ProtocolServerHandler extends Disposable {
 				const snapshot = this._stateManager.getSnapshot(uri);
 				if (snapshot) {
 					snapshots.push(snapshot);
-					client.subscriptions.add(uri.toString());
+					const key = uri.toString();
+					client.subscriptions.add(key);
+					this._agentService.addSubscriber(URI.parse(key), client.clientId);
 				}
 			}
 		}
@@ -292,7 +304,9 @@ export class ProtocolServerHandler extends Disposable {
 		if (canReplay) {
 			const actions: ActionEnvelope[] = [];
 			for (const sub of params.subscriptions) {
-				client.subscriptions.add(sub.toString());
+				const key = sub.toString();
+				client.subscriptions.add(key);
+				this._agentService.addSubscriber(URI.parse(key), client.clientId);
 			}
 			for (const envelope of this._replayBuffer) {
 				if (envelope.serverSeq > params.lastSeenServerSeq) {
@@ -309,6 +323,7 @@ export class ProtocolServerHandler extends Disposable {
 				if (snapshot) {
 					snapshots.push(snapshot);
 					client.subscriptions.add(sub);
+					this._agentService.addSubscriber(URI.parse(sub), client.clientId);
 				}
 			}
 			return { client, response: { type: 'snapshot', snapshots } };
@@ -325,7 +340,10 @@ export class ProtocolServerHandler extends Disposable {
 		subscribe: async (client, params) => {
 			try {
 				const snapshot = await this._agentService.subscribe(URI.parse(params.resource));
-				client.subscriptions.add(params.resource);
+				if (!client.subscriptions.has(params.resource)) {
+					client.subscriptions.add(params.resource);
+					this._agentService.addSubscriber(URI.parse(params.resource), client.clientId);
+				}
 				return { snapshot };
 			} catch (err) {
 				if (err instanceof ProtocolError) {
