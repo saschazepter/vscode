@@ -92,7 +92,7 @@ declare module 'vscode' {
 		/**
 		 * The extension identifier that contributed this customization, if any.
 		 */
-		readonly extensionId?;
+		readonly extensionId?: string;
 
 		/**
 		 * The URI of the plugin that contributed this customization, if any.
