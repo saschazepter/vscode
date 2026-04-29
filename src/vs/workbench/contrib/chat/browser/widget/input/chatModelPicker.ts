@@ -1,9 +1,9 @@
-import { SubmenuAction } from "../../../../../../base/common/actions.js";
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { SubmenuAction, Action } from '../../../../../../base/common/actions.js';
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { renderIcon, renderLabelWithIcons } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
@@ -115,89 +115,89 @@ function createModelItem(
  * value is 0 bulbs and the highest is 3.
  */
 function getModelThinkingEffort(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService: ILanguageModelsService): number {
-    const schema = model.metadata.configurationSchema;
-    if (!schema?.properties) {
-        return -1;
-    }
-    const currentConfig = languageModelsService.getModelConfiguration(model.identifier) ?? {};
-    for (const [key, propSchema] of Object.entries(schema.properties)) {
-        if (propSchema.group !== 'navigation') {
-            continue;
-        }
-        const isEffort = key.toLowerCase().includes('reasoning') ||
-            key.toLowerCase().includes('thinking') ||
-            (typeof propSchema.title === 'string' && propSchema.title.toLowerCase().includes('thinking effort'));
-        if (!isEffort || !propSchema.enum || propSchema.enum.length < 2) {
-            continue;
-        }
-        const value = currentConfig[key] ?? propSchema.default;
-        const idx = propSchema.enum.indexOf(value);
-        if (idx < 0) {
-            continue;
-        }
-        // Map the chosen enum index linearly onto a 0..3 bulb scale.
-        const lastIdx = propSchema.enum.length - 1;
-        if (lastIdx === 0) {
-            return 0;
-        }
-        return Math.round((idx / lastIdx) * 3);
-    }
-    return -1;
+	const schema = model.metadata.configurationSchema;
+	if (!schema?.properties) {
+		return -1;
+	}
+	const currentConfig = languageModelsService.getModelConfiguration(model.identifier) ?? {};
+	for (const [key, propSchema] of Object.entries(schema.properties)) {
+		if (propSchema.group !== 'navigation') {
+			continue;
+		}
+		const isEffort = key.toLowerCase().includes('reasoning') ||
+			key.toLowerCase().includes('thinking') ||
+			(typeof propSchema.title === 'string' && propSchema.title.toLowerCase().includes('thinking effort'));
+		if (!isEffort || !propSchema.enum || propSchema.enum.length < 2) {
+			continue;
+		}
+		const value = currentConfig[key] ?? propSchema.default;
+		const idx = propSchema.enum.indexOf(value);
+		if (idx < 0) {
+			continue;
+		}
+		// Map the chosen enum index linearly onto a 0..3 bulb scale.
+		const lastIdx = propSchema.enum.length - 1;
+		if (lastIdx === 0) {
+			return 0;
+		}
+		return Math.round((idx / lastIdx) * 3);
+	}
+	return -1;
 }
 
 function createBulbsElement(filledCount: number, total: number = 3): HTMLElement {
-    const container = dom.$('span.chat-model-bulbs');
-    for (let i = 0; i < total; i++) {
-        const item = dom.$('span.chat-model-bulb');
-        if (i < filledCount) {
-            item.classList.add('filled');
-        } else {
-            item.classList.add('empty');
-        }
-        container.appendChild(item);
-    }
-    return container;
+	const container = dom.$('span.chat-model-bulbs');
+	for (let i = 0; i < total; i++) {
+		const item = dom.$('span.chat-model-bulb');
+		if (i < filledCount) {
+			item.classList.add('filled');
+		} else {
+			item.classList.add('empty');
+		}
+		container.appendChild(item);
+	}
+	return container;
 }
 
 function createCostElement(filledCount: number, total: number = 3): HTMLElement {
-    const container = dom.$('span.chat-model-cost');
-    if (filledCount > 0) {
-        container.classList.add('has-fill');
-    }
+	const container = dom.$('span.chat-model-cost');
+	if (filledCount > 0) {
+		container.classList.add('has-fill');
+	}
 
-    const dollar = dom.$('span.chat-model-cost-dollar');
-    dollar.textContent = '$';
-    container.appendChild(dollar);
+	const dollar = dom.$('span.chat-model-cost-dollar');
+	dollar.textContent = '$';
+	container.appendChild(dollar);
 
-    const dots = dom.$('span.chat-model-cost-dots');
-    for (let i = 0; i < total; i++) {
-        const dot = dom.$('span.chat-model-cost-dot');
-        if (i < filledCount) {
-            dot.classList.add('filled');
-        }
-        dots.appendChild(dot);
-    }
-    container.appendChild(dots);
-    return container;
+	const dots = dom.$('span.chat-model-cost-dots');
+	for (let i = 0; i < total; i++) {
+		const dot = dom.$('span.chat-model-cost-dot');
+		if (i < filledCount) {
+			dot.classList.add('filled');
+		}
+		dots.appendChild(dot);
+	}
+	container.appendChild(dots);
+	return container;
 }
 
 function getCostBucket(modelName: string): number {
-    const n = modelName.toLowerCase();
-    if (n.includes('mini') || n.includes('haiku') || n.includes('3.5') || n.includes('nano')) {
-        return 1;
-    }
-    if (n.includes('opus') || n.includes('o1-preview') || n.includes('gpt-5') || n.includes('claude 4')) {
-        return 3;
-    }
-    return 2;
+	const n = modelName.toLowerCase();
+	if (n.includes('mini') || n.includes('haiku') || n.includes('3.5') || n.includes('nano')) {
+		return 1;
+	}
+	if (n.includes('opus') || n.includes('o1-preview') || n.includes('gpt-5') || n.includes('claude 4')) {
+		return 3;
+	}
+	return 2;
 }
 
 function createModelAction(
-    model: ILanguageModelChatMetadataAndIdentifier,
-    selectedModelId: string | undefined,
-    onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
-    languageModelsService: ILanguageModelsService,
-    section?: string,
+	model: ILanguageModelChatMetadataAndIdentifier,
+	selectedModelId: string | undefined,
+	onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
+	languageModelsService: ILanguageModelsService,
+	section?: string,
 ): IActionWidgetDropdownAction & { section?: string } {
 	const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
 
@@ -207,11 +207,10 @@ function createModelAction(
 	// Mock a Context Window configurable if none exists.
 	// Only Claude Opus is mocked as using 1M.
 	if (!toolbarActions.find(a => a.id.toLowerCase().includes('contextwindow'))) {
-		const isOpus = model.metadata.name.toLowerCase().includes('opus 4.6');
 		const ctxLabel = localize('contextWindow', "Context Window");
 		toolbarActions.unshift(new SubmenuAction('configureModel.mock.contextwindow', ctxLabel, [
-			{ id: 'cw.200', label: localize('cw200k', "200K"), tooltip: localize('cw200ktip', "Default context window"), class: undefined, enabled: true, checked: !isOpus, run: async () => { } } as any,
-			{ id: 'cw.1m', label: localize('cw1m', "1M"), class: undefined, enabled: true, tooltip: localize('cw1mtip', "Extended context window"), checked: isOpus, run: async () => { } } as any
+			new Action('cw.200', localize('cw200k', "200K"), undefined, true, async () => { }),
+			new Action('cw.1m', localize('cw1m', "1M"), undefined, true, async () => { }),
 		]));
 	}
 
@@ -301,7 +300,7 @@ function createManageModelsAction(commandService: ICommandService): IActionWidge
 		id: 'manageModels',
 		enabled: true,
 		checked: false,
-		class: ThemeIcon.asClassName(Codicon.gear),
+		class: ThemeIcon.asClassName(Codicon.settings),
 		tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
 		label: localize('chat.manageModels', "Manage Models..."),
 		run: () => { commandService.executeCommand(MANAGE_CHAT_COMMAND_ID); }
@@ -779,12 +778,14 @@ export class ModelPickerWidget extends Disposable {
 		};
 
 		const models = this._delegate.getModels();
-		const showFilter = models.length >= 10;
+		// Show the filter row whenever there's a manage-models action, so the
+		// settings icon always lives in the top-right of the picker.
+		const canShowManageModelsAction = this._delegate.showManageModelsAction() && shouldShowManageModelsAction(this._entitlementService);
+		const manageModelsAction = canShowManageModelsAction ? createManageModelsAction(this._commandService) : undefined;
+		const showFilter = models.length >= 10 || !!manageModelsAction;
 		const isPro = isProUser(this._entitlementService.entitlement);
 		const manifest = this._languageModelsService.getModelsControlManifest();
 		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
-		const canShowManageModelsAction = this._delegate.showManageModelsAction() && shouldShowManageModelsAction(this._entitlementService);
-		const manageModelsAction = canShowManageModelsAction ? createManageModelsAction(this._commandService) : undefined;
 		const logModelPickerInteraction = (interaction: ChatModelPickerInteraction) => {
 			this._telemetryService.publicLog2<ChatModelPickerInteractionEvent, ChatModelPickerInteractionClassification>('chat.modelPickerInteraction', { interaction });
 		};
@@ -799,7 +800,8 @@ export class ModelPickerWidget extends Disposable {
 			onSelect,
 			manageSettingsUrl,
 			this._delegate.useGroupedModelPicker(),
-			!showFilter ? manageModelsAction : undefined,
+			// The manage action lives in the filter actions slot when filter is shown.
+			undefined,
 			this._entitlementService,
 			this._delegate.showUnavailableFeatured(),
 			this._delegate.showFeatured(),
@@ -809,7 +811,7 @@ export class ModelPickerWidget extends Disposable {
 		const listOptions = {
 			showFilter,
 			filterPlaceholder: localize('chat.modelPicker.search', "Search models"),
-			filterActions: showFilter && manageModelsAction ? [manageModelsAction] : undefined,
+			filterActions: manageModelsAction ? [manageModelsAction] : undefined,
 			focusFilterOnOpen: true,
 			collapsedByDefault: new Set([ModelPickerSection.Other]),
 			onDidToggleSection: (section: string, collapsed: boolean) => {
@@ -927,7 +929,6 @@ export class ModelPickerWidget extends Disposable {
 
 
 function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): MarkdownString | undefined {
-	const isAuto = isAutoModel(model);
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 	let hasContent = false;
 
@@ -941,28 +942,10 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): M
 		hasContent = true;
 	}
 
-	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
-		if (hasContent) {
-			markdown.appendMarkdown(`\n\n`);
-		}
-		const totalTokens = (model.metadata.maxInputTokens ?? 0) + (model.metadata.maxOutputTokens ?? 0);
-		markdown.appendMarkdown(`${localize('models.contextSize', 'Context Size')}: `);
-		markdown.appendMarkdown(`${formatTokenCount(totalTokens)}`);
-		hasContent = true;
-	}
-
+	// Context size is already conveyed by the Context Window submenu below, so don't repeat it here.
 	return hasContent ? markdown : undefined;
 }
 
-
-function formatTokenCount(count: number): string {
-	if (count >= 1000000) {
-		return `${(count / 1000000).toFixed(1)}M`;
-	} else if (count >= 1000) {
-		return `${(count / 1000).toFixed(0)}K`;
-	}
-	return count.toString();
-}
 
 function isAutoModel(model: ILanguageModelChatMetadataAndIdentifier): boolean {
 	return model.metadata.id === 'auto' && (model.metadata.vendor === 'copilot' || model.metadata.vendor === 'copilotcli');

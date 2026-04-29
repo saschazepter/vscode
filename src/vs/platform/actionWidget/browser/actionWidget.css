@@ -230,7 +230,7 @@
 }
 
 /* Submenu panel: align all descriptions into a consistent left-aligned column.
-   The title gets a min-width so descriptions begin at the same x for every row. */
+ * The title gets a min-width so descriptions begin at the same x for every row. */
 .action-list-submenu-panel .monaco-list .monaco-list-row.action .title {
 	min-width: 90px;
 	flex: 0 0 auto;
@@ -240,6 +240,28 @@
 	margin-left: 16px;
 	text-align: left;
 	flex: 1 1 auto;
+}
+
+/* Section group titles in the submenu panel (e.g. "Context Window", "Thinking Effort"). */
+.action-list-submenu-panel .monaco-list .monaco-list-row .group-title,
+.action-list-submenu-panel .monaco-list .monaco-list-row .action-list-section-header {
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	text-transform: none;
+	font-size: 12px;
+	opacity: 0.9;
+	margin-top: 4px;
+}
+
+/* Tighten the hover-header (description) above the submenu panel list. */
+.action-list-submenu-hover-header {
+	padding: 8px 10px;
+}
+.action-list-submenu-hover-header > p {
+	margin: 0;
+}
+.action-list-submenu-hover-header > p + p {
+	margin-top: 4px;
 }
 
 .action-widget .monaco-list-row.action .group-title {
@@ -349,8 +371,9 @@
 }
 
 .action-widget .action-list-filter-input {
-	width: 100%;
-	flex: 1;
+	width: auto;
+	flex: 1 1 auto;
+	min-width: 0;
 	box-sizing: border-box;
 	padding: 4px 8px;
 	border: 1px solid var(--vscode-input-border, transparent);
@@ -366,6 +389,12 @@
 
 .action-widget .action-list-filter-input::placeholder {
 	color: var(--vscode-input-placeholderForeground);
+}
+
+.action-widget .action-list-filter-actions {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
 }
 
 .action-widget .action-list-filter-actions .action-label {

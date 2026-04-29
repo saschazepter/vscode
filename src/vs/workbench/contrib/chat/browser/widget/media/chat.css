@@ -275,22 +275,17 @@
 	visibility: hidden;
 	padding-top: 6px;
 	height: 22px;
-	transition: opacity 0.1s ease-in-out, visibility 0s linear 0.1s;
+	transition: opacity 0.15s ease-in-out, visibility 0s linear 0.15s;
 }
 
-/* Show toolbar on hover and last response. Also show when the item has keyboard focus (focus-within) or when the surrounding list row is marked focused (monaco list keyboard navigation). */
+/* Show toolbar only on direct hover or group hover. Never on focus / most-recent / list focus. */
 .interactive-item-container.interactive-response:not(.chat-response-loading):hover .chat-footer-toolbar,
-.interactive-item-container.interactive-response.chat-most-recent-response:not(.chat-response-loading) .chat-footer-toolbar,
 .interactive-item-container.interactive-response:not(.chat-response-loading):hover .chat-footer-toolbar .chat-footer-details,
-.interactive-item-container.interactive-response:not(.chat-response-loading):focus-within .chat-footer-toolbar,
-.interactive-item-container.interactive-response:not(.chat-response-loading):focus-within .chat-footer-toolbar .chat-footer-details,
-.monaco-list-row.focused .interactive-item-container.interactive-response:not(.chat-response-loading) .chat-footer-toolbar,
-.monaco-list-row.focused .interactive-item-container.interactive-response:not(.chat-response-loading) .chat-footer-toolbar .chat-footer-details,
 .interactive-item-container.interactive-response:not(.chat-response-loading).group-hovered .chat-footer-toolbar,
 .interactive-item-container.interactive-response:not(.chat-response-loading).group-hovered .chat-footer-toolbar .chat-footer-details {
 	opacity: 1;
 	visibility: visible;
-	transition: opacity 0.1s ease-in-out, visibility 0s linear 0s;
+	transition: opacity 0.15s ease-in-out, visibility 0s linear 0s;
 }
 
 /* Style the internal toolbar element to use flexbox */
@@ -1876,7 +1871,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 /* Empty bulb: hollow outline lightbulb so the empty state is clearly distinguishable
-   from a faded/disabled filled bulb. */
+ * from a faded/disabled filled bulb. */
 .chat-model-bulb.empty {
 	-webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path fill-rule='evenodd' clip-rule='evenodd' d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM2.5566 11L2.49083 10.7589C2.43154 10.5414 2.29795 10.3284 2.04654 10.0811C1.40165 9.44664 1 8.51994 1 7.5C1 5.567 2.567 4 4.5 4C6.433 4 8 5.567 8 7.5C8 8.51994 7.59835 9.44664 6.95346 10.0811C6.70205 10.3284 6.56846 10.5414 6.50917 10.7589L6.4434 11H2.5566ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
 	mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='18' viewBox='0 0 10 18'><path fill-rule='evenodd' clip-rule='evenodd' d='M4.5 3C2.01472 3 0 5.01472 0 7.5C0 8.75601 0.51523 9.89258 1.3446 10.7083C1.44136 10.8035 1.50044 10.9019 1.52569 10.9945L1.79992 12H7.20008L7.47431 10.9945C7.49956 10.9019 7.55864 10.8035 7.6554 10.7083C8.48477 9.89258 9 8.75601 9 7.5C9 5.01472 6.98528 3 4.5 3ZM2.5566 11L2.49083 10.7589C2.43154 10.5414 2.29795 10.3284 2.04654 10.0811C1.40165 9.44664 1 8.51994 1 7.5C1 5.567 2.567 4 4.5 4C6.433 4 8 5.567 8 7.5C8 8.51994 7.59835 9.44664 6.95346 10.0811C6.70205 10.3284 6.56846 10.5414 6.50917 10.7589L6.4434 11H2.5566ZM6.92735 13H2.07265L2.31665 13.8947C2.49463 14.5473 3.08737 15 3.7638 15H5.2362C5.91263 15 6.50537 14.5473 6.68335 13.8947L6.92735 13Z'/></svg>");
@@ -1951,7 +1946,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 /* Thinking-effort label (Low/Medium/High) shown next to the selected model in the
-   collapsed picker. The bulb scale is reserved for the dropdown rows. */
+ * collapsed picker. The bulb scale is reserved for the dropdown rows. */
 .chat-model-effort-label {
 	display: inline-flex;
 	align-items: center;

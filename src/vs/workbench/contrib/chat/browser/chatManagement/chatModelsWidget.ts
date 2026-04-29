@@ -591,60 +591,6 @@ class CacheCostColumnRenderer extends BaseCostColumnRenderer {
 	}
 }
 
-interface IPricingColumnTemplateData extends IModelTableColumnTemplateData {
-	readonly pricingElement: HTMLElement;
-}
-
-class PricingColumnRenderer extends ModelsTableColumnRenderer<IPricingColumnTemplateData> {
-	static readonly TEMPLATE_ID = 'pricing';
-
-	readonly templateId: string = PricingColumnRenderer.TEMPLATE_ID;
-
-	constructor(
-		@IHoverService private readonly hoverService: IHoverService
-	) {
-		super();
-	}
-
-	renderTemplate(container: HTMLElement): IPricingColumnTemplateData {
-		const disposables = new DisposableStore();
-		const elementDisposables = new DisposableStore();
-		const pricingElement = DOM.append(container, $('.model-pricing'));
-		return {
-			container,
-			pricingElement,
-			disposables,
-			elementDisposables
-		};
-	}
-
-	override renderElement(entry: IViewModelEntry, index: number, templateData: IPricingColumnTemplateData): void {
-		templateData.pricingElement.textContent = '';
-		super.renderElement(entry, index, templateData);
-	}
-
-	override renderGroupElement(element: ILanguageModelGroupEntry, index: number, templateData: IPricingColumnTemplateData): void {
-	}
-
-	override renderVendorElement(element: ILanguageModelProviderEntry, index: number, templateData: IPricingColumnTemplateData): void {
-	}
-
-	override renderModelElement(entry: ILanguageModelEntry, index: number, templateData: IPricingColumnTemplateData): void {
-		const pricingText = entry.model.metadata.pricing ?? '-';
-		templateData.pricingElement.textContent = pricingText;
-
-		if (pricingText !== '-') {
-			templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
-				content: localize('pricing.tooltip', "Pricing: {0}", pricingText),
-				appearance: {
-					compact: true,
-					skipFadeInAnimation: true
-				}
-			})));
-		}
-	}
-}
-
 function hashString(s: string): number {
 	let h = 2166136261 >>> 0;
 	for (let i = 0; i < s.length; i++) {
