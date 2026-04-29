@@ -5,6 +5,7 @@
 
 import type * as vscode from 'vscode';
 import { ILogService } from '../../../platform/log/common/logService';
+import { IChatSessionMetadataStore } from '../common/chatSessionMetadataStore';
 import { ICopilotCLIModels, formatModelDetails, matchesCopilotCLIModel } from '../copilotcli/node/copilotCli';
 import { ICopilotCLISession } from '../copilotcli/node/copilotcliSession';
 
@@ -34,4 +35,15 @@ export async function getCopilotCLIResponseModelDetails(session: ICopilotCLISess
 		result: modelInfo ? { details: formatModelDetails(modelInfo) } : {},
 		responseModelId,
 	};
+}
+
+/**
+ * Persists the concrete response model id so rebuilt history can recover details for auto-mode requests.
+ */
+export function persistCopilotCLIResponseModelId(sessionId: string, requestId: string, responseModelId: string | undefined, chatSessionMetadataStore: IChatSessionMetadataStore, logService: ILogService): void {
+	if (!responseModelId) {
+		return;
+	}
+	chatSessionMetadataStore.updateRequestDetails(sessionId, [{ vscodeRequestId: requestId, responseModelId }])
+		.catch(ex => logService.error(ex, 'Failed to persist response model id'));
 }

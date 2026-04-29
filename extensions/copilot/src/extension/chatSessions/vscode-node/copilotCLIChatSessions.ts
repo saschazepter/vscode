@@ -48,7 +48,7 @@ import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotC
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { UNTRUSTED_FOLDER_MESSAGE } from './folderRepositoryManagerImpl';
 import { IPullRequestDetectionService } from './pullRequestDetectionService';
-import { getCopilotCLIResponseModelDetails } from './copilotCLIResponseModelDetails';
+import { getCopilotCLIResponseModelDetails, persistCopilotCLIResponseModelId } from './copilotCLIResponseModelDetails';
 import { getSelectedSessionOptions, ISessionOptionGroupBuilder, OPEN_REPOSITORY_COMMAND_ID, toRepositoryOptionItem, toWorkspaceFolderOptionItem } from './sessionOptionGroupBuilder';
 import { ISessionRequestLifecycle } from './sessionRequestLifecycle';
 import { ICopilotCLIChatSessionInitializer, SessionInitOptions } from '../copilotcli/vscode-node/copilotCLIChatSessionInitializer';
@@ -865,10 +865,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			}
 
 			const { result, responseModelId } = await getCopilotCLIResponseModelDetails(session.object, model, this.copilotCLIModels, this.logService);
-			if (responseModelId) {
-				this.chatSessionMetadataStore.updateRequestDetails(sdkSessionId, [{ vscodeRequestId: request.id, responseModelId }])
-					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
-			}
+			persistCopilotCLIResponseModelId(sdkSessionId, request.id, responseModelId, this.chatSessionMetadataStore, this.logService);
 
 			return result;
 		} catch (ex) {

@@ -52,7 +52,7 @@ import { ICopilotCLISessionItem, ICopilotCLISessionService } from '../copilotcli
 import { buildMcpServerMappings } from '../copilotcli/node/mcpHandler';
 import { ICopilotCLISessionTracker } from '../copilotcli/vscode-node/copilotCLISessionTracker';
 import { ICopilotCLIChatSessionItemProvider } from './copilotCLIChatSessions';
-import { getCopilotCLIResponseModelDetails } from './copilotCLIResponseModelDetails';
+import { getCopilotCLIResponseModelDetails, persistCopilotCLIResponseModelId } from './copilotCLIResponseModelDetails';
 import { ICopilotCLITerminalIntegration, TerminalOpenLocation } from './copilotCLITerminalIntegration';
 import { CopilotCloudSessionsProvider } from './copilotCloudSessionsProvider';
 import { convertReferenceToVariable } from '../copilotcli/vscode-node/copilotCLIPromptReferences';
@@ -1553,13 +1553,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			// result, which would drop our `details` field on the first request.
 			const { result, responseModelId } = await getCopilotCLIResponseModelDetails(session.object, model, this.copilotCLIModels, this.logService);
 
-			// Persist the resolved model id so that on reload we can recover the model
-			// details for sessions that used `auto` (the SDK does not persist
-			// `assistant.usage`, which is the only source of the resolved model id).
-			if (responseModelId) {
-				this.chatSessionMetadataStore.updateRequestDetails(sessionId, [{ vscodeRequestId: request.id, responseModelId }])
-					.catch(ex => this.logService.error(ex, 'Failed to persist response model id'));
-			}
+			persistCopilotCLIResponseModelId(sessionId, request.id, responseModelId, this.chatSessionMetadataStore, this.logService);
 
 			if (isUntitled && !token.isCancellationRequested) {
 				this.scheduleUntitledSessionSwap(id, request.id, request.prompt, session.object.sessionId, chatSessionContext.chatSessionItem);
