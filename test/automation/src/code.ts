@@ -271,6 +271,28 @@ export class Code {
 		await this.poll(() => this.driver.click(selector, xoffset, yoffset), () => true, `click '${selector}'`, retryCount);
 	}
 
+	/**
+	 * Polls the element's click position via getElementXY until two consecutive samples
+	 * (separated by `intervalMs`) return identical coordinates. Used to defeat TOCTOU
+	 * races where a sibling element is inserted asynchronously and shifts the target's
+	 * position between the position lookup and the actual click dispatch.
+	 */
+	async waitForStableElementRect(selector: string, intervalMs: number = 100, retryCount: number = 50): Promise<void> {
+		let last: { x: number; y: number } | undefined;
+		await this.poll(
+			async () => {
+				const current = await this.driver.getElementXY(selector);
+				const stable = !!last && last.x === current.x && last.y === current.y;
+				last = current;
+				return stable;
+			},
+			stable => stable,
+			`stable element rect '${selector}'`,
+			retryCount,
+			intervalMs,
+		);
+	}
+
 	async waitForSetValue(selector: string, value: string): Promise<void> {
 		await this.poll(() => this.driver.setValue(selector, value), () => true, `set value '${selector}'`);
 	}
