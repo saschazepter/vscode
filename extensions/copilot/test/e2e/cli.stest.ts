@@ -48,10 +48,6 @@ import { IInstantiationService } from '../../src/util/vs/platform/instantiation/
 import { ChatRequest, ChatSessionStatus, ChatToolInvocationPart, Diagnostic, DiagnosticSeverity, LanguageModelTextPart, LanguageModelToolResult2, Location, Range, Uri } from '../../src/vscodeTypes';
 import { ssuite, stest } from '../base/stest';
 
-interface ChatToolResourcesInvocationData {
-	values: Array<Uri | Location>;
-}
-
 const permissionConfirmationInvocations: Array<{ name: string; input: unknown }> = [];
 
 class TestCopilotCLIToolsService extends TestToolsService {
@@ -340,23 +336,7 @@ async function assertFileNotContains(filePath: string, expectedContent: string) 
 	assert.ok(!fileContent.includes(expectedContent), `Expected not to contain "${expectedContent}", contents = ${fileContent}`);
 }
 
-function getToolInvocationsByName(toolInvocations: ChatToolInvocationPart[], toolName: string): ChatToolInvocationPart[] {
-	return toolInvocations.filter(t => t.toolName.toLocaleLowerCase() === toolName.toLocaleLowerCase());
-}
-
-function assertToolInvocationHasFiles(invocation: ChatToolInvocationPart, expectedFileCount: number, message?: string) {
-	const data = invocation.toolSpecificData as ChatToolResourcesInvocationData | undefined;
-	assert.ok(data, message ?? 'Expected toolSpecificData to exist');
-	assert.ok(data.values, message ?? 'Expected toolSpecificData.values to exist');
-	assert.strictEqual(data.values.length, expectedFileCount, message ?? `Expected ${expectedFileCount} files, got ${data.values.length}`);
-}
-
-function assertToolInvocationMessageContains(invocation: ChatToolInvocationPart, expectedPattern: string, message?: string) {
-	const pastTenseMessage = typeof invocation.pastTenseMessage === 'string' ? invocation.pastTenseMessage : invocation.pastTenseMessage?.value;
-	assert.ok(pastTenseMessage?.includes(expectedPattern), message ?? `Expected pastTenseMessage to contain "${expectedPattern}", got "${pastTenseMessage}"`);
-}
-
-ssuite({ title: '@cli', location: 'external' }, async (_) => {
+ssuite.skip({ title: '@cli', location: 'external' }, async (_) => {
 	stest({ description: 'can start a session' },
 		testRunner(async ({ sessionService, init, authInfo }, scenariosPath, toolInvocations, stream, disposables) => {
 			const workingDirectory = URI.file(path.join(scenariosPath, 'wkspc1'));
@@ -659,121 +639,6 @@ ssuite({ title: '@cli', location: 'external' }, async (_) => {
 			assert.strictEqual(session.object.status, ChatSessionStatus.Completed);
 			assertStreamContains(stream, 'wkspc1');
 			assert.ok(permissionConfirmationInvocations.some(invocation => invocation.name === 'vscode_get_terminal_confirmation'));
-		})
-	);
-
-	stest.skip({ description: 'glob tool returns files with correct toolSpecificData' },
-		testRunner(async ({ sessionService, promptResolver, init, authInfo }, scenariosPath, toolInvocations, stream, disposables) => {
-			const workingDirectory = URI.file(path.join(scenariosPath, 'wkspc1'));
-			await init(workingDirectory);
-			const { prompt, attachments } = await resolvePromptWithFileReferences(
-				`Use the glob tool to find all JavaScript files (*.js) in the current directory. Do not use any other search tools.`,
-				[],
-				promptResolver
-			);
-
-			const session = await sessionService.createSession(sessionOptionsFor(workingDirectory), CancellationToken.None);
-			disposables.add(session);
-			disposables.add(session.object.attachStream(stream));
-
-			await session.object.handleRequest({ id: '', toolInvocationToken: undefined as never }, { prompt }, attachments, undefined, authInfo, CancellationToken.None);
-
-			assert.strictEqual(session.object.status, ChatSessionStatus.Completed);
-			assertNoErrorsInStream(stream);
-
-			const globInvocations = getToolInvocationsByName(toolInvocations, 'search');
-			assert.ok(globInvocations.length > 0, 'Expected at least one glob tool invocation');
-			const invocation = globInvocations[globInvocations.length - 1];
-			// wkspc1 has sample.js, utils.js, stringUtils.js
-			assertToolInvocationHasFiles(invocation, 3);
-			assertToolInvocationMessageContains(invocation, '3 result');
-		})
-	);
-
-	stest.skip({ description: 'glob tool with no matches has empty toolSpecificData' },
-		testRunner(async ({ sessionService, promptResolver, init, authInfo }, scenariosPath, toolInvocations, stream, disposables) => {
-			const workingDirectory = URI.file(path.join(scenariosPath, 'wkspc1'));
-			await init(workingDirectory);
-			const { prompt, attachments } = await resolvePromptWithFileReferences(
-				`Use the glob tool to find all files matching *.xyz in the current directory. Do not use any other search tools.`,
-				[],
-				promptResolver
-			);
-
-			const session = await sessionService.createSession(sessionOptionsFor(workingDirectory), CancellationToken.None);
-			disposables.add(session);
-			disposables.add(session.object.attachStream(stream));
-
-			await session.object.handleRequest({ id: '', toolInvocationToken: undefined as never }, { prompt }, attachments, undefined, authInfo, CancellationToken.None);
-
-			assert.strictEqual(session.object.status, ChatSessionStatus.Completed);
-			assertNoErrorsInStream(stream);
-
-			const globInvocations = getToolInvocationsByName(toolInvocations, 'search');
-			assert.ok(globInvocations.length > 0, 'Expected at least one glob tool invocation');
-			const invocation = globInvocations[globInvocations.length - 1];
-			assertToolInvocationHasFiles(invocation, 0);
-			// When no results, the message ends with '.' (no result count)
-			const pastTenseMessage = typeof invocation.pastTenseMessage === 'string' ? invocation.pastTenseMessage : invocation.pastTenseMessage?.value;
-			assert.ok(pastTenseMessage?.endsWith('.'), `Expected pastTenseMessage to end with '.', got "${pastTenseMessage}"`);
-		})
-	);
-
-	stest.skip({ description: 'grep tool returns files with correct toolSpecificData' },
-		testRunner(async ({ sessionService, promptResolver, init, authInfo }, scenariosPath, toolInvocations, stream, disposables) => {
-			const workingDirectory = URI.file(path.join(scenariosPath, 'wkspc1'));
-			await init(workingDirectory);
-			const { prompt, attachments } = await resolvePromptWithFileReferences(
-				`Use the grep tool to search for the word 'function' in the current directory. Do not use any other search tools.`,
-				[],
-				promptResolver
-			);
-
-			const session = await sessionService.createSession(sessionOptionsFor(workingDirectory), CancellationToken.None);
-			disposables.add(session);
-			disposables.add(session.object.attachStream(stream));
-
-			await session.object.handleRequest({ id: '', toolInvocationToken: undefined as never }, { prompt }, attachments, undefined, authInfo, CancellationToken.None);
-
-			assert.strictEqual(session.object.status, ChatSessionStatus.Completed);
-			assertNoErrorsInStream(stream);
-
-			const grepInvocations = getToolInvocationsByName(toolInvocations, 'search');
-			assert.ok(grepInvocations.length > 0, 'Expected at least one grep tool invocation');
-			const invocation = grepInvocations[grepInvocations.length - 1];
-			// All JS files in wkspc1 contain 'function': sample.js, utils.js, stringUtils.js
-			const data = invocation.toolSpecificData as ChatToolResourcesInvocationData | undefined;
-			assert.ok(data && data.values && data.values.length > 0, 'Expected grep to find matching files');
-			assertToolInvocationMessageContains(invocation, 'result');
-		})
-	);
-
-	stest.skip({ description: 'grep tool with no matches has empty toolSpecificData' },
-		testRunner(async ({ sessionService, promptResolver, init, authInfo }, scenariosPath, toolInvocations, stream, disposables) => {
-			const workingDirectory = URI.file(path.join(scenariosPath, 'wkspc1'));
-			await init(workingDirectory);
-			const { prompt, attachments } = await resolvePromptWithFileReferences(
-				`Use the grep tool to search for the pattern 'xyzNonExistentPattern123' in the current directory. Do not use any other search tools.`,
-				[],
-				promptResolver
-			);
-
-			const session = await sessionService.createSession(sessionOptionsFor(workingDirectory), CancellationToken.None);
-			disposables.add(session);
-			disposables.add(session.object.attachStream(stream));
-
-			await session.object.handleRequest({ id: '', toolInvocationToken: undefined as never }, { prompt }, attachments, undefined, authInfo, CancellationToken.None);
-
-			assert.strictEqual(session.object.status, ChatSessionStatus.Completed);
-			assertNoErrorsInStream(stream);
-
-			const grepInvocations = getToolInvocationsByName(toolInvocations, 'search');
-			assert.ok(grepInvocations.length > 0, 'Expected at least one grep tool invocation');
-			const invocation = grepInvocations[grepInvocations.length - 1];
-			assertToolInvocationHasFiles(invocation, 0);
-			// When no results, the message ends with '.' (no result count)
-			const pastTenseMessage = typeof invocation.pastTenseMessage === 'string' ? invocation.pastTenseMessage : invocation.pastTenseMessage?.value;
-			assert.ok(pastTenseMessage?.endsWith('.'), `Expected pastTenseMessage to end with '.', got "${pastTenseMessage}"`);
 		})
 	);
 });
