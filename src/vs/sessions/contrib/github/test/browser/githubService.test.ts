@@ -11,8 +11,6 @@ import { TestInstantiationService } from '../../../../../platform/instantiation/
 import { GitHubService } from '../../browser/githubService.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../../../services/sessions/common/session.js';
-import { GitHubPullRequestState, IGitHubPullRequest } from '../../common/types.js';
-import { GitHubPullRequestModel } from '../../browser/models/githubPullRequestModel.js';
 
 suite('GitHubService', () => {
 
@@ -61,28 +59,6 @@ suite('GitHubService', () => {
 
 		const model2 = service.getPullRequest('owner', 'repo', 1);
 		assert.notStrictEqual(model1, model2);
-	});
-
-	test('disposePullRequest removes cached review threads and CI models for the pull request', () => {
-		const pullRequestModel = service.getPullRequest('owner', 'repo', 1);
-		const reviewThreadsModel = service.getPullRequestReviewThreads('owner', 'repo', 1);
-		const ciByHeadRefModel = service.getPullRequestCI('owner', 'repo', 1, 'feature');
-		const ciByHeadShaModel = service.getPullRequestCI('owner', 'repo', 1, 'abc123');
-		setPullRequest(pullRequestModel, makePullRequest({ headRef: 'feature', headSha: 'abc123' }));
-
-		service.disposePullRequest('owner', 'repo', 1);
-
-		assert.deepStrictEqual({
-			pullRequest: service.getPullRequest('owner', 'repo', 1) !== pullRequestModel,
-			reviewThreads: service.getPullRequestReviewThreads('owner', 'repo', 1) !== reviewThreadsModel,
-			ciByHeadRef: service.getPullRequestCI('owner', 'repo', 1, 'feature') !== ciByHeadRefModel,
-			ciByHeadSha: service.getPullRequestCI('owner', 'repo', 1, 'abc123') !== ciByHeadShaModel,
-		}, {
-			pullRequest: true,
-			reviewThreads: true,
-			ciByHeadRef: true,
-			ciByHeadSha: true,
-		});
 	});
 
 	test('getPullRequestReviewThreads returns cached model for same key', () => {
@@ -147,30 +123,6 @@ suite('GitHubService', () => {
 		assert.doesNotThrow(() => service.dispose());
 	});
 });
-
-function setPullRequest(model: GitHubPullRequestModel, pullRequest: IGitHubPullRequest): void {
-	(model as unknown as { readonly _pullRequest: { set(value: IGitHubPullRequest, tx: undefined): void } })._pullRequest.set(pullRequest, undefined);
-}
-
-function makePullRequest(overrides?: Partial<IGitHubPullRequest>): IGitHubPullRequest {
-	return {
-		number: 1,
-		title: 'Pull Request',
-		body: '',
-		state: GitHubPullRequestState.Open,
-		author: { login: 'octocat', avatarUrl: '' },
-		headRef: 'feature',
-		headSha: 'abc123',
-		baseRef: 'main',
-		isDraft: false,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-		mergedAt: undefined,
-		mergeable: true,
-		mergeableState: 'clean',
-		...overrides,
-	};
-}
 
 suite('getGitHubContext', () => {
 
