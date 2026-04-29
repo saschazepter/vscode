@@ -71,6 +71,11 @@ function getIncludedLabels(element: HTMLElement): string[] {
 	return Array.from(indicators).map(el => el.textContent ?? '');
 }
 
+function getQuotaValues(element: HTMLElement): string[] {
+	const values = element.querySelectorAll('.quota-indicator:not(.included) .quota-value');
+	return Array.from(values).map(el => el.textContent ?? '');
+}
+
 const dashboardOptions: IChatStatusDashboardOptions = {
 	disableInlineSuggestionsSettings: true,
 	disableModelSelection: true,
@@ -121,6 +126,7 @@ suite('ChatStatusDashboard', () => {
 		}));
 
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Chat messages', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['20%', '30%']);
 	});
 
 	test('Free — PRU exhausted: shows Chat messages and Inline Suggestions at 0%', () => {
@@ -131,6 +137,7 @@ suite('ChatStatusDashboard', () => {
 		}));
 
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Chat messages', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['100%', '100%']);
 	});
 
 	test('Free — TBB: shows Monthly Limit and Inline Suggestions, not Chat messages', () => {
@@ -142,6 +149,7 @@ suite('ChatStatusDashboard', () => {
 		}));
 
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['40%', '30%']);
 	});
 
 	test('Free — TBB exhausted: shows Monthly Limit and Inline Suggestions at 0%', () => {
@@ -153,6 +161,7 @@ suite('ChatStatusDashboard', () => {
 		}));
 
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['100%', '100%']);
 	});
 
 	// --- COPILOT PRO (EDU/Pro) ---
@@ -168,7 +177,7 @@ suite('ChatStatusDashboard', () => {
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Chat messages', 'Premium requests', 'Inline Suggestions']);
 	});
 
-	test('EDU/Pro — TBB: shows Monthly Limit and Inline Suggestions, not Chat messages', () => {
+	test('EDU/Pro — TBB: shows only Monthly Limit, not Chat messages or Inline Suggestions', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 80, unlimited: false },
 			premiumChat: { percentRemaining: 60, unlimited: false, usageBasedBilling: true },
@@ -176,10 +185,10 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.Pro,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
 	});
 
-	test('EDU/Pro — TBB exhausted (no overages): shows Monthly Limit at 0%', () => {
+	test('EDU/Pro — TBB exhausted (no overages): shows only Monthly Limit', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 0, unlimited: false },
 			premiumChat: { percentRemaining: 0, unlimited: false, usageBasedBilling: true },
@@ -188,10 +197,11 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.Pro,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['100%']);
 	});
 
-	test('EDU/Pro — TBB exhausted (with overages): shows Monthly Limit at 0%', () => {
+	test('EDU/Pro — TBB exhausted (with overages): shows only Monthly Limit', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 0, unlimited: false },
 			premiumChat: { percentRemaining: 0, unlimited: false, usageBasedBilling: true },
@@ -200,7 +210,8 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.Pro,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['100%']);
 	});
 
 	// --- COPILOT PRO+ ---
@@ -215,7 +226,7 @@ suite('ChatStatusDashboard', () => {
 		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Premium requests', 'Inline Suggestions']);
 	});
 
-	test('Pro+ — TBB with quota: shows Monthly Limit and Inline Suggestions', () => {
+	test('Pro+ — TBB with quota: shows only Monthly Limit', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 80, unlimited: false },
 			premiumChat: { percentRemaining: 60, unlimited: false, usageBasedBilling: true },
@@ -223,10 +234,10 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.ProPlus,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
 	});
 
-	test('Pro+ — TBB out of quota: shows Monthly Limit at 0%', () => {
+	test('Pro+ — TBB out of quota: shows only Monthly Limit', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 0, unlimited: false },
 			premiumChat: { percentRemaining: 0, unlimited: false, usageBasedBilling: true },
@@ -234,7 +245,8 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.ProPlus,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
+		assert.deepStrictEqual(getQuotaValues(dashboard.element), ['100%']);
 	});
 
 	// --- COPILOT MAX ---
@@ -276,7 +288,7 @@ suite('ChatStatusDashboard', () => {
 		assert.deepStrictEqual(getIncludedLabels(dashboard.element), ['Premium Requests']);
 	});
 
-	test('Enterprise — TBB (multi-quota): shows Monthly Limit and Inline Suggestions, not Chat messages', () => {
+	test('Enterprise — TBB (multi-quota): shows only Monthly Limit, not Chat messages or Inline Suggestions', () => {
 		const dashboard = createDashboard(createEntitlementService({
 			chat: { percentRemaining: 80, unlimited: false },
 			premiumChat: { percentRemaining: 60, unlimited: false, usageBasedBilling: true },
@@ -284,6 +296,6 @@ suite('ChatStatusDashboard', () => {
 			entitlement: ChatEntitlement.Enterprise,
 		}));
 
-		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit', 'Inline Suggestions']);
+		assert.deepStrictEqual(getQuotaLabels(dashboard.element), ['Monthly Limit']);
 	});
 });
