@@ -1481,7 +1481,7 @@ export class BrowserViewAttachmentWidget extends AbstractChatAttachmentWidget {
 		this._register(this._browserViewService.onDidChangeBrowserViews(() => this._resolveInput()));
 		this._register(this._browserViewService.onDidChangeSharingAvailable(() => this._updateLabel()));
 
-		this._hoverService.setupDelayedHover(this.element, () => ({
+		this._register(this._hoverService.setupDelayedHover(this.element, () => ({
 			...commonHoverOptions,
 			content: this._input
 				? {
@@ -1490,7 +1490,7 @@ export class BrowserViewAttachmentWidget extends AbstractChatAttachmentWidget {
 					[BrowserViewSharingState.Unavailable]: localize('chat.browserToolsDisabled', "Browser tools are not enabled."),
 				}[this._input.model?.sharingState ?? BrowserViewSharingState.Shared]
 				: localize('chat.browserViewClosed', "This browser page is no longer open."),
-		}), commonHoverLifecycleOptions);
+		}), commonHoverLifecycleOptions));
 
 		this._instantiationService.invokeFunction(accessor => {
 			this._register(hookUpResourceAttachmentDragAndContextMenu(accessor, this.element, _attachment.value));
@@ -1527,6 +1527,7 @@ export class BrowserViewAttachmentWidget extends AbstractChatAttachmentWidget {
 			} else {
 				this._inputListeners.add(input.onDidResolveModel(() => {
 					this._inputListeners.add(input.model!.onDidChangeSharingState(() => this._updateLabel()));
+					this._updateLabel();
 				}));
 			}
 		}

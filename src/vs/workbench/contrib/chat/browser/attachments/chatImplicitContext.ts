@@ -180,6 +180,7 @@ export class ChatImplicitContextContribution extends Disposable implements IWork
 		const codeEditor = this.findActiveCodeEditor();
 		const model = codeEditor?.getModel();
 		const selection = codeEditor?.getSelection();
+		const useSuggestedContext = this.configurationService.getValue<boolean>('chat.implicitContext.suggestedContext');
 		let newValue: Location | URI | StringChatContextValue | undefined;
 		let isSelection = false;
 
@@ -191,7 +192,7 @@ export class ChatImplicitContextContribution extends Disposable implements IWork
 				newValue = { uri: model.uri, range: selection } satisfies Location;
 				isSelection = true;
 			} else {
-				if (this.configurationService.getValue('chat.implicitContext.suggestedContext')) {
+				if (useSuggestedContext) {
 					newValue = model.uri;
 				} else {
 					const visibleRanges = codeEditor?.getVisibleRanges();
@@ -255,10 +256,8 @@ export class ChatImplicitContextContribution extends Disposable implements IWork
 		}
 
 		const browser = this.findActiveBrowserEditor();
-		if (browser) {
-			if (browser.isSharingAvailable) {
-				newValue = browser.resource;
-			}
+		if (browser?.isSharingAvailable && useSuggestedContext) {
+			newValue = browser.resource;
 		}
 
 		const uri = newValue instanceof URI ? newValue : (isStringImplicitContextValue(newValue) ? undefined : newValue?.uri);
