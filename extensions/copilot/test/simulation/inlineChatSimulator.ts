@@ -844,7 +844,7 @@ export function toRange(range: [number, number] | [number, number, number, numbe
 }
 
 
-export function forInlineAndInlineChatIntent(callback: (strategy: EditTestStrategy, configurations: NonExtensionConfiguration[] | undefined, suffix: string) => void): void {
+export function forInlineChatIntent(callback: (strategy: EditTestStrategy, configurations: NonExtensionConfiguration[] | undefined, suffix: string) => void): void {
 	callback(EditTestStrategy.InlineChatIntent, [['chat.agent.autoFix', false]], '-InlineChatIntent');
 }
 
