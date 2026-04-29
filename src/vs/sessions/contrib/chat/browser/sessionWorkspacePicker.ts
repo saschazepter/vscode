@@ -63,19 +63,6 @@ const KNOWN_TAB_ORDER: readonly string[] = [
 const KNOWN_TAB_SET = new Set<string>(KNOWN_TAB_ORDER);
 
 /**
- * Localized labels for well-known tab values. Custom group strings
- * contributed by future providers fall through to the raw value.
- */
-function localizeTabLabel(group: string): string {
-	switch (group) {
-		case SESSION_WORKSPACE_GROUP_LOCAL: return localize('workspacePicker.tab.local', "Local");
-		case SESSION_WORKSPACE_GROUP_CLOUD: return localize('workspacePicker.tab.cloud', "Cloud");
-		case SESSION_WORKSPACE_GROUP_REMOTE: return localize('workspacePicker.tab.remote', "Remote");
-		default: return group;
-	}
-}
-
-/**
  * Grace period for a restored remote workspace's provider to reach Connected
  * before we fall back to no selection. SSH tunnels typically connect within
  * a couple seconds; if it hasn't connected by then, we'd rather show no
@@ -400,6 +387,8 @@ export class WorkspacePicker extends Disposable {
 	 * tracking and submenu chrome.
 	 */
 	private _showFlatPicker(): void {
+		// Tear down any previous tabbed popup before delegating to the
+		// shared service — the two presentations don't co-exist.
 		this._pickerDisposables.value = undefined;
 		const triggerElement = this._triggerElement!;
 		const items = this._buildItems();
@@ -433,14 +422,17 @@ export class WorkspacePicker extends Disposable {
 		const items = this._buildItems();
 		const listOptions = this._buildListOptions(items, TABBED_PICKER_WIDTH);
 
-		// Tear down any previous tabbed popup before showing the new one.
-		// `_swappingTab` suppresses the cascading hide that would otherwise
-		// dismiss the popup we are about to show (see `_buildDelegate` and
-		// the focus-tracker block below).
+		// Tear down any previous popup before showing the new one. For a
+		// tabbed-to-tabbed swap, `_swappingTab` suppresses the cascading
+		// hide that would otherwise dismiss the popup we are about to show
+		// (see `_buildDelegate` and the focus-tracker block below).
 		const isSwap = !!this._pickerDisposables.value;
 		if (isSwap) {
 			this._swappingTab = true;
 			this._pickerDisposables.value = undefined;
+		}
+		if (this.actionWidgetService.isVisible) {
+			this.actionWidgetService.hide();
 		}
 
 		const hide = () => {
@@ -453,6 +445,14 @@ export class WorkspacePicker extends Disposable {
 			getAriaLabel: (item: IActionListItem<IWorkspacePickerItem>) => item.label ?? '',
 			getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 		};
+
+		// Reserve the disposable slot up-front so any synchronous hide
+		// triggered during `render` (e.g. an immediate selection) finds the
+		// expected disposable to clear, instead of a stale one assigned
+		// after `showContextView` returns.
+		this._pickerDisposables.value = toDisposable(() => {
+			this.contextViewService.hideContextView();
+		});
 
 		triggerElement.setAttribute('aria-expanded', 'true');
 		this.contextViewService.showContextView({
@@ -468,10 +468,7 @@ export class WorkspacePicker extends Disposable {
 				// widget service or platform layer.
 				const tabBar = dom.append(widget, dom.$('.sessions-workspace-picker-tabbar'));
 				const radio = renderDisposables.add(new Radio({
-					items: tabs.map(t => {
-						const label = localizeTabLabel(t);
-						return { text: label, tooltip: label, isActive: t === this._activeTab };
-					}),
+					items: tabs.map(t => ({ text: t, tooltip: t, isActive: t === this._activeTab })),
 				}));
 				tabBar.appendChild(radio.domNode);
 
@@ -599,10 +596,6 @@ export class WorkspacePicker extends Disposable {
 		if (isSwap) {
 			this._swappingTab = false;
 		}
-
-		this._pickerDisposables.value = toDisposable(() => {
-			this.contextViewService.hideContextView();
-		});
 	}
 
 	/**

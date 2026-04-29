@@ -268,9 +268,9 @@ export interface ISessionCapabilities {
  * `ISessionWorkspaceBrowseAction`; the picker discovers tabs from the union
  * of contributed values.
  */
-export const SESSION_WORKSPACE_GROUP_LOCAL = 'Local';
-export const SESSION_WORKSPACE_GROUP_CLOUD = 'Cloud';
-export const SESSION_WORKSPACE_GROUP_REMOTE = 'Remote';
+export const SESSION_WORKSPACE_GROUP_LOCAL = localize('sessionWorkspaceGroup.local', "Local");
+export const SESSION_WORKSPACE_GROUP_CLOUD = localize('sessionWorkspaceGroup.cloud', "Cloud");
+export const SESSION_WORKSPACE_GROUP_REMOTE = localize('sessionWorkspaceGroup.remote', "Remote");
 
 export interface ISessionWorkspaceBrowseAction {
 	/** Display label for the browse action. */
