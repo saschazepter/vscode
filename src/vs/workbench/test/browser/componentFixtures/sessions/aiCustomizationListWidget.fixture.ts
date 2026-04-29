@@ -62,6 +62,8 @@ function createMockPromptsService(instructionFiles: IFixtureInstructionFile[], a
 		}
 		override async listAgentInstructions() { return agentInstructionFiles; }
 		override async getCustomAgents() { return []; }
+		override async findAgentSkills() { return []; }
+		override async getPromptSlashCommands() { return []; }
 		override async getInstructionFiles() {
 			return instructionFiles.map(f => ({
 				uri: f.promptPath.uri,
@@ -108,6 +110,7 @@ function createMockWorkspaceService(): IAICustomizationWorkspaceService {
 		override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
 		override getActiveProjectRoot() { return URI.file('/workspace'); }
 		override getStorageSourceFilter() { return defaultFilter; }
+		override getSkillUIIntegrations() { return new Map(); }
 	}();
 }
 
