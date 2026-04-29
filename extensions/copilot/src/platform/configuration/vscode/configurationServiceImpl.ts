@@ -80,7 +80,13 @@ export class ConfigurationServiceImpl extends AbstractConfigurationService {
 				// we need to check if the migrated setting is configured
 				// and take only the configured value and let the default value be obtained from the registered Config<T>.
 				if (this.isConfigured(key, scope)) {
-					configuredValue = config.get<T>(key.id) ?? (key.oldId ? config.get<T>(key.oldId) : undefined);
+					configuredValue = config.get<T>(key.id) ?? config.get<T>(key.oldId);
+				} else {
+					// `isConfigured` relies on `inspect()`, which can return undefined for settings
+					// that were never registered in package.json. Read the old key directly so users
+					// who still have the legacy key in their settings.json get their value (until the
+					// migration rewrites it).
+					configuredValue = config.get<T>(key.oldId);
 				}
 			} else {
 				configuredValue = config.get<T>(key.id) ?? (key.oldId ? config.get<T>(key.oldId) : undefined);
