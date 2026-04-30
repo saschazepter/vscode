@@ -350,11 +350,13 @@ class MockChatWidgetService extends mock<IChatWidgetService>() {
 
 // ---- Helpers ----------------------------------------------------------------
 
-function createTestServices(disposables: DisposableStore, workingDirectoryResolver?: { resolve(sessionResource: URI): URI | undefined }, authServiceOverride?: Partial<IAuthenticationService>) {
+function createTestServices(disposables: DisposableStore, workingDirectoryResolver?: { resolve(sessionResource: URI): URI | undefined }, authServiceOverride?: Partial<IAuthenticationService>, existingAgentHostService?: MockAgentHostService) {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
-	const agentHostService = new MockAgentHostService();
-	disposables.add(toDisposable(() => agentHostService.dispose()));
+	const agentHostService = existingAgentHostService ?? new MockAgentHostService();
+	if (!existingAgentHostService) {
+		disposables.add(toDisposable(() => agentHostService.dispose()));
+	}
 
 	const chatAgentService = new MockChatAgentService();
 	const chatWidgetService = new MockChatWidgetService();
@@ -443,8 +445,8 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	return { instantiationService, agentHostService, chatAgentService, chatWidgetService, chatService };
 }
 
-function createContribution(disposables: DisposableStore, opts?: { authServiceOverride?: Partial<IAuthenticationService>; workingDirectoryResolver?: { resolve(sessionResource: URI): URI | undefined } }) {
-	const { instantiationService, agentHostService, chatAgentService, chatWidgetService, chatService } = createTestServices(disposables, opts?.workingDirectoryResolver, opts?.authServiceOverride);
+function createContribution(disposables: DisposableStore, opts?: { authServiceOverride?: Partial<IAuthenticationService>; workingDirectoryResolver?: { resolve(sessionResource: URI): URI | undefined }; existingAgentHostService?: MockAgentHostService }) {
+	const { instantiationService, agentHostService, chatAgentService, chatWidgetService, chatService } = createTestServices(disposables, opts?.workingDirectoryResolver, opts?.authServiceOverride, opts?.existingAgentHostService);
 
 	const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined, 'local'));
 	const sessionHandler = disposables.add(instantiationService.createInstance(AgentHostSessionHandler, {
@@ -459,6 +461,10 @@ function createContribution(disposables: DisposableStore, opts?: { authServiceOv
 	const contribution = disposables.add(instantiationService.createInstance(AgentHostContribution));
 
 	return { contribution, listController, sessionHandler, agentHostService, chatAgentService, chatWidgetService, chatService };
+}
+
+function createContributionWithExistingService(disposables: DisposableStore, existingAgentHostService: MockAgentHostService) {
+	return createContribution(disposables, { existingAgentHostService });
 }
 
 function makeRequest(overrides: Partial<{ message: string; sessionResource: URI; variables: IChatAgentRequest['variables']; userSelectedModelId: string; modelConfiguration: Record<string, unknown>; agentHostSessionConfig: Record<string, string>; agentId: string }> = {}): IChatAgentRequest {
@@ -619,7 +625,13 @@ suite('AgentHostChatContribution', () => {
 
 	const disposables = new DisposableStore();
 
-	teardown(() => disposables.clear());
+	teardown(() => {
+		disposables.clear();
+		// The static `_sessionToBackend` map persists across handler disposal
+		// (intentionally — see AgentHostSessionHandler). Reset it between
+		// tests so URI mappings from one test don't leak into another.
+		AgentHostSessionHandler._resetForTests();
+	});
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	// ---- Registration ---------------------------------------------------
@@ -873,6 +885,81 @@ suite('AgentHostChatContribution', () => {
 
 			// Should create a new SDK session, not use "untitled-abc123" literally
 			assert.ok(AgentSession.id(URI.parse(session)).startsWith('sdk-session-'));
+		}));
+
+		test('reattaches to existing backend session after handler is recreated (host reconnect on untitled URI)', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			// This is the bug from microsoft/vscode#313360.
+			// Repro:
+			//  1. User starts a new session from the welcome screen → the chat
+			//     widget gets an `untitled-<uuid>` URI.
+			//  2. User sends first message → handler creates backend session
+			//     `sdk-session-1` and remembers `untitled-X → sdk-session-1`.
+			//  3. The agent host tunnel reconnects → the workbench tears down
+			//     and re-creates the handler (instance-state is gone).
+			//  4. User sends another message in the SAME widget. Without the
+			//     static `_sessionToBackend`, the new handler would call
+			//     `createSession` again and surface a spurious sibling
+			//     session in the tree, orphaning the first one.
+			//
+			// `_sessionToBackend` is static so the recreated handler reattaches
+			// to `sdk-session-1` instead of creating a new one.
+			const sessionResource = URI.from({ scheme: 'agent-host-copilot', path: '/untitled-reconnect-bug' });
+
+			// --- Handler #1: send first message, gets a fresh backend session.
+			const firstHandlerDisposables = disposables.add(new DisposableStore());
+			const first = createContribution(firstHandlerDisposables);
+			const agentHostService = first.agentHostService;
+
+			{
+				const registered = first.chatAgentService.registeredAgents.get('agent-host-copilot')!;
+				const turnPromise = registered.impl.invoke(
+					makeRequest({ message: 'First', sessionResource }),
+					() => { }, [], CancellationToken.None,
+				);
+				await timeout(10);
+				const dispatch = agentHostService.turnActions[0];
+				const action = dispatch.action as ITurnStartedAction;
+				agentHostService.fireAction({ action: dispatch.action, serverSeq: 1, origin: { clientId: agentHostService.clientId, clientSeq: dispatch.clientSeq } });
+				agentHostService.fireAction({ action: { type: 'session/turnComplete', session: action.session, turnId: action.turnId } as SessionAction, serverSeq: 2, origin: undefined });
+				await turnPromise;
+			}
+
+			assert.strictEqual(agentHostService.createSessionCalls.length, 1, 'first message should create a new backend session');
+			const firstBackendSession = (agentHostService.turnActions[0].action as ITurnStartedAction).session;
+
+			// --- Simulate a tunnel reconnect: dispose handler #1, create handler #2.
+			// We reuse the SAME mock connection (`agentHostService`) — that
+			// represents the host, which keeps the existing backend session
+			// across a tunnel reconnect.
+			firstHandlerDisposables.dispose();
+
+			const secondHandlerDisposables = disposables.add(new DisposableStore());
+			const second = createContributionWithExistingService(secondHandlerDisposables, agentHostService);
+
+			// --- Handler #2: send another message on the SAME chat URI.
+			{
+				const registered = second.chatAgentService.registeredAgents.get('agent-host-copilot')!;
+				const turnPromise = registered.impl.invoke(
+					makeRequest({ message: 'Second', sessionResource }),
+					() => { }, [], CancellationToken.None,
+				);
+				await timeout(10);
+				const dispatch = agentHostService.turnActions[1];
+				assert.ok(dispatch, 'handler #2 should have dispatched a turnStarted');
+				const action = dispatch.action as ITurnStartedAction;
+				agentHostService.fireAction({ action: dispatch.action, serverSeq: 3, origin: { clientId: agentHostService.clientId, clientSeq: dispatch.clientSeq } });
+				agentHostService.fireAction({ action: { type: 'session/turnComplete', session: action.session, turnId: action.turnId } as SessionAction, serverSeq: 4, origin: undefined });
+				await turnPromise;
+			}
+
+			// The bug: a second `createSession` call would happen and the second
+			// turn would target a different backend session URI.
+			assert.strictEqual(agentHostService.createSessionCalls.length, 1, 'recreated handler must NOT create a second backend session');
+			assert.strictEqual(
+				(agentHostService.turnActions[1].action as ITurnStartedAction).session,
+				firstBackendSession,
+				'recreated handler must dispatch the second turn against the original backend session',
+			);
 		}));
 		test('passes raw model id extracted from language model identifier', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);

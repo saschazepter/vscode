@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { raceTimeout } from '../../../../../../base/common/async.js';
 import { encodeBase64 } from '../../../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { BugIndicatingError, isCancellationError } from '../../../../../../base/common/errors.js';
@@ -344,7 +345,34 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 	private readonly _activeSessions = new ResourceMap<AgentHostChatSession>();
 	/** Maps UI resource keys to resolved backend session URIs. */
-	private readonly _sessionToBackend = new ResourceMap<URI>();
+	/**
+	 * Maps a chat session URI (as known to the workbench) to the backend
+	 * session URI (as known to the agent host).
+	 *
+	 * This is **static** so it survives disposal/recreation of the handler
+	 * instance. When the tunnel to the agent host reconnects, the
+	 * `RemoteAgentHostContribution` tears down and re-creates the entire
+	 * agent store (including this handler). Without persistence, an
+	 * already-open chat widget that holds an `untitled-<uuid>` URI would
+	 * see a cache miss on its next message and we would create a brand
+	 * new backend session — surfacing a spurious tree item and orphaning
+	 * the original session. Keeping the mapping process-wide lets the
+	 * recreated handler reattach to the existing backend session.
+	 *
+	 * Keys include the provider scheme (e.g. `agent-host-copilot:`) so
+	 * different providers cannot collide. Entries are evicted when the
+	 * chat session is closed (see `AgentHostChatSession` dispose path) or
+	 * when the backend signals `notify/sessionRemoved`.
+	 */
+	private static readonly _sessionToBackend = new ResourceMap<URI>();
+
+	/**
+	 * Test-only: clear the static mapping so tests don't leak state to
+	 * each other.
+	 */
+	public static _resetForTests(): void {
+		AgentHostSessionHandler._sessionToBackend.clear();
+	}
 	/** Per-session subscription to chat model pending request changes. */
 	private readonly _pendingMessageSubscriptions = this._register(new DisposableResourceMap());
 	/** Per-session subscription watching for server-initiated turns. */
@@ -399,7 +427,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		this._register(autorun(reader => {
 			const tools = this._clientToolsObs.read(reader);
 			const defs = tools.map(toolDataToDefinition);
-			for (const [, backendSession] of this._sessionToBackend) {
+			for (const [, backendSession] of AgentHostSessionHandler._sessionToBackend) {
 				const state = this._getSessionState(backendSession.toString());
 				if (state?.activeClient?.clientId === this._config.connection.clientId) {
 					this._dispatchAction({
@@ -451,7 +479,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		if (config.customizations) {
 			this._register(autorun(reader => {
 				const refs = config.customizations!.read(reader);
-				for (const [, backendSession] of this._sessionToBackend) {
+				for (const [, backendSession] of AgentHostSessionHandler._sessionToBackend) {
 					const state = this._getSessionState(backendSession.toString());
 					if (state?.activeClient?.clientId === this._config.connection.clientId) {
 						this._dispatchActiveClient(backendSession, refs);
@@ -459,6 +487,21 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 			}));
 		}
+
+		// Evict static `_sessionToBackend` entries when the host signals that a
+		// backend session is gone. Without this, a chat session URI could
+		// remain mapped to a stale backend URI and `_tryReattachToBackendSession`
+		// would have to discover the staleness on the next request.
+		this._register(this._config.connection.onDidNotification(n => {
+			if (n.type === 'notify/sessionRemoved') {
+				const removedKey = n.session.toString();
+				for (const [chatUri, backendUri] of AgentHostSessionHandler._sessionToBackend) {
+					if (backendUri.toString() === removedKey) {
+						AgentHostSessionHandler._sessionToBackend.delete(chatUri);
+					}
+				}
+			}
+		}));
 
 		this._registerAgent();
 	}
@@ -475,7 +518,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		let activeTurnId: string | undefined;
 		if (!isUntitled) {
 			resolvedSession = this._resolveSessionUri(sessionResource);
-			this._sessionToBackend.set(sessionResource, resolvedSession);
+			AgentHostSessionHandler._sessionToBackend.set(sessionResource, resolvedSession);
 			try {
 				const sub = this._ensureSessionSubscription(resolvedSession.toString());
 				// Wait for the subscription to hydrate from the server
@@ -538,7 +581,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			sessionResource,
 			history,
 			(request: IChatSessionRequestHistoryItem | undefined, token: CancellationToken) => {
-				resolvedSession ??= this._sessionToBackend.get(sessionResource);
+				resolvedSession ??= AgentHostSessionHandler._sessionToBackend.get(sessionResource);
 				if (!resolvedSession) {
 					throw new BugIndicatingError('Cannot fork session before the initial request');
 				}
@@ -548,7 +591,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			initialProgress,
 			() => {
 				this._activeSessions.delete(sessionResource);
-				this._sessionToBackend.delete(sessionResource);
+				AgentHostSessionHandler._sessionToBackend.delete(sessionResource);
 				this._pendingMessageSubscriptions.deleteAndDispose(sessionResource);
 				this._serverTurnWatchers.deleteAndDispose(sessionResource);
 				this._pendingHistoryTurns.delete(sessionResource);
@@ -557,7 +600,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 			},
 			() => {
-				const backend = resolvedSession ?? this._sessionToBackend.get(sessionResource);
+				const backend = resolvedSession ?? AgentHostSessionHandler._sessionToBackend.get(sessionResource);
 				if (!backend) {
 					// Nothing to cancel. Treat as a successful noop so ChatService
 					// does not install a phantom pending request.
@@ -644,11 +687,28 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	): Promise<IChatAgentResult> {
 		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
 
-		// Resolve or create backend session
-		let resolvedSession = this._sessionToBackend.get(request.sessionResource);
+		// Resolve or create backend session.
+		//
+		// `_sessionToBackend` is static and persists across handler disposal/
+		// recreation. When the agent host tunnel reconnects, the workbench
+		// tears down and re-creates this handler — but the static map still
+		// remembers the URI → backend-session mapping. On a hit we reattach
+		// to the existing backend session (re-establishing this handler's
+		// subscriptions) instead of creating a new one. On a miss (or if the
+		// reattach fails because the host genuinely lost the session) we
+		// create a fresh backend session.
+		let resolvedSession = AgentHostSessionHandler._sessionToBackend.get(request.sessionResource);
+		if (resolvedSession) {
+			const reattached = await this._tryReattachToBackendSession(request.sessionResource, resolvedSession);
+			if (!reattached) {
+				this._logService.warn(`[AgentHost] Backend session ${resolvedSession.toString()} no longer exists, creating a new one for ${request.sessionResource.toString()}`);
+				AgentHostSessionHandler._sessionToBackend.delete(request.sessionResource);
+				resolvedSession = undefined;
+			}
+		}
 		if (!resolvedSession) {
 			resolvedSession = await this._createAndSubscribe(request.sessionResource, this._createModelSelection(request.userSelectedModelId, request.modelConfiguration), undefined, request.agentHostSessionConfig, getAgentHostBranchNameHint(request.message));
-			this._sessionToBackend.set(request.sessionResource, resolvedSession);
+			AgentHostSessionHandler._sessionToBackend.set(request.sessionResource, resolvedSession);
 		}
 
 		await this._handleTurn(resolvedSession, request, progress, cancellationToken);
@@ -2135,6 +2195,50 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		};
 	}
 
+	/**
+	 * Reattach this handler to an existing backend session that was previously
+	 * created (possibly by a now-disposed handler instance — see the static
+	 * `_sessionToBackend` map).
+	 *
+	 * The subscription / pending-message-sync / server-turn-watcher /
+	 * active-client-claim wiring is all per-handler and gets thrown away when
+	 * the handler is disposed, so we re-establish it here. All four helpers
+	 * are idempotent (the subscription is refcounted and the watchers replace
+	 * any prior entry on the same session resource).
+	 *
+	 * Returns `false` if the backend session no longer exists on the host
+	 * (e.g. host process restart vs. just a tunnel reconnect). The caller is
+	 * expected to evict the stale mapping and create a fresh session.
+	 */
+	private async _tryReattachToBackendSession(sessionResource: URI, backendSession: URI): Promise<boolean> {
+		this._logService.trace(`[AgentHost] Reattaching to backend session: ${backendSession.toString()}`);
+
+		const sessionStr = backendSession.toString();
+		const sub = this._ensureSessionSubscription(sessionStr);
+
+		// Wait until the subscription either hydrates with state or fails. The
+		// subscription does not fire `onDidChange` on failure (see
+		// `BaseAgentSubscription.setError`) so we race the change event with a
+		// timeout and then re-check `value` / `_getSessionState` below.
+		if (!this._getSessionState(sessionStr) && !(sub.value instanceof Error)) {
+			await raceTimeout(Event.toPromise(sub.onDidChange), 10_000);
+		}
+
+		// If the subscription resolved to an error (most commonly the host
+		// signalling "no such session") or never hydrated, the backend session
+		// is gone or unreachable.
+		if (sub.value instanceof Error || !this._getSessionState(sessionStr)) {
+			this._releaseSessionSubscription(sessionStr);
+			return false;
+		}
+
+		this._ensurePendingMessageSubscription(sessionResource, backendSession);
+		this._watchForServerInitiatedTurns(backendSession, sessionResource);
+		this._dispatchActiveClient(backendSession, this._config.customizations?.get() ?? []);
+
+		return true;
+	}
+
 	/** Creates a new backend session and subscribes to its state. */
 	private async _createAndSubscribe(sessionResource: URI, model: ModelSelection | undefined, fork?: { session: URI; turnIndex: number; turnId: string }, sessionConfig?: Record<string, unknown>, branchNameHint?: string): Promise<URI> {
 		const config = branchNameHint ? { ...sessionConfig, [SessionConfigKey.BranchNameHint]: branchNameHint } : sessionConfig;
@@ -2345,7 +2449,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		if (!requestedDir || requestedDir.scheme !== 'file') {
 			return uri;
 		}
-		const backendSession = this._sessionToBackend.get(sessionResource);
+		const backendSession = AgentHostSessionHandler._sessionToBackend.get(sessionResource);
 		const rawResolvedDir = backendSession ? this._getSessionState(backendSession.toString())?.summary.workingDirectory : undefined;
 		const resolvedDir = typeof rawResolvedDir === 'string' ? URI.parse(rawResolvedDir) : rawResolvedDir;
 		if (!resolvedDir || resolvedDir.scheme !== 'file') {
@@ -2421,7 +2525,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			session.dispose();
 		}
 		this._activeSessions.clear();
-		this._sessionToBackend.clear();
+		// Note: `_sessionToBackend` is intentionally NOT cleared here. It is
+		// static and must survive disposal so that a recreated handler (e.g.
+		// after a host reconnect) can reattach to existing backend sessions
+		// instead of creating spurious new ones.
 		for (const ref of this._sessionSubscriptions.values()) {
 			ref.dispose();
 		}
