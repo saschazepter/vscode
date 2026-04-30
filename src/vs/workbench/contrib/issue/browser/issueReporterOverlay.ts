@@ -20,6 +20,7 @@ import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
+import { isRemoteDiagnosticError } from '../../../../platform/diagnostics/common/diagnostics.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import product from '../../../../platform/product/common/product.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -72,6 +73,7 @@ export class IssueReporterOverlay {
 	readonly onDidRequestOpenScreenshot: Event<IScreenshot> = this._onDidRequestOpenScreenshot.event;
 
 	private wizardPanel!: HTMLElement;
+	private updateBanner!: HTMLElement;
 	private stepContainer!: HTMLElement;
 	private readonly stepPages: HTMLElement[] = [];
 
@@ -160,6 +162,7 @@ export class IssueReporterOverlay {
 		private readonly resolveExtensionIssueData?: (extensionId: string) => Promise<IssueReporterData | undefined>,
 		private readonly openExternalLink?: (url: string) => Promise<void>,
 		private readonly listBuiltinExtensions: boolean = false,
+		private showUpdateBanner = false,
 	) {
 		this._hideToolbarInScreenshots = initialHideToolbar;
 		this.model = new IssueReporterModel({
@@ -199,6 +202,12 @@ export class IssueReporterOverlay {
 		this.stepLabel = append(progressArea, $('span.wizard-step-label'));
 
 		append(toolbar, $('div.spacer'));
+
+		this.updateBanner = append(this.wizardPanel, $('div.wizard-update-banner'));
+		this.updateBanner.setAttribute('role', 'status');
+		this.updateBanner.setAttribute('aria-live', 'polite');
+		this.updateBanner.textContent = localize('updateAvailable', "A new version of {0} is available.", product.nameLong);
+		this.setUpdateAvailable(this.showUpdateBanner);
 
 		// Step content area
 		this.stepContainer = append(this.wizardPanel, $('div.wizard-step-container'));
@@ -587,6 +596,9 @@ export class IssueReporterOverlay {
 			}
 			this.updateDescriptionGuidance();
 			this.updateIssueSourceButtons();
+			if (this.currentStep === WizardStep.Review) {
+				this.updateReviewDetails();
+			}
 			this.searchSimilarIssues();
 		};
 
@@ -1462,40 +1474,6 @@ export class IssueReporterOverlay {
 			loading.textContent = localize('loadingSystemInfo', "Loading system information...");
 		}
 
-		if (this.selectedIssueType === IssueType.PerformanceIssue && !modelData.fileOnMarketplace) {
-			if (modelData.processInfo) {
-				this.createDiagSection(diagContainer, {
-					id: 'process-info',
-					label: localize('processInfo', "Process Info"),
-					checked: this.includeProcessInfo,
-					onToggle: (checked) => {
-						this.includeProcessInfo = checked;
-						this.model.update({ includeProcessInfo: checked });
-					},
-					renderContent: (container) => {
-						const pre = append(container, $('pre.review-diag-pre'));
-						pre.textContent = modelData.processInfo!;
-					},
-				});
-			}
-
-			if (modelData.workspaceInfo) {
-				this.createDiagSection(diagContainer, {
-					id: 'workspace-info',
-					label: localize('workspaceInfo', "Workspace Info"),
-					checked: this.includeWorkspaceInfo,
-					onToggle: (checked) => {
-						this.includeWorkspaceInfo = checked;
-						this.model.update({ includeWorkspaceInfo: checked });
-					},
-					renderContent: (container) => {
-						const pre = append(container, $('pre.review-diag-pre'));
-						pre.textContent = modelData.workspaceInfo!;
-					},
-				});
-			}
-		}
-
 		if (modelData.fileOnExtension && modelData.extensionData) {
 			this.createDiagSection(diagContainer, {
 				id: 'extension-data',
@@ -1580,6 +1558,52 @@ export class IssueReporterOverlay {
 					}
 				},
 			});
+		}
+
+		if (this.selectedIssueType === IssueType.PerformanceIssue && !modelData.fileOnMarketplace) {
+			const performanceContainer = append(diagContainer, $('div.review-performance-data'));
+			const performanceTitle = append(performanceContainer, $('div.review-performance-title'));
+			performanceTitle.textContent = localize('additionalPerformanceData', "Additional Performance Data");
+			const performanceDescription = append(performanceContainer, $('div.review-performance-description'));
+			performanceDescription.textContent = localize('additionalPerformanceDataDescription', "Optionally include currently running processes and workspace metadata to help diagnose performance issues.");
+
+			if (modelData.processInfo) {
+				this.createDiagSection(performanceContainer, {
+					id: 'process-info',
+					label: localize('runningProcesses', "Currently Running Processes"),
+					checked: this.includeProcessInfo,
+					onToggle: (checked) => {
+						this.includeProcessInfo = checked;
+						this.model.update({ includeProcessInfo: checked });
+					},
+					renderContent: (container) => {
+						const pre = append(container, $('pre.review-diag-pre'));
+						pre.textContent = modelData.processInfo!;
+					},
+				});
+			} else {
+				const loading = append(performanceContainer, $('div.review-diag-loading'));
+				loading.textContent = localize('loadingProcessInfo', "Loading currently running processes...");
+			}
+
+			if (modelData.workspaceInfo) {
+				this.createDiagSection(performanceContainer, {
+					id: 'workspace-info',
+					label: localize('workspaceMetadata', "Workspace Metadata"),
+					checked: this.includeWorkspaceInfo,
+					onToggle: (checked) => {
+						this.includeWorkspaceInfo = checked;
+						this.model.update({ includeWorkspaceInfo: checked });
+					},
+					renderContent: (container) => {
+						const pre = append(container, $('pre.review-diag-pre'));
+						pre.textContent = modelData.workspaceInfo!;
+					},
+				});
+			} else {
+				const loading = append(performanceContainer, $('div.review-diag-loading'));
+				loading.textContent = localize('loadingWorkspaceInfo', "Loading workspace metadata...");
+			}
 		}
 
 		// Align all title widths dynamically to the widest title
@@ -1957,29 +1981,257 @@ export class IssueReporterOverlay {
 
 	private buildIssueBody(): string {
 		const description = this.descriptionTextarea.value.trim();
-		this.model.update({ issueDescription: description });
+		this.model.update({
+			issueDescription: description,
+			issueType: this.selectedIssueType ?? IssueType.Bug,
+			includeSystemInfo: this.includeSystemInfo,
+			includeProcessInfo: this.includeProcessInfo,
+			includeWorkspaceInfo: this.includeWorkspaceInfo,
+			includeExtensions: this.includeExtensions,
+			includeExperiments: this.includeExperiments,
+			includeExtensionData: this.includeExtensionData,
+		});
 
-		let body = this.model.serialize();
+		const modelData = this.model.getData();
+		const sections: string[] = [
+			`### Description\n\n${description}`,
+			this.generateIssueDetailsMd(),
+		];
+
+		if (this.includeExtensionData && modelData.extensionData) {
+			sections.push(this.createDetails('Extension Data', this.createCodeBlock(modelData.extensionData)));
+		}
+
+		if (this.includeSystemInfo && (modelData.versionInfo || modelData.systemInfo || modelData.systemInfoWeb)) {
+			sections.push(this.generateSystemInfoMd());
+		}
+
+		if (!modelData.fileOnExtension && !modelData.fileOnMarketplace && this.includeExtensions) {
+			sections.push(this.generateExtensionsMd());
+		}
+
+		if (this.includeExperiments && modelData.experimentInfo) {
+			sections.push(this.createDetails('A/B Experiments', this.createCodeBlock(modelData.experimentInfo)));
+		}
 
 		if (this.includeSettings && this.settingsContent) {
-			body += `\n<details><summary>User Settings</summary>\n\n\`\`\`json\n${this.settingsContent}\n\`\`\`\n\n</details>`;
-			if (this.workspaceSettingsContent) {
-				body += `\n<details><summary>Workspace Settings</summary>\n\n\`\`\`json\n${this.workspaceSettingsContent}\n\`\`\`\n\n</details>`;
+			sections.push(this.generateSettingsMd());
+		}
+
+		if (this.selectedIssueType === IssueType.PerformanceIssue && !modelData.fileOnMarketplace) {
+			if (this.includeProcessInfo && modelData.processInfo) {
+				sections.push(this.createDetails('Currently Running Processes', this.createCodeBlock(modelData.processInfo)));
+			}
+			if (this.includeWorkspaceInfo && modelData.workspaceInfo) {
+				sections.push(this.createDetails('Workspace Metadata', this.createCodeBlock(modelData.workspaceInfo)));
 			}
 		}
 
-		if (this.screenshots.length > 0) {
-			body += '\n\n### Screenshots\n\n';
-			for (let i = 0; i < this.screenshots.length; i++) {
-				body += `<!-- Screenshot ${i + 1} will be uploaded -->\n`;
+		const attachmentSummary = this.generateAttachmentSummaryMd();
+		if (attachmentSummary) {
+			sections.push(attachmentSummary);
+		}
+
+		sections.push('<!-- generated by issue reporter -->');
+
+		return sections.join('\n\n');
+	}
+
+	private generateIssueDetailsMd(): string {
+		const rows: [string, string | undefined][] = [
+			['Issue Title', this.titleInput.value.trim()],
+			['Issue Type', this.getIssueTypeTitle(this.selectedIssueType ?? IssueType.Bug)],
+			['Target', this.getIssueSourceLabel()],
+		];
+		const repo = this.getIssueTargetRepo();
+		if (repo) {
+			rows.push(['Repository', `${repo.owner}/${repo.repositoryName}`]);
+		}
+
+		if (this.selectedIssueSource === IssueSource.Extension && this.selectedExtension) {
+			const issueUrl = this.getSelectedExtensionIssueUrl();
+			rows.push(
+				['Extension', this.selectedExtension.displayName || this.selectedExtension.name],
+				['Extension Identifier', this.selectedExtension.id],
+				['Extension Version', this.selectedExtension.version],
+				['Extension Publisher', this.selectedExtension.publisher],
+				['Extension Issue URL', issueUrl],
+			);
+		}
+
+		const modes = this.getModes();
+		if (modes.length) {
+			rows.push(['Modes', modes.join(', ')]);
+		}
+
+		return `### Issue Details\n\n${this.createMarkdownTable(rows)}`;
+	}
+
+	private generateSystemInfoMd(): string {
+		const modelData = this.model.getData();
+		const rows: [string, string | undefined][] = [];
+
+		if (modelData.versionInfo) {
+			rows.push(
+				['VS Code Version', modelData.versionInfo.vscodeVersion],
+				['OS Version', modelData.versionInfo.os],
+			);
+		}
+
+		if (modelData.systemInfo) {
+			rows.push(
+				['CPUs', modelData.systemInfo.cpus],
+				['GPU Status', Object.keys(modelData.systemInfo.gpuStatus).map(key => `${key}: ${modelData.systemInfo!.gpuStatus[key]}`).join('<br>')],
+				['Load (avg)', modelData.systemInfo.load],
+				['Memory (System)', modelData.systemInfo.memory],
+				['Process Argv', modelData.systemInfo.processArgs],
+				['Screen Reader', modelData.systemInfo.screenReader],
+				['VM', modelData.systemInfo.vmHint],
+			);
+
+			if (modelData.systemInfo.linuxEnv) {
+				rows.push(
+					['DESKTOP_SESSION', modelData.systemInfo.linuxEnv.desktopSession],
+					['XDG_CURRENT_DESKTOP', modelData.systemInfo.linuxEnv.xdgCurrentDesktop],
+					['XDG_SESSION_DESKTOP', modelData.systemInfo.linuxEnv.xdgSessionDesktop],
+					['XDG_SESSION_TYPE', modelData.systemInfo.linuxEnv.xdgSessionType],
+				);
+			}
+
+			for (const remote of modelData.systemInfo.remoteData) {
+				if (isRemoteDiagnosticError(remote)) {
+					rows.push(['Remote Error', remote.errorMessage]);
+				} else {
+					rows.push(
+						['Remote', remote.latency ? `${remote.hostName} (latency: ${remote.latency.current.toFixed(2)}ms last, ${remote.latency.average.toFixed(2)}ms average)` : remote.hostName],
+						['Remote OS', remote.machineInfo.os],
+						['Remote CPUs', remote.machineInfo.cpus],
+						['Remote Memory (System)', remote.machineInfo.memory],
+						['Remote VM', remote.machineInfo.vmHint],
+					);
+				}
 			}
 		}
 
-		return body;
+		if (modelData.systemInfoWeb) {
+			rows.push(['User Agent', modelData.systemInfoWeb]);
+		}
+		rows.push(['Installation', modelData.isUnsupported ? 'Unsupported (modified)' : 'Supported (pure)']);
+
+		return this.createDetails('System Info', this.createMarkdownTable(rows));
+	}
+
+	private generateExtensionsMd(): string {
+		const modelData = this.model.getData();
+		const nonThemeExtensions = (modelData.enabledNonThemeExtesions ?? modelData.allExtensions.filter(extension => !extension.isTheme && !extension.isBuiltin));
+		if (modelData.extensionsDisabled) {
+			return '### Extensions\n\nExtensions disabled.';
+		}
+
+		if (!nonThemeExtensions.length && !modelData.numberOfThemeExtesions) {
+			return '### Extensions\n\nExtensions: none';
+		}
+
+		const rows = nonThemeExtensions.map(extension => [
+			extension.displayName || extension.name,
+			extension.id,
+			extension.publisher ?? 'N/A',
+			extension.version,
+		] as [string, string, string, string]);
+		const details: string[] = [];
+		if (rows.length) {
+			details.push(this.createMarkdownTable(rows, ['Name', 'Identifier', 'Author', 'Version']));
+		}
+		if (modelData.numberOfThemeExtesions) {
+			details.push(`Theme extensions: ${modelData.numberOfThemeExtesions}`);
+		}
+
+		return this.createDetails(`Extensions (${nonThemeExtensions.length})`, details.join('\n\n'));
+	}
+
+	private generateSettingsMd(): string {
+		const details = [`#### User Settings\n\n${this.createCodeBlock(this.settingsContent ?? '', 'json')}`];
+		if (this.workspaceSettingsContent) {
+			details.push(`#### Workspace Settings\n\n${this.createCodeBlock(this.workspaceSettingsContent, 'json')}`);
+		}
+		return this.createDetails('Settings', details.join('\n\n'));
+	}
+
+	private generateAttachmentSummaryMd(): string | undefined {
+		const attachmentCount = this.screenshots.length + this.recordings.length;
+		if (!attachmentCount) {
+			return undefined;
+		}
+
+		const rows: [string, string][] = [
+			['Screenshots', String(this.screenshots.length)],
+			['Recordings', String(this.recordings.length)],
+		];
+		let summary = `### Attachment Summary\n\n${this.createMarkdownTable(rows)}`;
+		if (!this.data.githubAccessToken) {
+			summary += '\n\n> Attachments were captured locally. Please attach them manually if they are not uploaded automatically.';
+		}
+
+		return summary;
+	}
+
+	private getIssueTypeTitle(issueType: IssueType): string {
+		switch (issueType) {
+			case IssueType.Bug:
+				return 'Bug';
+			case IssueType.PerformanceIssue:
+				return 'Performance Issue';
+			case IssueType.FeatureRequest:
+				return 'Feature Request';
+		}
+	}
+
+	private getModes(): string[] {
+		const modelData = this.model.getData();
+		const modes: string[] = [];
+		if (modelData.restrictedMode) {
+			modes.push('Restricted');
+		}
+		if (modelData.isUnsupported) {
+			modes.push('Unsupported');
+		}
+		return modes;
+	}
+
+	private createDetails(summary: string, content: string): string {
+		return `<details>
+<summary>${summary}</summary>
+
+${content}
+
+</details>`;
+	}
+
+	private createCodeBlock(content: string, language = ''): string {
+		return `\`\`\`\`${language}
+${content.trimEnd()}
+\`\`\`\``;
+	}
+
+	private createMarkdownTable(rows: readonly (readonly (string | undefined)[])[], headers: readonly string[] = ['Item', 'Value']): string {
+		return `${headers.map(header => this.escapeMarkdownTableCell(header)).join('|')}
+${headers.map(() => '---').join('|')}
+${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).join('|')).join('\n')}`;
+	}
+
+	private escapeMarkdownTableCell(value: string): string {
+		return value.replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
 	}
 
 	isVisible(): boolean {
 		return this.visible;
+	}
+
+	setUpdateAvailable(showUpdateBanner: boolean): void {
+		this.showUpdateBanner = showUpdateBanner;
+		if (this.updateBanner) {
+			this.updateBanner.style.display = showUpdateBanner ? '' : 'none';
+		}
 	}
 
 	focus(): void {

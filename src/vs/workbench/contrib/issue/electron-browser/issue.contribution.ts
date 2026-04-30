@@ -51,7 +51,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	properties: {
 		'issueReporter.experimental.issueReportingWizard': {
 			type: 'object',
-			default: { enabled: false, defaultHideToolbarInScreenshots: true, listBuiltinExtensions: false },
+			default: { enabled: false, defaultHideToolbarInScreenshots: true, listBuiltinExtensions: false, forceNewVersionBanner: false },
 			description: localize('issueReporter.issueReportingWizard', "Configure the experimental issue reporting wizard."),
 			properties: {
 				'enabled': {
@@ -68,6 +68,11 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 					type: 'boolean',
 					default: false,
 					description: localize('issueReporter.issueReportingWizard.listBuiltinExtensions', "List built-in extensions in the experimental issue reporter wizard extension picker for testing."),
+				},
+				'forceNewVersionBanner': {
+					type: 'boolean',
+					default: false,
+					description: localize('issueReporter.issueReportingWizard.forceNewVersionBanner', "Temporarily force the experimental issue reporter wizard to show the new version banner for testing."),
 				},
 			},
 		},

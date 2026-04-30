@@ -32,6 +32,14 @@
 	padding-right: 0;
 }
 
+.wizard-update-banner {
+	padding: 8px 16px;
+	text-align: center;
+	color: var(--vscode-button-foreground);
+	background: var(--vscode-button-background);
+	flex-shrink: 0;
+}
+
 .issue-reporter-wizard .wizard-step-container {
 	flex: 1;
 	overflow: auto;
@@ -967,6 +975,33 @@
 	border: 1px solid var(--vscode-input-border, #444);
 	border-radius: 4px;
 	padding: 6px 12px;
+}
+
+.review-performance-data {
+	border: 1px solid var(--vscode-input-border, #444);
+	border-radius: 4px;
+	padding: 8px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.review-performance-data .review-diag-group {
+	border: 0;
+	border-top: 1px solid var(--vscode-input-border, #444);
+	border-radius: 0;
+	padding: 6px 0 0;
+}
+
+.review-performance-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--vscode-foreground, #ccc);
+}
+
+.review-performance-description {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground, #888);
 }
 
 .review-diag-header {
