@@ -7,7 +7,7 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { OperatingSystem } from '../../../../../../../base/common/platform.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { TerminalChatAgentToolsSettingId } from '../../../common/terminalChatAgentToolsConfiguration.js';
-import { isFish, isPowerShell } from '../../runInTerminalHelpers.js';
+import { isBash, isFish, isPowerShell, isZsh } from '../../runInTerminalHelpers.js';
 import type { ICommandLineRewriter, ICommandLineRewriterOptions, ICommandLineRewriterResult } from './commandLineRewriter.js';
 
 /**
@@ -136,9 +136,17 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 		// Always append `&` unless the (unwrapped) command already has a trailing `&`
 		// and we didn't wrap it in shell -c (in which case the `&` is still present).
 		const needsTrailingAmp = !(/(?:^|[^&])&$/.test(commandToWrap));
+
+		// `disown` removes the job from the shell's job table so it won't print
+		// `[1]+  Done  nohup ...` notifications that contaminate subsequent command
+		// output and can cause spurious SIGINT (exit 130). Only bash/zsh support
+		// `disown`; fish handles it differently (no contamination observed).
+		const supportsDisown = isBash(options.shell, options.os) || isZsh(options.shell, options.os);
+		const disownSuffix = supportsDisown ? ' disown' : '';
+
 		const rewritten = needsTrailingAmp
-			? `nohup ${commandToWrap} &`
-			: `nohup ${commandToWrap}`;
+			? `nohup ${commandToWrap} &${disownSuffix}`
+			: `nohup ${commandToWrap}${disownSuffix}`;
 		return {
 			rewritten,
 			reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
