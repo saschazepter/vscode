@@ -5,12 +5,12 @@
 
 import { parse as parseJSONC } from '../../../../base/common/jsonc.js';
 import { getErrorMessage } from '../../../../base/common/errors.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ConfigurationTarget } from '../../../../platform/configuration/common/configuration.js';
-import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
-import { IExtensionManagementService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import { IEnvironmentService, INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { IExtensionManagementService, ILocalExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IExtensionsScannerService } from '../../../../platform/extensionManagement/common/extensionsScannerService.js';
 import { ExtensionType, IExtensionManifest } from '../../../../platform/extensions/common/extensions.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
@@ -40,8 +40,17 @@ export interface IVSCodeThemeImporterService {
 	getVSCodeTheme(): Promise<string | undefined>;
 
 	/**
-	 * Imports the VS Code theme into the Agents app — using the providing
-	 * extension from the parent VS Code installation if necessary.
+	 * Temporarily installs the providing extension from the host's extensions
+	 * directory and applies the VS Code theme. Returns an `IDisposable` that
+	 * uninstalls the extension on dispose. Returns `undefined` if the theme
+	 * is already available or cannot be resolved.
+	 */
+	previewVSCodeTheme(): Promise<IDisposable | undefined>;
+
+	/**
+	 * Permanently imports the VS Code theme into the Agents app by copying
+	 * the providing extension into the Agents app's extensions directory
+	 * and installing it from there.
 	 */
 	importVSCodeTheme(): Promise<void>;
 }
@@ -68,7 +77,7 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 	private _parentThemePromise: Promise<IParentThemeInfo | undefined> | undefined;
 
 	constructor(
-		@IEnvironmentService private readonly environmentService: IEnvironmentService,
+		@IEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
 		@IExtensionsScannerService private readonly extensionsScannerService: IExtensionsScannerService,
 		@IFileService private readonly fileService: IFileService,
@@ -87,34 +96,89 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 		return themeInfo?.settingsId;
 	}
 
+	async previewVSCodeTheme(): Promise<IDisposable | undefined> {
+		try {
+			const theme = await this._getVSCodeTheme();
+			if (!theme) {
+				return undefined;
+			}
+
+			const installed = await this._installFromHostLocation(theme);
+			if (!installed) {
+				return undefined;
+			}
+
+			// Apply the theme
+			await this._applyTheme(theme.settingsId);
+
+			return toDisposable(() => {
+				const profileLocation = this.userDataProfileService.currentProfile.extensionsResource;
+				this.extensionManagementService.uninstall(installed, { profileLocation }).catch(err => {
+					this.logService.warn('[VSCodeThemeImporter] Failed to uninstall preview extension:', err);
+				});
+			});
+		} catch (err) {
+			this.logService.error('[VSCodeThemeImporter] Failed to preview theme:', err);
+			return undefined;
+		}
+	}
+
 	async importVSCodeTheme(): Promise<void> {
 		try {
-			if (!this._parentThemePromise) {
-				this._parentThemePromise = this._resolveVSCodeTheme();
-			}
-			const theme = await this._parentThemePromise;
+			const theme = await this._getVSCodeTheme();
 			if (!theme) {
 				return;
 			}
 
-			// Install the extension from the host's extensions directory if needed
+			// Step 1: Install from host location (preview — immediate availability)
+			await this._installFromHostLocation(theme);
+			await this._applyTheme(theme.settingsId);
+
+			// Step 2: Copy extension to Agents app's own extensions directory
 			if (theme.extensionLocation) {
-				this.logService.info(`[VSCodeThemeImporter] Installing extension from ${theme.extensionLocation.toString()}`);
+				const extensionsHome = URI.file(this.environmentService.extensionsPath);
+				const folderName = theme.extensionLocation.path.split('/').pop()!;
+				const targetLocation = joinPath(extensionsHome, folderName);
+
+				this.logService.info(`[VSCodeThemeImporter] Copying extension to ${targetLocation.toString()}`);
+				await this.fileService.copy(theme.extensionLocation, targetLocation, true);
+
+				// Step 3: Replace install from the copied location
 				const profileLocation = this.userDataProfileService.currentProfile.extensionsResource;
-				await this.extensionManagementService.installFromLocation(theme.extensionLocation, profileLocation);
+				await this.extensionManagementService.installFromLocation(targetLocation, profileLocation);
 			}
-
-			// Apply the theme
-			const allThemes = await this.themeService.getColorThemes();
-			const match = allThemes.find(t => t.settingsId === theme.settingsId);
-			if (match) {
-				await this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
-				return;
-			}
-
-			this.logService.warn(`[VSCodeThemeImporter] Theme ${theme.settingsId} not found after import`);
 		} catch (err) {
-			this.logService.error(`[VSCodeThemeImporter] Failed to import theme:`, err);
+			this.logService.error('[VSCodeThemeImporter] Failed to import theme:', err);
+		}
+	}
+
+	private async _getVSCodeTheme(): Promise<IParentThemeInfo | undefined> {
+		if (!this._parentThemePromise) {
+			this._parentThemePromise = this._resolveVSCodeTheme();
+		}
+		return this._parentThemePromise;
+	}
+
+	/**
+	 * Installs the extension from the host's extensions directory if needed.
+	 * Returns the installed extension, or `undefined` if no install was needed.
+	 */
+	private async _installFromHostLocation(theme: IParentThemeInfo): Promise<ILocalExtension | undefined> {
+		if (!theme.extensionLocation) {
+			return undefined;
+		}
+		this.logService.info(`[VSCodeThemeImporter] Installing extension from ${theme.extensionLocation.toString()}`);
+		const profileLocation = this.userDataProfileService.currentProfile.extensionsResource;
+		return this.extensionManagementService.installFromLocation(theme.extensionLocation, profileLocation);
+	}
+
+	private async _applyTheme(themeSettingsId: string): Promise<void> {
+		const allThemes = await this.themeService.getColorThemes();
+		const match = allThemes.find(t => t.settingsId === themeSettingsId);
+		if (match) {
+			await this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
+		} else {
+			this.logService.warn(`[VSCodeThemeImporter] Theme ${themeSettingsId} not found after install`);
 		}
 	}
 

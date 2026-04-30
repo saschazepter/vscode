@@ -5,7 +5,7 @@
 
 import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
-import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, addDisposableGenericMouseDownListener, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
 import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { localize } from '../../../../nls.js';
@@ -390,9 +390,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 		const themeCards: HTMLElement[] = [];
 		let vscodeThemeBtn: HTMLElement | undefined;
+		let isVSCodeThemeSelected = false;
 		for (const theme of themes) {
 			const card = this._createThemeCard(stepDisposables, themeGrid, theme, themeCards, selectedThemeId, id => {
 				selectedThemeId = id;
+				isVSCodeThemeSelected = false;
 				if (vscodeThemeBtn) {
 					vscodeThemeBtn.classList.remove('selected');
 					vscodeThemeBtn.setAttribute('aria-checked', 'false');
@@ -416,6 +418,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				parentThemeSettingsId,
 			);
 			vscodeThemeBtn.textContent = labelText;
+			let previewDisposable: IDisposable | undefined;
 			const selectVSCodeTheme = async () => {
 				for (const c of themeCards) {
 					c.classList.remove('selected');
@@ -423,19 +426,16 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				}
 				vscodeThemeBtn!.classList.add('selected');
 				vscodeThemeBtn!.setAttribute('aria-checked', 'true');
+				isVSCodeThemeSelected = true;
 
-				// Apply the theme immediately if it's already available (built-in)
-				const allThemes = await this.themeService.getColorThemes();
-				const match = allThemes.find(t => t.settingsId === parentThemeSettingsId);
-				if (match) {
-					this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
-				} else {
-					// Theme needs extension install
-					vscodeThemeBtn!.textContent = localize('walkthrough.theme.importing', "Importing theme\u2026");
-					await this.vsCodeThemeImporter.importVSCodeTheme();
-					vscodeThemeBtn!.textContent = labelText;
-				}
+				// Preview the theme (temporary install from host location)
+				vscodeThemeBtn!.textContent = localize('walkthrough.theme.importing', "Importing theme\u2026");
+				previewDisposable?.dispose();
+				previewDisposable = await this.vsCodeThemeImporter.previewVSCodeTheme();
+				vscodeThemeBtn!.textContent = labelText;
 			};
+			// Dispose preview on step teardown (escape)
+			stepDisposables.add(toDisposable(() => previewDisposable?.dispose()));
 			stepDisposables.add(Gesture.addTarget(vscodeThemeBtn));
 			for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
 				stepDisposables.add(addDisposableListener(vscodeThemeBtn, eventType, selectVSCodeTheme));
@@ -452,7 +452,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const actions = append(this.footerContainer, $('.sessions-walkthrough-theme-footer'));
 		const continueBtn = append(actions, $('button.sessions-walkthrough-get-started-btn')) as HTMLButtonElement;
 		continueBtn.textContent = localize('walkthrough.theme.continue', "Continue");
-		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, () => {
+		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, async () => {
+			if (isVSCodeThemeSelected) {
+				await this.vsCodeThemeImporter.importVSCodeTheme();
+			}
 			this._isShowingWelcome = false;
 			this._isShowingThemeStep = false;
 			this.complete();
