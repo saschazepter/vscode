@@ -10,6 +10,7 @@ import { ConfigKey, IConfigurationService } from '../../../platform/configuratio
 import { INativeEnvService } from '../../../platform/env/common/envService';
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { ILogService } from '../../../platform/log/common/logService';
+import { IChatEndpoint } from '../../../platform/networking/common/networking';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { Emitter, Event } from '../../../util/vs/base/common/event';
@@ -22,7 +23,7 @@ import { IInstantiationService } from '../../../util/vs/platform/instantiation/c
 import { ClaudeFolderInfo } from '../claude/common/claudeFolderInfo';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { ClaudeAgentManager } from '../claude/node/claudeCodeAgent';
-import { CLAUDE_REASONING_EFFORT_PROPERTY, formatClaudeModelDetails, IClaudeCodeModels } from '../claude/node/claudeCodeModels';
+import { CLAUDE_REASONING_EFFORT_PROPERTY, formatClaudeModelDetails, IClaudeCodeModels, pickReasoningEffort } from '../claude/node/claudeCodeModels';
 import { IClaudeCodeSdkService } from '../claude/node/claudeCodeSdkService';
 import { parseClaudeModelId, tryParseClaudeModelId } from '../claude/node/claudeModelId';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
@@ -139,8 +140,13 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			this.sessionStateService.setPermissionModeForSession(effectiveSessionId, permissionMode);
 			this.sessionStateService.setFolderInfoForSession(effectiveSessionId, folderInfo);
 
+			// Resolve the endpoint once and reuse it for both reasoning effort
+			// and the response footer details — they otherwise both call
+			// `resolveEndpoint` (which hits the cached endpoint list, then
+			// re-filters), which is wasted work and risks divergence.
+			const endpoint = await this._resolveEndpointForRequest(modelId.toEndpointModelId());
 			const rawReasoningEffort = request.modelConfiguration?.[CLAUDE_REASONING_EFFORT_PROPERTY];
-			const reasoningEffort = await this.claudeModels.resolveReasoningEffort(modelId, rawReasoningEffort);
+			const reasoningEffort = pickReasoningEffort(endpoint, typeof rawReasoningEffort === 'string' ? rawReasoningEffort : undefined);
 			this.sessionStateService.setReasoningEffortForSession(effectiveSessionId, reasoningEffort);
 
 			// Set usage handler to report token usage for context window widget
@@ -156,7 +162,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			// Clear usage handler after request completes
 			this.sessionStateService.setUsageHandlerForSession(effectiveSessionId, undefined);
 
-			const details = await this._resolveModelDetails(modelId.toEndpointModelId());
+			const details = endpoint ? formatClaudeModelDetails(endpoint) : undefined;
 			return {
 				...(details ? { details } : {}),
 				...(result.errorDetails ? { errorDetails: result.errorDetails } : {}),
@@ -168,7 +174,7 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 
 	async provideChatSessionContent(sessionResource: vscode.Uri, token: vscode.CancellationToken, context?: { readonly inputState: vscode.ChatSessionInputState }): Promise<vscode.ChatSession> {
 		const existingSession = await this.sessionService.getSession(sessionResource, token);
-		const detailsByModelId = existingSession ? await this._buildModelDetailsLookup(existingSession) : undefined;
+		const detailsByModelId = existingSession ? await this._buildModelDetailsLookup(existingSession, token) : undefined;
 		const history = existingSession ?
 			buildChatHistory(existingSession, detailsByModelId ? id => detailsByModelId.get(id) : undefined) :
 			[];
@@ -195,12 +201,15 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 	}
 
 	/**
-	 * Resolves a Claude model id to its display string for the chat response footer.
-	 * Returns `undefined` if no exact endpoint match is found, or if endpoint
-	 * resolution itself throws — neither failure mode should break the response or
-	 * session-load path.
+	 * Resolves a Claude model id to its endpoint, applying two safety nets:
+	 * - try/catch around `resolveEndpoint` so transient failures degrade gracefully
+	 *   (return `undefined`) instead of breaking the response or session-load path.
+	 * - exact-match guard so the resolver's fallback chain doesn't attribute a
+	 *   request to the wrong model (e.g. an unknown id surfacing as "the newest
+	 *   Sonnet"). The SDK model id is normalized to the endpoint format for
+	 *   comparison.
 	 */
-	private async _resolveModelDetails(modelId: string): Promise<string | undefined> {
+	private async _resolveEndpointForRequest(modelId: string): Promise<IChatEndpoint | undefined> {
 		let endpoint;
 		try {
 			endpoint = await this.claudeModels.resolveEndpoint(modelId, undefined);
@@ -214,15 +223,19 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		if (endpoint.model !== normalized && endpoint.family !== normalized) {
 			return undefined;
 		}
-		return formatClaudeModelDetails(endpoint);
+		return endpoint;
 	}
 
 	/**
 	 * Resolves the display string for each unique non-synthetic model id observed in the
 	 * session's assistant messages. Returns `undefined` (not an empty map) when no model
-	 * ids are present so callers can skip the per-turn details work entirely.
+	 * ids are present, when the caller has cancelled, or when no ids resolve to known
+	 * endpoints — so callers can skip the per-turn details work entirely.
 	 */
-	private async _buildModelDetailsLookup(session: IClaudeCodeSession): Promise<Map<string, string> | undefined> {
+	private async _buildModelDetailsLookup(session: IClaudeCodeSession, token: vscode.CancellationToken): Promise<Map<string, string> | undefined> {
+		if (token.isCancellationRequested) {
+			return undefined;
+		}
 		const modelIds = new Set<string>();
 		for (const msg of session.messages) {
 			if (msg.type === 'assistant' && msg.message.role === 'assistant') {
@@ -237,11 +250,17 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 		}
 		const detailsByModelId = new Map<string, string>();
 		await Promise.all([...modelIds].map(async modelId => {
-			const details = await this._resolveModelDetails(modelId);
-			if (details) {
-				detailsByModelId.set(modelId, details);
+			if (token.isCancellationRequested) {
+				return;
+			}
+			const endpoint = await this._resolveEndpointForRequest(modelId);
+			if (endpoint) {
+				detailsByModelId.set(modelId, formatClaudeModelDetails(endpoint));
 			}
 		}));
+		if (token.isCancellationRequested) {
+			return undefined;
+		}
 		return detailsByModelId.size > 0 ? detailsByModelId : undefined;
 	}
 }

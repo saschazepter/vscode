@@ -113,16 +113,7 @@ export class ClaudeCodeModels extends Disposable implements IClaudeCodeModels {
 
 	public async resolveReasoningEffort(requestedModel: ParsedClaudeModelId | string | undefined, requestedReasoningEffort: string | undefined): Promise<EffortLevel | undefined> {
 		const endpoint = await this.resolveEndpoint(requestedModel, undefined);
-		if (!endpoint || !endpoint.supportsReasoningEffort || endpoint.supportsReasoningEffort.length === 0) {
-			return undefined;
-		}
-		if (requestedReasoningEffort && isEffortLevel(requestedReasoningEffort) && endpoint.supportsReasoningEffort.includes(requestedReasoningEffort)) {
-			return requestedReasoningEffort;
-		}
-		if (endpoint.supportsReasoningEffort.length === 1 && isEffortLevel(endpoint.supportsReasoningEffort[0])) {
-			return endpoint.supportsReasoningEffort[0];
-		}
-		return undefined;
+		return pickReasoningEffort(endpoint, requestedReasoningEffort);
 	}
 
 	public async resolveEndpoint(requestedModel: ParsedClaudeModelId | string | undefined, fallbackModelId: ParsedClaudeModelId | undefined): Promise<IChatEndpoint | undefined> {
@@ -205,6 +196,22 @@ export function isEffortLevel(value: string): value is EffortLevel {
  */
 export function formatClaudeModelDetails(endpoint: IChatEndpoint): string {
 	return `${endpoint.name}${endpoint.multiplier ? ` • ${endpoint.multiplier}x` : ''}`;
+}
+
+/**
+ * Picks the reasoning effort to use for an endpoint given a requested level.
+ */
+export function pickReasoningEffort(endpoint: IChatEndpoint | undefined, requestedReasoningEffort: string | undefined): EffortLevel | undefined {
+	if (!endpoint || !endpoint.supportsReasoningEffort || endpoint.supportsReasoningEffort.length === 0) {
+		return undefined;
+	}
+	if (requestedReasoningEffort && isEffortLevel(requestedReasoningEffort) && endpoint.supportsReasoningEffort.includes(requestedReasoningEffort)) {
+		return requestedReasoningEffort;
+	}
+	if (endpoint.supportsReasoningEffort.length === 1 && isEffortLevel(endpoint.supportsReasoningEffort[0])) {
+		return endpoint.supportsReasoningEffort[0];
+	}
+	return undefined;
 }
 
 function buildConfigurationSchema(endpoint: IChatEndpoint): vscode.LanguageModelConfigurationSchema | undefined {
