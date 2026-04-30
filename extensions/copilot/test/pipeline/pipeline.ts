@@ -132,7 +132,7 @@ export async function runInputPipeline(opts: RunPipelineOptions, log = console.l
 			});
 		}
 
-		const { responses, errors: responseErrors } = generateAllResponses(responseFormat, responseInputs);
+		const { responses, errors: responseErrors } = generateAllResponses(responseFormat, responseInputs, log);
 		log(`  [4/5] Responses generated: ${responses.length} ok, ${responseErrors.length} errors`);
 		logErrors(responseErrors.map(e => {
 			const p = processedByOriginalIndex.get(e.index);

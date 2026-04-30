@@ -10,7 +10,18 @@ import { StringText } from '../../src/util/vs/editor/common/core/text/abstractTe
 
 export interface IGeneratedResponse {
 	readonly assistant: string;
+	/**
+	 * Number of oracle edits dropped because they fell outside the edit window.
+	 * Only meaningful for the `EditWindowOnly` format; `0` (or absent) otherwise.
+	 */
+	readonly droppedEditCount?: number;
 }
+
+/**
+ * Logger used by response generation to report non-fatal data-quality issues
+ * (e.g. oracle edits dropped because they fell outside the edit window).
+ */
+export type ResponseLogger = (message: string) => void;
 
 /**
  * Apply offset-based edits to document content.
@@ -193,23 +204,27 @@ export function filterEditsInsideEditWindow(
  * response format — including them would cause the assistant text to "spill
  * out" of the window and duplicate surrounding context when applied. Such
  * edits are discarded via {@link filterEditsInsideEditWindow}.
+ *
+ * @returns
+ *   - `assistant`: the edit-window slice of the document with all kept edits
+ *     applied, joined by `\n`. Empty string if every oracle edit was dropped.
+ *   - `droppedCount`: number of oracle edits discarded because they fell
+ *     outside the window (or followed an edit that did). `0` when all edits
+ *     were kept. Callers should surface non-zero values so dataset curators
+ *     can spot silent data loss.
  */
 export function formatAsEditWindowOnly(
 	oracleEdits: readonly (readonly [start: number, endEx: number, text: string])[],
 	docContent: string,
 	editWindowStartLine: number,
 	editWindowLineCount: number,
-): string {
+): { assistant: string; droppedCount: number } {
 	const windowStart = editWindowStartLine;
 	const windowEnd = editWindowStartLine + editWindowLineCount;
 
 	const { kept, droppedCount } = filterEditsInsideEditWindow(
 		oracleEdits, docContent, windowStart, windowEnd,
 	);
-
-	if (droppedCount > 0) {
-		console.warn(`formatAsEditWindowOnly: dropped ${droppedCount} oracle edit(s) outside edit window [${windowStart}, ${windowEnd})`);
-	}
 
 	const modifiedContent = applyEditsToContent(docContent, kept);
 	const modifiedLines = splitLines(modifiedContent);
@@ -227,7 +242,7 @@ export function formatAsEditWindowOnly(
 	const newEndLine = Math.min(windowEnd + netLineChange, modifiedLines.length);
 	const windowLines = modifiedLines.slice(windowStart, newEndLine);
 
-	return windowLines.join('\n');
+	return { assistant: windowLines.join('\n'), droppedCount };
 }
 
 /**
@@ -294,6 +309,7 @@ export function generateResponse(
 	docContent: string,
 	filePath: string,
 	userPrompt: string,
+	log?: ResponseLogger,
 ): IGeneratedResponse | { error: string } {
 	if (!edits || edits.length === 0) {
 		return { error: `No edits available (file: ${filePath})` };
@@ -303,7 +319,7 @@ export function generateResponse(
 		case ResponseFormat.CustomDiffPatch:
 			return generateCustomDiffPatchResponse(edits, docContent, filePath);
 		case ResponseFormat.EditWindowOnly:
-			return generateEditWindowOnlyResponse(edits, docContent, filePath, userPrompt);
+			return generateEditWindowOnlyResponse(edits, docContent, filePath, userPrompt, log);
 		case ResponseFormat.UnifiedWithXml:
 		case ResponseFormat.CodeBlock:
 		case ResponseFormat.EditWindowWithEditIntent:
@@ -331,6 +347,7 @@ function generateEditWindowOnlyResponse(
 	docContent: string,
 	filePath: string,
 	userPrompt: string,
+	log?: ResponseLogger,
 ): IGeneratedResponse | { error: string } {
 	const editWindow = parseEditWindowFromPrompt(userPrompt);
 
@@ -352,11 +369,16 @@ function generateEditWindowOnlyResponse(
 		lineCount = Math.min(editSpan + padding * 2, docLines.length - startLine);
 	}
 
-	const assistant = formatAsEditWindowOnly(edits, docContent, startLine, lineCount);
-	if (!assistant || !assistant.trim()) {
-		return { error: `formatAsEditWindowOnly produced empty result (file: ${filePath}, ${edits.length} edits, window: ${startLine}+${lineCount})` };
+	const { assistant, droppedCount } = formatAsEditWindowOnly(edits, docContent, startLine, lineCount);
+
+	if (droppedCount > 0) {
+		log?.(`[${filePath}] dropped ${droppedCount}/${edits.length} oracle edit(s) outside edit window [${startLine}, ${startLine + lineCount})`);
 	}
-	return { assistant };
+
+	if (!assistant || !assistant.trim()) {
+		return { error: `formatAsEditWindowOnly produced empty result (file: ${filePath}, ${edits.length} edits, ${droppedCount} dropped, window: ${startLine}+${lineCount})` };
+	}
+	return { assistant, droppedEditCount: droppedCount };
 }
 
 export interface IResponseGenerationInput {
@@ -370,6 +392,7 @@ export interface IResponseGenerationInput {
 export function generateAllResponses(
 	responseFormat: ResponseFormat,
 	inputs: readonly IResponseGenerationInput[],
+	log?: ResponseLogger,
 ): {
 	responses: { index: number; response: IGeneratedResponse }[];
 	errors: { index: number; error: string }[];
@@ -382,6 +405,7 @@ export function generateAllResponses(
 			responseFormat,
 			input.oracleEdits, input.docContent, input.filePath,
 			input.userPrompt,
+			log,
 		);
 		if ('error' in result) {
 			errors.push({ index: input.index, error: result.error });

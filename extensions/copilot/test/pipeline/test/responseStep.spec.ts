@@ -50,7 +50,10 @@ describe('formatAsEditWindowOnly (xtab-275)', () => {
 
 		// Expected: only the in-window slice with the first edit applied.
 		// "OUTSIDE" / "ALSO_DROPPED" / line L15 must not appear.
-		expect(result).toBe(['L5', 'EDITED', 'L7', 'L8', 'L9'].join('\n'));
+		expect(result).toEqual({
+			assistant: ['L5', 'EDITED', 'L7', 'L8', 'L9'].join('\n'),
+			droppedCount: 2,
+		});
 	});
 
 	test('keeps all edits when every edit lies inside the window', () => {
@@ -70,6 +73,9 @@ describe('formatAsEditWindowOnly (xtab-275)', () => {
 
 		const result = formatAsEditWindowOnly(edits, docContent, windowStart, windowLineCount);
 
-		expect(result).toBe(['L5', 'EDITED6', 'L7', 'EDITED8', 'L9'].join('\n'));
+		expect(result).toEqual({
+			assistant: ['L5', 'EDITED6', 'L7', 'EDITED8', 'L9'].join('\n'),
+			droppedCount: 0,
+		});
 	});
 });
