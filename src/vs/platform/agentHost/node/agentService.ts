@@ -212,6 +212,7 @@ export class AgentService extends Disposable implements IAgentService {
 					...s,
 					summary: liveState.summary.title || s.summary,
 					status: liveState.summary.status,
+					activity: liveState.summary.activity,
 					model: liveState.summary.model ?? s.model,
 				};
 			}
