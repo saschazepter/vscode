@@ -28,7 +28,7 @@ import { AgentConfigurationService, IAgentConfigurationService } from '../../nod
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import { IAgentHostGitService } from '../../node/agentHostGitService.js';
 import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
-import { CopilotAgent, deriveRepositoryRootFromWorktree, getCopilotWorktreeBranchName, getCopilotWorktreeName, getCopilotWorktreesRoot, type ICopilotClient } from '../../node/copilot/copilotAgent.js';
+import { CopilotAgent, getCopilotWorktreeBranchName, getCopilotWorktreeName, getCopilotWorktreesRoot, type ICopilotClient } from '../../node/copilot/copilotAgent.js';
 import { CopilotAgentSession, type SessionWrapperFactory } from '../../node/copilot/copilotAgentSession.js';
 import { CopilotSessionWrapper } from '../../node/copilot/copilotSessionWrapper.js';
 import { ShellManager } from '../../node/copilot/copilotShellTools.js';
@@ -308,17 +308,6 @@ suite('CopilotAgent', () => {
 		assert.strictEqual(
 			getCopilotWorktreesRoot(URI.file('/Users/me/src/vscode')).fsPath,
 			URI.file('/Users/me/src/vscode.worktrees').fsPath,
-		);
-	});
-
-	test('inverts the worktrees root convention to recover the repository root', () => {
-		assert.strictEqual(
-			deriveRepositoryRootFromWorktree(URI.file('/Users/me/src/vscode.worktrees/agents-feat-12345678'))?.fsPath,
-			URI.file('/Users/me/src/vscode').fsPath,
-		);
-		assert.strictEqual(
-			deriveRepositoryRootFromWorktree(URI.file('/Users/me/src/some-other-place/checkout')),
-			undefined,
 		);
 	});
 
@@ -820,60 +809,5 @@ suite('CopilotAgent', () => {
 			}
 		});
 
-		test('onArchivedChanged falls back to legacy metadata (branch + cwd) when worktree path/repositoryRoot were not persisted', async () => {
-			const sessionId = 'archive-legacy-meta-session';
-			const session = AgentSession.uri('copilotcli', sessionId);
-			const repositoryRoot = URI.joinPath(URI.file(tmpDir), 'repo-legacy');
-			await fs.mkdir(repositoryRoot.fsPath, { recursive: true });
-
-			const gitService = new TestAgentHostGitService();
-			gitService.repositoryRoot = repositoryRoot;
-
-			const sessionDataService = disposables.add(new TestSessionDataService());
-			const agent = createTestAgent(disposables, {
-				sessionDataService,
-				copilotClient: new TestCopilotClient([]),
-				gitService,
-			}) as TestableCopilotAgent;
-
-			try {
-				await agent.authenticate('https://api.github.com', 'token');
-				const workingDir = await agent.resolveWorktreeForTest({
-					workingDirectory: repositoryRoot,
-					config: { isolation: 'worktree', branch: 'main', branchNameHint: 'feat' },
-				}, sessionId);
-				assert.ok(workingDir);
-				await fs.mkdir(workingDir!.fsPath, { recursive: true });
-
-				// Simulate an old session: only branchName and the cwd are
-				// persisted; the new explicit path/repositoryRoot keys aren't.
-				// `_META_CWD` for worktree-isolated sessions IS the worktree URI.
-				const dbRef = sessionDataService.openDatabase(session);
-				try {
-					await dbRef.object.setMetadata('copilot.worktree.path', '');
-					await dbRef.object.setMetadata('copilot.worktree.repositoryRoot', '');
-					await dbRef.object.setMetadata('copilot.workingDirectory', workingDir!.toString());
-				} finally {
-					dbRef.dispose();
-				}
-
-				await agent.onArchivedChanged(session, true);
-				assert.deepStrictEqual(
-					gitService.removedWorktrees.map(r => ({ wt: r.worktree.fsPath, repo: r.repositoryRoot.fsPath })),
-					[{ wt: workingDir!.fsPath, repo: repositoryRoot.fsPath }],
-					'archive must use the legacy fallback to recover the worktree and repository root',
-				);
-
-				await fs.rm(workingDir!.fsPath, { recursive: true, force: true });
-				await agent.onArchivedChanged(session, false);
-				assert.deepStrictEqual(
-					gitService.addedExistingWorktrees.map(r => ({ wt: r.worktree.fsPath, branchName: r.branchName })),
-					[{ wt: workingDir!.fsPath, branchName: gitService.addedWorktrees[0].branchName }],
-					'unarchive must use the legacy fallback to recreate the worktree',
-				);
-			} finally {
-				await disposeAgent(agent);
-			}
-		});
 	});
 });
