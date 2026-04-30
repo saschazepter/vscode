@@ -79,6 +79,10 @@ jobs:
         run: npm run typecheck
         working-directory: build
 
+      - name: Prepare built-in extensions cache key
+        shell: pwsh
+        run: node build/azure-pipelines/common/computeBuiltInDepsCacheKey.ts > .build/builtindepshash
+
       - name: Restore built-in extensions cache
         id: cache-builtin-extensions
         uses: actions/cache/restore@v5
