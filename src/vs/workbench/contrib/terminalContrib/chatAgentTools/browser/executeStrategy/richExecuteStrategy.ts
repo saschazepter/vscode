@@ -110,9 +110,16 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 			// finished event before our new command has even started — causing
 			// the new command to be reported as having instantly exited 130 and
 			// cascading to every subsequent command on the same terminal.
-			const staleExecutingCommand = this._commandDetection.executingCommandObject;
-			const onCommandFinishedFiltered = staleExecutingCommand
-				? Event.filter(this._commandDetection.onCommandFinished, e => e !== staleExecutingCommand, store)
+			//
+			// Compare by marker identity rather than command object identity
+			// because `executingCommandObject` calls `promoteToFullCommand()`
+			// which creates a new wrapper each time, while `onCommandFinished`
+			// creates yet another wrapper. Both wrappers share the same
+			// underlying xterm `IMarker` reference from `commandStartMarker`,
+			// so marker identity is a reliable stable comparison.
+			const staleMarker = this._commandDetection.executingCommandObject?.marker;
+			const onCommandFinishedFiltered = staleMarker
+				? Event.filter(this._commandDetection.onCommandFinished, e => e.marker !== staleMarker, store)
 				: this._commandDetection.onCommandFinished;
 
 			// Subscribe to terminal lifecycle events BEFORE any awaits so that we
