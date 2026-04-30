@@ -661,6 +661,54 @@ suite('ChatService', () => {
 		await response.data.responseCompletePromise;
 	});
 
+	test('terminal steering message does not trigger setYieldRequested', async () => {
+		const requestStarted = new DeferredPromise<void>();
+		const completeRequest = new DeferredPromise<void>();
+		let yieldRequestedWithTrue = false;
+
+		const slowAgent: IChatAgentImplementation = {
+			async invoke(request, progress, history, token) {
+				requestStarted.complete();
+				await completeRequest.p;
+				return {};
+			},
+			setYieldRequested(requestId: string, value: boolean) {
+				if (value) {
+					yieldRequestedWithTrue = true;
+				}
+			},
+		};
+
+		testDisposables.add(chatAgentService.registerAgent('slowAgent', { ...getAgentData('slowAgent'), isDefault: true }));
+		testDisposables.add(chatAgentService.registerAgentImplementation('slowAgent', slowAgent));
+
+		const testService = createChatService();
+		const modelRef = testDisposables.add(startSessionModel(testService));
+		const model = modelRef.object;
+
+		// Start a request that will wait
+		const response = await testService.sendRequest(model.sessionResource, 'first request', { agentId: 'slowAgent' });
+		ChatSendResult.assertSent(response);
+
+		// Wait for the agent to start processing
+		await requestStarted.p;
+
+		// Queue a terminal steering message while the first request is still in progress
+		const steeringResponse = await testService.sendRequest(model.sessionResource, 'terminal needs input', {
+			agentId: 'slowAgent',
+			queue: ChatRequestQueueKind.Steering,
+			terminalExecutionId: 'term-123',
+		});
+		assert.strictEqual(steeringResponse.kind, 'queued');
+
+		// setYieldRequested(true) should NOT be called for terminal-originated steering messages
+		assert.strictEqual(yieldRequestedWithTrue, false, 'setYieldRequested(true) should not be called for terminal steering messages');
+
+		// Complete the first request
+		completeRequest.complete();
+		await response.data.responseCompletePromise;
+	});
+
 	test('multiple steering messages are combined into a single request', async () => {
 		const requestStarted = new DeferredPromise<void>();
 		const completeRequest = new DeferredPromise<void>();
