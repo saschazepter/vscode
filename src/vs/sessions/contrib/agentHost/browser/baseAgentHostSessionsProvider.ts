@@ -29,7 +29,7 @@ import { diffsEqual, diffsToChanges, mapProtocolStatus } from './agentHostDiffs.
 import { buildMutableConfigSchema, IAgentHostSessionsProvider, resolvedConfigsEqual } from '../../../common/agentHostSessionsProvider.js';
 import { agentHostSessionWorkspaceKey } from '../../../common/agentHostSessionWorkspace.js';
 import { isSessionConfigComplete } from '../../../common/sessionConfig.js';
-import { IChat, IGitHubInfo, ISession, ISessionType, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, toSessionId } from '../../../services/sessions/common/session.js';
+import { IChat, IGitHubInfo, ISession, ISessionChangeset, ISessionType, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, toSessionId } from '../../../services/sessions/common/session.js';
 import { ISendRequestOptions, ISessionChangeEvent } from '../../../services/sessions/common/sessionsProvider.js';
 
 // ============================================================================
@@ -71,6 +71,7 @@ export class AgentHostSessionAdapter implements ISession {
 	readonly updatedAt: ISettableObservable<Date>;
 	readonly status: ISettableObservable<SessionStatus>;
 	readonly changes = observableValue<readonly (IChatSessionFileChange | IChatSessionFileChange2)[]>('changes', []);
+	readonly changesets = observableValue<readonly ISessionChangeset[]>('changesets', []);
 	readonly modelId: ISettableObservable<string | undefined>;
 	modelSelection: ModelSelection | undefined;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
@@ -147,6 +148,7 @@ export class AgentHostSessionAdapter implements ISession {
 			updatedAt: this.updatedAt,
 			status: this.status,
 			changes: this.changes,
+			changesets: this.changesets,
 			modelId: this.modelId,
 			mode: this.mode,
 			isArchived: this.isArchived,
@@ -525,6 +527,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const status = observableValue<SessionStatus>(this, SessionStatus.Untitled);
 		const title = observableValue(this, '');
 		const updatedAt = observableValue(this, new Date());
+		const changesets = observableValue<readonly ISessionChangeset[]>(this, []);
 		const changes = observableValue<readonly (IChatSessionFileChange | IChatSessionFileChange2)[]>(this, []);
 		const modelId = observableValue<string | undefined>(this, undefined);
 		const mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>(this, undefined);
@@ -537,7 +540,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 
 		const mainChat: IChat = {
 			resource, createdAt, title, updatedAt, status,
-			changes, modelId, mode, isArchived, isRead, description, lastTurnEnd,
+			changes, changesets, modelId, mode, isArchived, isRead, description, lastTurnEnd,
 		};
 
 		const authPending = this.authenticationPending;
@@ -552,6 +555,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			title,
 			updatedAt,
 			status,
+			changesets,
 			changes,
 			modelId,
 			mode,
