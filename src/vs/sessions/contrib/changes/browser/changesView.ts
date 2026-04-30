@@ -1227,105 +1227,6 @@ class SetChangesTreeViewModeAction extends ViewAction<ChangesViewPane> {
 registerAction2(SetChangesListViewModeAction);
 registerAction2(SetChangesTreeViewModeAction);
 
-class ChangesDiffStatsAction extends Action2 {
-	static readonly ID = 'workbench.changesView.action.viewChanges';
-
-	constructor() {
-		super({
-			id: ChangesDiffStatsAction.ID,
-			title: localize2('changesView.viewChanges', 'View All Changes'),
-			f1: false,
-			menu: {
-				id: MenuId.ChatEditingSessionChangesFileHeaderRightToolbar,
-				group: 'navigation',
-				order: 1,
-				when: ChatContextKeys.hasAgentSessionChanges
-			},
-		});
-	}
-
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		const viewsService = accessor.get(IViewsService);
-		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
-		await view?.openChanges();
-	}
-}
-
-registerAction2(ChangesDiffStatsAction);
-
-class ChangesDiffStatsActionItem extends ActionViewItem {
-	private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
-
-	constructor(
-		action: MenuItemAction,
-		viewModel: ChangesViewModel,
-		options: IActionViewItemOptions,
-	) {
-		super(null, action, { ...options, icon: false, label: true });
-
-		this.diffStatsObs = derivedObservableWithCache({ equalsFn: structuralEquals }, (reader, lastValue) => {
-			const entries = viewModel.activeSessionChangesObs.read(reader);
-			const isLoading = viewModel.activeSessionIsLoadingObs.read(reader);
-
-			if (isLoading) {
-				return lastValue;
-			}
-
-			let insertions = 0, deletions = 0;
-			for (const entry of entries) {
-				insertions += entry.insertions;
-				deletions += entry.deletions;
-			}
-
-			return { files: entries.length, insertions, deletions };
-		});
-
-		this._register(autorun(reader => {
-			const diffStats = this.diffStatsObs.read(reader);
-			if (diffStats === undefined) {
-				return;
-			}
-
-			this.updateLabel();
-			this.updateTooltip();
-		}));
-	}
-
-	override render(container: HTMLElement): void {
-		super.render(container);
-		container.classList.add('changes-diff-stats-action');
-	}
-
-	protected override updateLabel(): void {
-		if (!this.label) {
-			return;
-		}
-
-		const diffStats = this.diffStatsObs.get();
-		if (diffStats === undefined) {
-			return;
-		}
-
-		const { insertions, deletions } = diffStats;
-
-		dom.reset(
-			this.label,
-			dom.$('span.working-set-lines-added', undefined, `+${insertions}`),
-			dom.$('span.working-set-lines-removed', undefined, `-${deletions}`)
-		);
-	}
-
-	protected override getTooltip(): string | undefined {
-		const diffStats = this.diffStatsObs.get();
-		if (diffStats === undefined) {
-			return undefined;
-		}
-
-		const { files, insertions, deletions } = diffStats;
-		return localize('changesView.diffStats.label', '{0} files, {1} additions, {2} deletions', files, insertions, deletions);
-	}
-}
-
 // --- Versions Picker Action
 
 class VersionsPickerAction extends Action2 {
@@ -1470,5 +1371,110 @@ class ChangesPickerActionItem extends ActionWidgetDropdownActionViewItem {
 		dom.reset(element, dom.$('span', undefined, label), ...renderLabelWithIcons('$(chevron-down)'));
 		this.updateAriaLabel();
 		return null;
+	}
+}
+
+// --- Diff Stats Action
+
+class ChangesDiffStatsAction extends Action2 {
+	static readonly ID = 'workbench.changesView.action.viewChanges';
+
+	constructor() {
+		super({
+			id: ChangesDiffStatsAction.ID,
+			title: localize2('changesView.viewChanges', 'View All Changes'),
+			f1: false,
+			menu: {
+				id: MenuId.ChatEditingSessionChangesFileHeaderRightToolbar,
+				group: 'navigation',
+				order: 1,
+				when: ChatContextKeys.hasAgentSessionChanges
+			},
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+		await view?.openChanges();
+	}
+}
+registerAction2(ChangesDiffStatsAction);
+
+class ChangesDiffStatsActionItem extends ActionViewItem {
+	private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
+
+	constructor(
+		action: MenuItemAction,
+		viewModel: ChangesViewModel,
+		options: IActionViewItemOptions,
+	) {
+		super(null, action, { ...options, icon: false, label: true });
+
+		const diffStatsRawObs = derivedObservableWithCache<{ files: number; insertions: number; deletions: number } | undefined>(this,
+			(reader, lastValue) => {
+				const entries = viewModel.activeSessionChangesObs.read(reader);
+				const isLoading = viewModel.activeSessionIsLoadingObs.read(reader);
+
+				if (isLoading) {
+					return lastValue;
+				}
+
+				let insertions = 0, deletions = 0;
+				for (const entry of entries) {
+					insertions += entry.insertions;
+					deletions += entry.deletions;
+				}
+
+				return { files: entries.length, insertions, deletions };
+			});
+
+		this.diffStatsObs = derivedOpts<{ files: number; insertions: number; deletions: number } | undefined>({
+			equalsFn: structuralEquals
+		}, reader => diffStatsRawObs.read(reader));
+
+		this._register(autorun(reader => {
+			const diffStats = this.diffStatsObs.read(reader);
+			if (diffStats === undefined) {
+				return;
+			}
+
+			this.updateLabel();
+			this.updateTooltip();
+		}));
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+		container.classList.add('changes-diff-stats-action');
+	}
+
+	protected override updateLabel(): void {
+		if (!this.label) {
+			return;
+		}
+
+		const diffStats = this.diffStatsObs.get();
+		if (diffStats === undefined) {
+			return;
+		}
+
+		const { insertions, deletions } = diffStats;
+
+		dom.reset(
+			this.label,
+			dom.$('span.working-set-lines-added', undefined, `+${insertions}`),
+			dom.$('span.working-set-lines-removed', undefined, `-${deletions}`)
+		);
+	}
+
+	protected override getTooltip(): string | undefined {
+		const diffStats = this.diffStatsObs.get();
+		if (diffStats === undefined) {
+			return undefined;
+		}
+
+		const { files, insertions, deletions } = diffStats;
+		return localize('changesView.diffStats.label', '{0} files, {1} additions, {2} deletions', files, insertions, deletions);
 	}
 }
