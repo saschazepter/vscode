@@ -58,6 +58,11 @@ export class SessionSyncStatus extends Disposable {
 	}
 
 	private _renderState(state: SessionSyncState): void {
+		// Don't render if localIndex is off — item should stay hidden
+		const localEnabled = this._configService.getExperimentBasedConfig(ConfigKey.LocalIndexEnabled, this._expService);
+		if (!localEnabled) {
+			return;
+		}
 		// description → shown as badge in collapsed header
 		// detail → shown when expanded
 		const tipsAction = '[Get Tips from Sessions](command:workbench.action.chat.open?%7B%22query%22%3A%22%2Fchronicle%3Atips%22%7D)';

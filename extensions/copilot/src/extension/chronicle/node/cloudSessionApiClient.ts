@@ -194,6 +194,36 @@ export class CloudSessionApiClient {
 	}
 
 	/**
+	 * Trigger bulk analytics backfill for all remote sessions at the given indexing level.
+	 * Single API call that queues all eligible sessions for reindexing.
+	 */
+	async backfillAnalytics(indexingLevel: 'user' | 'repo_and_user'): Promise<{ ok: true; sessionsQueued: number } | { ok: false }> {
+		try {
+			const { url, headers } = await this._buildRequest('/agents/analytics/backfill');
+			if (!url) {
+				return { ok: false };
+			}
+
+			const res = await this._fetcherService.fetch(url, {
+				callSite: 'chronicle.cloudBackfillAnalytics',
+				method: 'POST',
+				headers,
+				json: { indexing_level: indexingLevel },
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+
+			if (!res.ok) {
+				return { ok: false };
+			}
+
+			const data = await res.json() as { sessions_queued?: number };
+			return { ok: true, sessionsQueued: data.sessions_queued ?? 0 };
+		} catch {
+			return { ok: false };
+		}
+	}
+
+	/**
 	 * Build the full URL and auth headers for a cloud API request.
 	 */
 	private async _buildRequest(path: string): Promise<{ url: string | undefined; headers: Record<string, string> }> {

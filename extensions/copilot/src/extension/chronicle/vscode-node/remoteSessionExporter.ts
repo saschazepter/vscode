@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
+import { IChatDebugFileLoggerService } from '../../../platform/chat/common/chatDebugFileLoggerService';
 import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
@@ -32,6 +33,9 @@ import { IFetcherService } from '../../../platform/networking/common/fetcherServ
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { CloudSessionApiClient } from '../node/cloudSessionApiClient';
 import { ISessionSyncStateService, type SessionSyncState } from '../common/sessionSyncStateService';
+import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
+import { CloudSessionIdStore } from '../node/cloudSessionIdStore';
+import { reindexCloudSessions, type CloudReindexResult } from '../node/sessionReindexer';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
 
@@ -69,14 +73,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	// ── Per-session state ────────────────────────────────────────────────────────
 
-	/** Per-session cloud IDs (created lazily on first interaction). */
-	private readonly _cloudSessions = new Map<string, CloudSessionIds>();
-
-	/** Whether _cloudSessions has been fully populated from listSessions(). */
-	private _cloudSessionsFullyLoaded = false;
-
-	/** Running count of all cloud-synced sessions (survives session dispose, decremented on delete). */
-	private _totalSyncedCount = 0;
+	/** Per-session cloud IDs — persisted to globalStorage JSON file. */
+	private readonly _cloudSessions: CloudSessionIdStore;
 
 	/** Per-session translation state (parentId chaining, session.start tracking). */
 	private readonly _translationStates = new Map<string, SessionTranslationState>();
@@ -124,31 +122,27 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	}
 
 	/**
-	 * Fetch the total number of cloud sessions once and update the sync state.
+	 * Load cloud session IDs from disk, then reconcile with the cloud API.
+	 * The disk file provides instant ID lookups; the cloud call updates the
+	 * count and discovers sessions created by other VS Code windows.
 	 * Fire-and-forget — errors are silently swallowed.
 	 */
 	private async _loadTotalSyncedCount(): Promise<void> {
-		if (this._cloudSessionsFullyLoaded) {
-			return;
+		// 1. Load from disk (no network, fast async read)
+		await this._cloudSessions.load();
+		if (this._cloudSessions.size > 0 && this._syncState.kind === 'on') {
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
 		}
+
+		// 2. Reconcile with cloud (discovers sessions from other windows)
 		try {
 			const cloudSessions = await this._cloudClient.listSessions();
-			for (const cs of cloudSessions) {
-				if (cs.agent_task_id && !this._cloudSessions.has(cs.agent_task_id)) {
-					this._cloudSessions.set(cs.agent_task_id, {
-						cloudSessionId: cs.id,
-						cloudTaskId: cs.agent_task_id,
-					});
-				}
-			}
-			this._cloudSessionsFullyLoaded = true;
-			this._totalSyncedCount = this._cloudSessions.size;
-			// Update display if still in 'on' state (no activity yet)
-			if (this._syncState.kind === 'on') {
-				this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
+			this._cloudSessions.mergeFromCloud(cloudSessions);
+			if (this._syncState.kind === 'on' || this._syncState.kind === 'up-to-date') {
+				this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
 			}
 		} catch {
-			// Non-fatal — count will be populated lazily on first flush or delete
+			// Non-fatal — disk cache is good enough for ID lookups
 		}
 	}
 
@@ -164,9 +158,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IFetcherService private readonly _fetcherService: IFetcherService,
 		@ISessionStore private readonly _sessionStore: ISessionStore,
+		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
+		@IChatDebugFileLoggerService private readonly _debugLogService: IChatDebugFileLoggerService,
 	) {
 		super();
 
+		this._cloudSessions = new CloudSessionIdStore(this._extensionContext.globalStorageUri.fsPath);
 		this._indexingPreference = new SessionIndexingPreference(this._configService);
 		this._cloudClient = new CloudSessionApiClient(this._tokenManager, this._authService, this._fetcherService);
 		this._circuitBreaker = new CircuitBreaker({
@@ -178,8 +175,14 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Register delete cloud sessions command
 		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.deleteSessions', () => this._deleteCloudSessions()));
 
+		// Register cloud-only delete for sessions window hook (fire-and-forget, no UI)
+		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.deleteSessionFromCloud', (sessionIds: string[]) => this._deleteSessionsFromCloud(sessionIds)));
+
 		// Register suggest session sync command (called from chronicleIntent when user runs /chronicle)
 		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.suggest', () => this._suggestSessionSync()));
+
+		// Register cloud reindex command (called from chronicleIntent after local reindex)
+		this._register(vscode.commands.registerCommand('github.copilot.sessionSync.reindex', (reportProgress: (msg: string) => void, token: vscode.CancellationToken) => this._reindexCloud(reportProgress, token)));
 
 		// Register known auth tokens as dynamic secrets for filtering
 		this._registerAuthSecrets();
@@ -238,7 +241,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._flushBatch().catch(() => { /* best effort */ });
 		}
 
-		this._cloudSessions.clear();
 		this._translationStates.clear();
 		this._disabledSessions.clear();
 		this._initializingSessions.clear();
@@ -273,18 +275,36 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	// ── Delete sessions (Command Palette) ───────────────────────────────────────
 
 	private async _deleteCloudSessions(): Promise<void> {
-		const cloudEnabled = this._indexingPreference.hasCloudConsent();
+		// Ensure cloud session IDs are loaded from disk
+		await this._cloudSessions.load();
 
-		// Query local SQLite store for sessions with their first user message as label
-		const rows = this._sessionStore.executeReadOnlyFallback(
-			`SELECT s.id, s.repository, s.created_at,
-				(SELECT user_message FROM turns WHERE session_id = s.id ORDER BY turn_index LIMIT 1) as first_message
-			FROM sessions s ORDER BY s.updated_at DESC LIMIT 100`
-		) as Array<{ id: string; repository?: string; created_at?: string; first_message?: string }>;
-
-		if (rows.length === 0) {
-			vscode.window.showInformationMessage(vscode.l10n.t('No sessions found.'));
+		if (this._cloudSessions.size === 0) {
+			vscode.window.showInformationMessage(vscode.l10n.t('No cloud-synced sessions found.'));
 			return;
+		}
+
+		// Query local SQLite store for session labels, filtered to cloud-synced sessions only
+		let rows: Array<{ id: string; repository?: string; created_at?: string; first_message?: string }> = [];
+		try {
+			const allRows = this._sessionStore.executeReadOnlyFallback(
+				`SELECT s.id, s.repository, s.created_at,
+					(SELECT user_message FROM turns WHERE session_id = s.id ORDER BY turn_index LIMIT 1) as first_message
+				FROM sessions s ORDER BY s.updated_at DESC LIMIT 500`
+			) as Array<{ id: string; repository?: string; created_at?: string; first_message?: string }>;
+			rows = allRows.filter(row => this._cloudSessions.has(row.id));
+		} catch {
+			// SQLite may be disabled — fall back to cloud store IDs only
+		}
+
+		// If SQLite had no matches (disabled or sessions not tracked there),
+		// build minimal items from the cloud store keys
+		if (rows.length === 0) {
+			const cloudKeys = [...this._cloudSessions.keys()];
+			if (cloudKeys.length === 0) {
+				vscode.window.showInformationMessage(vscode.l10n.t('No cloud-synced sessions found.'));
+				return;
+			}
+			rows = cloudKeys.map(id => ({ id }));
 		}
 
 		// Build Quick Pick items
@@ -305,7 +325,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		];
 
 		const picked = await vscode.window.showQuickPick(sessionItems, {
-			title: vscode.l10n.t('Delete Session Data'),
+			title: vscode.l10n.t('Delete Cloud Session Data'),
 			placeHolder: vscode.l10n.t('Select sessions to delete'),
 			canPickMany: true,
 		});
@@ -319,14 +339,34 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			? rows
 			: picked.map(p => rows.find(r => r.id === p.sessionId)!).filter(Boolean);
 
-		// Confirmation — message indicates where data will be deleted from
-		const confirmMessage = cloudEnabled
-			? vscode.l10n.t('Delete {0} session(s) locally and from the cloud? This cannot be undone.', sessionsToDelete.length)
-			: vscode.l10n.t('Delete {0} session(s) locally? This cannot be undone.', sessionsToDelete.length);
+		// Ask where to delete from
+		type ScopeQuickPickItem = vscode.QuickPickItem & { deleteLocal: boolean };
+		const scopeItems: ScopeQuickPickItem[] = [
+			{ label: vscode.l10n.t('Delete from local and cloud'), description: vscode.l10n.t('Remove from local storage and the cloud'), deleteLocal: true },
+			{ label: vscode.l10n.t('Delete from Cloud Only'), description: vscode.l10n.t('Keep local data, remove from the cloud'), deleteLocal: false },
+		];
+		const scopePick = await vscode.window.showQuickPick(scopeItems, {
+			title: vscode.l10n.t('Where to Delete From?'),
+			placeHolder: vscode.l10n.t('Choose deletion scope'),
+		});
+
+		if (!scopePick) {
+			return;
+		}
+
+		const deleteLocal = scopePick.deleteLocal;
+
+		// Confirmation
+		const confirmMessage = sessionsToDelete.length === 1
+			? vscode.l10n.t('Are you sure you want to delete this session?')
+			: vscode.l10n.t('Are you sure you want to delete {0} sessions?', sessionsToDelete.length);
+		const confirmDetail = deleteLocal
+			? vscode.l10n.t('This will delete session data locally and from the cloud. This action cannot be undone.')
+			: vscode.l10n.t('This will delete session data from the cloud only. Local data will be kept. This action cannot be undone.');
 
 		const confirm = await vscode.window.showWarningMessage(
 			confirmMessage,
-			{ modal: true },
+			{ modal: true, detail: confirmDetail },
 			vscode.l10n.t('Delete'),
 		);
 
@@ -337,24 +377,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		// Execute deletions
 		let localDeleted = 0;
 		let cloudDeleted = 0;
-		let cloudNotFound = 0;
 		let cloudErrors = 0;
-
-		// Resolve local→cloud ID mapping when cloud is enabled.
-		// The delete API requires the cloud-assigned session ID, not our local
-		// agent_task_id, so we first check the in-memory cache (_cloudSessions)
-		// and only call listSessions() for any remaining sessions not in the cache.
-		const localToCloudId = new Map<string, string>();
-		if (cloudEnabled) {
-			// Use whatever cloud IDs are already cached (from startup load or session creation).
-			// If the startup load hasn't finished yet, we proceed with what we have — best effort.
-			for (const session of sessionsToDelete) {
-				const cached = this._cloudSessions.get(session.id);
-				if (cached) {
-					localToCloudId.set(session.id, cached.cloudSessionId);
-				}
-			}
-		}
 
 		this._setSyncState({ kind: 'deleting', sessionCount: sessionsToDelete.length });
 
@@ -362,49 +385,42 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			{ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Deleting sessions...') },
 			async () => {
 				for (const session of sessionsToDelete) {
-					// Always delete locally
-					try {
-						this._sessionStore.deleteSession(session.id);
-						localDeleted++;
-					} catch {
-						// Best effort — continue with cloud even if local fails
-					}
-
-					// Delete from cloud when session sync is enabled
-					if (cloudEnabled) {
-						const cloudId = localToCloudId.get(session.id);
-						if (cloudId) {
-							const result = await this._cloudClient.deleteSession(cloudId);
-							switch (result) {
-								case 'deleted': cloudDeleted++; break;
-								case 'not_found': cloudNotFound++; break;
-								case 'error': cloudErrors++; break;
-							}
-						} else {
-							// Session was never synced to cloud
-							cloudNotFound++;
+					// Delete locally when scope is "everywhere"
+					if (deleteLocal) {
+						try {
+							this._sessionStore.deleteSession(session.id);
+							localDeleted++;
+						} catch {
+							// Best effort — SQLite may be disabled
 						}
 					}
 
-					// Remove from in-memory caches
+					// Delete from cloud using the stored cloud session ID
+					const cached = this._cloudSessions.get(session.id);
+					if (cached) {
+						const result = await this._cloudClient.deleteSession(cached.cloudSessionId);
+						switch (result) {
+							case 'deleted': cloudDeleted++; break;
+							case 'not_found': cloudDeleted++; break; // Already gone — count as success
+							case 'error': cloudErrors++; break;
+						}
+					}
+
+					// Remove from caches and persisted store
 					this._cloudSessions.delete(session.id);
 					this._translationStates.delete(session.id);
 					this._disabledSessions.delete(session.id);
-					this._totalSyncedCount = Math.max(0, this._totalSyncedCount - 1);
 				}
 			},
 		);
 
 		// Build result message
 		const parts: string[] = [];
-		parts.push(vscode.l10n.t('{0} deleted locally', localDeleted));
-		if (cloudEnabled) {
-			if (cloudDeleted > 0) {
-				parts.push(vscode.l10n.t('{0} deleted from cloud', cloudDeleted));
-			}
-			if (cloudNotFound > 0) {
-				parts.push(vscode.l10n.t('{0} not found in cloud', cloudNotFound));
-			}
+		if (deleteLocal) {
+			parts.push(vscode.l10n.t('{0} deleted locally', localDeleted));
+		}
+		if (cloudDeleted > 0) {
+			parts.push(vscode.l10n.t('{0} deleted from cloud', cloudDeleted));
 		}
 
 		if (cloudErrors > 0) {
@@ -412,8 +428,100 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._setSyncState({ kind: 'error' });
 		} else {
 			vscode.window.showInformationMessage(parts.join(', ') + '.');
-			this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
 		}
+	}
+
+	// ── Delete from cloud + local SQLite (called by sessions window delete action) ─
+
+	/**
+	 * Best-effort cloud and local SQLite deletion for the given session IDs.
+	 * Called from the sessions window right-click delete action — no UI shown.
+	 */
+	private async _deleteSessionsFromCloud(sessionIds: string[]): Promise<void> {
+		if (!sessionIds || sessionIds.length === 0) {
+			return;
+		}
+		const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
+
+		for (const sessionId of sessionIds) {
+			// Delete from local SQLite store
+			try {
+				this._sessionStore.deleteSession(sessionId);
+			} catch {
+				// Best effort
+			}
+
+			// Delete from cloud only when session sync is enabled
+			const wasCloudSynced = this._cloudSessions.has(sessionId);
+			if (cloudEnabled && wasCloudSynced) {
+				const cached = this._cloudSessions.get(sessionId)!;
+				try {
+					await this._cloudClient.deleteSession(cached.cloudSessionId);
+				} catch {
+					// Best effort — don't block the caller
+				}
+			}
+
+			// Remove from in-memory caches
+			this._cloudSessions.delete(sessionId);
+			this._translationStates.delete(sessionId);
+			this._disabledSessions.delete(sessionId);
+		}
+		this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+	}
+
+	// ── Cloud reindex (called from /chronicle:reindex) ──────────────────────────
+
+	/**
+	 * Reindex all local sessions to the cloud. Creates cloud sessions for
+	 * any local sessions not yet synced, uploads their events, and triggers
+	 * a bulk analytics backfill.
+	 *
+	 * Returns undefined when cloud reindex is not applicable (cloud disabled,
+	 * no consent, no repo).
+	 */
+	private async _reindexCloud(
+		reportProgress: (msg: string) => void,
+		token: vscode.CancellationToken,
+	): Promise<CloudReindexResult | undefined> {
+		const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
+		if (!cloudEnabled) {
+			return undefined;
+		}
+
+		const repo = await this._resolveRepository();
+		if (!repo) {
+			return undefined;
+		}
+
+		const repoNwo = `${repo.owner}/${repo.repo}`;
+		if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
+			return undefined;
+		}
+
+		const indexingLevel = this._indexingPreference.getStorageLevel(repoNwo);
+		if (indexingLevel === 'local') {
+			return undefined;
+		}
+
+		const cloudIndexingLevel = indexingLevel === 'repo_and_user' ? 'repo_and_user' as const : 'user' as const;
+
+		const result = await reindexCloudSessions(
+			this._cloudClient,
+			this._cloudSessions,
+			this._debugLogService,
+			repo.repoIds.ownerId,
+			repo.repoIds.repoId,
+			cloudIndexingLevel,
+			reportProgress,
+			token,
+		);
+
+		// Update sync state with new count
+		this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+
+		return result;
 	}
 
 	// ── Span handling ────────────────────────────────────────────────────────────
@@ -620,7 +728,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		};
 
 		this._cloudSessions.set(sessionId, cloudIds);
-		this._totalSyncedCount++;
 
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 			operation: 'createCloudSession',
@@ -683,7 +790,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._bufferEvents(sessionId, [event]);
 		}
 
-		this._cloudSessions.delete(sessionId);
+		// Keep _cloudSessions entry — the cloud session ID mapping is needed
+		// for future delete operations (e.g. sidebar delete fires after dispose).
 		this._translationStates.delete(sessionId);
 		this._disabledSessions.delete(sessionId);
 		this._initializingSessions.delete(sessionId);
@@ -815,7 +923,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			}
 
 			if (allSuccess) {
-				this._setSyncState({ kind: 'up-to-date', syncedCount: this._totalSyncedCount });
+				this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
 			}
 		} catch (err) {
 			// Re-queue on unexpected error

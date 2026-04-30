@@ -175,7 +175,7 @@ export class ChronicleIntent implements IIntent {
 		if (result.cancelled) {
 			lines.push(l10n.t('Reindex cancelled.'));
 		} else {
-			lines.push(l10n.t('Reindex complete.'));
+			lines.push(l10n.t('Local reindex complete.'));
 		}
 
 		lines.push('');
@@ -190,6 +190,44 @@ export class ChronicleIntent implements IIntent {
 
 		stream.markdown(lines.join('\n'));
 
+		// ── Cloud reindex phase ─────────────────────────────────────────
+		// Runs after local reindex, gated by the reindex command in RemoteSessionExporter
+		// which checks cloud sync enabled + consent + repo.
+		let cloudSessionCount = 0;
+		if (!result.cancelled && !token.isCancellationRequested) {
+			try {
+				stream.progress(l10n.t('Starting cloud session sync...'));
+				const cloudResult = await this._commandService.executeCommand(
+					'github.copilot.sessionSync.reindex',
+					(msg: string) => stream.progress(msg),
+					token,
+				) as { created: number; eventsUploaded: number; failed: number; backfillQueued: number; backfillFailed?: boolean } | undefined;
+
+				if (cloudResult) {
+					cloudSessionCount = cloudResult.created;
+					const cloudLines: string[] = [];
+					if (cloudResult.created > 0 || cloudResult.eventsUploaded > 0) {
+						cloudLines.push('');
+						cloudLines.push(l10n.t('**Cloud sync:** {0} session(s) created, {1} event(s) uploaded.', cloudResult.created, cloudResult.eventsUploaded));
+					}
+					if (cloudResult.backfillQueued > 0) {
+						cloudLines.push(l10n.t('{0} session(s) queued for cloud indexing.', cloudResult.backfillQueued));
+					}
+					if (cloudResult.failed > 0) {
+						cloudLines.push(l10n.t('⚠ {0} session(s) failed cloud sync.', cloudResult.failed));
+					}
+					if (cloudResult.backfillFailed) {
+						cloudLines.push(l10n.t('⚠ Cloud indexing request failed.'));
+					}
+					if (cloudLines.length > 0) {
+						stream.markdown(cloudLines.join('\n'));
+					}
+				}
+			} catch {
+				// Cloud phase failure is non-fatal — local reindex already succeeded
+			}
+		}
+
 		this._telemetryService.sendMSFTTelemetryEvent('chronicle', {
 			subcommand: 'reindex',
 			querySource: 'local',
@@ -197,7 +235,7 @@ export class ChronicleIntent implements IIntent {
 			cancelled: String(result.cancelled),
 		}, {
 			localSessionCount: result.processed,
-			cloudSessionCount: 0,
+			cloudSessionCount,
 			totalSessionCount: result.processed + result.skipped,
 			skippedCount: result.skipped,
 			durationMs: Date.now() - startTime,
