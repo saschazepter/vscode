@@ -1345,10 +1345,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			if (!branchName) {
 				return undefined;
 			}
-			// Sessions created before _META_WORKTREE_PATH/_META_WORKTREE_REPOSITORY_ROOT
-			// existed return without those fields. Both archive cleanup and
-			// unarchive recreation skip in that case, so we leave the worktree
-			// alone rather than risk deleting something we couldn't restore.
 			const worktreePath = worktreePathRaw ? URI.parse(worktreePathRaw) : undefined;
 			const repositoryRoot = repositoryRootRaw ? URI.parse(repositoryRootRaw) : undefined;
 			return { branchName, worktreePath, repositoryRoot };
