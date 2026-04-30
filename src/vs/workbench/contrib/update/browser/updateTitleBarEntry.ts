@@ -14,15 +14,15 @@ import { localize } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { DisablementReason, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
+import { InEditorZenModeContext } from '../../../common/contextkeys.js';
 import { IHostService } from '../../../services/host/browser/host.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IChatService } from '../../chat/common/chatService/chatService.js';
 import { computeProgressPercent } from '../common/updateUtils.js';
 import { waitForState } from '../../../../base/common/observable.js';
@@ -47,7 +47,7 @@ registerAction2(class UpdateIndicatorTitleBarAction extends Action2 {
 			menu: [{
 				id: MenuId.TitleBarAdjacentCenter,
 				order: 0,
-				when: UPDATE_TITLE_BAR_CONTEXT,
+				when: ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, InEditorZenModeContext.negate()),
 			}]
 		});
 	}
@@ -64,7 +64,6 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 	private state!: State;
 	private entry: UpdateTitleBarEntry | undefined;
 	private tooltipVisible = false;
-	private zenMode = false;
 	private readonly pendingShow = this._register(new MutableDisposable());
 
 	constructor(
@@ -73,7 +72,6 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IHostService private readonly hostService: IHostService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IUpdateService updateService: IUpdateService,
 	) {
@@ -109,22 +107,11 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			}
 		));
 
-		this._register(layoutService.onDidChangeZenMode(zenMode => {
-			this.zenMode = zenMode;
-			void this.onStateChange();
-		}));
-
 		void this.onStateChange(true);
 	}
 
 	private async onStateChange(startup = false) {
 		this.pendingShow.clear();
-
-		if (this.zenMode) {
-			this.context.set(false);
-			return;
-		}
-
 		if (ACTIONABLE_STATES.includes(this.state.type)) {
 			await this.setContextWhenChatIdle(true);
 		} else {
