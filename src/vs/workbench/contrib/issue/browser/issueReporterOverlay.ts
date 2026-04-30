@@ -1338,11 +1338,6 @@ export class IssueReporterOverlay {
 		sourceLabel.textContent = localize('target', "Target");
 		const sourceValue = append(sourceSection, $('div.review-value'));
 		sourceValue.textContent = this.getIssueSourceLabel();
-		const targetUrl = this.getIssueTargetUrl();
-		if (targetUrl) {
-			const target = append(sourceValue, $('span.review-target-repo'));
-			target.textContent = ` ${targetUrl}`;
-		}
 
 		const catSection = append(details as HTMLElement, $('div.review-section'));
 		const catLabel = append(catSection, $('div.review-label'));
@@ -1946,7 +1941,7 @@ export class IssueReporterOverlay {
 		}
 
 		const screenshot = this.screenshots[index];
-		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel, this.contextViewService);
+		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel);
 		this.disposables.add(editor);
 
 		editor.onDidSave(annotatedDataUrl => {

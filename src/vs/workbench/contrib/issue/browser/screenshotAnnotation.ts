@@ -6,14 +6,12 @@
 import { $, addDisposableListener, append, EventType, getWindow } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
-import { IContextViewProvider } from '../../../../base/browser/ui/contextview/contextview.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
-import { defaultButtonStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IScreenshot } from './issueReporterOverlay.js';
 
 const enum AnnotationTool {
@@ -23,6 +21,7 @@ const enum AnnotationTool {
 	Ellipse = 'ellipse',
 	Arrow = 'arrow',
 	Text = 'text',
+	Eraser = 'eraser',
 	Pan = 'pan',
 	Crop = 'crop',
 }
@@ -42,14 +41,18 @@ const FONT_FAMILIES = [
 	{ label: 'Serif', value: 'Georgia, "Times New Roman", serif' },
 ];
 
-const FONT_SIZES = [12, 16, 20, 24, 32, 48];
 const DEFAULT_TEXT_BOX_WIDTH = 240;
 const MIN_TEXT_BOX_WIDTH = 48;
 const TEXT_DRAG_THRESHOLD = 4;
+const FILL_COLORS = ['transparent', ...COLORS];
+const STROKE_WIDTHS = [2, 4, 8, 12];
+const TEXT_SIZES = [14, 18, 24, 32, 48];
 
 interface DrawAction {
 	readonly type: AnnotationTool;
-	color: string;
+	strokeColor: string;
+	fillColor?: string;
+	opacity: number;
 	lineWidth: number;
 	fontSize?: number;
 	fontFamily?: string;
@@ -61,11 +64,14 @@ interface DrawAction {
 	text?: string;
 	textPos?: { x: number; y: number };
 	textWidth?: number;
+	/** Only set for type === AnnotationTool.Eraser: the batch of actions removed in one stroke. */
+	erasedActions?: DrawAction[];
 }
 
 export class ScreenshotAnnotationEditor {
 
 	private readonly disposables = new DisposableStore();
+	private readonly toolOptionsDisposables = new DisposableStore();
 	private readonly _onDidSave = new Emitter<string>();
 	readonly onDidSave: Event<string> = this._onDidSave.event;
 	private readonly _onDidCancel = new Emitter<void>();
@@ -76,11 +82,17 @@ export class ScreenshotAnnotationEditor {
 	private ctx!: CanvasRenderingContext2D;
 
 	private activeTool: AnnotationTool = AnnotationTool.Freehand;
-	private activeColor: string = COLORS[0];
+	private activeStrokeColor = COLORS[0];
+	private activeFillColor = 'transparent';
+	private activeLineWidth = 4;
+	private activeOpacity = 1;
 	private readonly actions: DrawAction[] = [];
 	private readonly undoneActions: DrawAction[] = [];
 	private currentAction: DrawAction | null = null;
 	private isDrawing = false;
+	private isErasing = false;
+	/** Actions erased during the current pointer drag; committed to undo stack on pointer-up. */
+	private pendingEraseActions: DrawAction[] = [];
 
 	private imageElement: HTMLImageElement | null = null;
 	private imageWidth = 0;
@@ -122,7 +134,7 @@ export class ScreenshotAnnotationEditor {
 	private selectedTextResizeStartWidth = DEFAULT_TEXT_BOX_WIDTH;
 
 	// Text configuration
-	private activeFontSize = 16;
+	private activeFontSize = 18;
 	private activeFontFamily = FONT_FAMILIES[0].value;
 	private textPlacementState: {
 		start: { x: number; y: number };
@@ -133,7 +145,9 @@ export class ScreenshotAnnotationEditor {
 		pos: { x: number; y: number };
 		text: string;
 		caretIndex: number;
-		color: string;
+		strokeColor: string;
+		fillColor: string;
+		opacity: number;
 		fontSize: number;
 		fontFamily: string;
 		width: number;
@@ -148,12 +162,12 @@ export class ScreenshotAnnotationEditor {
 
 	// Tool buttons (for active state management)
 	private readonly toolButtons: { element: HTMLElement; tool: AnnotationTool }[] = [];
+	private toolOptionsPopover: HTMLElement | null = null;
 
 
 	constructor(
 		private readonly screenshot: IScreenshot,
 		private readonly parentElement: HTMLElement,
-		private readonly contextViewProvider: IContextViewProvider,
 	) {
 		this.createUI();
 		this.loadImage();
@@ -176,9 +190,9 @@ export class ScreenshotAnnotationEditor {
 			this.addToolButton(toolbar, tool, label, icon);
 		}
 
-		// 2. Crop tool (uses scissors unicode character since no scissors codicon)
+		// 2. Crop tool
 		const cropBtn = append(toolbar, $('button.tool-btn.crop-btn'));
-		cropBtn.textContent = '\u2702';
+		cropBtn.appendChild(renderIcon(Codicon.screenCut));
 		cropBtn.title = localize('crop', "Crop");
 		cropBtn.setAttribute('aria-label', localize('crop', "Crop"));
 		this.toolButtons.push({ element: cropBtn, tool: AnnotationTool.Crop });
@@ -192,6 +206,7 @@ export class ScreenshotAnnotationEditor {
 			{ tool: AnnotationTool.Rectangle, label: localize('rectangle', "Rectangle"), icon: renderIcon(Codicon.primitiveSquare) },
 			{ tool: AnnotationTool.Ellipse, label: localize('ellipse', "Ellipse"), icon: renderIcon(Codicon.circle) },
 			{ tool: AnnotationTool.Arrow, label: localize('arrow', "Arrow"), icon: renderIcon(Codicon.arrowRight) },
+			{ tool: AnnotationTool.Eraser, label: localize('eraser', "Eraser"), icon: renderIcon(Codicon.eraser) },
 		];
 		for (const { tool, label, icon } of moreDrawingTools) {
 			this.addToolButton(toolbar, tool, label, icon);
@@ -200,108 +215,40 @@ export class ScreenshotAnnotationEditor {
 		// 4. Text tool
 		this.addToolButton(toolbar, AnnotationTool.Text, localize('text', "Text"), renderIcon(Codicon.symbolString));
 
-		// 5. Color button + popover
-		const colorBtn = append(toolbar, $('button.tool-btn.color-btn'));
-		colorBtn.title = localize('color', "Color");
-		colorBtn.setAttribute('aria-label', localize('color', "Color"));
-		const colorIndicator = append(colorBtn, $('div.color-indicator'));
-		colorIndicator.style.backgroundColor = this.activeColor;
-
-		const colorPopover = append(toolbar, $('div.color-popover'));
-		colorPopover.style.display = 'none';
-
-		const swatchElements: HTMLElement[] = [];
-		for (const color of COLORS) {
-			const swatch = append(colorPopover, $('div.color-swatch'));
-			swatch.style.backgroundColor = color;
-			if (color === this.activeColor) {
-				swatch.classList.add('active');
+		this.toolOptionsPopover = append(this.container, $('div.annotation-tool-options-popover'));
+		this.toolOptionsPopover.style.display = 'none';
+		this.disposables.add(addDisposableListener(this.container, EventType.CLICK, e => {
+			if (!this.toolOptionsPopover || this.toolOptionsPopover.style.display === 'none') {
+				return;
 			}
-			swatchElements.push(swatch);
-			this.disposables.add(addDisposableListener(swatch, EventType.CLICK, e => {
-				e.stopPropagation();
-				this.activeColor = color;
-				if (this.textEditState) {
-					this.textEditState.color = color;
-					this.redraw();
-				}
-				colorIndicator.style.backgroundColor = color;
-				for (const s of swatchElements) {
-					s.classList.remove('active');
-				}
-				swatch.classList.add('active');
-				colorPopover.style.display = 'none';
-			}));
-		}
-
-		this.disposables.add(addDisposableListener(colorBtn, EventType.CLICK, e => {
-			e.stopPropagation();
-			colorPopover.style.display = colorPopover.style.display === 'none' ? 'flex' : 'none';
-		}));
-
-		this.disposables.add(addDisposableListener(this.container, EventType.CLICK, () => {
-			colorPopover.style.display = 'none';
-		}));
-
-		// 6. Font family selector
-		const fontFamilySelectContainer = append(toolbar, $('div.toolbar-select-container'));
-		const fontFamilyOptions: ISelectOptionItem[] = FONT_FAMILIES.map(ff => ({ text: ff.label }));
-		const fontFamilySelect = this.disposables.add(new SelectBox(
-			fontFamilyOptions,
-			Math.max(0, FONT_FAMILIES.findIndex(ff => ff.value === this.activeFontFamily)),
-			this.contextViewProvider,
-			defaultSelectBoxStyles,
-			{ ariaLabel: localize('fontFamily', "Font Family"), useCustomDrawn: true }
-		));
-		fontFamilySelect.render(fontFamilySelectContainer);
-		this.disposables.add(fontFamilySelect.onDidSelect(({ index }) => {
-			this.activeFontFamily = FONT_FAMILIES[index].value;
-			if (this.textEditState) {
-				this.textEditState.fontFamily = this.activeFontFamily;
-				this.redraw();
+			const target = e.target as Node;
+			if (!this.toolOptionsPopover.contains(target) && !this.toolButtons.some(button => button.element.contains(target))) {
+				this.hideToolOptions();
 			}
 		}));
+		this.renderToolOptions();
 
-		// 7. Font size selector
-		const fontSizeSelectContainer = append(toolbar, $('div.toolbar-select-container.toolbar-select-container-small'));
-		const fontSizeOptions: ISelectOptionItem[] = FONT_SIZES.map(size => ({ text: `${size}px` }));
-		const fontSizeSelect = this.disposables.add(new SelectBox(
-			fontSizeOptions,
-			Math.max(0, FONT_SIZES.findIndex(size => size === this.activeFontSize)),
-			this.contextViewProvider,
-			defaultSelectBoxStyles,
-			{ ariaLabel: localize('fontSize', "Font Size"), useCustomDrawn: true }
-		));
-		fontSizeSelect.render(fontSizeSelectContainer);
-		this.disposables.add(fontSizeSelect.onDidSelect(({ index }) => {
-			this.activeFontSize = FONT_SIZES[index];
-			if (this.textEditState) {
-				this.textEditState.fontSize = this.activeFontSize;
-				this.redraw();
-			}
-		}));
-
-		// 8. Separator
+		// 5. Separator
 		append(toolbar, $('div.toolbar-separator'));
 
-		// 9. Undo button
+		// 6. Undo button
 		const undoBtn = append(toolbar, $('button.tool-btn'));
 		undoBtn.appendChild(renderIcon(Codicon.discard));
 		undoBtn.title = localize('undo', "Undo");
 		undoBtn.setAttribute('aria-label', localize('undo', "Undo"));
 		this.disposables.add(addDisposableListener(undoBtn, EventType.CLICK, () => this.undo()));
 
-		// 10. Redo button
+		// 7. Redo button
 		const redoBtn = append(toolbar, $('button.tool-btn'));
 		redoBtn.appendChild(renderIcon(Codicon.redo));
 		redoBtn.title = localize('redo', "Redo");
 		redoBtn.setAttribute('aria-label', localize('redo', "Redo"));
 		this.disposables.add(addDisposableListener(redoBtn, EventType.CLICK, () => this.redo()));
 
-		// 11. Separator
+		// 8. Separator
 		append(toolbar, $('div.toolbar-separator'));
 
-		// 12. Discard button
+		// 9. Discard button
 		const discardBtn = this.disposables.add(new Button(toolbar, { ...defaultButtonStyles, secondary: true }));
 		discardBtn.label = localize('discard', "Discard");
 		this.disposables.add(discardBtn.onDidClick(() => {
@@ -310,7 +257,7 @@ export class ScreenshotAnnotationEditor {
 			this.dispose();
 		}));
 
-		// 13. Save button
+		// 10. Save button
 		const saveBtn = this.disposables.add(new Button(toolbar, defaultButtonStyles));
 		saveBtn.label = localize('save', "Save");
 		this.disposables.add(saveBtn.onDidClick(() => {
@@ -448,13 +395,165 @@ export class ScreenshotAnnotationEditor {
 		btn.appendChild(icon);
 		btn.title = label;
 		btn.setAttribute('aria-label', label);
+		btn.setAttribute('aria-pressed', String(tool === this.activeTool));
 		if (tool === this.activeTool) {
 			btn.classList.add('active');
 		}
 		this.toolButtons.push({ element: btn, tool });
-		this.disposables.add(addDisposableListener(btn, EventType.CLICK, () => {
+		this.disposables.add(addDisposableListener(btn, EventType.CLICK, e => {
+			e.stopPropagation();
 			this.setActiveTool(tool);
 		}));
+	}
+
+	private renderToolOptions(): void {
+		if (!this.toolOptionsPopover) {
+			return;
+		}
+		this.toolOptionsDisposables.clear();
+		this.toolOptionsPopover.textContent = '';
+		this.toolOptionsPopover.setAttribute('role', 'group');
+		this.toolOptionsPopover.setAttribute('aria-label', localize('toolOptions', "Tool Options"));
+
+		this.appendColorOptions(
+			this.toolOptionsPopover,
+			this.activeTool === AnnotationTool.Text ? localize('textColor', "Text Color") : localize('strokeColor', "Stroke Color"),
+			COLORS,
+			this.activeStrokeColor,
+			localize('setStrokeColor', "Set Stroke Color"),
+			color => {
+				this.activeStrokeColor = color;
+				this.applyToolOptionsToTextEdit();
+			}
+		);
+
+		if (this.activeTool !== AnnotationTool.Freehand && this.activeTool !== AnnotationTool.Arrow) {
+			this.appendColorOptions(
+				this.toolOptionsPopover,
+				this.activeTool === AnnotationTool.Text ? localize('textBackgroundColor', "Background Color") : localize('fillColor', "Fill Color"),
+				FILL_COLORS,
+				this.activeFillColor,
+				localize('setFillColor', "Set Fill Color"),
+				color => {
+					this.activeFillColor = color;
+					this.applyToolOptionsToTextEdit();
+				}
+			);
+		}
+
+		this.appendSizeOptions(this.toolOptionsPopover);
+		this.appendOpacityOptions(this.toolOptionsPopover);
+	}
+
+	private appendColorOptions(container: HTMLElement, label: string, colors: string[], selectedColor: string, ariaLabelPrefix: string, onSelect: (color: string) => void): void {
+		const group = append(container, $('div.annotation-tool-options-group'));
+		append(group, $('span.annotation-tool-options-label')).textContent = label;
+		const swatches = append(group, $('div.annotation-color-swatches'));
+		for (const color of colors) {
+			const swatch = append(swatches, $('button.annotation-color-swatch')) as HTMLButtonElement;
+			const isTransparent = color === 'transparent';
+			swatch.classList.toggle('transparent', isTransparent);
+			swatch.style.backgroundColor = isTransparent ? 'transparent' : color;
+			swatch.setAttribute('aria-label', isTransparent ? localize('transparentColor', "{0}: Transparent", ariaLabelPrefix) : localize('colorValue', "{0}: {1}", ariaLabelPrefix, color));
+			swatch.setAttribute('aria-pressed', String(color === selectedColor));
+			swatch.classList.toggle('active', color === selectedColor);
+			this.toolOptionsDisposables.add(addDisposableListener(swatch, EventType.CLICK, e => {
+				e.stopPropagation();
+				onSelect(color);
+				this.renderToolOptions();
+				this.redraw();
+			}));
+		}
+	}
+
+	private appendSizeOptions(container: HTMLElement): void {
+		const isText = this.activeTool === AnnotationTool.Text;
+		const values = isText ? TEXT_SIZES : STROKE_WIDTHS;
+		const selectedValue = isText ? this.activeFontSize : this.activeLineWidth;
+		const group = append(container, $('div.annotation-tool-options-group'));
+		append(group, $('span.annotation-tool-options-label')).textContent = isText ? localize('textSize', "Text Size") : localize('strokeWidth', "Stroke Width");
+		const buttons = append(group, $('div.annotation-size-buttons'));
+		for (const value of values) {
+			const button = append(buttons, $('button.annotation-size-button')) as HTMLButtonElement;
+			button.textContent = `${value}`;
+			button.setAttribute('aria-label', isText ? localize('setTextSize', "Set Text Size to {0}px", value) : localize('setStrokeWidth', "Set Stroke Width to {0}px", value));
+			button.setAttribute('aria-pressed', String(value === selectedValue));
+			button.classList.toggle('active', value === selectedValue);
+			this.toolOptionsDisposables.add(addDisposableListener(button, EventType.CLICK, e => {
+				e.stopPropagation();
+				if (isText) {
+					this.activeFontSize = value;
+				} else {
+					this.activeLineWidth = value;
+				}
+				this.applyToolOptionsToTextEdit();
+				this.renderToolOptions();
+				this.redraw();
+			}));
+		}
+	}
+
+	private appendOpacityOptions(container: HTMLElement): void {
+		const group = append(container, $('div.annotation-tool-options-group.annotation-opacity-options'));
+		const label = append(group, $('label.annotation-tool-options-label'));
+		label.textContent = localize('opacity', "Opacity");
+		const input = append(group, $('input.annotation-opacity-slider')) as HTMLInputElement;
+		input.type = 'range';
+		input.min = '20';
+		input.max = '100';
+		input.step = '10';
+		input.value = `${Math.round(this.activeOpacity * 100)}`;
+		input.setAttribute('aria-label', localize('setOpacity', "Set Opacity"));
+		const value = append(group, $('span.annotation-opacity-value'));
+		value.textContent = `${input.value}%`;
+		this.toolOptionsDisposables.add(addDisposableListener(input, EventType.INPUT, e => {
+			e.stopPropagation();
+			this.activeOpacity = Number(input.value) / 100;
+			value.textContent = `${input.value}%`;
+			this.applyToolOptionsToTextEdit();
+			this.redraw();
+		}));
+	}
+
+	private applyToolOptionsToTextEdit(): void {
+		if (!this.textEditState) {
+			return;
+		}
+		this.textEditState.strokeColor = this.activeStrokeColor;
+		this.textEditState.fillColor = this.activeFillColor;
+		this.textEditState.opacity = this.activeOpacity;
+		this.textEditState.fontSize = this.activeFontSize;
+	}
+
+	private showToolOptions(anchor: HTMLElement): void {
+		if (!this.toolOptionsPopover || !this.hasToolOptions(this.activeTool)) {
+			this.hideToolOptions();
+			return;
+		}
+		this.renderToolOptions();
+		const containerRect = this.container.getBoundingClientRect();
+		const anchorRect = anchor.getBoundingClientRect();
+		this.toolOptionsPopover.style.top = `${anchorRect.bottom - containerRect.top + 6}px`;
+		this.toolOptionsPopover.style.display = 'flex';
+		const halfWidth = this.toolOptionsPopover.offsetWidth / 2;
+		const desiredLeft = anchorRect.left + anchorRect.width / 2 - containerRect.left;
+		const minLeft = halfWidth + 8;
+		const maxLeft = Math.max(minLeft, containerRect.width - halfWidth - 8);
+		this.toolOptionsPopover.style.left = `${Math.min(Math.max(desiredLeft, minLeft), maxLeft)}px`;
+	}
+
+	private hideToolOptions(): void {
+		if (this.toolOptionsPopover) {
+			this.toolOptionsPopover.style.display = 'none';
+		}
+	}
+
+	private hasToolOptions(tool: AnnotationTool): boolean {
+		return tool === AnnotationTool.Freehand
+			|| tool === AnnotationTool.Rectangle
+			|| tool === AnnotationTool.Ellipse
+			|| tool === AnnotationTool.Arrow
+			|| tool === AnnotationTool.Text;
 	}
 
 	private setActiveTool(tool: AnnotationTool): void {
@@ -467,6 +566,7 @@ export class ScreenshotAnnotationEditor {
 
 		// Special handling for Crop: enter crop mode (don't change activeTool to Crop persistently)
 		if (tool === AnnotationTool.Crop) {
+			this.hideToolOptions();
 			this.enterCropMode();
 			return;
 		}
@@ -475,9 +575,17 @@ export class ScreenshotAnnotationEditor {
 		this.selectedActionIndex = -1;
 		for (const tb of this.toolButtons) {
 			tb.element.classList.toggle('active', tb.tool === tool);
+			tb.element.setAttribute('aria-pressed', String(tb.tool === tool));
+		}
+		const activeToolButton = this.toolButtons.find(tb => tb.tool === tool)?.element;
+		if (activeToolButton && this.hasToolOptions(tool)) {
+			this.showToolOptions(activeToolButton);
+		} else {
+			this.hideToolOptions();
 		}
 		this.canvas.style.cursor = tool === AnnotationTool.Select ? 'default' :
-			tool === AnnotationTool.Pan ? 'grab' : 'crosshair';
+			tool === AnnotationTool.Pan ? 'grab' :
+				tool === AnnotationTool.Eraser ? 'url("data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewport=\'0 0 24 24\'><circle cx=\'12\' cy=\'12\' r=\'9\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/><circle cx=\'12\' cy=\'12\' r=\'9\' fill=\'none\' stroke=\'%23000\' stroke-width=\'1\' stroke-dasharray=\'2 2\'/></svg>") 12 12, cell' : 'crosshair';
 		this.redraw();
 	}
 
@@ -702,6 +810,14 @@ export class ScreenshotAnnotationEditor {
 			return;
 		}
 
+		// Eraser removes annotations that intersect the pointer path.
+		if (this.activeTool === AnnotationTool.Eraser) {
+			this.isErasing = true;
+			this.canvas.setPointerCapture(e.pointerId);
+			this.eraseAt(pos);
+			return;
+		}
+
 		// Pan tool
 		if (this.activeTool === AnnotationTool.Pan) {
 			this.isPanning = true;
@@ -718,32 +834,38 @@ export class ScreenshotAnnotationEditor {
 			case AnnotationTool.Freehand:
 				this.currentAction = {
 					type: AnnotationTool.Freehand,
-					color: this.activeColor,
-					lineWidth: 3,
+					strokeColor: this.activeStrokeColor,
+					opacity: this.activeOpacity,
+					lineWidth: this.activeLineWidth,
 					points: [pos],
 				};
 				break;
 			case AnnotationTool.Rectangle:
 				this.currentAction = {
 					type: AnnotationTool.Rectangle,
-					color: this.activeColor,
-					lineWidth: 2,
+					strokeColor: this.activeStrokeColor,
+					fillColor: this.activeFillColor,
+					opacity: this.activeOpacity,
+					lineWidth: this.activeLineWidth,
 					rect: { x: pos.x, y: pos.y, width: 0, height: 0 },
 				};
 				break;
 			case AnnotationTool.Ellipse:
 				this.currentAction = {
 					type: AnnotationTool.Ellipse,
-					color: this.activeColor,
-					lineWidth: 2,
+					strokeColor: this.activeStrokeColor,
+					fillColor: this.activeFillColor,
+					opacity: this.activeOpacity,
+					lineWidth: this.activeLineWidth,
 					ellipseRect: { x: pos.x, y: pos.y, width: 0, height: 0 },
 				};
 				break;
 			case AnnotationTool.Arrow:
 				this.currentAction = {
 					type: AnnotationTool.Arrow,
-					color: this.activeColor,
-					lineWidth: 2,
+					strokeColor: this.activeStrokeColor,
+					opacity: this.activeOpacity,
+					lineWidth: this.activeLineWidth,
 					arrowStart: pos,
 					arrowEnd: pos,
 				};
@@ -804,6 +926,12 @@ export class ScreenshotAnnotationEditor {
 			const pos = this.canvasCoords(e);
 			this.textPlacementState.current = pos;
 			this.redraw();
+			return;
+		}
+
+		if (this.isErasing) {
+			const pos = this.canvasCoords(e);
+			this.eraseAt(pos);
 			return;
 		}
 
@@ -894,6 +1022,23 @@ export class ScreenshotAnnotationEditor {
 			return;
 		}
 
+		if (this.isErasing) {
+			this.isErasing = false;
+			this.canvas.releasePointerCapture(e.pointerId);
+			if (this.pendingEraseActions.length > 0) {
+				this.actions.push({
+					type: AnnotationTool.Eraser,
+					strokeColor: '',
+					opacity: 1,
+					lineWidth: 0,
+					erasedActions: this.pendingEraseActions.slice(),
+				});
+				this.pendingEraseActions = [];
+				this.undoneActions.length = 0;
+			}
+			return;
+		}
+
 		if (this.textPlacementState) {
 			const { start, current, pointerId } = this.textPlacementState;
 			if (pointerId === e.pointerId) {
@@ -927,6 +1072,17 @@ export class ScreenshotAnnotationEditor {
 		this.redraw();
 	}
 
+	private eraseAt(pos: { x: number; y: number }): void {
+		const hitIndex = this.hitTest(pos);
+		if (hitIndex < 0) {
+			return;
+		}
+		const [erased] = this.actions.splice(hitIndex, 1);
+		this.pendingEraseActions.push(erased);
+		this.selectedActionIndex = -1;
+		this.redraw();
+	}
+
 	private undo(): void {
 		if (this.textPlacementState) {
 			this.cancelTextPlacement();
@@ -938,6 +1094,10 @@ export class ScreenshotAnnotationEditor {
 		}
 		const action = this.actions.pop();
 		if (action) {
+			if (action.type === AnnotationTool.Eraser && action.erasedActions) {
+				// Re-insert all erased actions (in original order) before pushing to redo stack.
+				this.actions.push(...action.erasedActions);
+			}
 			this.undoneActions.push(action);
 			this.redraw();
 		} else if (this.imageHistory.length > 0) {
@@ -965,6 +1125,15 @@ export class ScreenshotAnnotationEditor {
 		}
 		const action = this.undoneActions.pop();
 		if (action) {
+			if (action.type === AnnotationTool.Eraser && action.erasedActions) {
+				// Re-apply the erase: remove the re-inserted actions by reference.
+				for (const erased of action.erasedActions) {
+					const idx = this.actions.indexOf(erased);
+					if (idx >= 0) {
+						this.actions.splice(idx, 1);
+					}
+				}
+			}
 			this.actions.push(action);
 			this.redraw();
 		}
@@ -1096,7 +1265,9 @@ export class ScreenshotAnnotationEditor {
 			pos,
 			text: '',
 			caretIndex: 0,
-			color: this.activeColor,
+			strokeColor: this.activeStrokeColor,
+			fillColor: this.activeFillColor,
+			opacity: this.activeOpacity,
 			fontSize: this.activeFontSize,
 			fontFamily: this.activeFontFamily,
 			width,
@@ -1172,12 +1343,14 @@ export class ScreenshotAnnotationEditor {
 			return;
 		}
 
-		const { text, pos, color, fontFamily, fontSize, width } = this.textEditState;
+		const { text, pos, strokeColor, fillColor, opacity, fontFamily, fontSize, width } = this.textEditState;
 		this.cleanupTextEditor();
 		if (text.trim()) {
 			this.actions.push({
 				type: AnnotationTool.Text,
-				color,
+				strokeColor,
+				fillColor,
+				opacity,
 				lineWidth: 1,
 				fontSize,
 				fontFamily,
@@ -1312,9 +1485,15 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private drawAction(action: DrawAction): void {
+		// Erase-batch records are undo sentinels; nothing to draw.
+		if (action.type === AnnotationTool.Eraser) {
+			return;
+		}
 		this.ctx.save();
-		this.ctx.strokeStyle = action.color;
-		this.ctx.fillStyle = action.color;
+		const fillColor = action.fillColor ?? 'transparent';
+		this.ctx.globalAlpha = action.opacity;
+		this.ctx.strokeStyle = action.strokeColor;
+		this.ctx.fillStyle = this.isTransparent(fillColor) ? action.strokeColor : fillColor;
 		this.ctx.lineWidth = action.lineWidth * this.scale;
 		this.ctx.lineCap = 'round';
 		this.ctx.lineJoin = 'round';
@@ -1333,6 +1512,14 @@ export class ScreenshotAnnotationEditor {
 
 			case AnnotationTool.Rectangle:
 				if (action.rect) {
+					if (!this.isTransparent(fillColor)) {
+						this.ctx.fillRect(
+							action.rect.x * this.scale,
+							action.rect.y * this.scale,
+							action.rect.width * this.scale,
+							action.rect.height * this.scale,
+						);
+					}
 					this.ctx.strokeRect(
 						action.rect.x * this.scale,
 						action.rect.y * this.scale,
@@ -1351,6 +1538,9 @@ export class ScreenshotAnnotationEditor {
 					const ry = Math.abs(r.height / 2) * this.scale;
 					this.ctx.beginPath();
 					this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+					if (!this.isTransparent(fillColor)) {
+						this.ctx.fill();
+					}
 					this.ctx.stroke();
 				}
 				break;
@@ -1373,6 +1563,16 @@ export class ScreenshotAnnotationEditor {
 					const width = (action.textWidth ?? DEFAULT_TEXT_BOX_WIDTH) * this.scale;
 					this.ctx.font = `${fontSize}px ${fontFamily}`;
 					this.ctx.textBaseline = 'alphabetic';
+					if (!this.isTransparent(fillColor)) {
+						const layout = this.measureWrappedText(action.text, width, fontSize, fontFamily);
+						this.ctx.fillRect(
+							action.textPos.x * this.scale,
+							action.textPos.y * this.scale - fontSize,
+							width,
+							Math.max(layout.height, fontSize * 1.2),
+						);
+					}
+					this.ctx.fillStyle = action.strokeColor;
 					this.drawWrappedText(action.text, action.textPos.x * this.scale, action.textPos.y * this.scale, width, fontSize, fontFamily);
 				}
 				break;
@@ -1386,15 +1586,27 @@ export class ScreenshotAnnotationEditor {
 			return;
 		}
 
-		const { pos, text, color, fontFamily, fontSize, caretIndex, width, showBoxOutline } = this.textEditState;
+		const { pos, text, strokeColor, fillColor, opacity, fontFamily, fontSize, caretIndex, width, showBoxOutline } = this.textEditState;
 		const scaledFontSize = fontSize * this.scale;
 		const scaledWidth = width * this.scale;
 		this.ctx.save();
-		this.ctx.fillStyle = color;
-		this.ctx.strokeStyle = color;
+		this.ctx.globalAlpha = opacity;
+		this.ctx.fillStyle = strokeColor;
+		this.ctx.strokeStyle = strokeColor;
 		this.ctx.lineWidth = Math.max(1, this.scale);
 		this.ctx.font = `${scaledFontSize}px ${fontFamily}`;
 		this.ctx.textBaseline = 'alphabetic';
+		if (!this.isTransparent(fillColor)) {
+			const layout = this.measureWrappedText(text, scaledWidth, scaledFontSize, fontFamily);
+			this.ctx.fillStyle = fillColor;
+			this.ctx.fillRect(
+				pos.x * this.scale,
+				pos.y * this.scale - scaledFontSize,
+				scaledWidth,
+				Math.max(layout.height, scaledFontSize * 1.2),
+			);
+			this.ctx.fillStyle = strokeColor;
+		}
 		const layout = this.drawWrappedText(text, pos.x * this.scale, pos.y * this.scale, scaledWidth, scaledFontSize, fontFamily);
 
 		if (showBoxOutline) {
@@ -1419,6 +1631,10 @@ export class ScreenshotAnnotationEditor {
 			this.ctx.stroke();
 		}
 		this.ctx.restore();
+	}
+
+	private isTransparent(color: string): boolean {
+		return color === 'transparent';
 	}
 
 	private drawTextPlacementState(): void {
@@ -1596,7 +1812,10 @@ export class ScreenshotAnnotationEditor {
 					const dx = (pos.x - cx) / rx;
 					const dy = (pos.y - cy) / ry;
 					const dist = Math.sqrt(dx * dx + dy * dy);
-					// Check if point is near the ellipse border (dist ≈ 1)
+					if (!this.isTransparent(action.fillColor ?? 'transparent')) {
+						return dist <= 1 + threshold / Math.min(rx, ry);
+					}
+					// Check if point is near the ellipse border (dist around 1)
 					const normalizedThreshold = threshold / Math.min(rx, ry);
 					return Math.abs(dist - 1) < normalizedThreshold;
 				}
@@ -1781,26 +2000,34 @@ export class ScreenshotAnnotationEditor {
 	}
 
 	private drawArrow(fromX: number, fromY: number, toX: number, toY: number): void {
-		const headLength = 12 * this.scale;
-		const angle = Math.atan2(toY - fromY, toX - fromX);
+		const dx = toX - fromX;
+		const dy = toY - fromY;
+		const length = Math.hypot(dx, dy);
+		if (length === 0) {
+			return;
+		}
+
+		const unitX = dx / length;
+		const unitY = dy / length;
+		const normalX = -unitY;
+		const normalY = unitX;
+		const lineWidth = this.ctx.lineWidth;
+		const headLength = Math.min(Math.max(12 * this.scale, lineWidth * 3), length);
+		const headWidth = Math.max(10 * this.scale, lineWidth * 2.5);
+		const baseX = toX - unitX * headLength;
+		const baseY = toY - unitY * headLength;
 
 		this.ctx.beginPath();
 		this.ctx.moveTo(fromX, fromY);
-		this.ctx.lineTo(toX, toY);
+		this.ctx.lineTo(baseX, baseY);
 		this.ctx.stroke();
 
-		// Arrowhead
 		this.ctx.beginPath();
 		this.ctx.moveTo(toX, toY);
-		this.ctx.lineTo(
-			toX - headLength * Math.cos(angle - Math.PI / 6),
-			toY - headLength * Math.sin(angle - Math.PI / 6),
-		);
-		this.ctx.lineTo(
-			toX - headLength * Math.cos(angle + Math.PI / 6),
-			toY - headLength * Math.sin(angle + Math.PI / 6),
-		);
+		this.ctx.lineTo(baseX + normalX * headWidth / 2, baseY + normalY * headWidth / 2);
+		this.ctx.lineTo(baseX - normalX * headWidth / 2, baseY - normalY * headWidth / 2);
 		this.ctx.closePath();
+		this.ctx.fillStyle = this.ctx.strokeStyle;
 		this.ctx.fill();
 	}
 
@@ -1859,6 +2086,7 @@ export class ScreenshotAnnotationEditor {
 		this.cancelTextPlacement();
 		this.cleanupTextEditor();
 		this.container.remove();
+		this.toolOptionsDisposables.dispose();
 		this.disposables.dispose();
 		this._onDidSave.dispose();
 		this._onDidCancel.dispose();

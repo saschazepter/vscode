@@ -1265,44 +1265,113 @@
 	position: relative;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .color-indicator {
-	width: 16px;
-	height: 16px;
-	border-radius: 3px;
-	border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.issue-reporter-annotation-overlay .annotation-toolbar .color-popover {
+.issue-reporter-annotation-overlay .annotation-tool-options-popover {
 	position: absolute;
-	top: 34px;
+	transform: translateX(-50%);
 	display: flex;
-	gap: 4px;
-	padding: 6px;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
 	background: var(--vscode-editorWidget-background, #2d2d2d);
 	border: 1px solid var(--vscode-editorWidget-border, #555);
-	border-radius: 4px;
+	border-radius: 6px;
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-	z-index: 1;
-	flex-wrap: wrap;
-	width: 130px;
+	z-index: 4;
+	min-width: 220px;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .color-swatch {
+.issue-reporter-annotation-overlay .annotation-tool-options-popover::before {
+	content: '';
+	position: absolute;
+	top: -6px;
+	left: 50%;
+	transform: translateX(-50%) rotate(45deg);
+	width: 10px;
+	height: 10px;
+	background: var(--vscode-editorWidget-background, #2d2d2d);
+	border-left: 1px solid var(--vscode-editorWidget-border, #555);
+	border-top: 1px solid var(--vscode-editorWidget-border, #555);
+}
+
+.issue-reporter-annotation-overlay .annotation-tool-options-group {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.issue-reporter-annotation-overlay .annotation-tool-options-label {
+	color: var(--vscode-descriptionForeground, #999);
+	font-size: 11px;
+	min-width: 76px;
+}
+
+.issue-reporter-annotation-overlay .annotation-color-swatches,
+.issue-reporter-annotation-overlay .annotation-size-buttons {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.issue-reporter-annotation-overlay .annotation-color-swatch {
 	width: 22px;
 	height: 22px;
 	border-radius: 50%;
 	cursor: pointer;
 	border: 2px solid transparent;
 	flex-shrink: 0;
+	padding: 0;
+	background-clip: padding-box;
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .color-swatch:hover {
+.issue-reporter-annotation-overlay .annotation-color-swatch.transparent {
+	background:
+		linear-gradient(45deg, transparent 46%, #d04b4b 48%, #d04b4b 52%, transparent 54%),
+		linear-gradient(45deg, #858585 25%, transparent 25%, transparent 75%, #858585 75%),
+		linear-gradient(45deg, #858585 25%, transparent 25%, transparent 75%, #858585 75%);
+	background-color: #fff;
+	background-position: 0 0, 0 0, 5px 5px;
+	background-size: 100% 100%, 10px 10px, 10px 10px;
+}
+
+.issue-reporter-annotation-overlay .annotation-color-swatch:hover,
+.issue-reporter-annotation-overlay .annotation-size-button:hover {
 	border-color: rgba(255, 255, 255, .5);
 }
 
-.issue-reporter-annotation-overlay .annotation-toolbar .color-swatch.active {
+.issue-reporter-annotation-overlay .annotation-color-swatch.active,
+.issue-reporter-annotation-overlay .annotation-size-button.active {
 	border-color: #fff;
 	box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+}
+
+.issue-reporter-annotation-overlay .annotation-size-button {
+	min-width: 28px;
+	height: 24px;
+	border-radius: 4px;
+	border: 1px solid transparent;
+	background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.08));
+	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #ccc));
+	cursor: pointer;
+	font-size: 11px;
+	padding: 0 6px;
+}
+
+.issue-reporter-annotation-overlay .annotation-opacity-options {
+	align-items: center;
+}
+
+.issue-reporter-annotation-overlay .annotation-opacity-slider {
+	flex: 1;
+	min-width: 92px;
+}
+
+.issue-reporter-annotation-overlay .annotation-opacity-value {
+	color: var(--vscode-descriptionForeground, #999);
+	font-size: 11px;
+	width: 34px;
+	text-align: right;
 }
 
 .issue-reporter-annotation-overlay .annotation-hint {
@@ -1325,22 +1394,6 @@
 
 .issue-reporter-annotation-overlay .annotation-canvas-container canvas {
 	cursor: crosshair;
-}
-
-/* Toolbar selects (font family / size) */
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container {
-	min-width: 120px;
-	margin: 0 2px;
-}
-
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container-small {
-	min-width: 72px;
-	margin: 0 2px;
-}
-
-.issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container .monaco-select-box {
-	min-height: 26px;
-	padding: 2px 23px 2px 8px;
 }
 
 .issue-reporter-annotation-overlay .annotation-toolbar .crop-btn {

@@ -200,6 +200,9 @@ export class IssueReporterEditorPane extends EditorPane {
 				});
 
 				this.wizard.addScreenshot({ dataUrl, width: img.naturalWidth, height: img.naturalHeight });
+
+				// Bring the issue reporter tab back into focus after the capture.
+				this.group.focus();
 			} catch (err) {
 				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
 				this.logService.error('[IssueReporterEditorPane] Screenshot failed:', err);
@@ -329,12 +332,6 @@ export class IssueReporterEditorPane extends EditorPane {
 				this.wizard?.resetGenerateButton();
 			}
 		}));
-	}
-
-	override clearInput(): void {
-		// Hide floating bar when input is cleared (e.g., editor moved to another window)
-		this.wizard?.hideFloatingBar();
-		super.clearInput();
 	}
 
 	private async populateSystemInfo(): Promise<void> {
