@@ -211,7 +211,7 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 			return undefined;
 		}
 
-		const hostExtensionsHome = this.environmentService.hostExtensionsHome;
+		const hostExtensionsHome = this.environmentService.parentAppExtensionsHome;
 		if (!hostExtensionsHome) {
 			return undefined;
 		}
@@ -246,7 +246,7 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 	}
 
 	private async _readVSCodeThemeId(): Promise<string | undefined> {
-		const hostDataHome = this.environmentService.hostUserRoamingDataHome;
+		const hostDataHome = this.environmentService.parentAppUserRoamingDataHome;
 		if (!hostDataHome) {
 			return undefined;
 		}

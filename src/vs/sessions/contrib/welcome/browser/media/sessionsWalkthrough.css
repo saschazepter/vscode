@@ -36,7 +36,7 @@
 .sessions-walkthrough-card {
 	display: flex;
 	flex-direction: column;
-	width: 640px;
+	width: 1000px;
 	max-width: calc(100vw - 64px);
 	max-height: calc(100vh - 80px);
 	text-align: left;
@@ -504,21 +504,26 @@
 
 .sessions-walkthrough-theme-preview {
 	overflow: hidden;
+	min-height: 140px;
 }
 
 .sessions-walkthrough-theme-preview-img {
 	display: block;
 	width: 100%;
 	height: auto;
+	transform: scale(2);
+	transform-origin: top left;
 }
 
 .sessions-walkthrough-vscode-theme-option {
 	display: flex;
 	justify-content: center;
 	width: 100%;
+	margin-top: 24px;
 }
 
 .sessions-walkthrough-vscode-theme-radio {
+	min-width: 400px;
 	padding: 8px 20px;
 	border-radius: 8px;
 	border: 2px solid var(--vscode-radio-inactiveBorder, var(--vscode-widget-border, rgba(255, 255, 255, 0.1)));

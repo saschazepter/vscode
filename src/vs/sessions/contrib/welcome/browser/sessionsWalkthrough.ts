@@ -429,7 +429,6 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				isVSCodeThemeSelected = true;
 
 				// Preview the theme (temporary install from host location)
-				vscodeThemeBtn!.textContent = localize('walkthrough.theme.importing', "Importing theme\u2026");
 				previewDisposable?.dispose();
 				previewDisposable = await this.vsCodeThemeImporter.previewVSCodeTheme();
 				vscodeThemeBtn!.textContent = labelText;
