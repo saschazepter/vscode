@@ -13,7 +13,6 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
@@ -45,7 +44,6 @@ export class ScopedWorkspacePicker extends WorkspacePicker {
 		@IMenuService menuService: IMenuService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextViewService contextViewService: IContextViewService,
 		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
 	) {
 		super(
@@ -60,7 +58,6 @@ export class ScopedWorkspacePicker extends WorkspacePicker {
 			menuService,
 			contextKeyService,
 			instantiationService,
-			contextViewService,
 		);
 
 		// When the scoped host changes, if the current selection no longer

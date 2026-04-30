@@ -1262,7 +1262,6 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		this.browseActions = [
 			{
 				label: localize('folders', "Folders"),
-				description: localize('local', "Local"),
 				group: SESSION_WORKSPACE_GROUP_LOCAL,
 				icon: Codicon.folderOpened,
 				providerId: this.id,
@@ -1270,7 +1269,6 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			},
 			{
 				label: localize('repositories', "Repositories"),
-				description: localize('github', "GitHub"),
 				group: SESSION_WORKSPACE_GROUP_CLOUD,
 				icon: Codicon.library,
 				providerId: this.id,

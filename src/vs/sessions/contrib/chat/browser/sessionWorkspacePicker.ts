@@ -5,26 +5,24 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import * as touch from '../../../../base/browser/touch.js';
-import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
+import { IAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { disposableTimeout } from '../../../../base/common/async.js';
-import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { basename } from '../../../../base/common/resources.js';
 import { autorun } from '../../../../base/common/observable.js';
-import { KeyCode } from '../../../../base/common/keyCodes.js';
-import { Radio } from '../../../../base/browser/ui/radio/radio.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionList, ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
+import { TabbedActionListWidget } from '../../../../platform/actionWidget/browser/tabbedActionListWidget.js';
 import { IMenuService, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { TUNNEL_ADDRESS_PREFIX } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
@@ -94,6 +92,8 @@ interface IStoredRecentWorkspace {
 export interface IWorkspacePickerItem {
 	readonly selection?: IWorkspaceSelection;
 	readonly browseActionIndex?: number;
+	/** Index into the picker's per-render "manage" action list. */
+	readonly manageActionIndex?: number;
 	readonly checked?: boolean;
 	/** Command to execute when this item is selected. */
 	readonly commandId?: string;
@@ -132,15 +132,14 @@ export class WorkspacePicker extends Disposable {
 
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
-	private readonly _pickerDisposables = this._register(new MutableDisposable());
+	private readonly _tabbedWidget: TabbedActionListWidget;
 
 	/**
-	 * True while we are tearing down a tabbed popup only to immediately
-	 * re-render it with a different active tab. Suppresses the trigger
-	 * re-focus and outside-click teardown cascades that would otherwise
-	 * dismiss the freshly-shown popup.
+	 * Snapshot of "manage" actions (remote provider rows + menu-contributed
+	 * actions) for the currently displayed item list. The delegate dispatches
+	 * by index when a manage row is selected.
 	 */
-	private _swappingTab = false;
+	private _currentManageActions: readonly IAction[] = [];
 
 	/**
 	 * Currently active workspace tab (a group label contributed by a
@@ -174,9 +173,10 @@ export class WorkspacePicker extends Disposable {
 		@IMenuService private readonly menuService: IMenuService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
+
+		this._tabbedWidget = this._register(this.instantiationService.createInstance(TabbedActionListWidget));
 
 		// Migrate legacy storage to new key
 		this._migrateLegacyStorage();
@@ -225,7 +225,7 @@ export class WorkspacePicker extends Disposable {
 		// selection's category. Clears (`undefined`) are ignored so the
 		// previously-active tab is preserved.
 		this._register(this.onDidSelectWorkspace(selection => {
-			if (selection && !this.actionWidgetService.isVisible && !this._pickerDisposables.value) {
+			if (selection && !this.actionWidgetService.isVisible && !this._tabbedWidget.isVisible) {
 				this._userPickedTab = false;
 			}
 		}));
@@ -279,7 +279,7 @@ export class WorkspacePicker extends Disposable {
 		if (!this._triggerElement) {
 			return;
 		}
-		const alreadyVisible = this.actionWidgetService.isVisible || !!this._pickerDisposables.value;
+		const alreadyVisible = this.actionWidgetService.isVisible || this._tabbedWidget.isVisible;
 		if (!force && alreadyVisible) {
 			return;
 		}
@@ -360,16 +360,13 @@ export class WorkspacePicker extends Disposable {
 				}
 				if (item.browseActionIndex !== undefined) {
 					this._executeBrowseAction(item.browseActionIndex);
+				} else if (item.manageActionIndex !== undefined) {
+					this._currentManageActions[item.manageActionIndex]?.run();
 				} else if (item.selection) {
 					this._selectProject(item.selection);
 				}
 			},
 			onHide: () => {
-				// Suppressed during tab swaps so we don't move focus back to
-				// the trigger between hide and show.
-				if (this._swappingTab) {
-					return;
-				}
 				triggerElement.setAttribute('aria-expanded', 'false');
 				triggerElement.focus();
 			},
@@ -391,7 +388,7 @@ export class WorkspacePicker extends Disposable {
 	private _showFlatPicker(): void {
 		// Tear down any previous tabbed popup before delegating to the
 		// shared service — the two presentations don't co-exist.
-		this._pickerDisposables.value = undefined;
+		this._tabbedWidget.hide();
 		const triggerElement = this._triggerElement!;
 		const items = this._buildItems();
 		const delegate = this._buildDelegate(triggerElement, () => this._hidePicker());
@@ -414,190 +411,44 @@ export class WorkspacePicker extends Disposable {
 	}
 
 	/**
-	 * Tabbed presentation. The picker owns its own `IContextViewService`
-	 * popup and composes an `ActionList` directly so the tab bar and the
-	 * list live as siblings inside the same overlay. This keeps the action
-	 * widget service untouched.
+	 * Tabbed presentation. Delegates rendering and lifecycle to the
+	 * platform `TabbedActionListWidget`; this picker only owns the data
+	 * and selection logic.
 	 */
 	private _showTabbedPicker(tabs: readonly string[]): void {
 		const triggerElement = this._triggerElement!;
-		const items = this._buildItems();
-		const listOptions = this._buildListOptions(items, TABBED_PICKER_WIDTH);
-
-		// Tear down any previous popup before showing the new one. For a
-		// tabbed-to-tabbed swap, `_swappingTab` suppresses the cascading
-		// hide that would otherwise dismiss the popup we are about to show
-		// (see `_buildDelegate` and the focus-tracker block below).
-		const isSwap = !!this._pickerDisposables.value;
-		if (isSwap) {
-			this._swappingTab = true;
-			this._pickerDisposables.value = undefined;
-		}
+		// Hide the flat picker if it's visible — the two presentations
+		// don't co-exist.
 		if (this.actionWidgetService.isVisible) {
 			this.actionWidgetService.hide();
 		}
 
-		const hide = () => {
-			this._pickerDisposables.value = undefined;
-		};
-		const delegate = this._buildDelegate(triggerElement, hide);
-
-		let listRef: ActionList<IWorkspacePickerItem> | undefined;
+		const delegate = this._buildDelegate(triggerElement, () => this._hidePicker());
 		const accessibilityProvider = {
 			getAriaLabel: (item: IActionListItem<IWorkspacePickerItem>) => item.label ?? '',
 			getWidgetAriaLabel: () => localize('workspacePicker.ariaLabel', "Workspace Picker"),
 		};
 
-		// Reserve the disposable slot up-front so any synchronous hide
-		// triggered during `render` (e.g. an immediate selection) finds the
-		// expected disposable to clear, instead of a stale one assigned
-		// after `showContextView` returns.
-		this._pickerDisposables.value = toDisposable(() => {
-			this.contextViewService.hideContextView();
-		});
-
 		triggerElement.setAttribute('aria-expanded', 'true');
-		this.contextViewService.showContextView({
-			getAnchor: () => triggerElement,
-			render: (container: HTMLElement) => {
-				const renderDisposables = new DisposableStore();
-
-				const widget = dom.append(container, dom.$('.action-widget'));
-
-				// Tab bar is rendered as the first child inside the popup so
-				// it visually belongs to the dropdown. The picker owns the
-				// element and listeners; nothing leaks into the action
-				// widget service or platform layer.
-				const tabBar = dom.append(widget, dom.$('.sessions-workspace-picker-tabbar'));
-				const radio = renderDisposables.add(new Radio({
-					items: tabs.map(t => ({ text: t, tooltip: t, isActive: t === this._activeTab })),
-				}));
-				tabBar.appendChild(radio.domNode);
-
-				const activateTab = (next: string) => {
-					if (next === this._activeTab) {
-						return;
-					}
-					this._activeTab = next;
-					this._userPickedTab = true;
-					this.showPicker(true);
-				};
-
-				renderDisposables.add(radio.onDidSelect(index => {
-					const next = tabs[index];
-					if (next) {
-						activateTab(next);
-					}
-				}));
-
-				// Build the action list directly via DI — same constructor
-				// the action widget service uses internally.
-				const list = renderDisposables.add(this.instantiationService.createInstance(
-					ActionList<IWorkspacePickerItem>,
-					'workspacePicker',
-					false,
-					items,
-					delegate,
-					accessibilityProvider,
-					listOptions,
-					triggerElement,
-				));
-				listRef = list;
-
-				if (list.filterContainer) {
-					widget.appendChild(list.filterContainer);
-				}
-				widget.appendChild(list.domNode);
-
-				const width = list.layout(0);
-				widget.style.width = `${width}px`;
-				list.focus();
-
-				// Keyboard nav for the popup. We re-implement what the
-				// `IActionWidgetService` registers as global Action2
-				// keybindings (Escape / Enter / Up / Down / Left / Right)
-				// since our tabbed popup bypasses that service entirely.
-				// Bound to `widget` rather than the document so we don't
-				// observe unrelated keypresses while the popup is open.
-				renderDisposables.add(dom.addStandardDisposableListener(widget, 'keydown', e => {
-					const target = e.target as HTMLElement | null;
-					const onTabBar = !!target?.closest('.sessions-workspace-picker-tabbar');
-					const onEditable = !!target?.closest('input, textarea, [contenteditable="true"]');
-
-					if (e.keyCode === KeyCode.Escape) {
-						dom.EventHelper.stop(e, true);
-						hide();
-						return;
-					}
-					if (e.keyCode === KeyCode.Enter) {
-						if (!onTabBar) {
-							dom.EventHelper.stop(e, true);
-							list.acceptSelected();
-						}
-						return;
-					}
-					if (e.keyCode === KeyCode.UpArrow) {
-						if (!onTabBar) {
-							dom.EventHelper.stop(e, true);
-							list.focusPrevious();
-						}
-						return;
-					}
-					if (e.keyCode === KeyCode.DownArrow) {
-						if (!onTabBar) {
-							dom.EventHelper.stop(e, true);
-							list.focusNext();
-						}
-						return;
-					}
-					if (e.keyCode !== KeyCode.LeftArrow && e.keyCode !== KeyCode.RightArrow) {
-						return;
-					}
-					if (onEditable && !onTabBar) {
-						return;
-					}
-					const currentIndex = tabs.indexOf(this._activeTab ?? tabs[0]);
-					if (currentIndex < 0) {
-						return;
-					}
-					const delta = e.keyCode === KeyCode.RightArrow ? 1 : -1;
-					const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
-					e.preventDefault();
-					e.stopPropagation();
-					activateTab(tabs[nextIndex]);
-				}));
-
-				// Dismiss when focus leaves the popup (mirrors the
-				// `IActionWidgetService` behavior for outside clicks /
-				// focus loss). Suppressed during tab swaps so the brief
-				// teardown of the previous popup doesn't take the new one
-				// down with it.
-				const focusTracker = renderDisposables.add(dom.trackFocus(container));
-				renderDisposables.add(focusTracker.onDidBlur(() => {
-					if (this._swappingTab) {
-						return;
-					}
-					const activeElement = dom.getActiveElement();
-					if (activeElement && (activeElement.closest('.action-widget-hover') || activeElement.closest('.action-list-submenu-panel'))) {
-						return;
-					}
-					hide();
-				}));
-
-				return renderDisposables;
+		this._tabbedWidget.show<IWorkspacePickerItem>({
+			user: 'workspacePicker',
+			anchor: triggerElement,
+			tabs,
+			initialTab: this._activeTab ?? tabs[0],
+			buildItems: (tab) => {
+				this._activeTab = tab;
+				return this._buildItems();
 			},
-			onHide: () => {
-				delegate.onHide?.();
-				listRef = undefined;
+			delegate,
+			accessibilityProvider,
+			listOptions: this._buildListOptions(this._buildItems(), TABBED_PICKER_WIDTH),
+			width: TABBED_PICKER_WIDTH,
+			tabBarClassName: 'sessions-workspace-picker-tabbar',
+			onDidChangeTab: (tab) => {
+				this._activeTab = tab;
+				this._userPickedTab = true;
 			},
-			get anchorPosition() { return listRef?.anchorPosition; },
-		}, undefined, false);
-
-		// New popup is fully rendered — end the swap window so future
-		// outside-clicks / focus losses dismiss as expected.
-		if (isSwap) {
-			this._swappingTab = false;
-		}
+		});
 	}
 
 	/**
@@ -614,7 +465,7 @@ export class WorkspacePicker extends Disposable {
 	 * tabbed picker.
 	 */
 	private _hidePicker(): void {
-		this._pickerDisposables.value = undefined;
+		this._tabbedWidget.hide();
 		if (this.actionWidgetService.isVisible) {
 			this.actionWidgetService.hide();
 		}
@@ -781,10 +632,11 @@ export class WorkspacePicker extends Disposable {
 			});
 		});
 
-		// "Manage" submenu: dynamic remote provider entries + menu-contributed actions
-
-		// Dynamic remote provider entries
-		const remoteProviderActions: IAction[] = [];
+		// Inline "Manage" entries: dynamic remote provider rows + menu-contributed
+		// actions (Tunnels…, SSH…), separated from the workspace list above.
+		// The actions are tracked in a per-render array so the picker delegate
+		// can dispatch by index when an item is selected.
+		const manageActions: IAction[] = [];
 		if (includeManage) {
 			for (const provider of remoteProviders) {
 				const status = provider.connectionStatus!.get();
@@ -808,48 +660,40 @@ export class WorkspacePicker extends Disposable {
 						await this.remoteAgentHostService.removeRemoteAgentHost(address);
 					};
 				}
-				remoteProviderActions.push(action);
+				manageActions.push(action);
 			}
-		}
 
-		// Menu-contributed actions (e.g. Tunnels..., SSH...). Hidden when filtering
-		// to a single category — the contributed actions are global to the picker
-		// and would feel out of place inside a single-category tab.
-		const menuContributedActions: IAction[] = [];
-		if (includeManage) {
 			const menuActions = this.menuService.getMenuActions(Menus.SessionWorkspaceManage, this.contextKeyService, { renderShortTitle: true });
 			for (const [, actions] of menuActions) {
 				for (const menuAction of actions) {
 					if (menuAction instanceof MenuItemAction) {
 						const icon = ThemeIcon.isThemeIcon(menuAction.item.icon) ? menuAction.item.icon : undefined;
-						menuContributedActions.push(Object.assign(menuAction, { icon }));
+						manageActions.push(Object.assign(menuAction, { icon }));
 					}
 				}
 			}
 		}
 
-		// Build submenu groups — each SubmenuAction becomes a visual group with
-		// automatic separators between them.
-		const manageSubmenuActions: SubmenuAction[] = [];
-		if (remoteProviderActions.length > 0) {
-			manageSubmenuActions.push(new SubmenuAction('workspacePicker.manage.remotes', '', remoteProviderActions));
-		}
-		if (menuContributedActions.length > 0) {
-			manageSubmenuActions.push(new SubmenuAction('workspacePicker.manage.menu', '', menuContributedActions));
-		}
-
-		if (manageSubmenuActions.length > 0) {
+		if (manageActions.length > 0) {
 			if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator) {
 				items.push({ kind: ActionListItemKind.Separator, label: '' });
 			}
-			items.push({
-				kind: ActionListItemKind.Action,
-				label: localize('workspacePicker.manage', "Manage..."),
-				group: { title: '', icon: Codicon.settingsGear },
-				item: {},
-				submenuActions: manageSubmenuActions,
+			manageActions.forEach((action, index) => {
+				const extended = action as IAction & { icon?: ThemeIcon; hoverContent?: string; onRemove?: () => void };
+				items.push({
+					kind: ActionListItemKind.Action,
+					label: action.label,
+					tooltip: action.tooltip,
+					group: { title: '', icon: extended.icon ?? Codicon.settingsGear },
+					disabled: !action.enabled,
+					item: { manageActionIndex: index },
+					hover: extended.hoverContent ? { content: extended.hoverContent } : undefined,
+					onRemove: extended.onRemove,
+				});
 			});
 		}
+
+		this._currentManageActions = manageActions;
 
 		return items;
 	}
