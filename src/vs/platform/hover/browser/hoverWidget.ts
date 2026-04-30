@@ -42,6 +42,7 @@ const enum Constants {
 
 export class HoverWidget extends Widget implements IHoverWidget {
 	private readonly _messageListeners = new DisposableStore();
+	private _mouseTracker!: CompositeMouseTracker;
 	private readonly _lockMouseTracker: CompositeMouseTracker;
 
 	private readonly _hover: BaseHoverWidget;
@@ -268,7 +269,7 @@ export class HoverWidget extends Widget implements IHoverWidget {
 		if (!hideOnHover) {
 			mouseTrackerTargets.push(this._hoverContainer);
 		}
-		const mouseTracker = this._register(new CompositeMouseTracker(mouseTrackerTargets));
+		const mouseTracker = this._mouseTracker = this._register(new CompositeMouseTracker(mouseTrackerTargets));
 		this._register(mouseTracker.onMouseOut(() => {
 			if (!this._isLocked) {
 				this.dispose();
@@ -348,6 +349,14 @@ export class HoverWidget extends Widget implements IHoverWidget {
 	}
 
 	public layout() {
+		// Cancel any pending mouseout timers since the hover is being
+		// repositioned (e.g. due to content resize from collapsible sections).
+		// The mouse may end up back inside the hover after the layout.
+		this._mouseTracker?.suppressPendingMouseOut();
+		if (this._lockMouseTracker !== this._mouseTracker) {
+			this._lockMouseTracker?.suppressPendingMouseOut();
+		}
+
 		this._hover.containerDomNode.classList.remove('right-aligned');
 		this._hover.contentsDomNode.style.maxHeight = '';
 
@@ -708,6 +717,15 @@ class CompositeMouseTracker extends Widget {
 		if (!this._isMouseIn) {
 			this._onMouseOut.fire();
 		}
+	}
+
+	/**
+	 * Cancels any pending mouseout timer. Call this when tracked elements are
+	 * being resized or repositioned to avoid spurious dismissals caused by
+	 * the element shrinking away from the cursor.
+	 */
+	suppressPendingMouseOut(): void {
+		this._mouseTimer.clear();
 	}
 
 	/**
