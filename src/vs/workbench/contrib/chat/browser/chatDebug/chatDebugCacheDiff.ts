@@ -1,0 +1,281 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/**
+ * Pure helpers used by the Cache Explorer to compare two model-turn requests
+ * (A and B) and identify where the prompt prefix diverges.
+ *
+ * The engine works on the {@link IChatDebugEventModelTurnContent.sections}
+ * "Input Messages" section, which is a JSON-stringified array of
+ *   `[{ role, name?, parts: [{ type: 'text', content, name? }, ...] }]`
+ * matching the OpenTelemetry GenAI semantic convention used by
+ * `chatParticipantTelemetry.ts`.
+ *
+ * All functions are pure — no DOM, no services — so they can be unit tested
+ * in isolation.
+ */
+
+/**
+ * A normalized request message used by the diff engine.
+ */
+export interface INormalizedMessage {
+	readonly role: string;
+	readonly name?: string;
+	/** Concatenation of all `text` parts in the message. */
+	readonly text: string;
+	/** Byte length of `text` (utf-16 code unit count is a close-enough proxy in JS). */
+	readonly byteLength: number;
+}
+
+/** Classification of a single signature token when comparing A and B. */
+export const enum CacheDiffKind {
+	/** Same role+name and same byteLength in both A and B. */
+	Identical = 'identical',
+	/** Same role+name and same byteLength but different content. */
+	ContentDrift = 'contentDrift',
+	/** Same role+name but different byteLength. */
+	LengthChange = 'lengthChange',
+	/** Position exists only in A. */
+	OnlyInA = 'onlyInA',
+	/** Position exists only in B. */
+	OnlyInB = 'onlyInB',
+}
+
+/**
+ * A single token in the side-by-side prompt signature.
+ *
+ * The signature is computed by zipping A's and B's normalized messages
+ * positionally; if they diverge, every position from the divergence onward
+ * is reported as the appropriate non-identical kind.
+ */
+export interface ICacheSignatureToken {
+	readonly index: number;
+	readonly kind: CacheDiffKind;
+	readonly aRole?: string;
+	readonly aName?: string;
+	readonly aByteLength?: number;
+	readonly bRole?: string;
+	readonly bName?: string;
+	readonly bByteLength?: number;
+}
+
+/**
+ * The first place where A and B's prompt prefix diverges. Anything after
+ * this index cannot be served from the prompt cache.
+ */
+export interface ICacheBreak {
+	readonly index: number;
+	readonly kind: Exclude<CacheDiffKind, CacheDiffKind.Identical>;
+}
+
+/**
+ * A single drifting component (e.g. a message at index N).
+ */
+export interface IComponentDrift {
+	readonly name: string;
+	readonly role?: string;
+	readonly status: CacheDiffKind;
+	readonly aSize: number;
+	readonly bSize: number;
+}
+
+/**
+ * Aggregate result of comparing two requests.
+ */
+export interface ICacheDiffResult {
+	readonly signature: readonly ICacheSignatureToken[];
+	readonly break: ICacheBreak | undefined;
+	readonly drift: readonly IComponentDrift[];
+	/**
+	 * Counts of identical / drift / one-sided positions across the whole
+	 * signature. Useful for the summary pills.
+	 */
+	readonly counts: {
+		readonly identical: number;
+		readonly contentDrift: number;
+		readonly lengthChange: number;
+		readonly onlyInA: number;
+		readonly onlyInB: number;
+	};
+}
+
+interface IRawPart {
+	readonly type?: string;
+	readonly content?: string;
+	readonly name?: string;
+}
+
+interface IRawMessage {
+	readonly role?: string;
+	readonly name?: string;
+	readonly parts?: readonly IRawPart[];
+}
+
+/**
+ * Parse a JSON-encoded `inputMessages` payload into normalized messages.
+ *
+ * Returns an empty array on any parse error so callers can render a clear
+ * empty-state without try/catch boilerplate.
+ */
+export function parseInputMessages(inputMessagesJson: string | undefined): readonly INormalizedMessage[] {
+	if (!inputMessagesJson) {
+		return [];
+	}
+	let raw: unknown;
+	try {
+		raw = JSON.parse(inputMessagesJson);
+	} catch {
+		return [];
+	}
+	if (!Array.isArray(raw)) {
+		return [];
+	}
+
+	const out: INormalizedMessage[] = [];
+	for (const m of raw as readonly IRawMessage[]) {
+		if (!m || typeof m !== 'object') {
+			continue;
+		}
+		const role = typeof m.role === 'string' ? m.role : 'unknown';
+		const name = typeof m.name === 'string' ? m.name : undefined;
+		let text = '';
+		if (Array.isArray(m.parts)) {
+			for (const p of m.parts) {
+				if (p && typeof p === 'object' && (p.type === undefined || p.type === 'text') && typeof p.content === 'string') {
+					text += p.content;
+				}
+			}
+		}
+		out.push({ role, name, text, byteLength: text.length });
+	}
+	return out;
+}
+
+/**
+ * Returns true iff the two messages have the same role, name, and content.
+ */
+function messagesEqual(a: INormalizedMessage, b: INormalizedMessage): boolean {
+	return a.role === b.role && a.name === b.name && a.byteLength === b.byteLength && a.text === b.text;
+}
+
+/**
+ * Compute the per-position diff between two normalized message arrays.
+ *
+ * The algorithm is intentionally simple (positional zip) rather than a full
+ * Myers diff: prompt caches are prefix-based, so the moment two messages at
+ * the same index diverge in role, length, or content the cache breaks.
+ * Reporting that first divergence is far more useful than computing a
+ * minimum edit script.
+ */
+export function diffPromptSignature(a: readonly INormalizedMessage[], b: readonly INormalizedMessage[]): ICacheDiffResult {
+	const signature: ICacheSignatureToken[] = [];
+	const drift: IComponentDrift[] = [];
+	const counts = { identical: 0, contentDrift: 0, lengthChange: 0, onlyInA: 0, onlyInB: 0 };
+	let breakResult: ICacheBreak | undefined;
+	let broken = false;
+
+	const max = Math.max(a.length, b.length);
+	for (let i = 0; i < max; i++) {
+		const ai = a[i];
+		const bi = b[i];
+
+		if (ai && !bi) {
+			counts.onlyInA++;
+			signature.push({ index: i, kind: CacheDiffKind.OnlyInA, aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength });
+			drift.push({ name: `messages[${i}]`, role: ai.role, status: CacheDiffKind.OnlyInA, aSize: ai.byteLength, bSize: 0 });
+			if (!broken) {
+				broken = true;
+				breakResult = { index: i, kind: CacheDiffKind.OnlyInA };
+			}
+			continue;
+		}
+		if (bi && !ai) {
+			counts.onlyInB++;
+			signature.push({ index: i, kind: CacheDiffKind.OnlyInB, bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength });
+			drift.push({ name: `messages[${i}]`, role: bi.role, status: CacheDiffKind.OnlyInB, aSize: 0, bSize: bi.byteLength });
+			if (!broken) {
+				broken = true;
+				breakResult = { index: i, kind: CacheDiffKind.OnlyInB };
+			}
+			continue;
+		}
+		// Both present
+		if (!ai || !bi) {
+			continue; // unreachable, but appeases strict null checks
+		}
+		if (messagesEqual(ai, bi)) {
+			counts.identical++;
+			signature.push({
+				index: i, kind: CacheDiffKind.Identical,
+				aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength,
+				bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength,
+			});
+			continue;
+		}
+		// Diverged
+		const kind = ai.byteLength === bi.byteLength ? CacheDiffKind.ContentDrift : CacheDiffKind.LengthChange;
+		if (kind === CacheDiffKind.ContentDrift) {
+			counts.contentDrift++;
+		} else {
+			counts.lengthChange++;
+		}
+		signature.push({
+			index: i, kind,
+			aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength,
+			bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength,
+		});
+		drift.push({ name: `messages[${i}]`, role: ai.role, status: kind, aSize: ai.byteLength, bSize: bi.byteLength });
+		if (!broken) {
+			broken = true;
+			breakResult = { index: i, kind };
+		}
+	}
+
+	return { signature, break: breakResult, drift, counts };
+}
+
+/**
+ * Add a leading "system" drift entry to the report when the system
+ * instructions differ between the two requests.
+ */
+export function appendSystemDrift(
+	drift: IComponentDrift[],
+	aSystem: string | undefined,
+	bSystem: string | undefined,
+): IComponentDrift[] {
+	if (aSystem === bSystem) {
+		return drift;
+	}
+	const aSize = aSystem?.length ?? 0;
+	const bSize = bSystem?.length ?? 0;
+	let status: CacheDiffKind;
+	if (!aSystem) {
+		status = CacheDiffKind.OnlyInB;
+	} else if (!bSystem) {
+		status = CacheDiffKind.OnlyInA;
+	} else {
+		status = aSize === bSize ? CacheDiffKind.ContentDrift : CacheDiffKind.LengthChange;
+	}
+	return [{ name: 'system', status, aSize, bSize }, ...drift];
+}
+
+/**
+ * Format a normalized message into a single-line `role[-name]:bytes` token,
+ * matching the convention used by the existing `promptTypes` telemetry.
+ */
+export function formatSignatureToken(token: ICacheSignatureToken): string {
+	const role = token.bRole ?? token.aRole ?? 'unknown';
+	const name = token.bName ?? token.aName;
+	const a = token.aByteLength;
+	const b = token.bByteLength;
+	const sizeText = a !== undefined && b !== undefined && a !== b
+		? `${a}\u2192${b}`
+		: a !== undefined && b === undefined
+			? `${a}\u21920`
+			: a === undefined && b !== undefined
+				? `0\u2192${b}`
+				: `${b ?? a ?? 0}`;
+	return name ? `${role}-${name}:${sizeText}` : `${role}:${sizeText}`;
+}
