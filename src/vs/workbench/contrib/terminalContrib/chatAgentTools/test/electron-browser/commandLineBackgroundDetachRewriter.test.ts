@@ -79,7 +79,7 @@ suite('CommandLineBackgroundDetachRewriter', () => {
 
 		test('should wrap chained commands in shell -c to preserve shell semantics', () => {
 			deepStrictEqual(rewriter.rewrite(createOptions('cd /app && python3 service.py &', '/bin/bash', OperatingSystem.Linux, true)), {
-				rewritten: `nohup /bin/bash -c 'cd /app && python3 service.py &' &`,
+				rewritten: `nohup /bin/bash -c 'cd /app && python3 service.py' &`,
 				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
 				forDisplay: 'cd /app && python3 service.py &',
 			});
@@ -256,6 +256,14 @@ suite('CommandLineBackgroundDetachRewriter', () => {
 				rewritten: `nohup /bin/bash -c 'cd /app' &`,
 				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
 				forDisplay: 'cd /app',
+			});
+		});
+
+		test('mid-command & (background operator) should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('server start & client connect', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'server start & client connect' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'server start & client connect',
 			});
 		});
 	});

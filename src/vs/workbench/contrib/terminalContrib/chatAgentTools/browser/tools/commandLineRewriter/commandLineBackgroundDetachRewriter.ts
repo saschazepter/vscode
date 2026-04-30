@@ -109,29 +109,36 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 	private _rewriteForPosix(options: ICommandLineRewriterOptions): ICommandLineRewriterResult {
 		const trimmed = options.commandLine.trimEnd();
 
+		// Check for a trailing background `&` (not `&&`) on the original command.
+		// When wrapping in `shell -c`, we strip the trailing `&` from the inner
+		// command and always place it outside the quotes to avoid double-backgrounding.
+		const endsWithBackgroundAmp = /(?:^|[^&])&$/.test(trimmed);
+
 		// nohup only accepts a simple external command as its argument — it cannot exec
 		// compound statements (for/while/if/case) or shell builtins (eval/set/export/source).
 		// Wrap those in `<shell> -c '...'` so the whole construct runs as a single executable.
 		let commandToWrap = trimmed;
 		if (this._needsShellCWrapper(trimmed)) {
+			// Strip trailing `&` before quoting — we'll add the outer `&` below.
+			const innerCommand = endsWithBackgroundAmp ? trimmed.replace(/\s*&$/, '') : trimmed;
 			if (isFish(options.shell, options.os)) {
 				// Fish does not support the POSIX '\'' escape inside single-quoted strings.
 				// Use a double-quoted string and escape backslash and double-quote instead.
-				const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+				const escaped = innerCommand.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 				commandToWrap = `${options.shell} -c "${escaped}"`;
 			} else {
 				// bash/zsh: escape single quotes for use inside a single-quoted shell -c '...' string.
-				const escaped = trimmed.replace(/'/g, `'\\''`);
+				const escaped = innerCommand.replace(/'/g, `'\\''`);
 				commandToWrap = `${options.shell} -c '${escaped}'`;
 			}
 		}
 
-		// If the command already ends with a single trailing `&` (background operator,
-		// as opposed to `&&` for command chaining), don't append another one.
-		const endsWithBackgroundAmp = /(?:^|[^&])&$/.test(commandToWrap);
-		const rewritten = endsWithBackgroundAmp
-			? `nohup ${commandToWrap}`
-			: `nohup ${commandToWrap} &`;
+		// Always append `&` unless the (unwrapped) command already has a trailing `&`
+		// and we didn't wrap it in shell -c (in which case the `&` is still present).
+		const needsTrailingAmp = !(/(?:^|[^&])&$/.test(commandToWrap));
+		const rewritten = needsTrailingAmp
+			? `nohup ${commandToWrap} &`
+			: `nohup ${commandToWrap}`;
 		return {
 			rewritten,
 			reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
@@ -169,7 +176,7 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 			// simple command; the rest would be lost or misinterpreted.
 			// A single trailing `&` is handled separately (not matched here) since it's
 			// just a background operator that nohup can coexist with.
-			/\||\|\||&&|;/.test(trimmed)
+			/(?:\|\||&&|[|;]|&(?!&)(?!\s*$))/.test(trimmed)
 		);
 	}
 
