@@ -760,9 +760,14 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (setting.userValue !== undefined) {
 			return setting.value;
 		}
+		const userConfiguredKeys = this._configurationService.keys().user;
 		for (const deprecatedId of deprecatedSettingIds) {
 			const deprecated = this._configurationService.inspect<T>(deprecatedId);
-			if (deprecated.userValue !== undefined) {
+			// Some deprecated settings are parent keys of newer settings, for example
+			// `chat.agent.sandbox` and `chat.agent.sandbox.fileSystem.linux`. Inspecting the
+			// parent key can return the namespace object even when the deprecated key itself
+			// was not configured, so only fall back when the exact deprecated key exists.
+			if (deprecated.userValue !== undefined && userConfiguredKeys.includes(deprecatedId)) {
 				this._logService.warn(`TerminalSandboxService: Using deprecated setting ${deprecatedId} because ${settingId} is not set. Please update your settings to use ${settingId} instead.`);
 				return deprecated.value;
 			}
