@@ -1042,7 +1042,25 @@ export interface IChatPlanApprovalAction {
 export interface IChatPlanReviewResult {
 	action?: string;
 	rejected: boolean;
+	/**
+	 * The combined feedback string sent to the agent. Includes both the
+	 * overall textarea comment and any inline editor comments, joined with
+	 * blank lines and formatted as markdown.
+	 */
 	feedback?: string;
+	/**
+	 * Display-only: the overall textarea comment, separated from
+	 * `feedbackInlineMarkdown` so the chat transcript can render the two
+	 * parts differently (overall inline next to "Provided feedback:",
+	 * inline comments as a markdown block beneath). When unset, the
+	 * transcript falls back to rendering `feedback` verbatim.
+	 */
+	feedbackOverall?: string;
+	/**
+	 * Display-only: a pre-formatted markdown block listing the inline
+	 * editor comments (heading + bullet list). See `feedbackOverall`.
+	 */
+	feedbackInlineMarkdown?: string;
 }
 
 /**

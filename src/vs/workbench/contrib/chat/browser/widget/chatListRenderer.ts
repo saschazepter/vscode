@@ -2936,10 +2936,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// Build the inline progress message for the response stream. While
 		// pending, this is "Plan review required" with a spinner. Once the
 		// user has answered, it transitions to the action that was taken
-		// (e.g. "Approved plan", "Started implementation with autopilot"),
-		// and — when the user provided feedback — appends that feedback
-		// inline in the same progress row after a colon, collapsing
-		// whitespace so the transcript reads as a single line.
+		// (e.g. "Approved plan", "Started implementation with autopilot",
+		// "Provided feedback"). The actual feedback text is rendered as a
+		// separate user-message bubble; appending it here as a single
+		// collapsed line produced an unreadable wall of text.
 		const renderProgress = (): IChatContentPart => {
 			const message = this.getPlanReviewProgressMessage(review);
 			if (!message) {
@@ -2952,12 +2952,28 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			// pending → used transition and trigger a re-render.
 			const renderedAsUsed = !!review.isUsed;
 			const isPending = !renderedAsUsed;
-			const feedbackText = renderedAsUsed && !review.data?.rejected ? review.data?.feedback?.trim() : undefined;
-			const fullMessage = feedbackText
-				? localize('chat.planReview.feedbackInline', "{0}: {1}", message, feedbackText.replace(/\s+/g, ' '))
-				: message;
+			const data = renderedAsUsed && !review.data?.rejected ? review.data : undefined;
+			// Prefer the structured fields populated by `ChatPlanReviewPart`
+			// so we can render the overall comment inline (next to
+			// "Provided feedback:") and the inline-comments markdown block
+			// separately. Fall back to splitting the combined `feedback`
+			// string for backward compatibility with results produced
+			// before the structured fields existed.
+			let overall = data?.feedbackOverall?.trim();
+			const inlineMd = data?.feedbackInlineMarkdown?.trim();
+			if (!overall && !inlineMd && data?.feedback) {
+				overall = data.feedback.trim();
+			}
 			const content = new MarkdownString(undefined, { supportThemeIcons: true });
-			content.appendText(fullMessage);
+			if (overall) {
+				content.appendText(localize('chat.planReview.feedbackInline', "{0}: {1}", message, overall.replace(/\s+/g, ' ')));
+			} else {
+				content.appendText(message);
+			}
+			if (inlineMd) {
+				content.appendMarkdown('\n\n');
+				content.appendMarkdown(inlineMd);
+			}
 			const progressPart = this.instantiationService.createInstance(
 				ChatProgressContentPart,
 				{ content },
