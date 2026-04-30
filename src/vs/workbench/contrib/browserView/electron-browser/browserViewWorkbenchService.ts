@@ -21,7 +21,16 @@ import { IEditorGroupsService } from '../../../services/editor/common/editorGrou
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
+import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
 import { ChatConfiguration } from '../../chat/common/constants.js';
+import { AgentHostEnabledSettingId } from '../../../../platform/agentHost/common/agentService.js';
+
+/**
+ * When enabled, integrated browser tools are exposed as client-provided tools
+ * to agent host sessions in the Sessions window. Has no effect outside the
+ * Sessions window or when the agent host is disabled.
+ */
+export const AgentHostBrowserToolsEnabledSettingId = 'chat.agentHost.browserToolsEnabled';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -40,11 +49,33 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	private readonly _onDidChangeBrowserViews = this._register(new Emitter<void>());
 	readonly onDidChangeBrowserViews: Event<void> = this._onDidChangeBrowserViews.event;
 
-	/** Context expression for whether browser tools / sharing is available. */
+	/**
+	 * Context expression for whether browser tools / sharing is available.
+	 *
+	 * Always requires chat to be enabled, agent mode to be enabled, and
+	 * `workbench.browser.enableChatTools` to be set. In addition:
+	 *
+	 * - **Regular workbench window**: the above is sufficient (historical
+	 *   behavior).
+	 * - **Sessions/Agents window**: browser tools are off by default and
+	 *   only become available when the agent host is running
+	 *   (`chat.agentHost.enabled`) and the dedicated feature flag
+	 *   (`chat.agentHost.browserToolsEnabled`) is set. They are surfaced to
+	 *   agent-host sessions through the client-tool bridge configured by
+	 *   `chat.agentHost.clientTools`.
+	 */
 	private static readonly _sharingAvailableContext = ContextKeyExpr.and(
 		ChatContextKeys.enabled,
 		ContextKeyExpr.has(`config.${ChatConfiguration.AgentEnabled}`),
 		ContextKeyExpr.has(`config.workbench.browser.enableChatTools`),
+		ContextKeyExpr.or(
+			IsSessionsWindowContext.negate(),
+			ContextKeyExpr.and(
+				IsSessionsWindowContext,
+				ContextKeyExpr.has(`config.${AgentHostEnabledSettingId}`),
+				ContextKeyExpr.has(`config.${AgentHostBrowserToolsEnabledSettingId}`),
+			),
+		),
 	)!;
 
 	private _isSharingAvailable: boolean = false;
