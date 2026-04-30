@@ -15,8 +15,11 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { ChatSendResult, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatRequestQueueKind, ChatSendResult, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ICustomizationHarnessService } from '../../../../workbench/contrib/chat/common/customizationHarnessService.js';
+import { resolvePromptSlashCommandToVariableEntry } from '../../../../workbench/contrib/chat/common/promptSyntax/resolvePromptSlashCommand.js';
+import { ILanguageModelToolsService } from '../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ActiveSessionContextKeys, IsolationMode } from '../../changes/common/changes.js';
@@ -182,6 +185,8 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 		async run(accessor: ServicesAccessor): Promise<void> {
 			const sessionsManagementService = accessor.get(ISessionsManagementService);
 			const chatService = accessor.get(IChatService);
+			const customizationHarnessService = accessor.get(ICustomizationHarnessService);
+			const toolsService = accessor.get(ILanguageModelToolsService);
 
 			const activeSession = sessionsManagementService.activeSession.get();
 			if (!activeSession) {
@@ -197,9 +202,13 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 			// agent-host providers, so it is NOT a valid agent id here.
 			const agentId = activeSession.resource.scheme;
 			const prompt = `/${spec.skill}`;
+			const promptFile = await resolvePromptSlashCommandToVariableEntry(prompt, agentId, customizationHarnessService, toolsService, CancellationToken.None);
+			const attachedContext = promptFile ? [promptFile] : undefined;
+
+			await sessionsManagementService.openSession(activeSession.resource, { preserveFocus: true });
 			const ref = await chatService.acquireOrLoadSession(activeSession.resource, ChatAgentLocation.Chat, CancellationToken.None, 'AgentHostSkillButton');
 			try {
-				let result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId });
+				let result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId, attachedContext, queue: ChatRequestQueueKind.Queued });
 				if (ChatSendResult.isQueued(result)) {
 					result = await result.deferred;
 				}
