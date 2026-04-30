@@ -135,7 +135,8 @@ export class ChatModeService extends Disposable implements IChatModeService {
 						visibility,
 						agents: cachedMode.agents,
 						sessionTypes: cachedMode.sessionTypes,
-						source: reviveChatModeSource(cachedMode.source) ?? { storage: PromptsStorage.local }
+						source: reviveChatModeSource(cachedMode.source) ?? { storage: PromptsStorage.local },
+						enabled: true
 					};
 					// Wrap the cached agent in a synthetic IAgentCustomizationItem so the mode
 					// instance shares the same code path as live items, then immediately seed

@@ -133,7 +133,8 @@ suite('ChatModeService', () => {
 			agentInstructions: { content: 'Custom mode body', toolReferences: [] },
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		promptsService.setCustomModes([customMode]);
@@ -173,7 +174,8 @@ suite('ChatModeService', () => {
 			agentInstructions: { content: 'Custom mode body', toolReferences: [] },
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		promptsService.setCustomModes([customMode]);
@@ -193,7 +195,8 @@ suite('ChatModeService', () => {
 			agentInstructions: { content: 'Findable mode body', toolReferences: [] },
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		promptsService.setCustomModes([customMode]);
@@ -219,7 +222,8 @@ suite('ChatModeService', () => {
 			model: ['gpt-4'],
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		promptsService.setCustomModes([initialMode]);
@@ -268,7 +272,8 @@ suite('ChatModeService', () => {
 			agentInstructions: { content: 'Mode 1 body', toolReferences: [] },
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		const mode2: ICustomAgent = {
@@ -279,7 +284,8 @@ suite('ChatModeService', () => {
 			agentInstructions: { content: 'Mode 2 body', toolReferences: [] },
 			source: workspaceSource,
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			enabled: true
 		};
 
 		// Add both modes
