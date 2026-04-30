@@ -260,7 +260,12 @@ suite('ChatPlanReviewPart', () => {
 			assert.ok(submitButton, 'Submit Feedback button should exist');
 			submitButton!.click();
 
-			assert.deepStrictEqual(lastSubmitResult, { rejected: false, feedback: 'Please also add tests' });
+			assert.deepStrictEqual(lastSubmitResult, {
+				rejected: false,
+				feedback: 'Please also add tests',
+				feedbackOverall: 'Please also add tests',
+				feedbackInlineMarkdown: undefined,
+			});
 		});
 
 		test('clicking Back exits feedback mode but preserves textarea draft', async () => {
@@ -329,7 +334,7 @@ suite('ChatPlanReviewPart', () => {
 
 			const submitButton = getFooterButtons(widget).find(b => b.textContent?.includes('Submit Feedback'));
 			assert.ok(submitButton);
-			assert.match(submitButton!.textContent ?? '', /\(2\)/, 'Submit label should reflect inline count');
+			assert.ok((submitButton!.textContent ?? '').includes('(2)'), 'Submit label should reflect inline count');
 		});
 
 		test('inline comments alone are enough to enable Submit Feedback', async () => {
