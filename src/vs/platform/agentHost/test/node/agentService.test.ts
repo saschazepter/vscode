@@ -441,7 +441,7 @@ suite('AgentService (node dispatcher)', () => {
 			localService.stateManager.setSessionMeta(session.toString(), undefined);
 			calls.length = 0;
 
-			await localService.subscribe(session);
+			await localService.subscribe(session, 'client-1');
 			for (let i = 0; i < 5; i++) {
 				await Promise.resolve();
 			}
@@ -702,7 +702,7 @@ suite('AgentService (node dispatcher)', () => {
 
 			// Subscribing to the child session should restore it with inner tool calls
 			const childSessionUri = buildSubagentSessionUri(sessionResource.toString(), 'tc-sub');
-			const snapshot = await service.subscribe(URI.parse(childSessionUri));
+			const snapshot = await service.subscribe(URI.parse(childSessionUri), 'client-test');
 			const childState = service.stateManager.getSessionState(childSessionUri);
 			assert.ok(snapshot?.state, 'Child session snapshot should exist');
 			assert.ok(childState, 'Child session state should exist');
@@ -748,7 +748,7 @@ suite('AgentService (node dispatcher)', () => {
 
 			// Subscribe to the child subagent session and verify inner tools
 			const childSessionUri = buildSubagentSessionUri(sessionResource.toString(), parentToolCallId);
-			const snapshot = await service.subscribe(URI.parse(childSessionUri));
+			const snapshot = await service.subscribe(URI.parse(childSessionUri), 'client-test');
 			assert.ok(snapshot?.state, 'Child session snapshot should exist');
 			const childState = service.stateManager.getSessionState(childSessionUri);
 			assert.ok(childState, 'Child session state should exist');
@@ -771,7 +771,7 @@ suite('AgentService (node dispatcher)', () => {
 			const sessionResource = await service.createSession({ provider: 'copilot' });
 
 			service.addSubscriber(sessionResource, 'client-1');
-			service.removeSubscriber(sessionResource, 'client-1');
+			service.unsubscribe(sessionResource, 'client-1');
 
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'idle created session should be evicted; next subscribe will rehydrate from the agent');
 		});
@@ -789,7 +789,7 @@ suite('AgentService (node dispatcher)', () => {
 			await service.restoreSession(sessionResource);
 			service.addSubscriber(sessionResource, 'client-1');
 
-			service.removeSubscriber(sessionResource, 'client-1');
+			service.unsubscribe(sessionResource, 'client-1');
 
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'restored idle session should be evicted');
 		});
@@ -808,10 +808,10 @@ suite('AgentService (node dispatcher)', () => {
 			service.addSubscriber(sessionResource, 'client-1');
 			service.addSubscriber(sessionResource, 'client-2');
 
-			service.removeSubscriber(sessionResource, 'client-1');
+			service.unsubscribe(sessionResource, 'client-1');
 			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'still subscribed by client-2');
 
-			service.removeSubscriber(sessionResource, 'client-2');
+			service.unsubscribe(sessionResource, 'client-2');
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'evicted after last subscriber');
 		});
 
@@ -833,18 +833,17 @@ suite('AgentService (node dispatcher)', () => {
 			];
 			await service.restoreSession(sessionResource);
 			const childUri = URI.parse(buildSubagentSessionUri(sessionResource.toString(), 'tc-sub'));
-			await service.subscribe(childUri);
+			await service.subscribe(childUri, 'client-child');
 
 			service.addSubscriber(sessionResource, 'client-parent');
-			service.addSubscriber(childUri, 'client-child');
 
 			// Parent drops — child still subscribed, parent must not be evicted
-			service.removeSubscriber(sessionResource, 'client-parent');
+			service.unsubscribe(sessionResource, 'client-parent');
 			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'parent must stay while child is subscribed');
 			assert.ok(service.stateManager.getSessionState(childUri.toString()), 'child still present');
 
 			// Child drops — both can now be evicted
-			service.removeSubscriber(childUri, 'client-child');
+			service.unsubscribe(childUri, 'client-child');
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'parent evicted after subagent drops');
 			assert.strictEqual(service.stateManager.getSessionState(childUri.toString()), undefined, 'child also evicted with parent');
 		});

@@ -74,10 +74,11 @@ export class AgentService extends Disposable implements IAgentService {
 	/**
 	 * Authoritative server-side per-resource subscription refcount, keyed by
 	 * resource URI string and valued by the set of subscribed protocol
-	 * client IDs. Populated by {@link addSubscriber} and drained by
-	 * {@link removeSubscriber}. When a resource's set becomes empty, the
-	 * resource is dropped from the map and {@link _maybeEvictIdleSession}
-	 * is invoked to release any cached state for it.
+	 * client IDs. Populated by {@link subscribe} (or {@link addSubscriber}
+	 * for handshake fast-paths) and drained by {@link unsubscribe}. When a
+	 * resource's set becomes empty, the resource is dropped from the map and
+	 * {@link _maybeEvictIdleSession} is invoked to release any cached state
+	 * for it.
 	 */
 	private readonly _resourceSubscribers = new Map<string, Set<string>>();
 
@@ -427,9 +428,10 @@ export class AgentService extends Disposable implements IAgentService {
 		this._terminalManager.disposeTerminal(terminal.toString());
 	}
 
-	async subscribe(resource: URI): Promise<IStateSnapshot> {
+	async subscribe(resource: URI, clientId: string): Promise<IStateSnapshot> {
 		this._logService.trace(`[AgentService] subscribe: ${resource.toString()}`);
 		const resourceStr = resource.toString();
+		this.addSubscriber(resource, clientId);
 
 		// Check for terminal state
 		const terminalState = this._terminalManager.getTerminalState(resourceStr);
@@ -477,7 +479,7 @@ export class AgentService extends Disposable implements IAgentService {
 		set.add(clientId);
 	}
 
-	removeSubscriber(resource: URI, clientId: string): void {
+	unsubscribe(resource: URI, clientId: string): void {
 		const key = resource.toString();
 		const set = this._resourceSubscribers.get(key);
 		if (!set) {

@@ -92,7 +92,7 @@ class AgentHostServiceClient extends Disposable implements IAgentHostService {
 			() => this.nextClientSeq(),
 			msg => this._logService.warn(`[AgentHost:renderer] ${msg}`),
 			resource => this.subscribe(resource),
-			resource => this._proxy.removeSubscriber(resource, this.clientId),
+			resource => this.unsubscribe(resource),
 		));
 
 		if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
@@ -164,18 +164,11 @@ class AgentHostServiceClient extends Disposable implements IAgentHostService {
 	shutdown(): Promise<void> {
 		return this._proxy.shutdown();
 	}
-	subscribe(resource: URI): Promise<IStateSnapshot> {
-		// Pair every subscribe with an addSubscriber so the agent host's
-		// per-resource refcount reflects this renderer. Both calls go through
-		// the same delayed channel, so they are ordered.
-		this._proxy.addSubscriber(resource, this.clientId);
-		return this._proxy.subscribe(resource);
+	private subscribe(resource: URI): Promise<IStateSnapshot> {
+		return this._proxy.subscribe(resource, this.clientId);
 	}
-	addSubscriber(resource: URI, clientId: string): void {
-		this._proxy.addSubscriber(resource, clientId);
-	}
-	removeSubscriber(resource: URI, clientId: string): void {
-		this._proxy.removeSubscriber(resource, clientId);
+	private unsubscribe(resource: URI): void {
+		this._proxy.unsubscribe(resource, this.clientId);
 	}
 	dispatchAction(action: SessionAction | TerminalAction | IRootConfigChangedAction, clientId: string, clientSeq: number): void {
 		this._proxy.dispatchAction(action, clientId, clientSeq);

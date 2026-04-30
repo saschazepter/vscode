@@ -180,7 +180,7 @@ export class ProtocolServerHandler extends Disposable {
 						if (client) {
 							const resource = msg.params.resource;
 							if (client.subscriptions.delete(resource)) {
-								this._agentService.removeSubscriber(URI.parse(resource), client.clientId);
+								this._agentService.unsubscribe(URI.parse(resource), client.clientId);
 							}
 						}
 						break;
@@ -214,7 +214,7 @@ export class ProtocolServerHandler extends Disposable {
 				// client held, so the server-side refcount can drop to zero and any
 				// idle restored session state can be evicted.
 				for (const resource of client.subscriptions) {
-					this._agentService.removeSubscriber(URI.parse(resource), client.clientId);
+					this._agentService.unsubscribe(URI.parse(resource), client.clientId);
 				}
 				client.subscriptions.clear();
 				this._clients.delete(client.clientId);
@@ -443,11 +443,8 @@ export class ProtocolServerHandler extends Disposable {
 	private readonly _requestHandlers: RequestHandlerMap = {
 		subscribe: async (client, params) => {
 			try {
-				const snapshot = await this._agentService.subscribe(URI.parse(params.resource));
-				if (!client.subscriptions.has(params.resource)) {
-					client.subscriptions.add(params.resource);
-					this._agentService.addSubscriber(URI.parse(params.resource), client.clientId);
-				}
+				const snapshot = await this._agentService.subscribe(URI.parse(params.resource), client.clientId);
+				client.subscriptions.add(params.resource);
 				this._clearClientToolCallDisconnectTimeout(client.clientId, params.resource);
 				return { snapshot };
 			} catch (err) {
