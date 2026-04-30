@@ -145,9 +145,15 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 					this._log(`onDone via process exit (${formatExitCodeOrError(exitCodeOrError)})`);
 					return { type: 'processExit', exitCodeOrError } as const;
 				}),
-				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableFallbacks: this._isSyncMode }).then(() => {
-					this._log('onDone via idle prompt');
-				}),
+				// For sync mode, track idle-on-prompt as a race candidate so that
+				// commands complete when the terminal returns to a prompt. For async
+				// mode this is unnecessary — the OutputMonitor handles idle detection
+				// and the strategy result is not awaited.
+				...(this._isSyncMode ? [
+					trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableFallbacks: true }).then(() => {
+						this._log('onDone via idle prompt');
+					}),
+				] : []),
 			]);
 
 			// Ensure xterm is available
