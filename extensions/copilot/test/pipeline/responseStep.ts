@@ -180,10 +180,11 @@ function countNewlines(s: string, start: number, endEx: number): number {
 /**
  * Filter `oracleEdits` to those fully contained in the line range `[windowStart, windowEnd)`.
  *
- * Edit offsets are sequenced — each edit assumes all earlier edits in the list
- * were applied first — so once we hit the first edit not fully inside the
- * window, every subsequent edit is discarded as well (its offsets are no
- * longer reliable).
+ * Oracle edits come from `StringEdit.compose().replacements` upstream
+ * ({@link applyEditsToContent} sorts by offset descending and applies to the
+ * original doc), so each edit's offsets are independent of every other edit.
+ * Each edit is therefore filtered independently — out-of-window edits are
+ * dropped without affecting the in-window ones around them.
  */
 export function filterEditsInsideEditWindow(
 	oracleEdits: readonly (readonly [start: number, endEx: number, text: string])[],
@@ -196,15 +197,17 @@ export function filterEditsInsideEditWindow(
 } {
 	const transformer = new StringText(docContent).getTransformer();
 	const kept: (readonly [start: number, endEx: number, text: string])[] = [];
-	for (let i = 0; i < oracleEdits.length; i++) {
-		const [editStartLine, editEndLine] = getEditLineRange(transformer, oracleEdits[i]);
+	let droppedCount = 0;
+	for (const edit of oracleEdits) {
+		const [editStartLine, editEndLine] = getEditLineRange(transformer, edit);
 		const fullyInside = editStartLine >= windowStart && editEndLine < windowEnd;
-		if (!fullyInside) {
-			return { kept, droppedCount: oracleEdits.length - i };
+		if (fullyInside) {
+			kept.push(edit);
+		} else {
+			droppedCount++;
 		}
-		kept.push(oracleEdits[i]);
 	}
-	return { kept, droppedCount: 0 };
+	return { kept, droppedCount };
 }
 
 /**

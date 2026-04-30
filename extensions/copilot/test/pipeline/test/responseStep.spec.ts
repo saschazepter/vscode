@@ -22,12 +22,12 @@ describe('formatAsEditWindowOnly (xtab-275)', () => {
 	const docLines = Array.from({ length: 20 }, (_, i) => `L${i}`);
 	const docContent = docLines.join('\n');
 
-	test('drops oracle edits outside the prompt edit window and all edits after them', () => {
+	test('drops only the oracle edits that fall outside the prompt edit window', () => {
 		// Edit window covers lines [5, 10): L5..L9
 		const windowStart = 5;
 		const windowLineCount = 5;
 
-		// First edit is inside the window: replace "L6" → "EDITED"
+		// First edit is inside the window: replace "L6" → "EDITED6"
 		const inWindowStart = lineOffset(docContent, 6);
 		const inWindowEnd = inWindowStart + 'L6'.length;
 
@@ -35,24 +35,25 @@ describe('formatAsEditWindowOnly (xtab-275)', () => {
 		const outOfWindowStart = lineOffset(docContent, 15);
 		const outOfWindowEnd = outOfWindowStart + 'L15'.length;
 
-		// Third edit is back inside the window — must still be dropped, since
-		// its offset assumes the second (out-of-window) edit was applied first.
+		// Third edit is back inside the window. Oracle edits come from
+		// StringEdit.compose().replacements upstream, so each edit's offsets
+		// are independent — this in-window edit is kept even though an
+		// earlier edit was dropped.
 		const inWindowStart2 = lineOffset(docContent, 8);
 		const inWindowEnd2 = inWindowStart2 + 'L8'.length;
 
 		const edits: [number, number, string][] = [
-			[inWindowStart, inWindowEnd, 'EDITED'],
+			[inWindowStart, inWindowEnd, 'EDITED6'],
 			[outOfWindowStart, outOfWindowEnd, 'OUTSIDE'],
-			[inWindowStart2, inWindowEnd2, 'ALSO_DROPPED'],
+			[inWindowStart2, inWindowEnd2, 'EDITED8'],
 		];
 
 		const result = formatAsEditWindowOnly(edits, docContent, windowStart, windowLineCount);
 
-		// Expected: only the in-window slice with the first edit applied.
-		// "OUTSIDE" / "ALSO_DROPPED" / line L15 must not appear.
+		// Only the line-15 edit is dropped; the two in-window edits both apply.
 		expect(result).toEqual({
-			assistant: ['L5', 'EDITED', 'L7', 'L8', 'L9'].join('\n'),
-			droppedCount: 2,
+			assistant: ['L5', 'EDITED6', 'L7', 'EDITED8', 'L9'].join('\n'),
+			droppedCount: 1,
 		});
 	});
 
@@ -135,7 +136,7 @@ describe('formatAsEditWindowOnly (xtab-275)', () => {
 		});
 	});
 
-	test('returns an empty assistant when every oracle edit falls outside the window', () => {
+	test('returns the unmodified window slice when every oracle edit falls outside the window', () => {
 		// Window: lines [5, 10). All edits target line 15.
 		const windowStart = 5;
 		const windowLineCount = 5;
