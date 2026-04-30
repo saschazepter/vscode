@@ -145,7 +145,7 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 					this._log(`onDone via process exit (${formatExitCodeOrError(exitCodeOrError)})`);
 					return { type: 'processExit', exitCodeOrError } as const;
 				}),
-				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableExecutingFallback: this._isSyncMode }).then(() => {
+				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableFallbacks: this._isSyncMode }).then(() => {
 					this._log('onDone via idle prompt');
 				}),
 			]);

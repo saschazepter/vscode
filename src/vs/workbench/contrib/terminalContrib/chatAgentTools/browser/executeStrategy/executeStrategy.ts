@@ -162,13 +162,14 @@ export async function waitForIdleWithPromptHeuristics(
  */
 export interface ITrackIdleOnPromptOptions {
 	/**
-	 * When true, disables the 30s data-idle executing fallback and the 60s
-	 * hard-cap safety net. Use this for sync (foreground) commands that should
-	 * block until the command truly finishes rather than being abandoned after
-	 * an idle period. In sync mode the overall chat-request timeout or
-	 * user-specified timeout is the safety net instead.
+	 * When true, disables all fallback schedulers: the initial prompt fallback,
+	 * the data-idle executing fallback, and the hard-cap safety net. Use this
+	 * for sync (foreground) commands that should block until the command truly
+	 * finishes rather than being abandoned after an idle period. In sync mode
+	 * the overall chat-request timeout or user-specified timeout is the safety
+	 * net instead.
 	 */
-	disableExecutingFallback?: boolean;
+	disableFallbacks?: boolean;
 }
 
 export async function trackIdleOnPrompt(
@@ -229,7 +230,7 @@ export async function trackIdleOnPrompt(
 	// to avoid falsely reporting completion for commands that are slow to start
 	// producing output. Once any data arrives, the onData handler takes over
 	// with the shorter promptFallbackMs interval.
-	const disableFallbacks = options?.disableExecutingFallback ?? false;
+	const disableFallbacks = options?.disableFallbacks ?? false;
 	const initialFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing || state === TerminalState.PromptAfterExecuting) {
 			log?.(`Initial fallback fired but state is ${stateNames[state]}, skipping`);
