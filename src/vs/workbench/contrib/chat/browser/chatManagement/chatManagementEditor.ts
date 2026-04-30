@@ -60,6 +60,9 @@ export class ModelsManagementEditor extends EditorPane {
 			this.layout(this.dimension);
 		}
 		this.modelsWidget?.render();
+		if (input.query) {
+			this.modelsWidget?.search(input.query);
+		}
 	}
 
 	override layout(dimension: Dimension): void {

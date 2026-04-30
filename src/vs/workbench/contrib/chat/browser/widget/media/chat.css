@@ -1840,6 +1840,38 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	margin-bottom: 4px;
 }
 
+/*
+ * Pin the trailing Cost header to the top-right of the filter row while
+ * keeping the search field stretched across the remaining space.
+ */
+.action-widget .action-list-filter:has(.chat-model-picker-filter-input) .action-list-filter-row {
+	position: relative;
+	gap: 0;
+	padding-right: 0;
+}
+
+.action-widget .action-list-filter:has(.chat-model-picker-filter-input) .action-list-filter-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: auto;
+	padding-right: 56px;
+}
+
+.action-widget .action-list-filter:has(.chat-model-picker-filter-input) .action-list-filter-trailing-label {
+	position: absolute;
+	top: 50%;
+	right: 20px;
+	transform: translateY(-50%);
+	padding-left: 12px;
+	margin-left: 0;
+	background-color: var(--vscode-menu-background);
+	border-left: none;
+	color: var(--vscode-descriptionForeground);
+	font-size: 11px;
+	font-weight: 400;
+	line-height: 20px;
+}
+
 /* Thinking-effort lightbulb scale (used in model picker button + dropdown rows). */
 .chat-model-bulbs {
 	display: inline-flex;
@@ -1885,14 +1917,20 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	gap: 4px;
 }
 
+/* Discount label shown for the Auto model row instead of cost dots. */
+.chat-model-discount {
+	font-size: 11px;
+	font-weight: 400;
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+	line-height: 1;
+}
+
 /* Cost / pricing scale — solid filled squares for "spend" with bolded $ when applicable. */
 .chat-model-cost {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	margin-left: 6px;
-	padding-left: 6px;
-	border-left: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+	gap: 4px;
 	line-height: 1;
 }
 
@@ -1958,6 +1996,84 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	margin-left: 8px;
 }
 
+/* Spacer between model name, thinking effort, and context window in the collapsed picker. */
+.chat-model-picker-separator {
+	display: inline-block;
+	width: 0;
+	height: 0;
+	margin: 0 3px;
+	flex-shrink: 0;
+}
+
+/* Group container wrapping model name + thinking effort + context window as a cohesive unit. */
+.chat-model-picker-config-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 1px;
+	padding: 3px 5px;
+	border-radius: 5px;
+	border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+	flex-shrink: 0;
+}
+
+/* Config labels (e.g. "Medium", "1M") shown after separators in the collapsed picker. */
+.chat-model-picker-config-label {
+	display: inline-flex;
+	align-items: center;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+	flex-shrink: 0;
+	cursor: pointer;
+	border-radius: 3px;
+	padding: 1px 4px;
+}
+
+.chat-model-picker-config-label:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Context window 1M toggle — enabled vs disabled states */
+.chat-model-picker-config-context {
+	opacity: 0.4;
+	transition: opacity 0.15s, border-color 0.15s;
+	border: 1px solid transparent;
+	border-radius: 3px;
+	padding: 0px 3px;
+	margin: -1px 0;
+}
+
+.chat-model-picker-config-context.context-enabled {
+	opacity: 0.85;
+	color: var(--vscode-descriptionForeground);
+	border-color: var(--vscode-foreground, rgba(80, 80, 80, 0.7));
+}
+
+/* Suppress the parent action-label hover background for the model picker
+ * so only individual segments (model name, thinking, context) highlight. */
+.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label:has(.chat-model-picker-config-group):hover,
+.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label:has(.chat-model-picker-config-group)[aria-expanded="true"] {
+	background-color: transparent !important;
+}
+
+/* Zero out parent padding when the group border provides its own spacing */
+.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label:has(.chat-model-picker-config-group) {
+	padding: 0;
+}
+
+/* Give the model name its own hover highlight */
+.chat-model-picker-config-group > .chat-input-picker-label {
+	border-radius: 3px;
+	padding: 1px 4px;
+	cursor: pointer;
+}
+
+.chat-model-picker-config-group > .chat-input-picker-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
 /* AIC (AI credits per message) shown after the cost scale. */
 .chat-model-aic {
 	display: inline-flex;
@@ -1970,6 +2086,83 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	margin-left: 8px;
 	padding-left: 8px;
 	border-left: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.25));
+}
+
+/* Model picker flyout — narrow hover panel with title, description, and configurable tags. */
+.action-list-submenu-panel:has(.action-list-submenu-hover-header) {
+	max-width: 300px;
+}
+
+.action-list-submenu-hover-header p:first-child {
+	font-size: 11.5px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	margin-bottom: -2px;
+}
+
+.action-list-submenu-hover-header p:first-child a {
+	color: var(--vscode-descriptionForeground);
+	text-decoration: none;
+	flex-shrink: 0;
+	opacity: 0.7;
+	border-radius: 3px;
+	padding: 2px;
+	margin: -2px;
+	transition: opacity 0.1s, background-color 0.1s;
+}
+
+.action-list-submenu-hover-header p:first-child a:hover {
+	color: var(--vscode-foreground);
+	opacity: 1;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Description paragraph */
+.action-list-submenu-hover-header p:nth-child(3) {
+	font-size: 11.5px;
+	line-height: 1.45;
+}
+
+/* Configurable tags rendered as subtle bordered pills. */
+.action-list-submenu-hover-header code {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: 10px;
+	font-size: 10.5px;
+	font-family: inherit;
+	font-weight: 400;
+	line-height: 16px;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.3));
+	white-space: nowrap;
+	opacity: 0.85;
+}
+
+/* "Configurable:" label paragraph — keep inline */
+.action-list-submenu-hover-header p:last-child:not(:first-child) {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-top: -2px;
+}
+
+/* Tighten separator rules and overall spacing in the flyout. */
+.action-list-submenu-hover-header hr {
+	margin: 6px 0;
+	border: none;
+	border-top: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.2));
+}
+
+.action-list-submenu-hover-header {
+	padding: 8px 10px 6px;
 }
 
 .interactive-session .chat-input-toolbars .codicon-debug-stop {

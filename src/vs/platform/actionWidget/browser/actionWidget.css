@@ -397,6 +397,17 @@
 	align-items: center;
 }
 
+.action-widget .action-list-filter-trailing-label {
+	flex: 0 0 auto;
+	padding-left: 10px;
+	margin-left: 4px;
+	border-left: 1px solid var(--vscode-editorHoverWidget-border);
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	line-height: 22px;
+	white-space: nowrap;
+}
+
 .action-widget .action-list-filter-actions .action-label {
 	padding: 3px;
 	border-radius: 3px;

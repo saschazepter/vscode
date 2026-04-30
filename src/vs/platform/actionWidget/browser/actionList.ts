@@ -308,7 +308,7 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 			dom.clearNode(data.description!);
 			if (typeof element.description === 'string') {
 				data.description!.textContent = stripNewlines(element.description);
-			} else if (element.description instanceof HTMLElement) {
+			} else if (dom.isHTMLElement(element.description)) {
 				data.description!.appendChild(element.description);
 			} else {
 				const rendered = renderMarkdown(element.description, {
@@ -451,6 +451,11 @@ export interface IActionListOptions {
 	 * Optional actions shown in the filter row, to the right of the input.
 	 */
 	readonly filterActions?: readonly IAction[];
+
+	/**
+	 * Optional passive label shown at the trailing edge of the filter row.
+	 */
+	readonly filterTrailingLabel?: string;
 
 	/**
 	 * Section IDs that should be collapsed by default.
@@ -614,7 +619,7 @@ export class ActionListWidget<T> extends Disposable {
 						if (element.description) {
 							const descText = typeof element.description === 'string'
 								? element.description
-								: element.description instanceof HTMLElement
+								: dom.isHTMLElement(element.description)
 									? (element.description.textContent ?? '')
 									: element.description.value;
 							label = label + ', ' + stripNewlines(descText);
@@ -675,6 +680,12 @@ export class ActionListWidget<T> extends Disposable {
 				const filterActionsContainer = dom.append(filterRow, dom.$('.action-list-filter-actions'));
 				const filterActionBar = this._register(new ActionBar(filterActionsContainer));
 				filterActionBar.push(filterActions, { icon: true, label: false });
+			}
+
+			if (this._options?.filterTrailingLabel) {
+				const filterTrailingLabel = dom.append(filterRow, dom.$('.action-list-filter-trailing-label'));
+				filterTrailingLabel.textContent = this._options.filterTrailingLabel;
+				filterTrailingLabel.setAttribute('aria-hidden', 'true');
 			}
 
 			this._register(dom.addDisposableListener(this._filterInput, 'input', () => {
@@ -801,7 +812,7 @@ export class ActionListWidget<T> extends Disposable {
 				const label = (item.label ?? '').toLowerCase();
 				const descValue = typeof item.description === 'string'
 					? item.description
-					: item.description instanceof HTMLElement
+					: dom.isHTMLElement(item.description)
 						? (item.description.textContent ?? '')
 						: item.description?.value ?? '';
 				const desc = descValue.toLowerCase();

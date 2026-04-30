@@ -22,8 +22,15 @@ export class ModelsManagementEditorInput extends EditorInput {
 		return super.capabilities | EditorInputCapabilities.Singleton | EditorInputCapabilities.RequiresModal;
 	}
 
-	constructor() {
+	private _query: string | undefined;
+
+	get query(): string | undefined {
+		return this._query;
+	}
+
+	constructor(query?: string) {
 		super();
+		this._query = query;
 	}
 
 	override matches(otherInput: EditorInput | IUntypedEditorInput): boolean {
