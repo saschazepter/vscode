@@ -522,6 +522,7 @@ suite('CustomizationHarnessService', () => {
 			agentInstructions: { content: '', toolReferences: [] },
 			source: { storage: PromptsStorage.local },
 			sessionTypes,
+			enabled: true
 		});
 
 		test('falls back to promptsService and preserves source metadata', async () => {
@@ -567,7 +568,7 @@ suite('CustomizationHarnessService', () => {
 			store.add(service);
 
 			const items = await service.getAgentCustomizationItems(testSessionType, CancellationToken.None);
-			assert.deepStrictEqual(items.map(item => item.name), ['enabled']);
+			assert.deepStrictEqual(items.map(item => item.name), ['enabled', 'disabled']);
 
 			const [enabled] = items;
 			const agent = await enabled.getCustomAgent(CancellationToken.None);

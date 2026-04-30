@@ -210,6 +210,8 @@ export interface IAgentCustomizationItem {
 	/** Session types this agent applies to. Available without resolving the full agent. */
 	readonly sessionTypes: readonly string[] | undefined;
 
+	readonly enabled: boolean;
+
 	getCustomAgent(token: CancellationToken): Promise<ICustomAgent | undefined>;
 }
 
@@ -702,6 +704,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 					target: agent.target,
 					visibility: agent.visibility,
 					sessionTypes: agent.sessionTypes,
+					enabled: agent.enabled,
 					getCustomAgent: async () => agent,
 				}));
 		}
@@ -711,11 +714,8 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 			return [];
 		}
 
-		// Default metadata for provider-backed agents until providers expose them explicitly.
-		const defaultVisibility: ICustomAgentVisibility = { userInvocable: true, agentInvocable: true };
-
 		return items
-			.filter(item => (item.enabled !== false) && item.type === PromptsType.agent)
+			.filter(item => item.type === PromptsType.agent)
 			.map(item => {
 				return {
 					uri: item.uri,
@@ -726,8 +726,9 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 					extensionId: item.extensionId,
 					pluginUri: item.pluginUri,
 					target: Target.Undefined,
-					visibility: defaultVisibility,
+					visibility: { userInvocable: item.userInvocable ?? true, agentInvocable: true },
 					sessionTypes: [sessionType],
+					enabled: item.enabled !== false,
 					getCustomAgent: async agentToken => {
 						try {
 							const promptFile = await this.promptsService.parseNew(item.uri, agentToken);
@@ -738,6 +739,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 								hooks: undefined,
 								source: agentSourceFromAgent(item),
 								type: PromptsType.agent,
+								enabled: item.enabled !== false
 							};
 							return CustomAgent.fromParsedPromptFile(promptFile, extra);
 						} catch {

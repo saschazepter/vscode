@@ -361,6 +361,7 @@ function agentToCustomizationItem(agent: ICustomAgent): IAgentCustomizationItem 
 		target: agent.target,
 		visibility: agent.visibility,
 		sessionTypes: agent.sessionTypes,
+		enabled: agent.enabled,
 		getCustomAgent: async () => agent,
 	};
 }
