@@ -493,6 +493,10 @@
 	margin-bottom: 4px;
 }
 
+.wizard-similar-status {
+	line-height: 1.4;
+}
+
 .wizard-similar-list {
 	margin: 0;
 	padding-left: 18px;

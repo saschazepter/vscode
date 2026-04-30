@@ -980,6 +980,7 @@ export class IssueReporterOverlay {
 		if (this.similarIssuesHandle) {
 			clearTimeout(this.similarIssuesHandle);
 		}
+		this.renderSimilarIssuesMessage(localize('searchingSimilarIssues', "Searching similar issues..."));
 		this.similarIssuesHandle = setTimeout(() => this.doSearchSimilarIssues(), 300);
 	}
 
@@ -987,12 +988,11 @@ export class IssueReporterOverlay {
 		const title = this.titleInput.value.trim();
 		const request = ++this.similarIssuesRequest;
 		if (!title || !this.selectedIssueSource) {
-			this.clearSimilarIssues();
+			this.renderSimilarIssuesMessage(localize('similarIssuesNeedsTitle', "Enter a title to search for similar issues."));
 			return;
 		}
 
-		this.similarIssuesContainer.parentElement?.classList.remove('hidden');
-		this.similarIssuesContainer.textContent = localize('searchingSimilarIssues', "Searching similar issues...");
+		this.renderSimilarIssuesMessage(localize('searchingSimilarIssues', "Searching similar issues..."));
 		try {
 			let results: ISimilarIssue[] = [];
 			if (this.selectedIssueSource === IssueSource.Extension) {
@@ -1004,14 +1004,14 @@ export class IssueReporterOverlay {
 				const repo = marketplaceIssueUrl && this.parseGitHubUrl(marketplaceIssueUrl);
 				results = repo ? await this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
 			} else {
-				results = await this.searchVSCodeDuplicates(title, this.descriptionTextarea.value.trim());
+				results = await this.searchVSCodeSimilarIssues(title, this.descriptionTextarea.value.trim());
 			}
 			if (request === this.similarIssuesRequest) {
 				this.renderSimilarIssues(results);
 			}
 		} catch {
 			if (request === this.similarIssuesRequest) {
-				this.clearSimilarIssues();
+				this.renderSimilarIssuesMessage(localize('similarIssuesSearchFailed', "Unable to search for similar issues."));
 			}
 		}
 	}
@@ -1024,6 +1024,7 @@ export class IssueReporterOverlay {
 	}
 
 	private async searchVSCodeDuplicates(title: string, body: string): Promise<ISimilarIssue[]> {
+		// TODO: Check whether this duplicate candidate service is still alive or can be removed.
 		const response = await fetch('https://vscode-probot.westus.cloudapp.azure.com:7890/duplicate_candidates', {
 			method: 'POST',
 			body: JSON.stringify({ title, body }),
@@ -1033,17 +1034,39 @@ export class IssueReporterOverlay {
 		return Array.isArray(result?.candidates) ? result.candidates : [];
 	}
 
+	private async searchVSCodeSimilarIssues(title: string, body: string): Promise<ISimilarIssue[]> {
+		try {
+			const duplicates = await this.searchVSCodeDuplicates(title, body);
+			if (duplicates.length) {
+				return duplicates;
+			}
+		} catch {
+			// Fall back to GitHub search below.
+		}
+
+		const repo = this.getIssueTargetRepo();
+		return repo ? this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
+	}
+
+	private renderSimilarIssuesMessage(message: string): void {
+		this.similarIssuesDisposables.clear();
+		this.similarIssuesContainer.textContent = '';
+		const heading = append(this.similarIssuesContainer, $('div.wizard-similar-heading'));
+		heading.textContent = localize('similarIssues', "Similar Issues");
+		const status = append(this.similarIssuesContainer, $('div.wizard-similar-status'));
+		status.textContent = message;
+	}
+
 	private renderSimilarIssues(results: ISimilarIssue[]): void {
 		this.similarIssuesDisposables.clear();
 		this.similarIssuesContainer.textContent = '';
 		if (!results.length) {
-			this.similarIssuesContainer.parentElement?.classList.add('hidden');
+			this.renderSimilarIssuesMessage(localize('noSimilarIssues', "No similar issues found."));
 			return;
 		}
-		this.similarIssuesContainer.parentElement?.classList.remove('hidden');
 
 		const heading = append(this.similarIssuesContainer, $('div.wizard-similar-heading'));
-		heading.textContent = localize('similarIssues', "Similar issues");
+		heading.textContent = localize('similarIssues', "Similar Issues");
 		const list = append(this.similarIssuesContainer, $('ul.wizard-similar-list'));
 		for (const issue of results.slice(0, MAX_SIMILAR_ISSUES)) {
 			const item = append(list, $('li.wizard-similar-item'));
@@ -1059,14 +1082,6 @@ export class IssueReporterOverlay {
 				const state = append(item, $('span.wizard-similar-state'));
 				state.textContent = issue.state;
 			}
-		}
-	}
-
-	private clearSimilarIssues(): void {
-		this.similarIssuesDisposables.clear();
-		if (this.similarIssuesContainer) {
-			this.similarIssuesContainer.textContent = '';
-			this.similarIssuesContainer.parentElement?.classList.add('hidden');
 		}
 	}
 
@@ -1302,9 +1317,10 @@ export class IssueReporterOverlay {
 		this.reviewRenderDisposables.clear();
 		details.textContent = '';
 
-		const similarSection = append(details as HTMLElement, $('div.review-section.wizard-review-similar-section.hidden'));
+		const similarSection = append(details as HTMLElement, $('div.review-section.wizard-review-similar-section'));
 		this.similarIssuesContainer = append(similarSection, $('div.wizard-similar-issues'));
 		this.similarIssuesContainer.setAttribute('aria-live', 'polite');
+		this.renderSimilarIssuesMessage(localize('searchingSimilarIssues', "Searching similar issues..."));
 
 		const sourceSection = append(details as HTMLElement, $('div.review-section'));
 		const sourceLabel = append(sourceSection, $('div.review-label'));
