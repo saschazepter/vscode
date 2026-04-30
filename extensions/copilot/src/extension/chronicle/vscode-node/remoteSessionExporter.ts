@@ -272,7 +272,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 						"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in a failed batch." },
 						"reason": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Reason session was disabled (no_consent, no_repo, init_error, create_error)." },
 						"transition": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Circuit breaker state transition (open, closed)." },
-						"eventsCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of events in the batch." },
+						"eventsCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of actually submitted events (sum of eventsBySession sizes)." },
+						"orphanedCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of orphaned events not submitted (re-queued or dropped)." },
 						"batchDurationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time to submit batch in ms." },
 						"bufferSize": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Buffer size at time of event." },
 						"failureCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Consecutive failure count." },
@@ -557,7 +558,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			// Submit each session's events to the correct cloud session
 			let allSuccess = true;
+			let submittedCount = 0;
 			for (const [cloudSessionId, events] of eventsBySession) {
+				submittedCount += events.length;
 				const filteredEvents = events.map(e => filterSecretsFromObj(e));
 				const success = await this._cloudClient.submitSessionEvents(cloudSessionId, filteredEvents);
 				if (!success) {
@@ -571,7 +574,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 					operation: 'batchSuccess',
 				}, {
-					eventsCount: batch.length,
+					eventsCount: submittedCount,
+					orphanedCount: orphanedEntries.length,
 					batchDurationMs: Date.now() - batchStart,
 					bufferSize: this._eventBuffer.length,
 				});
@@ -592,7 +596,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 					transition: 'open',
 				}, {
 					failureCount: this._circuitBreaker.getFailureCount(),
-					eventsCount: batch.length,
+					eventsCount: submittedCount,
+					orphanedCount: orphanedEntries.length,
 					bufferSize: this._eventBuffer.length,
 				});
 			}
