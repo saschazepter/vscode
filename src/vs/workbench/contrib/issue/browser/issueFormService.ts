@@ -108,7 +108,7 @@ export class IssueFormService implements IIssueFormService {
 			return false;
 		}
 		if (issueTarget.external) {
-			return this.openerService.open(URI.parse(issueTarget.url), { openExternal: true });
+			return this.openerService.open(issueTarget.url, { openExternal: true });
 		}
 
 		let mediaMarkdown = '';
@@ -199,7 +199,7 @@ export class IssueFormService implements IIssueFormService {
 			url = this.addTemplateToUrl(url, gitHubDetails?.owner, gitHubDetails?.repositoryName, data.issueSource);
 		}
 
-		return this.openerService.open(URI.parse(url));
+		return this.openerService.open(url, { openExternal: true });
 	}
 
 	private getIssueTarget(data: IssueReporterData): { url: string; external: boolean } | undefined {

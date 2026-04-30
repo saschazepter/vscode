@@ -289,8 +289,8 @@ export class IssueReporterEditorPane extends EditorPane {
 			}
 			const opened = await (this.issueFormService as IssueFormService).submitIssue(this.wizard, data, title, body);
 			if (opened) {
-				// User opened the link — mark as submitted and show close button
-				this.wizard.markAsSubmitted();
+				// User opened the link — keep the wizard editable, but offer an explicit close action.
+				this.wizard.markPreviewOpened();
 				this.wizard.showCloseButton();
 			}
 		}));
