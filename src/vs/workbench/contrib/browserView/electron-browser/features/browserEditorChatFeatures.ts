@@ -40,7 +40,7 @@ import { AgentHostEnabledSettingId } from '../../../../../platform/agentHost/com
 import { workbenchConfigurationNodeBase } from '../../../../common/configuration.js';
 import { safeSetInnerHtml } from '../../../../../base/browser/domSanitize.js';
 import { BrowserActionCategory } from '../browserViewActions.js';
-import { AgentHostBrowserToolsEnabledSettingId } from '../browserViewWorkbenchService.js';
+import { AgentHostChatToolsEnabledSettingId } from '../browserViewWorkbenchService.js';
 
 // Register tools
 import '../tools/browserTools.contribution.js';
@@ -631,9 +631,9 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 				},
 			}
 		},
-		[AgentHostBrowserToolsEnabledSettingId]: {
+		[AgentHostChatToolsEnabledSettingId]: {
 			type: 'boolean',
-			markdownDescription: localize('chat.agentHost.browserToolsEnabled', "When enabled, integrated browser tools are exposed as client-provided tools to agent host sessions in the Sessions window. Requires {0} and {1}.", `\`#${AgentHostEnabledSettingId}#\``, '`#workbench.browser.enableChatTools#`'),
+			markdownDescription: localize('workbench.browser.agentHostChatToolsEnabled', "When enabled, integrated browser tools are exposed as client-provided tools to agent host sessions in the Sessions window. Requires {0} and {1}.", `\`#${AgentHostEnabledSettingId}#\``, '`#workbench.browser.enableChatTools#`'),
 			default: false,
 			experiment: { mode: 'startup' },
 			tags: ['experimental', 'advanced'],

@@ -17,7 +17,7 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IPreferencesService } from '../../../services/preferences/common/preferences.js';
 import { BrowserEditorInput } from '../common/browserEditorInput.js';
 import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
-import { AgentHostBrowserToolsEnabledSettingId } from './browserViewWorkbenchService.js';
+import { AgentHostChatToolsEnabledSettingId } from './browserViewWorkbenchService.js';
 
 // Context key expression to check if browser editor is active
 export const BROWSER_EDITOR_ACTIVE = ContextKeyExpr.equals('activeEditor', BrowserEditorInput.EDITOR_ID);
@@ -243,7 +243,7 @@ class OpenBrowserSettingsAction extends Action2 {
 		const contextKeyService = accessor.get(IContextKeyService);
 		const ids = ['workbench.browser.*', 'chat.sendElementsToChat.*'];
 		if (IsSessionsWindowContext.getValue(contextKeyService)) {
-			ids.push(AgentHostBrowserToolsEnabledSettingId);
+			ids.push(AgentHostChatToolsEnabledSettingId);
 		}
 		await preferencesService.openSettings({ query: `@id:${ids.join(',')}` });
 	}

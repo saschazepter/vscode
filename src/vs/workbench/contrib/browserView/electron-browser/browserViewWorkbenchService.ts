@@ -30,7 +30,7 @@ import { AgentHostEnabledSettingId } from '../../../../platform/agentHost/common
  * to agent host sessions in the Sessions window. Has no effect outside the
  * Sessions window or when the agent host is disabled.
  */
-export const AgentHostBrowserToolsEnabledSettingId = 'chat.agentHost.browserToolsEnabled';
+export const AgentHostChatToolsEnabledSettingId = 'workbench.browser.agentHostChatToolsEnabled';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
 const browserViewContextMenuCommands = [
@@ -60,9 +60,9 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	 * - **Sessions/Agents window**: browser tools are off by default and
 	 *   only become available when the agent host is running
 	 *   (`chat.agentHost.enabled`) and the dedicated feature flag
-	 *   (`chat.agentHost.browserToolsEnabled`) is set. They are surfaced to
-	 *   agent-host sessions through the client-tool bridge configured by
-	 *   `chat.agentHost.clientTools`.
+	 *   (`workbench.browser.agentHostChatToolsEnabled`) is set. They are
+	 *   surfaced to agent-host sessions through the client-tool bridge
+	 *   configured by `chat.agentHost.clientTools`.
 	 */
 	private static readonly _sharingAvailableContext = ContextKeyExpr.and(
 		ChatContextKeys.enabled,
@@ -73,7 +73,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 			ContextKeyExpr.and(
 				IsSessionsWindowContext,
 				ContextKeyExpr.has(`config.${AgentHostEnabledSettingId}`),
-				ContextKeyExpr.has(`config.${AgentHostBrowserToolsEnabledSettingId}`),
+				ContextKeyExpr.has(`config.${AgentHostChatToolsEnabledSettingId}`),
 			),
 		),
 	)!;
