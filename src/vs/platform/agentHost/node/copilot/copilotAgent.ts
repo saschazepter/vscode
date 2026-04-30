@@ -133,6 +133,25 @@ export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
 	return URI.joinPath(repositoryRoot, '..', `${basename(repositoryRoot.fsPath)}.worktrees`);
 }
 
+/**
+ * Inverse of {@link getCopilotWorktreesRoot} for the common-convention case
+ * where the worktree lives at `<parent>/<repoBasename>.worktrees/<wtName>`.
+ * Used as a fallback for sessions that were created before the worktree's
+ * repository root was persisted explicitly.
+ */
+export function deriveRepositoryRootFromWorktree(worktreePath: URI): URI | undefined {
+	const worktreesRoot = URI.joinPath(worktreePath, '..');
+	const wtRootName = basename(worktreesRoot.fsPath);
+	if (!wtRootName.endsWith('.worktrees')) {
+		return undefined;
+	}
+	const repoBasename = wtRootName.slice(0, -'.worktrees'.length);
+	if (!repoBasename) {
+		return undefined;
+	}
+	return URI.joinPath(worktreesRoot, '..', repoBasename);
+}
+
 export function getCopilotWorktreeName(branchName: string): string {
 	return branchName.replace(/\//g, '-');
 }
@@ -1337,19 +1356,25 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return undefined;
 		}
 		try {
-			const [branchName, worktreePath, repositoryRoot] = await Promise.all([
+			const [branchName, worktreePathRaw, repositoryRootRaw, cwdRaw] = await Promise.all([
 				ref.object.getMetadata(CopilotAgent._META_WORKTREE_BRANCH),
 				ref.object.getMetadata(CopilotAgent._META_WORKTREE_PATH),
 				ref.object.getMetadata(CopilotAgent._META_WORKTREE_REPOSITORY_ROOT),
+				ref.object.getMetadata(CopilotAgent._META_CWD),
 			]);
 			if (!branchName) {
 				return undefined;
 			}
-			return {
-				branchName,
-				worktreePath: worktreePath ? URI.parse(worktreePath) : undefined,
-				repositoryRoot: repositoryRoot ? URI.parse(repositoryRoot) : undefined,
-			};
+			// Sessions created before _META_WORKTREE_PATH/_META_WORKTREE_REPOSITORY_ROOT
+			// existed only have the branch name and the resolved working directory
+			// (which, for worktree-isolated sessions, IS the worktree path). Fall
+			// back to that and reverse the worktrees-root convention to recover
+			// the repository root, so we can both clean up and recreate.
+			const worktreePath = worktreePathRaw ? URI.parse(worktreePathRaw) : (cwdRaw ? URI.parse(cwdRaw) : undefined);
+			const repositoryRoot = repositoryRootRaw
+				? URI.parse(repositoryRootRaw)
+				: (worktreePath ? deriveRepositoryRootFromWorktree(worktreePath) : undefined);
+			return { branchName, worktreePath, repositoryRoot };
 		} finally {
 			ref.dispose();
 		}
