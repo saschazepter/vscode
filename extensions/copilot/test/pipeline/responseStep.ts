@@ -141,15 +141,58 @@ export function parseEditWindowFromPrompt(userPrompt: string): {
 }
 
 /**
+ * Return the 0-based start/end line numbers (inclusive) for an edit's
+ * `[start, endEx)` offset range in the document represented by `transformer`.
+ */
+function getEditLineRange(
+	transformer: ReturnType<StringText['getTransformer']>,
+	edit: readonly [start: number, endEx: number, text: string],
+): [startLine: number, endLine: number] {
+	const [start, endEx] = edit;
+	return [
+		transformer.getPosition(start).lineNumber - 1,
+		transformer.getPosition(endEx).lineNumber - 1,
+	];
+}
+
+/**
+ * Filter `oracleEdits` to those fully contained in the line range `[windowStart, windowEnd)`.
+ *
+ * Edit offsets are sequenced — each edit assumes all earlier edits in the list
+ * were applied first — so once we hit the first edit not fully inside the
+ * window, every subsequent edit is discarded as well (its offsets are no
+ * longer reliable).
+ */
+export function filterEditsInsideEditWindow(
+	oracleEdits: readonly (readonly [start: number, endEx: number, text: string])[],
+	docContent: string,
+	windowStart: number,
+	windowEnd: number,
+): {
+	kept: readonly (readonly [start: number, endEx: number, text: string])[];
+	droppedCount: number;
+} {
+	const transformer = new StringText(docContent).getTransformer();
+	const kept: (readonly [start: number, endEx: number, text: string])[] = [];
+	for (let i = 0; i < oracleEdits.length; i++) {
+		const [editStartLine, editEndLine] = getEditLineRange(transformer, oracleEdits[i]);
+		const fullyInside = editStartLine >= windowStart && editEndLine < windowEnd;
+		if (!fullyInside) {
+			return { kept, droppedCount: oracleEdits.length - i };
+		}
+		kept.push(oracleEdits[i]);
+	}
+	return { kept, droppedCount: 0 };
+}
+
+/**
  * Format edits as Xtab275 edit-window content.
  *
  * The NES model can only edit lines inside the prompt's `<|code_to_edit|>`
- * window `[K, N)`. Any oracle edit that falls outside that range is
- * unrepresentable in this response format — including it would cause the
- * generated assistant text to "spill out" of the window and duplicate
- * surrounding context when applied. Such edits are discarded; because edit
- * offsets are sequenced (later edits assume earlier ones were applied),
- * every edit after the first out-of-window edit is also discarded.
+ * window `[K, N)`. Oracle edits outside that range are unrepresentable in this
+ * response format — including them would cause the assistant text to "spill
+ * out" of the window and duplicate surrounding context when applied. Such
+ * edits are discarded via {@link filterEditsInsideEditWindow}.
  */
 export function formatAsEditWindowOnly(
 	oracleEdits: readonly (readonly [start: number, endEx: number, text: string])[],
@@ -157,36 +200,24 @@ export function formatAsEditWindowOnly(
 	editWindowStartLine: number,
 	editWindowLineCount: number,
 ): string {
-	const transformer = new StringText(docContent).getTransformer();
 	const windowStart = editWindowStartLine;
 	const windowEnd = editWindowStartLine + editWindowLineCount;
 
-	// Keep edits in order, stopping at the first edit that is not fully
-	// contained within the prompt's edit window.
-	const keptEdits: (readonly [start: number, endEx: number, text: string])[] = [];
-	let droppedCount = 0;
-	for (const edit of oracleEdits) {
-		const [start, endEx] = edit;
-		const editStartLine = transformer.getPosition(start).lineNumber - 1;
-		const editEndLine = transformer.getPosition(endEx).lineNumber - 1;
-		const fullyInside = editStartLine >= windowStart && editEndLine < windowEnd;
-		if (!fullyInside) {
-			droppedCount = oracleEdits.length - keptEdits.length;
-			break;
-		}
-		keptEdits.push(edit);
-	}
+	const { kept, droppedCount } = filterEditsInsideEditWindow(
+		oracleEdits, docContent, windowStart, windowEnd,
+	);
 
 	if (droppedCount > 0) {
 		console.warn(`formatAsEditWindowOnly: dropped ${droppedCount} oracle edit(s) outside edit window [${windowStart}, ${windowEnd})`);
 	}
 
-	const modifiedContent = applyEditsToContent(docContent, keptEdits);
+	const modifiedContent = applyEditsToContent(docContent, kept);
 	const modifiedLines = splitLines(modifiedContent);
 
-	// Calculate net line change from kept edits (all of which overlap the window).
+	// All kept edits are fully inside the window, so each one's net line delta
+	// applies directly to the window's line count.
 	let netLineChange = 0;
-	for (const [start, endEx, text] of keptEdits) {
+	for (const [start, endEx, text] of kept) {
 		const oldLineCount = splitLines(docContent.substring(start, endEx)).length;
 		const newLineCount = text.length > 0 ? splitLines(text).length : 0;
 		const effectiveOldCount = (endEx - start) === 0 ? 0 : oldLineCount;
