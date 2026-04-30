@@ -59,11 +59,11 @@ class ThemeImporterService extends Disposable implements IThemeImporterService {
 		return themeInfo?.settingsId;
 	}
 
-	async previewVSCodeTheme(): Promise<IDisposable | undefined> {
+	async previewVSCodeTheme(): Promise<IDisposable> {
 		try {
 			const theme = await this._getVSCodeTheme();
 			if (!theme) {
-				return undefined;
+				return Disposable.None;
 			}
 
 			const installed = await this._installFromHostLocation(theme);
@@ -72,7 +72,7 @@ class ThemeImporterService extends Disposable implements IThemeImporterService {
 			await this._applyTheme(theme.settingsId);
 
 			if (!installed) {
-				return toDisposable(() => { });
+				return Disposable.None;
 			}
 
 			return toDisposable(() => {
@@ -83,7 +83,7 @@ class ThemeImporterService extends Disposable implements IThemeImporterService {
 			});
 		} catch (err) {
 			this.logService.error('[VSCodeThemeImporter] Failed to preview theme:', err);
-			return undefined;
+			return Disposable.None;
 		}
 	}
 

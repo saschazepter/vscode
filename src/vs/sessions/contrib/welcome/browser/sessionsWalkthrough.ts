@@ -24,7 +24,7 @@ import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/co
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchThemeService } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
-import { IVSCodeThemeImporterService } from '../../../services/vscode/common/vsCodeThemeImporter.js';
+import { IThemeImporterService } from '../../../services/vscode/common/themeImporter.js';
 
 export type WalkthroughOutcome = 'completed' | 'dismissed';
 
@@ -99,7 +99,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IProductService private readonly productService: IProductService,
-		@IVSCodeThemeImporterService private readonly vsCodeThemeImporter: IVSCodeThemeImporterService,
+		@IThemeImporterService private readonly themeImporterService: IThemeImporterService,
 		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService,
 		@ILogService private readonly logService: ILogService,
 	) {
@@ -344,7 +344,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 		// Start resolving the parent VS Code theme during the fade-out
 		const parentThemePromise = !isWeb
-			? this.vsCodeThemeImporter.getVSCodeTheme()
+			? this.themeImporterService.getVSCodeTheme()
 			: Promise.resolve(undefined);
 
 		// Fade out current content, then render theme step
@@ -430,7 +430,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 				// Preview the theme (temporary install from host location)
 				previewDisposable?.dispose();
-				previewDisposable = await this.vsCodeThemeImporter.previewVSCodeTheme();
+				previewDisposable = await this.themeImporterService.previewVSCodeTheme();
 				vscodeThemeBtn!.textContent = labelText;
 			};
 			// Dispose preview on step teardown (escape)
@@ -453,7 +453,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		continueBtn.textContent = localize('walkthrough.theme.continue', "Continue");
 		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, async () => {
 			if (isVSCodeThemeSelected) {
-				await this.vsCodeThemeImporter.importVSCodeTheme();
+				await this.themeImporterService.importVSCodeTheme();
 			}
 			this._isShowingWelcome = false;
 			this._isShowingThemeStep = false;

@@ -33,7 +33,7 @@ export interface IThemeImporterService {
 	 * uninstalls the extension on dispose. Returns `undefined` if the theme
 	 * is already available or cannot be resolved.
 	 */
-	previewVSCodeTheme(): Promise<IDisposable | undefined>;
+	previewVSCodeTheme(): Promise<IDisposable>;
 
 	/**
 	 * Permanently imports the VS Code theme into the Agents app by copying
