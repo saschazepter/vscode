@@ -9,7 +9,7 @@ import { Disposable, IDisposable, toDisposable } from '../../../../base/common/l
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ConfigurationTarget } from '../../../../platform/configuration/common/configuration.js';
-import { IEnvironmentService, INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { IExtensionManagementService, ILocalExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IExtensionsScannerService } from '../../../../platform/extensionManagement/common/extensionsScannerService.js';
 import { ExtensionType, IExtensionManifest } from '../../../../platform/extensions/common/extensions.js';
@@ -77,7 +77,7 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 	private _parentThemePromise: Promise<IParentThemeInfo | undefined> | undefined;
 
 	constructor(
-		@IEnvironmentService private readonly environmentService: INativeEnvironmentService,
+		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
 		@IExtensionsScannerService private readonly extensionsScannerService: IExtensionsScannerService,
 		@IFileService private readonly fileService: IFileService,
@@ -104,12 +104,13 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 			}
 
 			const installed = await this._installFromHostLocation(theme);
-			if (!installed) {
-				return undefined;
-			}
 
-			// Apply the theme
+			// Apply the theme regardless of whether an install was needed
 			await this._applyTheme(theme.settingsId);
+
+			if (!installed) {
+				return toDisposable(() => { });
+			}
 
 			return toDisposable(() => {
 				const profileLocation = this.userDataProfileService.currentProfile.extensionsResource;
