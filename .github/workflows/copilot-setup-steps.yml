@@ -131,6 +131,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Save built-in extensions cache
+        if: steps.cache-builtin-extensions.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          enableCrossOsArchive: true
+          path: .build/builtInExtensions
+          key: "builtin-extensions-${{ hashFiles('.build/builtindepshash') }}"
+
       - name: Download Electron and Playwright
         run: |
           set -e
