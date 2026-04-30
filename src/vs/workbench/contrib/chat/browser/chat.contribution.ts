@@ -195,7 +195,12 @@ CommandsRegistry.registerCommand('_chat.notifyQuestionCarouselAnswer', (accessor
 const toolReferenceNameEnumValues: string[] = [];
 const toolReferenceNameEnumDescriptions: string[] = [];
 
-// Tool reference names for the integrated browser tools.
+/**
+ * Tool reference names for the integrated browser tools.
+ * Always present in the {@link ChatConfiguration.AgentHostClientTools} default but
+ * only effective when the tools themselves are actually registered, which is currently
+ * feature-flag-gated.
+ */
 const browserClientTools = [
 	'openBrowserPage',
 	'readPage',
