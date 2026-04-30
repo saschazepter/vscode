@@ -210,7 +210,7 @@ export class InlineEditsModelService extends Disposable implements IInlineEditsM
 		}: {
 			copilotToken: CopilotToken | undefined;
 			fetchedNesModels: WireTypes.Model.t[] | undefined;
-			localModelConfig: ModelConfiguration | undefined;
+			localModelConfig: ModelConfiguration | null;
 			modelConfigString: string | undefined;
 			defaultModelConfigString: string | undefined;
 			useSlashModels: boolean;
