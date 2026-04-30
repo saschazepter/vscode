@@ -537,21 +537,19 @@ export interface IAgentService {
 	 */
 	subscribe(resource: URI): Promise<IStateSnapshot>;
 
-	/** Unsubscribe from state updates for the given URI. */
-	unsubscribe(resource: URI): void;
-
 	/**
-	 * Register that `clientId` is now subscribed to `resource`. Used by the
-	 * protocol layer to maintain an authoritative server-side refcount so
-	 * idle restored session state can be evicted when no client holds it.
-	 * In-process callers without a clientId do not need to call this.
+	 * Register that `clientId` is now subscribed to `resource`. The protocol
+	 * layer maintains an authoritative server-side refcount so idle session
+	 * state can be evicted when no client holds it. Callers should pair every
+	 * {@link subscribe} with an `addSubscriber` and a matching
+	 * {@link removeSubscriber} when the subscription is released.
 	 */
 	addSubscriber(resource: URI, clientId: string): void;
 
 	/**
 	 * Counterpart to {@link addSubscriber}. Drops `clientId` from the
-	 * refcount for `resource`; when the last subscriber is removed, restored
-	 * idle session state for `resource` may be evicted from the server.
+	 * refcount for `resource`; when the last subscriber is removed, idle
+	 * session state for `resource` may be evicted from the server.
 	 */
 	removeSubscriber(resource: URI, clientId: string): void;
 

@@ -466,13 +466,6 @@ export class AgentService extends Disposable implements IAgentService {
 		return snapshot;
 	}
 
-	unsubscribe(resource: URI): void {
-		this._logService.trace(`[AgentService] unsubscribe: ${resource.toString()}`);
-		// In-process callers (tests, embedded use) that do not have a clientId
-		// hit this no-op overload. Protocol clients must go through
-		// {@link removeSubscriber} so that the per-resource refcount is decremented.
-	}
-
 	addSubscriber(resource: URI, clientId: string): void {
 		const key = resource.toString();
 		let set = this._resourceSubscribers.get(key);

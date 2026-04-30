@@ -119,7 +119,6 @@ class MockAgentService implements IAgentService {
 		}
 		return snapshot;
 	}
-	unsubscribe(_resource: URI): void { }
 	addSubscriber(_resource: URI, _clientId: string): void { }
 	removeSubscriber(_resource: URI, _clientId: string): void { }
 	async shutdown(): Promise<void> { }
