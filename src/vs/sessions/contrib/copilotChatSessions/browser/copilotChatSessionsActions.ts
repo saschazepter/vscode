@@ -11,7 +11,6 @@ import { IReader, autorun, observableValue } from '../../../../base/common/obser
 import { localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, MenuRegistry, isIMenuItem, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -34,7 +33,6 @@ import { IsolationPicker } from './isolationPicker.js';
 import { ModePicker } from './modePicker.js';
 import { CloudModelPicker } from './modelPicker.js';
 import { CopilotPermissionPickerDelegate, PermissionPicker } from './permissionPicker.js';
-import { AUTOPILOT_DONT_SHOW_AGAIN_KEY, AUTO_APPROVE_DONT_SHOW_AGAIN_KEY } from '../../../../workbench/contrib/chat/common/chatPermissionStorageKeys.js';
 
 const IsActiveSessionCopilotCLI = ContextKeyExpr.equals(ActiveSessionTypeContext.key, COPILOT_CLI_SESSION_TYPE);
 const IsActiveSessionCopilotCloud = ContextKeyExpr.equals(ActiveSessionTypeContext.key, COPILOT_CLOUD_SESSION_TYPE);
@@ -515,22 +513,5 @@ registerAction2(class DeleteSessionAction extends Action2 {
 		for (const session of sessions) {
 			await sessionsManagementService.deleteSession(session);
 		}
-	}
-});
-
-registerAction2(class ResetPermissionWarningDialogsAction extends Action2 {
-	constructor() {
-		super({
-			id: 'sessions.action.resetPermissionWarningDialogs',
-			title: localize2('sessions.action.resetPermissionWarningDialogs.label', "Reset Permission Warning Dialogs (Autopilot, Bypass Approvals)"),
-			category: Categories.Developer,
-			f1: true,
-		});
-	}
-
-	override run(accessor: ServicesAccessor): void {
-		const storageService = accessor.get(IStorageService);
-		storageService.remove(AUTOPILOT_DONT_SHOW_AGAIN_KEY, StorageScope.PROFILE);
-		storageService.remove(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, StorageScope.PROFILE);
 	}
 });
