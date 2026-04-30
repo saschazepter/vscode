@@ -229,6 +229,7 @@ export async function trackIdleOnPrompt(
 	// to avoid falsely reporting completion for commands that are slow to start
 	// producing output. Once any data arrives, the onData handler takes over
 	// with the shorter promptFallbackMs interval.
+	const disableFallbacks = options?.disableExecutingFallback ?? false;
 	const initialFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing || state === TerminalState.PromptAfterExecuting) {
 			log?.(`Initial fallback fired but state is ${stateNames[state]}, skipping`);
@@ -237,7 +238,7 @@ export async function trackIdleOnPrompt(
 		log?.(`Initial fallback fired, no data events received`);
 		setState(TerminalState.PromptAfterExecuting, 'initialFallback');
 		scheduler.schedule();
-	}, 10_000));
+	}, 2 * 60_000));
 	if (!disableFallbacks) {
 		initialFallbackScheduler.schedule();
 	}
@@ -246,38 +247,33 @@ export async function trackIdleOnPrompt(
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
 	// cancelled in that state, causing a permanent hang. This scheduler is
 	// rescheduled on every data event while in the Executing state, so it only
-	// fires after 30s of data-idle — long enough that actively-outputting
-	// commands won't be cut off, but short enough to prevent indefinite hangs
-	// when shell integration breaks. When shell integration is working,
-	// onCommandFinished in the rich strategy's race wins before this fires.
+	// fires after 5 minutes of data-idle — generous enough for async commands
+	// where this is purely a resource-cleanup safety net. With recent shell
+	// integration fixes (removing set -e guidance, etc.), broken SI is much
+	// less likely, so aggressive timeouts are no longer needed.
 	//
 	// In sync (foreground) mode this fallback is disabled: sync commands should
 	// block until the command truly finishes. The overall chat-request timeout
 	// or user-specified timeout serves as the safety net instead.
-	const disableFallbacks = options?.disableExecutingFallback ?? false;
 	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing) {
-			log?.(`Executing fallback fired after 30s data-idle (dataEvents=${dataEventCount})`);
+			log?.(`Executing fallback fired after 5min data-idle (dataEvents=${dataEventCount})`);
 			setState(TerminalState.PromptAfterExecuting, 'executingFallback');
 			scheduler.schedule();
 		}
-	}, 30_000));
+	}, 5 * 60_000));
 	// Hard wall-clock safety net for the case where shell integration never
 	// engages at all — no OSC `C`/`D` is ever parsed so state never advances
-	// to Executing, and yet the existing data-idle fallbacks somehow fail to
-	// fire (e.g. because data arrives in a single event before listeners are
-	// active, or because `onData` throttling masks idle periods). Without
-	// this, trackIdleOnPrompt can block the rich strategy for the lifetime
-	// of the chat request. Genuinely long-running commands with working
-	// shell integration reach Executing/PromptAfterExecuting before this
-	// fires, so this is purely a fallback for the broken-handshake path.
+	// to Executing. This is purely a resource-cleanup fallback; with recent
+	// shell integration fixes this path is rare. The 5-minute timeout is
+	// generous to avoid prematurely abandoning legitimate commands.
 	const hardCapScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Initial || state === TerminalState.Prompt) {
-			log?.(`Hard cap fired after 60s in state ${stateNames[state]} (dataEvents=${dataEventCount})`);
+			log?.(`Hard cap fired after 5min in state ${stateNames[state]} (dataEvents=${dataEventCount})`);
 			setState(TerminalState.PromptAfterExecuting, 'hardCap');
 			scheduler.schedule();
 		}
-	}, 60_000));
+	}, 5 * 60_000));
 	if (!disableFallbacks) {
 		hardCapScheduler.schedule();
 	}

@@ -59,6 +59,7 @@ suite('BasicExecuteStrategy', () => {
 			instance,
 			() => false,
 			commandDetection,
+			false,
 			new TestConfigurationService(),
 			createLogService(),
 		));
@@ -91,6 +92,7 @@ suite('BasicExecuteStrategy', () => {
 			instance,
 			() => false,
 			commandDetection,
+			false,
 			new TestConfigurationService(),
 			createLogService(),
 		));
@@ -120,6 +122,7 @@ suite('BasicExecuteStrategy', () => {
 			instance,
 			() => false,
 			commandDetection,
+			false,
 			new TestConfigurationService(),
 			createLogService(),
 		));
