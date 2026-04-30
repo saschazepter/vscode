@@ -251,9 +251,12 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 		this._shareButton.label = isShared
 			? localize('browser.sharingWithAgent', "Sharing with Agent") + ' $(share-window)'
 			: '$(share-window)';
-		this._shareButton.setTitle(isShared
+
+		const title = isShared
 			? localize('browser.unshareWithAgent', "Stop Sharing with Agent")
-			: localize('browser.shareWithAgent', "Share with Agent"));
+			: localize('browser.shareWithAgent', "Share with Agent");
+		this._shareButton.setTitle(title);
+		this._shareButton.element.setAttribute('aria-label', title);
 	}
 
 	private static readonly SHARING_CONTENT_WARNING_DONT_ASK_KEY = 'browserView.agentSharingContentWarning.dontAskAgain';
