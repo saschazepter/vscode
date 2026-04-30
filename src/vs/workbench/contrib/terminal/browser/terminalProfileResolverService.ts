@@ -189,6 +189,14 @@ export abstract class BaseTerminalProfileResolverService extends Disposable impl
 	}
 
 	private async _getUnresolvedDefaultProfile(options: IShellLaunchConfigResolveOptions): Promise<ITerminalProfile> {
+		// If agent host shell is allowed, prefer that
+		if (options.allowAgentHostShell) {
+			const agentHostShellProfile = this._getUnresolvedAgentHostShellProfile(options);
+			if (agentHostShellProfile) {
+				return agentHostShellProfile;
+			}
+		}
+
 		// If automation shell is allowed, prefer that
 		if (options.allowAutomationShell) {
 			const automationShellProfile = this._getUnresolvedAutomationShellProfile(options);
@@ -266,6 +274,16 @@ export abstract class BaseTerminalProfileResolverService extends Disposable impl
 		if (this._isValidAutomationProfile(automationProfile, options.os)) {
 			automationProfile.icon = this._getCustomIcon(automationProfile.icon) || Codicon.tools;
 			return automationProfile;
+		}
+
+		return undefined;
+	}
+
+	private _getUnresolvedAgentHostShellProfile(options: IShellLaunchConfigResolveOptions): ITerminalProfile | undefined {
+		const agentHostProfile = this._configurationService.getValue(`terminal.integrated.agentHostProfile.${this._getOsKey(options.os)}`);
+		if (this._isValidAutomationProfile(agentHostProfile, options.os)) {
+			agentHostProfile.icon = this._getCustomIcon(agentHostProfile.icon) || Codicon.tools;
+			return agentHostProfile;
 		}
 
 		return undefined;

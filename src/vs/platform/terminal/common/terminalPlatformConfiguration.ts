@@ -168,6 +168,60 @@ const terminalPlatformConfiguration: IConfigurationNode = {
 				}
 			]
 		},
+		[TerminalSettingId.AgentHostProfileLinux]: {
+			restricted: true,
+			markdownDescription: localize('terminal.integrated.agentHostProfile.linux', "The terminal profile to use on Linux for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.linux#`'),
+			type: ['object', 'null'],
+			default: null,
+			'anyOf': [
+				{ type: 'null' },
+				terminalAutomationProfileSchema
+			],
+			defaultSnippets: [
+				{
+					body: {
+						path: '${1}',
+						icon: '${2}'
+					}
+				}
+			]
+		},
+		[TerminalSettingId.AgentHostProfileMacOs]: {
+			restricted: true,
+			markdownDescription: localize('terminal.integrated.agentHostProfile.osx', "The terminal profile to use on macOS for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.osx#`'),
+			type: ['object', 'null'],
+			default: null,
+			'anyOf': [
+				{ type: 'null' },
+				terminalAutomationProfileSchema
+			],
+			defaultSnippets: [
+				{
+					body: {
+						path: '${1}',
+						icon: '${2}'
+					}
+				}
+			]
+		},
+		[TerminalSettingId.AgentHostProfileWindows]: {
+			restricted: true,
+			markdownDescription: localize('terminal.integrated.agentHostProfile.windows', "The terminal profile to use on Windows for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.windows#`'),
+			type: ['object', 'null'],
+			default: null,
+			'anyOf': [
+				{ type: 'null' },
+				terminalAutomationProfileSchema
+			],
+			defaultSnippets: [
+				{
+					body: {
+						path: '${1}',
+						icon: '${2}'
+					}
+				}
+			]
+		},
 		[TerminalSettingId.ProfilesWindows]: {
 			restricted: true,
 			markdownDescription: createTerminalProfileMarkdownDescription(Platform.Windows),

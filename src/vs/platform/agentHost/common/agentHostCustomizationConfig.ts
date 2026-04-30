@@ -14,6 +14,16 @@ import { type CustomizationRef } from './state/protocol/state.js';
 export const enum AgentHostConfigKey {
 	/** Host-owned Open Plugins available to remote sessions. */
 	Customizations = 'customizations',
+	/**
+	 * Absolute path to the shell executable used by host-managed terminals
+	 * (e.g. the PTY-backed `bash`/`powershell` tools that override the
+	 * Copilot CLI built-ins). Typically populated by the host's client from
+	 * the user's terminal profile (e.g. `terminal.integrated.agentHostProfile.<os>`
+	 * with fallback to `terminal.integrated.defaultProfile.<os>`). When unset,
+	 * the agent host auto-detects the preferred system shell — on Windows
+	 * this prefers PowerShell 7 (`pwsh.exe`) over Windows PowerShell 5.1.
+	 */
+	DefaultShell = 'defaultShell',
 }
 
 export const agentHostCustomizationConfigSchema = createSchema({
@@ -41,6 +51,11 @@ export const agentHostCustomizationConfigSchema = createSchema({
 			},
 			required: ['uri', 'displayName'],
 		},
+	}),
+	[AgentHostConfigKey.DefaultShell]: schemaProperty<string>({
+		type: 'string',
+		title: localize('agentHost.config.defaultShell.title', "Default Shell"),
+		description: localize('agentHost.config.defaultShell.description', "Absolute path to the shell executable used by host-managed terminals. Normally managed by the connected VS Code client based on terminal profile settings; advanced users running a headless agent host may set this directly."),
 	}),
 });
 

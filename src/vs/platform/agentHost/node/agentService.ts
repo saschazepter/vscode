@@ -128,7 +128,7 @@ export class AgentService extends Disposable implements IAgentService {
 
 		// Terminal management — the terminal manager listens to the state
 		// manager's action stream and dispatches PTY output back through it.
-		this._terminalManager = this._register(new AgentHostTerminalManager(this._stateManager, this._logService, this._productService));
+		this._terminalManager = this._register(new AgentHostTerminalManager(this._stateManager, this._logService, this._productService, configurationService));
 	}
 
 	// ---- provider registration ----------------------------------------------

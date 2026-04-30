@@ -79,6 +79,7 @@ class TestAgentHostTerminalManager implements IAgentHostTerminalManager {
 	disposeTerminal(): void { }
 	getTerminalInfos(): [] { return []; }
 	getTerminalState(): undefined { return undefined; }
+	async getDefaultShell(): Promise<string> { return '/bin/bash'; }
 }
 
 class TestSessionDataService extends Disposable implements ISessionDataService {

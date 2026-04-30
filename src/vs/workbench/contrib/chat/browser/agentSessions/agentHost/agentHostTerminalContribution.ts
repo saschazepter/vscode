@@ -3,18 +3,39 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { OS } from '../../../../../../base/common/platform.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../../nls.js';
 import { AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostConfigKey } from '../../../../../../platform/agentHost/common/agentHostCustomizationConfig.js';
+import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
 import { LoggingAgentConnection } from '../../../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
+import { ITerminalProfileResolverService } from '../../../../../../workbench/contrib/terminal/common/terminal.js';
 import { IAgentHostTerminalService } from '../../../../../../workbench/contrib/terminal/browser/agentHostTerminalService.js';
+
+/** Terminal settings whose change should re-resolve the agent host shell. */
+const AGENT_HOST_SHELL_DEPENDENT_SETTINGS = [
+	TerminalSettingId.AgentHostProfileLinux,
+	TerminalSettingId.AgentHostProfileMacOs,
+	TerminalSettingId.AgentHostProfileWindows,
+	TerminalSettingId.DefaultProfileLinux,
+	TerminalSettingId.DefaultProfileMacOs,
+	TerminalSettingId.DefaultProfileWindows,
+	TerminalSettingId.ProfilesLinux,
+	TerminalSettingId.ProfilesMacOs,
+	TerminalSettingId.ProfilesWindows,
+];
 
 /**
  * Registers local agent host terminal entries with
- * {@link IAgentHostTerminalService} so they appear in the terminal dropdown.
+ * {@link IAgentHostTerminalService} so they appear in the terminal dropdown,
+ * and bridges the resolved agent host terminal profile down to the local
+ * agent host process so its host-managed shells (PTY-backed `bash`/`powershell`
+ * tools, interactive remote shells) honor the user's terminal profile choice.
  *
  * Gated on the `chat.agentHost.enabled` setting.
  */
@@ -24,11 +45,15 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 	private readonly _localEntry = this._register(new MutableDisposable());
 	private readonly _conditionalListeners = this._register(new MutableDisposable<DisposableStore>());
 
+	/** Last shell path pushed to the agent host, to skip no-op dispatches. */
+	private _pushedShell: string | undefined;
+
 	constructor(
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@ITerminalProfileResolverService private readonly _terminalProfileResolverService: ITerminalProfileResolverService,
 	) {
 		super();
 
@@ -46,13 +71,21 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 			if (!this._conditionalListeners.value) {
 				const store = new DisposableStore();
 				store.add(this._agentHostService.onAgentHostStart(() => this._reconcile()));
-				store.add(this._agentHostService.onAgentHostExit(() => this._reconcile()));
+				store.add(this._agentHostService.onAgentHostExit(() => {
+					this._pushedShell = undefined;
+				}));
+				store.add(this._configurationService.onDidChangeConfiguration(e => {
+					if (AGENT_HOST_SHELL_DEPENDENT_SETTINGS.some(s => e.affectsConfiguration(s))) {
+						this._pushDefaultShell();
+					}
+				}));
 				this._conditionalListeners.value = store;
 				this._reconcile();
 			}
 		} else {
 			this._conditionalListeners.value = undefined;
 			this._localEntry.value = undefined;
+			this._pushedShell = undefined;
 		}
 	}
 
@@ -69,5 +102,34 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 				),
 			});
 		}
+		this._pushDefaultShell();
+	}
+
+	/**
+	 * Resolve the agent host terminal profile (with `defaultProfile.<os>`
+	 * fallback) and push the shell path into the agent host's root config so
+	 * its host-managed shells inherit the user's preferred terminal binary.
+	 */
+	private async _pushDefaultShell(): Promise<void> {
+		let profile;
+		try {
+			profile = await this._terminalProfileResolverService.getDefaultProfile({
+				remoteAuthority: undefined,
+				os: OS,
+				allowAgentHostShell: true,
+			});
+		} catch {
+			return;
+		}
+
+		if (!profile.path || profile.path === this._pushedShell) {
+			return;
+		}
+		this._pushedShell = profile.path;
+
+		this._agentHostService.dispatch({
+			type: ActionType.RootConfigChanged,
+			config: { [AgentHostConfigKey.DefaultShell]: profile.path },
+		});
 	}
 }

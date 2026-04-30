@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { Tool, ToolResultObject } from '@github/copilot-sdk';
+import { parse as pathParse } from '../../../../base/common/path.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { URI } from '../../../../base/common/uri.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
@@ -37,15 +38,40 @@ interface IManagedShell {
 	readonly id: string;
 	readonly terminalUri: string;
 	readonly shellType: ShellType;
+	readonly executable: string;
 }
 
 export type ShellType = 'bash' | 'powershell';
 
-function getShellExecutable(shellType: ShellType): string {
-	if (shellType === 'powershell') {
-		return 'powershell.exe';
+/**
+ * Classifies a shell executable path as `'powershell'`, `'bash'`, or
+ * `undefined` when the basename matches no known shell family. Used to
+ * pick the right Copilot SDK built-in tool to override and to tailor
+ * sentinel/history-suppression behavior to the shell's syntax.
+ *
+ * Exported for tests.
+ */
+export function classifyShellExecutable(shellPath: string): ShellType | undefined {
+	const name = pathParse(shellPath).name.toLowerCase();
+	if (name === 'pwsh' || name === 'powershell' || name === 'pwsh-preview') {
+		return 'powershell';
 	}
-	return process.env['SHELL'] || '/bin/bash';
+	if (name === 'bash' || name === 'sh' || name === 'zsh' || name === 'fish' || name === 'dash' || name === 'ksh') {
+		return 'bash';
+	}
+	return undefined;
+}
+
+/**
+ * Picks the Copilot SDK built-in shell tool to override (`'bash'` or
+ * `'powershell'`) given the resolved shell executable, falling back to
+ * the platform default when the executable does not match a known shell
+ * family.
+ *
+ * Exported for tests.
+ */
+export function shellTypeForExecutable(shellPath: string): ShellType {
+	return classifyShellExecutable(shellPath) ?? (platform.isWindows ? 'powershell' : 'bash');
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +90,7 @@ export class ShellManager {
 
 	private readonly _shells = new Map<string, IManagedShell>();
 	private readonly _toolCallShells = new Map<string, string>();
+	private _resolvedExecutable: Promise<string> | undefined;
 
 	private readonly _onDidAssociateTerminal = new Emitter<{ toolCallId: string; terminalUri: string; displayName: string }>();
 	readonly onDidAssociateTerminal: Event<{ toolCallId: string; terminalUri: string; displayName: string }> = this._onDidAssociateTerminal.event;
@@ -74,6 +101,22 @@ export class ShellManager {
 		@IAgentHostTerminalManager private readonly _terminalManager: IAgentHostTerminalManager,
 		@ILogService private readonly _logService: ILogService,
 	) { }
+
+	/**
+	 * Returns the resolved shell executable for this session, computed via
+	 * {@link IAgentHostTerminalManager.getDefaultShell} on first call and
+	 * cached for the lifetime of the session. Cached intentionally — we
+	 * want every tool call within a session to spawn the same shell binary
+	 * so that `shellType`, sentinel format, and history-suppression
+	 * behavior stay consistent across the session, even if the user
+	 * mutates host config mid-session.
+	 */
+	getResolvedExecutable(): Promise<string> {
+		if (!this._resolvedExecutable) {
+			this._resolvedExecutable = this._terminalManager.getDefaultShell();
+		}
+		return this._resolvedExecutable;
+	}
 
 	async getOrCreateShell(
 		shellType: ShellType,
@@ -103,18 +146,19 @@ export class ShellManager {
 		};
 
 		const shellDisplayName = shellType === 'bash' ? 'Bash' : 'PowerShell';
+		const executable = await this.getResolvedExecutable();
 
 		await this._terminalManager.createTerminal({
 			terminal: terminalUri,
 			claim,
 			name: shellDisplayName,
 			cwd: cwd ?? this._workingDirectory?.fsPath,
-		}, { shell: getShellExecutable(shellType), preventShellHistory: true, nonInteractive: true });
+		}, { shell: executable, preventShellHistory: true, nonInteractive: true });
 
-		const shell: IManagedShell = { id, terminalUri, shellType };
+		const shell: IManagedShell = { id, terminalUri, shellType, executable };
 		this._shells.set(id, shell);
 		this._trackToolCall(toolCallId, id);
-		this._logService.info(`[ShellManager] Created ${shellType} shell ${id} (terminal=${terminalUri})`);
+		this._logService.info(`[ShellManager] Created ${shellType} shell ${id} (terminal=${terminalUri}, executable=${executable})`);
 		return shell;
 	}
 
@@ -432,20 +476,23 @@ interface IShutdownShellArgs {
  * Creates the set of SDK {@link Tool} definitions that override the built-in
  * Copilot CLI shell tools with PTY-backed implementations.
  *
- * Returns tools for the platform-appropriate shell (bash or powershell),
- * including companion tools (read, write, shutdown, list).
+ * Returns tools for the user's configured (or auto-detected) shell — see
+ * {@link resolveShellExecutable}. Includes companion tools (read, write,
+ * shutdown, list). Async because the resolved executable determines which
+ * SDK built-in tool (`bash` vs `powershell`) we override.
  */
-export function createShellTools(
+export async function createShellTools(
 	shellManager: ShellManager,
 	terminalManager: IAgentHostTerminalManager,
 	logService: ILogService,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Tool<any>[] {
-	const shellType: ShellType = platform.isWindows ? 'powershell' : 'bash';
+): Promise<Tool<any>[]> {
+	const executable = await shellManager.getResolvedExecutable();
+	const shellType = shellTypeForExecutable(executable);
 
 	const primaryTool: Tool<IShellToolArgs> = {
 		name: shellType,
-		description: shellType === 'bash' ? createBashModelDescription(false) : createPowerShellModelDescription(shellType, 'pwsh.exe', false),
+		description: shellType === 'bash' ? createBashModelDescription(false) : createPowerShellModelDescription(shellType, executable, false),
 		parameters: {
 			type: 'object',
 			properties: {

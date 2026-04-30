@@ -16,10 +16,12 @@ import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
 import { getShellIntegrationInjection } from '../../terminal/node/terminalEnvironment.js';
+import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../common/agentHostCustomizationConfig.js';
 import { ActionType } from '../common/state/protocol/actions.js';
 import type { CreateTerminalParams } from '../common/state/protocol/commands.js';
 import { TerminalClaim, TerminalContentPart, TerminalInfo, TerminalState, TerminalClaimKind } from '../common/state/protocol/state.js';
 import { isTerminalAction } from '../common/state/sessionActions.js';
+import { IAgentConfigurationService } from './agentConfigurationService.js';
 import type { AgentHostStateManager } from './agentHostStateManager.js';
 import { Osc633Event, Osc633EventType, Osc633Parser } from './osc633Parser.js';
 
@@ -53,6 +55,16 @@ export interface IAgentHostTerminalManager {
 	disposeTerminal(uri: string): void;
 	getTerminalInfos(): TerminalInfo[];
 	getTerminalState(uri: string): TerminalState | undefined;
+	/**
+	 * Resolves the shell executable used by host-managed terminals when
+	 * no explicit `shell` option is supplied. Honors
+	 * `AgentHostConfigKey.DefaultShell` from agent-host root config when
+	 * the configured path is executable; otherwise delegates to
+	 * {@link getSystemShell} (which prefers `pwsh.exe` over Windows
+	 * PowerShell 5.1 on Windows via
+	 * {@link getFirstAvailablePowerShellInstallation}).
+	 */
+	getDefaultShell(): Promise<string>;
 }
 
 // node-pty is loaded dynamically to avoid bundling issues in non-node environments
@@ -112,6 +124,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		private readonly _stateManager: AgentHostStateManager,
 		@ILogService private readonly _logService: ILogService,
 		@IProductService private readonly _productService: IProductService,
+		private readonly _configurationService: IAgentConfigurationService | undefined = undefined,
 	) {
 		super();
 
@@ -185,7 +198,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		const cols = params.cols ?? 80;
 		const rows = params.rows ?? 24;
 
-		const shell = options?.shell ?? await this._getDefaultShell();
+		const shell = options?.shell ?? await this.getDefaultShell();
 		const name = platform.isWindows ? 'cmd' : 'xterm-256color';
 
 		this._logService.info(`[TerminalManager] Creating terminal ${uri}: shell=${shell}, cwd=${cwd}, cols=${cols}, rows=${rows}`);
@@ -666,7 +679,16 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		}
 	}
 
-	private _getDefaultShell(): Promise<string> {
+	async getDefaultShell(): Promise<string> {
+		const configured = this._configurationService?.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.DefaultShell);
+		if (configured) {
+			try {
+				await fs.promises.access(configured, fs.constants.X_OK);
+				return configured;
+			} catch (err) {
+				this._logService.warn(`[TerminalManager] Configured defaultShell '${configured}' is not accessible, falling back to system shell: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
 		return getSystemShell(platform.OS, process.env);
 	}
 
