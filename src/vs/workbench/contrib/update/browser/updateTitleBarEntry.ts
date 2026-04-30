@@ -22,6 +22,7 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { DisablementReason, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IHostService } from '../../../services/host/browser/host.js';
+import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IChatService } from '../../chat/common/chatService/chatService.js';
 import { computeProgressPercent } from '../common/updateUtils.js';
 import { waitForState } from '../../../../base/common/observable.js';
@@ -63,6 +64,7 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 	private state!: State;
 	private entry: UpdateTitleBarEntry | undefined;
 	private tooltipVisible = false;
+	private zenMode = false;
 	private readonly pendingShow = this._register(new MutableDisposable());
 
 	constructor(
@@ -71,6 +73,7 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IHostService private readonly hostService: IHostService,
 		@IInstantiationService instantiationService: IInstantiationService,
+		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IUpdateService updateService: IUpdateService,
 	) {
@@ -106,11 +109,22 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			}
 		));
 
+		this._register(layoutService.onDidChangeZenMode(zenMode => {
+			this.zenMode = zenMode;
+			void this.onStateChange();
+		}));
+
 		void this.onStateChange(true);
 	}
 
 	private async onStateChange(startup = false) {
 		this.pendingShow.clear();
+
+		if (this.zenMode) {
+			this.context.set(false);
+			return;
+		}
+
 		if (ACTIONABLE_STATES.includes(this.state.type)) {
 			await this.setContextWhenChatIdle(true);
 		} else {
