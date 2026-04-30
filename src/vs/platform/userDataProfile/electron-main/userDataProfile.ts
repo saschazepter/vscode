@@ -43,7 +43,7 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 		@IProductService productService: IProductService,
 	) {
 		super(stateService, uriIdentityService, environmentService, fileService, logService);
-		this.agentPluginsHome = URI.file(getAgentPluginsPath(environmentService.args, environmentService.userHome, productService.dataFolderName));
+		this.agentPluginsHome = URI.file(getAgentPluginsPath(environmentService.args, joinPath(environmentService.userHome, productService.dataFolderName)));
 	}
 
 	protected override createDefaultProfile(): IUserDataProfile {
@@ -54,11 +54,11 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 		if (!(process as INodeProcess).isEmbeddedApp) {
 			return defaultProfile;
 		}
-		const hostUserRoamingDataHome = this.environmentService.hostUserRoamingDataHome;
+		const hostUserRoamingDataHome = this.environmentService.parentAppUserRoamingDataHome;
 		if (!hostUserRoamingDataHome) {
 			return defaultProfile;
 		}
-		const hostAgentPluginsHome = getHostAgentPluginsPath(this.nativeEnvironmentService);
+		const hostAgentPluginsHome = getParentAppAgentPluginsPath(this.nativeEnvironmentService);
 		return {
 			...defaultProfile,
 			keybindingsResource: joinPath(hostUserRoamingDataHome, 'keybindings.json'),
@@ -77,15 +77,15 @@ export class UserDataProfilesMainService extends UserDataProfilesService impleme
 	}
 }
 
-function getHostAgentPluginsPath(environmentService: INativeEnvironmentService): string | undefined {
-	const hostUserHome = environmentService.hostUserHome;
+function getParentAppAgentPluginsPath(environmentService: INativeEnvironmentService): string | undefined {
+	const hostUserHome = environmentService.parentAppUserHome;
 	if (!hostUserHome) {
 		return undefined;
 	}
-	return joinPath(hostUserHome, 'agent-plugins').fsPath;
+	return getAgentPluginsPath(environmentService.args, hostUserHome);
 }
 
-function getAgentPluginsPath(args: NativeParsedArgs, userHome: URI, dataFolderName: string): string {
+function getAgentPluginsPath(args: NativeParsedArgs, userHome: URI): string {
 	const cliAgentPluginsDir = args['agent-plugins-dir'];
 	if (cliAgentPluginsDir) {
 		return resolve(cliAgentPluginsDir);
@@ -101,5 +101,5 @@ function getAgentPluginsPath(args: NativeParsedArgs, userHome: URI, dataFolderNa
 		return join(vscodePortable, 'agent-plugins');
 	}
 
-	return joinPath(userHome, dataFolderName, 'agent-plugins').fsPath;
+	return joinPath(userHome, 'agent-plugins').fsPath;
 }

@@ -5,8 +5,9 @@
 
 import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
-import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, addDisposableGenericMouseDownListener, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { localize } from '../../../../nls.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { IProductOnboardingTheme } from '../../../../base/common/product.js';
@@ -23,7 +24,7 @@ import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/co
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchThemeService } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
-import { IVSCodeThemeImporterService } from '../../../services/vscode/common/vsCodeThemeImporter.js';
+import { IThemeImporterService } from '../../../services/vscode/common/themeImporter.js';
 
 export type WalkthroughOutcome = 'completed' | 'dismissed';
 
@@ -98,7 +99,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IProductService private readonly productService: IProductService,
-		@IVSCodeThemeImporterService private readonly vsCodeThemeImporter: IVSCodeThemeImporterService,
+		@IThemeImporterService private readonly themeImporterService: IThemeImporterService,
 		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService,
 		@ILogService private readonly logService: ILogService,
 	) {
@@ -343,7 +344,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 		// Start resolving the parent VS Code theme during the fade-out
 		const parentThemePromise = !isWeb
-			? this.vsCodeThemeImporter.getVSCodeTheme()
+			? this.themeImporterService.getVSCodeTheme()
 			: Promise.resolve(undefined);
 
 		// Fade out current content, then render theme step
@@ -389,9 +390,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 
 		const themeCards: HTMLElement[] = [];
 		let vscodeThemeBtn: HTMLElement | undefined;
+		let isVSCodeThemeSelected = false;
 		for (const theme of themes) {
 			const card = this._createThemeCard(stepDisposables, themeGrid, theme, themeCards, selectedThemeId, id => {
 				selectedThemeId = id;
+				isVSCodeThemeSelected = false;
 				if (vscodeThemeBtn) {
 					vscodeThemeBtn.classList.remove('selected');
 					vscodeThemeBtn.setAttribute('aria-checked', 'false');
@@ -400,10 +403,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			themeCards.push(card);
 		}
 
-		// Show a VS Code theme option as a radio-style button below the grid
+		// Show a VS Code theme option as a radio-style button inside the radiogroup
 		if (parentThemeSettingsId) {
 			const parentName = this.productService.embedded?.nameShort ?? 'VS Code';
-			const option = append(this.contentContainer, $('.sessions-walkthrough-vscode-theme-option'));
+			const option = append(themeGrid, $('.sessions-walkthrough-vscode-theme-option'));
 			vscodeThemeBtn = append(option, $('div.sessions-walkthrough-vscode-theme-radio'));
 			vscodeThemeBtn.setAttribute('role', 'radio');
 			vscodeThemeBtn.setAttribute('aria-checked', 'false');
@@ -415,6 +418,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				parentThemeSettingsId,
 			);
 			vscodeThemeBtn.textContent = labelText;
+			let previewDisposable: IDisposable | undefined;
 			const selectVSCodeTheme = async () => {
 				for (const c of themeCards) {
 					c.classList.remove('selected');
@@ -422,20 +426,19 @@ export class SessionsWalkthroughOverlay extends Disposable {
 				}
 				vscodeThemeBtn!.classList.add('selected');
 				vscodeThemeBtn!.setAttribute('aria-checked', 'true');
+				isVSCodeThemeSelected = true;
 
-				// Apply the theme immediately if it's already available (built-in)
-				const allThemes = await this.themeService.getColorThemes();
-				const match = allThemes.find(t => t.settingsId === parentThemeSettingsId);
-				if (match) {
-					this.themeService.setColorTheme(match.id, ConfigurationTarget.USER);
-				} else {
-					// Theme needs extension install
-					vscodeThemeBtn!.textContent = localize('walkthrough.theme.importing', "Importing theme\u2026");
-					await this.vsCodeThemeImporter.importVSCodeTheme();
-					vscodeThemeBtn!.textContent = labelText;
-				}
+				// Preview the theme (temporary install from host location)
+				previewDisposable?.dispose();
+				previewDisposable = await this.themeImporterService.previewVSCodeTheme();
+				vscodeThemeBtn!.textContent = labelText;
 			};
-			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.CLICK, selectVSCodeTheme));
+			// Dispose preview on step teardown (escape)
+			stepDisposables.add(toDisposable(() => previewDisposable?.dispose()));
+			stepDisposables.add(Gesture.addTarget(vscodeThemeBtn));
+			for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
+				stepDisposables.add(addDisposableListener(vscodeThemeBtn, eventType, selectVSCodeTheme));
+			}
 			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 				if (e.key === 'Enter' || e.key === ' ') {
 					e.preventDefault();
@@ -448,7 +451,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const actions = append(this.footerContainer, $('.sessions-walkthrough-theme-footer'));
 		const continueBtn = append(actions, $('button.sessions-walkthrough-get-started-btn')) as HTMLButtonElement;
 		continueBtn.textContent = localize('walkthrough.theme.continue', "Continue");
-		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, () => {
+		stepDisposables.add(addDisposableListener(continueBtn, EventType.CLICK, async () => {
+			if (isVSCodeThemeSelected) {
+				await this.themeImporterService.importVSCodeTheme();
+			}
 			this._isShowingWelcome = false;
 			this._isShowingThemeStep = false;
 			this.complete();
@@ -478,13 +484,13 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const preview = append(card, $('div.sessions-walkthrough-theme-preview'));
 		const img = append(preview, $<HTMLImageElement>('img.sessions-walkthrough-theme-preview-img'));
 		img.alt = '';
-		img.src = FileAccess.asBrowserUri(`vs/workbench/contrib/welcomeOnboarding/browser/media/theme-preview-${theme.id}.svg`).toString(true);
+		img.src = FileAccess.asBrowserUri(`vs/sessions/contrib/welcome/browser/media/themePreviews/theme-preview-${theme.id}.svg`).toString(true);
 
 		// Label
 		const label = append(card, $('div.sessions-walkthrough-theme-label'));
 		label.textContent = theme.label;
 
-		stepDisposables.add(addDisposableListener(card, EventType.CLICK, () => {
+		const selectCard = () => {
 			onSelect(theme.id);
 			this._applyTheme(theme);
 			for (const c of allCards) {
@@ -493,7 +499,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			}
 			card.classList.add('selected');
 			card.setAttribute('aria-checked', 'true');
-		}));
+		};
+		stepDisposables.add(Gesture.addTarget(card));
+		for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
+			stepDisposables.add(addDisposableListener(card, eventType, selectCard));
+		}
 
 		stepDisposables.add(addDisposableListener(card, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {
