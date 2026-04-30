@@ -9,53 +9,16 @@ import { Disposable, IDisposable, toDisposable } from '../../../../base/common/l
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ConfigurationTarget } from '../../../../platform/configuration/common/configuration.js';
-import { INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { IExtensionManagementService, ILocalExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IExtensionsScannerService } from '../../../../platform/extensionManagement/common/extensionsScannerService.js';
 import { ExtensionType, IExtensionManifest } from '../../../../platform/extensions/common/extensions.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkbenchThemeService } from '../../../../workbench/services/themes/common/workbenchThemeService.js';
 import { IUserDataProfileService } from '../../../../workbench/services/userDataProfile/common/userDataProfile.js';
-
-/** The VS Code configuration key for the active color theme. */
-export const COLOR_THEME_SETTINGS_ID = 'workbench.colorTheme';
-
-/**
- * Service that reads the parent VS Code installation's active color theme
- * and can import it into the Agents app — using the providing extension
- * from the parent VS Code installation if necessary.
- */
-export interface IVSCodeThemeImporterService {
-
-	readonly _serviceBrand: undefined;
-
-	/**
-	 * Resolves the parent VS Code's active color theme. Returns `undefined`
-	 * when the parent settings cannot be read or the theme is already one of
-	 * the onboarding themes displayed in the theme picker.
-	 */
-	getVSCodeTheme(): Promise<string | undefined>;
-
-	/**
-	 * Temporarily installs the providing extension from the host's extensions
-	 * directory and applies the VS Code theme. Returns an `IDisposable` that
-	 * uninstalls the extension on dispose. Returns `undefined` if the theme
-	 * is already available or cannot be resolved.
-	 */
-	previewVSCodeTheme(): Promise<IDisposable | undefined>;
-
-	/**
-	 * Permanently imports the VS Code theme into the Agents app by copying
-	 * the providing extension into the Agents app's extensions directory
-	 * and installing it from there.
-	 */
-	importVSCodeTheme(): Promise<void>;
-}
-
-export const IVSCodeThemeImporterService = createDecorator<IVSCodeThemeImporterService>('vsCodeThemeImporterService');
+import { IThemeImporterService, COLOR_THEME_SETTINGS_ID } from '../common/themeImporter.js';
+import { INativeWorkbenchEnvironmentService } from '../../../../workbench/services/environment/electron-browser/environmentService.js';
 
 /**
  * Describes a color theme from the parent VS Code installation.
@@ -70,14 +33,14 @@ interface IParentThemeInfo {
 	readonly extensionLocation: URI | undefined;
 }
 
-export class VSCodeThemeImporterService extends Disposable implements IVSCodeThemeImporterService {
+class ThemeImporterService extends Disposable implements IThemeImporterService {
 
 	declare readonly _serviceBrand: undefined;
 
 	private _parentThemePromise: Promise<IParentThemeInfo | undefined> | undefined;
 
 	constructor(
-		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
+		@INativeWorkbenchEnvironmentService private readonly environmentService: INativeWorkbenchEnvironmentService,
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
 		@IExtensionsScannerService private readonly extensionsScannerService: IExtensionsScannerService,
 		@IFileService private readonly fileService: IFileService,
@@ -268,4 +231,4 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 	}
 }
 
-registerSingleton(IVSCodeThemeImporterService, VSCodeThemeImporterService, InstantiationType.Delayed);
+registerSingleton(IThemeImporterService, ThemeImporterService, InstantiationType.Delayed);
