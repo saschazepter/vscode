@@ -22,12 +22,12 @@ import { IInstantiationService } from '../../../util/vs/platform/instantiation/c
 import { ClaudeFolderInfo } from '../claude/common/claudeFolderInfo';
 import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { ClaudeAgentManager } from '../claude/node/claudeCodeAgent';
-import { CLAUDE_REASONING_EFFORT_PROPERTY, IClaudeCodeModels } from '../claude/node/claudeCodeModels';
+import { CLAUDE_REASONING_EFFORT_PROPERTY, formatClaudeModelDetails, IClaudeCodeModels } from '../claude/node/claudeCodeModels';
 import { IClaudeCodeSdkService } from '../claude/node/claudeCodeSdkService';
-import { parseClaudeModelId } from '../claude/node/claudeModelId';
+import { parseClaudeModelId, tryParseClaudeModelId } from '../claude/node/claudeModelId';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { IClaudeCodeSessionService } from '../claude/node/sessionParser/claudeCodeSessionService';
-import { IClaudeCodeSessionInfo } from '../claude/node/sessionParser/claudeSessionSchema';
+import { IClaudeCodeSessionInfo, IClaudeCodeSession, SYNTHETIC_MODEL_ID } from '../claude/node/sessionParser/claudeSessionSchema';
 import { IClaudeSlashCommandService } from '../claude/vscode-node/claudeSlashCommandService';
 import { IChatFolderMruService } from '../common/folderRepositoryManager';
 import { builtinSlashCommands } from '../common/builtinSlashCommands';
@@ -156,7 +156,11 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			// Clear usage handler after request completes
 			this.sessionStateService.setUsageHandlerForSession(effectiveSessionId, undefined);
 
-			return result.errorDetails ? { errorDetails: result.errorDetails } : {};
+			const details = await this._resolveModelDetails(modelId.toEndpointModelId());
+			return {
+				...(details ? { details } : {}),
+				...(result.errorDetails ? { errorDetails: result.errorDetails } : {}),
+			};
 		};
 	}
 
@@ -164,8 +168,9 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 
 	async provideChatSessionContent(sessionResource: vscode.Uri, token: vscode.CancellationToken, context?: { readonly inputState: vscode.ChatSessionInputState }): Promise<vscode.ChatSession> {
 		const existingSession = await this.sessionService.getSession(sessionResource, token);
+		const detailsByModelId = existingSession ? await this._buildModelDetailsLookup(existingSession) : undefined;
 		const history = existingSession ?
-			buildChatHistory(existingSession) :
+			buildChatHistory(existingSession, detailsByModelId ? id => detailsByModelId.get(id) : undefined) :
 			[];
 
 		const options: Record<string, string | vscode.ChatSessionProviderOptionItem> = {};
@@ -187,6 +192,57 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 			requestHandler: undefined,
 			options,
 		};
+	}
+
+	/**
+	 * Resolves a Claude model id to its display string for the chat response footer.
+	 * Returns `undefined` if no exact endpoint match is found, or if endpoint
+	 * resolution itself throws — neither failure mode should break the response or
+	 * session-load path.
+	 */
+	private async _resolveModelDetails(modelId: string): Promise<string | undefined> {
+		let endpoint;
+		try {
+			endpoint = await this.claudeModels.resolveEndpoint(modelId, undefined);
+		} catch {
+			return undefined;
+		}
+		if (!endpoint) {
+			return undefined;
+		}
+		const normalized = tryParseClaudeModelId(modelId)?.toEndpointModelId() ?? modelId;
+		if (endpoint.model !== normalized && endpoint.family !== normalized) {
+			return undefined;
+		}
+		return formatClaudeModelDetails(endpoint);
+	}
+
+	/**
+	 * Resolves the display string for each unique non-synthetic model id observed in the
+	 * session's assistant messages. Returns `undefined` (not an empty map) when no model
+	 * ids are present so callers can skip the per-turn details work entirely.
+	 */
+	private async _buildModelDetailsLookup(session: IClaudeCodeSession): Promise<Map<string, string> | undefined> {
+		const modelIds = new Set<string>();
+		for (const msg of session.messages) {
+			if (msg.type === 'assistant' && msg.message.role === 'assistant') {
+				const model = msg.message.model;
+				if (model && model !== SYNTHETIC_MODEL_ID) {
+					modelIds.add(model);
+				}
+			}
+		}
+		if (modelIds.size === 0) {
+			return undefined;
+		}
+		const detailsByModelId = new Map<string, string>();
+		await Promise.all([...modelIds].map(async modelId => {
+			const details = await this._resolveModelDetails(modelId);
+			if (details) {
+				detailsByModelId.set(modelId, details);
+			}
+		}));
+		return detailsByModelId.size > 0 ? detailsByModelId : undefined;
 	}
 }
 
