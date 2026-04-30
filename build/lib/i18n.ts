@@ -26,10 +26,6 @@ export interface Language {
 	folderName?: string; // language specific folder name, e.g. cht, deu  (optional, if not set, the id is used)
 }
 
-export interface InnoSetup {
-	codePage: string; //code page for encoding (http://www.jrsoftware.org/ishelp/index.php?topic=langoptionssection) — no longer used, ISL files are now UTF-8 with BOM
-}
-
 export const defaultLanguages: Language[] = [
 	{ id: 'zh-tw', folderName: 'cht', translationId: 'zh-hant' },
 	{ id: 'zh-cn', folderName: 'chs', translationId: 'zh-hans' },
@@ -797,7 +793,7 @@ export function prepareI18nPackFiles(resultingTranslationPaths: TranslationPath[
 	});
 }
 
-export function prepareIslFiles(language: Language, innoSetupConfig: InnoSetup): eventStream.ThroughStream {
+export function prepareIslFiles(language: Language): eventStream.ThroughStream {
 	const parsePromises: Promise<l10nJsonDetails[]>[] = [];
 
 	return eventStream.through(function (this: eventStream.ThroughStream, xlf: File) {
@@ -807,7 +803,7 @@ export function prepareIslFiles(language: Language, innoSetupConfig: InnoSetup):
 		parsePromise.then(
 			resolvedFiles => {
 				resolvedFiles.forEach(file => {
-					const translatedFile = createIslFile(file.name, file.messages, language, innoSetupConfig);
+					const translatedFile = createIslFile(file.name, file.messages, language);
 					stream.queue(translatedFile);
 				});
 			}
@@ -823,7 +819,7 @@ export function prepareIslFiles(language: Language, innoSetupConfig: InnoSetup):
 	});
 }
 
-function createIslFile(name: string, messages: l10nJsonFormat, language: Language, _innoSetup: InnoSetup): File {
+function createIslFile(name: string, messages: l10nJsonFormat, language: Language): File {
 	const content: string[] = [];
 	let originalContent: TextModel;
 	if (path.basename(name) === 'Default') {
