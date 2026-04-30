@@ -12,7 +12,7 @@ import { Disposable, MutableDisposable, toDisposable } from '../../../../base/co
 import { isWeb } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
-import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, IMenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
@@ -37,6 +37,16 @@ const DISABLED_REMINDER_PERIOD = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 const ACTIONABLE_STATES: readonly StateType[] = [StateType.AvailableForDownload, StateType.Downloaded, StateType.Ready];
 const DETAILED_STATES: readonly StateType[] = [...ACTIONABLE_STATES, StateType.CheckingForUpdates, StateType.Downloading, StateType.Updating, StateType.Overwriting];
+
+/**
+ * Additional menu placements for the update indicator, used by alternative
+ * shells (e.g. the Agents app) to render the same entry in their own titlebar.
+ */
+const additionalMenuPlacements: { readonly menuId: MenuId; readonly item: Omit<IMenuItem, 'command'> }[] = [];
+
+export function registerUpdateTitleBarMenuPlacement(menuId: MenuId, item: Omit<IMenuItem, 'command'> = {}): void {
+	additionalMenuPlacements.push({ menuId, item });
+}
 
 registerAction2(class UpdateIndicatorTitleBarAction extends Action2 {
 	constructor() {
@@ -93,21 +103,39 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 		this._register(actionViewItemService.register(
 			MenuId.TitleBarAdjacentCenter,
 			UPDATE_TITLE_BAR_ACTION_ID,
-			(action, options) => {
-				this.entry = instantiationService.createInstance(UpdateTitleBarEntry, action, options, this.tooltip, () => {
-					this.tooltipVisible = false;
-					if (!ACTIONABLE_STATES.includes(this.state.type) && !DETAILED_STATES.includes(this.state.type)) {
-						this.context.set(false);
-					}
-				});
-				if (this.tooltipVisible) {
-					this.entry.showTooltip();
-				}
-				return this.entry;
-			}
+			(action, options) => this.createEntry(instantiationService, action, options)
 		));
 
+		for (const placement of additionalMenuPlacements) {
+			MenuRegistry.appendMenuItem(placement.menuId, {
+				...placement.item,
+				command: {
+					id: UPDATE_TITLE_BAR_ACTION_ID,
+					title: localize('updateIndicatorTitleBarAction', 'Update'),
+				},
+				when: placement.item.when ? ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, placement.item.when) : UPDATE_TITLE_BAR_CONTEXT,
+			});
+			this._register(actionViewItemService.register(
+				placement.menuId,
+				UPDATE_TITLE_BAR_ACTION_ID,
+				(action, options) => this.createEntry(instantiationService, action, options)
+			));
+		}
+
 		void this.onStateChange(true);
+	}
+
+	private createEntry(instantiationService: IInstantiationService, action: IAction, options: IBaseActionViewItemOptions): UpdateTitleBarEntry {
+		this.entry = instantiationService.createInstance(UpdateTitleBarEntry, action, options, this.tooltip, () => {
+			this.tooltipVisible = false;
+			if (!ACTIONABLE_STATES.includes(this.state.type) && !DETAILED_STATES.includes(this.state.type)) {
+				this.context.set(false);
+			}
+		});
+		if (this.tooltipVisible) {
+			this.entry.showTooltip();
+		}
+		return this.entry;
 	}
 
 	private async onStateChange(startup = false) {
