@@ -808,9 +808,12 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 					schedulerStore.dispose();
 				}
 
-				disposableStore.add(toDisposable(() => {
-					p.run({ maxTasks: 100, maxTaskDepth: 5 });
-				}));
+				const drain = false;
+				if (drain) {
+					disposableStore.add(toDisposable(() => {
+						p.run({ maxTasks: 100, maxTaskDepth: 5 });
+					}));
+				}
 			}
 
 			// Every render gets its own trace root so that any diagnostics
