@@ -212,8 +212,9 @@ export class IssueFormService implements IIssueFormService {
 			return { url: extensionUrl, external: !this.isGitHubUrl(extensionUrl) };
 		}
 
-		if (data.issueSource === IssueSource.Marketplace && product.reportMarketplaceIssueUrl) {
-			return { url: product.reportMarketplaceIssueUrl, external: false };
+		if (data.issueSource === IssueSource.Marketplace) {
+			const marketplaceIssueUrl = product.reportMarketplaceIssueUrl ?? product.reportIssueUrl;
+			return marketplaceIssueUrl ? { url: marketplaceIssueUrl, external: false } : undefined;
 		}
 
 		if (data.uri) {

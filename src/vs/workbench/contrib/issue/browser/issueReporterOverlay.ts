@@ -83,6 +83,7 @@ export class IssueReporterOverlay {
 	private selectedExtension: IssueReporterExtensionData | undefined;
 	private sourceButtonGroup!: HTMLElement;
 	private sourceError!: HTMLElement;
+	private targetStatus!: HTMLElement;
 	private extensionField!: HTMLElement;
 	private extensionSelect!: SelectBox;
 	private extensionOptions: { label: string; value: string | undefined; hidden?: boolean }[] = [];
@@ -540,6 +541,7 @@ export class IssueReporterOverlay {
 			}));
 		}
 		this.sourceError = this.createFieldError(sourceField, localize('targetRequired', "Select a target to continue."));
+		this.targetStatus = append(sourceField, $('div.wizard-target-status'));
 
 		this.extensionField = append(page, $('div.wizard-field.wizard-extension-field'));
 		const extensionLabel = append(this.extensionField, $('label.wizard-field-label'));
@@ -685,19 +687,15 @@ export class IssueReporterOverlay {
 		this.descriptionError = this.createFieldError(descriptionGroup, localize('descriptionRequired', "Enter a description to continue."));
 
 		this.updateIssueSourceFlags();
+		this.updateTargetStatus();
 	}
 
 	private getSourceOptions(): { label: string; value: IssueSource }[] {
 		const options: { label: string; value: IssueSource }[] = [
 			{ label: product.nameLong || localize('vscode', "Visual Studio Code"), value: IssueSource.VSCode },
 			{ label: localize('extensionSource', "A VS Code extension"), value: IssueSource.Extension },
+			{ label: localize('marketplace', "Extensions Marketplace"), value: IssueSource.Marketplace },
 		];
-		if (product.reportMarketplaceIssueUrl) {
-			options.push({ label: localize('marketplace', "Extensions Marketplace"), value: IssueSource.Marketplace });
-		}
-		if (this.selectedIssueType !== IssueType.FeatureRequest) {
-			options.push({ label: localize('unknownSource', "Don't know"), value: IssueSource.Unknown });
-		}
 		return options;
 	}
 
@@ -728,6 +726,7 @@ export class IssueReporterOverlay {
 		this.updateIssueSourceButtons();
 		this.updateExtensionValidation();
 		this.updateTitlePlaceholder();
+		this.updateTargetStatus();
 		this.searchSimilarIssues();
 	}
 
@@ -823,7 +822,7 @@ export class IssueReporterOverlay {
 		this.updateIssueSourceFlags();
 
 		if (!extension) {
-			this.extensionStatus.textContent = '';
+			this.updateTargetStatus();
 			this.searchSimilarIssues();
 			return;
 		}
@@ -845,7 +844,7 @@ export class IssueReporterOverlay {
 			}
 		}
 
-		this.updateExtensionStatus();
+		this.updateTargetStatus();
 		this.searchSimilarIssues();
 	}
 
@@ -873,21 +872,45 @@ export class IssueReporterOverlay {
 		}
 	}
 
-	private updateExtensionStatus(): void {
-		if (!this.extensionStatus || !this.selectedExtension) {
+	private updateTargetStatus(): void {
+		if (!this.targetStatus) {
 			return;
 		}
+
+		this.targetStatus.textContent = '';
+		this.extensionStatus.textContent = '';
+		if (!this.selectedIssueSource) {
+			return;
+		}
+
+		if (this.selectedIssueSource !== IssueSource.Extension) {
+			const repo = this.getIssueTargetRepo();
+			this.targetStatus.textContent = repo
+				? localize('issueTargetRepo', "Issue will be created in {0}/{1}.", repo.owner, repo.repositoryName)
+				: '';
+			return;
+		}
+
+		if (!this.selectedExtension) {
+			return;
+		}
+
 		const issueUrl = this.getSelectedExtensionIssueUrl();
 		if (!issueUrl) {
 			this.extensionStatus.textContent = localize('extensionNoIssueUrl', "This extension does not provide an issue reporting URL.");
 		} else if (!this.isGitHubUrl(issueUrl)) {
 			this.extensionStatus.textContent = localize('extensionExternalIssueUrl', "This extension uses an external issue reporter. Preview will open that issue reporter.");
 		} else {
-			const repo = this.parseGitHubUrl(issueUrl);
+			const repo = this.getIssueTargetRepo();
 			this.extensionStatus.textContent = repo
-				? localize('extensionRepoTarget', "Issues will be previewed in {0}/{1}.", repo.owner, repo.repositoryName)
+				? localize('issueTargetRepo', "Issue will be created in {0}/{1}.", repo.owner, repo.repositoryName)
 				: '';
 		}
+	}
+
+	private getIssueTargetRepo(): { owner: string; repositoryName: string } | undefined {
+		const targetUrl = this.getIssueTargetUrl();
+		return targetUrl ? this.parseGitHubUrl(targetUrl) : undefined;
 	}
 
 	private getSelectedExtensionIssueUrl(): string | undefined {
@@ -927,7 +950,7 @@ export class IssueReporterOverlay {
 			return this.getSelectedExtensionIssueUrl();
 		}
 		if (this.selectedIssueSource === IssueSource.Marketplace) {
-			return product.reportMarketplaceIssueUrl;
+			return product.reportMarketplaceIssueUrl ?? product.reportIssueUrl;
 		}
 		if (this.data.uri) {
 			return URI.revive(this.data.uri).toString();
@@ -976,8 +999,9 @@ export class IssueReporterOverlay {
 				const extensionIssueUrl = this.getSelectedExtensionIssueUrl();
 				const repo = extensionIssueUrl && this.parseGitHubUrl(extensionIssueUrl);
 				results = repo ? await this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
-			} else if (this.selectedIssueSource === IssueSource.Marketplace && product.reportMarketplaceIssueUrl) {
-				const repo = this.parseGitHubUrl(product.reportMarketplaceIssueUrl);
+			} else if (this.selectedIssueSource === IssueSource.Marketplace) {
+				const marketplaceIssueUrl = product.reportMarketplaceIssueUrl ?? product.reportIssueUrl;
+				const repo = marketplaceIssueUrl && this.parseGitHubUrl(marketplaceIssueUrl);
 				results = repo ? await this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
 			} else {
 				results = await this.searchVSCodeDuplicates(title, this.descriptionTextarea.value.trim());

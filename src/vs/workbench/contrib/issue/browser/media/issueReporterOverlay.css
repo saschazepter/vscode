@@ -717,6 +717,7 @@
 	transform: translateY(-22px);
 }
 
+.wizard-target-status,
 .wizard-extension-status {
 	color: var(--vscode-descriptionForeground, #999);
 	font-size: 12px;
