@@ -163,7 +163,6 @@ export class IssueReporterOverlay {
 		initialHideToolbar: boolean = true,
 		private readonly resolveExtensionIssueData?: (extensionId: string) => Promise<IssueReporterData | undefined>,
 		private readonly openExternalLink?: (url: string) => Promise<void>,
-		private readonly listBuiltinExtensions: boolean = false,
 		private showUpdateBanner = false,
 	) {
 		this._hideToolbarInScreenshots = initialHideToolbar;
@@ -781,9 +780,9 @@ export class IssueReporterOverlay {
 
 	private getExtensionOptions(): { label: string; value: string | undefined; hidden?: boolean }[] {
 		const modelData = this.model.getData();
-		const sourceExtensions = (this.listBuiltinExtensions ? modelData.allExtensions : modelData.enabledNonThemeExtesions) ?? modelData.allExtensions ?? [];
+		const sourceExtensions = modelData.enabledNonThemeExtesions ?? modelData.allExtensions ?? [];
 		const extensions = [...sourceExtensions]
-			.filter(extension => !extension.isTheme && (this.listBuiltinExtensions || !extension.isBuiltin))
+			.filter(extension => !extension.isTheme && !extension.isBuiltin)
 			.sort((a, b) => (a.displayName || a.name || a.id).localeCompare(b.displayName || b.name || b.id));
 		return [
 			{ label: localize('selectExtension', "Select extension"), value: undefined, hidden: true },

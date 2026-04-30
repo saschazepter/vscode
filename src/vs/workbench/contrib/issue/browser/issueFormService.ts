@@ -83,8 +83,7 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
-		const wizardConfig = this.configurationService.getValue<{ enabled?: boolean }>('issueReporter.experimental.issueReportingWizard');
-		const useWizard = wizardConfig?.enabled ?? false;
+		const useWizard = this.configurationService.getValue<boolean>('issueReporter.experimental.wizard.enabled');
 		if (!useWizard) {
 			this.openAuxIssueReporterLegacy(data);
 			return;

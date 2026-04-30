@@ -37,7 +37,6 @@ import { IMarkdownRendererService } from '../../../../platform/markdown/browser/
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { ChatMessageRole, ILanguageModelsService, getTextResponseFromStream } from '../../chat/common/languageModels.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IUpdateService, StateType } from '../../../../platform/update/common/update.js';
 
@@ -72,7 +71,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotificationService private readonly notificationService: INotificationService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IUpdateService private readonly updateService: IUpdateService,
 	) {
@@ -86,11 +84,6 @@ export class IssueReporterEditorPane extends EditorPane {
 	}
 
 	private shouldShowUpdateBanner(): boolean {
-		const wizardConfig = this.configurationService.getValue<{ forceNewVersionBanner?: boolean }>('issueReporter.experimental.issueReportingWizard');
-		if (wizardConfig?.forceNewVersionBanner) {
-			return true;
-		}
-
 		return this.updateService.state.type === StateType.AvailableForDownload
 			|| this.updateService.state.type === StateType.Ready
 			|| this.updateService.state.type === StateType.Downloaded;
@@ -126,8 +119,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		}
 
 		// Create the wizard — renders inside this container
-		const wizardConfig = this.configurationService.getValue<{ defaultHideToolbarInScreenshots?: boolean; listBuiltinExtensions?: boolean; forceNewVersionBanner?: boolean }>('issueReporter.experimental.issueReportingWizard');
-		const hideToolbar = wizardConfig?.defaultHideToolbarInScreenshots ?? true;
 		this.wizard = new IssueReporterOverlay(
 			data,
 			this.recordingService.isSupported,
@@ -135,19 +126,13 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.contextViewService,
 			this.contextMenuService,
 			this.markdownRendererService,
-			hideToolbar,
+			true,
 			extensionId => this.issueFormService.sendReporterMenu(extensionId),
 			async url => { await this.openerService.open(URI.parse(url), { openExternal: true }); },
-			wizardConfig?.listBuiltinExtensions ?? false,
 			this.shouldShowUpdateBanner(),
 		);
 		this.inputDisposables.add(this.wizard);
 		this.inputDisposables.add(this.updateService.onStateChange(() => this.wizard?.setUpdateAvailable(this.shouldShowUpdateBanner())));
-		this.inputDisposables.add(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('issueReporter.experimental.issueReportingWizard.forceNewVersionBanner')) {
-				this.wizard?.setUpdateAvailable(this.shouldShowUpdateBanner());
-			}
-		}));
 
 		// Let the input check wizard state for close confirmation
 		input.hasUserInputFn = () => this.wizard?.hasUnsavedChanges() ?? false;

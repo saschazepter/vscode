@@ -49,32 +49,10 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	title: localize('issueReporterConfigurationTitle', "Issue Reporter"),
 	type: 'object',
 	properties: {
-		'issueReporter.experimental.issueReportingWizard': {
-			type: 'object',
-			default: { enabled: false, defaultHideToolbarInScreenshots: true, listBuiltinExtensions: false, forceNewVersionBanner: false },
-			description: localize('issueReporter.issueReportingWizard', "Configure the experimental issue reporting wizard."),
-			properties: {
-				'enabled': {
-					type: 'boolean',
-					default: false,
-					description: localize('issueReporter.issueReportingWizard.enabled', "Enable the experimental issue reporter wizard instead of the classic issue reporter."),
-				},
-				'defaultHideToolbarInScreenshots': {
-					type: 'boolean',
-					default: true,
-					description: localize('issueReporter.issueReportingWizard.defaultHideToolbarInScreenshots', "Default value for whether the floating capture toolbar is hidden when taking screenshots."),
-				},
-				'listBuiltinExtensions': {
-					type: 'boolean',
-					default: false,
-					description: localize('issueReporter.issueReportingWizard.listBuiltinExtensions', "List built-in extensions in the experimental issue reporter wizard extension picker for testing."),
-				},
-				'forceNewVersionBanner': {
-					type: 'boolean',
-					default: false,
-					description: localize('issueReporter.issueReportingWizard.forceNewVersionBanner', "Temporarily force the experimental issue reporter wizard to show the new version banner for testing."),
-				},
-			},
+		'issueReporter.experimental.wizard.enabled': {
+			type: 'boolean',
+			default: false,
+			description: localize('issueReporter.experimental.wizard.enabled', "Enable the experimental issue reporter wizard instead of the classic issue reporter."),
 		},
 	}
 });
