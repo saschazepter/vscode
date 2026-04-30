@@ -476,6 +476,7 @@ export function createShellTools(
 			},
 		},
 		overridesBuiltInTool: true,
+		skipPermission: true,
 		handler: (args) => {
 			const shells = shellManager.listShells();
 			const shell = args.shell_id
@@ -503,6 +504,7 @@ export function createShellTools(
 			required: ['command'],
 		},
 		overridesBuiltInTool: true,
+		skipPermission: true,
 		handler: (args) => {
 			const shells = shellManager.listShells();
 			const shell = shells[shells.length - 1];
@@ -524,6 +526,7 @@ export function createShellTools(
 			},
 		},
 		overridesBuiltInTool: true,
+		skipPermission: true,
 		handler: (args) => {
 			if (args.shell_id) {
 				const success = shellManager.shutdownShell(args.shell_id);
@@ -546,6 +549,7 @@ export function createShellTools(
 		description: `List active ${shellType} shell instances.`,
 		parameters: { type: 'object', properties: {} },
 		overridesBuiltInTool: true,
+		skipPermission: true,
 		handler: () => {
 			const shells = shellManager.listShells();
 			if (shells.length === 0) {
@@ -702,7 +706,7 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
-- NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Use read_${shellType} to check output before then
+- NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.
 
 Interactive Input Handling:
 - When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the ask_user tool to collect the needed values from the user, then send them.
