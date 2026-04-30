@@ -81,6 +81,7 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 		private readonly _instance: ITerminalInstance,
 		private readonly _hasReceivedUserInput: () => boolean,
 		private readonly _commandDetection: ICommandDetectionCapability,
+		private readonly _isSyncMode: boolean,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ITerminalLogService private readonly _logService: ITerminalLogService,
 	) {
@@ -131,7 +132,7 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 				? Event.filter(this._commandDetection.onCommandFinished, e => e !== staleExecutingCommand, store)
 				: this._commandDetection.onCommandFinished;
 
-			const idlePromptPromise = trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService);
+			const idlePromptPromise = trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableExecutingFallback: this._isSyncMode });
 			const onDone = Promise.race([
 				Event.toPromise(onCommandFinishedFiltered, store).then(e => {
 					// When shell integration is basic, it means that the end execution event is
@@ -159,7 +160,7 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 				}),
 				// A longer idle prompt event is used here as a catch all for unexpected cases where
 				// the end event doesn't fire for some reason.
-				trackIdleOnPrompt(this._instance, idlePollInterval * 3, store, idlePollInterval, this._logService).then(() => {
+				trackIdleOnPrompt(this._instance, idlePollInterval * 3, store, idlePollInterval, this._logService, { disableExecutingFallback: this._isSyncMode }).then(() => {
 					this._log('onDone long idle prompt');
 				}),
 			]);

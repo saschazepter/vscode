@@ -65,6 +65,7 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 	constructor(
 		private readonly _instance: ITerminalInstance,
 		private readonly _commandDetection: ICommandDetectionCapability,
+		private readonly _isSyncMode: boolean,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ITerminalLogService private readonly _logService: ITerminalLogService,
 	) {
@@ -137,7 +138,7 @@ export class RichExecuteStrategy extends Disposable implements ITerminalExecuteS
 					this._log(`onDone via process exit (${formatExitCodeOrError(exitCodeOrError)})`);
 					return { type: 'processExit', exitCodeOrError } as const;
 				}),
-				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService).then(() => {
+				trackIdleOnPrompt(this._instance, idlePollInterval, store, idlePollInterval, this._logService, { disableExecutingFallback: this._isSyncMode }).then(() => {
 					this._log('onDone via idle prompt');
 				}),
 			]);

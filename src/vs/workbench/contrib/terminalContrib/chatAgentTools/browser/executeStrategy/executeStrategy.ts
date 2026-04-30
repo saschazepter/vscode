@@ -160,12 +160,24 @@ export async function waitForIdleWithPromptHeuristics(
  * Tracks the terminal for being idle on a prompt input. This must be called before `executeCommand`
  * is called.
  */
+export interface ITrackIdleOnPromptOptions {
+	/**
+	 * When true, disables the 30s data-idle executing fallback and the 60s
+	 * hard-cap safety net. Use this for sync (foreground) commands that should
+	 * block until the command truly finishes rather than being abandoned after
+	 * an idle period. In sync mode the overall chat-request timeout or
+	 * user-specified timeout is the safety net instead.
+	 */
+	disableExecutingFallback?: boolean;
+}
+
 export async function trackIdleOnPrompt(
 	instance: ITerminalInstance,
 	idleDurationMs: number,
 	store: DisposableStore,
 	promptFallbackMs?: number,
 	logService?: ITerminalLogService,
+	options?: ITrackIdleOnPromptOptions,
 ): Promise<void> {
 	const idleOnPrompt = new DeferredPromise<void>();
 	const onData = instance.onData;
@@ -226,7 +238,9 @@ export async function trackIdleOnPrompt(
 		setState(TerminalState.PromptAfterExecuting, 'initialFallback');
 		scheduler.schedule();
 	}, 10_000));
-	initialFallbackScheduler.schedule();
+	if (!disableFallbacks) {
+		initialFallbackScheduler.schedule();
+	}
 	// Fallback for when shell integration breaks mid-command: data arrives and
 	// C/D sequences transition us to Executing, but no A (prompt) sequence ever
 	// follows. Both initialFallbackScheduler and promptFallbackScheduler get
@@ -236,6 +250,11 @@ export async function trackIdleOnPrompt(
 	// commands won't be cut off, but short enough to prevent indefinite hangs
 	// when shell integration breaks. When shell integration is working,
 	// onCommandFinished in the rich strategy's race wins before this fires.
+	//
+	// In sync (foreground) mode this fallback is disabled: sync commands should
+	// block until the command truly finishes. The overall chat-request timeout
+	// or user-specified timeout serves as the safety net instead.
+	const disableFallbacks = options?.disableExecutingFallback ?? false;
 	const executingFallbackScheduler = store.add(new RunOnceScheduler(() => {
 		if (state === TerminalState.Executing) {
 			log?.(`Executing fallback fired after 30s data-idle (dataEvents=${dataEventCount})`);
@@ -259,7 +278,9 @@ export async function trackIdleOnPrompt(
 			scheduler.schedule();
 		}
 	}, 60_000));
-	hardCapScheduler.schedule();
+	if (!disableFallbacks) {
+		hardCapScheduler.schedule();
+	}
 	// Only schedule when a prompt sequence (A) is seen after an execute sequence (C). This prevents
 	// cases where the command is executed before the prompt is written. While not perfect, sitting
 	// on an A without a C following shortly after is a very good indicator that the command is done
@@ -284,7 +305,9 @@ export async function trackIdleOnPrompt(
 				}
 			} else if (match.groups?.type === 'C' || match.groups?.type === 'D') {
 				setState(TerminalState.Executing, `sequence ${match.groups?.type}`);
-				executingFallbackScheduler.schedule();
+				if (!disableFallbacks) {
+					executingFallbackScheduler.schedule();
+				}
 			}
 		}
 		// Re-schedule on every data event as we're tracking data idle
@@ -300,7 +323,9 @@ export async function trackIdleOnPrompt(
 				promptFallbackScheduler.cancel();
 				// Re-schedule on every data event so it only fires after 30s
 				// of data-idle while in the Executing state.
-				executingFallbackScheduler.schedule();
+				if (!disableFallbacks) {
+					executingFallbackScheduler.schedule();
+				}
 			}
 		}
 	}));
