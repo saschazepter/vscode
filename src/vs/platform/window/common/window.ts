@@ -442,8 +442,8 @@ export interface INativeWindowConfiguration extends IWindowConfiguration, Native
 	homeDir: string;
 	tmpDir: string;
 	userDataDir: string;
-	parentAppUserDataDir: string | undefined;
-	parentAppUserHomeDir: string | undefined;
+	parentAppUserDataDir?: string;
+	parentAppUserHomeDir?: string;
 
 	partsSplash?: IPartsSplash;
 
