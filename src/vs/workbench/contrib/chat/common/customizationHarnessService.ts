@@ -181,6 +181,11 @@ export interface ICustomizationItem {
 	readonly badge?: string;
 	/** Tooltip shown when hovering the badge. */
 	readonly badgeTooltip?: string;
+	/**
+	 * Whether this customization item can be invoked by the user.
+	 * Relevant for prompt / skill and custom agents
+	 */
+	readonly userInvocable?: boolean;
 	/** Optional inline/context-menu actions specific to this item. */
 	readonly actions?: readonly ICustomizationItemAction[];
 }
@@ -645,7 +650,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 					type: item.type as PromptsType.prompt | PromptsType.skill,
 					name: item.pluginUri ? getCanonicalPluginCommandId({ uri: item.pluginUri }, item.name) : item.name,
 					description: item.description,
-					userInvocable: true, // todo we need a way for providers to specify this if some items aren't user-invocable`
+					userInvocable: item.userInvocable ?? true,
 					storage: item.storage ?? PromptsStorage.local,
 					sessionTypes: [sessionType],
 				});
@@ -679,7 +684,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 
 		const result: ICustomAgent[] = [];
 		for (const item of items) {
-			if ((item.enabled !== false) && item.type === PromptsType.agent) {
+			if (item.type === PromptsType.agent) {
 				const promptFile = await this.promptsService.parseNew(item.uri, token);
 				const extra = {
 					name: item.name,
@@ -688,6 +693,7 @@ export class CustomizationHarnessServiceBase implements ICustomizationHarnessSer
 					hooks: undefined,
 					source: getSource(item),
 					type: PromptsType.agent,
+					enabled: item.enabled !== false,
 				};
 				result.push(CustomAgent.fromParsedPromptFile(promptFile, extra));
 			}

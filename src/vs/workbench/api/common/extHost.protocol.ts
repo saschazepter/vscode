@@ -1444,6 +1444,7 @@ export interface IChatDebugModelTurnEventDto extends IChatDebugEventCommonDto {
 	readonly requestName?: string;
 	readonly inputTokens?: number;
 	readonly outputTokens?: number;
+	readonly cachedTokens?: number;
 	readonly totalTokens?: number;
 	readonly durationInMillis?: number;
 }
@@ -1701,6 +1702,7 @@ export interface ICustomAgentDto extends IChatResourceDto {
 	readonly model?: readonly string[];
 	readonly userInvocable: boolean;
 	readonly disableModelInvocation: boolean;
+	readonly enabled: boolean;
 }
 
 export interface IInstructionDto extends IChatResourceDto {
@@ -1744,6 +1746,7 @@ export interface IChatSessionCustomizationItemDto {
 	readonly extensionId?: string;
 	readonly pluginUri?: UriComponents;
 	readonly badgeTooltip?: string;
+	readonly userInvocable?: boolean;
 }
 export interface IChatParticipantMetadata {
 	participant: string;
@@ -3641,7 +3644,7 @@ export interface MainThreadTestingShape {
 
 export type ChatStatusItemDto = {
 	id: string;
-	title: string | { label: string; link: string };
+	title: string | { label: string; link: string; helpText?: string };
 	description: string;
 	detail: string | undefined;
 };
