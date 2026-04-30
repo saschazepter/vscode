@@ -661,7 +661,7 @@ suite('ChatService', () => {
 		await response.data.responseCompletePromise;
 	});
 
-	test('terminal steering message does not trigger setYieldRequested', async () => {
+	test('terminal steering message does not call setYieldRequested(true)', async () => {
 		const requestStarted = new DeferredPromise<void>();
 		const completeRequest = new DeferredPromise<void>();
 		let yieldRequestedWithTrue = false;
