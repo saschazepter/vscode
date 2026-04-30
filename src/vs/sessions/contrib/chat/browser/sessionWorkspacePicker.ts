@@ -426,11 +426,11 @@ export class WorkspacePicker extends Disposable {
 			initialTab: this._activeTab ?? tabs[0],
 			buildItems: (tab) => {
 				this._activeTab = tab;
-				return this._buildItems();
+				const items = this._buildItems();
+				return { items, listOptions: this._buildListOptions(items, TABBED_PICKER_WIDTH) };
 			},
 			delegate,
 			accessibilityProvider,
-			listOptions: this._buildListOptions(this._buildItems(), TABBED_PICKER_WIDTH),
 			width: TABBED_PICKER_WIDTH,
 			tabBarClassName: 'sessions-workspace-picker-tabbar',
 			onDidChangeTab: (tab) => {

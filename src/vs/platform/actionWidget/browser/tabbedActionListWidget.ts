@@ -11,6 +11,17 @@ import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '..
 import { IContextViewService } from '../../contextview/browser/contextView.js';
 import { IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ActionList, IActionListDelegate, IActionListItem, IActionListOptions } from './actionList.js';
+import './tabbedActionListWidget.css';
+
+/**
+ * Result of {@link ITabbedActionListShowOptions.buildItems}. The list
+ * options are recomputed on every tab switch so callers can vary filter
+ * visibility, width, etc. by tab.
+ */
+export interface ITabbedActionListBuildResult<T> {
+	readonly items: readonly IActionListItem<T>[];
+	readonly listOptions?: IActionListOptions;
+}
 
 /**
  * Options for {@link TabbedActionListWidget.show}. The widget renders a
@@ -27,17 +38,15 @@ export interface ITabbedActionListShowOptions<T> {
 	readonly tabs: readonly string[];
 	/** Initially active tab. Must be present in {@link tabs}. */
 	readonly initialTab: string;
-	/** Computes the list items shown when the given tab is active. */
-	buildItems(activeTab: string): readonly IActionListItem<T>[];
+	/** Computes the list items and per-tab options shown when the given tab is active. */
+	buildItems(activeTab: string): ITabbedActionListBuildResult<T>;
 	/** Item delegate (selection, hide, focus). */
 	readonly delegate: IActionListDelegate<T>;
 	/** Optional accessibility provider passed to the underlying list. */
 	readonly accessibilityProvider?: Partial<IListAccessibilityProvider<IActionListItem<T>>>;
-	/** Optional list options (filter, min/max width, etc.). */
-	readonly listOptions?: IActionListOptions;
 	/** Optional fixed popup width. */
 	readonly width?: number;
-	/** Optional class name to add to the tab bar element. */
+	/** Optional class name to add to the tab bar element (in addition to `.tabbed-action-list-tabbar`). Must be a single class. */
 	readonly tabBarClassName?: string;
 	/** Fired with the new tab when the user switches tabs. */
 	onDidChangeTab?(tab: string): void;
@@ -131,7 +140,7 @@ export class TabbedActionListWidget extends Disposable {
 					}
 				}));
 
-				const items = options.buildItems(activeTab);
+				const { items, listOptions } = options.buildItems(activeTab);
 				const list = renderDisposables.add(this._instantiationService.createInstance(
 					ActionList<T>,
 					options.user,
@@ -139,7 +148,7 @@ export class TabbedActionListWidget extends Disposable {
 					items,
 					options.delegate,
 					options.accessibilityProvider,
-					options.listOptions,
+					listOptions,
 					options.anchor,
 				));
 				listRef = list;
@@ -221,6 +230,12 @@ export class TabbedActionListWidget extends Disposable {
 				// not e.g. refocus the trigger button between hide and show.
 				if (this._swappingTab) {
 					return;
+				}
+				// External dismissal (Escape, click outside) — clear our
+				// own tracker so `isVisible` reflects reality. Done before
+				// firing consumer callbacks in case they re-show.
+				if (this._activePopup.value === popupDisposables) {
+					this._activePopup.value = undefined;
 				}
 				options.delegate.onHide?.();
 				options.onHide?.();
