@@ -305,36 +305,6 @@ suite('AgentHostStateManager', () => {
 		assert.strictEqual(notifications.length, 0, 'should not emit notification for restored sessions');
 	});
 
-	suite('isRestoredAndIdle', () => {
-		const uri = sessionUri; // protocol URI alias is `string` at this layer
-
-		test('returns false for unknown session', () => {
-			assert.strictEqual(manager.isRestoredAndIdle(uri), false);
-		});
-
-		test('returns false for a session created in this lifetime', () => {
-			manager.createSession(makeSessionSummary());
-			assert.strictEqual(manager.isRestoredAndIdle(uri), false);
-		});
-
-		test('returns true for a restored session with no active turn', () => {
-			manager.restoreSession(makeSessionSummary(), []);
-			assert.strictEqual(manager.isRestoredAndIdle(uri), true);
-		});
-
-		test('returns false for a restored session with an active turn', () => {
-			manager.restoreSession(makeSessionSummary(), []);
-			manager.dispatchServerAction({ type: ActionType.SessionTurnStarted, session: sessionUri, turnId: 'turn-1', userMessage: { text: 'hi' } });
-			assert.strictEqual(manager.isRestoredAndIdle(uri), false);
-		});
-
-		test('returns false after removeSession', () => {
-			manager.restoreSession(makeSessionSummary(), []);
-			manager.removeSession(uri);
-			assert.strictEqual(manager.isRestoredAndIdle(uri), false);
-		});
-	});
-
 	test('emits sessionSummaryChanged when summary changes', () => {
 		return runWithFakedTimers({ useFakeTimers: true }, async () => {
 			manager.createSession(makeSessionSummary());

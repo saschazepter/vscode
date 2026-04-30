@@ -755,14 +755,14 @@ suite('AgentService (node dispatcher)', () => {
 
 	suite('subscriber refcount eviction', () => {
 
-		test('a created (non-restored) session is not evicted when subscribers drop', async () => {
+		test('an idle session created in this lifetime is evicted when subscribers drop', async () => {
 			service.registerProvider(copilotAgent);
 			const sessionResource = await service.createSession({ provider: 'copilot' });
 
 			service.addSubscriber(sessionResource, 'client-1');
 			service.removeSubscriber(sessionResource, 'client-1');
 
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'created session must not be evicted');
+			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'idle created session should be evicted; next subscribe will rehydrate from the agent');
 		});
 
 		test('a restored idle session is evicted when its last subscriber drops', async () => {

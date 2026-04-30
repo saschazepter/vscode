@@ -28,17 +28,6 @@ export class AgentHostStateManager extends Disposable {
 	private _rootState: RootState;
 	private readonly _sessionStates = new Map<string, SessionState>();
 
-	/**
-	 * Server-internal set of session URIs whose authoritative state was loaded
-	 * from the backend agent (via {@link restoreSession}) rather than created
-	 * in this server lifetime via {@link createSession}. Restored sessions are
-	 * safe to evict from {@link _sessionStates} when no client is subscribed,
-	 * because their content can be re-fetched from the SDK on next subscribe.
-	 * Sessions created in-process are NOT in this set: their state lives only
-	 * in `_sessionStates` until persisted, so evicting them would lose data.
-	 */
-	private readonly _restoredSessions = new Set<string>();
-
 	/** Tracks which session URI each active turn belongs to, keyed by turnId. */
 	private readonly _activeTurnToSession = new Map<string, string>();
 
@@ -188,7 +177,6 @@ export class AgentHostStateManager extends Disposable {
 			turns,
 		};
 		this._sessionStates.set(key, state);
-		this._restoredSessions.add(key);
 		this._lastNotifiedSummaries.set(key, summary);
 
 		this._logService.trace(`[AgentHostStateManager] Restored session: ${key} (${turns.length} turns)`);
@@ -213,31 +201,9 @@ export class AgentHostStateManager extends Disposable {
 		}
 
 		this._sessionStates.delete(session);
-		this._restoredSessions.delete(session);
 		this._lastNotifiedSummaries.delete(session);
 		this._dirtySummaries.delete(session);
 		this._logService.trace(`[AgentHostStateManager] Removed session: ${session}`);
-	}
-
-	/**
-	 * Returns true if `session` was loaded from the backend via
-	 * {@link restoreSession} and currently has no active turn. Such sessions
-	 * are safe to evict from `_sessionStates` when no client is subscribed,
-	 * because their content is rehydratable from the agent SDK on the next
-	 * subscribe. Returns false for unknown sessions, sessions created in this
-	 * server lifetime, and sessions with an in-flight turn (the active-turn
-	 * veto preserves "the agent runs without a client" — a streaming response
-	 * must not be dropped just because the only viewer disconnected).
-	 */
-	isRestoredAndIdle(session: URI): boolean {
-		const state = this._sessionStates.get(session);
-		if (!state) {
-			return false;
-		}
-		if (!this._restoredSessions.has(session)) {
-			return false;
-		}
-		return state.activeTurn === undefined;
 	}
 
 	/**

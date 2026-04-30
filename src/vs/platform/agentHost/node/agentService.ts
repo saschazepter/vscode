@@ -92,8 +92,8 @@ export class AgentService extends Disposable implements IAgentService {
 	 * resource URI string and valued by the set of subscribed protocol
 	 * client IDs. Populated by {@link addSubscriber} and drained by
 	 * {@link removeSubscriber}. When a resource's set becomes empty, the
-	 * resource is dropped from the map and {@link _maybeEvictIdleRestoredSession}
-	 * is invoked to release any cached restored state for it.
+	 * resource is dropped from the map and {@link _maybeEvictIdleSession}
+	 * is invoked to release any cached state for it.
 	 */
 	private readonly _resourceSubscribers = new Map<string, Set<string>>();
 
@@ -510,17 +510,18 @@ export class AgentService extends Disposable implements IAgentService {
 			return;
 		}
 		this._resourceSubscribers.delete(key);
-		this._maybeEvictIdleRestoredSession(resource);
+		this._maybeEvictIdleSession(resource);
 	}
 
 	/**
-	 * If `resource` names a restored, idle session and no client is still
-	 * subscribed to it (or, for a subagent URI, no sibling subagent under the
-	 * same parent is still subscribed), drop its cached state from the state
-	 * manager. Subagent URIs evict the parent session entry; the parent owns
-	 * the materialized turn tree that backs every subagent view.
+	 * If `resource` names an idle session and no client is still subscribed to
+	 * it (or, for a subagent URI, no sibling subagent under the same parent is
+	 * still subscribed), drop its cached state from the state manager. Subagent
+	 * URIs evict the parent session entry; the parent owns the materialized
+	 * turn tree that backs every subagent view. The next subscribe will
+	 * rehydrate the session via {@link restoreSession}.
 	 */
-	private _maybeEvictIdleRestoredSession(resource: URI): void {
+	private _maybeEvictIdleSession(resource: URI): void {
 		const key = resource.toString();
 		if (this._resourceSubscribers.has(key)) {
 			return;
@@ -547,10 +548,11 @@ export class AgentService extends Disposable implements IAgentService {
 				}
 			}
 		}
-		if (!this._stateManager.isRestoredAndIdle(evictionTarget)) {
+		const targetState = this._stateManager.getSessionState(evictionTarget);
+		if (!targetState || targetState.activeTurn !== undefined) {
 			return;
 		}
-		this._logService.trace(`[AgentService] Evicting idle restored session: ${evictionTarget} (triggered by unsubscribe of ${key})`);
+		this._logService.trace(`[AgentService] Evicting idle session: ${evictionTarget} (triggered by unsubscribe of ${key})`);
 		// Also evict any sibling subagent entries cached under the parent: their
 		// authoritative state is the parent's turn tree, and dropping the parent
 		// would leave them orphaned.
