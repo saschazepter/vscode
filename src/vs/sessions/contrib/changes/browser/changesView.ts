@@ -56,10 +56,12 @@ import { createFileIconThemableTreeContainerScope } from '../../../../workbench/
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../../workbench/services/editor/common/editorService.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
+import { ChangesMultiDiffSourceResolver, getChangesMultiDiffSourceUri } from './changesMultiDiffSourceResolver.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
-import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, ISessionFileChange, SessionStatus } from '../../../services/sessions/common/session.js';
+import { COPILOT_CLOUD_SESSION_TYPE, GITHUB_REMOTE_FILE_SCHEME, SessionStatus } from '../../../services/sessions/common/session.js';
 import { Orientation } from '../../../../base/browser/ui/sash/sash.js';
 import { IView, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
 import { Color } from '../../../../base/common/color.js';
@@ -67,14 +69,13 @@ import { PANEL_SECTION_BORDER } from '../../../../workbench/common/theme.js';
 import { EditorResourceAccessor, SideBySideEditor } from '../../../../workbench/common/editor.js';
 import { logChangesViewFileSelect, logChangesViewVersionModeChange, logChangesViewViewModeChange } from '../../../common/sessionsTelemetry.js';
 import { ChecksViewModel } from './checksViewModel.js';
+import { AGENT_HOST_SKILL_BUTTON_UPDATE_PR_ID, isAgentHostSkillButtonId } from '../../agentHost/browser/agentHostSkillButtons.js';
 import { ActiveSessionContextKeys, CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesContextKeys, ChangesVersionMode, ChangesViewMode, IsolationMode } from '../common/changes.js';
 import { buildTreeChildren, ChangesTreeElement, ChangesTreeRenderer, IChangesFileItem, IChangesTreeRootInfo, isChangesFileItem, toIChangesFileItem } from './changesViewRenderer.js';
 import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { isIChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 
 const $ = dom.$;
 
@@ -165,7 +166,9 @@ class ChangesButtonBarWidget extends Disposable {
 	private _getButtonConfiguration(action: IAction, outgoingChanges: number, reviewState: { isLoading: boolean; commentCount: number | undefined }): { showIcon: boolean; showLabel: boolean; isSecondary?: boolean; customLabel?: string; customClass?: string } | undefined {
 		if (
 			action.id === 'github.copilot.sessions.sync' ||
-			action.id === 'github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR'
+			action.id === 'github.copilot.claude.sessions.sync' ||
+			action.id === 'github.copilot.chat.createPullRequestCopilotCLIAgentSession.updatePR' ||
+			action.id === AGENT_HOST_SKILL_BUTTON_UPDATE_PR_ID
 		) {
 			const customLabel = outgoingChanges > 0
 				? `${action.label} ${outgoingChanges}↑`
@@ -197,7 +200,11 @@ class ChangesButtonBarWidget extends Disposable {
 			action.id === 'pr.checkoutFromChat' ||
 			action.id === 'github.copilot.sessions.initializeRepository' ||
 			action.id === 'github.copilot.sessions.commit' ||
-			action.id === 'agentSession.markAsDone'
+			action.id === 'github.copilot.claude.sessions.initializeRepository' ||
+			action.id === 'github.copilot.claude.sessions.commit' ||
+			action.id === 'github.copilot.claude.sessions.commitAndSync' ||
+			action.id === 'agentSession.markAsDone' ||
+			isAgentHostSkillButtonId(action.id)
 		) {
 			return { showIcon: true, showLabel: true, isSecondary: false };
 		}
@@ -269,7 +276,6 @@ export class ChangesViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ISessionsManagementService private readonly sessionManagementService: ISessionsManagementService,
 		@ILabelService private readonly labelService: ILabelService,
@@ -280,6 +286,10 @@ export class ChangesViewPane extends ViewPane {
 
 		this.viewModel = this.instantiationService.createInstance(ChangesViewModel);
 		this._register(this.viewModel);
+
+		// Multi-diff editor source resolver
+		const changesMultiDiffSourceResolver = this.instantiationService.createInstance(ChangesMultiDiffSourceResolver, this.viewModel);
+		this._register(changesMultiDiffSourceResolver);
 
 		// Context keys
 		this.isMergeBaseBranchProtectedContextKey = ActiveSessionContextKeys.IsMergeBaseBranchProtected.bindTo(this.scopedContextKeyService);
@@ -632,6 +642,9 @@ export class ChangesViewPane extends ViewPane {
 			const changes = changesObs.read(reader);
 			const viewMode = this.viewModel.viewModeObs.read(reader);
 			const isLoading = this.viewModel.activeSessionIsLoadingObs.read(reader);
+			// Read session state so this autorun re-runs when git state (e.g. branch name)
+			// arrives asynchronously, since the tree root label depends on it.
+			this.viewModel.activeSessionStateObs.read(reader);
 
 			if (!this.tree || isLoading) {
 				return;
@@ -1015,33 +1028,32 @@ export class ChangesViewPane extends ViewPane {
 			return;
 		}
 
-		const compare = (aChange: ISessionFileChange, bChange: ISessionFileChange): number => {
-			const aPath = isIChatSessionFileChange2(aChange) ? aChange.uri.fsPath : aChange.modifiedUri.fsPath;
-			const bPath = isIChatSessionFileChange2(bChange) ? bChange.uri.fsPath : bChange.modifiedUri.fsPath;
-			return comparePaths(aPath, bPath);
-		};
+		// Determine the reveal target (original/modified URI pair) from the
+		// current change list, so the multi-diff editor can navigate to it.
+		let options: IMultiDiffEditorOptions | undefined;
+		if (reveal) {
+			const target = changes.find(c => isEqual(c.modifiedUri, reveal));
+			if (target) {
+				options = {
+					viewState: {
+						revealData: {
+							resource: {
+								original: target.originalUri,
+								modified: target.modifiedUri,
+							},
+						},
+					},
+				} satisfies IMultiDiffEditorOptions;
+			}
+		}
 
-		// Sort the changes
-		const resources = changes.toSorted(compare).map(d => ({
-			originalUri: d.originalUri,
-			modifiedUri: d.modifiedUri
-		}));
-
-		// Ensure the reveal resource is part of the changes
-		reveal = reveal
-			? resources.some(r => isEqual(r.modifiedUri, reveal))
-				? reveal
-				: undefined
-			: undefined;
-
-		// Open multi-file diff editor
-		await this.commandService.executeCommand('_workbench.openMultiDiffEditor', {
-			multiDiffSourceUri: sessionResource.with({ scheme: sessionResource.scheme + '-session-changes' }),
-			title: localize('sessions.changes.title', 'Session Changes'),
-			resources,
-			reveal: reveal
-				? { modifiedUri: reveal }
-				: undefined
+		// Open the multi-diff editor using the sessions source URI. The resource
+		// list is resolved via `SessionsMultiDiffSourceResolver` and updates
+		// reactively as `activeSessionChangesObs` changes.
+		await this.editorService.openEditor({
+			multiDiffSource: getChangesMultiDiffSourceUri(sessionResource),
+			label: localize('sessions.changes.title', 'Session Changes'),
+			options,
 		});
 	}
 
