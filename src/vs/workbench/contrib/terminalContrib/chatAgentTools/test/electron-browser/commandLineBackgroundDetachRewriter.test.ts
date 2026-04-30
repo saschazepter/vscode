@@ -77,9 +77,9 @@ suite('CommandLineBackgroundDetachRewriter', () => {
 			});
 		});
 
-		test('should not duplicate trailing & when command ends with chained background command', () => {
+		test('should wrap chained commands in shell -c to preserve shell semantics', () => {
 			deepStrictEqual(rewriter.rewrite(createOptions('cd /app && python3 service.py &', '/bin/bash', OperatingSystem.Linux, true)), {
-				rewritten: 'nohup cd /app && python3 service.py &',
+				rewritten: `nohup /bin/bash -c 'cd /app && python3 service.py &' &`,
 				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
 				forDisplay: 'cd /app && python3 service.py &',
 			});
@@ -180,6 +180,82 @@ suite('CommandLineBackgroundDetachRewriter', () => {
 				rewritten: 'nohup python3 app.py &',
 				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
 				forDisplay: 'python3 app.py',
+			});
+		});
+	});
+
+	suite('POSIX inline env var assignments', () => {
+		test('single env var assignment before command should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('OPAMROOT=/root/.opam opam install menhir', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'OPAMROOT=/root/.opam opam install menhir' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'OPAMROOT=/root/.opam opam install menhir',
+			});
+		});
+
+		test('multiple env var assignments before command should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('OPAMROOT=/root/.opam OPAMYES=1 opam install menhir', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'OPAMROOT=/root/.opam OPAMYES=1 opam install menhir' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'OPAMROOT=/root/.opam OPAMYES=1 opam install menhir',
+			});
+		});
+
+		test('env var with quoted value should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('FOO="a b" cmd', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'FOO="a b" cmd' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'FOO="a b" cmd',
+			});
+		});
+
+		test('env command should NOT trigger env var detection', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('env FOO=1 cmd', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: 'nohup env FOO=1 cmd &',
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'env FOO=1 cmd',
+			});
+		});
+	});
+
+	suite('POSIX shell operator wrapping', () => {
+		test('pipe should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('cat log.txt | grep error', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'cat log.txt | grep error' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'cat log.txt | grep error',
+			});
+		});
+
+		test('semicolon chain should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('cmd1; cmd2', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'cmd1; cmd2' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'cmd1; cmd2',
+			});
+		});
+
+		test('&& chain should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('mkdir -p /tmp/build && make', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'mkdir -p /tmp/build && make' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'mkdir -p /tmp/build && make',
+			});
+		});
+
+		test('|| chain should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('cmd1 || cmd2', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'cmd1 || cmd2' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'cmd1 || cmd2',
+			});
+		});
+
+		test('cd builtin should be wrapped in shell -c', () => {
+			deepStrictEqual(rewriter.rewrite(createOptions('cd /app', '/bin/bash', OperatingSystem.Linux, true)), {
+				rewritten: `nohup /bin/bash -c 'cd /app' &`,
+				reasoning: 'Wrapped background command with nohup to survive terminal shutdown',
+				forDisplay: 'cd /app',
 			});
 		});
 	});

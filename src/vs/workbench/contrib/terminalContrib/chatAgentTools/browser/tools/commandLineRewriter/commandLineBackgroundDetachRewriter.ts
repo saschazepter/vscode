@@ -140,9 +140,13 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 	}
 
 	/**
-	 * Returns true when the command uses shell compound constructs or builtins that
-	 * `nohup` cannot exec directly. Such commands must be wrapped in `<shell> -c '...'` before
-	 * being passed to nohup.
+	 * Returns true when the command uses shell constructs that `nohup` cannot exec
+	 * directly. Such commands must be wrapped in `<shell> -c '...'` before being
+	 * passed to nohup.
+	 *
+	 * `nohup` only accepts a single simple external command (plus its arguments).
+	 * Anything that requires shell parsing — compound statements, builtins, shell
+	 * operators, or inline variable assignments — must go through a shell wrapper.
 	 */
 	private _needsShellCWrapper(commandLine: string): boolean {
 		const trimmed = commandLine.trimStart();
@@ -150,13 +154,22 @@ export class CommandLineBackgroundDetachRewriter extends Disposable implements I
 			// Bash compound command keywords — syntax constructs that are not executables.
 			/^(for|while|until|if|case|select|function)\b/.test(trimmed) ||
 			// Shell builtins — these only run meaningfully inside the current shell; nohup
-			// cannot exec them (eval, set, export, source, unset, declare, etc.).
-			/^(eval|set|export|source|unset|declare|typeset|local|readonly|alias)\b/.test(trimmed) ||
+			// cannot exec them (eval, set, export, source, unset, declare, cd, exec, etc.).
+			/^(eval|set|export|source|unset|declare|typeset|local|readonly|alias|cd|exec)\b/.test(trimmed) ||
 			// `. file` (dot-source builtin). Exclude `./script` (relative path) by requiring
 			// whitespace after the dot.
 			/^\.\s/.test(trimmed) ||
 			// Compound groupings: subshell `( ... )` or brace group `{ ...; }`.
-			/^[{(]/.test(trimmed)
+			/^[{(]/.test(trimmed) ||
+			// Inline environment variable assignments before a command (e.g. `VAR=val cmd`).
+			// nohup would try to exec `VAR=val` as a program name.
+			/^[A-Za-z_][A-Za-z0-9_]*=/.test(trimmed) ||
+			// Shell operators: pipes, command chains (&&, ||), semicolons, or background
+			// operators (&) in the middle of the command. nohup only execs the first
+			// simple command; the rest would be lost or misinterpreted.
+			// A single trailing `&` is handled separately (not matched here) since it's
+			// just a background operator that nohup can coexist with.
+			/\||\|\||&&|;/.test(trimmed)
 		);
 	}
 
