@@ -571,7 +571,12 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 								attachedContext = [promptFile, ...(attachedContext ?? [])];
 							}
 
-							const result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext, queue: ChatRequestQueueKind.Queued });
+							// Try direct send first (agent idle — preserves full attachedContext).
+							// Fall back to queued if the agent is currently busy.
+							let result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext });
+							if (result.kind === 'rejected') {
+								result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext, queue: ChatRequestQueueKind.Queued });
+							}
 							if (result.kind === 'queued') {
 								await result.deferred;
 							} else if (result.kind === 'sent') {
