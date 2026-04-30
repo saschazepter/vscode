@@ -39,13 +39,16 @@ const ACTIONABLE_STATES: readonly StateType[] = [StateType.AvailableForDownload,
 const DETAILED_STATES: readonly StateType[] = [...ACTIONABLE_STATES, StateType.CheckingForUpdates, StateType.Downloading, StateType.Updating, StateType.Overwriting];
 
 /**
- * Additional menu placements for the update indicator, used by alternative
- * shells (e.g. the Agents app) to render the same entry in their own titlebar.
+ * Optional secondary placement for the update indicator (e.g. used by the Agents
+ * app). Limited to one because the contribution tracks a single rendered entry.
  */
-const additionalMenuPlacements: { readonly menuId: MenuId; readonly item: Omit<IMenuItem, 'command'> }[] = [];
+let additionalMenuPlacement: { readonly menuId: MenuId; readonly item: Omit<IMenuItem, 'command'> } | undefined;
 
 export function registerUpdateTitleBarMenuPlacement(menuId: MenuId, item: Omit<IMenuItem, 'command'> = {}): void {
-	additionalMenuPlacements.push({ menuId, item });
+	if (additionalMenuPlacement) {
+		throw new Error('An additional update title bar menu placement is already registered');
+	}
+	additionalMenuPlacement = { menuId, item };
 }
 
 registerAction2(class UpdateIndicatorTitleBarAction extends Action2 {
@@ -106,17 +109,18 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			(action, options) => this.createEntry(instantiationService, action, options)
 		));
 
-		for (const placement of additionalMenuPlacements) {
-			MenuRegistry.appendMenuItem(placement.menuId, {
-				...placement.item,
+		if (additionalMenuPlacement) {
+			const { menuId, item } = additionalMenuPlacement;
+			MenuRegistry.appendMenuItem(menuId, {
+				...item,
 				command: {
 					id: UPDATE_TITLE_BAR_ACTION_ID,
 					title: localize('updateIndicatorTitleBarAction', 'Update'),
 				},
-				when: placement.item.when ? ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, placement.item.when) : UPDATE_TITLE_BAR_CONTEXT,
+				when: item.when ? ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, item.when) : UPDATE_TITLE_BAR_CONTEXT,
 			});
 			this._register(actionViewItemService.register(
-				placement.menuId,
+				menuId,
 				UPDATE_TITLE_BAR_ACTION_ID,
 				(action, options) => this.createEntry(instantiationService, action, options)
 			));
