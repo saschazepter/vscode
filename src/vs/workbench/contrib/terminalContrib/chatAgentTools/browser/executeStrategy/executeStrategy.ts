@@ -315,7 +315,9 @@ export async function trackIdleOnPrompt(
 		} else {
 			scheduler.cancel();
 			if (state === TerminalState.Initial || state === TerminalState.Prompt) {
-				promptFallbackScheduler.schedule();
+				if (!disableFallbacks) {
+					promptFallbackScheduler.schedule();
+				}
 			} else {
 				promptFallbackScheduler.cancel();
 				// Re-schedule on every data event so it only fires after 30s
