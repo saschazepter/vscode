@@ -11,16 +11,22 @@ import { URI } from '../../../../base/common/uri.js';
 // eslint-disable-next-line local/code-import-patterns
 import '../../../../../../build/vite/style.css';
 import '../../../browser/media/style.css';
+// Import auxiliaryBarPart.css here (before any contrib/chat CSS) so the cascade
+// matches the product: chat.css loads later and overrides the auxiliarybar
+// rules where applicable. Fixtures that wrap content in `.part.auxiliarybar`
+// rely on these rules to recolor inline editors with `--vscode-sideBar-background`.
+import '../../../browser/parts/auxiliarybar/media/auxiliaryBarPart.css';
 
 // Theme
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { IExtensionResourceLoaderService } from '../../../../platform/extensionResourceLoader/common/extensionResourceLoader.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { getIconsStyleSheet } from '../../../../platform/theme/browser/iconsStyleSheet.js';
-import { ColorScheme } from '../../../../platform/theme/common/theme.js';
+import { ColorScheme, ThemeTypeSelector } from '../../../../platform/theme/common/theme.js';
 import { IColorTheme, IThemeService, IThemingRegistry, Extensions as ThemingExtensions } from '../../../../platform/theme/common/themeService.js';
 import { generateColorThemeCSS } from '../../../services/themes/browser/colorThemeCss.js';
 import { ColorThemeData } from '../../../services/themes/common/colorThemeData.js';
-import { COLOR_THEME_DARK_INITIAL_COLORS, COLOR_THEME_LIGHT_INITIAL_COLORS } from '../../../services/themes/common/workbenchThemeService.js';
+import { ExtensionData } from '../../../services/themes/common/workbenchThemeService.js';
 
 // Instantiation
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
@@ -82,6 +88,7 @@ import { IUndoRedoService } from '../../../../platform/undoRedo/common/undoRedo.
 import { UndoRedoService } from '../../../../platform/undoRedo/common/undoRedoService.js';
 import { IUserDataProfile } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IUserInteractionService, MockUserInteractionService } from '../../../../platform/userInteraction/browser/userInteractionService.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { IAnyWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { TestMenuService } from '../workbenchTestServices.js';
 import { IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
@@ -102,7 +109,7 @@ import './fixtures.css';
 
 // Import color registrations to ensure colors are available
 import { IdleDeadline, installFakeRunWhenIdle } from '../../../../base/common/async.js';
-import { AsyncSchedulerProcessor, TimeTravelScheduler, captureGlobalTimeApi, createLoggingTimeApi, createVirtualTimeApi, overwriteGlobalTimeApi } from '../../../../base/test/common/timeTravelScheduler.js';
+import { AsyncSchedulerProcessor, TimeTravelScheduler, captureGlobalTimeApi, createLoggingTimeApi, createVirtualTimeApi, pushGlobalTimeApi } from '../../../../base/test/common/timeTravelScheduler.js';
 import '../../../../platform/theme/common/colors/baseColors.js';
 import '../../../../platform/theme/common/colors/editorColors.js';
 import '../../../../platform/theme/common/colors/listColors.js';
@@ -224,15 +231,56 @@ class NullStorageService implements IStorageService {
 const themingRegistry = Registry.as<IThemingRegistry>(ThemingExtensions.ThemingContribution);
 const mockEnvironmentService: IEnvironmentService = Object.create(null);
 
-export const darkTheme = ColorThemeData.createUnloadedThemeForThemeType(
-	ColorScheme.DARK,
-	COLOR_THEME_DARK_INITIAL_COLORS
-);
+// Eagerly bundle all built-in theme JSON files so they can be served to
+// `_loadColorTheme` via the IExtensionResourceLoaderService code path. The
+// rspack config maps these JSON files to `asset/source`, so they are imported
+// as raw text (not parsed JSON) — this lets VS Code's JSONC parser handle
+// comments and trailing commas the way it does in the real product.
+/* eslint-disable local/code-import-patterns */
+import dark_modern from '../../../../../../extensions/theme-defaults/themes/dark_modern.json' with { type: 'json' };
+import dark_plus from '../../../../../../extensions/theme-defaults/themes/dark_plus.json' with { type: 'json' };
+import dark_vs from '../../../../../../extensions/theme-defaults/themes/dark_vs.json' with { type: 'json' };
+import light_modern from '../../../../../../extensions/theme-defaults/themes/light_modern.json' with { type: 'json' };
+import light_plus from '../../../../../../extensions/theme-defaults/themes/light_plus.json' with { type: 'json' };
+import light_vs from '../../../../../../extensions/theme-defaults/themes/light_vs.json' with { type: 'json' };
+import { createTraceRoot, TraceContext } from '../../../../base/test/common/traceableTimeApi.js';
+import { buildHistoryFromTasks, renderSwimlanes } from '../../../../base/test/common/executionGraph.js';
+/* eslint-enable local/code-import-patterns */
 
-export const lightTheme = ColorThemeData.createUnloadedThemeForThemeType(
-	ColorScheme.LIGHT,
-	COLOR_THEME_LIGHT_INITIAL_COLORS
-);
+const themeJsonModules: Record<string, string> = {
+	'/extensions/theme-defaults/themes/dark_modern.json': dark_modern as unknown as string,
+	'/extensions/theme-defaults/themes/dark_plus.json': dark_plus as unknown as string,
+	'/extensions/theme-defaults/themes/dark_vs.json': dark_vs as unknown as string,
+	'/extensions/theme-defaults/themes/light_modern.json': light_modern as unknown as string,
+	'/extensions/theme-defaults/themes/light_plus.json': light_plus as unknown as string,
+	'/extensions/theme-defaults/themes/light_vs.json': light_vs as unknown as string,
+};
+
+const fixtureExtensionResourceLoaderService = new class implements IExtensionResourceLoaderService {
+	declare readonly _serviceBrand: undefined;
+	async readExtensionResource(uri: URI): Promise<string> {
+		const content = themeJsonModules[uri.path];
+		if (content === undefined) {
+			throw new Error(`Fixture extension resource not found: ${uri.toString()}`);
+		}
+		return content;
+	}
+	supportsExtensionGalleryResources(): Promise<boolean> { return Promise.resolve(false); }
+	isExtensionGalleryResource(): Promise<boolean> { return Promise.resolve(false); }
+	getExtensionGalleryResourceURL(): Promise<URI | undefined> { return Promise.resolve(undefined); }
+};
+
+function createBuiltInTheme(themePath: string, uiTheme: ThemeTypeSelector): ColorThemeData {
+	const location = URI.parse(`file://${themePath}`);
+	return ColorThemeData.fromExtensionTheme(
+		{ id: themePath, path: themePath, uiTheme, _watch: false },
+		location,
+		ExtensionData.fromName('vscode', 'theme-defaults', true)
+	);
+}
+
+export const darkTheme = createBuiltInTheme('/extensions/theme-defaults/themes/dark_modern.json', ThemeTypeSelector.VS_DARK);
+export const lightTheme = createBuiltInTheme('/extensions/theme-defaults/themes/light_modern.json', ThemeTypeSelector.VS);
 
 let globalStyleSheet: CSSStyleSheet | undefined;
 let iconsStyleSheetCache: CSSStyleSheet | undefined;
@@ -296,6 +344,17 @@ function getThemeStyleSheet(theme: ColorThemeData): CSSStyleSheet {
 
 let globalStylesInstalled = false;
 
+let themesLoadedPromise: Promise<void> | undefined;
+function ensureThemesLoaded(): Promise<void> {
+	if (!themesLoadedPromise) {
+		themesLoadedPromise = Promise.all([
+			darkTheme.ensureLoaded(fixtureExtensionResourceLoaderService),
+			lightTheme.ensureLoaded(fixtureExtensionResourceLoaderService),
+		]).then(() => undefined);
+	}
+	return themesLoadedPromise;
+}
+
 function installGlobalStyles(): void {
 	if (globalStylesInstalled) {
 		return;
@@ -310,7 +369,8 @@ function installGlobalStyles(): void {
 	];
 }
 
-export function setupTheme(container: HTMLElement, theme: ColorThemeData): void {
+export async function setupTheme(container: HTMLElement, theme: ColorThemeData): Promise<void> {
+	await ensureThemesLoaded();
 	installGlobalStyles();
 	container.classList.add('monaco-workbench', getPlatformClass(), 'disable-animations', ...theme.classNames);
 }
@@ -453,6 +513,13 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 
 	// User interaction service with focus simulation enabled (all elements appear focused in fixtures)
 	defineInstance(IUserInteractionService, new MockUserInteractionService(true, false));
+
+	definePartialInstance(IActionWidgetService, {
+		_serviceBrand: undefined,
+		show: () => { },
+		hide: () => { },
+		get isVisible() { return false; },
+	});
 
 	defineInstance(IAccessibilitySignalService, {
 		_serviceBrand: undefined,
@@ -646,6 +713,7 @@ export interface ComponentFixtureContext {
 export interface ComponentFixtureOptions {
 	render: (context: ComponentFixtureContext) => void | Promise<void>;
 	labels?: ThemedFixtureGroupLabels;
+	virtualTime?: { enabled?: boolean; durationMs?: number };
 }
 
 type ThemedFixtures = ReturnType<typeof defineFixtureVariants>;
@@ -653,11 +721,16 @@ type ThemedFixtures = ReturnType<typeof defineFixtureVariants>;
 // Permanent logging layer that detects real timer API usage.
 // Includes handler source for identification since bundled stack traces are not useful.
 const realTimeApi = captureGlobalTimeApi();
-const loggingTimeApi = createLoggingTimeApi(realTimeApi, (name, stack, handler) => {
-	const handlerStr = typeof handler === 'function' ? handler.toString().slice(0, 500) : String(handler);
-	console.warn(`[ComponentFixture] Real ${name} called outside of virtual time.\nHandler: ${handlerStr}\nStack: ${stack}`);
-});
-overwriteGlobalTimeApi(loggingTimeApi);
+const logOutsideTime = false;
+if (logOutsideTime) {
+	const loggingTimeApi = createLoggingTimeApi(realTimeApi, (name, stack, handler) => {
+		const handlerStr = typeof handler === 'function' ? handler.toString().slice(0, 500) : String(handler);
+		console.warn(`[ComponentFixture] Real ${name} called outside of virtual time.\nHandler: ${handlerStr}\nStack: ${stack}`);
+	});
+	pushGlobalTimeApi(loggingTimeApi);
+}
+
+let fixtureRenderCounter = 0;
 
 /**
  * Creates Dark and Light fixture variants from a single render function.
@@ -675,47 +748,78 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 		render: async (container: HTMLElement, context) => {
 			const disposableStore = context.addDisposable(new DisposableStore());
 
-			const schedulerStore = disposableStore.add(new DisposableStore());
-			const scheduler = new TimeTravelScheduler(Date.now());
-			const p = schedulerStore.add(new AsyncSchedulerProcessor(scheduler, {
-				maxTaskCount: 100,
-				realTimeApi,
-			}));
+			// Do not enable virtual time in explorer ui, as multiple fixtures are rendered in parallel.
+			const virtualTimeEnabled = (options.virtualTime?.enabled ?? true) && context.host.kind !== 'explorer-ui';
 
 			async function actualRender() {
-
-				setupTheme(container, theme);
-
-				const virtualTimeApi = createVirtualTimeApi(scheduler, { fakeRequestAnimationFrame: true });
-				schedulerStore.add(overwriteGlobalTimeApi(virtualTimeApi));
-				disposableStore.add(installFakeRunWhenIdle((_targetWindow, callback, _timeout?) => {
-					return scheduler.schedule({
-						time: scheduler.now,
-						run: () => {
-							const deadline: IdleDeadline = {
-								didTimeout: true,
-								timeRemaining: () => 50,
-							};
-							callback(deadline);
-						},
-						source: {
-							toString() { return 'runWhenIdle'; },
-							stackTrace: undefined,
-						},
-					});
+				const schedulerStore = disposableStore.add(new DisposableStore());
+				const scheduler = new TimeTravelScheduler(Date.now());
+				const p = schedulerStore.add(new AsyncSchedulerProcessor(scheduler, {
+					maxTaskCount: 100,
+					realTimeApi,
 				}));
 
-				const result = options.render({ container, disposableStore, theme });
+				await setupTheme(container, theme);
 
-				const p2 = p.runForVirtualTimeMs(1000);
+				const virtualTimeApi = createVirtualTimeApi(scheduler, { fakeRequestAnimationFrame: true });
 
-				await Promise.all([
-					result instanceof Promise ? result : Promise.resolve(),
-					p2,
-				]);
+				if (virtualTimeEnabled) {
+					schedulerStore.add(pushGlobalTimeApi(virtualTimeApi));
+
+					disposableStore.add(installFakeRunWhenIdle((_targetWindow, callback, _timeout?) => {
+						const stackTrace = new Error().stack;
+						const trace = TraceContext.instance.currentTrace().child('runWhenIdle', stackTrace);
+						return scheduler.schedule({
+							time: scheduler.now,
+							run: () => {
+								const deadline: IdleDeadline = {
+									didTimeout: true,
+									timeRemaining: () => 50,
+								};
+								callback(deadline);
+							},
+							source: {
+								toString() { return 'runWhenIdle'; },
+								stackTrace,
+							},
+							trace,
+						});
+					}));
+				}
+
+				try {
+					const result = options.render({ container, disposableStore, theme });
+
+					const p2 = virtualTimeEnabled
+						? p.run({ virtualDeadline: scheduler.now + (options.virtualTime?.durationMs ?? 1000), maxTasks: 100, maxTaskDepth: 5 })
+						: Promise.resolve();
+
+					await Promise.all([
+						result instanceof Promise ? result : Promise.resolve(),
+						p2,
+					]);
+				} finally {
+					if (virtualTimeEnabled && p.history.length > 0) {
+						const startTime = p.history[0].time;
+						const history = buildHistoryFromTasks(p.history, startTime);
+						console.log(`[ComponentFixture] ${themeLabel} virtual-time history (${p.history.length} tasks):\n${renderSwimlanes(history)}`);
+					}
+					schedulerStore.dispose();
+				}
+
+				disposableStore.add(toDisposable(() => {
+					p.run({ maxTasks: 100, maxTaskDepth: 5 });
+				}));
 			}
 
-			await actualRender();
+			// Every render gets its own trace root so that any diagnostics
+			// output by the scheduler / processor shows exactly which fixture
+			// caused each queued or historical timer, plus the full chain of
+			// setTimeout/rAF calls that led to it.
+			const themeLabel = theme === darkTheme ? 'Dark' : 'Light';
+			const fixtureRoot = createTraceRoot(`render#${++fixtureRenderCounter}(${themeLabel})`);
+
+			await TraceContext.instance.runAsHandler(fixtureRoot, actualRender, realTimeApi);
 		},
 	});
 
