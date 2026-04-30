@@ -238,6 +238,7 @@ function buildFishSvg(targetDocument: Document): SVGSVGElement {
 
 	const svg = targetDocument.createElementNS(SVG_NS, 'svg');
 	svg.setAttribute('xmlns', SVG_NS);
+	svg.setAttribute('focusable', 'false');
 	// viewBox 0..96 matches the original VS Code icon.
 	svg.setAttribute('viewBox', '0 0 96 96');
 	svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');

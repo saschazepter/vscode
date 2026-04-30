@@ -223,7 +223,7 @@
 
 .agents-aquarium-toggle.active {
 	opacity: 1;
-	color: #ff6b88;
+	color: var(--vscode-icon-foreground, var(--vscode-foreground, #cccccc));
 }
 .agents-aquarium-toggle .codicon {
 	font-size: 14px;

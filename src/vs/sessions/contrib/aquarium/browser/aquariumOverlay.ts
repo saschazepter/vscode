@@ -9,6 +9,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
+import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
@@ -41,7 +42,7 @@ const EXIT_DURATION_MS = 900;
 const DART_RATE_PER_SECOND = 0.04;
 const DART_IMPULSE = 150;
 
-const AQUARIUM_ENABLED_STORAGE_KEY = 'workbench.sessions.aquarium.enabled';
+const ENABLED_STORAGE_KEY = 'sessions.developerJoy.enabled';
 
 interface IFoodPellet {
 	readonly element: HTMLDivElement;
@@ -80,8 +81,8 @@ export class AquariumService extends Disposable implements IAquariumService {
 
 	private readonly mounts = new Set<IMountedToggle>();
 	private readonly activeRef = this._register(new MutableDisposable<IActiveAquarium>());
+	private readonly pendingExit = this._register(new MutableDisposable<IDisposable>());
 	private readonly activeContextKey: IContextKey<boolean>;
-	private pendingExit: IDisposable | undefined;
 
 	constructor(
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
@@ -89,6 +90,7 @@ export class AquariumService extends Disposable implements IAquariumService {
 		@IHoverService private readonly hoverService: IHoverService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 	) {
 		super();
 
@@ -120,7 +122,7 @@ export class AquariumService extends Disposable implements IAquariumService {
 		store.add(this.hoverService.setupManagedHover(
 			hoverDelegate,
 			button,
-			() => this.activeRef.value ? localize('aquarium.hide', "Hide Aquarium") : localize('aquarium.show', "Show Aquarium"),
+			() => this.getToggleLabel(!!this.activeRef.value),
 		));
 
 		parent.appendChild(button);
@@ -151,11 +153,11 @@ export class AquariumService extends Disposable implements IAquariumService {
 	}
 
 	private isStoredEnabled(): boolean {
-		return this.storageService.getBoolean(AQUARIUM_ENABLED_STORAGE_KEY, StorageScope.APPLICATION, false);
+		return this.storageService.getBoolean(ENABLED_STORAGE_KEY, StorageScope.APPLICATION, false);
 	}
 
 	private setStoredEnabled(enabled: boolean): void {
-		this.storageService.store(AQUARIUM_ENABLED_STORAGE_KEY, enabled, StorageScope.APPLICATION, StorageTarget.USER);
+		this.storageService.store(ENABLED_STORAGE_KEY, enabled, StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
 	private applyFeatureEnabledState(): void {
@@ -188,8 +190,13 @@ export class AquariumService extends Disposable implements IAquariumService {
 			iconSpan.classList.add('agents-aquarium-toggle-logo');
 		}
 		button.appendChild(iconSpan);
+		const label = this.getToggleLabel(active);
 		button.setAttribute('aria-pressed', String(active));
-		button.setAttribute('aria-label', active ? localize('aquarium.hide', "Hide Aquarium") : localize('aquarium.show', "Show Aquarium"));
+		button.setAttribute('aria-label', label);
+	}
+
+	private getToggleLabel(active: boolean): string {
+		return active ? localize('aquarium.hide', "Hide Aquarium") : localize('aquarium.show', "Show Aquarium");
 	}
 
 	private toggle(): void {
@@ -213,13 +220,17 @@ export class AquariumService extends Disposable implements IAquariumService {
 		}
 		// Cancel any in-flight exit so its delayed dispose can't tear down
 		// the new aquarium's shared SVG defs.
-		this.pendingExit?.dispose();
-		this.pendingExit = undefined;
-		let active: IActiveAquarium;
+		this.pendingExit.clear();
+		let active: IActiveAquarium | undefined;
 		try {
-			active = createActiveAquarium(this.mainContainer, this.layoutService);
+			active = createActiveAquarium(this.mainContainer, this.layoutService, this.accessibilityService);
 		} catch (e) {
 			console.error('[aquarium] failed to activate', e);
+			return;
+		}
+		// No host (e.g. chat bar isn't visible yet) — leave the toggle
+		// untouched and don't persist; a later toggle attempt will retry.
+		if (!active) {
 			return;
 		}
 		this.activeRef.value = active;
@@ -232,20 +243,23 @@ export class AquariumService extends Disposable implements IAquariumService {
 
 	/** @param persist false when tearing down for non-user reasons. */
 	private deactivate(persist: boolean): void {
+		// Detach from activeRef WITHOUT disposing (clearAndLeak) so the exit
+		// animation can run; the returned handle from active.exit() is parked
+		// in `pendingExit` and disposes the underlying store either when the
+		// animation completes, when the service tears down, or when a rapid
+		// re-activate replaces it.
 		const active = this.activeRef.clearAndLeak();
 		if (!active) {
 			return;
 		}
-		// Re-register so the orphaned aquarium is still disposed if the
-		// service itself is torn down mid-exit.
-		this._register(active);
 		this.activeContextKey.set(false);
 		this.updateAllToggleButtonsVisual(false);
-		// Stash the pending exit so a rapid re-activate can cancel it.
-		this.pendingExit?.dispose();
-		const pending = active.exit();
-		this.pendingExit = pending;
-		this._register(pending);
+		const pending = active.exit(() => {
+			if (this.pendingExit.value === pending) {
+				this.pendingExit.clear();
+			}
+		});
+		this.pendingExit.value = pending;
 		if (persist) {
 			this.setStoredEnabled(false);
 		}
@@ -257,27 +271,30 @@ interface IActiveAquarium extends IDisposable {
 	 * Trigger the exit animation and dispose when it completes. Disposing the
 	 * returned handle before the animation finishes disposes immediately.
 	 */
-	exit(): IDisposable;
+	exit(onDidComplete: () => void): IDisposable;
 }
 
-/** Build the live aquarium: water, fish, food, mouse handling, RAF loop. */
-function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbenchLayoutService): IActiveAquarium {
-	const store = new DisposableStore();
+/**
+ * Build the live aquarium: water, fish, food, mouse handling, RAF loop.
+ * Returns `undefined` if the chat bar isn't available so callers can bail
+ * without leaving the toggle button stuck in an "active but invisible" state.
+ */
+function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbenchLayoutService, accessibilityService: IAccessibilityService): IActiveAquarium | undefined {
 	const targetWindow = getWindow(mainContainer);
 
 	// Host inside the chat bar so chat input UI naturally paints on top —
 	// no z-index gymnastics required.
 	const chatBar = layoutService.getContainer(targetWindow, Parts.CHATBAR_PART);
 	if (!chatBar || !layoutService.isVisible(Parts.CHATBAR_PART, targetWindow)) {
-		return {
-			dispose: () => store.dispose(),
-			exit: () => { store.dispose(); return store; },
-		};
+		return undefined;
 	}
 
+	const store = new DisposableStore();
 	const doc = targetWindow.document;
 	const water = doc.createElement('div');
 	water.className = 'agents-aquarium-water';
+	// Decorative: hide the entire subtree from a11y tree.
+	water.setAttribute('aria-hidden', 'true');
 	// First child so subsequent chat bar content paints over it.
 	chatBar.insertBefore(water, chatBar.firstChild);
 	store.add(toDisposable(() => water.remove()));
@@ -336,8 +353,13 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 		firstBatch.appendChild(fish[i].element);
 	}
 	fishLayer.appendChild(firstBatch);
+	let exiting = false;
+
 	if (SYNC_BATCH < fish.length) {
 		const deferred = scheduleAtNextAnimationFrame(targetWindow, () => {
+			if (exiting) {
+				return;
+			}
 			const restBatch = targetWindow.document.createDocumentFragment();
 			for (let i = SYNC_BATCH; i < fish.length; i++) {
 				restBatch.appendChild(fish[i].element);
@@ -346,6 +368,9 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 			// Add `.visible` on the NEXT frame so a paint at opacity:0 happens
 			// first — guarantees the CSS transition fires.
 			const fadeIn = scheduleAtNextAnimationFrame(targetWindow, () => {
+				if (exiting) {
+					return;
+				}
 				for (let i = SYNC_BATCH; i < fish.length; i++) {
 					const localIndex = i - SYNC_BATCH;
 					const delay = Math.min(localIndex * 12, 400);
@@ -376,8 +401,14 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 
 	// Listen on the main container so we always know cursor position even
 	// when over the chat input (water has pointer-events:none).
-	store.add(addDisposableListener(targetWindow, EventType.RESIZE, updateBounds, { passive: true }));
-	store.add(addDisposableListener(targetWindow, 'scroll', updateBounds, { passive: true, capture: true }));
+	//
+	// Coalesce updateBounds() across scroll/resize storms: scroll with capture
+	// fires for ANY descendant scroll, and updateBounds() reads layout. Mark
+	// dirty here and let the RAF tick refresh at most once per frame.
+	let boundsDirty = false;
+	const markBoundsDirty = () => { boundsDirty = true; };
+	store.add(addDisposableListener(targetWindow, EventType.RESIZE, markBoundsDirty, { passive: true }));
+	store.add(addDisposableListener(targetWindow, 'scroll', markBoundsDirty, { passive: true, capture: true }));
 
 	let mouseX = -1e6;
 	let mouseY = -1e6;
@@ -426,24 +457,42 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 		food.push({ element: el, x: dropX, y: dropY, vy: randomBetween(20, 35) });
 	}
 
-	const reduceMotion = targetWindow.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 	let lastFrame = performance.now();
 	let rafDisposable: IDisposable | undefined;
 
+	const stopAnimation = () => {
+		rafDisposable?.dispose();
+		rafDisposable = undefined;
+	};
+	const startAnimation = () => {
+		if (rafDisposable || accessibilityService.isMotionReduced()) {
+			return;
+		}
+		lastFrame = performance.now();
+		rafDisposable = scheduleAtNextAnimationFrame(targetWindow, tick);
+	};
+
 	const tick = () => {
+		rafDisposable = undefined;
 		const now = performance.now();
 		const dtMs = Math.min(now - lastFrame, 100); // clamp big stalls
 		const dt = dtMs / 1000;
 		lastFrame = now;
 
+		if (boundsDirty) {
+			boundsDirty = false;
+			updateBounds();
+		}
+
 		// Skip work when window is hidden (RAF stays alive lazily).
-		const visible = targetWindow.document.visibilityState !== 'hidden';
-		if (visible && !reduceMotion) {
+		if (!accessibilityService.isMotionReduced() && targetWindow.document.visibilityState !== 'hidden') {
 			updateFood(dt);
 			updateFish(dt);
 		}
 
-		rafDisposable = scheduleAtNextAnimationFrame(targetWindow, tick);
+		if (!accessibilityService.isMotionReduced()) {
+			rafDisposable = scheduleAtNextAnimationFrame(targetWindow, tick);
+		}
 	};
 
 	function updateFood(dt: number): void {
@@ -557,11 +606,21 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 		}
 	}
 
-	rafDisposable = scheduleAtNextAnimationFrame(targetWindow, tick);
-	store.add(toDisposable(() => rafDisposable?.dispose()));
+	store.add(accessibilityService.onDidChangeReducedMotion(() => {
+		if (accessibilityService.isMotionReduced()) {
+			stopAnimation();
+		} else {
+			startAnimation();
+		}
+	}));
+	store.add(toDisposable(() => stopAnimation()));
+	startAnimation();
 
 	// First-batch fade-in (the deferred batch fades in when it mounts).
-	scheduleAtNextAnimationFrame(targetWindow, () => {
+	const fadeIn = scheduleAtNextAnimationFrame(targetWindow, () => {
+		if (exiting) {
+			return;
+		}
 		water.classList.add('visible');
 		for (let i = 0; i < Math.min(SYNC_BATCH, fish.length); i++) {
 			const f = fish[i];
@@ -571,14 +630,18 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 			f.element.classList.add('visible');
 		}
 	});
+	store.add(fadeIn);
 
-	let exiting = false;
+	const result = new class extends Disposable implements IActiveAquarium {
 
-	const result: IActiveAquarium = {
-		dispose: () => store.dispose(),
-		exit: () => {
+		constructor() {
+			super();
+			this._register(store);
+		}
+
+		exit(onDidComplete: () => void): IDisposable {
 			if (exiting) {
-				return store;
+				return toDisposable(() => this.dispose());
 			}
 			exiting = true;
 
@@ -592,16 +655,17 @@ function createActiveAquarium(mainContainer: HTMLElement, layoutService: IWorkbe
 
 			let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
 				timer = undefined;
-				store.dispose();
+				this.dispose();
+				onDidComplete();
 			}, EXIT_DURATION_MS);
 			return toDisposable(() => {
 				if (timer !== undefined) {
 					clearTimeout(timer);
 					timer = undefined;
-					store.dispose();
 				}
+				this.dispose();
 			});
-		},
+		}
 	};
 
 	return result;
