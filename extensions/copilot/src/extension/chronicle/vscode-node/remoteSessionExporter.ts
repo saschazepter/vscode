@@ -260,6 +260,30 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const repo = await this._resolveRepository();
 			if (!repo) {
 				this._disabledSessions.add(sessionId);
+				/* __GDPR__
+					"chronicle.cloudSync" : {
+						"owner": "vijayu",
+						"comment": "Tracks cloud sync operations (session init, creation, flush, errors, volume metrics)",
+						"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation performed." },
+						"sessionSource": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The agent name/source for the session, or unknown if unavailable." },
+						"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the operation succeeded." },
+						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message if failed." },
+						"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." },
+						"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in a failed batch." },
+						"reason": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Reason session was disabled (no_consent, no_repo, init_error, create_error)." },
+						"transition": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Circuit breaker state transition (open, closed)." },
+						"eventsCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of events in the batch." },
+						"batchDurationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time to submit batch in ms." },
+						"bufferSize": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Buffer size at time of event." },
+						"failureCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Consecutive failure count." },
+						"droppedCount": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Events dropped due to buffer overflow." }
+					}
+				*/
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+					operation: 'sessionDisabled',
+					sessionSource,
+					reason: 'no_repo',
+				});
 				return;
 			}
 
@@ -268,21 +292,14 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 			if (!this._indexingPreference.hasCloudConsent(repoNwo)) {
 				this._disabledSessions.add(sessionId);
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+					operation: 'sessionDisabled',
+					sessionSource,
+					reason: 'no_consent',
+				});
 				return;
 			}
 			await this._createCloudSession(sessionId, repo, this._indexingPreference.getStorageLevel(repoNwo));
-			/* __GDPR__
-"chronicle.cloudSync" : {
-"owner": "vijayu",
-"comment": "Tracks cloud sync operations (session init, creation, flush, errors)",
-"operation": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The operation performed." },
-"sessionSource": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The agent name/source for the session, or unknown if unavailable." },
-"success": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the operation succeeded." },
-"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "Truncated error message if failed." },
-"indexingLevel": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The indexing level for the session." },
-"droppedEvents": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Number of events in a failed batch." }
-}
-*/
 			this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
 				operation: 'sessionInit',
 				success: 'true',
@@ -445,6 +462,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		if (this._eventBuffer.length > MAX_BUFFER_SIZE) {
 			const dropped = this._eventBuffer.length - MAX_BUFFER_SIZE;
 			this._eventBuffer.splice(0, dropped);
+			this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+				operation: 'bufferDrop',
+			}, {
+				droppedCount: dropped,
+				bufferSize: MAX_BUFFER_SIZE,
+			});
 		}
 	}
 
@@ -502,6 +525,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 		this._isFlushing = true;
 		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
+		const batchStart = Date.now();
 
 		try {
 			// Group events by chat session ID for correct cloud session routing
@@ -544,6 +568,14 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
 
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+					operation: 'batchSuccess',
+				}, {
+					eventsCount: batch.length,
+					batchDurationMs: Date.now() - batchStart,
+					bufferSize: this._eventBuffer.length,
+				});
+
 				if (!this._firstCloudWriteLogged) {
 					this._firstCloudWriteLogged = true;
 
@@ -554,6 +586,15 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				}
 			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
+
+				this._telemetryService.sendMSFTTelemetryEvent('chronicle.cloudSync', {
+					operation: 'circuitBreaker',
+					transition: 'open',
+				}, {
+					failureCount: this._circuitBreaker.getFailureCount(),
+					eventsCount: batch.length,
+					bufferSize: this._eventBuffer.length,
+				});
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
