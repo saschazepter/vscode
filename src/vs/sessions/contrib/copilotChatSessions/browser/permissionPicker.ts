@@ -5,25 +5,27 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
+import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../../base/common/observable.js';
+import Severity from '../../../../base/common/severity.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
-import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
-import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
-import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
-import { ChatConfiguration, ChatPermissionLevel, isChatPermissionLevel } from '../../../../workbench/contrib/chat/common/constants.js';
-import Severity from '../../../../base/common/severity.js';
-import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { URI } from '../../../../base/common/uri.js';
-import { CopilotChatSessionsProvider } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, AUTOPILOT_DONT_SHOW_AGAIN_KEY } from '../../../../workbench/contrib/chat/common/chatPermissionStorageKeys.js';
 import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { ChatConfiguration, ChatPermissionLevel, isChatPermissionLevel } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
+import { CopilotChatSessionsProvider } from '../../copilotChatSessions/browser/copilotChatSessionsProvider.js';
 
 const PERMISSION_LEVEL_OPTION_ID = 'permissionLevel';
 
@@ -67,6 +69,27 @@ interface IPermissionItem {
 // Track whether warnings have been shown this VS Code session
 const shownWarnings = new Set<ChatPermissionLevel>();
 
+function dontShowAgainKey(level: ChatPermissionLevel): string | undefined {
+	if (level === ChatPermissionLevel.Autopilot) {
+		return AUTOPILOT_DONT_SHOW_AGAIN_KEY;
+	}
+	if (level === ChatPermissionLevel.AutoApprove) {
+		return AUTO_APPROVE_DONT_SHOW_AGAIN_KEY;
+	}
+	return undefined;
+}
+
+function hasShownElevatedWarning(level: ChatPermissionLevel, storageService: IStorageService): boolean {
+	if (shownWarnings.has(level)) {
+		return true;
+	}
+	const key = dontShowAgainKey(level);
+	if (key && storageService.getBoolean(key, StorageScope.PROFILE, false)) {
+		return true;
+	}
+	return false;
+}
+
 export class PermissionPicker extends Disposable {
 
 	private _currentLevel: ChatPermissionLevel = ChatPermissionLevel.Default;
@@ -79,6 +102,7 @@ export class PermissionPicker extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
 	}
@@ -239,7 +263,7 @@ export class PermissionPicker extends Disposable {
 	}
 
 	private async _selectLevel(level: ChatPermissionLevel): Promise<void> {
-		if (level === ChatPermissionLevel.AutoApprove && !shownWarnings.has(ChatPermissionLevel.AutoApprove)) {
+		if (level === ChatPermissionLevel.AutoApprove && !hasShownElevatedWarning(ChatPermissionLevel.AutoApprove, this.storageService)) {
 			const result = await this.dialogService.prompt({
 				type: Severity.Warning,
 				message: localize('permissions.autoApprove.warning.title', "Enable Bypass Approvals?"),
@@ -253,6 +277,10 @@ export class PermissionPicker extends Disposable {
 						run: () => false
 					},
 				],
+				checkbox: {
+					label: localize('permissions.warning.dontShowAgain', "Don't show again"),
+					checked: false,
+				},
 				custom: {
 					icon: Codicon.warning,
 					markdownDetails: [{
@@ -266,10 +294,13 @@ export class PermissionPicker extends Disposable {
 			if (result.result !== true) {
 				return;
 			}
+			if (result.checkboxChecked) {
+				this.storageService.store(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
+			}
 			shownWarnings.add(ChatPermissionLevel.AutoApprove);
 		}
 
-		if (level === ChatPermissionLevel.Autopilot && !shownWarnings.has(ChatPermissionLevel.Autopilot)) {
+		if (level === ChatPermissionLevel.Autopilot && !hasShownElevatedWarning(ChatPermissionLevel.Autopilot, this.storageService)) {
 			const result = await this.dialogService.prompt({
 				type: Severity.Warning,
 				message: localize('permissions.autopilot.warning.title', "Enable Autopilot?"),
@@ -283,6 +314,10 @@ export class PermissionPicker extends Disposable {
 						run: () => false
 					},
 				],
+				checkbox: {
+					label: localize('permissions.warning.dontShowAgain', "Don't show again"),
+					checked: false,
+				},
 				custom: {
 					icon: Codicon.rocket,
 					markdownDetails: [{
@@ -295,6 +330,9 @@ export class PermissionPicker extends Disposable {
 			});
 			if (result.result !== true) {
 				return;
+			}
+			if (result.checkboxChecked) {
+				this.storageService.store(AUTOPILOT_DONT_SHOW_AGAIN_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
 			}
 			shownWarnings.add(ChatPermissionLevel.Autopilot);
 		}
