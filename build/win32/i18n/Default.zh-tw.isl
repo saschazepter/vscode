@@ -1,4 +1,4 @@
-﻿﻿; *** Inno Setup version 6.0.0+ Chinese Traditional messages ***
+﻿; *** Inno Setup version 6.0.0+ Chinese Traditional messages ***
 ;
 ; Name: John Wu, mr.johnwu@gmail.com
 ; Base on 5.5.3+ translations by Samuel Lee, Email: 751555749@qq.com

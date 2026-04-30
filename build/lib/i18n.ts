@@ -854,8 +854,15 @@ function createIslFile(name: string, messages: l10nJsonFormat, language: Languag
 
 	const basename = path.basename(name);
 	const filePath = `${basename}.${language.id}.isl`;
+	// Drop a leading U+FEFF that may have been preserved when reading the
+	// source `.isl` file as UTF-8, so we don't end up with a double BOM
+	// once we prepend the byte-level BOM below.
+	let text = content.join('\r\n');
+	if (text.charCodeAt(0) === 0xFEFF) {
+		text = text.slice(1);
+	}
 	const utf8BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
-	const contentBuffer = Buffer.from(content.join('\r\n'), 'utf8');
+	const contentBuffer = Buffer.from(text, 'utf8');
 	const encoded = Buffer.concat([utf8BOM, contentBuffer]);
 
 	return new File({

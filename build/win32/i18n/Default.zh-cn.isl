@@ -1,4 +1,4 @@
-﻿﻿; *** Inno Setup version 6.0.3+ Chinese Simplified messages ***
+﻿; *** Inno Setup version 6.0.3+ Chinese Simplified messages ***
 ;
 ; Maintained by Zhenghan Yang
 ; Email: 847320916@QQ.com
