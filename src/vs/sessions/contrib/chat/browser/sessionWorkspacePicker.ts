@@ -5,7 +5,7 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import * as touch from '../../../../base/browser/touch.js';
-import { IAction, toAction } from '../../../../base/common/actions.js';
+import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { disposableTimeout } from '../../../../base/common/async.js';
@@ -92,8 +92,6 @@ interface IStoredRecentWorkspace {
 export interface IWorkspacePickerItem {
 	readonly selection?: IWorkspaceSelection;
 	readonly browseActionIndex?: number;
-	/** Index into the picker's per-render "manage" action list. */
-	readonly manageActionIndex?: number;
 	readonly checked?: boolean;
 	/** Command to execute when this item is selected. */
 	readonly commandId?: string;
@@ -133,13 +131,6 @@ export class WorkspacePicker extends Disposable {
 	private _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 	private readonly _tabbedWidget: TabbedActionListWidget;
-
-	/**
-	 * Snapshot of "manage" actions (remote provider rows + menu-contributed
-	 * actions) for the currently displayed item list. The delegate dispatches
-	 * by index when a manage row is selected.
-	 */
-	private _currentManageActions: readonly IAction[] = [];
 
 	/**
 	 * Currently active workspace tab (a group label contributed by a
@@ -360,8 +351,6 @@ export class WorkspacePicker extends Disposable {
 				}
 				if (item.browseActionIndex !== undefined) {
 					this._executeBrowseAction(item.browseActionIndex);
-				} else if (item.manageActionIndex !== undefined) {
-					this._currentManageActions[item.manageActionIndex]?.run();
 				} else if (item.selection) {
 					this._selectProject(item.selection);
 				}
@@ -678,22 +667,14 @@ export class WorkspacePicker extends Disposable {
 			if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator) {
 				items.push({ kind: ActionListItemKind.Separator, label: '' });
 			}
-			manageActions.forEach((action, index) => {
-				const extended = action as IAction & { icon?: ThemeIcon; hoverContent?: string; onRemove?: () => void };
-				items.push({
-					kind: ActionListItemKind.Action,
-					label: action.label,
-					tooltip: action.tooltip,
-					group: { title: '', icon: extended.icon ?? Codicon.settingsGear },
-					disabled: !action.enabled,
-					item: { manageActionIndex: index },
-					hover: extended.hoverContent ? { content: extended.hoverContent } : undefined,
-					onRemove: extended.onRemove,
-				});
+			items.push({
+				kind: ActionListItemKind.Action,
+				label: localize('workspacePicker.manage', "Manage..."),
+				group: { title: '', icon: Codicon.settingsGear },
+				item: {},
+				submenuActions: [new SubmenuAction('workspacePicker.manage.submenu', '', manageActions)],
 			});
 		}
-
-		this._currentManageActions = manageActions;
 
 		return items;
 	}
