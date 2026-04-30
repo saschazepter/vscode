@@ -128,7 +128,6 @@ export class ChatStatusDashboard extends DomWidget {
 			contributedEntries.length > 0;
 
 		// Title header with plan name, CTA buttons, and manage action
-		let headerAdditionalSpendButton: Button | undefined;
 		if (hasUsageSection) {
 			const planName = getChatPlanName(this.chatEntitlementService.entitlement);
 			const header = this.renderHeader(this.element, this._store, planName, toAction({
@@ -139,26 +138,12 @@ export class ChatStatusDashboard extends DomWidget {
 				run: () => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageSettingsUrl))),
 			}));
 
-			// Add Additional Spend / Upgrade buttons to the header
-			const canConfigureAdditionalSpend = this.chatEntitlementService.entitlement === ChatEntitlement.EDU || this.chatEntitlementService.entitlement === ChatEntitlement.Pro || this.chatEntitlementService.entitlement === ChatEntitlement.ProPlus;
 			const showUpgrade = this.chatEntitlementService.entitlement !== ChatEntitlement.ProPlus &&
 				this.chatEntitlementService.entitlement !== ChatEntitlement.Business &&
 				this.chatEntitlementService.entitlement !== ChatEntitlement.Enterprise;
 
-			const actionBarElement = header.lastElementChild;
-			const initialAdditionalUsageEnabled = this.chatEntitlementService.quotas.additionalUsageEnabled ?? false;
-
-			if (canConfigureAdditionalSpend) {
-				headerAdditionalSpendButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate, secondary: true }));
-				headerAdditionalSpendButton.element.classList.add('header-cta-button');
-				headerAdditionalSpendButton.label = initialAdditionalUsageEnabled ? localize('manageAdditionalSpend', "Manage Additional Spend") : localize('configureAdditionalSpend', "Configure Additional Spend");
-				this._store.add(headerAdditionalSpendButton.onDidClick(() => this.runCommandAndClose(() => this.openerService.open(URI.parse(defaultChat.manageAdditionalSpendUrl)))));
-				if (actionBarElement) {
-					header.insertBefore(headerAdditionalSpendButton.element, actionBarElement);
-				}
-			}
-
 			if (showUpgrade) {
+				const actionBarElement = header.lastElementChild;
 				const upgradeButton = this._store.add(new Button(header, { ...defaultButtonStyles, hoverDelegate: nativeHoverDelegate }));
 				upgradeButton.element.classList.add('header-cta-button');
 				upgradeButton.label = localize('upgrade', "Upgrade");
@@ -174,7 +159,7 @@ export class ChatStatusDashboard extends DomWidget {
 
 		// Usage section — always shown inline
 		if (hasVisibleUsageContent) {
-			this.renderUsageContent(this.element, token, headerAdditionalSpendButton, updatePromise);
+			this.renderUsageContent(this.element, token, updatePromise);
 		}
 
 		// Premium chat included indicator (shown when premium chat is unlimited)
@@ -196,7 +181,7 @@ export class ChatStatusDashboard extends DomWidget {
 		this.renderSetupSection();
 	}
 
-	private renderUsageContent(container: HTMLElement, token: CancellationToken, headerAdditionalSpendButton: Button | undefined, updatePromise: Promise<void>): void {
+	private renderUsageContent(container: HTMLElement, token: CancellationToken, updatePromise: Promise<void>): void {
 		const { chat: chatQuota, completions: completionsQuota, premiumChat: premiumChatQuota, resetDate, resetDateHasTime } = this.chatEntitlementService.quotas;
 
 		if (chatQuota || premiumChatQuota || completionsQuota) {
@@ -204,12 +189,7 @@ export class ChatStatusDashboard extends DomWidget {
 
 			// Global quota callout (shown at the top, before quota indicators)
 			const globalCalloutUpdater = this.createGlobalQuotaCallout(container);
-			const { calloutVisible: initialCalloutVisible } = globalCalloutUpdater();
-
-			// Update header additional spend button visibility based on callout
-			if (headerAdditionalSpendButton) {
-				headerAdditionalSpendButton.element.style.display = initialCalloutVisible ? '' : 'none';
-			}
+			globalCalloutUpdater();
 
 			let chatQuotaIndicator: ((quota: IQuotaSnapshot | string) => void) | undefined;
 			if (chatQuota && !chatQuota.unlimited) {
@@ -220,7 +200,7 @@ export class ChatStatusDashboard extends DomWidget {
 			if (premiumChatQuota && !premiumChatQuota.unlimited && premiumChatQuota.percentRemaining >= 0) {
 				const premiumChatLabel = premiumChatQuota.usageBasedBilling
 					? localize('monthlyLimitLabel', "Monthly Limit")
-					: this.chatEntitlementService.quotas.additionalUsageEnabled ? localize('includedPremiumChatsLabel', "Included premium requests") : localize('premiumChatsLabel', "Premium requests");
+					: localize('premiumChatsLabel', "Premium requests");
 				const premiumChatResetLabel = premiumChatQuota.usageBasedBilling ? this.formatResetAtLabel(premiumChatQuota.resetAt) ?? resetLabel : resetLabel;
 				premiumChatQuotaIndicator = this.createQuotaIndicator(container, premiumChatQuota, premiumChatLabel, premiumChatResetLabel);
 			}
@@ -248,11 +228,7 @@ export class ChatStatusDashboard extends DomWidget {
 				if (completionsQuota) {
 					completionsQuotaIndicator?.(completionsQuota);
 				}
-				const { calloutVisible, additionalUsageEnabled: isAdditionalUsageEnabled } = globalCalloutUpdater();
-				if (headerAdditionalSpendButton) {
-					headerAdditionalSpendButton.element.style.display = calloutVisible ? '' : 'none';
-					headerAdditionalSpendButton.label = isAdditionalUsageEnabled ? localize('manageAdditionalSpend', "Manage Additional Spend") : localize('configureAdditionalSpend', "Configure Additional Spend");
-				}
+				globalCalloutUpdater();
 			})();
 		}
 
@@ -529,7 +505,11 @@ export class ChatStatusDashboard extends DomWidget {
 
 	private createQuotaIndicator(container: HTMLElement, quota: IQuotaSnapshot | string, label: string, resetLabel?: string): (quota: IQuotaSnapshot | string) => void {
 		const quotaValue = $('span.quota-value');
-		const quotaValueSuffix = $('span.quota-value-suffix');
+		const quotaUsedButton = $('button.quota-used-button');
+		const quotaUsedLabel = $('span.quota-used-label');
+		const quotaUsedFraction = $('span.quota-used-fraction');
+		quotaUsedButton.appendChild(quotaUsedLabel);
+		quotaUsedButton.appendChild(quotaUsedFraction);
 		const quotaBit = $('div.quota-bit');
 		const resetValue = $('span.quota-reset');
 
@@ -537,12 +517,20 @@ export class ChatStatusDashboard extends DomWidget {
 			resetValue.textContent = resetLabel;
 		}
 
+		let isExpanded = false;
+		this._store.add(addDisposableListener(quotaUsedButton, EventType.CLICK, () => {
+			if (quotaUsedFraction.textContent) {
+				isExpanded = !isExpanded;
+				quotaUsedButton.classList.toggle('expanded', isExpanded);
+			}
+		}));
+
 		container.appendChild($('div.quota-indicator', undefined,
 			$('div.quota-title', undefined, label),
 			$('div.quota-details', undefined,
 				$('div.quota-percentage', undefined,
 					quotaValue,
-					quotaValueSuffix
+					quotaUsedButton
 				),
 				resetValue
 			),
@@ -561,10 +549,18 @@ export class ChatStatusDashboard extends DomWidget {
 
 			if (typeof quota === 'string') {
 				quotaValue.textContent = quota;
-				quotaValueSuffix.textContent = '';
+				quotaUsedButton.style.display = 'none';
 			} else {
 				quotaValue.textContent = localize('quotaDisplay', "{0}%", this.quotaPercentageFormatter.value.format(Math.floor(usedPercentage)));
-				quotaValueSuffix.textContent = ` ${localize('quotaUsed', "used")}`;
+				quotaUsedLabel.textContent = localize('quotaUsed', "used");
+				if (typeof quota.used === 'number' && typeof quota.limit === 'number') {
+					quotaUsedFraction.textContent = `(${quota.used}/${quota.limit})`;
+					quotaUsedButton.classList.add('has-fraction');
+				} else {
+					quotaUsedFraction.textContent = '';
+					quotaUsedButton.classList.remove('has-fraction');
+				}
+				quotaUsedButton.style.display = '';
 			}
 
 			quotaBit.style.width = `${usedPercentage}%`;
@@ -575,7 +571,7 @@ export class ChatStatusDashboard extends DomWidget {
 		return update;
 	}
 
-	private createGlobalQuotaCallout(container: HTMLElement): () => { calloutVisible: boolean; additionalUsageEnabled: boolean } {
+	private createGlobalQuotaCallout(container: HTMLElement): () => void {
 		const calloutIcon = $('span.callout-icon');
 		const calloutText = $('span.callout-text');
 		const quotaCallout = container.appendChild($('div.quota-callout', undefined, calloutIcon, calloutText));
@@ -583,7 +579,6 @@ export class ChatStatusDashboard extends DomWidget {
 
 		const update = () => {
 			const quotas = this.chatEntitlementService.quotas;
-			const additionalUsageEnabled = quotas.additionalUsageEnabled ?? false;
 			const isEnterpriseUser = this.chatEntitlementService.entitlement === ChatEntitlement.Enterprise || this.chatEntitlementService.entitlement === ChatEntitlement.Business;
 
 			const allQuotas: IQuotaSnapshot[] = [];
@@ -593,24 +588,14 @@ export class ChatStatusDashboard extends DomWidget {
 
 			const maxUsedPercentage = allQuotas.length > 0 ? Math.max(...allQuotas.map(q => Math.max(0, 100 - q.percentRemaining))) : 0;
 
-			if (maxUsedPercentage >= 100 && additionalUsageEnabled) {
-				quotaCallout.style.display = '';
-				quotaCallout.className = 'quota-callout info';
-				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
-				calloutText.textContent = localize('quotaAdditionalUsageActive', "Additional spend is configured. Usage will continue until limits reset.");
-			} else if (maxUsedPercentage >= 75 && additionalUsageEnabled) {
-				quotaCallout.style.display = '';
-				quotaCallout.className = 'quota-callout info';
-				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
-				calloutText.textContent = localize('quotaAdditionalUsageApproaching', "Once the limit is reached, additional spend will be used.");
-			} else if (maxUsedPercentage >= 100 && !additionalUsageEnabled) {
+			if (maxUsedPercentage >= 100) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout info';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
 				calloutText.textContent = isEnterpriseUser
 					? localize('quotaPausedEnterprise', "Copilot is paused until the limit resets. Contact your administrator for more information.")
 					: localize('quotaPaused', "Copilot is paused until the limit resets.");
-			} else if (maxUsedPercentage >= 75 && !additionalUsageEnabled) {
+			} else if (maxUsedPercentage >= 75) {
 				quotaCallout.style.display = '';
 				quotaCallout.className = 'quota-callout info';
 				calloutIcon.className = `callout-icon ${ThemeIcon.asClassName(Codicon.info)}`;
@@ -620,8 +605,6 @@ export class ChatStatusDashboard extends DomWidget {
 			} else {
 				quotaCallout.style.display = 'none';
 			}
-
-			return { calloutVisible: quotaCallout.style.display !== 'none', additionalUsageEnabled };
 		};
 
 		update();

@@ -16,6 +16,7 @@ import { autorun, IObservable } from '../../../../../../base/common/observable.j
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
+import { toAction } from '../../../../../../base/common/actions.js';
 import { ActionListItemKind, IActionListItem } from '../../../../../../platform/actionWidget/browser/actionList.js';
 import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
 import { IActionWidgetDropdownAction } from '../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
@@ -208,6 +209,7 @@ export function buildModelPickerItems(
 	showUnavailableFeatured: boolean,
 	showFeatured: boolean,
 	languageModelsService?: ILanguageModelsService,
+	onManageModels?: () => void,
 ): IActionListItem<IActionWidgetDropdownAction>[] {
 	const items: IActionListItem<IActionWidgetDropdownAction>[] = [];
 	if (models.length === 0) {
@@ -394,6 +396,12 @@ export function buildModelPickerItems(
 					hideIcon: false,
 					section: ModelPickerSection.Other,
 					isSectionToggle: true,
+					toolbarActions: onManageModels ? [toAction({
+						id: 'workbench.action.chat.manage',
+						label: localize('chat.modelPicker.manageModels', "Manage Models"),
+						class: ThemeIcon.asClassName(Codicon.settingsGear),
+						run: () => onManageModels(),
+					})] : [],
 				});
 				for (const model of otherModels) {
 					const entry = controlModels[model.metadata.id] ?? controlModels[model.identifier];
@@ -685,6 +693,10 @@ export class ModelPickerWidget extends Disposable {
 			this._delegate.showUnavailableFeatured(),
 			this._delegate.showFeatured(),
 			this._languageModelsService,
+			() => {
+				this._actionWidgetService.hide();
+				this._openerService.open(URI.parse('command:workbench.action.chat.manage'), { allowCommands: true });
+			},
 		);
 
 		const listOptions = {
@@ -752,30 +764,49 @@ export class ModelPickerWidget extends Disposable {
 		const schema = model.metadata.configurationSchema;
 		const contextSchema = schema?.properties?.['contextWindow'];
 		if (contextSchema?.enum && contextSchema.enum.length >= 2) {
-			// Model has explicit contextWindow schema — toggle between default and max
 			const config = this._languageModelsService.getModelConfiguration(model.identifier);
 			const currentValue = config?.['contextWindow'] ?? contextSchema.default;
 			const defaultOption = contextSchema.default ?? contextSchema.enum[0];
 			const maxOption = contextSchema.enum[contextSchema.enum.length - 1];
 			const newValue = currentValue === maxOption ? defaultOption : maxOption;
-			void this._languageModelsService.setModelConfiguration(model.identifier, { contextWindow: newValue });
-			if (newValue === maxOption) {
-				this._showContextWindowBanner();
+			const expanding = newValue === maxOption;
+			const defaultLabel = formatContextLabel(typeof defaultOption === 'number' ? defaultOption : model.metadata.maxInputTokens);
+			const maxLabel = formatContextLabel(typeof maxOption === 'number' ? maxOption : 1_000_000);
+			if (!expanding) {
+				// Shrinking — show compaction warning with accept
+				this._showContextWindowBanner(false, defaultLabel, maxLabel, () => {
+					void this._languageModelsService.setModelConfiguration(model.identifier, { contextWindow: newValue });
+					this._renderLabel();
+				});
+			} else {
+				// Expanding — show confirmation with accept
+				this._showContextWindowBanner(true, defaultLabel, maxLabel, () => {
+					void this._languageModelsService.setModelConfiguration(model.identifier, { contextWindow: newValue });
+					this._renderLabel();
+				});
 			}
 		} else {
-			// No schema — toggle local state
 			const current = this._contextWindowExpanded.get(model.identifier) ?? false;
-			this._contextWindowExpanded.set(model.identifier, !current);
-			if (!current) {
-				this._showContextWindowBanner();
+			const expanding = !current;
+			const defaultLabel = formatContextLabel(model.metadata.maxInputTokens);
+			const maxLabel = '1M';
+			if (!expanding) {
+				this._showContextWindowBanner(false, defaultLabel, maxLabel, () => {
+					this._contextWindowExpanded.set(model.identifier, false);
+					this._renderLabel();
+				});
+			} else {
+				this._showContextWindowBanner(true, defaultLabel, maxLabel, () => {
+					this._contextWindowExpanded.set(model.identifier, true);
+					this._renderLabel();
+				});
 			}
 		}
-		this._renderLabel();
 	}
 
 	private _contextBannerElement: HTMLElement | undefined;
 
-	private _showContextWindowBanner(): void {
+	private _showContextWindowBanner(expanding: boolean, defaultLabel: string, maxLabel: string, onAccept?: () => void): void {
 		// Find the input part to insert the banner
 		const container = this._layoutService.getContainer(dom.getWindow(this._domNode!));
 		const inputParts = container.querySelectorAll('.part.auxiliarybar .interactive-input-part, .part.chatbar .interactive-input-part, .part.chatbar .new-chat-input-container'); // eslint-disable-line no-restricted-syntax
@@ -797,40 +828,64 @@ export class ModelPickerWidget extends Disposable {
 		this._clearContextWindowBanner();
 
 		const banner = document.createElement('div');
-		banner.className = 'copilot-prototype-chat-banner info simple';
+		banner.className = 'copilot-prototype-chat-banner info simple compact-single-row';
 		this._contextBannerElement = banner;
 
-		const topRow = document.createElement('div');
-		topRow.className = 'copilot-prototype-chat-banner-top';
+		const row = document.createElement('div');
+		row.className = 'copilot-prototype-chat-banner-top';
 
 		const icon = document.createElement('span');
 		icon.className = 'copilot-prototype-chat-banner-icon';
 		icon.append(...renderLabelWithIcons('$(info)'));
-		topRow.appendChild(icon);
+		row.appendChild(icon);
 
 		const titleText = document.createElement('span');
 		titleText.className = 'copilot-prototype-chat-banner-title';
-		titleText.textContent = localize('chat.modelPicker.contextWindowBannerTitle', "1M context window enabled");
-		topRow.appendChild(titleText);
+
+		if (expanding) {
+			titleText.textContent = localize('chat.contextBanner.expandTitle', "Increase to {0} context window?", maxLabel);
+		} else {
+			titleText.textContent = localize('chat.contextBanner.compactTitle', "Reduce to {0} context window?", defaultLabel);
+		}
+		row.appendChild(titleText);
+
+		const desc = document.createElement('span');
+		desc.className = 'copilot-prototype-chat-banner-inline-desc';
+		if (expanding) {
+			desc.textContent = localize('chat.contextBanner.expandDescShort', "Uses more tokens per request.");
+		} else {
+			desc.textContent = localize('chat.contextBanner.compactDescShort', "May compact earlier context.");
+		}
+		row.appendChild(desc);
+
+		const actions = document.createElement('span');
+		actions.className = 'copilot-prototype-chat-banner-actions';
+
+		if (onAccept) {
+			const accept = document.createElement('span');
+			accept.className = 'copilot-prototype-chat-banner-action-btn';
+			accept.append(...renderLabelWithIcons('$(check)'));
+			accept.tabIndex = 0;
+			accept.role = 'button';
+			accept.title = localize('chat.contextBanner.accept', "Confirm");
+			accept.addEventListener('click', () => {
+				onAccept();
+				this._clearContextWindowBanner();
+			});
+			actions.appendChild(accept);
+		}
 
 		const dismiss = document.createElement('span');
-		dismiss.className = 'copilot-prototype-chat-banner-dismiss';
+		dismiss.className = 'copilot-prototype-chat-banner-action-btn';
 		dismiss.append(...renderLabelWithIcons('$(close)'));
 		dismiss.tabIndex = 0;
 		dismiss.role = 'button';
 		dismiss.title = localize('dismiss', "Dismiss");
 		dismiss.addEventListener('click', () => this._clearContextWindowBanner());
-		topRow.appendChild(dismiss);
+		actions.appendChild(dismiss);
 
-		banner.appendChild(topRow);
-
-		const descRow = document.createElement('div');
-		descRow.className = 'copilot-prototype-chat-banner-bottom';
-		const descText = document.createElement('span');
-		descText.className = 'copilot-prototype-chat-banner-desc';
-		descText.textContent = localize('chat.modelPicker.contextWindowBannerDesc', "Larger context windows may increase token consumption and response time.");
-		descRow.appendChild(descText);
-		banner.appendChild(descRow);
+		row.appendChild(actions);
+		banner.appendChild(row);
 
 		// Find or create the banner container
 		let bannerContainer = inputPart.querySelector('.copilot-prototype-banner-container') as HTMLElement | null; // eslint-disable-line no-restricted-syntax
@@ -990,8 +1045,9 @@ export class ModelPickerWidget extends Disposable {
 				const thinkingValue = config?.[thinkingKey] ?? thinkingSchema.default;
 				if (thinkingValue && thinkingSchema.enum && thinkingSchema.enumItemLabels) {
 					const idx = thinkingSchema.enum.indexOf(thinkingValue);
-					const thinkingLabel = idx >= 0 && thinkingSchema.enumItemLabels[idx] ? thinkingSchema.enumItemLabels[idx] : String(thinkingValue);
-					configItems.push(dom.$('span.chat-model-picker-config-label.chat-model-picker-config-thinking', undefined, thinkingLabel));
+					const fullLabel = idx >= 0 && thinkingSchema.enumItemLabels[idx] ? thinkingSchema.enumItemLabels[idx] : String(thinkingValue);
+					const shortLabel = getShortThinkingLabel(fullLabel);
+					configItems.push(dom.$('span.chat-model-picker-config-label.chat-model-picker-config-thinking', undefined, shortLabel));
 				}
 			}
 
@@ -1000,20 +1056,23 @@ export class ModelPickerWidget extends Disposable {
 				const contextValue = config?.['contextWindow'] ?? contextSchema.default;
 				const maxOption = contextSchema.enum?.[contextSchema.enum.length - 1];
 				const isExpanded = maxOption !== undefined && contextValue === maxOption;
-				const contextEl = dom.$('span.chat-model-picker-config-label.chat-model-picker-config-context', undefined, '1M');
+				const maxLabel = typeof maxOption === 'number' ? formatContextLabel(maxOption) : '1M';
+				const contextLabel = isExpanded ? maxLabel : formatContextLabel(this._selectedModel.metadata.maxInputTokens);
+				const contextEl = dom.$('span.chat-model-picker-config-label.chat-model-picker-config-context', undefined, contextLabel);
 				contextEl.classList.toggle('context-enabled', isExpanded);
 				const contextTooltip = isExpanded
-					? localize('chat.modelPicker.contextWindowEnabledTooltip', "1M context window enabled. Click to use the default context window. Larger context uses more tokens per request.")
-					: localize('chat.modelPicker.contextWindowDisabledTooltip', "Using default context window. Click to enable 1M context for longer conversations and larger codebases.");
+					? localize('chat.modelPicker.contextWindowEnabledTooltip', "{0} context window enabled. Click to use the default context window. Larger context uses more tokens per request.", maxLabel)
+					: localize('chat.modelPicker.contextWindowDisabledTooltip', "Using default context window. Click to enable {0} context for longer conversations and larger codebases.", maxLabel);
 				this._configHoverStore.add(getBaseLayerHoverDelegate().setupManagedHover(getDefaultHoverDelegate('mouse'), contextEl, contextTooltip));
 				configItems.push(contextEl);
 			} else if (thinkingSchema) {
 				const isExpanded = this._contextWindowExpanded.get(this._selectedModel.identifier) ?? false;
-				const contextEl = dom.$('span.chat-model-picker-config-label.chat-model-picker-config-context', undefined, '1M');
+				const contextLabel = isExpanded ? '1M' : formatContextLabel(this._selectedModel.metadata.maxInputTokens);
+				const contextEl = dom.$('span.chat-model-picker-config-label.chat-model-picker-config-context', undefined, contextLabel);
 				contextEl.classList.toggle('context-enabled', isExpanded);
 				const contextTooltip = isExpanded
-					? localize('chat.modelPicker.contextWindowEnabledTooltip', "1M context window enabled. Click to use the default context window. Larger context uses more tokens per request.")
-					: localize('chat.modelPicker.contextWindowDisabledTooltip', "Using default context window. Click to enable 1M context for longer conversations and larger codebases.");
+					? localize('chat.modelPicker.contextWindowEnabledTooltip', "{0} context window enabled. Click to use the default context window. Larger context uses more tokens per request.", '1M')
+					: localize('chat.modelPicker.contextWindowDisabledTooltip', "Using default context window. Click to enable {0} context for longer conversations and larger codebases.", '1M');
 				this._configHoverStore.add(getBaseLayerHoverDelegate().setupManagedHover(getDefaultHoverDelegate('mouse'), contextEl, contextTooltip));
 				configItems.push(contextEl);
 			}
@@ -1049,9 +1108,9 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): M
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 	let hasContent = false;
 
-	// Title row with settings gear — strip parenthetical suffixes for a clean title
+// Title — strip parenthetical suffixes for a clean title
 	const displayName = model.metadata.name.replace(/\s*\(.*\)\s*/g, '').trim() || model.metadata.name;
-	markdown.appendMarkdown(`${displayName}&nbsp;&nbsp;[$(settings-gear)](command:workbench.action.chat.manage?${encodeURIComponent(JSON.stringify(model.metadata.name))} "${localize('chat.modelPicker.manageModel', "Manage model")}")`);
+	markdown.appendMarkdown(`${displayName}`);
 	hasContent = true;
 
 	// Description
@@ -1081,4 +1140,28 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): M
 
 function isAutoModel(model: ILanguageModelChatMetadataAndIdentifier): boolean {
 	return model.metadata.id === 'auto' && (model.metadata.vendor === 'copilot' || model.metadata.vendor === 'copilotcli');
+}
+
+const SHORT_THINKING_LABELS: Record<string, string> = {
+	'Low': 'Low',
+	'Medium': 'Med',
+	'High': 'Hi',
+	'Extra High': 'xHi',
+};
+
+function getShortThinkingLabel(fullLabel: string): string {
+	return SHORT_THINKING_LABELS[fullLabel] ?? fullLabel;
+}
+
+function formatContextLabel(maxInputTokens: number): string {
+	if (maxInputTokens >= 1_000_000) {
+		const m = maxInputTokens / 1_000_000;
+		return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
+	}
+	if (maxInputTokens >= 1_000) {
+		// Round up to nearest 50K for a clean display label
+		const k = Math.ceil(maxInputTokens / 50_000) * 50;
+		return `${k}K`;
+	}
+	return String(maxInputTokens);
 }

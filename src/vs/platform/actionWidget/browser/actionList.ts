@@ -268,8 +268,10 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		if (element.isSectionToggle) {
 			const expanded = element.group?.icon === Codicon.chevronDown;
 			data.container.setAttribute('aria-expanded', String(expanded));
+			data.container.classList.add('section-toggle');
 		} else {
 			data.container.removeAttribute('aria-expanded');
+			data.container.classList.remove('section-toggle');
 		}
 
 		// Apply optional className - clean up previous to avoid stale classes

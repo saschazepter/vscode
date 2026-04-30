@@ -1957,7 +1957,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	width: 6px;
 	height: 6px;
 	box-sizing: border-box;
-	border-radius: 1px;
+	border-radius: 50%;
 	background: transparent;
 	border: 1px solid var(--vscode-icon-foreground);
 	opacity: 0.55;
@@ -2035,20 +2035,15 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
-/* Context window 1M toggle — enabled vs disabled states */
+/* Context window toggle — shows current context size (e.g. 200K / 1M) */
 .chat-model-picker-config-context {
-	opacity: 0.4;
-	transition: opacity 0.15s, border-color 0.15s;
-	border: 1px solid transparent;
+	transition: opacity 0.15s;
 	border-radius: 3px;
-	padding: 0px 3px;
-	margin: -1px 0;
+	padding: 1px 4px;
 }
 
 .chat-model-picker-config-context.context-enabled {
-	opacity: 0.85;
 	color: var(--vscode-descriptionForeground);
-	border-color: var(--vscode-foreground, rgba(80, 80, 80, 0.7));
 }
 
 /* Suppress the parent action-label hover background for the model picker

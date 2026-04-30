@@ -165,10 +165,42 @@
 	color: var(--vscode-foreground);
 }
 
-.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-value-suffix {
+.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-used-button {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 4px;
+	border: none;
+	background: none;
+	padding: 2px 6px;
+	border-radius: 4px;
 	font-size: 12px;
 	line-height: 16px;
 	color: var(--vscode-descriptionForeground);
+	cursor: default;
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-used-button.has-fraction {
+	cursor: pointer;
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-used-button.has-fraction:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-used-button .quota-used-fraction {
+	display: inline-block;
+	max-width: 0;
+	overflow: hidden;
+	opacity: 0;
+	transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
+	margin-left: 0;
+	white-space: nowrap;
+}
+
+.chat-status-bar-entry-tooltip .quota-indicator .quota-percentage .quota-used-button.expanded .quota-used-fraction {
+	max-width: 120px;
+	opacity: 1;
+	margin-left: 2px;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-reset {
@@ -176,6 +208,7 @@
 	line-height: 16px;
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
+	pointer-events: none;
 }
 
 .chat-status-bar-entry-tooltip .quota-indicator .quota-bar {

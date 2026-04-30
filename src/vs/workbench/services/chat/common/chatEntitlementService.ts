@@ -616,6 +616,8 @@ export interface IQuotaSnapshot {
 	readonly unlimited: boolean;
 	readonly resetAt?: number;
 	readonly usageBasedBilling?: boolean;
+	readonly used?: number;
+	readonly limit?: number;
 }
 
 interface IQuotas {
@@ -767,16 +769,24 @@ export class ChatEntitlementRequests extends Disposable {
 
 		// Legacy Free SKU Quota
 		if (entitlementsData.monthly_quotas?.chat && typeof entitlementsData.limited_user_quotas?.chat === 'number') {
+			const total = entitlementsData.monthly_quotas.chat;
+			const remaining = entitlementsData.limited_user_quotas.chat;
 			quotas.chat = {
-				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.chat / entitlementsData.monthly_quotas.chat) * 100)),
-				unlimited: false
+				percentRemaining: Math.min(100, Math.max(0, (remaining / total) * 100)),
+				unlimited: false,
+				used: total - remaining,
+				limit: total,
 			};
 		}
 
 		if (entitlementsData.monthly_quotas?.completions && typeof entitlementsData.limited_user_quotas?.completions === 'number') {
+			const total = entitlementsData.monthly_quotas.completions;
+			const remaining = entitlementsData.limited_user_quotas.completions;
 			quotas.completions = {
-				percentRemaining: Math.min(100, Math.max(0, (entitlementsData.limited_user_quotas.completions / entitlementsData.monthly_quotas.completions) * 100)),
-				unlimited: false
+				percentRemaining: Math.min(100, Math.max(0, (remaining / total) * 100)),
+				unlimited: false,
+				used: total - remaining,
+				limit: total,
 			};
 		}
 
@@ -792,6 +802,8 @@ export class ChatEntitlementRequests extends Disposable {
 					unlimited: rawQuotaSnapshot.unlimited,
 					usageBasedBilling: rawQuotaSnapshot.token_based_billing,
 					resetAt: rawQuotaSnapshot.quota_reset_at || undefined,
+					used: rawQuotaSnapshot.used,
+					limit: rawQuotaSnapshot.limit,
 				};
 
 				switch (quotaType) {

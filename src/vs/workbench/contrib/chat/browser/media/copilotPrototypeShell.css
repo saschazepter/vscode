@@ -1343,6 +1343,58 @@
 	color: var(--vscode-foreground);
 	flex: 1;
 	line-height: 1.4;
+	min-width: 0;
+}
+
+/* Compact single-row banner: single line with inline description */
+.copilot-prototype-chat-banner.compact-single-row {
+	padding: 6px 10px;
+	gap: 0;
+}
+
+.copilot-prototype-chat-banner.compact-single-row .copilot-prototype-chat-banner-top {
+	align-items: center;
+}
+
+.copilot-prototype-chat-banner.compact-single-row .copilot-prototype-chat-banner-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 0 1 auto;
+}
+
+.copilot-prototype-chat-banner-inline-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+	flex: 1 1 auto;
+	margin-left: 6px;
+}
+
+.copilot-prototype-chat-banner-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+	margin-left: auto;
+}
+
+.copilot-prototype-chat-banner-action-btn {
+	flex-shrink: 0;
+	cursor: pointer;
+	color: var(--vscode-descriptionForeground);
+	display: flex;
+	align-items: center;
+	padding: 2px;
+	border-radius: var(--vscode-cornerRadius-small);
+}
+
+.copilot-prototype-chat-banner-action-btn:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .copilot-prototype-chat-banner-dismiss {
@@ -1359,6 +1411,24 @@
 .copilot-prototype-chat-banner-dismiss:hover {
 	color: var(--vscode-foreground);
 	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Inline accept/confirm button in banners */
+.copilot-prototype-chat-banner-accept {
+	display: inline-block;
+	margin-left: 8px;
+	padding: 2px 10px;
+	border: none;
+	border-radius: 3px;
+	font-size: 11px;
+	cursor: pointer;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	white-space: nowrap;
+}
+
+.copilot-prototype-chat-banner-accept:hover {
+	background-color: var(--vscode-button-hoverBackground);
 }
 
 /* Banner gauge bar */
