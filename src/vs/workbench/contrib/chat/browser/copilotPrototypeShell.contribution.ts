@@ -3203,7 +3203,7 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 			const aic = CopilotPrototypeShellCoinStatusBarContribution.instance?.getTbb3AicAllocation(sku, state)
 				?? { monthlyTotal: 0, monthlyUsed: 0, overageTotal: 0, overageUsed: 0 };
 			const aicLabel = (used: number, total: number) => total > 0
-				? localize('tbb3AicUsedOf', "{0} / {1} AICs", used.toLocaleString(), total.toLocaleString())
+				? localize('tbb3AicFraction', "{0} / {1}", used.toLocaleString(), total.toLocaleString())
 				: undefined;
 
 			// Monthly Limit / Monthly Budget card.
@@ -3229,7 +3229,7 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 			// Overage card — Pro/Pro+ + Max only. Always visible so the budget is discoverable.
 			// We don't know an upper bound on overage spend, so render just the AIC count
 			// (no % and no bar) and use the badge to convey active/ready state.
-			if (hasOverage) {
+			if (hasOverage && aic.overageUsed > 0) {
 				const overageInUse = monthlyExhausted || overageExhausted;
 				this.createCard(cards, {
 					name: localize('tbb3CardAdditionalSpend', "Additional Spend"),
@@ -3240,7 +3240,7 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 					severity: overageExhausted ? 'celebrate' as const : undefined,
 					valueOnly: {
 						value: aic.overageUsed.toLocaleString(),
-						label: localize('tbb3OverageAicsUsed', "AICs used"),
+						label: localize('tbb3OverageCreditsUsed', "credits used"),
 					},
 				});
 			}
@@ -3253,7 +3253,7 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 					name: localize('tbb3CardInline', "Inline Suggestions"),
 					resetLabel: localize('tbb3ResetMay1', "Resets May 1 at 10:00 AM"),
 					percent: 18,
-					usedLabel: localize('tbb3InlineUsedOf', "{0} / {1} suggestions", inlineUsed.toLocaleString(), inlineTotal.toLocaleString()),
+					usedLabel: localize('tbb3InlineFraction', "{0} / {1}", inlineUsed.toLocaleString(), inlineTotal.toLocaleString()),
 				});
 			}
 		}
@@ -3292,6 +3292,11 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 			}
 		}
 
+		// Workspace Index — own expandable section (VS Code only, not Agents app)
+		if (!this.isAgentsApp()) {
+			this.renderCollapsibleWorkspaceIndex(contentWrapper);
+		}
+
 		// Quick Settings
 		this.renderCollapsibleQuickSettings(contentWrapper, disposables);
 
@@ -3300,52 +3305,83 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 
 	// ---- Helpers ----
 
+	private isAgentsApp(): boolean {
+		const container = this.layoutService.getContainer(mainWindow);
+		return !!container.querySelector('.part.chatbar'); // eslint-disable-line no-restricted-syntax
+	}
+
+	private renderCollapsibleWorkspaceIndex(container: HTMLElement): void {
+		const collapsibleHeader = append(container, $('div.copilot-prototype-dashboard-collapsible-header'));
+		const chevronEl = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-chevron'));
+		chevronEl.append(...renderLabelWithIcons('$(chevron-right)'));
+		append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-label')).textContent = localize('wsIndexSection', "Workspace Index");
+		const statusBadge = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-badge'));
+		statusBadge.textContent = localize('wsIndexReady', "Ready");
+
+		const collapsibleContent = append(container, $('div.copilot-prototype-dashboard-collapsible-content'));
+
+		const wsIndex = append(collapsibleContent, $('div.copilot-prototype-dashboard-ws-index'));
+		const wsHeader = append(wsIndex, $('div.copilot-prototype-dashboard-ws-index-header'));
+		append(wsHeader, $('span.copilot-prototype-dashboard-ws-index-label')).textContent = localize('wsIndexStatusLabel', "Status");
+		const wsStatus = append(wsHeader, $('span.copilot-prototype-dashboard-ws-index-status'));
+		wsStatus.append(...renderLabelWithIcons('$(check) ' + localize('wsIndexReady', "Ready")));
+
+		collapsibleHeader.addEventListener('click', () => {
+			const isExpanded = collapsibleContent.classList.toggle('expanded');
+			chevronEl.classList.toggle('expanded', isExpanded);
+		});
+	}
+
 	private renderCollapsibleQuickSettings(container: HTMLElement, disposables: DisposableStore): void {
 		const collapsibleHeader = append(container, $('div.copilot-prototype-dashboard-collapsible-header'));
 		const chevronEl = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-chevron'));
 		chevronEl.append(...renderLabelWithIcons('$(chevron-right)'));
-		append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-label')).textContent = localize('tab.quickSettings', "Quick Settings");
+		const headerLeft = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-label'));
+		headerLeft.textContent = localize('tab.inlineSuggestionsSettings', "Inline Suggestions");
+		const enabledBadge = append(collapsibleHeader, $('span.copilot-prototype-dashboard-collapsible-badge'));
+		enabledBadge.textContent = localize('enabled', "Enabled");
 
 		const collapsibleContent = append(container, $('div.copilot-prototype-dashboard-collapsible-content'));
 
-		// Workspace Index (mock)
-		const wsIndex = append(collapsibleContent, $('div.copilot-prototype-dashboard-ws-index'));
-		const wsHeader = append(wsIndex, $('div.copilot-prototype-dashboard-ws-index-header'));
-		append(wsHeader, $('span.copilot-prototype-dashboard-ws-index-label')).textContent = localize('wsIndexLabel', "Workspace Index");
-		const wsStatus = append(wsHeader, $('span.copilot-prototype-dashboard-ws-index-status'));
-		wsStatus.append(...renderLabelWithIcons('$(check) ' + localize('wsIndexReady', "Ready")));
+		// Checkboxes
+		const checkboxes: { label: string; checked: boolean; indeterminate?: boolean }[] = [
+			{ label: localize('ghostTextSuggestions', "Ghost text suggestions"), checked: true },
+			{ label: localize('ghostTextSkill', "Ghost text suggestions for Skill"), checked: false, indeterminate: true },
+			{ label: localize('nextEditSuggestions', "Next edit suggestions"), checked: true },
+		];
 
-		const settingsGrid = append(collapsibleContent, $('div.copilot-prototype-dashboard-settings-grid'));
-		const leftCol = append(settingsGrid, $('div.copilot-prototype-dashboard-settings-col'));
+		for (const item of checkboxes) {
+			const cb = disposables.add(new Checkbox(item.label, item.checked, { ...defaultCheckboxStyles }));
+			const row = append(collapsibleContent, $('div.copilot-prototype-dashboard-setting-row'));
+			row.appendChild(cb.domNode);
+			append(row, $('span.copilot-prototype-dashboard-setting-label')).textContent = item.label;
+		}
 
-		const allFilesCheckbox = disposables.add(new Checkbox(localize('allFiles', "All files"), true, { ...defaultCheckboxStyles }));
-		const allFilesRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		allFilesRow.appendChild(allFilesCheckbox.domNode);
-		append(allFilesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('allFiles', "All files");
+		// Model dropdown
+		const modelRow = append(collapsibleContent, $('div.copilot-prototype-dashboard-dropdown-row'));
+		append(modelRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('model', "Model");
+		const modelSelect = append(modelRow, $('select.copilot-prototype-dashboard-select'));
+		for (const opt of ['copilot-nes-oct']) {
+			const option = append(modelSelect, $('option'));
+			option.textContent = opt;
+			option.setAttribute('value', opt);
+		}
 
-		const tsCheckbox = disposables.add(new Checkbox(localize('typescript', "TypeScript"), true, { ...defaultCheckboxStyles }));
-		const tsRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		tsRow.appendChild(tsCheckbox.domNode);
-		append(tsRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('typescript', "TypeScript");
-
-		const nesCheckbox = disposables.add(new Checkbox(localize('nextEditSuggestions', "Next edit suggestions"), true, { ...defaultCheckboxStyles }));
-		const nesRow = append(leftCol, $('div.copilot-prototype-dashboard-setting-row'));
-		nesRow.appendChild(nesCheckbox.domNode);
-		append(nesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('nesShortLabel', "NES");
-
+		// Eagerness dropdown
 		const eagernessRow = append(collapsibleContent, $('div.copilot-prototype-dashboard-dropdown-row'));
 		append(eagernessRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('eagerness', "Eagerness");
 		const eagernessSelect = append(eagernessRow, $('select.copilot-prototype-dashboard-select'));
-		for (const opt of ['Auto', 'Low', 'Medium', 'High']) {
+		for (const opt of ['Low', 'Medium', 'High']) {
 			const option = append(eagernessSelect, $('option'));
 			option.textContent = opt;
 			option.setAttribute('value', opt);
 		}
 
+		// Snooze row
 		const snoozeRow = append(collapsibleContent, $('div.copilot-prototype-dashboard-snooze'));
-		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
 		const snoozeBtn = disposables.add(new Button(snoozeRow, { ...defaultButtonStyles, secondary: true }));
 		snoozeBtn.label = localize('snooze', "Snooze");
+		append(snoozeRow, $('span.copilot-prototype-dashboard-snooze-label')).textContent = localize('hideSuggestions', "Hide suggestions for 5 min");
 
 		collapsibleHeader.addEventListener('click', () => {
 			const isExpanded = collapsibleContent.classList.toggle('expanded');
@@ -3438,11 +3474,45 @@ export class CopilotTBB3StatusBarContribution extends Disposable implements IWor
 		const percentValue = append(percentLeft, $('span.copilot-prototype-dashboard-card-percent-value'));
 		percentValue.textContent = `${opts.percent}%`;
 		if (opts.severity) { percentValue.classList.add(opts.severity); }
-		append(percentLeft, $('span.copilot-prototype-dashboard-card-percent-label')).textContent = localize('cardUsed', "used");
+		const percentLabel = append(percentLeft, $('span.copilot-prototype-dashboard-card-percent-label'));
+		percentLabel.textContent = localize('cardUsed', "used");
 		if (opts.usedLabel) {
-			append(percentLeft, $('span.copilot-prototype-dashboard-card-percent-aics')).textContent = opts.usedLabel;
+			const aicsLabel = append(percentLeft, $('span.copilot-prototype-dashboard-card-percent-aics.hover-detail'));
+			aicsLabel.textContent = opts.usedLabel;
+			percentLeft.classList.add('has-hover-detail');
 		}
-		append(percentRow, $('span.copilot-prototype-dashboard-card-badge')).textContent = opts.resetLabel;
+		const resetBadge = append(percentRow, $('span.copilot-prototype-dashboard-card-badge'));
+		resetBadge.textContent = opts.resetLabel;
+
+		// Show countdown on hover over the reset badge
+		if (opts.resetLabel.includes('Resets')) {
+			const originalText = opts.resetLabel;
+			resetBadge.addEventListener('mouseenter', () => {
+				const now = new Date();
+				const year = now.getFullYear();
+				const match = originalText.match(/Resets\s+(.+)\s+at\s+(\d+:\d+\s*[AP]M)/i);
+				if (match) {
+					const target = new Date(`${match[1]}, ${year} ${match[2]}`);
+					if (target.getTime() <= now.getTime()) {
+						target.setFullYear(year + 1);
+					}
+					const diff = target.getTime() - now.getTime();
+					if (diff > 0) {
+						const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+						const hrs = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+						const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+						const parts: string[] = [];
+						if (days > 0) { parts.push(`${days}d`); }
+						parts.push(`${hrs}h`);
+						parts.push(`${mins}m`);
+						resetBadge.textContent = localize('tbb3ResetsIn', "Resets in {0}", parts.join(' '));
+					}
+				}
+			});
+			resetBadge.addEventListener('mouseleave', () => {
+				resetBadge.textContent = originalText;
+			});
+		}
 
 		const barContainer = append(card, $('div.copilot-prototype-dashboard-card-bar'));
 		if (opts.severity) { barContainer.classList.add(opts.severity); }
