@@ -95,10 +95,10 @@ export interface IEnvironmentService {
 
 	/**
 	 * When running as the embedded Agents app, the data home of the host
-	 * VS Code application (e.g. `~/.vscode-insiders`). This is the base
-	 * directory from which `hostUserRoamingDataHome`, `hostExtensionsHome`,
-	 * and similar host paths are derived. `undefined` when not running as
-	 * embedded.
+	 * VS Code application (e.g. `~/.vscode-insiders`). This identifies the
+	 * host application's home/data directory and is used alongside other
+	 * host-specific paths such as `hostUserRoamingDataHome` and
+	 * `hostExtensionsHome`. `undefined` when not running as embedded.
 	 */
 	readonly hostUserHome?: URI;
 

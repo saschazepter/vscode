@@ -7,6 +7,7 @@ import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, addDisposableGenericMouseDownListener, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { localize } from '../../../../nls.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { IProductOnboardingTheme } from '../../../../base/common/product.js';
@@ -400,10 +401,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			themeCards.push(card);
 		}
 
-		// Show a VS Code theme option as a radio-style button below the grid
+		// Show a VS Code theme option as a radio-style button inside the radiogroup
 		if (parentThemeSettingsId) {
 			const parentName = this.productService.embedded?.nameShort ?? 'VS Code';
-			const option = append(this.contentContainer, $('.sessions-walkthrough-vscode-theme-option'));
+			const option = append(themeGrid, $('.sessions-walkthrough-vscode-theme-option'));
 			vscodeThemeBtn = append(option, $('div.sessions-walkthrough-vscode-theme-radio'));
 			vscodeThemeBtn.setAttribute('role', 'radio');
 			vscodeThemeBtn.setAttribute('aria-checked', 'false');
@@ -435,7 +436,10 @@ export class SessionsWalkthroughOverlay extends Disposable {
 					vscodeThemeBtn!.textContent = labelText;
 				}
 			};
-			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.CLICK, selectVSCodeTheme));
+			stepDisposables.add(Gesture.addTarget(vscodeThemeBtn));
+			for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
+				stepDisposables.add(addDisposableListener(vscodeThemeBtn, eventType, selectVSCodeTheme));
+			}
 			stepDisposables.add(addDisposableListener(vscodeThemeBtn, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 				if (e.key === 'Enter' || e.key === ' ') {
 					e.preventDefault();
@@ -484,7 +488,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const label = append(card, $('div.sessions-walkthrough-theme-label'));
 		label.textContent = theme.label;
 
-		stepDisposables.add(addDisposableListener(card, EventType.CLICK, () => {
+		const selectCard = () => {
 			onSelect(theme.id);
 			this._applyTheme(theme);
 			for (const c of allCards) {
@@ -493,7 +497,11 @@ export class SessionsWalkthroughOverlay extends Disposable {
 			}
 			card.classList.add('selected');
 			card.setAttribute('aria-checked', 'true');
-		}));
+		};
+		stepDisposables.add(Gesture.addTarget(card));
+		for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
+			stepDisposables.add(addDisposableListener(card, eventType, selectCard));
+		}
 
 		stepDisposables.add(addDisposableListener(card, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {

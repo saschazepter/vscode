@@ -456,6 +456,7 @@
 	border-radius: 8px;
 	border: 2px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
 	cursor: pointer;
+	touch-action: manipulation;
 	overflow: hidden;
 	transition: border-color 100ms, transform 100ms;
 	width: calc(25% - 8px);
@@ -514,7 +515,7 @@
 .sessions-walkthrough-vscode-theme-option {
 	display: flex;
 	justify-content: center;
-	margin-top: 16px;
+	width: 100%;
 }
 
 .sessions-walkthrough-vscode-theme-radio {
@@ -526,6 +527,7 @@
 	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
+	touch-action: manipulation;
 	transition: border-color 100ms, background 100ms;
 	text-align: center;
 }

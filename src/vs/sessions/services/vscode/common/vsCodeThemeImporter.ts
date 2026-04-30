@@ -25,8 +25,8 @@ export const COLOR_THEME_SETTINGS_ID = 'workbench.colorTheme';
 
 /**
  * Service that reads the parent VS Code installation's active color theme
- * and can import it into the Agents app — installing the providing extension
- * from the gallery if necessary.
+ * and can import it into the Agents app — using the providing extension
+ * from the parent VS Code installation if necessary.
  */
 export interface IVSCodeThemeImporterService {
 
@@ -40,7 +40,8 @@ export interface IVSCodeThemeImporterService {
 	getVSCodeTheme(): Promise<string | undefined>;
 
 	/**
-	 * Imports the VS Code theme into the Agents app.
+	 * Imports the VS Code theme into the Agents app — using the providing
+	 * extension from the parent VS Code installation if necessary.
 	 */
 	importVSCodeTheme(): Promise<void>;
 }
@@ -174,8 +175,8 @@ export class VSCodeThemeImporterService extends Disposable implements IVSCodeThe
 			return false;
 		}
 		return themes.some(t => {
-			const id = (t as { id?: string; label?: string }).id ?? (t as { label?: string }).label;
-			return id === themeSettingsId;
+			const theme = t as { id?: string; label?: string };
+			return theme.id === themeSettingsId || theme.label === themeSettingsId;
 		});
 	}
 
