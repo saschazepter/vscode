@@ -166,6 +166,17 @@ function getEditLineRange(
 	];
 }
 
+/** Count `\n` characters in `s` over the half-open range `[start, endEx)`. */
+function countNewlines(s: string, start: number, endEx: number): number {
+	let n = 0;
+	for (let i = start; i < endEx; i++) {
+		if (s.charCodeAt(i) === 10 /* \n */) {
+			n++;
+		}
+	}
+	return n;
+}
+
 /**
  * Filter `oracleEdits` to those fully contained in the line range `[windowStart, windowEnd)`.
  *
@@ -229,14 +240,15 @@ export function formatAsEditWindowOnly(
 	const modifiedContent = applyEditsToContent(docContent, kept);
 	const modifiedLines = splitLines(modifiedContent);
 
-	// All kept edits are fully inside the window, so each one's net line delta
-	// applies directly to the window's line count.
+	// All kept edits are fully inside the window, so each edit's net line
+	// delta applies directly to the window's line count. We compute the delta
+	// by counting newlines: replacing text containing N newlines with text
+	// containing M newlines changes the document's line count by `M - N`.
 	let netLineChange = 0;
 	for (const [start, endEx, text] of kept) {
-		const oldLineCount = splitLines(docContent.substring(start, endEx)).length;
-		const newLineCount = text.length > 0 ? splitLines(text).length : 0;
-		const effectiveOldCount = (endEx - start) === 0 ? 0 : oldLineCount;
-		netLineChange += newLineCount - effectiveOldCount;
+		const oldNewlines = countNewlines(docContent, start, endEx);
+		const newNewlines = countNewlines(text, 0, text.length);
+		netLineChange += newNewlines - oldNewlines;
 	}
 
 	const newEndLine = Math.min(windowEnd + netLineChange, modifiedLines.length);
