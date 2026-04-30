@@ -800,9 +800,10 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 					]);
 				} finally {
 					if (virtualTimeEnabled && p.history.length > 0) {
-						const startTime = p.history[0].time;
-						const history = buildHistoryFromTasks(p.history, startTime);
-						console.log(`[ComponentFixture] ${themeLabel} virtual-time history (${p.history.length} tasks):\n${renderSwimlanes(history)}`);
+						// TODO
+						// const startTime = p.history[0].time;
+						// const history = buildHistoryFromTasks(p.history, startTime);
+						// console.log(`[ComponentFixture] ${themeLabel} virtual-time history (${p.history.length} tasks):\n${renderSwimlanes(history)}`);
 					}
 					schedulerStore.dispose();
 				}
