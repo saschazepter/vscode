@@ -195,6 +195,25 @@ CommandsRegistry.registerCommand('_chat.notifyQuestionCarouselAnswer', (accessor
 const toolReferenceNameEnumValues: string[] = [];
 const toolReferenceNameEnumDescriptions: string[] = [];
 
+/**
+ * Tool reference names for the integrated browser tools registered in
+ * `src/vs/workbench/contrib/browserView/electron-browser/tools/`. Exposing
+ * these as agent-host client tools lets background agents drive the
+ * integrated browser pane (open/read pages, click, type, screenshot, etc.).
+ */
+const browserClientTools = [
+	'openBrowserPage',
+	'readPage',
+	'screenshotPage',
+	'navigatePage',
+	'clickElement',
+	'typeInPage',
+	'hoverElement',
+	'dragElement',
+	'handleDialog',
+	'runPlaywrightCode',
+];
+
 // Register JSON schema for hook files
 const jsonContributionRegistry = Registry.as<IJSONContributionRegistry>(JSONExtensions.JSONContribution);
 jsonContributionRegistry.registerSchema(HOOK_SCHEMA_URI, hookFileSchema);
@@ -969,7 +988,10 @@ configurationRegistry.registerConfiguration({
 			type: 'array',
 			items: { type: 'string' },
 			description: nls.localize('chat.agentHost.clientTools', "Tool reference names to expose as client-provided tools in agent host sessions."),
-			default: ['runTask', 'getTaskOutput', 'problems', 'runTests'],
+			default: [
+				'runTask', 'getTaskOutput', 'problems', 'runTests',
+				...browserClientTools,
+			],
 			tags: ['experimental', 'advanced'],
 			included: product.quality !== 'stable',
 		},

@@ -21,7 +21,6 @@ import { IEditorGroupsService } from '../../../services/editor/common/editorGrou
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
-import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
 import { ChatConfiguration } from '../../chat/common/constants.js';
 
 /** Command IDs whose accelerators are shown in browser view context menus. */
@@ -44,7 +43,6 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	/** Context expression for whether browser tools / sharing is available. */
 	private static readonly _sharingAvailableContext = ContextKeyExpr.and(
 		ChatContextKeys.enabled,
-		IsSessionsWindowContext.negate(),
 		ContextKeyExpr.has(`config.${ChatConfiguration.AgentEnabled}`),
 		ContextKeyExpr.has(`config.workbench.browser.enableChatTools`),
 	)!;
