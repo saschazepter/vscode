@@ -114,7 +114,7 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 	private _renderAccountPolicyGate(card: HTMLElement, options: ISessionsBlockedOverlayOptions): void {
 		this.overlay.setAttribute('aria-label', localize('accountGate.aria', "Sign-in required by your administrator"));
 
-		append(card, $('h2', undefined, localize('accountGate.title', "Sign-In Required by Your Administrator")));
+		append(card, $('h2', undefined, localize('accountGate.title', "Sign-In Required")));
 
 		const description = append(card, $('p'));
 		if (options.accountName) {
@@ -141,6 +141,8 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		}
 
 		const footer = append(card, $('p.sessions-policy-blocked-footer'));
+		append(footer, document.createTextNode(localize('accountGate.contactAdmin', "Contact your administrator for more information.")));
+		append(footer, document.createTextNode(' '));
 		const learnMore = append(footer, $('a.sessions-policy-blocked-link')) as HTMLAnchorElement;
 		learnMore.textContent = localize('accountGate.learnMore', "Learn more");
 		learnMore.href = 'https://code.visualstudio.com/docs/enterprise/overview';
