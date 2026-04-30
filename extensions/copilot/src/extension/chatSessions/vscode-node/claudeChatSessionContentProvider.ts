@@ -25,7 +25,7 @@ import { ClaudeSessionUri } from '../claude/common/claudeSessionUri';
 import { ClaudeAgentManager } from '../claude/node/claudeCodeAgent';
 import { CLAUDE_REASONING_EFFORT_PROPERTY, formatClaudeModelDetails, IClaudeCodeModels, pickReasoningEffort } from '../claude/node/claudeCodeModels';
 import { IClaudeCodeSdkService } from '../claude/node/claudeCodeSdkService';
-import { parseClaudeModelId, tryParseClaudeModelId } from '../claude/node/claudeModelId';
+import { parseClaudeModelId } from '../claude/node/claudeModelId';
 import { IClaudeSessionStateService } from '../claude/common/claudeSessionStateService';
 import { IClaudeCodeSessionService } from '../claude/node/sessionParser/claudeCodeSessionService';
 import { IClaudeCodeSessionInfo, IClaudeCodeSession, SYNTHETIC_MODEL_ID } from '../claude/node/sessionParser/claudeSessionSchema';
@@ -201,29 +201,16 @@ export class ClaudeChatSessionContentProvider extends Disposable implements vsco
 	}
 
 	/**
-	 * Resolves a Claude model id to its endpoint, applying two safety nets:
-	 * - try/catch around `resolveEndpoint` so transient failures degrade gracefully
-	 *   (return `undefined`) instead of breaking the response or session-load path.
-	 * - exact-match guard so the resolver's fallback chain doesn't attribute a
-	 *   request to the wrong model (e.g. an unknown id surfacing as "the newest
-	 *   Sonnet"). The SDK model id is normalized to the endpoint format for
-	 *   comparison.
+	 * Resolves a Claude model id to its endpoint. Wraps `resolveEndpoint` in a
+	 * try/catch so transient failures degrade gracefully (return `undefined`)
+	 * instead of breaking the response or session-load path.
 	 */
 	private async _resolveEndpointForRequest(modelId: string): Promise<IChatEndpoint | undefined> {
-		let endpoint;
 		try {
-			endpoint = await this.claudeModels.resolveEndpoint(modelId, undefined);
+			return await this.claudeModels.resolveEndpoint(modelId, undefined);
 		} catch {
 			return undefined;
 		}
-		if (!endpoint) {
-			return undefined;
-		}
-		const normalized = tryParseClaudeModelId(modelId)?.toEndpointModelId() ?? modelId;
-		if (endpoint.model !== normalized && endpoint.family !== normalized) {
-			return undefined;
-		}
-		return endpoint;
 	}
 
 	/**
