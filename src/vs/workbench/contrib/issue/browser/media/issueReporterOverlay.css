@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /*
- * Issue Reporter — Wizard UI (editor tab mode).
+ * Issue Reporter - Wizard UI (editor tab mode).
  * The wizard renders inside an editor pane container.
  * A floating capture bar appears on step 3.
  */
@@ -13,9 +13,7 @@
 	flex: 1;
 }
 
-/* ═══════════════════════════════════════════════
-   Wizard Panel — renders inside the editor tab
-   ═══════════════════════════════════════════════ */
+/* Wizard Panel - renders inside the editor tab */
 .issue-reporter-wizard {
 	position: relative;
 	display: flex;
@@ -53,7 +51,7 @@
 	outline: none !important;
 }
 
-/* ── Floating Capture Bar (debug toolbar style) ── */
+/* Floating Capture Bar (debug toolbar style) */
 .wizard-floating-bar {
 	position: fixed;
 	top: 35px;
@@ -247,7 +245,7 @@
 	animation: recording-pulse 1.5s ease-in-out infinite;
 }
 
-/* ── Toolbar ── */
+/* Toolbar */
 .wizard-toolbar {
 	display: flex;
 	align-items: center;
@@ -307,7 +305,7 @@
 	color: var(--vscode-titleBar-activeForeground, #999);
 }
 
-/* ── Step Container ── */
+/* Step Container */
 .wizard-step-container {
 	flex: 1;
 	position: relative;
@@ -315,7 +313,7 @@
 	min-height: 150px;
 }
 
-/* ── Individual Steps ── */
+/* Individual Steps */
 .wizard-step {
 	display: flex;
 	flex-direction: column;
@@ -326,7 +324,7 @@
 	inset: 0;
 }
 
-/* ── Wizard Typography ── */
+/* Wizard Typography */
 .wizard-heading {
 	margin: 0;
 	font-size: 22px;
@@ -342,7 +340,7 @@
 	line-height: 1.4;
 }
 
-/* ── Wizard Inputs ── */
+/* Wizard Inputs */
 .wizard-textarea {
 	width: 100%;
 	min-height: 120px;
@@ -373,7 +371,7 @@
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1));
 }
 
-/* ── Category Buttons (Step 1) ── */
+/* Category Buttons (Step 1) */
 .wizard-type-buttons {
 	display: flex;
 	gap: 10px;
@@ -441,7 +439,11 @@
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 }
 
-/* Shortcut badge — shared style for keyboard shortcut indicators */
+.monaco-button.wizard-type-btn.hidden {
+	display: none;
+}
+
+/* Shortcut badge - shared style for keyboard shortcut indicators */
 .wizard-shortcut-badge {
 	display: inline-flex;
 	align-items: center;
@@ -452,7 +454,7 @@
 	border-radius: 4px;
 	border: 1px solid var(--vscode-input-border, #555);
 	font-size: 11px;
-	font-family: var(--vscode-editor-font-family, monospace);
+	font-family: monospace;
 	color: var(--vscode-descriptionForeground, #888);
 	opacity: 0.7;
 	margin-left: 2px;
@@ -479,13 +481,52 @@
 	display: none;
 }
 
+.wizard-similar-issues {
+	margin-top: 8px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground, #999);
+}
+
+.wizard-similar-heading {
+	font-weight: 600;
+	color: var(--vscode-foreground, #ccc);
+	margin-bottom: 4px;
+}
+
+.wizard-similar-list {
+	margin: 0;
+	padding-left: 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.wizard-similar-item {
+	line-height: 1.4;
+}
+
+.wizard-similar-link {
+	color: var(--vscode-textLink-foreground, #3794ff);
+	text-decoration: none;
+}
+
+.wizard-similar-link:hover {
+	color: var(--vscode-textLink-activeForeground, #3794ff);
+	text-decoration: underline;
+}
+
+.wizard-similar-state {
+	margin-left: 6px;
+	color: var(--vscode-descriptionForeground, #999);
+}
+
 .wizard-type-icon {
 	display: flex;
 	align-items: center;
 	font-size: 16px;
 }
 
-/* ── Screenshot Cards (Step 3) ── */
+/* Screenshot Cards (Step 3) */
 .wizard-screenshots {
 	display: flex;
 	gap: 10px;
@@ -572,7 +613,7 @@
 	color: var(--vscode-descriptionForeground, #888);
 }
 
-/* ── Screenshot Controls ── */
+/* Screenshot Controls */
 
 .wizard-screenshot-actions {
 	display: flex;
@@ -617,11 +658,15 @@
 	font-size: 14px;
 }
 
-/* ── Review Step (Step 4) ── */
+/* Review Step (Step 4) */
 .wizard-field {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+}
+
+.wizard-field.hidden {
+	display: none;
 }
 
 .wizard-field-label {
@@ -648,6 +693,34 @@
 .wizard-field .monaco-inputbox.invalid-input .input {
 	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1)) !important;
+}
+
+.wizard-extension-field.invalid-input .monaco-select-box {
+	border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
+	background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.1)) !important;
+}
+
+.wizard-extension-select {
+	max-width: 420px;
+}
+
+.wizard-extension-select .monaco-select-box {
+	min-height: 26px;
+	padding: 2px 23px 2px 8px;
+}
+
+.wizard-extension-select .monaco-select-box-dropdown-container .monaco-list-row.option-disabled {
+	display: none !important;
+}
+
+.wizard-extension-select .monaco-select-box-dropdown-container .monaco-list-row[data-index="0"].option-disabled ~ .monaco-list-row {
+	transform: translateY(-22px);
+}
+
+.wizard-extension-status {
+	color: var(--vscode-descriptionForeground, #999);
+	font-size: 12px;
+	line-height: 1.4;
 }
 
 /* Title label row: label + AI generate button */
@@ -719,6 +792,10 @@
 	margin-top: 8px;
 }
 
+.wizard-review-similar-section.hidden {
+	display: none;
+}
+
 .review-thumbnails {
 	display: flex;
 	gap: 10px;
@@ -726,12 +803,12 @@
 	flex-wrap: wrap;
 }
 
-/* Review attachment cards — same size as step 3 cards */
+/* Review attachment cards - same size as step 3 cards */
 .review-attachment-card {
 	cursor: pointer;
 }
 
-/* ── Upload Progress Overlay ── */
+/* Upload Progress Overlay */
 .review-progress-overlay {
 	position: absolute;
 	inset: 0;
@@ -868,7 +945,12 @@
 	text-overflow: ellipsis;
 }
 
-/* ── Diagnostic data sections (System Info, Extensions, Experiments) ── */
+.review-target-repo {
+	color: var(--vscode-descriptionForeground, #999);
+	font-size: 12px;
+}
+
+/* Diagnostic data sections (System Info, Extensions, Experiments) */
 .review-diagnostics {
 	margin-top: 12px;
 	display: flex;
@@ -992,7 +1074,7 @@
 	padding: 4px 0;
 }
 
-/* ── Bottom Navigation ── */
+/* Bottom Navigation */
 .wizard-nav {
 	display: flex;
 	align-items: center;
@@ -1010,7 +1092,7 @@
 	flex: none;
 }
 
-/* ── Navigation buttons ── */
+/* Navigation buttons */
 .wizard-nav-btn {
 	display: flex;
 	align-items: center;
@@ -1053,7 +1135,7 @@
 	filter: brightness(1.1);
 }
 
-/* ── Annotation Editor Buttons ── */
+/* Annotation Editor Buttons */
 .issue-reporter-annotation-overlay .monaco-button {
 	border-radius: 4px;
 	height: 28px;
@@ -1063,7 +1145,7 @@
 	cursor: pointer;
 }
 
-/* ── Annotation Editor ── */
+/* Annotation Editor */
 .issue-reporter-annotation-overlay {
 	position: absolute;
 	inset: 0;
@@ -1205,7 +1287,7 @@
 	cursor: crosshair;
 }
 
-/* ── Toolbar selects (font family / size) ── */
+/* Toolbar selects (font family / size) */
 .issue-reporter-annotation-overlay .annotation-toolbar .toolbar-select-container {
 	min-width: 120px;
 	margin: 0 2px;
@@ -1226,9 +1308,7 @@
 	line-height: 1;
 }
 
-/* ═══════════════════════════════════════════════
-   Recording UI
-   ═══════════════════════════════════════════════ */
+/* Recording UI */
 
 .wizard-record-btn,
 .monaco-button.wizard-record-btn {

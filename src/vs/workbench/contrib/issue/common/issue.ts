@@ -26,7 +26,8 @@ export const enum IssueType {
 export enum IssueSource {
 	VSCode = 'vscode',
 	Extension = 'extension',
-	Marketplace = 'marketplace'
+	Marketplace = 'marketplace',
+	Unknown = 'unknown'
 }
 
 export interface IssueReporterStyles extends WindowStyles {

@@ -51,7 +51,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	properties: {
 		'issueReporter.experimental.issueReportingWizard': {
 			type: 'object',
-			default: { enabled: false, defaultHideToolbarInScreenshots: true },
+			default: { enabled: false, defaultHideToolbarInScreenshots: true, listBuiltinExtensions: false },
 			description: localize('issueReporter.issueReportingWizard', "Configure the experimental issue reporting wizard."),
 			properties: {
 				'enabled': {
@@ -63,6 +63,11 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 					type: 'boolean',
 					default: true,
 					description: localize('issueReporter.issueReportingWizard.defaultHideToolbarInScreenshots', "Default value for whether the floating capture toolbar is hidden when taking screenshots."),
+				},
+				'listBuiltinExtensions': {
+					type: 'boolean',
+					default: false,
+					description: localize('issueReporter.issueReportingWizard.listBuiltinExtensions', "List built-in extensions in the experimental issue reporter wizard extension picker for testing."),
 				},
 			},
 		},

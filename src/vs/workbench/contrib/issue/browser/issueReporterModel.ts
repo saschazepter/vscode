@@ -5,7 +5,7 @@
 
 import { mainWindow } from '../../../../base/browser/window.js';
 import { isRemoteDiagnosticError, SystemInfo } from '../../../../platform/diagnostics/common/diagnostics.js';
-import { ISettingSearchResult, IssueReporterExtensionData, IssueType } from '../common/issue.js';
+import { ISettingSearchResult, IssueReporterExtensionData, IssueSource, IssueType } from '../common/issue.js';
 
 interface VersionInfo {
 	vscodeVersion: string;
@@ -14,6 +14,7 @@ interface VersionInfo {
 
 export interface IssueReporterData {
 	issueType: IssueType;
+	issueSource?: IssueSource;
 	issueDescription?: string;
 	issueTitle?: string;
 	extensionData?: string;

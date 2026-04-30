@@ -32,14 +32,13 @@ import { IssueFormService } from './issueFormService.js';
 import { IProcessService } from '../../../../platform/process/common/process.js';
 import { IWorkbenchAssignmentService } from '../../../services/assignment/common/assignmentService.js';
 import product from '../../../../platform/product/common/product.js';
-import { isLinuxSnap } from '../../../../base/common/platform.js';
-import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IContextMenuService, IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { ChatMessageRole, ILanguageModelsService, getTextResponseFromStream } from '../../chat/common/languageModels.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 
 /**
  * Editor pane that hosts the issue reporter wizard inside an editor tab.
@@ -66,7 +65,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IIssueFormService private readonly issueFormService: IIssueFormService,
 		@IProcessService private readonly processService: IProcessService,
 		@IWorkbenchAssignmentService private readonly experimentService: IWorkbenchAssignmentService,
-		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IContextViewService private readonly contextViewService: IContextViewService,
@@ -74,6 +72,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IOpenerService private readonly openerService: IOpenerService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -113,7 +112,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		}
 
 		// Create the wizard — renders inside this container
-		const wizardConfig = this.configurationService.getValue<{ defaultHideToolbarInScreenshots?: boolean }>('issueReporter.experimental.issueReportingWizard');
+		const wizardConfig = this.configurationService.getValue<{ defaultHideToolbarInScreenshots?: boolean; listBuiltinExtensions?: boolean }>('issueReporter.experimental.issueReportingWizard');
 		const hideToolbar = wizardConfig?.defaultHideToolbarInScreenshots ?? true;
 		this.wizard = new IssueReporterOverlay(
 			data,
@@ -123,6 +122,9 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.contextMenuService,
 			this.markdownRendererService,
 			hideToolbar,
+			extensionId => this.issueFormService.sendReporterMenu(extensionId),
+			async url => { await this.openerService.open(URI.parse(url), { openExternal: true }); },
+			wizardConfig?.listBuiltinExtensions ?? false,
 		);
 		this.inputDisposables.add(this.wizard);
 
@@ -324,19 +326,18 @@ export class IssueReporterEditorPane extends EditorPane {
 
 		try {
 			// Version info
-			const osProps = await this.nativeHostService.getOSProperties();
 			const vscodeVersion = `${product.nameShort} ${!!product.darwinUniversalAssetId ? `${product.version} (Universal)` : product.version} (${product.commit || 'Commit unknown'}, ${product.date || 'Date unknown'})`;
-			const os = `${osProps.type} ${osProps.arch} ${osProps.release}${isLinuxSnap ? ' snap' : ''}`;
-
-			this.wizard.updateModel({
-				versionInfo: { vscodeVersion, os },
-			});
-
-			// System info (CPUs, GPU, memory, etc.)
 			const systemInfo = await this.processService.getSystemInfo();
 			this.wizard.updateModel({
+				versionInfo: { vscodeVersion, os: systemInfo.os },
 				systemInfo,
 				systemInfoWeb: navigator.userAgent,
+			});
+
+			const performanceInfo = await this.processService.getPerformanceInfo();
+			this.wizard.updateModel({
+				processInfo: performanceInfo.processInfo,
+				workspaceInfo: performanceInfo.workspaceInfo,
 			});
 		} catch (err) {
 			this.logService.error('[IssueReporterEditorPane] Failed to collect system info:', err);
@@ -455,7 +456,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			video.playsInline = true;
 			video.preload = 'auto';
 			video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:320px;height:240px;opacity:0;pointer-events:none;';
-			document.body.appendChild(video);
+			mainWindow.document.body.appendChild(video);
 			video.src = browserUri.toString(true);
 
 			video.addEventListener('loadeddata', () => {

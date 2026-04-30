@@ -21,7 +21,8 @@ import product from '../../../../platform/product/common/product.js';
 import { IRectangle } from '../../../../platform/window/common/window.js';
 import { AuxiliaryWindowMode, IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
-import { IIssueFormService, IssueReporterData } from '../common/issue.js';
+import { IIssueFormService, IssueReporterData, IssueReporterExtensionData, IssueSource } from '../common/issue.js';
+import { normalizeGitHubUrl } from '../common/issueReporterUtil.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import BaseHtml from './issueReporterPage.js';
 import { IssueWebReporter } from './issueReporterService.js';
@@ -98,20 +99,16 @@ export class IssueFormService implements IIssueFormService {
 	}
 
 	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<boolean> {
+		data = wizard.getIssueReporterData();
 		const screenshots = wizard.getScreenshots();
 		const recordings = wizard.getRecordings();
 
-		// Determine the issue URL
-		let issueUrl = data.privateUri
-			? URI.revive(data.privateUri).toString()
-			: product.reportIssueUrl ?? '';
-
-		const selectedExtension = data.extensionId
-			? data.enabledExtensions.find(ext => ext.id.toLocaleLowerCase() === data.extensionId?.toLocaleLowerCase())
-			: undefined;
-
-		if (selectedExtension?.uri) {
-			issueUrl = URI.revive(selectedExtension.uri).toString();
+		const issueTarget = this.getIssueTarget(data);
+		if (!issueTarget?.url) {
+			return false;
+		}
+		if (issueTarget.external) {
+			return this.openerService.open(URI.parse(issueTarget.url), { openExternal: true });
 		}
 
 		let mediaMarkdown = '';
@@ -123,7 +120,8 @@ export class IssueFormService implements IIssueFormService {
 			wizard.setUploading(true);
 
 			try {
-				const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
+				const gitHubDetails = this.parseGitHubUrl(issueTarget.url);
+				const repoId = await this.githubUploadService.resolveRepositoryId(gitHubDetails?.owner ?? 'microsoft', gitHubDetails?.repositoryName ?? 'vscode');
 
 				// Collect files, keyed for cache lookup
 				const filesToProcess: { key: string; name: string; bytes: Uint8Array; contentType: string }[] = [];
@@ -187,17 +185,99 @@ export class IssueFormService implements IIssueFormService {
 		const issueBody = body + mediaMarkdown;
 		this.logService.info(`[IssueFormService] Opening issue preview: bodyLen=${issueBody.length}`);
 
-		let url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(issueBody)}`;
+		const baseUrl = this.getIssueUrlWithTitle(title, issueTarget.url, data.issueSource === IssueSource.Extension);
+		const gitHubDetails = this.parseGitHubUrl(issueTarget.url);
+		let url = `${baseUrl}&body=${encodeURIComponent(issueBody)}`;
+		url = this.addTemplateToUrl(url, gitHubDetails?.owner, gitHubDetails?.repositoryName, data.issueSource);
 
 		if (url.length > 7500) {
 			const shouldWrite = await this.showClipboardDialog();
 			if (!shouldWrite) {
 				return false;
 			}
-			url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
+			url = `${baseUrl}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
+			url = this.addTemplateToUrl(url, gitHubDetails?.owner, gitHubDetails?.repositoryName, data.issueSource);
 		}
 
 		return this.openerService.open(URI.parse(url));
+	}
+
+	private getIssueTarget(data: IssueReporterData): { url: string; external: boolean } | undefined {
+		const selectedExtension = this.getSelectedExtension(data);
+		if (data.issueSource === IssueSource.Extension && selectedExtension) {
+			const extensionUrl = this.getExtensionIssueUrl(selectedExtension);
+			if (!extensionUrl) {
+				return undefined;
+			}
+			return { url: extensionUrl, external: !this.isGitHubUrl(extensionUrl) };
+		}
+
+		if (data.issueSource === IssueSource.Marketplace && product.reportMarketplaceIssueUrl) {
+			return { url: product.reportMarketplaceIssueUrl, external: false };
+		}
+
+		if (data.uri) {
+			return { url: URI.revive(data.uri).toString(), external: false };
+		}
+
+		if (data.privateUri) {
+			return { url: URI.revive(data.privateUri).toString(), external: false };
+		}
+
+		return product.reportIssueUrl ? { url: product.reportIssueUrl, external: false } : undefined;
+	}
+
+	private getSelectedExtension(data: IssueReporterData): IssueReporterExtensionData | undefined {
+		return data.extensionId
+			? data.enabledExtensions.find(ext => ext.id.toLowerCase() === data.extensionId?.toLowerCase())
+			: undefined;
+	}
+
+	private getExtensionIssueUrl(extension: IssueReporterExtensionData): string | undefined {
+		if (extension.uri) {
+			return URI.revive(extension.uri).toString();
+		}
+		if (extension.bugsUrl && /^https?:\/\/github\.com\/([^\/]*)\/([^\/]*)\/?(\/issues)?\/?$/.test(extension.bugsUrl)) {
+			return `${normalizeGitHubUrl(extension.bugsUrl)}/issues/new`;
+		}
+		if (extension.repositoryUrl && /^https?:\/\/github\.com\/([^\/]*)\/([^\/]*)\/?$/.test(extension.repositoryUrl)) {
+			return `${normalizeGitHubUrl(extension.repositoryUrl)}/issues/new`;
+		}
+		return extension.bugsUrl || extension.repositoryUrl;
+	}
+
+	private isGitHubUrl(url: string): boolean {
+		return /^https?:\/\/github\.com\//i.test(url);
+	}
+
+	private parseGitHubUrl(url: string): { owner: string; repositoryName: string } | undefined {
+		const match = /^https?:\/\/github\.com\/([^\/?#]+)\/([^\/?#]+).*/i.exec(url);
+		if (!match) {
+			return undefined;
+		}
+		return { owner: match[1], repositoryName: match[2] };
+	}
+
+	private getIssueUrlWithTitle(issueTitle: string, issueUrl: string, fileOnExtension: boolean): string {
+		if (fileOnExtension && !/\/issues\/new(?:[?#].*)?$/i.test(issueUrl)) {
+			issueUrl = `${normalizeGitHubUrl(issueUrl)}/issues/new`;
+		}
+		const queryStringPrefix = issueUrl.indexOf('?') === -1 ? '?' : '&';
+		return `${issueUrl}${queryStringPrefix}title=${encodeURIComponent(issueTitle)}`;
+	}
+
+	private addTemplateToUrl(baseUrl: string, owner?: string, repositoryName?: string, issueSource?: IssueSource): string {
+		const needsTemplate = issueSource === IssueSource.VSCode || (owner?.toLowerCase() === 'microsoft' && repositoryName === 'vscode');
+		if (!needsTemplate) {
+			return baseUrl;
+		}
+		try {
+			const url = new URL(baseUrl);
+			url.searchParams.set('template', 'bug_report.md');
+			return url.toString();
+		} catch {
+			return `${baseUrl}&template=bug_report.md`;
+		}
 	}
 
 	private dataUrlToBytes(dataUrl: string): Uint8Array | undefined {

@@ -21,12 +21,22 @@ import { localize } from '../../../../nls.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
-import { IssueReporterData, IssueType } from '../common/issue.js';
+import product from '../../../../platform/product/common/product.js';
+import { URI } from '../../../../base/common/uri.js';
+import { normalizeGitHubUrl } from '../common/issueReporterUtil.js';
+import { IssueReporterData, IssueReporterExtensionData, IssueSource, IssueType } from '../common/issue.js';
 import { IssueReporterModel } from './issueReporterModel.js';
 import { RecordingState } from './recordingService.js';
 import { ScreenshotAnnotationEditor } from './screenshotAnnotation.js';
 
 const MAX_ATTACHMENTS = 5;
+const MAX_SIMILAR_ISSUES = 5;
+
+interface ISimilarIssue {
+	readonly html_url: string;
+	readonly title: string;
+	readonly state?: string;
+}
 
 const enum WizardStep {
 	Attachments = 0,
@@ -67,7 +77,22 @@ export class IssueReporterOverlay {
 
 	// Step 1: Describe (category + description + title)
 	private readonly issueTypeButtons: Button[] = [];
+	private readonly issueSourceButtons: Button[] = [];
 	private selectedIssueType: IssueType | undefined;
+	private selectedIssueSource: IssueSource | undefined;
+	private selectedExtension: IssueReporterExtensionData | undefined;
+	private sourceButtonGroup!: HTMLElement;
+	private sourceError!: HTMLElement;
+	private extensionField!: HTMLElement;
+	private extensionSelect!: SelectBox;
+	private extensionOptions: { label: string; value: string | undefined; hidden?: boolean }[] = [];
+	private extensionError!: HTMLElement;
+	private extensionStatus!: HTMLElement;
+	private didAttemptDescribeSubmit = false;
+	private similarIssuesContainer!: HTMLElement;
+	private similarIssuesRequest = 0;
+	private extensionDataRequest = 0;
+	private similarIssuesHandle: ReturnType<typeof setTimeout> | undefined;
 	private typeButtonGroup!: HTMLElement;
 	private typeError!: HTMLElement;
 	private descriptionTextarea!: HTMLTextAreaElement;
@@ -85,7 +110,7 @@ export class IssueReporterOverlay {
 	private captureBtn!: Button;
 	private recordBtn: Button | undefined;
 	private recordingElapsedLabel!: HTMLElement;
-	private recordingElapsedTimer: ReturnType<typeof setInterval> | undefined;
+	private recordingElapsedTimer: number | undefined;
 	private recordingStartTime = 0;
 	private currentRecordingState = RecordingState.Idle;
 	private delayedScreenshotPending = false;
@@ -94,10 +119,14 @@ export class IssueReporterOverlay {
 	// Step 2: Review
 	private reviewThumbCards: HTMLElement[] = [];
 	private readonly reviewRenderDisposables = new DisposableStore();
+	private readonly similarIssuesDisposables = new DisposableStore();
 	private uploading = false;
 	private includeSystemInfo = true;
+	private includeProcessInfo = true;
+	private includeWorkspaceInfo = true;
 	private includeExtensions = true;
 	private includeExperiments = true;
+	private includeExtensionData = false;
 	private includeSettings = true;
 	private settingsContent: string | undefined;
 	private workspaceSettingsContent: string | undefined;
@@ -120,13 +149,16 @@ export class IssueReporterOverlay {
 	private _hideToolbarInScreenshots = true;
 
 	constructor(
-		private readonly data: IssueReporterData,
+		private data: IssueReporterData,
 		private readonly recordingSupported: boolean = false,
 		private readonly container: HTMLElement,
 		private readonly contextViewService: IContextViewService,
 		private readonly contextMenuProvider?: IContextMenuProvider,
 		private readonly markdownRendererService?: IMarkdownRendererService,
 		initialHideToolbar: boolean = true,
+		private readonly resolveExtensionIssueData?: (extensionId: string) => Promise<IssueReporterData | undefined>,
+		private readonly openExternalLink?: (url: string) => Promise<void>,
+		private readonly listBuiltinExtensions: boolean = false,
 	) {
 		this._hideToolbarInScreenshots = initialHideToolbar;
 		this.model = new IssueReporterModel({
@@ -141,6 +173,7 @@ export class IssueReporterOverlay {
 			includeExtensionData: false,
 		});
 		this.selectedIssueType = data.issueType;
+		this.selectedIssueSource = data.issueSource ?? (data.extensionId ? IssueSource.Extension : undefined);
 
 		this.createWizard();
 	}
@@ -151,7 +184,7 @@ export class IssueReporterOverlay {
 		this.wizardPanel.setAttribute('aria-label', localize('reportIssue', "Report Issue"));
 		this.wizardPanel.setAttribute('tabindex', '-1');
 
-		// ── Toolbar (drag region + step indicator + discard) ──
+		// Toolbar (drag region + step indicator + discard)
 		const toolbar = append(this.wizardPanel, $('div.wizard-toolbar'));
 
 		// Progress indicator area
@@ -166,13 +199,13 @@ export class IssueReporterOverlay {
 
 		append(toolbar, $('div.spacer'));
 
-		// ── Step content area ──
+		// Step content area
 		this.stepContainer = append(this.wizardPanel, $('div.wizard-step-container'));
 		this.createStep0Attachments();
 		this.createStep1Describe();
 		this.createStep2Review();
 
-		// ── Bottom navigation ──
+		// Bottom navigation
 		const nav = append(this.wizardPanel, $('div.wizard-nav'));
 
 		this.backButton = this.disposables.add(new Button(nav, { ...defaultButtonStyles, secondary: true }));
@@ -187,10 +220,13 @@ export class IssueReporterOverlay {
 		this.nextButton.element.title = localize('nextCtrlEnter', "Next ({0}+Enter)", ctrlKey);
 
 		this.registerEventHandlers();
+		if (this.data.extensionId) {
+			void this.updateSelectedExtension(this.data.extensionId, false);
+		}
 		this.updateStepUI();
 	}
 
-	// ── Step 0: Attachments ──
+	// Step 0: Attachments
 	private createStep0Attachments(): void {
 		const page = append(this.stepContainer, $('div.wizard-step'));
 		this.stepPages.push(page);
@@ -241,12 +277,13 @@ export class IssueReporterOverlay {
 				const origLabel = this.captureBtn.label as string;
 				let remaining = this.screenshotDelay;
 				this.captureBtn.label = `${remaining}...`;
-				const interval = setInterval(() => {
+				const targetWindow = getWindow(this.container);
+				const interval = targetWindow.setInterval(() => {
 					remaining--;
 					if (remaining > 0) {
 						this.captureBtn.label = `${remaining}...`;
 					} else {
-						clearInterval(interval);
+						targetWindow.clearInterval(interval);
 						this.captureBtn.label = origLabel;
 						this.captureBtn.enabled = true;
 						this.delayedScreenshotPending = false;
@@ -368,7 +405,7 @@ export class IssueReporterOverlay {
 			// Close the delay menu when drag starts.
 			// The drag handler calls e.preventDefault() on pointerdown which
 			// suppresses the mousedown event that the context menu uses for
-			// outside-click detection — so we dispatch a synthetic one.
+			// outside-click detection, so we dispatch a synthetic one.
 			this.disposables.add(addDisposableListener(dragArea, EventType.POINTER_DOWN, () => {
 				dragArea.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 			}));
@@ -387,12 +424,13 @@ export class IssueReporterOverlay {
 				this.updateAttachmentButtons();
 				let remaining = this.screenshotDelay;
 				captureBtn.label = `${remaining}...`;
-				const interval = setInterval(() => {
+				const targetWindow = getWindow(this.container);
+				const interval = targetWindow.setInterval(() => {
 					remaining--;
 					if (remaining > 0) {
 						captureBtn.label = `${remaining}...`;
 					} else {
-						clearInterval(interval);
+						targetWindow.clearInterval(interval);
 						captureBtn.label = `$(device-camera) ${localize('screenshot', "Screenshot")}`;
 						captureBtn.element.style.minWidth = '';
 						captureBtn.enabled = true;
@@ -474,13 +512,56 @@ export class IssueReporterOverlay {
 		this.floatingBar.style.display = '';
 	}
 
-	// ── Step 1: Describe (category + description + title) ──
+	// Step 1: Describe (category + description + title)
 	private createStep1Describe(): void {
 		const page = append(this.stepContainer, $('div.wizard-step'));
 		this.stepPages.push(page);
 
 		const heading = append(page, $('h2.wizard-heading'));
 		heading.textContent = localize('describeHeading', "Describe your feedback");
+
+		// Issue source selection
+		const sourceField = append(page, $('div.wizard-field.wizard-source-field'));
+		const sourceLabel = append(sourceField, $('label.wizard-field-label'));
+		sourceLabel.textContent = localize('target', "Target");
+		this.sourceButtonGroup = append(sourceField, $('div.wizard-type-buttons.wizard-source-buttons'));
+		for (const option of this.getSourceOptions()) {
+			const btn = this.disposables.add(new Button(this.sourceButtonGroup, { ...defaultButtonStyles, secondary: true }));
+			btn.element.classList.add('wizard-type-btn', 'wizard-source-btn');
+			btn.element.setAttribute('data-source', option.value);
+			btn.element.setAttribute('aria-pressed', 'false');
+			btn.label = option.label;
+			this.issueSourceButtons.push(btn);
+			this.disposables.add(btn.onDidClick(() => {
+				this.setIssueSource(option.value);
+				if (option.value === IssueSource.Extension && this.selectedExtension) {
+					void this.updateSelectedExtension(this.selectedExtension.id);
+				}
+			}));
+		}
+		this.sourceError = this.createFieldError(sourceField, localize('targetRequired', "Select a target to continue."));
+
+		this.extensionField = append(page, $('div.wizard-field.wizard-extension-field'));
+		const extensionLabel = append(this.extensionField, $('label.wizard-field-label'));
+		extensionLabel.textContent = localize('extension', "Extension");
+		const extensionSelectContainer = append(this.extensionField, $('div.wizard-extension-select'));
+		this.extensionOptions = this.getExtensionOptions();
+		this.extensionSelect = this.disposables.add(new SelectBox(
+			this.getExtensionSelectItems(),
+			this.getSelectedExtensionIndex(),
+			this.contextViewService,
+			defaultSelectBoxStyles,
+			{ ariaLabel: localize('extension', "Extension"), useCustomDrawn: true, optionsAsChildren: true }
+		));
+		this.extensionSelect.render(extensionSelectContainer);
+		this.disposables.add(this.extensionSelect.onDidSelect(e => {
+			void this.updateSelectedExtension(this.extensionOptions[e.index]?.value);
+		}));
+		this.extensionError = this.createFieldError(this.extensionField, localize('extensionRequired', "Select an extension to continue."));
+		this.extensionStatus = append(this.extensionField, $('div.wizard-extension-status'));
+		this.updateExtensionOptions();
+		this.updateExtensionFieldVisibility();
+		this.updateIssueSourceButtons();
 
 		// Category selection
 		const catLabel = append(page, $('label.wizard-field-label'));
@@ -503,6 +584,8 @@ export class IssueReporterOverlay {
 				b.element.setAttribute('aria-pressed', String(isSelected));
 			}
 			this.updateDescriptionGuidance();
+			this.updateIssueSourceButtons();
+			this.searchSimilarIssues();
 		};
 
 		for (const { type, label, icon } of types) {
@@ -560,6 +643,7 @@ export class IssueReporterOverlay {
 			placeholder: localize('issueTitlePlaceholder', "Brief summary of the issue"),
 			inputBoxStyles: defaultInputBoxStyles,
 		}));
+		this.updateTitlePlaceholder();
 		if (this.data.issueTitle) {
 			this.titleInput.value = this.data.issueTitle;
 		}
@@ -567,6 +651,7 @@ export class IssueReporterOverlay {
 			if (this.titleInput.value.trim()) {
 				this.setFieldError(this.titleInput.element, this.titleError, false);
 			}
+			this.searchSimilarIssues();
 		}));
 		this.titleError = this.createFieldError(titleGroup, localize('titleRequired', "Enter a title to continue."));
 
@@ -595,8 +680,370 @@ export class IssueReporterOverlay {
 				this.setFieldError(this.descriptionTextarea, this.descriptionError, false);
 			}
 			autoGrowTextarea();
+			this.searchSimilarIssues();
 		}));
 		this.descriptionError = this.createFieldError(descriptionGroup, localize('descriptionRequired', "Enter a description to continue."));
+
+		this.updateIssueSourceFlags();
+	}
+
+	private getSourceOptions(): { label: string; value: IssueSource }[] {
+		const options: { label: string; value: IssueSource }[] = [
+			{ label: product.nameLong || localize('vscode', "Visual Studio Code"), value: IssueSource.VSCode },
+			{ label: localize('extensionSource', "A VS Code extension"), value: IssueSource.Extension },
+		];
+		if (product.reportMarketplaceIssueUrl) {
+			options.push({ label: localize('marketplace', "Extensions Marketplace"), value: IssueSource.Marketplace });
+		}
+		if (this.selectedIssueType !== IssueType.FeatureRequest) {
+			options.push({ label: localize('unknownSource', "Don't know"), value: IssueSource.Unknown });
+		}
+		return options;
+	}
+
+	private updateIssueSourceButtons(): void {
+		const availableSources = new Set(this.getSourceOptions().map(option => option.value));
+		if (this.selectedIssueSource && !availableSources.has(this.selectedIssueSource)) {
+			this.selectedIssueSource = undefined;
+			this.updateIssueSourceFlags();
+			this.updateExtensionValidation();
+		}
+
+		for (const button of this.issueSourceButtons) {
+			const source = button.element.getAttribute('data-source') as IssueSource;
+			const isAvailable = availableSources.has(source);
+			const isSelected = source === this.selectedIssueSource;
+			button.element.classList.toggle('hidden', !isAvailable);
+			button.element.classList.toggle('selected', isSelected);
+			button.element.setAttribute('aria-pressed', String(isSelected));
+		}
+
+		this.updateExtensionFieldVisibility();
+	}
+
+	private setIssueSource(source: IssueSource | undefined): void {
+		this.selectedIssueSource = source;
+		this.setFieldError(this.sourceButtonGroup, this.sourceError, this.didAttemptDescribeSubmit && !source);
+		this.updateIssueSourceFlags();
+		this.updateIssueSourceButtons();
+		this.updateExtensionValidation();
+		this.updateTitlePlaceholder();
+		this.searchSimilarIssues();
+	}
+
+	private updateIssueSourceFlags(): void {
+		const fileOnExtension = this.selectedIssueSource === IssueSource.Extension;
+		const fileOnMarketplace = this.selectedIssueSource === IssueSource.Marketplace;
+		const fileOnProduct = this.selectedIssueSource === IssueSource.VSCode || this.selectedIssueSource === IssueSource.Unknown;
+		this.model.update({
+			issueSource: this.selectedIssueSource,
+			fileOnExtension,
+			fileOnMarketplace,
+			fileOnProduct,
+			selectedExtension: this.selectedExtension,
+		});
+		this.data.issueSource = this.selectedIssueSource;
+		this.data.extensionId = fileOnExtension ? this.selectedExtension?.id : undefined;
+	}
+
+	private updateTitlePlaceholder(): void {
+		if (!this.titleInput) {
+			return;
+		}
+		switch (this.selectedIssueSource) {
+			case IssueSource.Extension:
+				this.titleInput.setPlaceHolder(localize('extensionPlaceholder', "E.g. Missing alt text on extension readme image"));
+				break;
+			case IssueSource.Marketplace:
+				this.titleInput.setPlaceHolder(localize('marketplacePlaceholder', "E.g. Cannot disable installed extension"));
+				break;
+			case IssueSource.VSCode:
+				this.titleInput.setPlaceHolder(localize('vscodePlaceholder', "E.g. Workbench is missing problems panel"));
+				break;
+			default:
+				this.titleInput.setPlaceHolder(localize('issueTitlePlaceholder', "Brief summary of the issue"));
+				break;
+		}
+	}
+
+	private getExtensionOptions(): { label: string; value: string | undefined; hidden?: boolean }[] {
+		const modelData = this.model.getData();
+		const sourceExtensions = (this.listBuiltinExtensions ? modelData.allExtensions : modelData.enabledNonThemeExtesions) ?? modelData.allExtensions ?? [];
+		const extensions = [...sourceExtensions]
+			.filter(extension => !extension.isTheme && (this.listBuiltinExtensions || !extension.isBuiltin))
+			.sort((a, b) => (a.displayName || a.name || a.id).localeCompare(b.displayName || b.name || b.id));
+		return [
+			{ label: localize('selectExtension', "Select extension"), value: undefined, hidden: true },
+			...extensions.map(extension => ({ label: extension.displayName || extension.name || extension.id, value: extension.id })),
+		];
+	}
+
+	private getExtensionSelectItems(): ISelectOptionItem[] {
+		return this.extensionOptions.map(option => ({ text: option.label, isDisabled: option.hidden }));
+	}
+
+	private getSelectedExtensionIndex(): number {
+		return Math.max(0, this.extensionOptions.findIndex(option => option.value === this.selectedExtension?.id || option.value === this.data.extensionId));
+	}
+
+	private updateExtensionOptions(): void {
+		if (!this.extensionSelect) {
+			return;
+		}
+		this.extensionOptions = this.getExtensionOptions();
+		this.extensionSelect.setOptions(this.getExtensionSelectItems(), this.getSelectedExtensionIndex());
+		if (!this.selectedExtension && this.data.extensionId) {
+			void this.updateSelectedExtension(this.data.extensionId, false);
+		}
+	}
+
+	private updateExtensionFieldVisibility(): void {
+		if (!this.extensionField) {
+			return;
+		}
+		this.extensionField.classList.toggle('hidden', this.selectedIssueSource !== IssueSource.Extension);
+	}
+
+	private updateExtensionValidation(): void {
+		const hasExtension = this.selectedIssueSource !== IssueSource.Extension || !!this.selectedExtension;
+		const hasExtensionIssueUrl = this.selectedIssueSource !== IssueSource.Extension || !this.selectedExtension || !!this.getSelectedExtensionIssueUrl();
+		this.setFieldError(this.extensionField, this.extensionError, this.didAttemptDescribeSubmit && (!hasExtension || !hasExtensionIssueUrl));
+	}
+
+	private async updateSelectedExtension(extensionId: string | undefined, loadExtensionData = true): Promise<void> {
+		const extension = extensionId
+			? this.model.getData().allExtensions.find(candidate => candidate.id.toLowerCase() === extensionId.toLowerCase())
+			: undefined;
+		this.selectedExtension = extension;
+		this.data.extensionId = extension?.id;
+		if (this.extensionSelect) {
+			this.extensionSelect.select(this.getSelectedExtensionIndex());
+		}
+		this.updateExtensionValidation();
+		this.updateIssueSourceFlags();
+
+		if (!extension) {
+			this.extensionStatus.textContent = '';
+			this.searchSimilarIssues();
+			return;
+		}
+
+		if (extension.isBuiltin && this.selectedIssueSource === IssueSource.Extension && !this.data.issueSource) {
+			this.setIssueSource(IssueSource.VSCode);
+			return;
+		}
+
+		if (loadExtensionData && this.resolveExtensionIssueData) {
+			const request = ++this.extensionDataRequest;
+			this.extensionStatus.textContent = localize('loadingExtensionData', "Loading extension issue data...");
+			const issueData = await this.resolveExtensionIssueData(extension.id);
+			if (request !== this.extensionDataRequest) {
+				return;
+			}
+			if (issueData) {
+				this.applyExtensionIssueData(extension, issueData);
+			}
+		}
+
+		this.updateExtensionStatus();
+		this.searchSimilarIssues();
+	}
+
+	private applyExtensionIssueData(extension: IssueReporterExtensionData, issueData: IssueReporterData): void {
+		extension.data = issueData.data;
+		extension.uri = issueData.uri;
+		extension.privateUri = issueData.privateUri;
+		this.data.data = issueData.data;
+		this.data.uri = issueData.uri;
+		this.data.privateUri = issueData.privateUri;
+		this.data.issueBody = issueData.issueBody ?? this.data.issueBody;
+		this.data.issueTitle = issueData.issueTitle ?? this.data.issueTitle;
+		if (issueData.issueTitle && !this.titleInput.value.trim()) {
+			this.titleInput.value = issueData.issueTitle;
+		}
+		if (issueData.issueBody && !this.descriptionTextarea.value.includes(issueData.issueBody)) {
+			this.descriptionTextarea.value = this.descriptionTextarea.value
+				? `${this.descriptionTextarea.value}\n${issueData.issueBody}`
+				: issueData.issueBody;
+		}
+		if (issueData.data) {
+			extension.extensionData = issueData.data;
+			this.model.update({ extensionData: issueData.data, includeExtensionData: true });
+			this.includeExtensionData = true;
+		}
+	}
+
+	private updateExtensionStatus(): void {
+		if (!this.extensionStatus || !this.selectedExtension) {
+			return;
+		}
+		const issueUrl = this.getSelectedExtensionIssueUrl();
+		if (!issueUrl) {
+			this.extensionStatus.textContent = localize('extensionNoIssueUrl', "This extension does not provide an issue reporting URL.");
+		} else if (!this.isGitHubUrl(issueUrl)) {
+			this.extensionStatus.textContent = localize('extensionExternalIssueUrl', "This extension uses an external issue reporter. Preview will open that issue reporter.");
+		} else {
+			const repo = this.parseGitHubUrl(issueUrl);
+			this.extensionStatus.textContent = repo
+				? localize('extensionRepoTarget', "Issues will be previewed in {0}/{1}.", repo.owner, repo.repositoryName)
+				: '';
+		}
+	}
+
+	private getSelectedExtensionIssueUrl(): string | undefined {
+		const extension = this.selectedExtension;
+		if (!extension) {
+			return undefined;
+		}
+		if (extension.uri) {
+			return URI.revive(extension.uri).toString();
+		}
+		if (extension.bugsUrl && /^https?:\/\/github\.com\/([^\/]*)\/([^\/]*)\/?(\/issues)?\/?$/.test(extension.bugsUrl)) {
+			return `${normalizeGitHubUrl(extension.bugsUrl)}/issues/new`;
+		}
+		if (extension.repositoryUrl && /^https?:\/\/github\.com\/([^\/]*)\/([^\/]*)\/?$/.test(extension.repositoryUrl)) {
+			return `${normalizeGitHubUrl(extension.repositoryUrl)}/issues/new`;
+		}
+		return extension.bugsUrl || extension.repositoryUrl;
+	}
+
+	private getIssueSourceLabel(): string {
+		switch (this.selectedIssueSource) {
+			case IssueSource.VSCode:
+				return product.nameLong || localize('vscode', "Visual Studio Code");
+			case IssueSource.Extension:
+				return this.selectedExtension?.displayName || this.selectedExtension?.name || localize('extensionSource', "A VS Code extension");
+			case IssueSource.Marketplace:
+				return localize('marketplace', "Extensions Marketplace");
+			case IssueSource.Unknown:
+				return localize('unknownSource', "Don't know");
+			default:
+				return localize('unknown', "Unknown");
+		}
+	}
+
+	private getIssueTargetUrl(): string | undefined {
+		if (this.selectedIssueSource === IssueSource.Extension) {
+			return this.getSelectedExtensionIssueUrl();
+		}
+		if (this.selectedIssueSource === IssueSource.Marketplace) {
+			return product.reportMarketplaceIssueUrl;
+		}
+		if (this.data.uri) {
+			return URI.revive(this.data.uri).toString();
+		}
+		if (this.data.privateUri) {
+			return URI.revive(this.data.privateUri).toString();
+		}
+		return product.reportIssueUrl;
+	}
+
+	private isGitHubUrl(url: string): boolean {
+		return /^https?:\/\/github\.com\//i.test(url);
+	}
+
+	private parseGitHubUrl(url: string): { owner: string; repositoryName: string } | undefined {
+		const match = /^https?:\/\/github\.com\/([^\/?#]+)\/([^\/?#]+).*/i.exec(url);
+		if (!match) {
+			return undefined;
+		}
+		return { owner: match[1], repositoryName: match[2] };
+	}
+
+	private searchSimilarIssues(): void {
+		if (this.currentStep !== WizardStep.Review || !this.similarIssuesContainer) {
+			return;
+		}
+		if (this.similarIssuesHandle) {
+			clearTimeout(this.similarIssuesHandle);
+		}
+		this.similarIssuesHandle = setTimeout(() => this.doSearchSimilarIssues(), 300);
+	}
+
+	private async doSearchSimilarIssues(): Promise<void> {
+		const title = this.titleInput.value.trim();
+		const request = ++this.similarIssuesRequest;
+		if (!title || !this.selectedIssueSource) {
+			this.clearSimilarIssues();
+			return;
+		}
+
+		this.similarIssuesContainer.parentElement?.classList.remove('hidden');
+		this.similarIssuesContainer.textContent = localize('searchingSimilarIssues', "Searching similar issues...");
+		try {
+			let results: ISimilarIssue[] = [];
+			if (this.selectedIssueSource === IssueSource.Extension) {
+				const extensionIssueUrl = this.getSelectedExtensionIssueUrl();
+				const repo = extensionIssueUrl && this.parseGitHubUrl(extensionIssueUrl);
+				results = repo ? await this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
+			} else if (this.selectedIssueSource === IssueSource.Marketplace && product.reportMarketplaceIssueUrl) {
+				const repo = this.parseGitHubUrl(product.reportMarketplaceIssueUrl);
+				results = repo ? await this.searchGitHubIssues(`${repo.owner}/${repo.repositoryName}`, title) : [];
+			} else {
+				results = await this.searchVSCodeDuplicates(title, this.descriptionTextarea.value.trim());
+			}
+			if (request === this.similarIssuesRequest) {
+				this.renderSimilarIssues(results);
+			}
+		} catch {
+			if (request === this.similarIssuesRequest) {
+				this.clearSimilarIssues();
+			}
+		}
+	}
+
+	private async searchGitHubIssues(repo: string, title: string): Promise<ISimilarIssue[]> {
+		const query = `is:issue repo:${repo} ${title}`;
+		const response = await fetch(`https://api.github.com/search/issues?q=${encodeURIComponent(query)}`);
+		const result = await response.json();
+		return Array.isArray(result?.items) ? result.items : [];
+	}
+
+	private async searchVSCodeDuplicates(title: string, body: string): Promise<ISimilarIssue[]> {
+		const response = await fetch('https://vscode-probot.westus.cloudapp.azure.com:7890/duplicate_candidates', {
+			method: 'POST',
+			body: JSON.stringify({ title, body }),
+			headers: new Headers({ 'Content-Type': 'application/json' }),
+		});
+		const result = await response.json();
+		return Array.isArray(result?.candidates) ? result.candidates : [];
+	}
+
+	private renderSimilarIssues(results: ISimilarIssue[]): void {
+		this.similarIssuesDisposables.clear();
+		this.similarIssuesContainer.textContent = '';
+		if (!results.length) {
+			this.similarIssuesContainer.parentElement?.classList.add('hidden');
+			return;
+		}
+		this.similarIssuesContainer.parentElement?.classList.remove('hidden');
+
+		const heading = append(this.similarIssuesContainer, $('div.wizard-similar-heading'));
+		heading.textContent = localize('similarIssues', "Similar issues");
+		const list = append(this.similarIssuesContainer, $('ul.wizard-similar-list'));
+		for (const issue of results.slice(0, MAX_SIMILAR_ISSUES)) {
+			const item = append(list, $('li.wizard-similar-item'));
+			const link = append(item, $('a.wizard-similar-link')) as HTMLAnchorElement;
+			link.href = issue.html_url;
+			link.textContent = issue.title;
+			link.title = issue.title;
+			this.similarIssuesDisposables.add(addDisposableListener(link, EventType.CLICK, e => {
+				e.preventDefault();
+				this.openExternalLink?.(issue.html_url);
+			}));
+			if (issue.state) {
+				const state = append(item, $('span.wizard-similar-state'));
+				state.textContent = issue.state;
+			}
+		}
+	}
+
+	private clearSimilarIssues(): void {
+		this.similarIssuesDisposables.clear();
+		if (this.similarIssuesContainer) {
+			this.similarIssuesContainer.textContent = '';
+			this.similarIssuesContainer.parentElement?.classList.add('hidden');
+		}
 	}
 
 	/** Update the guidance text above the description based on selected category */
@@ -641,7 +1088,7 @@ export class IssueReporterOverlay {
 		error.classList.toggle('hidden', !hasError);
 	}
 
-	// ── Step 2: Review & Submit ──
+	// Step 2: Review & Submit
 	private createStep2Review(): void {
 		const page = append(this.stepContainer, $('div.wizard-step.wizard-step-review'));
 		this.stepPages.push(page);
@@ -649,7 +1096,7 @@ export class IssueReporterOverlay {
 		const heading = append(page, $('h2.wizard-heading'));
 		heading.textContent = localize('reviewSubmit', "Review and submit");
 
-		// Review details (filled dynamically) — compact horizontal layout
+		// Review details (filled dynamically) with compact horizontal layout
 		append(page, $('div.wizard-review-details'));
 	}
 
@@ -698,16 +1145,26 @@ export class IssueReporterOverlay {
 		}
 
 		if (this.currentStep === WizardStep.Describe) {
+			this.didAttemptDescribeSubmit = true;
+			const hasIssueSource = this.selectedIssueSource !== undefined;
+			const hasExtension = this.selectedIssueSource !== IssueSource.Extension || !!this.selectedExtension;
+			const hasExtensionIssueUrl = this.selectedIssueSource !== IssueSource.Extension || !this.selectedExtension || !!this.getSelectedExtensionIssueUrl();
 			const hasIssueType = this.selectedIssueType !== undefined;
 			const hasDescription = this.hasDescriptionContent();
 			const title = this.titleInput.value.trim();
 
+			this.setFieldError(this.sourceButtonGroup, this.sourceError, !hasIssueSource);
+			this.setFieldError(this.extensionField, this.extensionError, !hasExtension || !hasExtensionIssueUrl);
 			this.setFieldError(this.typeButtonGroup, this.typeError, !hasIssueType);
 			this.setFieldError(this.descriptionTextarea, this.descriptionError, !hasDescription);
 			this.setFieldError(this.titleInput.element, this.titleError, !title);
 
-			if (!hasIssueType || !hasDescription || !title) {
-				if (!hasIssueType) {
+			if (!hasIssueSource || !hasExtension || !hasExtensionIssueUrl || !hasIssueType || !hasDescription || !title) {
+				if (!hasIssueSource) {
+					this.issueSourceButtons.find(button => !button.element.classList.contains('hidden'))?.element.focus();
+				} else if (!hasExtension || !hasExtensionIssueUrl) {
+					this.extensionSelect.focus();
+				} else if (!hasIssueType) {
 					this.issueTypeButtons[0]?.element.focus();
 				} else if (!hasDescription) {
 					this.descriptionTextarea.focus();
@@ -716,6 +1173,7 @@ export class IssueReporterOverlay {
 				}
 				return;
 			}
+			this.updateIssueSourceFlags();
 			this.model.update({ issueDescription: this.descriptionTextarea.value.trim() });
 		}
 
@@ -736,7 +1194,7 @@ export class IssueReporterOverlay {
 		const oldPage = this.stepPages[oldStep];
 		const newPage = this.stepPages[step];
 
-		// Immediate transition — no animation
+		// Immediate transition with no animation
 		oldPage.style.display = 'none';
 		newPage.style.display = 'flex';
 
@@ -746,9 +1204,10 @@ export class IssueReporterOverlay {
 			this.descriptionTextarea.focus();
 		} else if (step === WizardStep.Review) {
 			this.updateReviewDetails();
+			this.searchSimilarIssues();
 			this.wizardPanel.focus();
 		} else {
-			// Attachments — focus the panel so keyboard shortcuts work
+			// Attachments: focus the panel so keyboard shortcuts work
 			this.wizardPanel.focus();
 		}
 	}
@@ -785,8 +1244,13 @@ export class IssueReporterOverlay {
 		// Next button label
 		const ctrlKey = isMacintosh ? '\u2318' : 'Ctrl';
 		if (this.currentStep === WizardStep.Review) {
-			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
-			this.nextButton.element.title = localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
+			const externalExtensionUrl = this.selectedIssueSource === IssueSource.Extension && this.getIssueTargetUrl() && !this.isGitHubUrl(this.getIssueTargetUrl()!);
+			this.nextButton.label = externalExtensionUrl
+				? localize('openExternalIssueReporter', "Open External Issue Reporter")
+				: localize('previewOnGitHub', "Preview on GitHub");
+			this.nextButton.element.title = externalExtensionUrl
+				? localize('openExternalIssueReporterCtrlEnter', "Open External Issue Reporter ({0}+Enter)", ctrlKey)
+				: localize('submitCtrlEnter', "Preview on GitHub ({0}+Enter)", ctrlKey);
 			this.nextButton.enabled = true;
 		} else if (this.currentStep === WizardStep.Attachments) {
 			this.nextButton.label = this.getTotalAttachments() === 0
@@ -806,12 +1270,28 @@ export class IssueReporterOverlay {
 
 	private updateReviewDetails(): void {
 		const page = this.stepPages[WizardStep.Review];
+		// eslint-disable-next-line no-restricted-syntax
 		const details = page.querySelector('.wizard-review-details');
 		if (!details) {
 			return;
 		}
 		this.reviewRenderDisposables.clear();
 		details.textContent = '';
+
+		const similarSection = append(details as HTMLElement, $('div.review-section.wizard-review-similar-section.hidden'));
+		this.similarIssuesContainer = append(similarSection, $('div.wizard-similar-issues'));
+		this.similarIssuesContainer.setAttribute('aria-live', 'polite');
+
+		const sourceSection = append(details as HTMLElement, $('div.review-section'));
+		const sourceLabel = append(sourceSection, $('div.review-label'));
+		sourceLabel.textContent = localize('target', "Target");
+		const sourceValue = append(sourceSection, $('div.review-value'));
+		sourceValue.textContent = this.getIssueSourceLabel();
+		const targetUrl = this.getIssueTargetUrl();
+		if (targetUrl) {
+			const target = append(sourceValue, $('span.review-target-repo'));
+			target.textContent = ` ${targetUrl}`;
+		}
 
 		const catSection = append(details as HTMLElement, $('div.review-section'));
 		const catLabel = append(catSection, $('div.review-label'));
@@ -903,7 +1383,7 @@ export class IssueReporterOverlay {
 			}
 		}
 
-		// ── Diagnostic data sections with checkboxes + collapsible details ──
+		// Diagnostic data sections with checkboxes and collapsible details
 		const diagContainer = append(details as HTMLElement, $('div.review-diagnostics'));
 
 		const modelData = this.model.getData();
@@ -942,9 +1422,59 @@ export class IssueReporterOverlay {
 			loading.textContent = localize('loadingSystemInfo', "Loading system information...");
 		}
 
+		if (this.selectedIssueType === IssueType.PerformanceIssue && !modelData.fileOnMarketplace) {
+			if (modelData.processInfo) {
+				this.createDiagSection(diagContainer, {
+					id: 'process-info',
+					label: localize('processInfo', "Process Info"),
+					checked: this.includeProcessInfo,
+					onToggle: (checked) => {
+						this.includeProcessInfo = checked;
+						this.model.update({ includeProcessInfo: checked });
+					},
+					renderContent: (container) => {
+						const pre = append(container, $('pre.review-diag-pre'));
+						pre.textContent = modelData.processInfo!;
+					},
+				});
+			}
+
+			if (modelData.workspaceInfo) {
+				this.createDiagSection(diagContainer, {
+					id: 'workspace-info',
+					label: localize('workspaceInfo', "Workspace Info"),
+					checked: this.includeWorkspaceInfo,
+					onToggle: (checked) => {
+						this.includeWorkspaceInfo = checked;
+						this.model.update({ includeWorkspaceInfo: checked });
+					},
+					renderContent: (container) => {
+						const pre = append(container, $('pre.review-diag-pre'));
+						pre.textContent = modelData.workspaceInfo!;
+					},
+				});
+			}
+		}
+
+		if (modelData.fileOnExtension && modelData.extensionData) {
+			this.createDiagSection(diagContainer, {
+				id: 'extension-data',
+				label: localize('extensionData', "Extension Data"),
+				checked: this.includeExtensionData,
+				onToggle: (checked) => {
+					this.includeExtensionData = checked;
+					this.model.update({ includeExtensionData: checked });
+				},
+				renderContent: (container) => {
+					const pre = append(container, $('pre.review-diag-pre'));
+					pre.textContent = modelData.extensionData!;
+				},
+			});
+		}
+
 		// Extensions (non-theme only)
 		const nonThemeExtensions = (modelData.allExtensions ?? []).filter(e => !e.isTheme && !e.isBuiltin);
-		if (nonThemeExtensions.length > 0) {
+		if (!modelData.fileOnExtension && !modelData.fileOnMarketplace && nonThemeExtensions.length > 0) {
 			this.createDiagSection(diagContainer, {
 				id: 'extensions',
 				label: localize('extensions', "Extensions ({0})", nonThemeExtensions.length),
@@ -1013,6 +1543,7 @@ export class IssueReporterOverlay {
 		}
 
 		// Align all title widths dynamically to the widest title
+		// eslint-disable-next-line no-restricted-syntax
 		const titles = diagContainer.querySelectorAll('.review-diag-title');
 		let maxWidth = 0;
 		for (const t of titles) {
@@ -1028,6 +1559,7 @@ export class IssueReporterOverlay {
 		}
 
 		// Align all toggle button widths to the widest
+		// eslint-disable-next-line no-restricted-syntax
 		const toggles = diagContainer.querySelectorAll('.review-diag-toggle');
 		let maxToggleWidth = 0;
 		for (const t of toggles) {
@@ -1104,8 +1636,8 @@ export class IssueReporterOverlay {
 			this.backButton.element.style.display = 'none';
 		} else {
 			this.nextButton.element.classList.remove('uploading');
-			this.nextButton.label = localize('previewOnGitHub', "Preview on GitHub");
 			this.nextButton.enabled = true;
+			this.updateStepUI();
 		}
 	}
 
@@ -1118,6 +1650,7 @@ export class IssueReporterOverlay {
 		card.classList.remove('upload-pending', 'upload-uploading', 'upload-done');
 		card.classList.add(`upload-${state}`);
 
+		// eslint-disable-next-line no-restricted-syntax
 		const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
 		if (!overlay) {
 			return;
@@ -1135,11 +1668,12 @@ export class IssueReporterOverlay {
 	private submit(): void {
 		const title = this.titleInput.value.trim();
 		if (!title) {
-			// Should not happen — validated in goNext() on Describe step
+			// Should not happen: validated in goNext() on Describe step
 			return;
 		}
 
 		const description = this.descriptionTextarea.value.trim();
+		this.updateIssueSourceFlags();
 		this.model.update({ issueDescription: description, issueTitle: title, ...(this.selectedIssueType !== undefined ? { issueType: this.selectedIssueType } : {}) });
 
 		const body = this.buildIssueBody();
@@ -1369,6 +1903,18 @@ export class IssueReporterOverlay {
 		return this.recordings;
 	}
 
+	getIssueReporterData(): IssueReporterData {
+		this.updateIssueSourceFlags();
+		return {
+			...this.data,
+			issueType: this.selectedIssueType,
+			issueSource: this.selectedIssueSource,
+			extensionId: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.id : undefined,
+			uri: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.uri : this.data.uri,
+			privateUri: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.privateUri ?? this.data.privateUri : this.data.privateUri,
+		};
+	}
+
 	private buildIssueBody(): string {
 		const description = this.descriptionTextarea.value.trim();
 		this.model.update({ issueDescription: description });
@@ -1445,6 +1991,11 @@ export class IssueReporterOverlay {
 	/** Update the internal model with additional data loaded asynchronously */
 	updateModel(newData: Record<string, unknown>): void {
 		this.model.update(newData);
+		if (Array.isArray(newData.allExtensions)) {
+			this.data.enabledExtensions = newData.allExtensions as IssueReporterExtensionData[];
+			this.updateExtensionOptions();
+			this.updateIssueSourceFlags();
+		}
 		// Refresh review details if we're on the review step (async data may have arrived)
 		if (this.currentStep === WizardStep.Review) {
 			this.updateReviewDetails();
@@ -1476,7 +2027,7 @@ export class IssueReporterOverlay {
 		);
 	}
 
-	/** Mark as submitted — locks navigation and disables discard dialog */
+	/** Mark as submitted: locks navigation and disables discard dialog */
 	markAsSubmitted(): void {
 		this.submitted = true;
 	}
@@ -1503,6 +2054,7 @@ export class IssueReporterOverlay {
 
 		// Add close button next to the existing preview button
 		const nav = this.nextButton.element.parentElement;
+		// eslint-disable-next-line no-restricted-syntax
 		if (nav && !nav.querySelector('.wizard-close-btn')) {
 			const closeBtn = this.disposables.add(new Button(nav, { ...defaultButtonStyles, secondary: true }));
 			closeBtn.label = localize('closeTab', "Close");
@@ -1545,7 +2097,7 @@ export class IssueReporterOverlay {
 				this.captureStripRecordBtn.label = makeLabel();
 			}
 
-			this.recordingElapsedTimer = setInterval(() => {
+			this.recordingElapsedTimer = getWindow(this.container).setInterval(() => {
 				const label = makeLabel();
 				if (this.recordBtn) {
 					this.recordBtn.label = label;
@@ -1562,7 +2114,7 @@ export class IssueReporterOverlay {
 				this.recordingElapsedLabel.style.display = 'none';
 			}
 			if (this.recordingElapsedTimer !== undefined) {
-				clearInterval(this.recordingElapsedTimer);
+				getWindow(this.container).clearInterval(this.recordingElapsedTimer);
 				this.recordingElapsedTimer = undefined;
 			}
 
@@ -1586,9 +2138,10 @@ export class IssueReporterOverlay {
 
 	dispose(): void {
 		if (this.recordingElapsedTimer !== undefined) {
-			clearInterval(this.recordingElapsedTimer);
+			getWindow(this.container).clearInterval(this.recordingElapsedTimer);
 		}
 		this.reviewRenderDisposables.dispose();
+		this.similarIssuesDisposables.dispose();
 		this.disposables.dispose();
 		this._onDidClose.dispose();
 		this._onDidSubmit.dispose();
