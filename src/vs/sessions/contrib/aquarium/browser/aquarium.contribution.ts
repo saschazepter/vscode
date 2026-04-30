@@ -4,25 +4,23 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/aquarium.css';
-import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { AquariumOverlay } from './aquariumOverlay.js';
+import { localize } from '../../../../nls.js';
+import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import product from '../../../../platform/product/common/product.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { AquariumService, IAquariumService, SESSIONS_DEVELOPER_JOY_ENABLED_SETTING } from './aquariumOverlay.js';
 
-/**
- * Lifecycle owner for the Agents window aquarium. Instantiates the overlay
- * (which renders its persistent toggle button and manages the on/off state).
- */
-class SessionsAquariumContribution extends Disposable implements IWorkbenchContribution {
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
+	id: 'sessions',
+	properties: {
+		[SESSIONS_DEVELOPER_JOY_ENABLED_SETTING]: {
+			type: 'boolean',
+			default: product.quality !== 'stable',
+			description: localize('sessions.developerJoy.enabled', "Adds an easter egg to the Agents application."),
+			tags: ['experimental'],
+		},
+	},
+});
 
-	static readonly ID = 'workbench.contrib.sessionsAquarium';
-
-	constructor(
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super();
-		this._register(instantiationService.createInstance(AquariumOverlay));
-	}
-}
-
-registerWorkbenchContribution2(SessionsAquariumContribution.ID, SessionsAquariumContribution, WorkbenchPhase.AfterRestored);
+registerSingleton(IAquariumService, AquariumService, InstantiationType.Delayed);
