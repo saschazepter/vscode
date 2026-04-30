@@ -49,25 +49,11 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	private readonly _onDidChangeBrowserViews = this._register(new Emitter<void>());
 	readonly onDidChangeBrowserViews: Event<void> = this._onDidChangeBrowserViews.event;
 
-	/**
-	 * Context expression for whether browser tools / sharing is available.
-	 *
-	 * Always requires chat to be enabled, agent mode to be enabled, and
-	 * `workbench.browser.enableChatTools` to be set. In addition:
-	 *
-	 * - **Regular workbench window**: the above is sufficient (historical
-	 *   behavior).
-	 * - **Sessions/Agents window**: browser tools are off by default and
-	 *   only become available when the agent host is running
-	 *   (`chat.agentHost.enabled`) and the dedicated feature flag
-	 *   (`workbench.browser.agentHostChatToolsEnabled`) is set. They are
-	 *   surfaced to agent-host sessions through the client-tool bridge
-	 *   configured by `chat.agentHost.clientTools`.
-	 */
 	private static readonly _sharingAvailableContext = ContextKeyExpr.and(
 		ChatContextKeys.enabled,
 		ContextKeyExpr.has(`config.${ChatConfiguration.AgentEnabled}`),
 		ContextKeyExpr.has(`config.workbench.browser.enableChatTools`),
+		// If we're in Sessions Window, we require some additional conditions.
 		ContextKeyExpr.or(
 			IsSessionsWindowContext.negate(),
 			ContextKeyExpr.and(

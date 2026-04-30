@@ -195,12 +195,7 @@ CommandsRegistry.registerCommand('_chat.notifyQuestionCarouselAnswer', (accessor
 const toolReferenceNameEnumValues: string[] = [];
 const toolReferenceNameEnumDescriptions: string[] = [];
 
-/**
- * Tool reference names for the integrated browser tools registered in
- * `src/vs/workbench/contrib/browserView/electron-browser/tools/`. Exposing
- * these as agent-host client tools lets background agents drive the
- * integrated browser pane (open/read pages, click, type, screenshot, etc.).
- */
+// Tool reference names for the integrated browser tools.
 const browserClientTools = [
 	'openBrowserPage',
 	'readPage',
