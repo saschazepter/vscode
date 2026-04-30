@@ -880,12 +880,13 @@ export class ChatService extends Disposable implements IChatService {
 		model.addPendingRequest(requestModel, options.queue ?? ChatRequestQueueKind.Queued, { ...options, queue: undefined });
 
 		if (options.queue === ChatRequestQueueKind.Steering && !options.terminalExecutionId) {
-			// Only yield the active request for non-terminal steering messages.
-			// Terminal notifications (input-needed / command-completed) carry a
-			// terminalExecutionId — the model already received the terminal state
-			// as a tool result in its current turn and may be handling it. Yielding
-			// would kill that turn prematurely. The queued steering request will
-			// still be processed after the current turn completes.
+			// Steering requests only set yieldRequested for non-terminal messages.
+			// Terminal steering notifications (input-needed / command-completed)
+			// carry a terminalExecutionId. In that case, the model already received
+			// the terminal state as a tool result in its current turn and may still
+			// be handling it. Yielding would kill that turn prematurely, so the
+			// steering request remains queued and is processed after the current
+			// turn completes.
 			this.setYieldRequested(sessionResource);
 		}
 
