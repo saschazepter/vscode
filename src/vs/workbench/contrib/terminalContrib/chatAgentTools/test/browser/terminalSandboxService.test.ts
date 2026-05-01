@@ -953,7 +953,7 @@ suite('TerminalSandboxService - network domains', () => {
 
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 
-		strictEqual(await sandboxService.isEnabled(), TerminalSandboxEnablement.Off, 'Child settings under chat.agent.sandbox should not be treated as the deprecated boolean setting');
+		strictEqual(await sandboxService.isEnabled(), false, 'Child settings under chat.agent.sandbox should not be treated as the deprecated boolean setting');
 	});
 
 	test('should fall back to deprecated chat.agent.sandbox setting in user scope', async () => {
@@ -962,7 +962,7 @@ suite('TerminalSandboxService - network domains', () => {
 
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 
-		strictEqual(await sandboxService.isEnabled(), TerminalSandboxEnablement.On, 'Deprecated chat.agent.sandbox should still be respected when only the user scope is set');
+		strictEqual(await sandboxService.isEnabled(), true, 'Deprecated chat.agent.sandbox should still be respected when only the user scope is set');
 	});
 
 	test('should detect ssh style remotes as domains', async () => {

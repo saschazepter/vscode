@@ -731,6 +731,7 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 				messageSource: this.options.intent?.id && this.options.intent.id !== UnknownIntent.ID ? `${messageSourcePrefix}.${this.options.intent.id}` : `${messageSourcePrefix}.user`,
 				subType: this.options.request.subAgentInvocationId ? `subagent` : this.options.request.isSystemInitiated ? 'system-initiated' : undefined,
 				parentRequestId: this.options.request.parentRequestId,
+				iterationNumber: opts.iterationNumber.toString(),
 			},
 			requestKindOptions: this.options.request.subAgentInvocationId
 				? { kind: 'subagent' }
@@ -741,6 +742,11 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 
 	private didModeChangeSincePreviousRequest(): boolean {
 		if (this.options.invocation.endpoint.apiType !== 'responses') {
+			return false;
+		}
+
+		const previousTurn = this.options.conversation.turns.at(-2);
+		if (!previousTurn) {
 			return false;
 		}
 
@@ -756,7 +762,7 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 			return false;
 		}
 
-		const previousModeInstructions = this.options.conversation.turns.at(-2)?.modeInstructions;
+		const previousModeInstructions = previousTurn.modeInstructions;
 		if (!previousModeInstructions && !this.options.request.modeInstructions2) {
 			return false;
 		}
