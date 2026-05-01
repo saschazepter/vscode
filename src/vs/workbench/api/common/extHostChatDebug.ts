@@ -342,6 +342,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 				evt.sessionResource = sessionResource;
 				evt.parentEventId = dto.parentEventId;
 				evt.model = dto.model;
+				evt.requestName = dto.requestName;
 				evt.inputTokens = dto.inputTokens;
 				evt.outputTokens = dto.outputTokens;
 				evt.cachedTokens = dto.cachedTokens;

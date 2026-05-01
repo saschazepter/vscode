@@ -3634,6 +3634,7 @@ export class ChatDebugModelTurnEvent {
 	created: Date;
 	parentEventId?: string;
 	model?: string;
+	requestName?: string;
 	inputTokens?: number;
 	outputTokens?: number;
 	cachedTokens?: number;
