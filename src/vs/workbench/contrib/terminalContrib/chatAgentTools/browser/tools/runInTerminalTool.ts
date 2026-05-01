@@ -116,7 +116,7 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'Async Mode:',
 		'- Use mode=async ONLY for processes that should keep running while you do other work (servers, watchers, dev daemons)',
 		'- For one-shot long-running commands where you have nothing to do until they finish (package installs, builds, downloads, test suites), use mode=sync with timeout=0 so the command can run to completion',
-		'- If you need a safety cap, use a large timeout (e.g. 600000 for installs, longer for big builds)',
+		'- If you need a safety cap, use mode=async with a large timeout (e.g. 600000 for installs, longer for big builds)',
 		'- Returns a terminal ID for checking status and runtime later',
 		'- Use Start-Job for background PowerShell jobs',
 		'',
