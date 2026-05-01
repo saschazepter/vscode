@@ -14,7 +14,7 @@ import { ILogService, NullLogService } from '../../../log/common/log.js';
 import type { CreateTerminalParams } from '../../common/state/protocol/commands.js';
 import type { TerminalClaim, TerminalInfo } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
-import { ShellManager, classifyShellExecutable, prefixForHistorySuppression, shellTypeForExecutable } from '../../node/copilot/copilotShellTools.js';
+import { ShellManager, prefixForHistorySuppression, shellTypeForExecutable } from '../../node/copilot/copilotShellTools.js';
 
 class TestAgentHostTerminalManager implements IAgentHostTerminalManager {
 	declare readonly _serviceBrand: undefined;
@@ -99,20 +99,17 @@ suite('CopilotShellTools', () => {
 		assert.strictEqual(prefixForHistorySuppression('powershell'), '');
 	});
 
-	test('classifyShellExecutable maps known shell basenames to a shell type', () => {
+	test('shellTypeForExecutable maps known shell basenames and falls back to platform default', () => {
 		assert.deepStrictEqual([
-			classifyShellExecutable('C:\\Program Files\\PowerShell\\7\\pwsh.exe'),
-			classifyShellExecutable('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'),
-			classifyShellExecutable('/usr/bin/bash'),
-			classifyShellExecutable('/usr/bin/zsh'),
-			classifyShellExecutable('/bin/sh'),
-			classifyShellExecutable('C:\\Windows\\System32\\cmd.exe'),
-		], ['powershell', 'powershell', 'bash', 'bash', 'bash', undefined]);
-	});
+			shellTypeForExecutable('C:\\Program Files\\PowerShell\\7\\pwsh.exe'),
+			shellTypeForExecutable('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'),
+			shellTypeForExecutable('/usr/bin/bash'),
+			shellTypeForExecutable('/usr/bin/zsh'),
+			shellTypeForExecutable('/bin/sh'),
+		], ['powershell', 'powershell', 'bash', 'bash', 'bash']);
 
-	test('shellTypeForExecutable falls back to platform default for unknown shells', () => {
+		// Unknown shells fall through to the platform default — just assert it's one of the known types.
 		const unknownDefault = shellTypeForExecutable('C:\\Windows\\System32\\cmd.exe');
-		// Falls back to platform default; just assert it's one of the known types.
 		assert.ok(unknownDefault === 'bash' || unknownDefault === 'powershell');
 	});
 });

@@ -44,12 +44,11 @@ interface IManagedShell {
 export type ShellType = 'bash' | 'powershell';
 
 /**
- * The Copilot SDK ships two built-in shell tools (`bash` and `powershell`).
- * These helpers route a resolved shell executable to one of them.
+ * Routes a resolved shell executable to one of the Copilot SDK's two
+ * built-in shell tools (`bash` / `powershell`). Falls back to the platform
+ * default for unknown shells. Exported for tests.
  */
-
-/** Returns `'bash'` / `'powershell'` for known shells, or `undefined`. Exported for tests. */
-export function classifyShellExecutable(shellPath: string): ShellType | undefined {
+export function shellTypeForExecutable(shellPath: string): ShellType {
 	switch (pathParse(shellPath).name.toLowerCase()) {
 		case 'pwsh':
 		case 'powershell':
@@ -65,13 +64,8 @@ export function classifyShellExecutable(shellPath: string): ShellType | undefine
 		case 'git-cmd':
 			return 'bash';
 		default:
-			return undefined;
+			return platform.isWindows ? 'powershell' : 'bash';
 	}
-}
-
-/** Like {@link classifyShellExecutable} but falls back to the platform default. Exported for tests. */
-export function shellTypeForExecutable(shellPath: string): ShellType {
-	return classifyShellExecutable(shellPath) ?? (platform.isWindows ? 'powershell' : 'bash');
 }
 
 // ---------------------------------------------------------------------------
