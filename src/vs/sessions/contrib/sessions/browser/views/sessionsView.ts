@@ -25,6 +25,7 @@ import { localize } from '../../../../../nls.js';
 import { SessionsList, SessionsGrouping, SessionsSorting } from './sessionsList.js';
 import { SessionStatus } from '../../../../services/sessions/common/session.js';
 import { AICustomizationShortcutsWidget } from '../aiCustomizationShortcutsWidget.js';
+import { AgentHostShortcutsWidget } from '../agentHostShortcutsWidget.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
@@ -271,6 +272,20 @@ export class SessionsView extends ViewPane {
 				}
 			},
 		}));
+
+		// Agent Host toolbar (bottom, below customizations). Only rendered
+		// on web desktop — electron has no host picker today, and phone
+		// layout uses the mobile titlebar pill instead.
+		if (isWeb && !isPhoneLayout(this.layoutService)) {
+			this._register(this.instantiationService.createInstance(AgentHostShortcutsWidget, sessionsContainer, {
+				onDidChangeLayout: () => {
+					if (this.viewPaneContainer) {
+						const { offsetHeight, offsetWidth } = this.viewPaneContainer;
+						this.layoutBody(offsetHeight, offsetWidth);
+					}
+				},
+			}));
+		}
 	}
 
 	private createNewSessionButton(container: HTMLElement): void {

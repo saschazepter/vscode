@@ -39,7 +39,7 @@ export class MobileHostFilterActionViewItem extends HostFilterActionViewItem {
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IHoverService hoverService: IHoverService,
 	) {
-		super(action, filterService, contextMenuService, hoverService);
+		super(action, 'titlebar', filterService, contextMenuService, hoverService);
 	}
 
 	/**
