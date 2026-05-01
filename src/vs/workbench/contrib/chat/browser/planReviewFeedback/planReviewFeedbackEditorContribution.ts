@@ -314,11 +314,6 @@ export class PlanReviewFeedbackEditorContribution extends Disposable implements 
 		this._register(this._planReviewFeedbackService.onDidChangeFeedback(() => this._updateDecorations()));
 		this._register(this._planReviewFeedbackService.onDidChangeNavigation(() => this._updateDecorations()));
 
-		// Editor contributions registered with `Eventually` are instantiated
-		// after the editor's model is already attached, so `onDidChangeModel`
-		// would not fire and `_isActivePlan` would remain false. Sync state
-		// from the current model so the inline overlay activates correctly
-		// when the contribution wakes up against an already-loaded plan file.
 		this._onModelChanged();
 	}
 
@@ -377,10 +372,9 @@ export class PlanReviewFeedbackEditorContribution extends Disposable implements 
 	private _show(): void {
 		const widget = this._ensureWidget();
 
-		// Only clear the input when transitioning from hidden to shown.
-		// `_show()` is called on every selection change, so clearing here
-		// unconditionally would wipe a draft if the user momentarily
-		// refocuses the editor while typing a comment.
+		// `_show()` runs on every selection change, so only clear input on
+		// the hidden→shown transition to avoid wiping a draft when the user
+		// briefly refocuses the editor.
 		const wasVisible = this._visible;
 		if (!wasVisible) {
 			this._visible = true;

@@ -171,11 +171,9 @@
 	min-height: 0;
 }
 
-/* The inner message element is what `DomScrollableElement` actually
- * measures (`clientHeight` / `scrollHeight`). It must fill the wrapper
- * exactly — otherwise its `clientHeight` reports its own (taller) layout
- * height instead of the visible wrapper area, and the scrollbar geometry
- * goes wrong as soon as the feedback section claims part of the widget. */
+/* The inner element must fill the wrapper exactly — `DomScrollableElement`
+ * measures `clientHeight` against it, so a taller layout height would break
+ * scrollbar geometry once the feedback section claims part of the widget. */
 .interactive-session .chat-plan-review-container .chat-confirmation-widget-message.chat-plan-review-body {
 	padding: 6px 12px;
 	background: transparent;

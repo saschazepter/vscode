@@ -2933,13 +2933,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 		}
 
-		// Build the inline progress message for the response stream. While
-		// pending, this is "Plan review required" with a spinner. Once the
-		// user has answered, it transitions to the action that was taken
-		// (e.g. "Approved plan", "Started implementation with autopilot",
-		// "Provided feedback"). The actual feedback text is rendered as a
-		// separate user-message bubble; appending it here as a single
-		// collapsed line produced an unreadable wall of text.
+		// Build the inline progress message. While pending: "Plan review
+		// required" with a spinner. Once answered: the action that was
+		// taken (e.g. "Approved plan", "Provided feedback"). The actual
+		// feedback text is rendered as a separate markdown block beneath
+		// rather than collapsed onto the progress line.
 		const renderProgress = (): IChatContentPart => {
 			const message = this.getPlanReviewProgressMessage(review);
 			if (!message) {
@@ -2953,12 +2951,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			const renderedAsUsed = !!review.isUsed;
 			const isPending = !renderedAsUsed;
 			const data = renderedAsUsed && !review.data?.rejected ? review.data : undefined;
-			// Prefer the structured fields populated by `ChatPlanReviewPart`
-			// so we can render the overall comment inline (next to
-			// "Provided feedback:") and the inline-comments markdown block
-			// separately. Fall back to splitting the combined `feedback`
-			// string for backward compatibility with results produced
-			// before the structured fields existed.
+			// Prefer the structured fields from `ChatPlanReviewPart`; fall
+			// back to the combined `feedback` string for older results.
 			let overall = data?.feedbackOverall?.trim();
 			const inlineMd = data?.feedbackInlineMarkdown?.trim();
 			if (!overall && !inlineMd && data?.feedback) {

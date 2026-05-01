@@ -95,9 +95,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		// Register with the plan review feedback service so the editor
 		// contribution can show inline feedback input for this plan file.
-		// Only register when feedback is allowed and the review hasn't
-		// already been submitted. Also subscribe to feedback changes so the
-		// in-widget comments list and primary button label stay in sync.
+		// Subscribe to feedback changes so the comments list and Submit
+		// button label stay in sync.
 		if (review.planUri && review.canProvideFeedback && !this._isSubmitted) {
 			const planUri = URI.revive(review.planUri);
 			const planUriString = planUri.toString();
@@ -110,9 +109,6 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 				this._options.onSubmit(result);
 				this.markUsed();
 			}));
-			// Scope the change listener to the same lifetime as the
-			// registration so it goes away on `markUsed()` instead of
-			// living until widget disposal.
 			registrationStore.add(this._planReviewFeedbackService.onDidChangeFeedback(uri => {
 				if (uri.toString() === planUriString) {
 					this.onInlineFeedbackChanged();
@@ -152,9 +148,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		elements.titleLabel.textContent = review.title;
 		this._register(this._hoverService.setupDelayedHover(elements.titleLabel, { content: review.title }));
 
-		// Single Review button — opens the plan file and (when feedback is
-		// allowed) enters review mode in the widget so the user can comment
-		// on the plan from one cohesive surface.
+		// Review button — opens the plan file and enters feedback mode.
 		if (review.planUri) {
 			const fileName = basename(URI.revive(review.planUri));
 			const reviewButtonTooltip = review.canProvideFeedback
@@ -187,10 +181,9 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		this._messageScrollable.getDomNode().classList.add('chat-confirmation-widget-message-scrollable', 'chat-plan-review-body-scrollable');
 		messageParent.insertBefore(this._messageScrollable.getDomNode(), messageNextSibling);
 		const resizeObserver = this._register(new dom.DisposableResizeObserver(() => this._messageScrollable.scanDomNode()));
-		// Observe only the wrapper: the inner `_messageEl` is `height: 100%`
-		// so it only changes size when the wrapper does. Content reflow
-		// inside the inner is handled by the markdown renderer's
-		// `asyncRenderCallback`, which calls `scanDomNode()` directly.
+		// The inner `_messageEl` is `height: 100%`, so observing only the
+		// wrapper is enough; markdown content reflow is handled by the
+		// renderer's `asyncRenderCallback`.
 		this._register(resizeObserver.observe(this._messageScrollable.getDomNode()));
 
 		this.renderMarkdown();
@@ -201,10 +194,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			if (review.planUri) {
 				dom.hide(elements.feedback); // Hidden until the user enters review mode or inline feedback exists.
 			} else {
-				// No plan file means no editor surface to coordinate with;
-				// keep the feedback textarea visible from the start so the user
-				// has somewhere to type. Treat as already in review mode so the
-				// primary button reads "Submit Feedback".
+				// No plan file: keep the textarea visible from the start and
+				// treat as already in feedback mode.
 				this._isFeedbackMode = true;
 				this.domNode.classList.add('chat-plan-review-feedback-mode');
 			}
@@ -226,14 +217,14 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		if (this._feedbackTextarea && review instanceof ChatPlanReviewData && review.draftFeedback) {
 			this._feedbackTextarea.value = review.draftFeedback;
-			// Mirror the auto-resize behaviour wired up on `input` events so
-			// a multi-line restored draft renders with the right height.
+			// Match the auto-resize wired up on `input` so a multi-line
+			// restored draft renders with the right height.
 			this._feedbackTextarea.style.height = 'auto';
 			this._feedbackTextarea.style.height = `${this._feedbackTextarea.scrollHeight}px`;
 		}
 
-		// If inline feedback is already present (e.g. restored from a prior
-		// session), promote into review mode so the user sees it.
+		// Promote into review mode if inline feedback is already present
+		// (e.g. restored from a prior session).
 		if (!this._isSubmitted && this.getInlineFeedbackItems().length > 0) {
 			this.enterFeedbackMode({ focus: false });
 		}
@@ -272,8 +263,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		const headerActions = dom.append(header, dom.$('.chat-plan-review-feedback-header-actions'));
 
-		// Clear All button — only relevant when there's anchored feedback
-		// to clear; visibility is updated alongside the comments list.
+		// Clear All — visibility is toggled with the comments list.
 		if (this.review.planUri) {
 			const clearAllLabel = localize('chat.planReview.clearAll', "Clear All");
 			const clearAllButton = this._register(new Button(headerActions, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: clearAllLabel, ariaLabel: clearAllLabel }));
@@ -283,11 +273,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			this._clearAllButtonEl = clearAllButton.element;
 		}
 
-		// Back button (replaces the previous close X) — only meaningful when
-		// there's a way to re-enter review mode (i.e. the title-bar Review
-		// button, which requires a planUri). Per-comment removal now happens
-		// via each row's × button, so this button is for navigating back to
-		// the normal action set without discarding inline comments.
+		// Back — non-destructive exit from feedback mode. Per-row × buttons
+		// and Clear All handle deletion explicitly.
 		if (this.review.planUri) {
 			const backButtonLabel = localize('chat.planReview.back', "Back");
 			const backButton = this._register(new Button(headerActions, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: backButtonLabel, ariaLabel: backButtonLabel }));
@@ -296,11 +283,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			this._register(backButton.onDidClick(() => this.exitFeedbackMode()));
 		}
 
-		// Inline comments list (shown when there are anchored comments
-		// captured from the editor). Each row is clickable to reveal the
-		// comment in the editor. Wrapped in a Monaco scrollable so the
-		// list gets a styled scrollbar consistent with the rest of the
-		// workbench instead of the native one.
+		// Inline comments list — wrapped in a Monaco scrollable for a styled
+		// scrollbar consistent with the rest of the workbench.
 		this._commentsListEl = dom.$('.chat-plan-review-comments-list');
 		this._commentsListScrollable = this._register(new DomScrollableElement(this._commentsListEl, {
 			vertical: ScrollbarVisibility.Auto,
@@ -333,10 +317,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			if (this.review instanceof ChatPlanReviewData) {
 				this.review.draftFeedback = textarea.value;
 			}
-			// Textarea content only affects the Submit button's enabled
-			// state (and label, when inline-count changes). Avoid a full
-			// button-row re-render on every keystroke — just update the
-			// cached Submit button.
+			// Update the cached Submit button rather than re-rendering the
+			// whole button row on every keystroke.
 			this.updateSubmitButtonState();
 		}));
 
@@ -463,8 +445,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		}
 		const items = this.getInlineFeedbackItems();
 
-		// Auto-promote into review mode the first time a comment shows up
-		// so the chat widget always reflects the live feedback queue.
+		// Auto-promote into review mode the first time a comment shows up.
 		if (items.length > 0 && !this._isFeedbackMode && !this._isCollapsed) {
 			this.enterFeedbackMode({ focus: false });
 			return;
@@ -472,8 +453,6 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		this.renderCommentsList();
 		if (this._isFeedbackMode) {
-			// Inline-count changed; just update the cached Submit button
-			// rather than re-rendering all action buttons.
 			this.updateSubmitButtonState();
 		}
 		this._messageScrollable.scanDomNode();
@@ -481,11 +460,9 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	}
 
 	/**
-	 * Render the primary/secondary action buttons into whichever container
-	 * is currently active (footer when expanded, inline title slot when
-	 * collapsed). Always clears the inactive slot so the same buttons can
-	 * never appear in two places at once. Prefer this over calling
-	 * `renderActionButtons` directly when the surface choice is implicit.
+	 * Render the action buttons into the active container (footer when
+	 * expanded, inline title slot when collapsed). Clears the inactive slot
+	 * so the same buttons can never appear in two places at once.
 	 */
 	private renderCurrentActionButtons(): void {
 		if (this._isSubmitted) {
@@ -504,9 +481,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		this._renderedSubmitInlineCount = -1;
 		dom.clearNode(container);
 
-		// In feedback mode, show Submit + Reject. The Submit label includes
-		// the count of pending inline comments so the user can see exactly
-		// what is about to be sent.
+		// In feedback mode, show Submit + Reject. Submit's label includes
+		// the count of pending inline comments.
 		if (this._isFeedbackMode) {
 			const inlineCount = this.getInlineFeedbackItems().length;
 			const submitButton = new Button(container, { ...defaultButtonStyles, supportIcons: true });
@@ -591,10 +567,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	}
 
 	/**
-	 * Update the cached Submit button's enabled state and (only when the
-	 * inline-comment count changed) its label. Cheap enough to run on every
-	 * keystroke, unlike `renderCurrentActionButtons` which destroys and
-	 * recreates the entire button row.
+	 * Update the cached Submit button's enabled state and label without
+	 * destroying the button row. Cheap enough to run on every keystroke.
 	 */
 	private updateSubmitButtonState(): void {
 		if (!this._submitButton || !this._isFeedbackMode) {
@@ -644,10 +618,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		this._collapseButton.element.setAttribute('aria-expanded', String(!this._isCollapsed));
 		this._collapseButton.setTitle(collapseTooltip);
 
-		// When the widget is collapsed the title bar is tight, so the review
-		// affordance is a single pencil icon. When expanded there's room for
-		// a clearer text label, which doubles as a hint that the button also
-		// opens the feedback flow.
+		// Collapsed title bar uses a pencil icon; expanded uses a text
+		// label that hints at the feedback flow.
 		if (this._reviewButton) {
 			const isIconOnly = this._isCollapsed;
 			this._reviewButton.element.classList.toggle('chat-plan-review-title-icon-button', isIconOnly);
@@ -660,12 +632,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			}
 		}
 
-		// Move the action buttons between the footer and the inline title
-		// slot so the user can approve (or submit feedback) while collapsed.
-		// Reject is omitted in the collapsed view (matches
-		// chatToolConfirmationCarouselPart). Feedback mode itself is
-		// preserved across collapse/expand so any draft text or queued
-		// inline comments are retained.
+		// Move action buttons between footer (expanded) and inline title
+		// slot (collapsed). Reject is omitted when collapsed.
 		this.renderCurrentActionButtons();
 	}
 
@@ -756,10 +724,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return;
 		}
 
-		// "Back" is non-destructive: inline comments and the draft textarea
-		// are preserved so the user can resume by clicking Review again.
-		// Per-row \u00d7 buttons and the Clear All button handle deletion
-		// explicitly.
+		// Back is non-destructive: inline comments and the textarea draft
+		// persist so the user can resume via the Review button.
 		this._isFeedbackMode = false;
 		if (this._feedbackSection) {
 			dom.hide(this._feedbackSection);
@@ -787,12 +753,10 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return;
 		}
 
-		// Build a structured markdown message so the agent (and the chat
-		// transcript) sees a well-formatted block rather than a wall of
-		// concatenated lines. We also keep the overall comment and the
-		// inline-comments block as separate fields on the result so the
-		// transcript can render them differently without parsing the
-		// combined string back apart (which would be locale-dependent).
+		// Build a structured markdown message for the agent. Keep the overall
+		// comment and inline-comments block as separate fields on the result
+		// so the transcript can render them differently without re-parsing
+		// the localized combined string.
 		let feedbackInlineMarkdown: string | undefined;
 		if (editorFeedbackItems.length > 0) {
 			const planUri = this.review.planUri ? URI.revive(this.review.planUri) : undefined;
