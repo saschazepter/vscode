@@ -315,7 +315,34 @@ suite('RunInTerminalTool', () => {
 		return (tool as unknown as Record<string, (shellType: string, blockedDomains: string[] | undefined) => IMarkdownString>)['_getAutomaticUnsandboxRetryTitle'](shellType, blockedDomains);
 	}
 
+	function getMinimumTimeoutMsForCommand(tool: RunInTerminalTool, command: string): number | undefined {
+		return (tool as unknown as Record<string, (command: string) => number | undefined>)['_getMinimumTimeoutMsForCommand'](command);
+	}
+
 	suite('sandbox invocation messaging', () => {
+		test('should return minimum timeout recommendations for known long-running command patterns', () => {
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'npm install'), 10 * 60_000);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'pip install requests'), 10 * 60_000);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'cargo build --release'), 10 * 60_000);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'docker build .'), 20 * 60_000);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'qemu-system-x86_64 -m 1024'), 20 * 60_000);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'npm test'), 5 * 60_000);
+		});
+
+		test('should not return minimum timeout recommendation for quick commands', () => {
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'echo hello'), undefined);
+			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'ls -la'), undefined);
+		});
+
+		test('should instruct models to omit timeout by default for long-running one-shot commands', async () => {
+			sandboxEnabled = false;
+
+			const toolData = await instantiationService.invokeFunction(createRunInTerminalToolData);
+
+			ok(toolData.modelDescription?.includes('omit timeout by default so the command can run to completion'), 'Expected model description to prefer omitting timeout for one-shot long-running commands');
+			ok(toolData.modelDescription?.includes('Never use short timeouts (<60000 ms) for builds, compiles, package installs, downloads, test suites, or VM boots'), 'Expected model description to forbid short timeouts for long-running build/install workflows');
+		});
+
 		test('should instruct models to use $TMPDIR instead of /tmp when sandboxed', async () => {
 			sandboxEnabled = true;
 
