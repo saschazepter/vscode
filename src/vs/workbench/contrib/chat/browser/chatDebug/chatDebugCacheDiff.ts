@@ -203,6 +203,14 @@ export function parseInputMessages(inputMessagesJson: string | undefined): reado
  * a way that matches what an HTTP client would actually serialize. We do
  * not normalize key order: if a provider's serializer differs between
  * requests, that *is* a real cache break we want to surface.
+ *
+ * The fallback to {@link String} is reached only for values that
+ * `JSON.stringify` rejects \u2014 circular references or `BigInt` payloads.
+ * Both produce a stable but lossy representation (e.g. `[object Object]`)
+ * which still surfaces as content drift in the diff rather than silently
+ * matching, so the user notices that something unusual went through. We
+ * intentionally do not log here so the diff engine stays free of service
+ * dependencies; the caller is welcome to wrap with logging when needed.
  */
 function stableStringify(value: unknown): string {
 	try {
