@@ -73,7 +73,7 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 				}));
 				store.add(this._terminalProfileService.onDidChangeAvailableProfiles(() => this._pushDefaultShell()));
 				// Retry the push when the host's root state hydrates or its schema
-				// changes — the initial push from `_reconcile()` may have raced an
+				// changes - the initial push from `_reconcile()` may have raced an
 				// undefined `rootState.value`, in which case the schema gate below
 				// in `_pushDefaultShell` returned early.
 				store.add(this._agentHostService.rootState.onDidChange(() => this._pushDefaultShell()));
@@ -108,9 +108,16 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 	 * its host-managed shells inherit the user's preferred terminal binary.
 	 *
 	 * No-ops if the host's root-config schema doesn't advertise
-	 * {@link AgentHostConfigKey.DefaultShell} — protects older / third-party
+	 * `AgentHostConfigKey.DefaultShell` - protects older / third-party
 	 * agent hosts from receiving keys they don't understand. The push is
 	 * retried automatically when `rootState` hydrates (see `_updateEnabled`).
+	 *
+	 * Local agent host only. Remote agent hosts (via
+	 * `IRemoteAgentHostService.connections`) are intentionally not fanned out
+	 * to: the resolved path is local-machine-shaped (e.g. a Windows path) and
+	 * not necessarily valid on the remote machine. Remote operators should
+	 * configure the shell server-side via the remote's `agent-host-config.json`.
+	 * See https://github.com/microsoft/vscode/issues/313160 follow-ups.
 	 */
 	private async _pushDefaultShell(): Promise<void> {
 		const rootState = this._agentHostService.rootState.value;
