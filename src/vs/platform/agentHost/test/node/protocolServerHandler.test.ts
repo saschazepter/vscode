@@ -435,7 +435,7 @@ suite('ProtocolServerHandler', () => {
 		});
 	});
 
-	test('reconnect replays missed actions', () => {
+	test('reconnect replays missed actions', async () => {
 		stateManager.createSession(makeSessionSummary());
 		stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: sessionUri });
 
@@ -449,14 +449,14 @@ suite('ProtocolServerHandler', () => {
 
 		const transport2 = new MockProtocolTransport();
 		server.simulateConnection(transport2);
+		const reconnectRespPromise = waitForResponse(transport2, 1);
 		transport2.simulateMessage(request(1, 'reconnect', {
 			clientId: 'client-r',
 			lastSeenServerSeq: initSeq,
 			subscriptions: [sessionUri],
 		}));
 
-		const reconnectResp = findResponse(transport2.sent, 1);
-		assert.ok(reconnectResp, 'should have sent reconnect response');
+		const reconnectResp = await reconnectRespPromise;
 		const result = (reconnectResp as { result: ReconnectResult }).result;
 		assert.strictEqual(result.type, 'replay');
 		if (result.type === 'replay') {
@@ -464,7 +464,7 @@ suite('ProtocolServerHandler', () => {
 		}
 	});
 
-	test('reconnect sends fresh snapshots when gap too large', () => {
+	test('reconnect sends fresh snapshots when gap too large', async () => {
 		stateManager.createSession(makeSessionSummary());
 		stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: sessionUri });
 
@@ -477,19 +477,62 @@ suite('ProtocolServerHandler', () => {
 
 		const transport2 = new MockProtocolTransport();
 		server.simulateConnection(transport2);
+		const reconnectRespPromise = waitForResponse(transport2, 1);
 		transport2.simulateMessage(request(1, 'reconnect', {
 			clientId: 'client-g',
 			lastSeenServerSeq: 0,
 			subscriptions: [sessionUri],
 		}));
 
-		const reconnectResp = findResponse(transport2.sent, 1);
-		assert.ok(reconnectResp, 'should have sent reconnect response');
+		const reconnectResp = await reconnectRespPromise;
 		const result = (reconnectResp as { result: ReconnectResult }).result;
 		assert.strictEqual(result.type, 'snapshot');
 		if (result.type === 'snapshot') {
 			assert.ok(result.snapshots.length > 0, 'should contain snapshots');
 		}
+	});
+
+	test('reconnect rehydrates server-side state that was evicted while disconnected', async () => {
+		stateManager.createSession(makeSessionSummary());
+		stateManager.dispatchServerAction({ type: ActionType.SessionReady, session: sessionUri });
+
+		// MockAgentService.subscribe normally just returns the existing snapshot.
+		// Override it so a missing session is restored on subscribe — this is the
+		// behavior the real AgentService provides and that reconnect now relies on.
+		const subscribeCalls: string[] = [];
+		agentService.subscribe = async (resource, _clientId) => {
+			subscribeCalls.push(resource.toString());
+			let snapshot = stateManager.getSnapshot(resource.toString());
+			if (!snapshot) {
+				stateManager.restoreSession(makeSessionSummary(), []);
+				snapshot = stateManager.getSnapshot(resource.toString())!;
+			}
+			return snapshot;
+		};
+
+		const transport1 = connectClient('client-e', [sessionUri]);
+		const initResp = findResponse(transport1.sent, 1);
+		const initSeq = (initResp as { result: InitializeResult }).result.serverSeq;
+		transport1.simulateClose();
+
+		// Simulate the AgentService evicting the idle session while the client
+		// was disconnected (this is what `_maybeEvictIdleSession` does in the
+		// real service).
+		stateManager.removeSession(sessionUri);
+		assert.strictEqual(stateManager.getSnapshot(sessionUri), undefined, 'precondition: state evicted');
+
+		const transport2 = new MockProtocolTransport();
+		server.simulateConnection(transport2);
+		const reconnectRespPromise = waitForResponse(transport2, 1);
+		transport2.simulateMessage(request(1, 'reconnect', {
+			clientId: 'client-e',
+			lastSeenServerSeq: initSeq,
+			subscriptions: [sessionUri],
+		}));
+
+		await reconnectRespPromise;
+		assert.deepStrictEqual(subscribeCalls, [sessionUri], 'reconnect should call subscribe to restore evicted state');
+		assert.ok(stateManager.getSnapshot(sessionUri), 'state should have been re-hydrated by reconnect');
 	});
 
 	test('client disconnect cleans up', () => {
