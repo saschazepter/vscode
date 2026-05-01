@@ -10,7 +10,7 @@ import { Range } from '../../../../../editor/common/core/range.js';
 import { IObservable, observableValue } from '../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
-import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, ImmortalReference, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { mock } from '../../../../../base/test/common/mock.js';
@@ -19,7 +19,6 @@ import { InMemoryStorageService, IStorageService, StorageScope, StorageTarget } 
 import { IChatSessionFileChange, IChatSessionFileChange2 } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IGitHubService } from '../../../github/browser/githubService.js';
 import { GitHubPRFetcher } from '../../../github/browser/fetchers/githubPRFetcher.js';
-import { GitHubPullRequestModel } from '../../../github/browser/models/githubPullRequestModel.js';
 import { GitHubPullRequestReviewThreadsModel } from '../../../github/browser/models/githubPullRequestReviewThreadsModel.js';
 import { IGitHubPRComment, IGitHubPullRequestReviewThread } from '../../../github/common/types.js';
 import { IGitHubInfo, ISession, ISessionWorkspace } from '../../../../services/sessions/common/session.js';
@@ -223,27 +222,15 @@ suite('CodeReviewService', () => {
 		readonly legacyFetcher = new MockReviewThreadsFetcher();
 		readonly reviewThreadsFetcher = new MockReviewThreadsFetcher();
 
-		private readonly _pullRequestModel: GitHubPullRequestModel;
 		private readonly _reviewThreadsModels = new Map<string, MockGitHubPullRequestReviewThreadsModel>();
 		private readonly _reviewThreadsFetchers = new Map<string, MockReviewThreadsFetcher>();
 
 		getPullRequestCalls = 0;
 		getPullRequestReviewThreadsCalls = 0;
 
-		constructor(disposables: DisposableStore, logService: ILogService) {
+		constructor() {
 			super();
-			this._pullRequestModel = disposables.add(new GitHubPullRequestModel('owner', 'repo', 1, this.legacyFetcher as unknown as GitHubPRFetcher, logService));
 			this._reviewThreadsFetchers.set(this._key('owner', 'repo', 1), this.reviewThreadsFetcher);
-		}
-
-		override getPullRequest(): GitHubPullRequestModel {
-			this.getPullRequestCalls++;
-			return this._pullRequestModel;
-		}
-
-		override getPullRequestReviewThreads(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
-			this.getPullRequestReviewThreadsCalls++;
-			return this.getReviewThreadsModel(owner, repo, prNumber);
 		}
 
 		getReviewThreadsFetcher(owner: string, repo: string, prNumber: number): MockReviewThreadsFetcher {
@@ -266,6 +253,11 @@ suite('CodeReviewService', () => {
 			return model;
 		}
 
+		override createPullRequestReviewThreadsModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestReviewThreadsModel> {
+			this.getPullRequestReviewThreadsCalls++;
+			return new ImmortalReference(this.getReviewThreadsModel(owner, repo, prNumber));
+		}
+
 		private _key(owner: string, repo: string, prNumber: number): string {
 			return `${owner}/${repo}#${prNumber}`;
 		}
@@ -278,7 +270,7 @@ suite('CodeReviewService', () => {
 		instantiationService.stub(ICommandService, commandService);
 		const logService = new NullLogService();
 		instantiationService.stub(ILogService, logService);
-		gitHubService = new MockGitHubService(store, logService);
+		gitHubService = new MockGitHubService();
 		instantiationService.stub(IGitHubService, gitHubService);
 
 		sessionsManagement = new MockSessionsManagementService(store);

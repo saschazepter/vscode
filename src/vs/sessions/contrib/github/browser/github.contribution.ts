@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { structuralEquals } from '../../../../base/common/equals.js';
-import { Disposable, DisposableMap } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun, derivedOpts } from '../../../../base/common/observable.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -31,31 +30,20 @@ export class GitHubPullRequestPollingContribution extends Disposable implements 
 			return this._sessionsManagementService.activeSession.read(reader)?.resource;
 		});
 
-		const gitHubInfoObs = derivedOpts<{ owner: string; repo: string; pullRequestNumber: number } | undefined>({ equalsFn: structuralEquals }, reader => {
-			const gitHubInfo = this._sessionsManagementService.activeSession.read(reader)?.gitHubInfo.read(reader);
-			if (!gitHubInfo?.pullRequest) {
-				return undefined;
-			}
-
-			return {
-				owner: gitHubInfo.owner,
-				repo: gitHubInfo.repo,
-				pullRequestNumber: gitHubInfo.pullRequest.number,
-			};
-		});
-
 		this._register(autorun(reader => {
 			const activeSessionResource = activeSessionResourceObs.read(reader);
 			const activeSession = this._sessionsManagementService.activeSession.read(reader);
 			if (!activeSessionResource || !activeSession || activeSession.isArchived.read(reader)) {
 				return;
 			}
-			const gitHubInfo = gitHubInfoObs.read(reader);
-			if (!gitHubInfo) {
+
+			const prModel = this._gitHubService.activeSessionPullRequestObs.read(reader);
+			if (!prModel) {
 				return;
 			}
-			const prModel = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequestNumber);
+
 			prModel.refresh();
+			reader.store.add(prModel);
 		}));
 
 		this._sessionsManagementService.onDidChangeSessions(this._onDidChangeSessions, this, this._store);
@@ -101,8 +89,13 @@ export class GitHubPullRequestPollingContribution extends Disposable implements 
 			return;
 		}
 
-		const model = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
-		this._pullRequests.set(key, model.startPolling());
+		const disposables = new DisposableStore();
+		const modelRef = this._gitHubService.createPullRequestModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+
+		disposables.add(modelRef);
+		disposables.add(modelRef.object.startPolling());
+
+		this._pullRequests.set(key, disposables);
 	}
 
 	private _disposePolling(session: ISession): void {

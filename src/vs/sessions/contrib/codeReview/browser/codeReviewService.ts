@@ -20,6 +20,7 @@ import { IGitHubService } from '../../github/browser/githubService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISessionFileChange } from '../../../services/sessions/common/session.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
+import { GitHubPullRequestReviewThreadsModel } from '../../github/browser/models/githubPullRequestReviewThreadsModel.js';
 
 // --- Types -------------------------------------------------------------------
 
@@ -237,13 +238,11 @@ interface ISessionReviewData {
 	readonly state: ReturnType<typeof observableValue<ICodeReviewState>>;
 }
 
-type IPullRequestReviewThreadsModel = ReturnType<IGitHubService['getPullRequestReviewThreads']>;
-
 interface IPRSessionReviewData {
 	readonly state: ReturnType<typeof observableValue<IPRReviewState>>;
 	readonly disposables: DisposableStore;
 	readonly pollingDisposable: DisposableStore;
-	reviewThreadsModel?: IPullRequestReviewThreadsModel;
+	reviewThreadsModel?: GitHubPullRequestReviewThreadsModel;
 	initialized: boolean;
 }
 
@@ -359,7 +358,7 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 			}
 
 			// Initial fetch of review threads
-			data.reviewThreadsModel.refresh().catch(err => {
+			data.reviewThreadsModel.refresh().catch((err: unknown) => {
 				this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
 				data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
 			});
@@ -631,11 +630,13 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		const session = this._sessionsManagementService.getSession(sessionResource);
 		const gitHubInfo = session?.gitHubInfo.get();
 		if (gitHubInfo?.pullRequest) {
-			const reviewThreadsModel = this._gitHubService.getPullRequestReviewThreads(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+			const modelRef = this._gitHubService.createPullRequestReviewThreadsModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
 			try {
-				await reviewThreadsModel.resolveThread(threadId);
+				await modelRef.object.resolveThread(threadId);
 			} catch (err) {
 				this._logService.warn('[CodeReviewService] Failed to resolve PR thread on GitHub:', err);
+			} finally {
+				modelRef.dispose();
 			}
 		}
 
@@ -700,13 +701,15 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 		data.initialized = true;
 		data.state.set({ kind: PRReviewStateKind.Loading }, undefined);
 
-		const reviewThreadsModel = this._gitHubService.getPullRequestReviewThreads(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequestNumber);
+		const reviewThreadsModelRef = this._gitHubService.createPullRequestReviewThreadsModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequestNumber);
+		data.disposables.add(reviewThreadsModelRef);
+
 		const workspace = session.workspace.get();
-		data.reviewThreadsModel = reviewThreadsModel;
+		data.reviewThreadsModel = reviewThreadsModelRef.object;
 
 		// Watch the PR review threads model and map to local state
 		data.disposables.add(autorun(reader => {
-			const threads = reviewThreadsModel.reviewThreads.read(reader);
+			const threads = reviewThreadsModelRef.object.reviewThreads.read(reader);
 			const converted = this._convertedPRCommentsBySession.get(sessionResource.toString());
 			const comments: IPRReviewComment[] = [];
 

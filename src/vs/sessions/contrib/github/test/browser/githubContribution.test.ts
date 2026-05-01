@@ -13,7 +13,6 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { GitHubPullRequestPollingContribution } from '../../browser/github.contribution.js';
-import { GitHubPullRequestModel } from '../../browser/models/githubPullRequestModel.js';
 import { IGitHubService } from '../../browser/githubService.js';
 import { IChat, IGitHubInfo, ISession, ISessionCapabilities, ISessionFileChange, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
@@ -204,10 +203,6 @@ class TestGitHubService extends mock<IGitHubService>() {
 
 	private readonly _models = new Map<string, TestPullRequestModel>();
 
-	override getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
-		return this._getModel(owner, repo, prNumber) as unknown as GitHubPullRequestModel;
-	}
-
 	snapshot(): Record<string, { startPollingCalls: number; stopPollingCalls: number; disposeCalls: number }> {
 		const entries = [...this._models.entries()].map(([key, model]) => [key, {
 			startPollingCalls: model.startPollingCalls,
@@ -215,16 +210,6 @@ class TestGitHubService extends mock<IGitHubService>() {
 			disposeCalls: model.disposeCalls,
 		}] as const);
 		return Object.fromEntries(entries);
-	}
-
-	private _getModel(owner: string, repo: string, prNumber: number): TestPullRequestModel {
-		const key = `${owner}/${repo}/${prNumber}`;
-		let model = this._models.get(key);
-		if (!model) {
-			model = new TestPullRequestModel();
-			this._models.set(key, model);
-		}
-		return model;
 	}
 }
 
