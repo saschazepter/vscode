@@ -64,8 +64,8 @@ suite('CopilotShellTools', () => {
 		const explicitCwd = URI.file('/explicit/cwd').fsPath;
 		const shellManager = disposables.add(instantiationService.createInstance(ShellManager, URI.parse('copilot:/session-1'), URI.file(worktreePath)));
 
-		await shellManager.getOrCreateShell('bash', 'turn-1', 'tool-1');
-		await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2', explicitCwd);
+		(await shellManager.getOrCreateShell('bash', 'turn-1', 'tool-1')).dispose();
+		(await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2', explicitCwd)).dispose();
 
 		assert.deepStrictEqual(terminalManager.created.map(c => c.params.cwd), [
 			worktreePath,
@@ -111,5 +111,42 @@ suite('CopilotShellTools', () => {
 		// Unknown shells fall through to the platform default — just assert it's one of the known types.
 		const unknownDefault = shellTypeForExecutable('C:\\Windows\\System32\\cmd.exe');
 		assert.ok(unknownDefault === 'bash' || unknownDefault === 'powershell');
+	test('getOrCreateShell reuses an idle shell after the reference is disposed', async () => {
+		const terminalManager = new TestAgentHostTerminalManager();
+		// Pretend created terminals exist and are still running.
+		(terminalManager as unknown as { hasTerminal: () => boolean }).hasTerminal = () => true;
+		const services = new ServiceCollection();
+		services.set(ILogService, new NullLogService());
+		services.set(IAgentHostTerminalManager, terminalManager);
+		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+		services.set(IInstantiationService, instantiationService);
+		const shellManager = disposables.add(instantiationService.createInstance(ShellManager, URI.parse('copilot:/session-1'), undefined));
+
+		const first = await shellManager.getOrCreateShell('bash', 'turn-1', 'tool-1');
+		first.dispose();
+		const second = await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2');
+
+		assert.strictEqual(second.object.id, first.object.id, 'should reuse idle shell');
+		assert.strictEqual(terminalManager.created.length, 1);
+		second.dispose();
+	});
+
+	test('getOrCreateShell creates a new shell when the existing reference is still held', async () => {
+		const terminalManager = new TestAgentHostTerminalManager();
+		(terminalManager as unknown as { hasTerminal: () => boolean }).hasTerminal = () => true;
+		const services = new ServiceCollection();
+		services.set(ILogService, new NullLogService());
+		services.set(IAgentHostTerminalManager, terminalManager);
+		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+		services.set(IInstantiationService, instantiationService);
+		const shellManager = disposables.add(instantiationService.createInstance(ShellManager, URI.parse('copilot:/session-1'), undefined));
+
+		const first = await shellManager.getOrCreateShell('bash', 'turn-1', 'tool-1');
+		const second = await shellManager.getOrCreateShell('bash', 'turn-2', 'tool-2');
+
+		assert.notStrictEqual(second.object.id, first.object.id, 'should create a new shell when existing is busy');
+		assert.strictEqual(terminalManager.created.length, 2);
+		first.dispose();
+		second.dispose();
 	});
 });
