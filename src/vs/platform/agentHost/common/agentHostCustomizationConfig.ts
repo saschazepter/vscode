@@ -14,7 +14,10 @@ import { type CustomizationRef } from './state/protocol/state.js';
 export const enum AgentHostConfigKey {
 	/** Host-owned Open Plugins available to remote sessions. */
 	Customizations = 'customizations',
-	/** Absolute path to the shell executable for host-managed terminals. */
+	/**
+	 * Absolute path to the shell executable for host-managed terminals.
+	 * TODO: revisit magic key in config; refine into a dedicated typed channel. https://github.com/microsoft/vscode/issues/313812
+	 */
 	DefaultShell = 'defaultShell',
 }
 
