@@ -11,7 +11,6 @@ import { Attributes, AutoTunnelSource, forwardedPortsFeaturesEnabled, forwardedP
 import { ForwardPortAction, OpenPortInBrowserAction, TunnelPanel, TunnelPanelDescriptor, TunnelViewModel, OpenPortInPreviewAction, openPreviewEnabledContext } from './tunnelView.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
-import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import { UrlFinder } from './urlFinder.js';
@@ -204,7 +203,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IExternalUriOpenerService private readonly externalOpenerService: IExternalUriOpenerService,
 		@IRemoteExplorerService private readonly remoteExplorerService: IRemoteExplorerService,
-		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
+		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchConfigurationService private readonly configurationService: IWorkbenchConfigurationService,
 		@IDebugService private readonly debugService: IDebugService,
@@ -216,28 +215,15 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 	) {
 		super();
-		// Auto port-forwarding runs when either:
-		//   • we are connected to a remote authority (classic remote/web flow), or
-		//   • the embedder has supplied a tunnelProvider.tunnelFactory so that
-		//     ports detected from terminal output can be forwarded out-of-band
-		//     (used by the agents workbench on vscode.dev/agents).
-		const hasEmbedderTunnelFactory = !!environmentService.options?.tunnelProvider?.tunnelFactory;
-		if (!environmentService.remoteAuthority && !hasEmbedderTunnelFactory) {
+		if (!environmentService.remoteAuthority) {
 			return;
 		}
 
-		const environmentPromise = environmentService.remoteAuthority
-			? configurationService.whenRemoteConfigurationLoaded().then(() => remoteAgentService.getEnvironment())
-			// When there is no remote authority there is no remote agent
-			// environment to consult — pass null so setup() takes the
-			// non-Linux branch and creates OutputAutomaticPortForwarding.
-			: Promise.resolve(null);
-
-		environmentPromise.then(environment => {
-			this.setup(environment, !environmentService.remoteAuthority);
+		configurationService.whenRemoteConfigurationLoaded().then(() => remoteAgentService.getEnvironment()).then(environment => {
+			this.setup(environment);
 			this._register(configurationService.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration(PORT_AUTO_SOURCE_SETTING)) {
-					this.setup(environment, !environmentService.remoteAuthority);
+					this.setup(environment);
 				} else if (e.affectsConfiguration(PORT_AUTO_FALLBACK_SETTING) && !this.portListener) {
 					this.listenForPorts();
 				}
@@ -318,7 +304,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 	}
 
 
-	private setup(environment: IRemoteAgentEnvironment | null, embedderTunnelFactoryOnly: boolean) {
+	private setup(environment: IRemoteAgentEnvironment | null) {
 		const alreadyForwarded = this.procForwarder?.forwarded;
 		const isSwitch = this.outputForwarder || this.procForwarder;
 		this.procForwarder?.dispose();
@@ -331,7 +317,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 					.registerDefaultConfigurations([{ overrides: { 'remote.autoForwardPortsSource': PORT_AUTO_SOURCE_SETTING_OUTPUT } }]);
 			}
 			this.outputForwarder = this._register(new OutputAutomaticPortForwarding(this.terminalService, this.notificationService, this.openerService, this.externalOpenerService,
-				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, () => false, embedderTunnelFactoryOnly));
+				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, () => false));
 		} else {
 			const useProc = () => (this.configurationService.getValue(PORT_AUTO_SOURCE_SETTING) === PORT_AUTO_SOURCE_SETTING_PROCESS);
 			if (useProc()) {
@@ -342,7 +328,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 					this.openerService, this.externalOpenerService, this.tunnelService, this.hostService, this.logService, this.contextKeyService));
 			}
 			this.outputForwarder = this._register(new OutputAutomaticPortForwarding(this.terminalService, this.notificationService, this.openerService, this.externalOpenerService,
-				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, useProc, embedderTunnelFactoryOnly));
+				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, useProc));
 		}
 		this.listenForPorts();
 	}
@@ -581,14 +567,7 @@ class OutputAutomaticPortForwarding extends Disposable {
 		readonly hostService: IHostService,
 		readonly logService: ILogService,
 		readonly contextKeyService: IContextKeyService,
-		readonly privilegedOnly: () => boolean,
-		// When true, no auto-forward toast is shown — the embedder is
-		// expected to surface forwarded ports through its own UI (the
-		// agents workbench shows a globe button on the titlebar). The
-		// default toast links to the Ports panel via
-		// `command:tunnelView.focus`, which the agents workbench does not
-		// host.
-		readonly suppressNotifications: boolean = false
+		readonly privilegedOnly: () => boolean
 	) {
 		super();
 		this.notifier = new OnAutoForwardedAction(notificationService, remoteExplorerService, openerService, externalOpenerService, tunnelService, hostService, logService, contextKeyService);
@@ -634,7 +613,7 @@ class OutputAutomaticPortForwarding extends Disposable {
 				return;
 			}
 			const forwarded = await this.remoteExplorerService.forward({ remote: localUrl, source: AutoTunnelSource }, attributes ?? null);
-			if (forwarded && (typeof forwarded !== 'string') && !this.suppressNotifications) {
+			if (forwarded && (typeof forwarded !== 'string')) {
 				this.notifier.doAction([forwarded]);
 			}
 		}));
