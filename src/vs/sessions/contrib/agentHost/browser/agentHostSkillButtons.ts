@@ -15,7 +15,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { ChatRequestQueueKind, ChatSendResult, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatSendResult, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ICustomizationHarnessService } from '../../../../workbench/contrib/chat/common/customizationHarnessService.js';
 import { resolvePromptSlashCommandToVariableEntry } from '../../../../workbench/contrib/chat/common/promptSyntax/resolvePromptSlashCommand.js';
@@ -208,15 +208,7 @@ function registerAgentHostSkillButton(spec: IAgentHostSkillButtonSpec): void {
 			await sessionsManagementService.openSession(activeSession.resource, { preserveFocus: true });
 			const ref = await chatService.acquireOrLoadSession(activeSession.resource, ChatAgentLocation.Chat, CancellationToken.None, 'AgentHostSkillButton');
 			try {
-				// Try direct send first (agent idle — preserves full attachedContext).
-				// Fall back to queued if the agent is currently busy.
-				let result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId, attachedContext });
-				if (result.kind === 'rejected') {
-					result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId, attachedContext, queue: ChatRequestQueueKind.Queued });
-				}
-				if (ChatSendResult.isQueued(result)) {
-					result = await result.deferred;
-				}
+				const result = await chatService.sendRequest(activeSession.resource, prompt, { agentIdSilent: agentId, attachedContext });
 				if (ChatSendResult.isSent(result)) {
 					await result.data.responseCompletePromise;
 				}

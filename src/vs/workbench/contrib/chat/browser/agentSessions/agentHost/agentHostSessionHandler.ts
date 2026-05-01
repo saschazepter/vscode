@@ -592,18 +592,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}));
 			}
 
-			// Set up pending message sync once the chat model is created.
-			// This must be deferred because the model is created after this
-			// function returns. Without this, queued skill-button requests
-			// would never dispatch SessionPendingMessageSet to the server
-			// and remain stuck as "QUEUED" in the UI.
-			const capturedBackend = resolvedSession;
-			session.registerDisposable(Event.once(this._chatService.onDidCreateModel)(model => {
-				if (isEqual(model.sessionResource, sessionResource)) {
-					this._ensurePendingMessageSubscription(sessionResource, capturedBackend);
-				}
-			}));
-
 			// If reconnecting to an active turn, wire up an ongoing state listener
 			// to stream new progress into the session's progressObs.
 			if (activeTurnId && initialProgress !== undefined) {

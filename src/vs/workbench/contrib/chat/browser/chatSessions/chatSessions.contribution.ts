@@ -35,7 +35,7 @@ import { ChatSessionOptionsMap, ChatSessionStatus, IChatNewSessionRequest, IChat
 import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
-import { ChatRequestQueueKind, IChatService, ResponseModelState } from '../../common/chatService/chatService.js';
+import { IChatService, ResponseModelState } from '../../common/chatService/chatService.js';
 import { autorun, observableFromEvent } from '../../../../../base/common/observable.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
@@ -571,15 +571,8 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 								attachedContext = [promptFile, ...(attachedContext ?? [])];
 							}
 
-							// Try direct send first (agent idle — preserves full attachedContext).
-							// Fall back to queued if the agent is currently busy.
-							let result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext });
-							if (result.kind === 'rejected') {
-								result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext, queue: ChatRequestQueueKind.Queued });
-							}
-							if (result.kind === 'queued') {
-								await result.deferred;
-							} else if (result.kind === 'sent') {
+							const result = await chatService.sendRequest(resource, chatOptions.prompt, { agentIdSilent: type, attachedContext });
+							if (result.kind === 'sent') {
 								await result.data.responseCompletePromise;
 							}
 						} finally {
