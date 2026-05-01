@@ -26,16 +26,16 @@ export interface INormalizedMessage {
 	/** Concatenation of all `text` parts in the message. */
 	readonly text: string;
 	/** Byte length of `text` (utf-16 code unit count is a close-enough proxy in JS). */
-	readonly byteLength: number;
+	readonly charLength: number;
 }
 
 /** Classification of a single signature token when comparing A and B. */
 export const enum CacheDiffKind {
-	/** Same role+name and same byteLength in both A and B. */
+	/** Same role+name and same charLength in both A and B. */
 	Identical = 'identical',
-	/** Same role+name and same byteLength but different content. */
+	/** Same role+name and same charLength but different content. */
 	ContentDrift = 'contentDrift',
-	/** Same role+name but different byteLength. */
+	/** Same role+name but different charLength. */
 	LengthChange = 'lengthChange',
 	/** Position exists only in A. */
 	OnlyInA = 'onlyInA',
@@ -55,10 +55,10 @@ export interface ICacheSignatureToken {
 	readonly kind: CacheDiffKind;
 	readonly aRole?: string;
 	readonly aName?: string;
-	readonly aByteLength?: number;
+	readonly aCharLength?: number;
 	readonly bRole?: string;
 	readonly bName?: string;
-	readonly bByteLength?: number;
+	readonly bCharLength?: number;
 }
 
 /**
@@ -193,7 +193,7 @@ export function parseInputMessages(inputMessagesJson: string | undefined): reado
 		} else if (hasToolCall && !hasText && role === 'assistant') {
 			role = 'assistant';
 		}
-		out.push({ role, name, text, byteLength: text.length });
+		out.push({ role, name, text, charLength: text.length });
 	}
 	return out;
 }
@@ -216,7 +216,7 @@ function stableStringify(value: unknown): string {
  * Returns true iff the two messages have the same role, name, and content.
  */
 function messagesEqual(a: INormalizedMessage, b: INormalizedMessage): boolean {
-	return a.role === b.role && a.name === b.name && a.byteLength === b.byteLength && a.text === b.text;
+	return a.role === b.role && a.name === b.name && a.charLength === b.charLength && a.text === b.text;
 }
 
 /**
@@ -242,8 +242,8 @@ export function diffPromptSignature(a: readonly INormalizedMessage[], b: readonl
 
 		if (ai && !bi) {
 			counts.onlyInA++;
-			signature.push({ index: i, kind: CacheDiffKind.OnlyInA, aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength });
-			drift.push({ name: `messages[${i}]`, role: ai.role, status: CacheDiffKind.OnlyInA, aSize: ai.byteLength, bSize: 0 });
+			signature.push({ index: i, kind: CacheDiffKind.OnlyInA, aRole: ai.role, aName: ai.name, aCharLength: ai.charLength });
+			drift.push({ name: `messages[${i}]`, role: ai.role, status: CacheDiffKind.OnlyInA, aSize: ai.charLength, bSize: 0 });
 			if (!broken) {
 				broken = true;
 				breakResult = { index: i, kind: CacheDiffKind.OnlyInA };
@@ -252,8 +252,8 @@ export function diffPromptSignature(a: readonly INormalizedMessage[], b: readonl
 		}
 		if (bi && !ai) {
 			counts.onlyInB++;
-			signature.push({ index: i, kind: CacheDiffKind.OnlyInB, bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength });
-			drift.push({ name: `messages[${i}]`, role: bi.role, status: CacheDiffKind.OnlyInB, aSize: 0, bSize: bi.byteLength });
+			signature.push({ index: i, kind: CacheDiffKind.OnlyInB, bRole: bi.role, bName: bi.name, bCharLength: bi.charLength });
+			drift.push({ name: `messages[${i}]`, role: bi.role, status: CacheDiffKind.OnlyInB, aSize: 0, bSize: bi.charLength });
 			if (!broken) {
 				broken = true;
 				breakResult = { index: i, kind: CacheDiffKind.OnlyInB };
@@ -268,13 +268,13 @@ export function diffPromptSignature(a: readonly INormalizedMessage[], b: readonl
 			counts.identical++;
 			signature.push({
 				index: i, kind: CacheDiffKind.Identical,
-				aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength,
-				bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength,
+				aRole: ai.role, aName: ai.name, aCharLength: ai.charLength,
+				bRole: bi.role, bName: bi.name, bCharLength: bi.charLength,
 			});
 			continue;
 		}
 		// Diverged
-		const kind = ai.byteLength === bi.byteLength ? CacheDiffKind.ContentDrift : CacheDiffKind.LengthChange;
+		const kind = ai.charLength === bi.charLength ? CacheDiffKind.ContentDrift : CacheDiffKind.LengthChange;
 		if (kind === CacheDiffKind.ContentDrift) {
 			counts.contentDrift++;
 		} else {
@@ -282,10 +282,10 @@ export function diffPromptSignature(a: readonly INormalizedMessage[], b: readonl
 		}
 		signature.push({
 			index: i, kind,
-			aRole: ai.role, aName: ai.name, aByteLength: ai.byteLength,
-			bRole: bi.role, bName: bi.name, bByteLength: bi.byteLength,
+			aRole: ai.role, aName: ai.name, aCharLength: ai.charLength,
+			bRole: bi.role, bName: bi.name, bCharLength: bi.charLength,
 		});
-		drift.push({ name: `messages[${i}]`, role: ai.role, status: kind, aSize: ai.byteLength, bSize: bi.byteLength });
+		drift.push({ name: `messages[${i}]`, role: ai.role, status: kind, aSize: ai.charLength, bSize: bi.charLength });
 		if (!broken) {
 			broken = true;
 			breakResult = { index: i, kind };
@@ -327,8 +327,8 @@ export function appendSystemDrift(
 export function formatSignatureToken(token: ICacheSignatureToken): string {
 	const role = token.bRole ?? token.aRole ?? 'unknown';
 	const name = token.bName ?? token.aName;
-	const a = token.aByteLength;
-	const b = token.bByteLength;
+	const a = token.aCharLength;
+	const b = token.bCharLength;
 	const sizeText = a !== undefined && b !== undefined && a !== b
 		? `${a}\u2192${b}`
 		: a !== undefined && b === undefined

@@ -23,9 +23,9 @@ suite('chatDebugCacheDiff', () => {
 			const json = JSON.stringify([msg('system', 'hi'), msg('user', 'hello'), msg('tool', 'result', 'tool_a')]);
 			const parsed = parseInputMessages(json);
 			assert.deepStrictEqual(parsed, [
-				{ role: 'system', name: undefined, text: 'hi', byteLength: 2 },
-				{ role: 'user', name: undefined, text: 'hello', byteLength: 5 },
-				{ role: 'tool', name: 'tool_a', text: 'result', byteLength: 6 },
+				{ role: 'system', name: undefined, text: 'hi', charLength: 2 },
+				{ role: 'user', name: undefined, text: 'hello', charLength: 5 },
+				{ role: 'tool', name: 'tool_a', text: 'result', charLength: 6 },
 			]);
 		});
 
@@ -41,7 +41,7 @@ suite('chatDebugCacheDiff', () => {
 				{ role: 'user', parts: [{ type: 'tool_call_response', id: 'call_1', response: 'Found 12 references.' }] },
 			]);
 			assert.deepStrictEqual(parseInputMessages(json), [
-				{ role: 'tool', name: undefined, text: 'Found 12 references.', byteLength: 'Found 12 references.'.length },
+				{ role: 'tool', name: undefined, text: 'Found 12 references.', charLength: 'Found 12 references.'.length },
 			]);
 		});
 
@@ -51,7 +51,7 @@ suite('chatDebugCacheDiff', () => {
 			]);
 			const expected = `call:fs_read${JSON.stringify({ path: '/etc/hosts' })}`;
 			assert.deepStrictEqual(parseInputMessages(json), [
-				{ role: 'assistant', name: undefined, text: expected, byteLength: expected.length },
+				{ role: 'assistant', name: undefined, text: expected, charLength: expected.length },
 			]);
 		});
 	});
@@ -162,15 +162,15 @@ suite('chatDebugCacheDiff', () => {
 	suite('formatSignatureToken', () => {
 		test('formats identical, drift, and one-sided tokens', () => {
 			assert.strictEqual(
-				formatSignatureToken({ index: 0, kind: CacheDiffKind.Identical, aRole: 'user', aByteLength: 12, bRole: 'user', bByteLength: 12 }),
+				formatSignatureToken({ index: 0, kind: CacheDiffKind.Identical, aRole: 'user', aCharLength: 12, bRole: 'user', bCharLength: 12 }),
 				'user:12',
 			);
 			assert.strictEqual(
-				formatSignatureToken({ index: 1, kind: CacheDiffKind.LengthChange, aRole: 'user', aByteLength: 5, bRole: 'user', bByteLength: 8 }),
+				formatSignatureToken({ index: 1, kind: CacheDiffKind.LengthChange, aRole: 'user', aCharLength: 5, bRole: 'user', bCharLength: 8 }),
 				'user:5\u21928',
 			);
 			assert.strictEqual(
-				formatSignatureToken({ index: 2, kind: CacheDiffKind.OnlyInB, bRole: 'tool', bName: 'fs_read', bByteLength: 320 }),
+				formatSignatureToken({ index: 2, kind: CacheDiffKind.OnlyInB, bRole: 'tool', bName: 'fs_read', bCharLength: 320 }),
 				'tool-fs_read:0\u2192320',
 			);
 		});

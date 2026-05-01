@@ -84,6 +84,15 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	/** Selected turn (B side). A is computed as `selectedIndex - 1`. -1 = no explicit selection yet. */
 	private selectedIndex = -1;
 
+	/**
+	 * Monotonically-increasing render token. Each call to {@link render}
+	 * captures the current value, then re-checks it after each await; if a
+	 * newer render has started in the meantime, the older one bails out
+	 * before mutating the DOM. Avoids races where a slow model-turn
+	 * resolve from one session writes into another's panel.
+	 */
+	private renderToken = 0;
+
 	/** Cache of resolved model-turn content keyed by event id. */
 	private readonly resolvedCache = new Map<string, IChatDebugEventModelTurnContent | undefined>();
 
@@ -153,6 +162,10 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	setSession(sessionResource: URI): void {
 		if (!this.currentSessionResource || this.currentSessionResource.toString() !== sessionResource.toString()) {
 			this.resolvedCache.clear();
+			this.collapsedGroups.clear();
+			this.openComponents.clear();
+			this.openComponents.add('system');
+			this.openComponents.add('tools');
 			this.selectedIndex = -1;
 		}
 		this.currentSessionResource = sessionResource;
@@ -187,6 +200,13 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	}
 
 	private async render(): Promise<void> {
+		// Monotonically-increasing token. Captured at the start of every
+		// render() and re-checked after each await so an in-flight resolve
+		// that's been superseded by a newer render bails out before
+		// touching the DOM.
+		const token = ++this.renderToken;
+		const isCurrent = () => token === this.renderToken;
+
 		this.updateBreadcrumb();
 		this.loadDisposables.clear();
 		DOM.clearNode(this.railList);
@@ -221,7 +241,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			// No prior turn to diff against — still surface OTel-reported cache hit
 			// and request metadata for the first turn of a session.
 			const b = await this.resolveSide(bEvent);
-			if (this.selectedIndex < 0 || this.modelTurns[this.selectedIndex] !== bEvent) {
+			if (!isCurrent()) {
 				return;
 			}
 			this.renderSingleSummary(b);
@@ -229,8 +249,8 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		}
 
 		const [a, b] = await Promise.all([this.resolveSide(aEvent), this.resolveSide(bEvent)]);
-		// If the user changed selection while resolving, drop this render.
-		if (this.selectedIndex < 0 || this.modelTurns[this.selectedIndex] !== bEvent) {
+		// If a newer render started while we were resolving, drop this one.
+		if (!isCurrent()) {
 			return;
 		}
 
@@ -335,10 +355,21 @@ export class ChatDebugCacheExplorerView extends Disposable {
 				}
 
 				row.title = localize('chatDebug.cache.turnHelp', "Click to compare this request against the previous one");
-				this.loadDisposables.add(DOM.addDisposableListener(row, DOM.EventType.CLICK, () => {
+				row.tabIndex = 0;
+				row.setAttribute('role', 'button');
+				row.setAttribute('aria-selected', i === this.selectedIndex ? 'true' : 'false');
+				row.setAttribute('aria-label', localize('chatDebug.cache.turnAria', "Turn {0}: {1}", i, evt.requestName ?? evt.model ?? localize('chatDebug.cache.modelTurn', "Model Turn")));
+				const select = () => {
 					if (this.selectedIndex !== i) {
 						this.selectedIndex = i;
 						this.refresh();
+					}
+				};
+				this.loadDisposables.add(DOM.addDisposableListener(row, DOM.EventType.CLICK, select));
+				this.loadDisposables.add(DOM.addDisposableListener(row, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						select();
 					}
 				}));
 			}
@@ -547,7 +578,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 					|| kind === CacheDiffKind.LengthChange
 					|| (isA && kind === CacheDiffKind.OnlyInA)
 					|| (!isA && kind === CacheDiffKind.OnlyInB);
-				segs.push({ role: m.role, bytes: m.byteLength, drift, label: m.name ? `${m.role}-${m.name}` : m.role });
+				segs.push({ role: m.role, bytes: m.charLength, drift, label: m.name ? `${m.role}-${m.name}` : m.role });
 			});
 			return segs;
 		};
@@ -626,7 +657,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		let shared = 0;
 		for (const tok of diff.signature) {
 			if (tok.kind === CacheDiffKind.Identical) {
-				shared += tok.bByteLength ?? 0;
+				shared += tok.bCharLength ?? 0;
 			} else {
 				break;
 			}
@@ -733,11 +764,11 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	private renderComponentDiff(aText: string, bText: string, aSize: number, bSize: number): HTMLElement {
 		const grid = $('.chat-debug-cache-diff');
 		const colA = DOM.append(grid, $('.chat-debug-cache-diff-col'));
-		DOM.append(colA, $('h4', undefined, localize('chatDebug.cache.diffSideA', "Previous \u00b7 {0} B", numberFormatter.value.format(aSize))));
+		DOM.append(colA, $('h4', undefined, localize('chatDebug.cache.diffSideA', "Previous \u00b7 {0} chars", numberFormatter.value.format(aSize))));
 		const aBody = DOM.append(colA, $('.chat-debug-cache-diff-body'));
 
 		const colB = DOM.append(grid, $('.chat-debug-cache-diff-col'));
-		DOM.append(colB, $('h4', undefined, localize('chatDebug.cache.diffSideB', "Current \u00b7 {0} B", numberFormatter.value.format(bSize))));
+		DOM.append(colB, $('h4', undefined, localize('chatDebug.cache.diffSideB', "Current \u00b7 {0} chars", numberFormatter.value.format(bSize))));
 		const bBody = DOM.append(colB, $('.chat-debug-cache-diff-body'));
 
 		if (!aText && !bText) {
@@ -825,7 +856,7 @@ function describeBreakKind(kind: Exclude<CacheDiffKind, CacheDiffKind.Identical>
 	const tok = diff.signature.find(t => t.index === diff.break?.index);
 	const role = tok?.bRole ?? tok?.aRole ?? 'message';
 	const bMsg = b.inputMessages[diff.break?.index ?? -1];
-	const charsB = bMsg ? numberFormatter.value.format(bMsg.byteLength) : undefined;
+	const charsB = bMsg ? numberFormatter.value.format(bMsg.charLength) : undefined;
 	switch (kind) {
 		case CacheDiffKind.OnlyInB:
 			return charsB

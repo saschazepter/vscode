@@ -909,6 +909,10 @@
 .chat-debug-cache-turn:hover {
 	background: var(--vscode-list-hoverBackground);
 }
+.chat-debug-cache-turn:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
 .chat-debug-cache-turn.is-selected {
 	border-left-color: var(--vscode-focusBorder);
 	background: var(--vscode-list-activeSelectionBackground);
