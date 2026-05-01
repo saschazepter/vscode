@@ -25,13 +25,13 @@ export class GitHubPullRequestCIModelReferenceCollection extends ReferenceCollec
 		this._fetcher = new GitHubPRCIFetcher(apiClient);
 	}
 
-	protected override createReferencedObject(_key: string, owner: string, repo: string, headSha: string): GitHubPullRequestCIModel {
-		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][createReferencedObject] Creating CI model for ${_key}`);
-		return new GitHubPullRequestCIModel(owner, repo, headSha, this._fetcher, this._logService);
+	protected override createReferencedObject(key: string, owner: string, repo: string, prNumber: number, headSha: string): GitHubPullRequestCIModel {
+		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][createReferencedObject] Creating CI model for ${key}`);
+		return new GitHubPullRequestCIModel(owner, repo, prNumber, headSha, this._fetcher, this._logService);
 	}
 
-	protected override destroyReferencedObject(_key: string, object: GitHubPullRequestCIModel): void {
-		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][destroyReferencedObject] Disposing CI model for ${_key}`);
+	protected override destroyReferencedObject(key: string, object: GitHubPullRequestCIModel): void {
+		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][destroyReferencedObject] Disposing CI model for ${key}`);
 		object.dispose();
 	}
 }
@@ -57,6 +57,7 @@ export class GitHubPullRequestCIModel extends Disposable {
 	constructor(
 		readonly owner: string,
 		readonly repo: string,
+		readonly prNumber: number,
 		readonly headSha: string,
 		private readonly _fetcher: GitHubPRCIFetcher,
 		private readonly _logService: ILogService,
@@ -97,7 +98,7 @@ export class GitHubPullRequestCIModel extends Disposable {
 				this._overallStatus.set(computeOverallCIStatus(response.data), undefined);
 			}
 		} catch (err) {
-			this._logService.error(`${LOG_PREFIX} Failed to refresh CI checks for ${this.owner}/${this.repo}@${this.headSha}:`, err);
+			this._logService.error(`${LOG_PREFIX} Failed to refresh CI checks for ${this.owner}/${this.repo}#${this.prNumber}@${this.headSha}:`, err);
 		}
 	}
 

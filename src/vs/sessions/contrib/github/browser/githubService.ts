@@ -8,7 +8,6 @@ import { createDecorator, IInstantiationService } from '../../../../platform/ins
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IGitHubChangedFile } from '../common/types.js';
 import { GitHubApiClient } from './githubApiClient.js';
-import { GitHubRepositoryFetcher } from './fetchers/githubRepositoryFetcher.js';
 import { GitHubPRFetcher } from './fetchers/githubPRFetcher.js';
 import { GitHubPRCIFetcher } from './fetchers/githubPRCIFetcher.js';
 import { GitHubRepositoryModel, GitHubRepositoryModelReferenceCollection } from './models/githubRepositoryModel.js';
@@ -25,12 +24,6 @@ export interface IGitHubService {
 	 * Get a reference to a reactive model for a GitHub repository.
 	 */
 	createRepositoryModelReference(owner: string, repo: string): IReference<GitHubRepositoryModel>;
-
-	/**
-	 * Get or create a reactive model for a GitHub repository.
-	 * The model is cached by owner/repo key and disposed when the service is disposed.
-	 */
-	getRepository(owner: string, repo: string): GitHubRepositoryModel;
 
 	/**
 	 * Get a reference to a reactive model for a GitHub pull request.
@@ -52,11 +45,6 @@ export interface IGitHubService {
 	 * The model is cached by owner/repo/prNumber key and disposed when the service is disposed.
 	 */
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel;
-
-	/**
-	 * Dispose and remove cached models associated with a GitHub pull request, if they exist.
-	 */
-	disposePullRequest(owner: string, repo: string, prNumber: number): void;
 
 	/**
 	 * Get or create a reactive model for review threads on a GitHub pull request.
@@ -85,12 +73,10 @@ export class GitHubService extends Disposable implements IGitHubService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _apiClient: GitHubApiClient;
-	private readonly _repoFetcher: GitHubRepositoryFetcher;
 	private readonly _changesFetcher: GitHubChangesFetcher;
 	private readonly _prFetcher: GitHubPRFetcher;
 	private readonly _ciFetcher: GitHubPRCIFetcher;
 
-	private readonly _repositories = this._register(new DisposableMap<string, GitHubRepositoryModel>());
 	private readonly _pullRequests = this._register(new DisposableMap<string, GitHubPullRequestModel>());
 	private readonly _pullRequestReviewThreads = this._register(new DisposableMap<string, GitHubPullRequestReviewThreadsModel>());
 	private readonly _ciModels = this._register(new DisposableMap<string, DisposableMap<string, GitHubPullRequestCIModel>>());
@@ -108,7 +94,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 
 		this._apiClient = this._register(instantiationService.createInstance(GitHubApiClient));
 
-		this._repoFetcher = new GitHubRepositoryFetcher(this._apiClient);
 		this._changesFetcher = new GitHubChangesFetcher(this._apiClient);
 		this._prFetcher = new GitHubPRFetcher(this._apiClient);
 		this._ciFetcher = new GitHubPRCIFetcher(this._apiClient);
@@ -117,17 +102,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 		this._pullRequestReferences = instantiationService.createInstance(GitHubPullRequestModelReferenceCollection, this._apiClient);
 		this._pullRequestReviewThreadsReferences = instantiationService.createInstance(GitHubPullRequestReviewThreadsModelReferenceCollection, this._apiClient);
 		this._pullRequestCIReferences = instantiationService.createInstance(GitHubPullRequestCIModelReferenceCollection, this._apiClient);
-	}
-
-	getRepository(owner: string, repo: string): GitHubRepositoryModel {
-		const key = `${owner}/${repo}`;
-		let model = this._repositories.get(key);
-		if (!model) {
-			this._logService.trace(`${LOG_PREFIX} Creating repository model for ${key}`);
-			model = new GitHubRepositoryModel(owner, repo, this._repoFetcher, this._logService);
-			this._repositories.set(key, model);
-		}
-		return model;
 	}
 
 	createRepositoryModelReference(owner: string, repo: string): IReference<GitHubRepositoryModel> {
@@ -143,7 +117,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 	}
 
 	createPullRequestCIModelReference(owner: string, repo: string, prNumber: number, headSha: string): IReference<GitHubPullRequestCIModel> {
-		return this._pullRequestCIReferences.acquire(`${getPullRequestKey(owner, repo, prNumber)}/${headSha}`, owner, repo, headSha);
+		return this._pullRequestCIReferences.acquire(`${getPullRequestKey(owner, repo, prNumber)}/${headSha}`, owner, repo, prNumber, headSha);
 	}
 
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
@@ -180,7 +154,7 @@ export class GitHubService extends Disposable implements IGitHubService {
 		if (!model) {
 			models.clearAndDisposeAll();
 			this._logService.trace(`${LOG_PREFIX} Creating CI model for ${key}/${headSha}`);
-			model = new GitHubPullRequestCIModel(owner, repo, headSha, this._ciFetcher, this._logService);
+			model = new GitHubPullRequestCIModel(owner, repo, prNumber, headSha, this._ciFetcher, this._logService);
 			models.set(headSha, model);
 		}
 		return model;
@@ -188,14 +162,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 
 	getChangedFiles(owner: string, repo: string, base: string, head: string): Promise<readonly IGitHubChangedFile[]> {
 		return this._changesFetcher.getChangedFiles(owner, repo, base, head);
-	}
-
-	disposePullRequest(owner: string, repo: string, prNumber: number): void {
-		const key = getPullRequestKey(owner, repo, prNumber);
-
-		this._pullRequests.deleteAndDispose(key);
-		this._pullRequestReviewThreads.deleteAndDispose(key);
-		this._ciModels.deleteAndDispose(key);
 	}
 
 	override dispose(): void {

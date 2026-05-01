@@ -208,10 +208,6 @@ class TestGitHubService extends mock<IGitHubService>() {
 		return this._getModel(owner, repo, prNumber) as unknown as GitHubPullRequestModel;
 	}
 
-	override disposePullRequest(owner: string, repo: string, prNumber: number): void {
-		this._getModel(owner, repo, prNumber).dispose();
-	}
-
 	snapshot(): Record<string, { startPollingCalls: number; stopPollingCalls: number; disposeCalls: number }> {
 		const entries = [...this._models.entries()].map(([key, model]) => [key, {
 			startPollingCalls: model.startPollingCalls,

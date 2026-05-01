@@ -25,13 +25,13 @@ export class GitHubPullRequestModelReferenceCollection extends ReferenceCollecti
 		this._fetcher = new GitHubPRFetcher(apiClient);
 	}
 
-	protected override createReferencedObject(_key: string, owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
-		this._logService.trace(`[GitHubPullRequestModelReferenceCollection][createReferencedObject] Creating PR model for ${_key}`);
+	protected override createReferencedObject(key: string, owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
+		this._logService.trace(`[GitHubPullRequestModelReferenceCollection][createReferencedObject] Creating PR model for ${key}`);
 		return new GitHubPullRequestModel(owner, repo, prNumber, this._fetcher, this._logService);
 	}
 
-	protected override destroyReferencedObject(_key: string, object: GitHubPullRequestModel): void {
-		this._logService.trace(`[GitHubPullRequestModelReferenceCollection][destroyReferencedObject] Disposing PR model for ${_key}`);
+	protected override destroyReferencedObject(key: string, object: GitHubPullRequestModel): void {
+		this._logService.trace(`[GitHubPullRequestModelReferenceCollection][destroyReferencedObject] Disposing PR model for ${key}`);
 		object.dispose();
 	}
 }

@@ -23,13 +23,13 @@ export class GitHubRepositoryModelReferenceCollection extends ReferenceCollectio
 		this._fetcher = new GitHubRepositoryFetcher(apiClient);
 	}
 
-	protected override createReferencedObject(_key: string, owner: string, repo: string): GitHubRepositoryModel {
-		this._logService.trace(`[GitHubRepositoryModelReferenceCollection][createReferencedObject] Creating repository model for ${_key}`);
+	protected override createReferencedObject(key: string, owner: string, repo: string): GitHubRepositoryModel {
+		this._logService.trace(`[GitHubRepositoryModelReferenceCollection][createReferencedObject] Creating repository model for ${key}`);
 		return new GitHubRepositoryModel(owner, repo, this._fetcher, this._logService);
 	}
 
-	protected override destroyReferencedObject(_key: string, object: GitHubRepositoryModel): void {
-		this._logService.trace(`[GitHubRepositoryModelReferenceCollection][destroyReferencedObject] Disposing repository model for ${_key}`);
+	protected override destroyReferencedObject(key: string, object: GitHubRepositoryModel): void {
+		this._logService.trace(`[GitHubRepositoryModelReferenceCollection][destroyReferencedObject] Disposing repository model for ${key}`);
 		object.dispose();
 	}
 }
