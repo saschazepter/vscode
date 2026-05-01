@@ -31,15 +31,10 @@ const AGENT_HOST_SHELL_DEPENDENT_SETTINGS = [
 ];
 
 /**
- * Local agent host terminal plumbing:
- * - Registers the "Local" entry with {@link IAgentHostTerminalService} so it
- *   appears in the terminal dropdown.
- * - Pushes the resolved `terminal.integrated.agentHostProfile.<os>` shell path
- *   into the local agent host's root config so its PTY-backed `bash` /
- *   `powershell` tool overrides honor the user's terminal profile.
+ * Registers local agent host terminal entries with
+ * {@link IAgentHostTerminalService} so they appear in the terminal dropdown.
  *
- * Gated on the `chat.agentHost.enabled` setting. Remote agent hosts have a
- * separate contribution.
+ * Gated on the `chat.agentHost.enabled` setting.
  */
 export class AgentHostTerminalContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.agentHostTerminal';
