@@ -21,10 +21,10 @@ export const DEFAULT_ELEMENT_LABEL = localize('browser.element', 'element');
 
 /**
  * Extracts the session ID from a tool invocation context.
- * Falls back to an empty string when no session context is available.
+ * Falls back to a default string when no session context is available.
  */
 export function getSessionId(invocation: IToolInvocation): string {
-	return invocation.context?.sessionResource?.toString() ?? '';
+	return invocation.context?.sessionResource?.toString() ?? '<default>';
 }
 
 export interface FormatBrowserEditorLinesOptions {

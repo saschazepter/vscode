@@ -156,7 +156,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 			}
 			for (const [id, other] of this._sessions) {
 				if (id !== sessionId) {
-					other.group.addView(e.viewId);
+					void other.group.addView(e.viewId).catch(() => { });
 				}
 			}
 		}));

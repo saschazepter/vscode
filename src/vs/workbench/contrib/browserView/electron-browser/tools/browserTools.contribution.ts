@@ -69,7 +69,7 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 		// Dispose Playwright sessions when the corresponding chat session ends.
 		this._register(this.chatService.onDidDisposeSession(e => {
 			for (const resource of e.sessionResources) {
-				this.playwrightService.disposeSession(resource.toString());
+				void this.playwrightService.disposeSession(resource.toString()).catch(() => { });
 			}
 		}));
 	}
