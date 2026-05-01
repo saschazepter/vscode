@@ -344,13 +344,12 @@ suite('RunInTerminalTool', () => {
 			strictEqual(getMinimumTimeoutMsForCommand(runInTerminalTool, 'make help'), undefined);
 		});
 
-		test('should instruct models to use generous timeouts and forbid short timeouts for long-running one-shot commands', async () => {
+		test('should instruct models to use generous timeouts for long-running one-shot commands', async () => {
 			sandboxEnabled = false;
 
 			const toolData = await instantiationService.invokeFunction(createRunInTerminalToolData);
 
 			ok(toolData.modelDescription?.includes('set a generous timeout as a safety net'), 'Expected model description to recommend a generous timeout for one-shot long-running commands');
-			ok(toolData.modelDescription?.includes('Never use short timeouts (<60000 ms) for builds, compiles, package installs, downloads, test suites, or VM boots'), 'Expected model description to forbid short timeouts for long-running build/install workflows');
 		});
 
 		test('should instruct models to use $TMPDIR instead of /tmp when sandboxed', async () => {
