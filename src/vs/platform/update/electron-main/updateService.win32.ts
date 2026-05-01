@@ -186,8 +186,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		}
 
 		const command =
-			`Get-CimInstance Win32_Process | ` +
-			`Where-Object { $_.Name -eq 'dllhost.exe' -and $_.CommandLine -like '*/Processid:${clsid}*' } | ` +
+			`Get-CimInstance Win32_Process -Filter "Name = 'dllhost.exe'" | ` +
+			`Where-Object { $_.CommandLine -like '*/Processid:${clsid}*' } | ` +
 			`Stop-Process -Force -ErrorAction SilentlyContinue`;
 
 		await new Promise<void>(resolve => {

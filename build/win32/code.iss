@@ -1731,12 +1731,14 @@ begin
 
   Command :=
     '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "' +
-    'Get-CimInstance Win32_Process | ' +
-    'Where-Object { $_.Name -eq ''dllhost.exe'' -and $_.CommandLine -like ''*/Processid:{#FileExplorerContextMenuCLSID}*'' } | ' +
+    'Get-CimInstance Win32_Process -Filter ""Name = ''dllhost.exe''"" | ' +
+    'Where-Object { $_.CommandLine -like ''*/Processid:{#FileExplorerContextMenuCLSID}*'' } | ' +
     'Stop-Process -Force -ErrorAction SilentlyContinue"';
 
   if not ShellExec('', 'powershell.exe', Command, '', SW_HIDE, ewWaitUntilTerminated, KillErrorCode) then
     Log('KillContextMenuComSurrogate: ShellExec failed with error code ' + IntToStr(KillErrorCode))
+  else if KillErrorCode <> 0 then
+    Log('KillContextMenuComSurrogate: PowerShell exited with non-zero code ' + IntToStr(KillErrorCode))
   else
     Log('KillContextMenuComSurrogate: complete');
 #endif
