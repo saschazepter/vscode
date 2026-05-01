@@ -133,4 +133,12 @@ export class OpenRouterEndpoint extends OpenAIEndpoint {
 	protected override get useMessagesApi(): boolean {
 		return !!this.modelMetadata.supported_endpoints?.includes(ModelSupportedEndpoint.Messages);
 	}
+
+	public override getExtraHeaders(): Record<string, string> {
+		const headers = super.getExtraHeaders();
+		if (this.useMessagesApi) {
+			Object.assign(headers, this.getAnthropicBetaHeader());
+		}
+		return headers;
+	}
 }
