@@ -189,8 +189,12 @@ export abstract class BaseTerminalProfileResolverService extends Disposable impl
 	}
 
 	private async _getUnresolvedDefaultProfile(options: IShellLaunchConfigResolveOptions): Promise<ITerminalProfile> {
-		// If agent host shell is allowed, prefer that
+		// If agent host shell is allowed, prefer that.
 		if (options.allowAgentHostShell) {
+			const raw = this._configurationService.getValue(`terminal.integrated.agentHostProfile.${this._getOsKey(options.os)}`);
+			if (isString(raw)) {
+				await this._terminalProfileService.profilesReady;
+			}
 			const agentHostShellProfile = this._getUnresolvedAgentHostShellProfile(options);
 			if (agentHostShellProfile) {
 				return agentHostShellProfile;

@@ -14,7 +14,7 @@ import { IInstantiationService } from '../../../../../../platform/instantiation/
 import { TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
 import { LoggingAgentConnection } from '../../../../../../workbench/contrib/chat/browser/agentSessions/agentHost/loggingAgentConnection.js';
-import { ITerminalProfileResolverService } from '../../../../../../workbench/contrib/terminal/common/terminal.js';
+import { ITerminalProfileResolverService, ITerminalProfileService } from '../../../../../../workbench/contrib/terminal/common/terminal.js';
 import { IAgentHostTerminalService } from '../../../../../../workbench/contrib/terminal/browser/agentHostTerminalService.js';
 
 /** Terminal settings whose change should re-resolve the agent host shell. */
@@ -47,6 +47,7 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@ITerminalProfileService private readonly _terminalProfileService: ITerminalProfileService,
 		@ITerminalProfileResolverService private readonly _terminalProfileResolverService: ITerminalProfileResolverService,
 	) {
 		super();
@@ -70,6 +71,7 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 						this._pushDefaultShell();
 					}
 				}));
+				store.add(this._terminalProfileService.onDidChangeAvailableProfiles(() => this._pushDefaultShell()));
 				this._conditionalListeners.value = store;
 				this._reconcile();
 			}
