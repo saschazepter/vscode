@@ -45,6 +45,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	public readonly onDidChangeHeight: Event<void> = this._onDidChangeHeight.event;
 
 	private readonly _buttonStore = this._register(new DisposableStore());
+	private _submitButton: Button | undefined;
+	private _renderedSubmitInlineCount = -1;
 	private readonly _messageContentDisposables = this._register(new MutableDisposable<DisposableStore>());
 
 	private readonly _titleActionsEl: HTMLElement;
@@ -331,11 +333,11 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			if (this.review instanceof ChatPlanReviewData) {
 				this.review.draftFeedback = textarea.value;
 			}
-			// Update primary button label since textarea content affects whether
-			// it should read "Approve" or "Submit Feedback".
-			if (this._isFeedbackMode) {
-				this.renderCurrentActionButtons();
-			}
+			// Textarea content only affects the Submit button's enabled
+			// state (and label, when inline-count changes). Avoid a full
+			// button-row re-render on every keystroke — just update the
+			// cached Submit button.
+			this.updateSubmitButtonState();
 		}));
 
 		// Enter submits feedback; Shift+Enter inserts a newline.
@@ -470,7 +472,9 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 
 		this.renderCommentsList();
 		if (this._isFeedbackMode) {
-			this.renderCurrentActionButtons();
+			// Inline-count changed; just update the cached Submit button
+			// rather than re-rendering all action buttons.
+			this.updateSubmitButtonState();
 		}
 		this._messageScrollable.scanDomNode();
 		this._onDidChangeHeight.fire();
@@ -496,6 +500,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private renderActionButtons(container: HTMLElement, options?: { includeReject?: boolean }): void {
 		const includeReject = options?.includeReject ?? true;
 		this._buttonStore.clear();
+		this._submitButton = undefined;
+		this._renderedSubmitInlineCount = -1;
 		dom.clearNode(container);
 
 		// In feedback mode, show Submit + Reject. The Submit label includes
@@ -503,12 +509,11 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		// what is about to be sent.
 		if (this._isFeedbackMode) {
 			const inlineCount = this.getInlineFeedbackItems().length;
-			const submitLabel = inlineCount > 0
-				? localize('chat.planReview.submitFeedbackWithCount', 'Submit Feedback ({0})', inlineCount)
-				: localize('chat.planReview.submitFeedback', 'Submit Feedback');
 			const submitButton = new Button(container, { ...defaultButtonStyles, supportIcons: true });
-			submitButton.label = submitLabel;
+			submitButton.label = this.computeSubmitLabel(inlineCount);
 			submitButton.enabled = this.canSubmitFeedback();
+			this._submitButton = submitButton;
+			this._renderedSubmitInlineCount = inlineCount;
 			this._buttonStore.add(submitButton);
 			this._buttonStore.add(submitButton.onDidClick(() => this.submitFeedback()));
 
@@ -577,6 +582,30 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return true;
 		}
 		return this.getInlineFeedbackItems().length > 0;
+	}
+
+	private computeSubmitLabel(inlineCount: number): string {
+		return inlineCount > 0
+			? localize('chat.planReview.submitFeedbackWithCount', 'Submit Feedback ({0})', inlineCount)
+			: localize('chat.planReview.submitFeedback', 'Submit Feedback');
+	}
+
+	/**
+	 * Update the cached Submit button's enabled state and (only when the
+	 * inline-comment count changed) its label. Cheap enough to run on every
+	 * keystroke, unlike `renderCurrentActionButtons` which destroys and
+	 * recreates the entire button row.
+	 */
+	private updateSubmitButtonState(): void {
+		if (!this._submitButton || !this._isFeedbackMode) {
+			return;
+		}
+		this._submitButton.enabled = this.canSubmitFeedback();
+		const inlineCount = this.getInlineFeedbackItems().length;
+		if (inlineCount !== this._renderedSubmitInlineCount) {
+			this._submitButton.label = this.computeSubmitLabel(inlineCount);
+			this._renderedSubmitInlineCount = inlineCount;
+		}
 	}
 
 	private toggleCollapsed(): void {
@@ -826,6 +855,8 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 	private markUsed(): void {
 		this.domNode.classList.add('chat-plan-review-used');
 		this._buttonStore.clear();
+		this._submitButton = undefined;
+		this._renderedSubmitInlineCount = -1;
 		// Unregister from the feedback service so the editor contribution
 		// hides/disables immediately, even if the plan file is still open.
 		this._planReviewRegistration.clear();

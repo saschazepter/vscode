@@ -69,11 +69,13 @@ suite('ChatPlanReviewPart', () => {
 
 	let widget: ChatPlanReviewPart;
 	let lastSubmitResult: IChatPlanReviewResult | undefined;
+	let lastFeedbackService: IPlanReviewFeedbackService | undefined;
 
 	function createWidget(review: IChatPlanReview, dialogService?: TestDialogService): ChatPlanReviewPart {
 		const instantiationService = workbenchInstantiationService(undefined, store);
 		const feedbackService = store.add(new PlanReviewFeedbackService());
 		instantiationService.stub(IPlanReviewFeedbackService, feedbackService);
+		lastFeedbackService = feedbackService;
 		if (dialogService) {
 			instantiationService.stub(IDialogService, dialogService);
 		}
@@ -90,6 +92,7 @@ suite('ChatPlanReviewPart', () => {
 			widget.domNode.parentNode.removeChild(widget.domNode);
 		}
 		lastSubmitResult = undefined;
+		lastFeedbackService = undefined;
 	});
 
 	suite('Basic rendering', () => {
@@ -324,7 +327,7 @@ suite('ChatPlanReviewPart', () => {
 			getReviewButton(widget)!.click();
 			await tick();
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 5, 1, 'Fix this step');
 			service.addFeedback(planUri, 12, 1, 'Reword this');
@@ -344,7 +347,7 @@ suite('ChatPlanReviewPart', () => {
 			getReviewButton(widget)!.click();
 			await tick();
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 1, 1, 'Hi');
 
@@ -360,7 +363,7 @@ suite('ChatPlanReviewPart', () => {
 			// Section starts hidden when planUri is present.
 			assert.strictEqual(getFeedbackSection(widget).style.display, 'none');
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 1, 1, 'Surprise comment');
 
@@ -374,7 +377,7 @@ suite('ChatPlanReviewPart', () => {
 			getReviewButton(widget)!.click();
 			await tick();
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 5, 1, 'Fix this');
 			service.addFeedback(planUri, 12, 1, 'Reword');
@@ -410,7 +413,7 @@ suite('ChatPlanReviewPart', () => {
 			getReviewButton(widget)!.click();
 			await tick();
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 1, 1, 'a');
 			service.addFeedback(planUri, 2, 1, 'b');
@@ -432,7 +435,7 @@ suite('ChatPlanReviewPart', () => {
 			getReviewButton(widget)!.click();
 			await tick();
 
-			const service = widget['_planReviewFeedbackService'] as IPlanReviewFeedbackService;
+			const service = lastFeedbackService!;
 			const planUri = URI.revive(review.planUri!);
 			service.addFeedback(planUri, 1, 1, 'a');
 			service.addFeedback(planUri, 2, 1, 'b');
