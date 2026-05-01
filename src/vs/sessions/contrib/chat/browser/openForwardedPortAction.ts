@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
+import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
@@ -63,6 +64,15 @@ export class OpenForwardedPortContribution extends Disposable implements IWorkbe
 		update();
 		this._register(tunnelModel.onForwardPort(update));
 		this._register(tunnelModel.onClosePort(update));
+		// `TunnelModel`'s constructor restores entries from
+		// `tunnelService.tunnels` *without* firing `onForwardPort`, so the
+		// initial `update()` above can miss restored ports. Re-evaluate on
+		// the next macrotask once the restore promise has settled. Today
+		// agents sessions never start with pre-existing tunnels, but
+		// anything that pre-populates the tunnel service in the future
+		// would otherwise leave the globe button hidden until the next
+		// open/close event.
+		this._register(disposableTimeout(update, 0));
 	}
 }
 
@@ -79,7 +89,11 @@ class OpenForwardedPortAction extends Action2 {
 			icon: Codicon.globe,
 			category: SessionsCategories.Sessions,
 			f1: true,
-			precondition: HasForwardedPortContext,
+			// `IsWebContext` is included in the precondition so the command
+			// is hidden from the desktop command palette (where there is no
+			// menu host for it and no embedder tunnel-factory to populate
+			// the forwarded ports list).
+			precondition: ContextKeyExpr.and(IsWebContext, HasForwardedPortContext),
 			menu: [{
 				id: Menus.TitleBarSessionMenu,
 				group: 'navigation',

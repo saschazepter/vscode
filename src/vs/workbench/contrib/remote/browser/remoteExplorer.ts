@@ -234,10 +234,10 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 			: Promise.resolve(null);
 
 		environmentPromise.then(environment => {
-			this.setup(environment);
+			this.setup(environment, !environmentService.remoteAuthority);
 			this._register(configurationService.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration(PORT_AUTO_SOURCE_SETTING)) {
-					this.setup(environment);
+					this.setup(environment, !environmentService.remoteAuthority);
 				} else if (e.affectsConfiguration(PORT_AUTO_FALLBACK_SETTING) && !this.portListener) {
 					this.listenForPorts();
 				}
@@ -318,7 +318,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 	}
 
 
-	private setup(environment: IRemoteAgentEnvironment | null) {
+	private setup(environment: IRemoteAgentEnvironment | null, embedderTunnelFactoryOnly: boolean) {
 		const alreadyForwarded = this.procForwarder?.forwarded;
 		const isSwitch = this.outputForwarder || this.procForwarder;
 		this.procForwarder?.dispose();
@@ -331,7 +331,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 					.registerDefaultConfigurations([{ overrides: { 'remote.autoForwardPortsSource': PORT_AUTO_SOURCE_SETTING_OUTPUT } }]);
 			}
 			this.outputForwarder = this._register(new OutputAutomaticPortForwarding(this.terminalService, this.notificationService, this.openerService, this.externalOpenerService,
-				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, () => false));
+				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, () => false, embedderTunnelFactoryOnly));
 		} else {
 			const useProc = () => (this.configurationService.getValue(PORT_AUTO_SOURCE_SETTING) === PORT_AUTO_SOURCE_SETTING_PROCESS);
 			if (useProc()) {
@@ -342,7 +342,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 					this.openerService, this.externalOpenerService, this.tunnelService, this.hostService, this.logService, this.contextKeyService));
 			}
 			this.outputForwarder = this._register(new OutputAutomaticPortForwarding(this.terminalService, this.notificationService, this.openerService, this.externalOpenerService,
-				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, useProc));
+				this.remoteExplorerService, this.configurationService, this.debugService, this.tunnelService, this.hostService, this.logService, this.contextKeyService, useProc, embedderTunnelFactoryOnly));
 		}
 		this.listenForPorts();
 	}
@@ -581,7 +581,14 @@ class OutputAutomaticPortForwarding extends Disposable {
 		readonly hostService: IHostService,
 		readonly logService: ILogService,
 		readonly contextKeyService: IContextKeyService,
-		readonly privilegedOnly: () => boolean
+		readonly privilegedOnly: () => boolean,
+		// When true, no auto-forward toast is shown — the embedder is
+		// expected to surface forwarded ports through its own UI (the
+		// agents workbench shows a globe button on the titlebar). The
+		// default toast links to the Ports panel via
+		// `command:tunnelView.focus`, which the agents workbench does not
+		// host.
+		readonly suppressNotifications: boolean = false
 	) {
 		super();
 		this.notifier = new OnAutoForwardedAction(notificationService, remoteExplorerService, openerService, externalOpenerService, tunnelService, hostService, logService, contextKeyService);
@@ -627,7 +634,7 @@ class OutputAutomaticPortForwarding extends Disposable {
 				return;
 			}
 			const forwarded = await this.remoteExplorerService.forward({ remote: localUrl, source: AutoTunnelSource }, attributes ?? null);
-			if (forwarded && (typeof forwarded !== 'string')) {
+			if (forwarded && (typeof forwarded !== 'string') && !this.suppressNotifications) {
 				this.notifier.doAction([forwarded]);
 			}
 		}));
