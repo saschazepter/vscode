@@ -1234,24 +1234,29 @@
 				"name": "copilot_sessionStoreSql",
 				"displayName": "Session Store SQL",
 				"toolReferenceName": "sessionStoreSql",
+				"when": "github.copilot.sessionSearch.enabled",
 				"userDescription": "Query your Copilot session history using SQL",
-				"modelDescription": "Execute read-only SQL queries against the global session store containing history from ALL past coding sessions. Use this proactively when the user asks about:\n- What they've worked on recently or in the past\n- Prior approaches to similar problems\n- Project history and file changes\n- Sessions linked to PRs, issues, or commits\n- Temporal queries ('what was I doing yesterday?')\n\nSupports SQLite SQL including JOINs, FTS5 MATCH queries, aggregations, and subqueries.\n\n**Only one query per call — do not combine multiple statements with semicolons.**\n\nSchema:\n- sessions — id, cwd, repository, branch, summary, created_at, updated_at\n- turns — session_id, turn_index, user_message, assistant_response, timestamp\n- session_files — session_id, file_path, tool_name (edit/create), turn_index\n- session_refs — session_id, ref_type (commit/pr/issue), ref_value, turn_index\n- search_index — FTS5 virtual table (content, session_id, source_type). Use WHERE search_index MATCH 'query' for full-text search.",
+				"modelDescription": "Interact with the global session store containing history from ALL past coding sessions.\n\nSupports three actions via the `action` parameter:\n\n**action: 'query' (default)** — Execute a read-only SQL query. Use this proactively when the user asks about what they've worked on, prior approaches, project history, sessions linked to PRs/issues/commits, or temporal queries ('what was I doing yesterday?'). Supports SQLite SQL including JOINs, FTS5 MATCH queries, aggregations, and subqueries. Only one query per call — do not combine multiple statements with semicolons.\n\nSchema:\n- sessions — id, cwd, repository, branch, summary, agent_name, agent_description, created_at, updated_at\n- turns — session_id, turn_index, user_message, assistant_response, timestamp\n- session_files — session_id, file_path, tool_name (edit/create), turn_index\n- session_refs — session_id, ref_type (commit/pr/issue), ref_value, turn_index\n- search_index — FTS5 virtual table (content, session_id, source_type). Use WHERE search_index MATCH 'query' for full-text search.\n\n**action: 'standup'** — Pre-fetches last 24 hours of sessions, turns, files, and refs (merging local and cloud data). Returns a formatted data blob ready for standup summarisation. No `query` parameter needed.\n\n**action: 'reindex'** — Rebuilds the local session store by re-reading debug logs from disk. Returns before/after stats. No `query` parameter needed.",
 				"tags": [],
 				"canBeReferencedInPrompt": false,
 				"inputSchema": {
 					"type": "object",
 					"properties": {
+						"action": {
+							"type": "string",
+							"enum": ["query", "standup", "reindex"],
+							"description": "The action to perform. 'query' (default) executes a SQL query. 'standup' pre-fetches last 24h session data for standup reports. 'reindex' rebuilds the local session index."
+						},
 						"query": {
 							"type": "string",
-							"description": "A single read-only SQL query to execute. Supports SELECT, WITH, JOINs, aggregations, and FTS5 MATCH. Only one statement per call — do not combine multiple queries with semicolons."
+							"description": "A single read-only SQL query to execute. Required when action is 'query'. Supports SELECT, WITH, JOINs, aggregations, and FTS5 MATCH. Only one statement per call — do not combine multiple queries with semicolons."
 						},
 						"description": {
 							"type": "string",
-							"description": "A 2-5 word summary of what this query does (e.g. 'Recent sessions overview', 'Find PR sessions')."
+							"description": "A 2-5 word summary of what this call does (e.g. 'Recent sessions overview', 'Generate standup', 'Reindex sessions')."
 						}
 					},
 					"required": [
-						"query",
 						"description"
 					]
 				}
@@ -1556,26 +1561,6 @@
 					{
 						"name": "compact",
 						"description": "%copilot.agent.compact.description%"
-					},
-					{
-						"name": "chronicle",
-						"description": "%copilot.chronicle.description%",
-						"when": "github.copilot.sessionSearch.enabled"
-					},
-					{
-						"name": "chronicle:standup",
-						"description": "%copilot.chronicle.standup.description%",
-						"when": "github.copilot.sessionSearch.enabled"
-					},
-					{
-						"name": "chronicle:tips",
-						"description": "%copilot.chronicle.tips.description%",
-						"when": "github.copilot.sessionSearch.enabled"
-					},
-					{
-						"name": "chronicle:reindex",
-						"description": "%copilot.chronicle.reindex.description%",
-						"when": "github.copilot.sessionSearch.enabled"
 					},
 					{
 						"name": "explain",
@@ -6450,6 +6435,13 @@
 			},
 			{
 				"path": "./assets/prompts/skills/create-hook/SKILL.md",
+				"sessionTypes": [
+					"local"
+				]
+			},
+			{
+				"path": "./assets/prompts/skills/chronicle/SKILL.md",
+				"when": "github.copilot.sessionSearch.enabled",
 				"sessionTypes": [
 					"local"
 				]
