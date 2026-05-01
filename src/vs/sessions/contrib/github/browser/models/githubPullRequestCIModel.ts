@@ -4,14 +4,37 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
-import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, ReferenceCollection, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { IObservable, observableValue } from '../../../../../base/common/observable.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { GitHubCIOverallStatus, IGitHubCICheck } from '../../common/types.js';
+import { GitHubApiClient } from '../githubApiClient.js';
 import { computeOverallCIStatus, GitHubPRCIFetcher } from '../fetchers/githubPRCIFetcher.js';
 
 const LOG_PREFIX = '[GitHubPullRequestCIModel]';
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
+
+export class GitHubPullRequestCIModelReferenceCollection extends ReferenceCollection<GitHubPullRequestCIModel> {
+	private readonly _fetcher: GitHubPRCIFetcher;
+
+	constructor(
+		apiClient: GitHubApiClient,
+		@ILogService private readonly _logService: ILogService
+	) {
+		super();
+		this._fetcher = new GitHubPRCIFetcher(apiClient);
+	}
+
+	protected override createReferencedObject(_key: string, owner: string, repo: string, headSha: string): GitHubPullRequestCIModel {
+		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][createReferencedObject] Creating CI model for ${_key}`);
+		return new GitHubPullRequestCIModel(owner, repo, headSha, this._fetcher, this._logService);
+	}
+
+	protected override destroyReferencedObject(_key: string, object: GitHubPullRequestCIModel): void {
+		this._logService.trace(`[GitHubPullRequestCIModelReferenceCollection][destroyReferencedObject] Disposing CI model for ${_key}`);
+		object.dispose();
+	}
+}
 
 /**
  * Reactive model for CI check status on a pull request head ref.

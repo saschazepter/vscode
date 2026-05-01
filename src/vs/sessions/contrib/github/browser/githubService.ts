@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableMap } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, IReference } from '../../../../base/common/lifecycle.js';
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IGitHubChangedFile } from '../common/types.js';
@@ -11,10 +11,10 @@ import { GitHubApiClient } from './githubApiClient.js';
 import { GitHubRepositoryFetcher } from './fetchers/githubRepositoryFetcher.js';
 import { GitHubPRFetcher } from './fetchers/githubPRFetcher.js';
 import { GitHubPRCIFetcher } from './fetchers/githubPRCIFetcher.js';
-import { GitHubRepositoryModel } from './models/githubRepositoryModel.js';
-import { GitHubPullRequestModel } from './models/githubPullRequestModel.js';
-import { GitHubPullRequestReviewThreadsModel } from './models/githubPullRequestReviewThreadsModel.js';
-import { GitHubPullRequestCIModel } from './models/githubPullRequestCIModel.js';
+import { GitHubRepositoryModel, GitHubRepositoryModelReferenceCollection } from './models/githubRepositoryModel.js';
+import { GitHubPullRequestModel, GitHubPullRequestModelReferenceCollection } from './models/githubPullRequestModel.js';
+import { GitHubPullRequestReviewThreadsModel, GitHubPullRequestReviewThreadsModelReferenceCollection } from './models/githubPullRequestReviewThreadsModel.js';
+import { GitHubPullRequestCIModel, GitHubPullRequestCIModelReferenceCollection } from './models/githubPullRequestCIModel.js';
 import { GitHubChangesFetcher } from './fetchers/githubChangesFetcher.js';
 import { getPullRequestKey } from '../common/utils.js';
 
@@ -22,10 +22,30 @@ export interface IGitHubService {
 	readonly _serviceBrand: undefined;
 
 	/**
+	 * Get a reference to a reactive model for a GitHub repository.
+	 */
+	createRepositoryModelReference(owner: string, repo: string): IReference<GitHubRepositoryModel>;
+
+	/**
 	 * Get or create a reactive model for a GitHub repository.
 	 * The model is cached by owner/repo key and disposed when the service is disposed.
 	 */
 	getRepository(owner: string, repo: string): GitHubRepositoryModel;
+
+	/**
+	 * Get a reference to a reactive model for a GitHub pull request.
+	 */
+	createPullRequestModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestModel>;
+
+	/**
+	 * Get a reference to a reactive model for review threads on a GitHub pull request.
+	 */
+	createPullRequestReviewThreadsModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestReviewThreadsModel>;
+
+	/**
+	 * Get a reference to a reactive model for CI checks on a pull request head SHA.
+	 */
+	createPullRequestCIModelReference(owner: string, repo: string, prNumber: number, headSha: string): IReference<GitHubPullRequestCIModel>;
 
 	/**
 	 * Get or create a reactive model for a GitHub pull request.
@@ -75,6 +95,11 @@ export class GitHubService extends Disposable implements IGitHubService {
 	private readonly _pullRequestReviewThreads = this._register(new DisposableMap<string, GitHubPullRequestReviewThreadsModel>());
 	private readonly _ciModels = this._register(new DisposableMap<string, DisposableMap<string, GitHubPullRequestCIModel>>());
 
+	private readonly _repositoryReferences: GitHubRepositoryModelReferenceCollection;
+	private readonly _pullRequestReferences: GitHubPullRequestModelReferenceCollection;
+	private readonly _pullRequestReviewThreadsReferences: GitHubPullRequestReviewThreadsModelReferenceCollection;
+	private readonly _pullRequestCIReferences: GitHubPullRequestCIModelReferenceCollection;
+
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
@@ -87,6 +112,11 @@ export class GitHubService extends Disposable implements IGitHubService {
 		this._changesFetcher = new GitHubChangesFetcher(this._apiClient);
 		this._prFetcher = new GitHubPRFetcher(this._apiClient);
 		this._ciFetcher = new GitHubPRCIFetcher(this._apiClient);
+
+		this._repositoryReferences = instantiationService.createInstance(GitHubRepositoryModelReferenceCollection, this._apiClient);
+		this._pullRequestReferences = instantiationService.createInstance(GitHubPullRequestModelReferenceCollection, this._apiClient);
+		this._pullRequestReviewThreadsReferences = instantiationService.createInstance(GitHubPullRequestReviewThreadsModelReferenceCollection, this._apiClient);
+		this._pullRequestCIReferences = instantiationService.createInstance(GitHubPullRequestCIModelReferenceCollection, this._apiClient);
 	}
 
 	getRepository(owner: string, repo: string): GitHubRepositoryModel {
@@ -98,6 +128,22 @@ export class GitHubService extends Disposable implements IGitHubService {
 			this._repositories.set(key, model);
 		}
 		return model;
+	}
+
+	createRepositoryModelReference(owner: string, repo: string): IReference<GitHubRepositoryModel> {
+		return this._repositoryReferences.acquire(`${owner}/${repo}`, owner, repo);
+	}
+
+	createPullRequestModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestModel> {
+		return this._pullRequestReferences.acquire(getPullRequestKey(owner, repo, prNumber), owner, repo, prNumber);
+	}
+
+	createPullRequestReviewThreadsModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestReviewThreadsModel> {
+		return this._pullRequestReviewThreadsReferences.acquire(getPullRequestKey(owner, repo, prNumber), owner, repo, prNumber);
+	}
+
+	createPullRequestCIModelReference(owner: string, repo: string, prNumber: number, headSha: string): IReference<GitHubPullRequestCIModel> {
+		return this._pullRequestCIReferences.acquire(`${getPullRequestKey(owner, repo, prNumber)}/${headSha}`, owner, repo, headSha);
 	}
 
 	getPullRequest(owner: string, repo: string, prNumber: number): GitHubPullRequestModel {
