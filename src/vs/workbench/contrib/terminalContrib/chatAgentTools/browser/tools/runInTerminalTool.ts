@@ -115,7 +115,8 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'',
 		'Async Mode:',
 		'- Use mode=async ONLY for processes that should keep running while you do other work (servers, watchers, dev daemons)',
-		'- For one-shot long-running commands where you have nothing to do until they finish (package installs, builds, downloads, test suites), use mode=sync with a generous timeout (e.g. 600000 / 10 min for installs, longer for big builds) so the command can complete before your turn ends',
+		'- For one-shot long-running commands where you have nothing to do until they finish (package installs, builds, downloads, test suites), use mode=sync with timeout=0 so the command can run to completion',
+		'- If you need a safety cap, use a large timeout (e.g. 600000 for installs, longer for big builds)',
 		'- Returns a terminal ID for checking status and runtime later',
 		'- Use Start-Job for background PowerShell jobs',
 		'',
@@ -202,7 +203,8 @@ Program Execution:
 
 Async Mode:
 - Use mode=async ONLY for processes that should keep running while you do other work (servers, watchers, dev daemons)
-- For one-shot long-running commands where you have nothing to do until they finish (package installs, builds, downloads, test suites), use mode=sync with a generous timeout (e.g. 600000 / 10 min for installs, longer for big builds) so the command can complete before your turn ends
+- For one-shot long-running commands where you have nothing to do until they finish (package installs, builds, downloads, test suites), use mode=sync with timeout=0 so the command can run to completion
+- If you need a safety cap, use a large timeout (e.g. 600000 for installs, longer for big builds)
 - Returns a terminal ID for checking status and runtime later
 
 Use ${TerminalToolId.SendToTerminal} to send commands or input to a terminal session.`];
@@ -325,7 +327,7 @@ export async function createRunInTerminalToolData(
 		toolReferenceName: TOOL_REFERENCE_NAME,
 		legacyToolReferenceFullNames: LEGACY_TOOL_REFERENCE_FULL_NAMES,
 		displayName: localize('runInTerminalTool.displayName', 'Run in Terminal'),
-		modelDescription: `${modelDescription}\n\nExecution mode:\n- mode='sync': wait for completion (optionally capped by timeout); if still running when timeout elapses, return with a terminal ID.\n- mode='async': wait for an initial idle/output signal, then return with terminal output snapshot and ID. Timeout caps how long to wait for the initial idle/output signal.\n- Prefer mode='sync' for commands that will prompt for interactive input (e.g., npm init, interactive installers, configuration wizards).\n\nTimeout parameter: For one-shot long-running commands, set a generous timeout as a safety net (e.g. 600000 for installs, longer for big builds). Omit timeout only for processes that should run indefinitely (servers, daemons). If the timeout elapses, you get a terminal ID and can check output later.\n\nTerminal notifications: When an async command finishes or a sync command times out, you will be automatically notified on your next turn with the exit code and terminal output. You will also be notified if the terminal needs input. Do NOT poll or sleep to wait for completion.`,
+		modelDescription: `${modelDescription}\n\nExecution mode:\n- mode='sync': wait for completion. Sync mode is always enforced with timeout=0 (no timeout).\n- mode='async': wait for an initial idle/output signal, then return with terminal output snapshot and ID. Timeout caps how long to wait for the initial idle/output signal.\n- Prefer mode='sync' for commands that will prompt for interactive input (e.g., npm init, interactive installers, configuration wizards).\n\nTimeout parameter: In mode='sync', timeout is always forced to 0 (no timeout), and any provided timeout value is ignored. In mode='async', use timeout as needed to cap how long the tool waits for the initial idle/output signal. A timeout does not mean the command failed or was killed; it only means the tool returned early with a terminal ID so you can keep monitoring output.\n\nTerminal notifications: When an async command finishes or a sync command times out, you will be automatically notified on your next turn with the exit code and terminal output. You will also be notified if the terminal needs input. Do NOT poll or sleep to wait for completion.`,
 		userDescription: localize('runInTerminalTool.userDescription', 'Run commands in the terminal'),
 		source: ToolDataSource.Internal,
 		icon: Codicon.terminal,
@@ -338,7 +340,7 @@ export async function createRunInTerminalToolData(
 					type: 'string',
 					enum: ['sync', 'async'],
 					enumDescriptions: [
-						'Wait for completion up to timeout, then return with collected output. If still running at timeout, the terminal session continues in the background.',
+						'Wait for completion with timeout forced to 0 (no timeout).',
 						'Wait for an initial idle/output signal, then return with a terminal ID and output snapshot while the session may continue running.'
 					],
 					description: 'Execution mode for this command.'
@@ -349,7 +351,7 @@ export async function createRunInTerminalToolData(
 				},
 				timeout: {
 					type: 'number',
-					description: 'Optional hard cap in milliseconds on how long the tool tracks the command before returning. Omit to let the command run to completion (recommended for package installs, builds, and long-running scripts). Use 0 to explicitly indicate no timeout.',
+					description: 'Optional hard cap in milliseconds on how long the tool tracks the command before returning. In mode=sync, timeout is forced to 0 and any provided value is ignored. In mode=async, set this to cap wait time for the initial idle/output signal.',
 				},
 			},
 			required: ['command', 'explanation', 'goal', 'mode']
@@ -1166,12 +1168,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				}]
 			};
 		}
-		if (executionOptions.mode === 'sync' && args.timeout === undefined) {
-			// Timeout is optional for mode=sync: when omitted, the tool waits for
-			// the command to complete with no hard cap. Models frequently pick
-			// timeouts that are too short for package installs, builds, and
-			// long-running scripts, which causes the command to be moved to the
-			// background unnecessarily.
+		if (executionOptions.mode === 'sync') {
+			// Sync mode is intentionally uncapped to avoid premature early returns.
+			// Any model-provided timeout is ignored.
 			args.timeout = 0;
 		}
 
