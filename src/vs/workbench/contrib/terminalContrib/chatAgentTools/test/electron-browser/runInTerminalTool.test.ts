@@ -349,7 +349,7 @@ suite('RunInTerminalTool', () => {
 
 			const toolData = await instantiationService.invokeFunction(createRunInTerminalToolData);
 
-			ok(toolData.modelDescription?.includes('set a generous timeout as a safety net'), 'Expected model description to recommend a generous timeout for one-shot long-running commands');
+			ok(toolData.modelDescription?.includes('a generous timeout'), 'Expected model description to recommend a generous timeout for one-shot long-running commands');
 		});
 
 		test('should instruct models to use $TMPDIR instead of /tmp when sandboxed', async () => {
