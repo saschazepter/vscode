@@ -47,7 +47,7 @@ import { ChatModeService, IChatMode, IChatModeService } from '../common/chatMode
 import { ChatResponseResourceFileSystemProvider, ChatResponseResourceWorkbenchContribution, IChatResponseResourceFileSystemProvider } from '../common/widget/chatResponseResourceFileSystemProvider.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { ChatService } from '../common/chatService/chatServiceImpl.js';
-import { IChatSessionsService } from '../common/chatSessionsService.js';
+import { IChatSessionsService, localChatSessionType } from '../common/chatSessionsService.js';
 import { ChatSlashCommandService, IChatSlashCommandService } from '../common/participants/chatSlashCommands.js';
 import { ChatArtifactsService, IChatArtifactsService } from '../common/tools/chatArtifactsService.js';
 import { ChatTodoListService, IChatTodoListService } from '../common/tools/chatTodoListService.js';
@@ -1990,7 +1990,11 @@ class ChatAgentActionsContribution extends Disposable implements IWorkbenchContr
 		this._store.add(this._modeActionDisposables);
 
 		// Register actions for existing custom modes (avoiding name collisions)
-		const { builtin, custom } = this.chatModeService.getModes();
+		// NOTE: ChatAgentActionsContribution registers global keybinding actions for
+		// custom modes. There is no per-session context here, so we default to the
+		// local session type. Custom agents from non-local session types will not
+		// have keybinding actions registered.
+		const { builtin, custom } = this.chatModeService.getModes(localChatSessionType);
 		const currentModeIds = getCustomModesWithUniqueNames(builtin, custom);
 		for (const mode of custom) {
 			if (currentModeIds.has(mode.id)) {
@@ -2000,7 +2004,7 @@ class ChatAgentActionsContribution extends Disposable implements IWorkbenchContr
 
 		// Listen for custom mode changes by tracking snapshots
 		this._register(this.chatModeService.onDidChangeChatModes(() => {
-			const { builtin, custom } = this.chatModeService.getModes();
+			const { builtin, custom } = this.chatModeService.getModes(localChatSessionType);
 			const currentModeIds = getCustomModesWithUniqueNames(builtin, custom);
 
 			// Remove modes that no longer exist and those replaced by modes later in the list with same name

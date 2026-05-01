@@ -238,7 +238,9 @@ abstract class OpenChatGlobalAction extends Action2 {
 			return;
 		}
 
-		const switchToMode = (opts?.mode ? chatModeService.getModes().findModeByName(opts?.mode) : undefined) ?? this.mode;
+		const sessionResource = chatWidget.viewModel?.model.sessionResource;
+		const sessionType = sessionResource ? getChatSessionType(sessionResource) : localChatSessionType;
+		const switchToMode = (opts?.mode ? chatModeService.getModes(sessionType).findModeByName(opts?.mode) : undefined) ?? this.mode;
 		if (switchToMode) {
 			await this.handleSwitchToMode(switchToMode, chatWidget, instaService, commandService);
 		}

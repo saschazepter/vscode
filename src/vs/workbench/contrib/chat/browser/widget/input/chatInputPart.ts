@@ -83,7 +83,7 @@ import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { ChatRequestVariableSet, getImageAttachmentLimit, IChatRequestVariableEntry, isBrowserViewVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isStringVariableEntry, OmittedState } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatMode, getModeNameForTelemetry, IChatMode, IChatModeService } from '../../../common/chatModes.js';
 import { IChatFollowup, IChatPlanReview, IChatQuestionCarousel, IChatToolInvocation } from '../../../common/chatService/chatService.js';
-import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, localChatSessionType } from '../../../common/chatSessionsService.js';
+import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, SessionType } from '../../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
 import { IChatEditingSession, IModifiedFileEntry, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
@@ -976,7 +976,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			const defaultMode = rawDefaultMode.trim();
 			if (defaultMode) {
 				const defaultModeLower = defaultMode.toLowerCase();
-				const modes = this.chatModeService.getModes();
+				const modes = this.chatModeService.getModes(this.getCurrentSessionType() ?? SessionType.Local);
 				const resolved = modes.findModeById(defaultMode)
 					?? modes.findModeByName(defaultMode)
 					?? modes.custom.find(m => m.name.get().toLowerCase() === defaultModeLower);
@@ -1129,7 +1129,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			return;
 		}
 
-		const modes = this.chatModeService.getModes();
+		const modes = this.chatModeService.getModes(this.getCurrentSessionType() ?? SessionType.Local);
 		const mode2 = modes.findModeById(mode) ??
 			modes.findModeByName(mode) ??
 			modes.findModeById(ChatModeKind.Agent) ??
@@ -1377,7 +1377,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	private validateCurrentChatMode() {
 		const currentMode = this._currentModeObservable.get();
-		const validMode = this.chatModeService.getModes().findModeById(currentMode.id);
+		const validMode = this.chatModeService.getModes(this.getCurrentSessionType() ?? SessionType.Local).findModeById(currentMode.id);
 		const isAgentModeEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentEnabled);
 		if (!validMode) {
 			this.setChatMode(isAgentModeEnabled ? ChatModeKind.Agent : ChatModeKind.Ask);
@@ -1932,7 +1932,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * Local sessions unlock from coding agent mode, while remote/cloud sessions lock to coding agent mode.
 	 */
 	private updateWidgetLockStateFromSessionType(sessionType: string): void {
-		if (sessionType === localChatSessionType) {
+		if (sessionType === SessionType.Local) {
 			this._widget?.unlockFromCodingAgent();
 			return;
 		}
@@ -2333,19 +2333,19 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						getModels: () => this.getModels(),
 						useGroupedModelPicker: () => {
 							const sessionType = this.getCurrentSessionType();
-							return !sessionType || sessionType === localChatSessionType;
+							return !sessionType || sessionType === SessionType.Local;
 						},
 						showManageModelsAction: () => {
 							const sessionType = this.getCurrentSessionType();
-							return !sessionType || sessionType === localChatSessionType;
+							return !sessionType || sessionType === SessionType.Local;
 						},
 						showUnavailableFeatured: () => {
 							const sessionType = this.getCurrentSessionType();
-							return !sessionType || sessionType === localChatSessionType;
+							return !sessionType || sessionType === SessionType.Local;
 						},
 						showFeatured: () => {
 							const sessionType = this.getCurrentSessionType();
-							return !sessionType || sessionType === localChatSessionType;
+							return !sessionType || sessionType === SessionType.Local;
 						},
 					};
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, itemDelegate, pickerOptions);

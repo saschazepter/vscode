@@ -36,6 +36,7 @@ import { IToggleChatModeArgs, ToggleAgentModeActionId } from '../../actions/chat
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IWorkbenchAssignmentService } from '../../../../../services/assignment/common/assignmentService.js';
+import { SessionType } from '../../../common/chatSessionsService.js';
 
 export interface IModePickerDelegate {
 	readonly currentMode: IObservable<IChatMode>;
@@ -162,10 +163,10 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 		};
 
 		const getActionsForCustomAgentTarget = (currentTarget: Target): IActionWidgetDropdownAction[] => {
-			const modes = chatModeService.getModes();
 			const currentMode = delegate.currentMode.get();
 			const sessionResource = delegate.sessionResource();
 			const currentSessionType = sessionResource ? getChatSessionType(sessionResource) : undefined;
+			const modes = chatModeService.getModes(currentSessionType ?? SessionType.Local);
 			const filteredCustomModes = modes.custom.filter(mode => {
 				const target = mode.target.get();
 				if (target !== currentTarget && target !== Target.Undefined) {
@@ -195,11 +196,11 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const actionProvider: IActionWidgetDropdownActionProvider = {
 			getActions: () => {
-				const modes = chatModeService.getModes();
 				const currentMode = delegate.currentMode.get();
-				const agentMode = modes.builtin.find(mode => mode.id === ChatMode.Agent.id);
 				const sessionResource = delegate.sessionResource();
-				const currentSessionType = sessionResource ? getChatSessionType(sessionResource) : undefined;
+				const currentSessionType = sessionResource ? getChatSessionType(sessionResource) : SessionType.Local;
+				const modes = chatModeService.getModes(currentSessionType);
+				const agentMode = modes.builtin.find(mode => mode.id === ChatMode.Agent.id);
 
 				const otherBuiltinModes = modes.builtin.filter(mode => {
 					return mode.id !== ChatMode.Agent.id && shouldShowBuiltInMode(mode, assignments.get(), agentModeDisabledViaPolicy);

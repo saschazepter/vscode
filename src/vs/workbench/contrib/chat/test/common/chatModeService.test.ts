@@ -80,10 +80,14 @@ suite('ChatModeService', () => {
 		instantiationService.stub(ICustomizationHarnessService, harnessService);
 
 		chatModeService = testDisposables.add(instantiationService.createInstance(ChatModeService));
+		// Pre-seed the 'local' ChatModes instance so subsequent custom-agent change
+		// events refresh it (instances are created lazily on first getModes call).
+		chatModeService.getModes('local');
+		await timeout(0);
 	});
 
 	test('should return builtin modes', () => {
-		const modes = chatModeService.getModes();
+		const modes = chatModeService.getModes('local');
 
 		assert.strictEqual(modes.builtin.length, 3);
 		assert.strictEqual(modes.custom.length, 0);
@@ -99,12 +103,12 @@ suite('ChatModeService', () => {
 	test('should adjust builtin modes based on tools agent availability', () => {
 		// Agent mode should always be present regardless of tools agent availability
 		chatAgentService.setHasToolsAgent(true);
-		let agents = chatModeService.getModes();
+		let agents = chatModeService.getModes('local');
 		assert.ok(agents.builtin.find(agent => agent.id === ChatModeKind.Agent));
 
 		// Without tools agent - Agent mode should not be present
 		chatAgentService.setHasToolsAgent(false);
-		agents = chatModeService.getModes();
+		agents = chatModeService.getModes('local');
 		assert.strictEqual(agents.builtin.find(agent => agent.id === ChatModeKind.Agent), undefined);
 
 		// Ask and Edit modes should always be present
@@ -113,14 +117,14 @@ suite('ChatModeService', () => {
 	});
 
 	test('should find builtin modes by id', () => {
-		const agentMode = chatModeService.getModes().findModeById(ChatModeKind.Agent);
+		const agentMode = chatModeService.getModes('local').findModeById(ChatModeKind.Agent);
 		assert.ok(agentMode);
 		assert.strictEqual(agentMode.id, ChatMode.Agent.id);
 		assert.strictEqual(agentMode.kind, ChatModeKind.Agent);
 	});
 
 	test('should return undefined for non-existent mode', () => {
-		const mode = chatModeService.getModes().findModeById('non-existent-mode');
+		const mode = chatModeService.getModes('local').findModeById('non-existent-mode');
 		assert.strictEqual(mode, undefined);
 	});
 
@@ -142,7 +146,7 @@ suite('ChatModeService', () => {
 		// Wait for the service to refresh
 		await timeout(0);
 
-		const modes = chatModeService.getModes();
+		const modes = chatModeService.getModes('local');
 		assert.strictEqual(modes.custom.length, 1);
 
 		const testMode = modes.custom[0];
@@ -204,7 +208,7 @@ suite('ChatModeService', () => {
 		// Wait for the service to refresh
 		await timeout(0);
 
-		const foundMode = chatModeService.getModes().findModeById(customMode.uri.toString());
+		const foundMode = chatModeService.getModes('local').findModeById(customMode.uri.toString());
 		assert.ok(foundMode);
 		assert.strictEqual(foundMode.id, customMode.uri.toString());
 		assert.strictEqual(foundMode.name.get(), customMode.name);
@@ -229,7 +233,7 @@ suite('ChatModeService', () => {
 		promptsService.setCustomModes([initialMode]);
 		await timeout(0);
 
-		const initialModes = chatModeService.getModes();
+		const initialModes = chatModeService.getModes('local');
 		const initialCustomMode = initialModes.custom[0];
 		assert.strictEqual(initialCustomMode.description.get(), 'Initial description');
 		// Trigger heavy-detail resolution so the re-resolve path runs on update below.
@@ -247,7 +251,7 @@ suite('ChatModeService', () => {
 		promptsService.setCustomModes([updatedMode]);
 		await timeout(0);
 
-		const updatedModes = chatModeService.getModes();
+		const updatedModes = chatModeService.getModes('local');
 		const updatedCustomMode = updatedModes.custom[0];
 
 		// The instance should be the same (reused)
@@ -292,14 +296,14 @@ suite('ChatModeService', () => {
 		promptsService.setCustomModes([mode1, mode2]);
 		await timeout(0);
 
-		let modes = chatModeService.getModes();
+		let modes = chatModeService.getModes('local');
 		assert.strictEqual(modes.custom.length, 2);
 
 		// Remove one mode
 		promptsService.setCustomModes([mode1]);
 		await timeout(0);
 
-		modes = chatModeService.getModes();
+		modes = chatModeService.getModes('local');
 		assert.strictEqual(modes.custom.length, 1);
 		assert.strictEqual(modes.custom[0].id, mode1.uri.toString());
 	});

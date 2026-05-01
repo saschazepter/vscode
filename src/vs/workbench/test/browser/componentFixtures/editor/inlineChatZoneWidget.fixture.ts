@@ -225,7 +225,7 @@ function renderInlineChatZoneWidget({ container, disposableStore, theme }: Compo
 			}());
 			reg.defineInstance(IChatModeService, new class extends mock<IChatModeService>() {
 				override readonly onDidChangeChatModes = Event.None;
-				override getModes() { return { builtin: [], custom: [], findModeById: () => undefined, findModeByName: () => undefined }; }
+				override getModes(_sessionType: string) { return { builtin: [], custom: [], findModeById: () => undefined, findModeByName: () => undefined }; }
 			}());
 			reg.defineInstance(IChatSessionsService, new class extends mock<IChatSessionsService>() {
 				override getAllChatSessionContributions() { return []; }

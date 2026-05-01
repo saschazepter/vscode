@@ -60,7 +60,7 @@ import { chatAgentLeader, ChatRequestAgentPart, ChatRequestDynamicVariablePart, 
 import { ChatRequestParser } from '../../common/requestParser/chatRequestParser.js';
 import { getDynamicVariablesForWidget, getSelectedToolAndToolSetsForWidget } from '../attachments/chatVariables.js';
 import { ChatRequestQueueKind, ChatSendResult, IChatLocationData, IChatSendRequestOptions, IChatService } from '../../common/chatService/chatService.js';
-import { IChatSessionsService } from '../../common/chatSessionsService.js';
+import { IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
 import { IChatSlashCommandService } from '../../common/participants/chatSlashCommands.js';
 import { IChatTodoListService } from '../../common/tools/chatTodoListService.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isWorkspaceVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../common/attachments/chatVariableEntries.js';
@@ -359,7 +359,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					mode: this.input.currentModeKind,
 					attachmentCapabilities: this.attachmentCapabilities,
 					forcedAgent: this._lockedAgent?.id ? this.chatAgentService.getAgent(this._lockedAgent.id) : undefined,
-					sessionType: getChatSessionType(this.viewModel.model.sessionResource)
+					sessionType: getChatSessionType(this.viewModel.sessionResource)
 				});
 			this._onDidChangeParsedInput.fire();
 		}
@@ -1262,7 +1262,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return;
 		}
 
-		const items = this.viewModel?.getItems() ?? [];
+		const viewModel = this.viewModel;
+		if (!viewModel) {
+			return;
+		}
+
+		const items = viewModel.getItems();
 		if (!items.length) {
 			return;
 		}
@@ -1280,9 +1285,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const modeInfo = lastItem.model.request?.modeInfo;
 		let responseMode: IChatMode | undefined;
 		if (modeInfo?.modeInstructions?.name) {
-			responseMode = this.chatModeService.getModes().findModeByName(modeInfo.modeInstructions.name);
+			responseMode = this.chatModeService.getModes(getChatSessionType(viewModel.sessionResource)).findModeByName(modeInfo.modeInstructions.name);
 		} else if (modeInfo?.modeId) {
-			responseMode = this.chatModeService.getModes().findModeById(modeInfo.modeId);
+			responseMode = this.chatModeService.getModes(getChatSessionType(viewModel.sessionResource)).findModeById(modeInfo.modeId);
 		} else {
 			responseMode = this.input.currentModeObs.get();
 		}
@@ -1343,7 +1348,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// Log telemetry
 		const currentMode = this.input.currentModeObs.get();
-		const toMode = handoff.agent ? this.chatModeService.getModes().findModeByName(handoff.agent) : undefined;
+		const toMode = handoff.agent ? this.chatModeService.getModes(this.viewModel ? getChatSessionType(this.viewModel.model.sessionResource) : localChatSessionType).findModeByName(handoff.agent) : undefined;
 		this.telemetryService.publicLog2<ChatHandoffClickEvent, ChatHandoffClickClassification>('chat.handoffClicked', {
 			fromAgent: getModeNameForTelemetry(currentMode),
 			toAgent: agentId || (toMode ? getModeNameForTelemetry(toMode) : ''),
@@ -2891,7 +2896,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		// Find the mode object to get its kind
-		const agent = this.chatModeService.getModes().findModeByName(agentName);
+		const agent = this.chatModeService.getModes(this.viewModel ? getChatSessionType(this.viewModel.model.sessionResource) : localChatSessionType).findModeByName(agentName);
 		if (!agent) {
 			return false;
 		}

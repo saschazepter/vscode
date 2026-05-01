@@ -57,6 +57,7 @@ import { ChatSetupController } from './chatSetupController.js';
 import { GrowthSessionController, registerGrowthSession } from './chatSetupGrowthSession.js';
 import { AICodeActionsHelper, AINewSymbolNamesProvider, ChatCodeActionsProvider, SetupAgent } from './chatSetupProviders.js';
 import { ChatSetup } from './chatSetupRunner.js';
+import { getChatSessionType } from '../../common/model/chatUri.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
@@ -247,13 +248,20 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				const commandService = accessor.get(ICommandService);
 				const lifecycleService = accessor.get(ILifecycleService);
 				const configurationService = accessor.get(IConfigurationService);
+				const chatModeService = accessor.get(IChatModeService);
 
 				await context.update({ hidden: false });
 				configurationService.updateValue(ChatConfiguration.AIDisabled, false);
 
 				if (mode) {
 					const chatWidget = await widgetService.revealWidget();
-					chatWidget?.input.setChatMode(mode);
+					if (chatWidget?.viewModel) {
+						const sessionType = getChatSessionType(chatWidget?.viewModel.sessionResource);
+						const modeId = this.resolveAgentId(mode, sessionType, chatModeService);
+						if (modeId) {
+							chatWidget.input.setChatMode(modeId);
+						}
+					}
 				}
 
 				if (options?.inputValue) {
@@ -277,6 +285,21 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				}
 
 				return Boolean(success);
+			}
+
+			private resolveAgentId(agentParam: string, sessionType: string, chatModeService: IChatModeService): string | undefined {
+				// No widget context available — default to local session type.
+				const agents = chatModeService.getModes(sessionType);
+				const allAgents = [...agents.builtin, ...agents.custom];
+
+				const foundAgent = agents.findModeById(agentParam);
+				if (foundAgent) {
+					return foundAgent.id;
+				}
+
+				const nameLower = agentParam.toLowerCase();
+				const agentByName = allAgents.find(agent => agent.name.get().toLowerCase() === nameLower);
+				return agentByName?.id;
 			}
 		}
 
@@ -668,7 +691,6 @@ class ChatSetupExtensionUrlHandler implements IExtensionUrlHandlerOverride {
 		@IProductService private readonly productService: IProductService,
 		@ICommandService private readonly commandService: ICommandService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
-		@IChatModeService private readonly chatModeService: IChatModeService,
 	) { }
 
 	canHandleURL(url: URI): boolean {
@@ -685,23 +707,8 @@ class ChatSetupExtensionUrlHandler implements IExtensionUrlHandlerOverride {
 			return false;
 		}
 
-		const agentId = agentParam ? this.resolveAgentId(agentParam) : undefined;
-		await this.commandService.executeCommand(CHAT_SETUP_ACTION_ID, agentId, inputParam ? { inputValue: inputParam } : undefined);
+		await this.commandService.executeCommand(CHAT_SETUP_ACTION_ID, agentParam, inputParam ? { inputValue: inputParam } : undefined);
 		return true;
-	}
-
-	private resolveAgentId(agentParam: string): string | undefined {
-		const agents = this.chatModeService.getModes();
-		const allAgents = [...agents.builtin, ...agents.custom];
-
-		const foundAgent = allAgents.find(agent => agent.id === agentParam);
-		if (foundAgent) {
-			return foundAgent.id;
-		}
-
-		const nameLower = agentParam.toLowerCase();
-		const agentByName = allAgents.find(agent => agent.name.get().toLowerCase() === nameLower);
-		return agentByName?.id;
 	}
 }
 

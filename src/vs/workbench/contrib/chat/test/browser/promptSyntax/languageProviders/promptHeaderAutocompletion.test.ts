@@ -92,7 +92,7 @@ suite('PromptHeaderAutocompletion', () => {
 		});
 
 		instaService.stub(IChatModeService, {
-			getModes() {
+			getModes(_sessionType: string) {
 				return { builtin: [], custom: [], findModeById: () => undefined, findModeByName: () => undefined };
 			}
 		});

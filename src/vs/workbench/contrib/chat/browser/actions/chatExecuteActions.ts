@@ -33,7 +33,8 @@ import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../common
 import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { ILanguageModelToolsService } from '../../common/tools/languageModelToolsService.js';
 import { isInClaudeAgentsFolder } from '../../common/promptSyntax/config/promptFileLocations.js';
-import { IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
+import { IChatSessionsService, SessionType } from '../../common/chatSessionsService.js';
+import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IChatWidget, IChatWidgetService } from '../chat.js';
 import { getAgentSessionProvider, AgentSessionProviders } from '../agentSessions/agentSessions.js';
 import { getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
@@ -314,7 +315,7 @@ class ToggleChatModeAction extends Action2 {
 
 		const chatSession = widget.viewModel?.model;
 		const requestCount = chatSession?.getRequests().length ?? 0;
-		const modes = modeService.getModes();
+		const modes = modeService.getModes(chatSession ? getChatSessionType(chatSession.sessionResource) : SessionType.Local);
 		const switchToMode = (arg && (modes.findModeById(arg.modeId) || modes.findModeByName(arg.modeId))) ?? this.getNextMode(widget, requestCount, modeService);
 
 		const currentMode = widget.input.currentModeObs.get();
@@ -355,7 +356,8 @@ class ToggleChatModeAction extends Action2 {
 	}
 
 	private getNextMode(chatWidget: IChatWidget, requestCount: number, modeService: IChatModeService): IChatMode {
-		const modes = modeService.getModes();
+		const sessionResource = chatWidget.viewModel?.model.sessionResource;
+		const modes = modeService.getModes(sessionResource ? getChatSessionType(sessionResource) : SessionType.Local);
 		const flat = [
 			...modes.builtin.filter(mode => {
 				return mode.kind !== ChatModeKind.Edit || requestCount === 0;
@@ -628,7 +630,7 @@ export class OpenWorkspacePickerAction extends Action2 {
 					order: 0.6,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.inAgentSessionsWelcome,
-						ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType)
+						ChatContextKeys.chatSessionType.isEqualTo(SessionType.Local)
 					),
 					group: 'navigation',
 				},
@@ -1033,7 +1035,12 @@ interface IGetHandoffsArgs {
 	 * you want to retrieve. If omitted, all
 	 * handoffs from all agents and built-in modes are returned.
 	 */
-	sourceCustomAgent?: string;
+	readonly sourceCustomAgent?: string;
+
+	/**
+	 * Session type for which the agents should be requested. If ommited, SessinType.Local
+	 */
+	readonly sessionType?: string;
 }
 
 /**
@@ -1063,7 +1070,7 @@ class GetHandoffsAction extends Action2 {
 		const modeService = accessor.get(IChatModeService);
 		const arg = args.at(0) as IGetHandoffsArgs | undefined;
 
-		const { builtin, custom } = modeService.getModes();
+		const { builtin, custom } = modeService.getModes(arg?.sessionType ?? SessionType.Local);
 		let allModes: readonly IChatMode[] = [...builtin, ...custom];
 
 		if (arg?.sourceCustomAgent) {
@@ -1140,7 +1147,7 @@ class ExecuteHandoffAction extends Action2 {
 		} else {
 			widget = chatWidgetService.lastFocusedWidget;
 		}
-		if (!widget) {
+		if (!widget || !widget.viewModel) {
 			return { success: false, error: 'No chat widget found. Provide sessionResource or focus a chat widget.' };
 		}
 
@@ -1148,7 +1155,8 @@ class ExecuteHandoffAction extends Action2 {
 		let sourceMode: IChatMode | undefined;
 		if (arg.sourceCustomAgent) {
 			const filterName = arg.sourceCustomAgent.toLowerCase();
-			const { builtin, custom } = modeService.getModes();
+			const sessionResource = widget.viewModel.sessionResource;
+			const { builtin, custom } = modeService.getModes(getChatSessionType(sessionResource));
 			sourceMode = [...builtin, ...custom].find(m => m.name.get().toLowerCase() === filterName || m.id.toLowerCase() === filterName);
 		}
 		if (!sourceMode) {

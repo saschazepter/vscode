@@ -12,6 +12,7 @@ import { ITextModel } from '../../../../../../editor/common/model.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../languageModels.js';
 import { ILanguageModelToolsService } from '../../tools/languageModelToolsService.js';
 import { IChatModeService } from '../../chatModes.js';
+import { SessionType } from '../../chatSessionsService.js';
 import { getPromptsTypeForLanguageId, PromptsType, Target } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { Iterable } from '../../../../../../base/common/iterator.js';
@@ -575,7 +576,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 			case PromptHeaderAttributes.mode:
 				if (promptType === PromptsType.prompt) {
 					// Get all available agents (builtin + custom)
-					const agents = this.chatModeService.getModes();
+					const agents = this.chatModeService.getModes(SessionType.Local);
 					const suggestions: IValueEntry[] = [];
 					for (const agent of Iterable.concat(agents.builtin, agents.custom)) {
 						suggestions.push({ name: agent.name.get(), description: agent.label.get() });

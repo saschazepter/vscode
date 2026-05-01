@@ -35,7 +35,7 @@ export interface IChatModeService {
 
 	// TODO expose an observable list of modes
 	readonly onDidChangeChatModes: Event<void>;
-	getModes(): IChatModes;
+	getModes(sessionType: string): IChatModes;
 }
 
 export interface IChatModes {
@@ -54,14 +54,15 @@ export class ChatModeService extends Disposable implements IChatModeService {
 	private readonly _onDidChangeChatModes = this._register(new Emitter<void>());
 	public readonly onDidChangeChatModes = this._onDidChangeChatModes.event;
 
-	private readonly _chatModes: ChatModes;
+	// One ChatModes instance per session type, created lazily on first `getModes(sessionType)` call.
+	private readonly _chatModesMap = new Map<string, ChatModes>();
 
 	constructor(
-		@ICustomizationHarnessService customizationHarnessService: ICustomizationHarnessService,
+		@ICustomizationHarnessService private readonly customizationHarnessService: ICustomizationHarnessService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@ILogService logService: ILogService,
-		@IStorageService storageService: IStorageService,
+		@ILogService private readonly logService: ILogService,
+		@IStorageService private readonly storageService: IStorageService,
 		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super();
@@ -72,21 +73,17 @@ export class ChatModeService extends Disposable implements IChatModeService {
 		// Initialize the policy context key
 		this.updateAgentModePolicyContextKey();
 
-		this._chatModes = new ChatModes(
-			() => this.chatAgentService.hasToolsAgent || this.isAgentModeDisabledByPolicy(),
-			this.hasCustomModes,
-			customizationHarnessService,
-			storageService,
-			logService,
-		);
-
-		void this.refreshAndFire();
 		this._register(customizationHarnessService.onDidChangeCustomAgents(e => {
-			if (e.sessionType === customizationHarnessService.activeHarness.get()) {
-				void this.refreshAndFire();
+			const modes = this._chatModesMap.get(e.sessionType);
+			if (modes) {
+				void this.refreshAndFire(modes);
 			}
 		}));
-		this._register(storageService.onWillSaveState(() => this._chatModes.saveCachedModes()));
+		this._register(storageService.onWillSaveState(() => {
+			for (const modes of this._chatModesMap.values()) {
+				modes.saveCachedModes();
+			}
+		}));
 
 		// Listen for configuration changes that affect agent mode policy
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -106,13 +103,26 @@ export class ChatModeService extends Disposable implements IChatModeService {
 		}));
 	}
 
-	private async refreshAndFire(): Promise<void> {
-		await this._chatModes.refreshCustomPromptModes();
+	private async refreshAndFire(modes: ChatModes): Promise<void> {
+		await modes.refreshCustomPromptModes();
 		this._onDidChangeChatModes.fire();
 	}
 
-	getModes(): IChatModes {
-		return this._chatModes;
+	getModes(sessionType: string): IChatModes {
+		let modes = this._chatModesMap.get(sessionType);
+		if (!modes) {
+			modes = new ChatModes(
+				sessionType,
+				() => this.chatAgentService.hasToolsAgent || this.isAgentModeDisabledByPolicy(),
+				this.hasCustomModes,
+				this.customizationHarnessService,
+				this.storageService,
+				this.logService,
+			);
+			this._chatModesMap.set(sessionType, modes);
+			void this.refreshAndFire(modes);
+		}
+		return modes;
 	}
 
 	private updateAgentModePolicyContextKey(): void {
@@ -126,11 +136,12 @@ export class ChatModeService extends Disposable implements IChatModeService {
 
 export class ChatModes implements IChatModes {
 
-	private static readonly CUSTOM_MODES_STORAGE_KEY = 'chat.customModes';
+	private static readonly CUSTOM_MODES_STORAGE_KEY_PREFIX = 'chat.customModes';
 
 	private readonly _customModeInstances = new Map<string, CustomChatMode>();
 
 	constructor(
+		public readonly sessionType: string,
 		private readonly _isAgentModeEnabled: () => boolean,
 		private readonly _hasCustomModes: IContextKey<boolean>,
 		private readonly _customizationHarnessService: ICustomizationHarnessService,
@@ -138,6 +149,10 @@ export class ChatModes implements IChatModes {
 		private readonly _logService: ILogService,
 	) {
 		this.loadCachedModes();
+	}
+
+	private get storageKey(): string {
+		return `${ChatModes.CUSTOM_MODES_STORAGE_KEY_PREFIX}.${this.sessionType}`;
 	}
 
 	get builtin(): readonly IChatMode[] {
@@ -158,7 +173,7 @@ export class ChatModes implements IChatModes {
 
 	private loadCachedModes(): void {
 		try {
-			const cachedCustomModes = this._storageService.getObject(ChatModes.CUSTOM_MODES_STORAGE_KEY, StorageScope.WORKSPACE);
+			const cachedCustomModes = this._storageService.getObject(this.storageKey, StorageScope.WORKSPACE);
 			if (cachedCustomModes) {
 				this.deserializeCachedModes(cachedCustomModes);
 			}
@@ -214,7 +229,7 @@ export class ChatModes implements IChatModes {
 	saveCachedModes(): void {
 		try {
 			const modesToCache = Array.from(this._customModeInstances.values());
-			this._storageService.store(ChatModes.CUSTOM_MODES_STORAGE_KEY, modesToCache, StorageScope.WORKSPACE, StorageTarget.MACHINE);
+			this._storageService.store(this.storageKey, modesToCache, StorageScope.WORKSPACE, StorageTarget.MACHINE);
 		} catch (error) {
 			this._logService.warn('Failed to save cached custom agents', error);
 		}
@@ -225,8 +240,7 @@ export class ChatModes implements IChatModes {
 			// Enumerate via the harness service so we only get lightweight metadata
 			// (uri, name, description, target, visibility, sessionTypes). The
 			// expensive agent file parse is deferred to `mode.resolveDetails()`.
-			const sessionType = this._customizationHarnessService.activeHarness.get();
-			const items = await this._customizationHarnessService.getAgentCustomizationItems(sessionType, CancellationToken.None);
+			const items = await this._customizationHarnessService.getAgentCustomizationItems(this.sessionType, CancellationToken.None);
 
 			// Create a new set of mode instances, reusing existing ones where possible
 			const seenUris = new Set<string>();

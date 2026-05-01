@@ -116,7 +116,7 @@ export class ModePicker extends Disposable {
 	private _getAvailableModes(): IChatMode[] {
 		const customAgentTarget = this.chatSessionsService.getCustomAgentTargetForSessionType(CopilotCLISessionType.id);
 		const effectiveTarget = customAgentTarget && customAgentTarget !== Target.Undefined ? customAgentTarget : Target.GitHubCopilot;
-		const modes = this.chatModeService.getModes();
+		const modes = this.chatModeService.getModes(CopilotCLISessionType.id);
 
 		// Always include the default Agent mode
 		const result: IChatMode[] = [ChatMode.Agent];

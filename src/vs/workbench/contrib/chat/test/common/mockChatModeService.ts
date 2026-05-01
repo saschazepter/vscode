@@ -16,7 +16,7 @@ export class MockChatModeService implements IChatModeService {
 		private readonly _modes: { builtin: readonly IChatMode[]; custom: readonly IChatMode[] } = { builtin: [ChatMode.Ask], custom: [] }
 	) { }
 
-	getModes(): IChatModes {
+	getModes(_sessionType: string): IChatModes {
 		const { builtin, custom } = this._modes;
 		return {
 			builtin,
