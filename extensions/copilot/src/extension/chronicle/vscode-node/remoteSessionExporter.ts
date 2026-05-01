@@ -76,6 +76,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/** Per-session cloud IDs — persisted to globalStorage JSON file. */
 	private readonly _cloudSessions: CloudSessionIdStore;
 
+	/** Whether we've reconciled the disk cache with the cloud API this window. */
+	private _cloudReconciled = false;
+
 	/** Per-session translation state (parentId chaining, session.start tracking). */
 	private readonly _translationStates = new Map<string, SessionTranslationState>();
 
@@ -122,25 +125,55 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	}
 
 	/**
-	 * Load cloud session IDs from disk, then reconcile with the cloud API.
-	 * The disk file provides instant ID lookups; the cloud call updates the
-	 * count and discovers sessions created by other VS Code windows.
+	 * Count sessions from this machine that are synced to the cloud.
+	 * Cross-references SQLite (local sessions) with the cloud session ID store.
+	 * Falls back to the full cloud store size if SQLite is unavailable.
+	 */
+	private _getLocalSyncedCount(): number {
+		try {
+			const localIds = this._sessionStore.executeReadOnlyFallback(
+				'SELECT id FROM sessions LIMIT 1000'
+			) as Array<{ id: string }>;
+			let count = 0;
+			for (const row of localIds) {
+				if (this._cloudSessions.has(row.id)) {
+					count++;
+				}
+			}
+			return count;
+		} catch {
+			// SQLite unavailable — fall back to full cloud store size
+			return this._cloudSessions.size;
+		}
+	}
+
+	/**
+	 * Load cloud session IDs from disk (no network).
+	 * The disk file provides instant ID lookups and status bar count.
 	 * Fire-and-forget — errors are silently swallowed.
 	 */
-	private async _loadTotalSyncedCount(): Promise<void> {
-		// 1. Load from disk (no network, fast async read)
+	private async _loadFromDisk(): Promise<void> {
 		await this._cloudSessions.load();
 		if (this._cloudSessions.size > 0 && this._syncState.kind === 'on') {
-			this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 		}
+	}
 
-		// 2. Reconcile with cloud (discovers sessions from other windows)
+	/**
+	 * Reconcile the local disk cache with the cloud sessions API.
+	 * Called lazily on first delete or reindex — not at startup.
+	 * Idempotent within a window lifetime.
+	 */
+	private async _reconcileWithCloud(): Promise<void> {
+		if (this._cloudReconciled) {
+			return;
+		}
+		this._cloudReconciled = true;
+		await this._cloudSessions.load();
 		try {
 			const cloudSessions = await this._cloudClient.listSessions();
 			this._cloudSessions.mergeFromCloud(cloudSessions);
-			if (this._syncState.kind === 'on' || this._syncState.kind === 'up-to-date') {
-				this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
-			}
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 		} catch {
 			// Non-fatal — disk cache is good enough for ID lookups
 		}
@@ -213,8 +246,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// Cloud sync is active — set initial state
 			this._setSyncState({ kind: 'on' });
 
-			// Load total synced count from cloud (fire-and-forget)
-			this._loadTotalSyncedCount();
+			// Load synced count from disk (no network call at startup)
+			this._loadFromDisk();
 
 			// Listen to completed OTel spans — deferred off the callback
 			spanListenerStore.add(this._otelService.onDidCompleteSpan(span => {
@@ -275,8 +308,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	// ── Delete sessions (Command Palette) ───────────────────────────────────────
 
 	private async _deleteCloudSessions(): Promise<void> {
-		// Ensure cloud session IDs are loaded from disk
-		await this._cloudSessions.load();
+		// Reconcile with cloud to get the full picture (lazy, once per window)
+		await this._reconcileWithCloud();
 
 		if (this._cloudSessions.size === 0) {
 			vscode.window.showInformationMessage(vscode.l10n.t('No cloud-synced sessions found.'));
@@ -296,15 +329,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			// SQLite may be disabled — fall back to cloud store IDs only
 		}
 
-		// If SQLite had no matches (disabled or sessions not tracked there),
-		// build minimal items from the cloud store keys
 		if (rows.length === 0) {
-			const cloudKeys = [...this._cloudSessions.keys()];
-			if (cloudKeys.length === 0) {
-				vscode.window.showInformationMessage(vscode.l10n.t('No cloud-synced sessions found.'));
-				return;
-			}
-			rows = cloudKeys.map(id => ({ id }));
+			vscode.window.showInformationMessage(vscode.l10n.t('No cloud-synced sessions found locally.'));
+			return;
 		}
 
 		// Build Quick Pick items
@@ -428,7 +455,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._setSyncState({ kind: 'error' });
 		} else {
 			vscode.window.showInformationMessage(parts.join(', ') + '.');
-			this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+			this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 		}
 	}
 
@@ -468,7 +495,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			this._translationStates.delete(sessionId);
 			this._disabledSessions.delete(sessionId);
 		}
-		this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+		this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 	}
 
 	// ── Cloud reindex (called from /chronicle:reindex) ──────────────────────────
@@ -489,6 +516,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		if (!cloudEnabled) {
 			return undefined;
 		}
+
+		// Reconcile with cloud to know which sessions already exist (lazy, once per window)
+		await this._reconcileWithCloud();
 
 		const repo = await this._resolveRepository();
 		if (!repo) {
@@ -516,10 +546,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			cloudIndexingLevel,
 			reportProgress,
 			token,
+			nwo => !this._indexingPreference.hasCloudConsent(nwo),
 		);
 
 		// Update sync state with new count
-		this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+		this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 
 		return result;
 	}
@@ -923,7 +954,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			}
 
 			if (allSuccess) {
-				this._setSyncState({ kind: 'up-to-date', syncedCount: this._cloudSessions.size });
+				this._setSyncState({ kind: 'up-to-date', syncedCount: this._getLocalSyncedCount() });
 			}
 		} catch (err) {
 			// Re-queue on unexpected error

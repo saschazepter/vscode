@@ -33,12 +33,6 @@ declare module 'vscode' {
 		detail: string | undefined;
 
 		/**
-		 * When true, the item is rendered as its own collapsible section in the
-		 * chat status dashboard rather than inline.
-		 */
-		collapsible: boolean;
-
-		/**
 		 * Shows the entry in the chat status.
 		 */
 		show(): void;

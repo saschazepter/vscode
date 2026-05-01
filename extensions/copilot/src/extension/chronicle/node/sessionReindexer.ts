@@ -366,6 +366,7 @@ export async function reindexCloudSessions(
 	indexingLevel: 'user' | 'repo_and_user',
 	reportProgress: (message: string) => void,
 	token: CancellationToken,
+	isRepoExcluded?: (repoNwo: string) => boolean,
 ): Promise<CloudReindexResult> {
 	const result: CloudReindexResult = {
 		created: 0,
@@ -395,7 +396,7 @@ export async function reindexCloudSessions(
 		}
 
 		try {
-			await reindexOneCloudSession(sessionId, cloudClient, cloudSessionIds, debugLogService, ownerId, repoId, indexingLevel, result);
+			await reindexOneCloudSession(sessionId, cloudClient, cloudSessionIds, debugLogService, ownerId, repoId, indexingLevel, result, isRepoExcluded);
 		} catch {
 			result.failed++;
 		}
@@ -430,28 +431,44 @@ async function reindexOneCloudSession(
 	repoId: number,
 	indexingLevel: 'user' | 'repo_and_user',
 	result: CloudReindexResult,
+	isRepoExcluded?: (repoNwo: string) => boolean,
 ): Promise<void> {
-	// Create cloud session
-	const createResult = await cloudClient.createSession(ownerId, repoId, sessionId, indexingLevel);
-	if (!createResult.ok || !createResult.response.task_id) {
-		result.failed++;
-		return;
-	}
-
-	const cloudSessionId = createResult.response.id;
-	const cloudTaskId = createResult.response.task_id;
-
-	// Stream entries and translate to cloud events
+	// Stream entries, check repo exclusion, and translate to cloud events
 	const state = createSessionTranslationState();
 	const batch: SessionEvent[] = [];
-	let uploaded = 0;
+	let sessionRepo: string | undefined;
 
 	await debugLogService.streamEntries(sessionId, (entry: IDebugLogEntry) => {
+		// Extract repo from session_start for exclusion check
+		if (entry.type === 'session_start' && typeof entry.attrs.repository === 'string') {
+			sessionRepo = entry.attrs.repository;
+		}
 		const events = translateDebugLogEntry(entry, sessionId, state);
 		for (const event of events) {
 			batch.push(event);
 		}
 	});
+
+	// Check if this session's repo is excluded
+	if (sessionRepo && isRepoExcluded) {
+		// Normalize: repo may be a full URL like "https://github.com/owner/repo.git"
+		const nwo = extractNwoFromRepoString(sessionRepo);
+		if (nwo && isRepoExcluded(nwo)) {
+			batch.length = 0;
+			return;
+		}
+	}
+
+	// Create cloud session
+	const createResult = await cloudClient.createSession(ownerId, repoId, sessionId, indexingLevel);
+	if (!createResult.ok || !createResult.response.task_id) {
+		result.failed++;
+		batch.length = 0;
+		return;
+	}
+
+	const cloudSessionId = createResult.response.id;
+	const cloudTaskId = createResult.response.task_id;
 
 	// Add shutdown event
 	if (state.started) {
@@ -459,6 +476,7 @@ async function reindexOneCloudSession(
 	}
 
 	// Upload in batches
+	let uploaded = 0;
 	for (let i = 0; i < batch.length; i += MAX_EVENTS_PER_UPLOAD) {
 		const chunk = batch.slice(i, i + MAX_EVENTS_PER_UPLOAD);
 		const filtered = chunk.map(e => filterSecretsFromObj(e));
@@ -478,4 +496,26 @@ async function reindexOneCloudSession(
 
 	result.created++;
 	result.eventsUploaded += uploaded;
+}
+
+/**
+ * Extract `owner/repo` from a repository string that may be a full URL
+ * (e.g. `https://github.com/owner/repo.git`) or already `owner/repo`.
+ */
+function extractNwoFromRepoString(repo: string): string | undefined {
+	// Already in owner/repo format
+	if (/^[^/]+\/[^/]+$/.test(repo)) {
+		return repo;
+	}
+	// URL format: extract from path
+	try {
+		const url = new URL(repo);
+		const parts = url.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+		if (parts.length >= 2) {
+			return `${parts[0]}/${parts[1]}`;
+		}
+	} catch {
+		// Not a valid URL
+	}
+	return undefined;
 }

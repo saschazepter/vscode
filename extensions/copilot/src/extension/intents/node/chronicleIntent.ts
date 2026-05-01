@@ -210,9 +210,6 @@ export class ChronicleIntent implements IIntent {
 						cloudLines.push('');
 						cloudLines.push(l10n.t('**Cloud sync:** {0} session(s) created, {1} event(s) uploaded.', cloudResult.created, cloudResult.eventsUploaded));
 					}
-					if (cloudResult.backfillQueued > 0) {
-						cloudLines.push(l10n.t('{0} session(s) queued for cloud indexing.', cloudResult.backfillQueued));
-					}
 					if (cloudResult.failed > 0) {
 						cloudLines.push(l10n.t('⚠ {0} session(s) failed cloud sync.', cloudResult.failed));
 					}

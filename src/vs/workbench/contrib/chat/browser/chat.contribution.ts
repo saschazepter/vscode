@@ -488,18 +488,18 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.SessionSyncEnabled]: {
 			default: false,
-			markdownDescription: nls.localize('chat.sessionSync.enabled', "Enable session sync to the cloud. When enabled, Copilot session data is synced to your account for cross-device access and richer insights. Requires local session tracking to also be enabled."),
+			markdownDescription: nls.localize('chat.sessionSync.enabled', "Enable session sync to GitHub.com. When enabled, Copilot session data is synced to your GitHub account for cross-device access and richer insights. Requires local session tracking to also be enabled."),
 			type: 'boolean',
-			tags: ['experimental'],
+			tags: ['experimental', 'advanced'],
 			policy: {
 				name: 'CopilotSessionSync',
 				category: PolicyCategory.InteractiveSession,
-				minimumVersion: '1.118',
+				minimumVersion: '1.119',
 				value: (policyData) => policyData.session_search === CopilotSessionSearchPolicy.Disabled ? false : undefined,
 				localization: {
 					description: {
 						key: 'chat.sessionSync.enabled.policy',
-						value: nls.localize('chat.sessionSync.enabled.policy', "Enable session sync to the cloud for cross-device Copilot session history. When disabled by organization policy, session data is kept local only."),
+						value: nls.localize('chat.sessionSync.enabled.policy', "Enable session sync to GitHub.com for cross-device Copilot session history. When disabled by organization policy, session data is kept local only."),
 					}
 				},
 			}
@@ -509,7 +509,7 @@ configurationRegistry.registerConfiguration({
 			items: { type: 'string' },
 			default: [],
 			markdownDescription: nls.localize('chat.sessionSync.excludeRepositories', "Repository patterns to exclude from session sync. Use exact `owner/repo` names or glob patterns like `my-org/*`. Sessions from matching repositories will only be stored locally."),
-			tags: ['experimental'],
+			tags: ['experimental', 'advanced'],
 		},
 		[ChatConfiguration.AutoApproveEdits]: {
 			default: {

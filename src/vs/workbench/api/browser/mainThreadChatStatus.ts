@@ -24,7 +24,6 @@ export class MainThreadChatStatus extends Disposable implements MainThreadChatSt
 			label: entry.title,
 			description: entry.description,
 			detail: entry.detail,
-			collapsible: entry.collapsible,
 		});
 	}
 

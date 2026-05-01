@@ -10,6 +10,7 @@ import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { ISessionSyncStateService, type SessionSyncState } from '../common/sessionSyncStateService';
 
 const statusTitle = 'Session Sync';
+const sessionSyncDocsLink = 'https://code.visualstudio.com/docs/copilot/overview';
 
 /**
  * Shows session sync status in the chat status bar popup.
@@ -31,7 +32,6 @@ export class SessionSyncStatus extends Disposable {
 
 		this._statusItem = this._register(vscode.window.createChatStatusItem('copilot.sessionSyncStatus'));
 		this._statusItem.title = statusTitle;
-		this._statusItem.collapsible = true;
 
 		// Listen for sync state changes
 		this._register(this._syncStateService.onDidChangeSyncState(state => this._renderState(state)));
@@ -63,13 +63,20 @@ export class SessionSyncStatus extends Disposable {
 		if (!localEnabled) {
 			return;
 		}
-		// description → shown as badge in collapsed header
+
+		this._statusItem.title = {
+			label: statusTitle,
+			link: sessionSyncDocsLink,
+			helpText: 'Syncs session data to your GitHub.com account.',
+		};
+
+		// description → shown as badge in collapsed header (icon + message)
 		// detail → shown when expanded
 		const tipsAction = '[Get Tips from Sessions](command:workbench.action.chat.open?%7B%22query%22%3A%22%2Fchronicle%3Atips%22%7D)';
 
 		switch (state.kind) {
 			case 'not-enabled':
-				this._statusItem.description = 'Not enabled';
+				this._statusItem.description = '$(circle-slash) Not enabled';
 				this._statusItem.detail = '[Enable Session Sync](command:workbench.action.openSettings?%5B%22chat.sessionSync.enabled%22%5D)';
 				break;
 
@@ -79,7 +86,7 @@ export class SessionSyncStatus extends Disposable {
 				break;
 
 			case 'on':
-				this._statusItem.description = 'On';
+				this._statusItem.description = '$(check) On';
 				this._statusItem.detail = tipsAction;
 				break;
 
@@ -89,7 +96,7 @@ export class SessionSyncStatus extends Disposable {
 				break;
 
 			case 'up-to-date':
-				this._statusItem.description = `${state.syncedCount} sessions synced`;
+				this._statusItem.description = `$(check) ${state.syncedCount} sessions synced`;
 				this._statusItem.detail = tipsAction;
 				break;
 
