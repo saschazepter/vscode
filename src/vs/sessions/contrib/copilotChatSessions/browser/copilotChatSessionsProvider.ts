@@ -180,8 +180,8 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	private readonly _loading = observableValue(this, true);
 	readonly loading: IObservable<boolean> = this._loading;
 
-	private readonly _changesets = observableValue<readonly ISessionChangeset[]>(this, []);
-	readonly changesets: IObservable<readonly ISessionChangeset[]> = this._changesets;
+	private readonly _changesets: ReturnType<typeof observableValue<readonly ISessionChangeset[]>>;
+	readonly changesets: IObservable<readonly ISessionChangeset[]>;
 
 	private readonly _changes: ReturnType<typeof observableValue<readonly ISessionFileChange[]>>;
 	readonly changes: IObservable<readonly ISessionFileChange[]>;
@@ -422,6 +422,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 		this._title.set(session.title.get(), undefined);
 		this._status.set(session.status.get(), undefined);
 		this._updatedAt.set(session.updatedAt.get(), undefined);
+		this._changesets.set(session.changesets.get(), undefined);
 		this._changes.set(session.changes.get(), undefined);
 		this._description.set(session.description.get(), undefined);
 	}

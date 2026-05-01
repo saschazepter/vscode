@@ -157,8 +157,10 @@ export interface ISessionChangeset {
 	readonly label: string;
 	/** Optional description for the changeset. */
 	readonly description?: string;
-	/** Provides the file changes associated with this changeset. */
-	provideChanges(): Promise<ISessionFileChange[]>;
+	/** Whether the changeset is enabled. */
+	readonly enabled: IObservable<boolean>;
+	/** File changes associated with this changeset. */
+	readonly changes: IObservable<readonly ISessionFileChange[]>;
 }
 
 /**
