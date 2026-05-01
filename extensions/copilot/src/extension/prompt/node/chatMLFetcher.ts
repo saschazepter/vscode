@@ -304,6 +304,15 @@ export class ChatMLFetcherImpl extends AbstractChatMLFetcher {
 					if (toolDefs) {
 						otelInferenceSpan.setAttribute(GenAiAttr.TOOL_DEFINITIONS, truncateForOTel(JSON.stringify(toolDefs)));
 					}
+					// Cache-relevant request options. Anything in this blob, when changed
+					// between two requests, will invalidate the prompt cache even when
+					// the messages array is byte-identical. The Cache Explorer uses
+					// this to surface "options changed" drift alongside the message
+					// signature diff.
+					const requestOptions = pickCacheRelevantRequestOptions(requestBody);
+					if (requestOptions) {
+						otelInferenceSpan.setAttribute(CopilotChatAttr.REQUEST_OPTIONS, truncateForOTel(JSON.stringify(requestOptions)));
+					}
 				}
 				tokenCount = await countTokens();
 				const extensionId = source?.extensionId ?? EXTENSION_ID;
@@ -2236,4 +2245,65 @@ export function locationToIntent(location: ChatLocation): string {
 		case ChatLocation.MessagesProxy:
 			return 'messages-proxy';
 	}
+}
+
+/**
+ * Curate the cache-relevant subset of a request body. Anything in the
+ * returned object that differs between two requests will invalidate the
+ * prompt cache even when the message array itself is byte-identical
+ * (e.g. switching from `tool_choice: 'auto'` to `'required'`, raising
+ * `reasoning_effort`, enabling thinking, changing the response format).
+ *
+ * Known cache-keying fields are surfaced explicitly. Anything else
+ * unrecognized but present at the top level of the body is captured
+ * under `extra` so we don't silently miss provider-specific knobs.
+ */
+function pickCacheRelevantRequestOptions(body: IEndpointBody): Record<string, unknown> | undefined {
+	const known: Record<string, unknown> = {};
+	const seen = new Set<string>();
+	const take = (key: string) => {
+		seen.add(key);
+		const value = (body as Record<string, unknown>)[key];
+		if (value !== undefined) {
+			known[key] = value;
+		}
+	};
+
+	for (const key of [
+		'tool_choice', 'reasoning', 'reasoning_effort', 'thinking', 'thinking_budget',
+		'output_config', 'response_format', 'text', 'truncation', 'context_management',
+		'frequency_penalty', 'presence_penalty', 'top_logprobs', 'logit_bias',
+		'store', 'stream', 'stream_options', 'prediction', 'seed', 'parallel_tool_calls',
+		'service_tier', 'metadata', 'verbosity', 'snippy', 'state', 'intent', 'intent_threshold',
+		'include',
+	] as const) {
+		take(key);
+	}
+
+	// Fields that are already on the OTel span as their own attributes are
+	// excluded here so we don't double-track them (model, temperature, top_p,
+	// max_tokens, max_output_tokens, max_completion_tokens). Messages, tools,
+	// system, prompt_cache_key are excluded because they're either tracked
+	// elsewhere or not stable for caching purposes.
+	const excluded = new Set([
+		'model', 'temperature', 'top_p',
+		'max_tokens', 'max_output_tokens', 'max_completion_tokens',
+		'messages', 'input', 'tools', 'system', 'instructions',
+		'prompt_cache_key', 'previous_response_id', 'n', 'prompt',
+		'dimensions', 'embed', 'qos', 'content', 'path', 'local_hashes',
+		'language_id', 'query', 'scopingQuery', 'scoping_query', 'limit', 'similarity',
+	]);
+
+	const extra: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+		if (seen.has(key) || excluded.has(key) || value === undefined) {
+			continue;
+		}
+		extra[key] = value;
+	}
+	if (Object.keys(extra).length > 0) {
+		known.extra = extra;
+	}
+
+	return Object.keys(known).length > 0 ? known : undefined;
 }

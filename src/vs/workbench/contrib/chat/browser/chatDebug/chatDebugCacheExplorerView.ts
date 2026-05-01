@@ -239,6 +239,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 
 		this.renderSummary(a, b, diff);
 		this.renderSignature(a, b, diff);
+		this.renderRequestOptions(a, b);
 		this.renderComponents(drift, a, b);
 	}
 
@@ -363,8 +364,18 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		const inputTokens = b.event.inputTokens ?? 0;
 		const cachedTokens = b.event.cachedTokens ?? 0;
 		const lostTokens = Math.max(0, inputTokens - cachedTokens);
+		const optionsDiff = computeOptionsDiff(a, b);
+		const expiration = isLikelyCacheExpiration(hit, diff, optionsDiff);
+
 		const headline = DOM.append(breakCard, $('.chat-debug-cache-card-headline'));
-		headline.textContent = localize('chatDebug.cache.hitHeadline', "{0}% cache hit", formatCachePct(hit));
+		if (expiration) {
+			headline.textContent = localize('chatDebug.cache.expirationHeadline',
+				"{0}% cache hit \u2014 likely cache expiration",
+				formatCachePct(hit),
+			);
+		} else {
+			headline.textContent = localize('chatDebug.cache.hitHeadline', "{0}% cache hit", formatCachePct(hit));
+		}
 		const counts = DOM.append(breakCard, $('.chat-debug-cache-card-sub'));
 		counts.textContent = localize('chatDebug.cache.tokensReused',
 			"{0} of {1} input tokens reused",
@@ -376,7 +387,11 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		DOM.append(breakCard, $('.chat-debug-cache-perf-rule'));
 		DOM.append(breakCard, $('.chat-debug-cache-perf-section-h', undefined, localize('chatDebug.cache.whereBroke', "Where the cache broke")));
 		const breakLine = DOM.append(breakCard, $('.chat-debug-cache-perf-line'));
-		if (diff.break) {
+		if (expiration) {
+			breakLine.textContent = localize('chatDebug.cache.expirationNote',
+				"The prompt prefix matches but the model still treated this as a fresh request. Most likely the cached entry expired between requests.",
+			);
+		} else if (diff.break) {
 			const componentName = diff.break.index === 0
 				? localize('chatDebug.cache.firstMessage', "the first message")
 				: `messages[${diff.break.index}]`;
@@ -394,6 +409,10 @@ export class ChatDebugCacheExplorerView extends Disposable {
 					formatCachePct(lostPct),
 				);
 			}
+		} else if (optionsDiff.length > 0) {
+			breakLine.textContent = localize('chatDebug.cache.optionsBroke',
+				"Request options changed \u2014 the cache was invalidated even though the message prefix matches.",
+			);
 		} else {
 			breakLine.textContent = localize('chatDebug.cache.noBreak', "No prefix divergence detected.");
 		}
@@ -416,6 +435,18 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			parts.push(localize('chatDebug.cache.summaryDropped', "{0} dropped from previous", droppedFromA));
 		}
 		summaryLine.textContent = parts.join(' \u00b7 ');
+
+		// Inline one-liner: surface request-option drift right under the
+		// summary cards so it is visible regardless of which card the user
+		// scans first. The detailed Request options card lives in the
+		// Components row.
+		if (optionsDiff.length > 0) {
+			const optsLine = DOM.append(this.content, $('.chat-debug-cache-options-banner'));
+			optsLine.textContent = localize('chatDebug.cache.optionsBanner',
+				"Options changed: {0}",
+				optionsDiff.map(d => `${d.key} (${formatOptionValue(d.previous)} \u2192 ${formatOptionValue(d.current)})`).join(', '),
+			);
+		}
 	}
 
 	private renderSideCard(data: ISideData, title?: string): HTMLElement {
@@ -620,6 +651,44 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		}
 	}
 
+	/**
+	 * Render the per-key request-options table. Shows every cache-keying
+	 * option captured from the model provider request body, with a column
+	 * for the previous turn and one for the current turn. Rows whose
+	 * values differ are highlighted.
+	 */
+	private renderRequestOptions(a: ISideData, b: ISideData): void {
+		const prev = sideOptions(a);
+		const curr = sideOptions(b);
+		const keys = new Set<string>([...Object.keys(prev), ...Object.keys(curr)]);
+		if (keys.size === 0) {
+			return;
+		}
+
+		const section = DOM.append(this.content, $('.chat-debug-cache-section'));
+		DOM.append(section, $('h3.chat-debug-cache-section-h', undefined, localize('chatDebug.cache.requestOptionsHeading', "Request Options")));
+
+		const table = DOM.append(section, $('.chat-debug-cache-options-table'));
+		const head = DOM.append(table, $('.chat-debug-cache-options-row.head'));
+		DOM.append(head, $('.chat-debug-cache-options-cell.key', undefined, localize('chatDebug.cache.optionsKey', "Option")));
+		DOM.append(head, $('.chat-debug-cache-options-cell', undefined, localize('chatDebug.cache.optionsPrev', "Previous")));
+		DOM.append(head, $('.chat-debug-cache-options-cell', undefined, localize('chatDebug.cache.optionsCurr', "Current")));
+
+		const sortedKeys = [...keys].sort((x, y) => x.localeCompare(y));
+		for (const key of sortedKeys) {
+			const row = DOM.append(table, $('.chat-debug-cache-options-row'));
+			const av = prev[key];
+			const bv = curr[key];
+			const changed = !deepEqual(av, bv);
+			if (changed) {
+				row.classList.add('changed');
+			}
+			DOM.append(row, $('.chat-debug-cache-options-cell.key', undefined, key));
+			DOM.append(row, $('.chat-debug-cache-options-cell', undefined, formatOptionValue(av)));
+			DOM.append(row, $('.chat-debug-cache-options-cell', undefined, formatOptionValue(bv)));
+		}
+	}
+
 	private renderComponents(drift: readonly IComponentDrift[], a: ISideData, b: ISideData): void {
 		const section = DOM.append(this.content, $('.chat-debug-cache-section'));
 		DOM.append(section, $('h3.chat-debug-cache-section-h', undefined, localize('chatDebug.cache.componentsHeading', "Components")));
@@ -821,6 +890,136 @@ function formatTokens(value: number | undefined): string {
 		return '\u2014';
 	}
 	return numberFormatter.value.format(value);
+}
+
+interface IOptionDelta {
+	readonly key: string;
+	readonly previous: unknown;
+	readonly current: unknown;
+}
+
+/**
+ * Build the cache-relevant options table for one side. Combines the
+ * request body's `request_options` blob with the model id surfaced on
+ * the OTel chat span, since switching models is the most aggressive
+ * cache invalidator and users expect to see it here.
+ */
+function sideOptions(side: ISideData): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	if (side.event.model !== undefined) {
+		out.model = side.event.model;
+	}
+	Object.assign(out, parseOptions(side.content?.requestOptions));
+	return out;
+}
+
+/**
+ * Compute the per-key delta between two requests' option tables.
+ * Keys are flattened one level deep so nested objects (e.g.
+ * `reasoning.effort`) show up with their own row instead of dumping the
+ * full object onto one line. The result is sorted by key for stable
+ * rendering.
+ */
+function computeOptionsDiff(a: ISideData, b: ISideData): readonly IOptionDelta[] {
+	const prev = sideOptions(a);
+	const curr = sideOptions(b);
+	const keys = new Set<string>([...Object.keys(prev), ...Object.keys(curr)]);
+	const out: IOptionDelta[] = [];
+	for (const key of keys) {
+		const av = prev[key];
+		const bv = curr[key];
+		if (!deepEqual(av, bv)) {
+			out.push({ key, previous: av, current: bv });
+		}
+	}
+	out.sort((x, y) => x.key.localeCompare(y.key));
+	return out;
+}
+
+function parseOptions(blob: string | undefined): Record<string, unknown> {
+	if (!blob) {
+		return {};
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(blob);
+	} catch {
+		return {};
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		return {};
+	}
+	const flat: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+		if (v && typeof v === 'object' && !Array.isArray(v)) {
+			for (const [nk, nv] of Object.entries(v as Record<string, unknown>)) {
+				flat[`${k}.${nk}`] = nv;
+			}
+		} else {
+			flat[k] = v;
+		}
+	}
+	return flat;
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (a === b) {
+		return true;
+	}
+	if (a === undefined || b === undefined || a === null || b === null) {
+		return false;
+	}
+	if (typeof a !== typeof b) {
+		return false;
+	}
+	if (typeof a !== 'object') {
+		return false;
+	}
+	try {
+		return JSON.stringify(a) === JSON.stringify(b);
+	} catch {
+		return false;
+	}
+}
+
+function formatOptionValue(value: unknown): string {
+	if (value === undefined) {
+		return '\u2014';
+	}
+	if (value === null) {
+		return 'null';
+	}
+	if (typeof value === 'string') {
+		return value;
+	}
+	if (typeof value === 'number' || typeof value === 'boolean') {
+		return String(value);
+	}
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return String(value);
+	}
+}
+
+/**
+ * Cache "expiration" heuristic. We can't know for sure why a provider
+ * decided to invalidate a cache entry, but if the structural diff says
+ * the prompt prefix is byte-identical AND the request options match AND
+ * the model still reports 0 cached input tokens, expiration is the most
+ * likely cause.
+ */
+function isLikelyCacheExpiration(hitPct: number, diff: ICacheDiffResult, optionsDiff: readonly IOptionDelta[]): boolean {
+	if (hitPct >= 1) {
+		return false;
+	}
+	if (diff.break) {
+		return false;
+	}
+	if (optionsDiff.length > 0) {
+		return false;
+	}
+	return true;
 }
 
 const DIFF_OPTIONS = {

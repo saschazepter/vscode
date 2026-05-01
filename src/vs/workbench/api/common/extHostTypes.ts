@@ -3779,6 +3779,7 @@ export class ChatDebugEventModelTurnContent {
 	outputTokens?: number;
 	cachedTokens?: number;
 	totalTokens?: number;
+	requestOptions?: string;
 	errorMessage?: string;
 	sections?: ChatDebugMessageSection[];
 
