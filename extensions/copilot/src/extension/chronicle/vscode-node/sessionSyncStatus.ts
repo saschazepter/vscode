@@ -4,13 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import * as l10n from '@vscode/l10n';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { ISessionSyncStateService, type SessionSyncState } from '../common/sessionSyncStateService';
 
-const statusTitle = 'Session Sync';
-const sessionSyncDocsLink = 'https://code.visualstudio.com/docs/copilot/overview';
+const statusTitle = l10n.t('Session Sync');
+const sessionSyncDocsLink = 'https://aka.ms/vscode-copilot-session-sync';
 
 /**
  * Shows session sync status in the chat status bar popup.
@@ -67,46 +68,46 @@ export class SessionSyncStatus extends Disposable {
 		this._statusItem.title = {
 			label: statusTitle,
 			link: sessionSyncDocsLink,
-			helpText: 'Syncs session data to your GitHub.com account.',
+			helpText: l10n.t('Syncs session data to your GitHub.com account.'),
 		};
 
 		// description → shown as badge in collapsed header (icon + message)
 		// detail → shown when expanded
-		const tipsAction = '[Get Tips from Sessions](command:workbench.action.chat.open?%7B%22query%22%3A%22%2Fchronicle%3Atips%22%7D)';
+		const tipsAction = `[${l10n.t('Get Tips from Sessions')}](command:workbench.action.chat.open?%7B%22query%22%3A%22%2Fchronicle%3Atips%22%7D)`;
 
 		switch (state.kind) {
 			case 'not-enabled':
-				this._statusItem.description = '$(circle-slash) Not enabled';
-				this._statusItem.detail = '[Enable Session Sync](command:workbench.action.openSettings?%5B%22chat.sessionSync.enabled%22%5D)';
+				this._statusItem.description = `$(circle-slash) ${l10n.t('Not enabled')}`;
+				this._statusItem.detail = `[${l10n.t('Enable Session Sync')}](command:workbench.action.openSettings?%5B%22chat.sessionSync.enabled%22%5D)`;
 				break;
 
 			case 'disabled-by-policy':
-				this._statusItem.description = '$(warning) Disabled by policy';
-				this._statusItem.detail = 'Session sync is disabled by your organization\'s policy.';
+				this._statusItem.description = `$(warning) ${l10n.t('Disabled by policy')}`;
+				this._statusItem.detail = l10n.t('Session sync is disabled by your organization\'s policy.');
 				break;
 
 			case 'on':
-				this._statusItem.description = '$(check) On';
+				this._statusItem.description = `$(check) ${l10n.t('On')}`;
 				this._statusItem.detail = tipsAction;
 				break;
 
 			case 'syncing':
-				this._statusItem.description = `Syncing ${state.sessionCount} session(s)\u2026 $(loading~spin)`;
+				this._statusItem.description = `${l10n.t('Syncing {0} session(s)\u2026', state.sessionCount)} $(loading~spin)`;
 				this._statusItem.detail = tipsAction;
 				break;
 
 			case 'up-to-date':
-				this._statusItem.description = `$(check) ${state.syncedCount} sessions synced`;
+				this._statusItem.description = `$(check) ${l10n.t('{0} sessions synced', state.syncedCount)}`;
 				this._statusItem.detail = tipsAction;
 				break;
 
 			case 'deleting':
-				this._statusItem.description = `Deleting ${state.sessionCount} session(s)\u2026 $(loading~spin)`;
+				this._statusItem.description = `${l10n.t('Deleting {0} session(s)\u2026', state.sessionCount)} $(loading~spin)`;
 				this._statusItem.detail = tipsAction;
 				break;
 
 			case 'error':
-				this._statusItem.description = '$(warning) Sync failed';
+				this._statusItem.description = `$(warning) ${l10n.t('Sync failed')}`;
 				this._statusItem.detail = tipsAction;
 				break;
 		}

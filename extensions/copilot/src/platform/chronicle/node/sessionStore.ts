@@ -392,12 +392,14 @@ export class SessionStore implements ISessionStore {
 	 */
 	deleteSession(sessionId: string): void {
 		const db = this.ensureDb();
-		db.prepare('DELETE FROM search_index WHERE session_id = ?').run(sessionId);
-		db.prepare('DELETE FROM session_refs WHERE session_id = ?').run(sessionId);
-		db.prepare('DELETE FROM session_files WHERE session_id = ?').run(sessionId);
-		db.prepare('DELETE FROM checkpoints WHERE session_id = ?').run(sessionId);
-		db.prepare('DELETE FROM turns WHERE session_id = ?').run(sessionId);
-		db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+		this.runInTransaction(() => {
+			db.prepare('DELETE FROM search_index WHERE session_id = ?').run(sessionId);
+			db.prepare('DELETE FROM session_refs WHERE session_id = ?').run(sessionId);
+			db.prepare('DELETE FROM session_files WHERE session_id = ?').run(sessionId);
+			db.prepare('DELETE FROM checkpoints WHERE session_id = ?').run(sessionId);
+			db.prepare('DELETE FROM turns WHERE session_id = ?').run(sessionId);
+			db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+		});
 	}
 
 	/**

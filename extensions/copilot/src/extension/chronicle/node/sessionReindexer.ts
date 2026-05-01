@@ -477,6 +477,7 @@ async function reindexOneCloudSession(
 
 	// Upload in batches
 	let uploaded = 0;
+	let uploadFailed = false;
 	for (let i = 0; i < batch.length; i += MAX_EVENTS_PER_UPLOAD) {
 		const chunk = batch.slice(i, i + MAX_EVENTS_PER_UPLOAD);
 		const filtered = chunk.map(e => filterSecretsFromObj(e));
@@ -484,17 +485,22 @@ async function reindexOneCloudSession(
 		if (success) {
 			uploaded += chunk.length;
 		} else {
-			break; // Stop uploading on failure
+			uploadFailed = true;
+			break;
 		}
 	}
 
 	// Clear batch to release memory
 	batch.length = 0;
 
-	// Persist cloud IDs locally
-	cloudSessionIds.set(sessionId, { cloudSessionId, cloudTaskId });
-
-	result.created++;
+	// Only persist IDs and count as created when all chunks uploaded successfully.
+	// If upload failed, leave the session eligible for retry on next reindex.
+	if (uploadFailed) {
+		result.failed++;
+	} else {
+		cloudSessionIds.set(sessionId, { cloudSessionId, cloudTaskId });
+		result.created++;
+	}
 	result.eventsUploaded += uploaded;
 }
 

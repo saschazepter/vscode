@@ -469,6 +469,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		if (!sessionIds || sessionIds.length === 0) {
 			return;
 		}
+
+		// Ensure cloud session ID store is loaded from disk
+		await this._cloudSessions.load();
+
 		const cloudEnabled = this._configService.getNonExtensionConfig<boolean>('chat.sessionSync.enabled') ?? false;
 
 		for (const sessionId of sessionIds) {

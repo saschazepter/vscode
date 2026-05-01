@@ -278,7 +278,7 @@ export function translateDebugLogEntry(
 						detailedContent: truncatedResult,
 					} : undefined,
 					error: !success ? {
-						message: truncatedResult || typeof entry.attrs.error === 'string' ? entry.attrs.error : 'Tool execution failed',
+						message: truncatedResult || (typeof entry.attrs.error === 'string' ? entry.attrs.error : 'Tool execution failed'),
 						code: 'failure',
 					} : undefined,
 				}));
