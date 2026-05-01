@@ -146,9 +146,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	override get toolbarElements(): readonly HTMLElement[] {
-		if (!this._isFeatureEnabled()) {
-			return [];
-		}
 		return [this._toolbarElement];
 	}
 
@@ -157,6 +154,16 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	protected override subscribeToModel(model: IBrowserViewModel, store: DisposableStore): void {
+		this._toolbarElement.classList.toggle('disabled', !this._isFeatureEnabled());
+		store.add(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(BROWSER_SELECT_ENABLED_SETTING)) {
+				const enabled = this._isFeatureEnabled();
+				this._toolbarElement.classList.toggle('disabled', !enabled);
+				if (!enabled && this._annotationModeActive) {
+					this._stopAnnotationMode();
+				}
+			}
+		}));
 		if (!this._isFeatureEnabled()) {
 			return;
 		}

@@ -23,6 +23,10 @@
 	&.visible {
 		display: flex;
 	}
+
+	&.disabled {
+		display: none !important;
+	}
 }
 
 .browser-annotation-toolbar .browser-annotation-toolbar-drag {
