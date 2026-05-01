@@ -11,6 +11,7 @@ import { Attributes, AutoTunnelSource, forwardedPortsFeaturesEnabled, forwardedP
 import { ForwardPortAction, OpenPortInBrowserAction, TunnelPanel, TunnelPanelDescriptor, TunnelViewModel, OpenPortInPreviewAction, openPreviewEnabledContext } from './tunnelView.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
+import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import { UrlFinder } from './urlFinder.js';
@@ -203,7 +204,7 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IExternalUriOpenerService private readonly externalOpenerService: IExternalUriOpenerService,
 		@IRemoteExplorerService private readonly remoteExplorerService: IRemoteExplorerService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchConfigurationService private readonly configurationService: IWorkbenchConfigurationService,
 		@IDebugService private readonly debugService: IDebugService,
@@ -215,11 +216,24 @@ export class AutomaticPortForwarding extends Disposable implements IWorkbenchCon
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 	) {
 		super();
-		if (!environmentService.remoteAuthority) {
+		// Auto port-forwarding runs when either:
+		//   • we are connected to a remote authority (classic remote/web flow), or
+		//   • the embedder has supplied a tunnelProvider.tunnelFactory so that
+		//     ports detected from terminal output can be forwarded out-of-band
+		//     (used by the agents workbench on vscode.dev/agents).
+		const hasEmbedderTunnelFactory = !!environmentService.options?.tunnelProvider?.tunnelFactory;
+		if (!environmentService.remoteAuthority && !hasEmbedderTunnelFactory) {
 			return;
 		}
 
-		configurationService.whenRemoteConfigurationLoaded().then(() => remoteAgentService.getEnvironment()).then(environment => {
+		const environmentPromise = environmentService.remoteAuthority
+			? configurationService.whenRemoteConfigurationLoaded().then(() => remoteAgentService.getEnvironment())
+			// When there is no remote authority there is no remote agent
+			// environment to consult — pass null so setup() takes the
+			// non-Linux branch and creates OutputAutomaticPortForwarding.
+			: Promise.resolve(null);
+
+		environmentPromise.then(environment => {
 			this.setup(environment);
 			this._register(configurationService.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration(PORT_AUTO_SOURCE_SETTING)) {
