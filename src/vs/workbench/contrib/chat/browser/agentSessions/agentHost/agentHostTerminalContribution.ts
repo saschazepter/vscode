@@ -72,6 +72,11 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 					}
 				}));
 				store.add(this._terminalProfileService.onDidChangeAvailableProfiles(() => this._pushDefaultShell()));
+				// Retry the push when the host's root state hydrates or its schema
+				// changes — the initial push from `_reconcile()` may have raced an
+				// undefined `rootState.value`, in which case the schema gate below
+				// in `_pushDefaultShell` returned early.
+				store.add(this._agentHostService.rootState.onDidChange(() => this._pushDefaultShell()));
 				this._conditionalListeners.value = store;
 				this._reconcile();
 			}
@@ -101,8 +106,21 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 	 * Resolve the agent host terminal profile (with `defaultProfile.<os>`
 	 * fallback) and push the shell path into the agent host's root config so
 	 * its host-managed shells inherit the user's preferred terminal binary.
+	 *
+	 * No-ops if the host's root-config schema doesn't advertise
+	 * {@link AgentHostConfigKey.DefaultShell} — protects older / third-party
+	 * agent hosts from receiving keys they don't understand. The push is
+	 * retried automatically when `rootState` hydrates (see `_updateEnabled`).
 	 */
 	private async _pushDefaultShell(): Promise<void> {
+		const rootState = this._agentHostService.rootState.value;
+		if (!rootState || rootState instanceof Error) {
+			return;
+		}
+		if (!rootState.config?.schema.properties[AgentHostConfigKey.DefaultShell]) {
+			return;
+		}
+
 		let profile;
 		try {
 			profile = await this._terminalProfileResolverService.getDefaultProfile({
