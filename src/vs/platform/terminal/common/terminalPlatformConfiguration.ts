@@ -170,11 +170,12 @@ const terminalPlatformConfiguration: IConfigurationNode = {
 		},
 		[TerminalSettingId.AgentHostProfileLinux]: {
 			restricted: true,
-			markdownDescription: localize('terminal.integrated.agentHostProfile.linux', "The terminal profile to use on Linux for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.linux#`'),
-			type: ['object', 'null'],
+			markdownDescription: localize('terminal.integrated.agentHostProfile.linux', "The terminal profile to use on Linux for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). Accepts either a profile name from {0} or an inline profile object. When unset, falls back to {1}.", '`#terminal.integrated.profiles.linux#`', '`#terminal.integrated.defaultProfile.linux#`'),
+			type: ['string', 'object', 'null'],
 			default: null,
 			'anyOf': [
 				{ type: 'null' },
+				{ type: 'string' },
 				terminalAutomationProfileSchema
 			],
 			defaultSnippets: [
@@ -188,11 +189,12 @@ const terminalPlatformConfiguration: IConfigurationNode = {
 		},
 		[TerminalSettingId.AgentHostProfileMacOs]: {
 			restricted: true,
-			markdownDescription: localize('terminal.integrated.agentHostProfile.osx', "The terminal profile to use on macOS for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.osx#`'),
-			type: ['object', 'null'],
+			markdownDescription: localize('terminal.integrated.agentHostProfile.osx', "The terminal profile to use on macOS for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). Accepts either a profile name from {0} or an inline profile object. When unset, falls back to {1}.", '`#terminal.integrated.profiles.osx#`', '`#terminal.integrated.defaultProfile.osx#`'),
+			type: ['string', 'object', 'null'],
 			default: null,
 			'anyOf': [
 				{ type: 'null' },
+				{ type: 'string' },
 				terminalAutomationProfileSchema
 			],
 			defaultSnippets: [
@@ -206,11 +208,12 @@ const terminalPlatformConfiguration: IConfigurationNode = {
 		},
 		[TerminalSettingId.AgentHostProfileWindows]: {
 			restricted: true,
-			markdownDescription: localize('terminal.integrated.agentHostProfile.windows', "The terminal profile to use on Windows for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). When unset, falls back to {0}.", '`#terminal.integrated.defaultProfile.windows#`'),
-			type: ['object', 'null'],
+			markdownDescription: localize('terminal.integrated.agentHostProfile.windows', "The terminal profile to use on Windows for agent host terminals (the shell launched by AI agent tools and remote agent host sessions). Accepts either a profile name from {0} or an inline profile object. When unset, falls back to {1}.", '`#terminal.integrated.profiles.windows#`', '`#terminal.integrated.defaultProfile.windows#`'),
+			type: ['string', 'object', 'null'],
 			default: null,
 			'anyOf': [
 				{ type: 'null' },
+				{ type: 'string' },
 				terminalAutomationProfileSchema
 			],
 			defaultSnippets: [

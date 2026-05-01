@@ -611,7 +611,32 @@ export async function createShellTools(
 		},
 	};
 
-	return [primaryTool, readTool, writeTool, shutdownTool, listTool];
+	// Override the SDK's built-in tool for the *other* shell family with a
+	// stub that redirects the model to the primary tool. Without this, on
+	// Windows the model would still call the SDK's built-in `powershell`
+	// tool (and run Windows PowerShell 5.1) even when the user has
+	// configured Git Bash via `terminal.integrated.agentHostProfile.windows`.
+	const otherShellType: ShellType = shellType === 'bash' ? 'powershell' : 'bash';
+	const redirectMessage = `This tool is disabled because the configured shell is ${executable}. Use the \`${shellType}\` tool instead.`;
+	const redirectTool: Tool<IShellToolArgs> = {
+		name: otherShellType,
+		description: redirectMessage,
+		parameters: {
+			type: 'object',
+			properties: {
+				command: { type: 'string', description: 'The command to execute' },
+				timeout: { type: 'number', description: 'Timeout in milliseconds (default 120000)' },
+			},
+			required: ['command'],
+		},
+		overridesBuiltInTool: true,
+		skipPermission: true,
+		handler: () => {
+			return makeFailureResult(redirectMessage, 'wrong_shell');
+		},
+	};
+
+	return [primaryTool, readTool, writeTool, shutdownTool, listTool, redirectTool];
 }
 interface ITerminalSandboxResolvedNetworkDomains {
 	allowedDomains: string[];

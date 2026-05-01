@@ -281,6 +281,21 @@ export abstract class BaseTerminalProfileResolverService extends Disposable impl
 
 	private _getUnresolvedAgentHostShellProfile(options: IShellLaunchConfigResolveOptions): ITerminalProfile | undefined {
 		const agentHostProfile = this._configurationService.getValue(`terminal.integrated.agentHostProfile.${this._getOsKey(options.os)}`);
+
+		// Allow a string value as a reference to a named profile under
+		// `terminal.integrated.profiles.<os>` — same convention as
+		// `terminal.integrated.defaultProfile.<os>` — so users don't have
+		// to inline the path when they already have the profile defined.
+		if (isString(agentHostProfile)) {
+			const named = this._terminalProfileService.availableProfiles.find(p => p.profileName === agentHostProfile && !p.isAutoDetected);
+			if (named) {
+				const cloned = deepClone(named);
+				cloned.icon = this._getCustomIcon(cloned.icon) || Codicon.tools;
+				return cloned;
+			}
+			return undefined;
+		}
+
 		if (this._isValidAutomationProfile(agentHostProfile, options.os)) {
 			agentHostProfile.icon = this._getCustomIcon(agentHostProfile.icon) || Codicon.tools;
 			return agentHostProfile;
