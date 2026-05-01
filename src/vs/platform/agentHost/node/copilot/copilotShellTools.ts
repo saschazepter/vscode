@@ -44,32 +44,32 @@ interface IManagedShell {
 export type ShellType = 'bash' | 'powershell';
 
 /**
- * Classifies a shell executable path as `'powershell'`, `'bash'`, or
- * `undefined` when the basename matches no known shell family. Used to
- * pick the right Copilot SDK built-in tool to override and to tailor
- * sentinel/history-suppression behavior to the shell's syntax.
- *
- * Exported for tests.
+ * The Copilot SDK ships two built-in shell tools (`bash` and `powershell`).
+ * These helpers route a resolved shell executable to one of them.
  */
+
+/** Returns `'bash'` / `'powershell'` for known shells, or `undefined`. Exported for tests. */
 export function classifyShellExecutable(shellPath: string): ShellType | undefined {
-	const name = pathParse(shellPath).name.toLowerCase();
-	if (name === 'pwsh' || name === 'powershell' || name === 'pwsh-preview') {
-		return 'powershell';
+	switch (pathParse(shellPath).name.toLowerCase()) {
+		case 'pwsh':
+		case 'powershell':
+		case 'pwsh-preview':
+			return 'powershell';
+		case 'bash':
+		case 'sh':
+		case 'zsh':
+		case 'fish':
+		case 'dash':
+		case 'ksh':
+		case 'wsl':
+		case 'git-cmd':
+			return 'bash';
+		default:
+			return undefined;
 	}
-	if (name === 'bash' || name === 'sh' || name === 'zsh' || name === 'fish' || name === 'dash' || name === 'ksh') {
-		return 'bash';
-	}
-	return undefined;
 }
 
-/**
- * Picks the Copilot SDK built-in shell tool to override (`'bash'` or
- * `'powershell'`) given the resolved shell executable, falling back to
- * the platform default when the executable does not match a known shell
- * family.
- *
- * Exported for tests.
- */
+/** Like {@link classifyShellExecutable} but falls back to the platform default. Exported for tests. */
 export function shellTypeForExecutable(shellPath: string): ShellType {
 	return classifyShellExecutable(shellPath) ?? (platform.isWindows ? 'powershell' : 'bash');
 }
@@ -103,13 +103,9 @@ export class ShellManager {
 	) { }
 
 	/**
-	 * Returns the resolved shell executable for this session, computed via
-	 * {@link IAgentHostTerminalManager.getDefaultShell} on first call and
-	 * cached for the lifetime of the session. Cached intentionally — we
-	 * want every tool call within a session to spawn the same shell binary
-	 * so that `shellType`, sentinel format, and history-suppression
-	 * behavior stay consistent across the session, even if the user
-	 * mutates host config mid-session.
+	 * Resolves the session's shell executable via {@link IAgentHostTerminalManager.getDefaultShell}
+	 * and caches it so every tool call in the session uses the same binary
+	 * (keeps `shellType`, sentinel format, and history suppression consistent).
 	 */
 	getResolvedExecutable(): Promise<string> {
 		if (!this._resolvedExecutable) {
@@ -473,13 +469,9 @@ interface IShutdownShellArgs {
 }
 
 /**
- * Creates the set of SDK {@link Tool} definitions that override the built-in
- * Copilot CLI shell tools with PTY-backed implementations.
- *
- * Returns tools for the user's configured (or auto-detected) shell — see
- * {@link resolveShellExecutable}. Includes companion tools (read, write,
- * shutdown, list). Async because the resolved executable determines which
- * SDK built-in tool (`bash` vs `powershell`) we override.
+ * Builds the SDK {@link Tool} set that overrides the Copilot SDK's two
+ * built-in shells (`bash` and `powershell`) with PTY-backed implementations,
+ * plus companion tools (read, write, shutdown, list).
  */
 export async function createShellTools(
 	shellManager: ShellManager,
@@ -611,11 +603,8 @@ export async function createShellTools(
 		},
 	};
 
-	// Override the SDK's built-in tool for the *other* shell family with a
-	// stub that redirects the model to the primary tool. Without this, on
-	// Windows the model would still call the SDK's built-in `powershell`
-	// tool (and run Windows PowerShell 5.1) even when the user has
-	// configured Git Bash via `terminal.integrated.agentHostProfile.windows`.
+	// Stub the *other* SDK built-in so the model can't bypass our override
+	// (e.g. on Windows still calling `powershell` when Git Bash is configured).
 	const otherShellType: ShellType = shellType === 'bash' ? 'powershell' : 'bash';
 	const redirectMessage = `This tool is disabled because the configured shell is ${executable}. Use the \`${shellType}\` tool instead.`;
 	const redirectTool: Tool<IShellToolArgs> = {

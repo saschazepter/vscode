@@ -55,15 +55,6 @@ export interface IAgentHostTerminalManager {
 	disposeTerminal(uri: string): void;
 	getTerminalInfos(): TerminalInfo[];
 	getTerminalState(uri: string): TerminalState | undefined;
-	/**
-	 * Resolves the shell executable used by host-managed terminals when
-	 * no explicit `shell` option is supplied. Honors
-	 * `AgentHostConfigKey.DefaultShell` from agent-host root config when
-	 * the configured path is executable; otherwise delegates to
-	 * {@link getSystemShell} (which prefers `pwsh.exe` over Windows
-	 * PowerShell 5.1 on Windows via
-	 * {@link getFirstAvailablePowerShellInstallation}).
-	 */
 	getDefaultShell(): Promise<string>;
 }
 
@@ -124,7 +115,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		private readonly _stateManager: AgentHostStateManager,
 		@ILogService private readonly _logService: ILogService,
 		@IProductService private readonly _productService: IProductService,
-		private readonly _configurationService: IAgentConfigurationService | undefined = undefined,
+		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
 	) {
 		super();
 
@@ -680,7 +671,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 	}
 
 	async getDefaultShell(): Promise<string> {
-		const configured = this._configurationService?.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.DefaultShell);
+		const configured = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.DefaultShell);
 		if (configured) {
 			try {
 				await fs.promises.access(configured, fs.constants.X_OK);

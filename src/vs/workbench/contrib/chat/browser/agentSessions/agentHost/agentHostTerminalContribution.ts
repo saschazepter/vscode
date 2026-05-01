@@ -31,22 +31,21 @@ const AGENT_HOST_SHELL_DEPENDENT_SETTINGS = [
 ];
 
 /**
- * Registers local agent host terminal entries with
- * {@link IAgentHostTerminalService} so they appear in the terminal dropdown,
- * and bridges the resolved agent host terminal profile down to the local
- * agent host process so its host-managed shells (PTY-backed `bash`/`powershell`
- * tools, interactive remote shells) honor the user's terminal profile choice.
+ * Local agent host terminal plumbing:
+ * - Registers the "Local" entry with {@link IAgentHostTerminalService} so it
+ *   appears in the terminal dropdown.
+ * - Pushes the resolved `terminal.integrated.agentHostProfile.<os>` shell path
+ *   into the local agent host's root config so its PTY-backed `bash` /
+ *   `powershell` tool overrides honor the user's terminal profile.
  *
- * Gated on the `chat.agentHost.enabled` setting.
+ * Gated on the `chat.agentHost.enabled` setting. Remote agent hosts have a
+ * separate contribution.
  */
 export class AgentHostTerminalContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.agentHostTerminal';
 
 	private readonly _localEntry = this._register(new MutableDisposable());
 	private readonly _conditionalListeners = this._register(new MutableDisposable<DisposableStore>());
-
-	/** Last shell path pushed to the agent host, to skip no-op dispatches. */
-	private _pushedShell: string | undefined;
 
 	constructor(
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
@@ -71,9 +70,6 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 			if (!this._conditionalListeners.value) {
 				const store = new DisposableStore();
 				store.add(this._agentHostService.onAgentHostStart(() => this._reconcile()));
-				store.add(this._agentHostService.onAgentHostExit(() => {
-					this._pushedShell = undefined;
-				}));
 				store.add(this._configurationService.onDidChangeConfiguration(e => {
 					if (AGENT_HOST_SHELL_DEPENDENT_SETTINGS.some(s => e.affectsConfiguration(s))) {
 						this._pushDefaultShell();
@@ -85,7 +81,6 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 		} else {
 			this._conditionalListeners.value = undefined;
 			this._localEntry.value = undefined;
-			this._pushedShell = undefined;
 		}
 	}
 
@@ -122,10 +117,9 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 			return;
 		}
 
-		if (!profile.path || profile.path === this._pushedShell) {
+		if (!profile.path) {
 			return;
 		}
-		this._pushedShell = profile.path;
 
 		this._agentHostService.dispatch({
 			type: ActionType.RootConfigChanged,

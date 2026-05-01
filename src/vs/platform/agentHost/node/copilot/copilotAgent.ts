@@ -924,10 +924,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const plugins = snapshot?.plugins ?? [];
 
 		return async (callbacks: Parameters<SessionWrapperFactory>[0]) => {
-			const [shellTools, customAgents] = await Promise.all([
-				createShellTools(shellManager, this._terminalManager, this._logService),
-				toSdkCustomAgents(plugins.flatMap(p => p.agents), this._fileService),
-			]);
+			const shellTools = await createShellTools(shellManager, this._terminalManager, this._logService);
+			const customAgents = await toSdkCustomAgents(plugins.flatMap(p => p.agents), this._fileService);
 			return {
 				onPermissionRequest: callbacks.onPermissionRequest,
 				onUserInputRequest: callbacks.onUserInputRequest,
