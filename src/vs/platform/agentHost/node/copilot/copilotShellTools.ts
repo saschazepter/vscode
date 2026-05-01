@@ -124,6 +124,7 @@ export class ShellManager {
 		return this._resolvedExecutable;
 	}
 
+	/**
 	 * Acquire a shell of the given type for executing a single command. The
 	 * returned reference holds the shell exclusively — its terminal will not
 	 * be handed out to another concurrent caller until the reference is
