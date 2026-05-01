@@ -154,6 +154,11 @@ declare module 'vscode' {
 		timeToFirstTokenInMillis?: number;
 
 		/**
+		 * The unique request id assigned by the model provider for this turn.
+		 */
+		requestId?: string;
+
+		/**
 		 * The maximum number of prompt/input tokens allowed for this request.
 		 */
 		maxInputTokens?: number;
@@ -545,6 +550,11 @@ declare module 'vscode' {
 		 * first response token.
 		 */
 		timeToFirstTokenInMillis?: number;
+
+		/**
+		 * The unique request id assigned by the model provider for this turn.
+		 */
+		requestId?: string;
 
 		/**
 		 * The maximum number of prompt/input tokens allowed for this request.

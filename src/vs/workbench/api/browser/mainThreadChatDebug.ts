@@ -222,6 +222,8 @@ export class MainThreadChatDebug extends Disposable implements MainThreadChatDeb
 					model: dto.model,
 					status: dto.status,
 					durationInMillis: dto.durationInMillis,
+					timeToFirstTokenInMillis: dto.timeToFirstTokenInMillis,
+					requestId: dto.requestId,
 					inputTokens: dto.inputTokens,
 					outputTokens: dto.outputTokens,
 					cachedTokens: dto.cachedTokens,

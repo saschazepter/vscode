@@ -284,6 +284,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 					status: mt.status,
 					durationInMillis: mt.durationInMillis,
 					timeToFirstTokenInMillis: mt.timeToFirstTokenInMillis,
+					requestId: mt.requestId,
 					maxInputTokens: mt.maxInputTokens,
 					maxOutputTokens: mt.maxOutputTokens,
 					inputTokens: mt.inputTokens,

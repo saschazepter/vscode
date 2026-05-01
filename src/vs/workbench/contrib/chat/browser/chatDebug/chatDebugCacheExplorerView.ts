@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from '../../../../../base/browser/dom.js';
+import { Orientation, Sash, SashState } from '../../../../../base/browser/ui/sash/sash.js';
 import { BreadcrumbsWidget } from '../../../../../base/browser/ui/breadcrumbs/breadcrumbsWidget.js';
-import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { safeIntl } from '../../../../../base/common/date.js';
@@ -13,16 +13,21 @@ import { Emitter } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
-import { defaultBreadcrumbsWidgetStyles, defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
-import { IChatDebugEventModelTurnContent, IChatDebugMessageSection, IChatDebugModelTurnEvent, IChatDebugService } from '../../common/chatDebugService.js';
+import { defaultBreadcrumbsWidgetStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { IChatDebugEventModelTurnContent, IChatDebugMessageSection, IChatDebugModelTurnEvent, IChatDebugService, IChatDebugUserMessageEvent } from '../../common/chatDebugService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
-import { appendSystemDrift, CacheDiffKind, diffPromptSignature, formatSignatureToken, ICacheDiffResult, ICacheSignatureToken, IComponentDrift, INormalizedMessage, parseInputMessages } from './chatDebugCacheDiff.js';
+import { appendSystemDrift, CacheDiffKind, diffPromptSignature, ICacheDiffResult, IComponentDrift, INormalizedMessage, parseInputMessages } from './chatDebugCacheDiff.js';
 import { setupBreadcrumbKeyboardNavigation, TextBreadcrumbItem } from './chatDebugTypes.js';
 
 const $ = DOM.$;
 const numberFormatter = safeIntl.NumberFormat();
 const timeFormatter = safeIntl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+/** Default rail width in pixels. */
+const RAIL_DEFAULT_WIDTH = 280;
+const RAIL_MIN_WIDTH = 180;
+const RAIL_MAX_WIDTH = 600;
 
 /**
  * Navigation events fired by the Cache Explorer breadcrumb.
@@ -38,6 +43,13 @@ interface ISideData {
 	readonly content: IChatDebugEventModelTurnContent | undefined;
 	readonly system: string | undefined;
 	readonly inputMessages: readonly INormalizedMessage[];
+}
+
+/** A grouping of model turns sharing the same parent (one user request). */
+interface ITurnGroup {
+	readonly key: string;
+	readonly userMessage: IChatDebugUserMessageEvent | undefined;
+	readonly turns: readonly { readonly turn: IChatDebugModelTurnEvent; readonly index: number }[];
 }
 
 /**
@@ -57,22 +69,27 @@ export class ChatDebugCacheExplorerView extends Disposable {
 
 	readonly container: HTMLElement;
 	private readonly breadcrumbWidget: BreadcrumbsWidget;
+	private readonly rail: HTMLElement;
 	private readonly railList: HTMLElement;
 	private readonly content: HTMLElement;
+	private readonly sash: Sash;
+	private railWidth = RAIL_DEFAULT_WIDTH;
 	private readonly loadDisposables = this._register(new DisposableStore());
 	private readonly refreshScheduler: RunOnceScheduler;
 
 	private currentSessionResource: URI | undefined;
 	private modelTurns: IChatDebugModelTurnEvent[] = [];
-	private aIndex = 0;
-	private bIndex = 1;
-	private filterFlags = { content: true, onlyA: true, onlyB: true, identical: true };
+	/** Selected turn (B side). A is computed as `selectedIndex - 1`. -1 = no explicit selection yet. */
+	private selectedIndex = -1;
 
 	/** Cache of resolved model-turn content keyed by event id. */
 	private readonly resolvedCache = new Map<string, IChatDebugEventModelTurnContent | undefined>();
 
 	/** Components currently expanded (by component name). */
 	private readonly openComponents = new Set<string>(['system', 'tools']);
+
+	/** Rail groups currently collapsed (by group key — the parent event id). */
+	private readonly collapsedGroups = new Set<string>();
 
 	constructor(
 		parent: HTMLElement,
@@ -100,11 +117,33 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			}
 		}));
 
-		// Body: 2-column split
+		// Body: 2-column split with resizable rail
 		const body = DOM.append(this.container, $('.chat-debug-cache-body'));
-		const rail = DOM.append(body, $('.chat-debug-cache-rail'));
-		this.railList = DOM.append(rail, $('.chat-debug-cache-rail-list'));
+		this.rail = DOM.append(body, $('.chat-debug-cache-rail'));
+		this.rail.style.width = `${this.railWidth}px`;
+		this.railList = DOM.append(this.rail, $('.chat-debug-cache-rail-list'));
 		this.content = DOM.append(body, $('.chat-debug-cache-content'));
+
+		this.sash = this._register(new Sash(body, {
+			getVerticalSashLeft: () => this.railWidth,
+		}, { orientation: Orientation.VERTICAL }));
+		this.sash.state = SashState.Enabled;
+		let sashStartWidth: number | undefined;
+		this._register(this.sash.onDidStart(() => sashStartWidth = this.railWidth));
+		this._register(this.sash.onDidEnd(() => {
+			sashStartWidth = undefined;
+			this.sash.layout();
+		}));
+		this._register(this.sash.onDidChange(e => {
+			if (sashStartWidth === undefined) {
+				return;
+			}
+			const delta = e.currentX - e.startX;
+			const next = Math.max(RAIL_MIN_WIDTH, Math.min(RAIL_MAX_WIDTH, sashStartWidth + delta));
+			this.railWidth = next;
+			this.rail.style.width = `${next}px`;
+			this.sash.layout();
+		}));
 
 		this.refreshScheduler = this._register(new RunOnceScheduler(() => this.render(), 50));
 	}
@@ -112,8 +151,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	setSession(sessionResource: URI): void {
 		if (!this.currentSessionResource || this.currentSessionResource.toString() !== sessionResource.toString()) {
 			this.resolvedCache.clear();
-			this.aIndex = 0;
-			this.bIndex = 1;
+			this.selectedIndex = -1;
 		}
 		this.currentSessionResource = sessionResource;
 	}
@@ -158,6 +196,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 
 		const events = this.chatDebugService.getEvents(this.currentSessionResource);
 		this.modelTurns = events.filter((e): e is IChatDebugModelTurnEvent => e.kind === 'modelTurn');
+		const userMessages = events.filter((e): e is IChatDebugUserMessageEvent => e.kind === 'userMessage');
 
 		if (this.modelTurns.length === 0) {
 			const empty = DOM.append(this.content, $('.chat-debug-cache-empty'));
@@ -165,28 +204,39 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			return;
 		}
 
-		// Clamp indices
-		this.bIndex = Math.min(Math.max(this.bIndex, 0), this.modelTurns.length - 1);
-		this.aIndex = Math.min(Math.max(this.aIndex, 0), this.modelTurns.length - 1);
-		if (this.modelTurns.length > 1 && this.aIndex === this.bIndex) {
-			this.aIndex = Math.max(0, this.bIndex - 1);
+		// Default to the most recent turn on first display. Clamp to a valid index.
+		if (this.selectedIndex < 0 || this.selectedIndex >= this.modelTurns.length) {
+			this.selectedIndex = this.modelTurns.length - 1;
 		}
 
-		this.renderRail();
+		this.renderRail(buildTurnGroups(this.modelTurns, userMessages));
+		this.renderTitleRow();
 
-		const a = await this.resolveSide(this.modelTurns[this.aIndex]);
-		const b = await this.resolveSide(this.modelTurns[this.bIndex]);
+		const bEvent = this.modelTurns[this.selectedIndex];
+		const aEvent = this.selectedIndex > 0 ? this.modelTurns[this.selectedIndex - 1] : undefined;
+
+		if (!aEvent) {
+			// No prior turn to diff against — still surface OTel-reported cache hit
+			// and request metadata for the first turn of a session.
+			const b = await this.resolveSide(bEvent);
+			if (this.selectedIndex < 0 || this.modelTurns[this.selectedIndex] !== bEvent) {
+				return;
+			}
+			this.renderSingleSummary(b);
+			return;
+		}
+
+		const [a, b] = await Promise.all([this.resolveSide(aEvent), this.resolveSide(bEvent)]);
 		// If the user changed selection while resolving, drop this render.
-		if (a.event !== this.modelTurns[this.aIndex] || b.event !== this.modelTurns[this.bIndex]) {
+		if (this.selectedIndex < 0 || this.modelTurns[this.selectedIndex] !== bEvent) {
 			return;
 		}
 
 		const diff = diffPromptSignature(a.inputMessages, b.inputMessages);
 		const drift = appendSystemDrift([...diff.drift], a.system, b.system);
 
-		this.renderTitleRow();
 		this.renderSummary(a, b, diff);
-		this.renderSignature(diff);
+		this.renderSignature(a, b, diff);
 		this.renderComponents(drift, a, b);
 	}
 
@@ -207,182 +257,364 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		return { event, content, system, inputMessages };
 	}
 
-	private renderRail(): void {
-		this.modelTurns.forEach((evt, i) => {
-			const row = DOM.append(this.railList, $('.chat-debug-cache-turn'));
-			if (i === this.aIndex) { row.classList.add('is-a'); }
-			if (i === this.bIndex) { row.classList.add('is-b'); }
-			const idx = DOM.append(row, $('.chat-debug-cache-turn-idx'));
-			idx.textContent = String(i).padStart(2, ' ');
+	private renderRail(groups: readonly ITurnGroup[]): void {
+		for (const group of groups) {
+			const collapsed = this.collapsedGroups.has(group.key);
+			const header = DOM.append(this.railList, $('.chat-debug-cache-group-header'));
+			if (collapsed) {
+				header.classList.add('is-collapsed');
+			}
+			header.tabIndex = 0;
+			header.setAttribute('role', 'button');
+			header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+			header.title = localize('chatDebug.cache.toggleGroup', "Toggle group");
 
-			const main = DOM.append(row, $('.chat-debug-cache-turn-main'));
-			const label = DOM.append(main, $('.chat-debug-cache-turn-label'));
-			label.textContent = evt.model || evt.requestName || localize('chatDebug.cache.modelTurn', "Model Turn");
-			const meta = DOM.append(main, $('.chat-debug-cache-turn-meta'));
-			meta.appendChild(DOM.$('span', undefined, formatTokens(evt.inputTokens)));
-			const hit = computeCacheHit(evt);
-			const bar = DOM.append(meta, $('.chat-debug-cache-bar'));
-			if (hit < 70) { bar.classList.add('bad'); }
-			else if (hit < 95) { bar.classList.add('warn'); }
-			const fill = DOM.append(bar, DOM.$('i'));
-			fill.style.width = `${Math.max(2, hit)}%`;
-			meta.appendChild(DOM.$('span', undefined, localize('chatDebug.cache.hitPct', "cache {0}%", hit.toFixed(0))));
+			const topLine = DOM.append(header, $('.chat-debug-cache-group-top'));
+			DOM.append(topLine, $('span.chat-debug-cache-group-chev'));
+			const headerLine = DOM.append(topLine, $('.chat-debug-cache-group-prompt'));
+			headerLine.textContent = group.userMessage?.message?.trim() || localize('chatDebug.cache.unknownPrompt', "(no prompt captured)");
+			const countBadge = DOM.append(topLine, $('span.chat-debug-cache-group-count'));
+			countBadge.textContent = String(group.turns.length);
 
-			const ts = DOM.append(row, $('.chat-debug-cache-turn-ts'));
-			ts.textContent = timeFormatter.value.format(evt.created);
+			const headerMeta = DOM.append(header, $('.chat-debug-cache-group-meta'));
+			headerMeta.textContent = group.key;
+			headerMeta.title = localize('chatDebug.cache.requestIdTooltip', "Request id: {0}", group.key);
 
-			row.title = localize('chatDebug.cache.turnHelp', "Click to set as B · Shift-click to set as A");
-			this.loadDisposables.add(DOM.addDisposableListener(row, DOM.EventType.CLICK, (e: MouseEvent) => {
-				if (e.shiftKey) {
-					this.aIndex = i;
+			const toggle = () => {
+				if (this.collapsedGroups.has(group.key)) {
+					this.collapsedGroups.delete(group.key);
 				} else {
-					this.bIndex = i;
-				}
-				if (this.aIndex === this.bIndex) {
-					this.aIndex = Math.max(0, this.bIndex - 1);
+					this.collapsedGroups.add(group.key);
 				}
 				this.refresh();
+			};
+			this.loadDisposables.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, toggle));
+			this.loadDisposables.add(DOM.addDisposableListener(header, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					toggle();
+				}
 			}));
-		});
+
+			if (collapsed) {
+				continue;
+			}
+
+			for (const { turn: evt, index: i } of group.turns) {
+				const row = DOM.append(this.railList, $('.chat-debug-cache-turn'));
+				if (i === this.selectedIndex) { row.classList.add('is-selected'); }
+				const idx = DOM.append(row, $('.chat-debug-cache-turn-idx'));
+				idx.textContent = String(i).padStart(2, ' ');
+
+				const main = DOM.append(row, $('.chat-debug-cache-turn-main'));
+
+				// Top line: agent source with bracketed cache hit, duration, and timestamp
+				const top = DOM.append(main, $('.chat-debug-cache-turn-top'));
+				const source = DOM.append(top, $('span.chat-debug-cache-turn-source'));
+				source.textContent = evt.requestName || localize('chatDebug.cache.modelTurn', "Model Turn");
+				if (evt.cachedTokens !== undefined && evt.inputTokens) {
+					const hit = computeCacheHit(evt);
+					const hitChip = DOM.append(top, $('span.chat-debug-cache-turn-chip.chat-debug-cache-turn-hit', undefined,
+						localize('chatDebug.cache.hitChip', "[cache {0}%]", formatCachePctInt(hit))));
+					if (hit < 90) {
+						hitChip.classList.add('is-bad');
+					}
+				}
+				if (evt.durationInMillis !== undefined) {
+					DOM.append(top, $('span.chat-debug-cache-turn-chip', undefined, localize('chatDebug.cache.msChip', "[{0}ms]", numberFormatter.value.format(Math.round(evt.durationInMillis)))));
+				}
+				DOM.append(top, $('span.chat-debug-cache-turn-chip', undefined, `[${timeFormatter.value.format(evt.created)}]`));
+
+				// Bottom line: model name
+				if (evt.model) {
+					const sub = DOM.append(main, $('.chat-debug-cache-turn-sub'));
+					sub.textContent = evt.model;
+				}
+
+				row.title = localize('chatDebug.cache.turnHelp', "Click to compare this request against the previous one");
+				this.loadDisposables.add(DOM.addDisposableListener(row, DOM.EventType.CLICK, () => {
+					if (this.selectedIndex !== i) {
+						this.selectedIndex = i;
+						this.refresh();
+					}
+				}));
+			}
+		}
 	}
 
 	private renderTitleRow(): void {
 		const titleRow = DOM.append(this.content, $('.chat-debug-cache-title-row'));
 		const title = DOM.append(titleRow, $('h2.chat-debug-cache-title'));
 		title.textContent = localize('chatDebug.cacheExplorer.title', "Cache Explorer — Prefix Diff");
-
-		const actions = DOM.append(titleRow, $('.chat-debug-cache-title-actions'));
-		const prevBtn = this.loadDisposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true, title: localize('chatDebug.cache.prevPair', "Previous pair") }));
-		prevBtn.label = localize('chatDebug.cache.prevPair', "Previous pair");
-		this.loadDisposables.add(prevBtn.onDidClick(() => {
-			if (this.bIndex > 1) {
-				this.bIndex--;
-				this.aIndex = this.bIndex - 1;
-				this.refresh();
-			}
-		}));
-		const nextBtn = this.loadDisposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true, title: localize('chatDebug.cache.nextPair', "Next pair") }));
-		nextBtn.label = localize('chatDebug.cache.nextPair', "Next pair");
-		this.loadDisposables.add(nextBtn.onDidClick(() => {
-			if (this.bIndex < this.modelTurns.length - 1) {
-				this.bIndex++;
-				this.aIndex = this.bIndex - 1;
-				this.refresh();
-			}
-		}));
-		const swapBtn = this.loadDisposables.add(new Button(actions, { ...defaultButtonStyles, title: localize('chatDebug.cache.swapTitle', "Swap A and B") }));
-		swapBtn.label = localize('chatDebug.cache.swapLabel', "Swap A ↔ B");
-		this.loadDisposables.add(swapBtn.onDidClick(() => {
-			const tmp = this.aIndex;
-			this.aIndex = this.bIndex;
-			this.bIndex = tmp;
-			this.refresh();
-		}));
 	}
 
 	private renderSummary(a: ISideData, b: ISideData, diff: ICacheDiffResult): void {
 		const row = DOM.append(this.content, $('.chat-debug-cache-summary'));
-		row.appendChild(this.renderSideCard('A', a));
-		row.appendChild(this.renderSideCard('B', b));
+		row.appendChild(this.renderSideCard(a, localize('chatDebug.cache.previousRequest', "Previous request")));
+		row.appendChild(this.renderSideCard(b, localize('chatDebug.cache.requestTitle', "Request")));
 
 		const breakCard = DOM.append(row, $('.chat-debug-cache-card.break'));
-		DOM.append(breakCard, $('.chat-debug-cache-card-h', undefined, localize('chatDebug.cache.breakAnalysis', "Cache-break analysis")));
+		DOM.append(breakCard, $('.chat-debug-cache-card-h', undefined, localize('chatDebug.cache.performance', "Cache performance")));
+
+		// Section 1: cache hit headline + absolute counts
+		const hit = computeCacheHit(b.event);
+		const inputTokens = b.event.inputTokens ?? 0;
+		const cachedTokens = b.event.cachedTokens ?? 0;
+		const lostTokens = Math.max(0, inputTokens - cachedTokens);
 		const headline = DOM.append(breakCard, $('.chat-debug-cache-card-headline'));
-		const sharedPct = b.event.inputTokens && b.event.cachedTokens !== undefined
-			? Math.round((b.event.cachedTokens / b.event.inputTokens) * 100)
-			: 0;
-		headline.textContent = localize('chatDebug.cache.sharedPrefix', "~{0}% shared prefix", sharedPct);
-		const sub = DOM.append(breakCard, $('.chat-debug-cache-card-sub'));
+		headline.textContent = localize('chatDebug.cache.hitHeadline', "{0}% cache hit", formatCachePct(hit));
+		const counts = DOM.append(breakCard, $('.chat-debug-cache-card-sub'));
+		counts.textContent = localize('chatDebug.cache.tokensReused',
+			"{0} of {1} input tokens reused",
+			numberFormatter.value.format(cachedTokens),
+			numberFormatter.value.format(inputTokens),
+		);
+
+		// Section 2: where the cache broke
+		DOM.append(breakCard, $('.chat-debug-cache-perf-rule'));
+		DOM.append(breakCard, $('.chat-debug-cache-perf-section-h', undefined, localize('chatDebug.cache.whereBroke', "Where the cache broke")));
+		const breakLine = DOM.append(breakCard, $('.chat-debug-cache-perf-line'));
 		if (diff.break) {
 			const componentName = diff.break.index === 0
 				? localize('chatDebug.cache.firstMessage', "the first message")
 				: `messages[${diff.break.index}]`;
-			sub.textContent = localize('chatDebug.cache.breakLocation', "Cache breaks at {0}. Anything after this point cannot reuse cache from A.", componentName);
+			breakLine.textContent = localize('chatDebug.cache.breakAt',
+				"At {0} \u2014 {1}",
+				componentName,
+				describeBreakKind(diff.break.kind, diff, b),
+			);
+			if (lostTokens > 0 && inputTokens > 0) {
+				const lostPct = (lostTokens / inputTokens) * 100;
+				const lossLine = DOM.append(breakCard, $('.chat-debug-cache-perf-line'));
+				lossLine.textContent = localize('chatDebug.cache.lossLine',
+					"Lost: {0} tokens ({1}% of this request)",
+					numberFormatter.value.format(lostTokens),
+					formatCachePct(lostPct),
+				);
+			}
 		} else {
-			sub.textContent = localize('chatDebug.cache.noBreak', "No prefix divergence detected.");
+			breakLine.textContent = localize('chatDebug.cache.noBreak', "No prefix divergence detected.");
 		}
-		const pills = DOM.append(breakCard, $('.chat-debug-cache-pills'));
-		this.appendPill(pills, 'drift', localize('chatDebug.cache.contentDriftCount', "{0} content drift", diff.counts.contentDrift + diff.counts.lengthChange));
-		this.appendPill(pills, 'oneSided', localize('chatDebug.cache.oneSidedCount', "{0} one-sided", diff.counts.onlyInA + diff.counts.onlyInB));
-		this.appendPill(pills, 'identical', localize('chatDebug.cache.identicalCount', "{0} identical", diff.counts.identical));
+
+		// Section 3: structural diff summary
+		DOM.append(breakCard, $('.chat-debug-cache-perf-rule'));
+		DOM.append(breakCard, $('.chat-debug-cache-perf-section-h', undefined, localize('chatDebug.cache.diffSummary', "Diff summary")));
+		const summaryLine = DOM.append(breakCard, $('.chat-debug-cache-perf-line'));
+		const inPlaceChanged = diff.counts.contentDrift + diff.counts.lengthChange;
+		const addedInB = diff.counts.onlyInB;
+		const droppedFromA = diff.counts.onlyInA;
+		const parts: string[] = [
+			localize('chatDebug.cache.summaryIdentical', "{0} identical", diff.counts.identical),
+			localize('chatDebug.cache.summaryChanged', "{0} in-place changed", inPlaceChanged),
+		];
+		if (addedInB > 0) {
+			parts.push(localize('chatDebug.cache.summaryAdded', "{0} added in this request", addedInB));
+		}
+		if (droppedFromA > 0) {
+			parts.push(localize('chatDebug.cache.summaryDropped', "{0} dropped from previous", droppedFromA));
+		}
+		summaryLine.textContent = parts.join(' \u00b7 ');
 	}
 
-	private renderSideCard(side: 'A' | 'B', data: ISideData): HTMLElement {
-		const card = $(`.chat-debug-cache-card.side-${side.toLowerCase()}`);
-		const header = DOM.append(card, $('.chat-debug-cache-card-h'));
-		const tag = DOM.append(header, $(`span.chat-debug-cache-tag.tag-${side.toLowerCase()}`));
-		tag.textContent = side;
-		const idLabel = DOM.append(header, DOM.$('span'));
-		idLabel.textContent = (data.event.id ?? '').slice(0, 8).toUpperCase() || side;
-		this.appendKv(card, localize('chatDebug.cache.when', "when"), timeFormatter.value.format(data.event.created));
-		this.appendKv(card, localize('chatDebug.cache.model', "model"), data.event.model ?? '—');
+	private renderSideCard(data: ISideData, title?: string): HTMLElement {
+		const card = $('.chat-debug-cache-card');
+		if (title) {
+			DOM.append(card, $('.chat-debug-cache-card-h', undefined, title));
+		}
+		this.appendKv(card, localize('chatDebug.cache.model', "model"), data.event.model ?? '\u2014');
 		this.appendKv(card, localize('chatDebug.cache.inputTok', "input tok"), formatTokens(data.event.inputTokens));
 		this.appendKv(card, localize('chatDebug.cache.cachedTok', "cached tok"), formatTokens(data.event.cachedTokens));
-		this.appendKv(card, localize('chatDebug.cache.cacheHit', "cache hit"), `${computeCacheHit(data.event).toFixed(1)}%`);
+		this.appendKv(card, localize('chatDebug.cache.cacheHit', "cache hit"), `${formatCachePct(computeCacheHit(data.event))}%`);
+
+		const startTime = data.event.created;
+		const endTime = data.event.durationInMillis !== undefined
+			? new Date(startTime.getTime() + data.event.durationInMillis)
+			: undefined;
+		this.appendKv(card, localize('chatDebug.cache.startTime', "startTime"), startTime.toISOString(), true);
+		if (endTime) {
+			this.appendKv(card, localize('chatDebug.cache.endTime', "endTime"), endTime.toISOString(), true);
+		}
+		if (data.event.durationInMillis !== undefined) {
+			this.appendKv(card, localize('chatDebug.cache.duration', "duration"), `${numberFormatter.value.format(Math.round(data.event.durationInMillis))}ms`);
+		}
+		const ttft = data.content?.timeToFirstTokenInMillis;
+		if (ttft !== undefined) {
+			this.appendKv(card, localize('chatDebug.cache.ttft', "timeToFirstToken"), `${numberFormatter.value.format(Math.round(ttft))}ms`);
+		}
+		const requestId = data.content?.requestId ?? data.event.parentEventId ?? data.event.id;
+		if (requestId) {
+			this.appendKv(card, localize('chatDebug.cache.requestId', "requestId"), requestId, true);
+		}
 		return card;
 	}
 
-	private appendKv(parent: HTMLElement, key: string, value: string): void {
+	/**
+	 * Render the summary cards alone when there is no prior turn to diff
+	 * against (e.g. the first request in a brand-new session). The OTel-
+	 * reported cache hit is still useful here — the system prompt and tool
+	 * definitions can already be cached from previous sessions.
+	 */
+	private renderSingleSummary(b: ISideData): void {
+		const row = DOM.append(this.content, $('.chat-debug-cache-summary'));
+		row.appendChild(this.renderSideCard(b, localize('chatDebug.cache.requestTitle', "Request")));
+
+		const note = DOM.append(row, $('.chat-debug-cache-card.break'));
+		DOM.append(note, $('.chat-debug-cache-card-h', undefined, localize('chatDebug.cache.firstRequest', "First request in session")));
+		const headline = DOM.append(note, $('.chat-debug-cache-card-headline'));
+		headline.textContent = `${formatCachePct(computeCacheHit(b.event))}%`;
+		const sub = DOM.append(note, $('.chat-debug-cache-card-sub'));
+		sub.textContent = localize('chatDebug.cache.firstRequestNote', "OTel-reported cache hit. Nothing earlier in this session to diff against \u2014 the system prompt and tools may still match a previous session's cache.");
+	}
+
+	private appendKv(parent: HTMLElement, key: string, value: string, copyable: boolean = false): void {
 		const row = DOM.append(parent, $('.chat-debug-cache-kv'));
 		DOM.append(row, $('span.k', undefined, key));
-		DOM.append(row, $('span.v', undefined, value));
+		const valueEl = DOM.append(row, $('span.v', undefined, value));
+		if (copyable) {
+			valueEl.classList.add('chat-debug-cache-request-id');
+			valueEl.title = value;
+		}
 	}
 
-	private appendPill(parent: HTMLElement, kind: string, text: string): void {
-		const pill = DOM.append(parent, $(`.chat-debug-cache-pill.${kind}`));
-		pill.textContent = text;
-	}
-
-	private renderSignature(diff: ICacheDiffResult): void {
+	private renderSignature(a: ISideData, b: ISideData, diff: ICacheDiffResult): void {
 		const section = DOM.append(this.content, $('.chat-debug-cache-section'));
 		const heading = DOM.append(section, $('h3.chat-debug-cache-section-h'));
 		heading.textContent = localize('chatDebug.cache.signatureHeading', "Prompt Signature");
-		const sig = DOM.append(section, $('.chat-debug-cache-signature'));
 
-		let breakInserted = false;
-		for (const tok of diff.signature) {
-			if (!this.tokenPassesFilter(tok)) {
-				continue;
+		const legend = DOM.append(section, $('.chat-debug-cache-sig-legend'));
+		for (const role of ['system', 'user', 'assistant', 'tool']) {
+			const entry = DOM.append(legend, $('span.chat-debug-cache-sig-legend-entry'));
+			DOM.append(entry, $(`span.chat-debug-cache-sig-swatch.role-${role}`));
+			DOM.append(entry, DOM.$('span', undefined, role));
+		}
+		const driftEntry = DOM.append(legend, $('span.chat-debug-cache-sig-legend-entry'));
+		DOM.append(driftEntry, $('span.chat-debug-cache-sig-swatch.role-drift'));
+		DOM.append(driftEntry, DOM.$('span', undefined, localize('chatDebug.cache.driftLegend', "drift")));
+
+		// Per-side byte sequences. We prepend a synthetic 'system' segment for
+		// the system prompt so it shows up in the bar even though it's not in
+		// the inputMessages array.
+		interface ISegment {
+			readonly role: string;
+			readonly bytes: number;
+			readonly drift: boolean;
+			readonly label: string;
+		}
+		const toSegments = (side: ISideData, isA: boolean): ISegment[] => {
+			const segs: ISegment[] = [];
+			const sys = side.system;
+			if (sys) {
+				const other = isA ? b.system : a.system;
+				segs.push({ role: 'system', bytes: sys.length, drift: sys !== (other ?? ''), label: 'system' });
 			}
-			const span = DOM.append(sig, $(`span.chat-debug-cache-sig-tok.${tok.kind}`));
-			span.textContent = formatSignatureToken(tok);
-			if (!breakInserted && diff.break && tok.index === diff.break.index) {
-				const marker = DOM.append(sig, $('span.chat-debug-cache-sig-tok.break-marker'));
-				marker.textContent = localize('chatDebug.cache.breakMarker', "cache break");
-				breakInserted = true;
+			side.inputMessages.forEach((m, i) => {
+				const tok = diff.signature[i];
+				const kind = tok?.kind;
+				const drift = kind === CacheDiffKind.ContentDrift
+					|| kind === CacheDiffKind.LengthChange
+					|| (isA && kind === CacheDiffKind.OnlyInA)
+					|| (!isA && kind === CacheDiffKind.OnlyInB);
+				segs.push({ role: m.role, bytes: m.byteLength, drift, label: m.name ? `${m.role}-${m.name}` : m.role });
+			});
+			return segs;
+		};
+
+		const aSegs = toSegments(a, true);
+		const bSegs = toSegments(b, false);
+		const totalA = aSegs.reduce((s, x) => s + x.bytes, 0);
+		const totalB = bSegs.reduce((s, x) => s + x.bytes, 0);
+		const max = Math.max(totalA, totalB, 1);
+
+		// Compute byte position of cache break inside each side's bar.
+		const breakBytePos = (segs: readonly ISegment[]): number | undefined => {
+			if (!diff.break) {
+				return undefined;
+			}
+			// Skip the synthetic system segment when matching diff.break.index.
+			let cumulative = 0;
+			let skipSystem = segs[0]?.role === 'system';
+			let idx = 0;
+			for (const s of segs) {
+				if (skipSystem) {
+					cumulative += s.bytes;
+					skipSystem = false;
+					continue;
+				}
+				if (idx === diff.break.index) {
+					return cumulative;
+				}
+				cumulative += s.bytes;
+				idx++;
+			}
+			return cumulative;
+		};
+
+		const buildLane = (label: string, segs: readonly ISegment[], breakPos: number | undefined): HTMLElement => {
+			const row = $('.chat-debug-cache-sig-lane-row');
+			DOM.append(row, $('.chat-debug-cache-sig-lane-label', undefined, label));
+			const bar = DOM.append(row, $('.chat-debug-cache-sig-bar'));
+			let sideTotal = 0;
+			for (const s of segs) {
+				if (s.bytes <= 0) {
+					sideTotal += s.bytes;
+					continue;
+				}
+				const widthPct = (s.bytes / max) * 100;
+				const seg = DOM.append(bar, $(`span.chat-debug-cache-sig-seg.role-${roleClass(s.role)}`));
+				if (s.drift) {
+					seg.classList.add('is-drift');
+				}
+				seg.style.width = `${widthPct}%`;
+				seg.title = `${s.label}: ${numberFormatter.value.format(s.bytes)} chars` + (s.drift ? ` \u2014 drift` : '');
+				if (s.bytes > max * 0.05) {
+					seg.textContent = `${s.label}:${numberFormatter.value.format(s.bytes)}`;
+				}
+				sideTotal += s.bytes;
+			}
+			// Pad the lane so both sides share the same x scale.
+			if (sideTotal < max) {
+				const pad = DOM.append(bar, $('span.chat-debug-cache-sig-seg.role-empty'));
+				pad.style.width = `${((max - sideTotal) / max) * 100}%`;
+			}
+			if (breakPos !== undefined && diff.break) {
+				const line = DOM.append(bar, $('.chat-debug-cache-sig-break'));
+				line.style.left = `${(breakPos / max) * 100}%`;
+				line.title = localize('chatDebug.cache.breakLineTooltip', "Cache break at messages[{0}]", diff.break.index);
+			}
+			DOM.append(row, $('.chat-debug-cache-sig-lane-total', undefined, localize('chatDebug.cache.charsTotal', "{0} chars", numberFormatter.value.format(sideTotal))));
+			return row;
+		};
+
+		const lanes = DOM.append(section, $('.chat-debug-cache-sig-lanes'));
+		lanes.appendChild(buildLane(localize('chatDebug.cache.lanePrevious', "Previous"), aSegs, breakBytePos(aSegs)));
+		lanes.appendChild(buildLane(localize('chatDebug.cache.laneCurrent', "Current"), bSegs, breakBytePos(bSegs)));
+
+		// Single-line text summary below the bars.
+		let shared = 0;
+		for (const tok of diff.signature) {
+			if (tok.kind === CacheDiffKind.Identical) {
+				shared += tok.bByteLength ?? 0;
+			} else {
+				break;
 			}
 		}
-
-		// Filter toggles
-		const toggle = DOM.append(section, $('.chat-debug-cache-show-toggle'));
-		DOM.append(toggle, $('span', undefined, localize('chatDebug.cache.showLabel', "SHOW:")));
-		this.appendFilterCheckbox(toggle, 'content', localize('chatDebug.cache.filterContent', "content"));
-		this.appendFilterCheckbox(toggle, 'onlyA', localize('chatDebug.cache.filterOnlyA', "only-A"));
-		this.appendFilterCheckbox(toggle, 'onlyB', localize('chatDebug.cache.filterOnlyB', "only-B"));
-		this.appendFilterCheckbox(toggle, 'identical', localize('chatDebug.cache.filterIdentical', "identical"));
-	}
-
-	private appendFilterCheckbox(parent: HTMLElement, key: keyof typeof this.filterFlags, label: string): void {
-		const wrapper = DOM.append(parent, DOM.$('label'));
-		const input = DOM.append(wrapper, DOM.$('input')) as HTMLInputElement;
-		input.type = 'checkbox';
-		input.checked = this.filterFlags[key];
-		this.loadDisposables.add(DOM.addDisposableListener(input, DOM.EventType.CHANGE, () => {
-			this.filterFlags[key] = input.checked;
-			this.refresh();
-		}));
-		const text = DOM.append(wrapper, DOM.$('span'));
-		text.textContent = label;
-	}
-
-	private tokenPassesFilter(token: ICacheSignatureToken): boolean {
-		switch (token.kind) {
-			case CacheDiffKind.Identical: return this.filterFlags.identical;
-			case CacheDiffKind.OnlyInA: return this.filterFlags.onlyA;
-			case CacheDiffKind.OnlyInB: return this.filterFlags.onlyB;
-			case CacheDiffKind.ContentDrift:
-			case CacheDiffKind.LengthChange:
-				return this.filterFlags.content;
+		if (a.system && a.system === b.system) {
+			shared += a.system.length;
+		}
+		const summary = DOM.append(section, $('.chat-debug-cache-sig-summary'));
+		if (diff.break) {
+			summary.textContent = localize('chatDebug.cache.signatureSummaryBreak',
+				"{0} of {1} chars reused \u00b7 break at messages[{2}]",
+				numberFormatter.value.format(shared),
+				numberFormatter.value.format(totalB),
+				diff.break.index,
+			);
+		} else {
+			summary.textContent = localize('chatDebug.cache.signatureSummaryClean',
+				"{0} of {1} chars reused \u00b7 no divergence detected",
+				numberFormatter.value.format(shared),
+				numberFormatter.value.format(totalB),
+			);
 		}
 	}
 
@@ -430,12 +662,12 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	private renderComponentDiff(aText: string, bText: string, aSize: number, bSize: number): HTMLElement {
 		const grid = $('.chat-debug-cache-diff');
 		const colA = DOM.append(grid, $('.chat-debug-cache-diff-col'));
-		DOM.append(colA, $('h4', undefined, localize('chatDebug.cache.diffSideA', "A \u00b7 {0} B", numberFormatter.value.format(aSize))));
+		DOM.append(colA, $('h4', undefined, localize('chatDebug.cache.diffSideA', "Previous \u00b7 {0} B", numberFormatter.value.format(aSize))));
 		const aBody = DOM.append(colA, DOM.$('div'));
 		aBody.textContent = aText || localize('chatDebug.cache.notPresent', "(not present)");
 
 		const colB = DOM.append(grid, $('.chat-debug-cache-diff-col'));
-		DOM.append(colB, $('h4', undefined, localize('chatDebug.cache.diffSideB', "B \u00b7 {0} B", numberFormatter.value.format(bSize))));
+		DOM.append(colB, $('h4', undefined, localize('chatDebug.cache.diffSideB', "Current \u00b7 {0} B", numberFormatter.value.format(bSize))));
 		const bBody = DOM.append(colB, DOM.$('div'));
 		bBody.textContent = bText || localize('chatDebug.cache.notPresent', "(not present)");
 		return grid;
@@ -452,6 +684,38 @@ function findSection(sections: readonly IChatDebugMessageSection[] | undefined, 
 		}
 	}
 	return undefined;
+}
+
+/**
+ * Group model turns by request — turns that share the same `parentEventId`
+ * belong to the same agent invocation (one user prompt). The group key is
+ * used as the request id surfaced in the rail header.
+ */
+function buildTurnGroups(turns: readonly IChatDebugModelTurnEvent[], userMessages: readonly IChatDebugUserMessageEvent[]): readonly ITurnGroup[] {
+	// Index user messages by their span id (and the live `user-msg-` prefixed variant).
+	const userById = new Map<string, IChatDebugUserMessageEvent>();
+	for (const um of userMessages) {
+		if (!um.id) {
+			continue;
+		}
+		userById.set(um.id, um);
+		const stripped = um.id.startsWith('user-msg-') ? um.id.slice('user-msg-'.length) : um.id;
+		userById.set(stripped, um);
+	}
+
+	const groups = new Map<string, { userMessage: IChatDebugUserMessageEvent | undefined; turns: { turn: IChatDebugModelTurnEvent; index: number }[] }>();
+	const order: string[] = [];
+	turns.forEach((turn, index) => {
+		const key = turn.parentEventId ?? turn.id ?? `turn-${index}`;
+		let entry = groups.get(key);
+		if (!entry) {
+			entry = { userMessage: userById.get(key) ?? userById.get(`user-msg-${key}`), turns: [] };
+			groups.set(key, entry);
+			order.push(key);
+		}
+		entry.turns.push({ turn, index });
+	});
+	return order.map(key => ({ key, userMessage: groups.get(key)!.userMessage, turns: groups.get(key)!.turns }));
 }
 
 function textForComponent(c: IComponentDrift, side: ISideData): string {
@@ -476,11 +740,72 @@ function badgeLabel(status: CacheDiffKind): string {
 	}
 }
 
+/**
+ * One-line human-readable description of the kind of change at the cache
+ * break, including the role and size of the divergent message when known.
+ */
+function describeBreakKind(kind: Exclude<CacheDiffKind, CacheDiffKind.Identical>, diff: ICacheDiffResult, b: ISideData): string {
+	const tok = diff.signature.find(t => t.index === diff.break?.index);
+	const role = tok?.bRole ?? tok?.aRole ?? 'message';
+	const bMsg = b.inputMessages[diff.break?.index ?? -1];
+	const charsB = bMsg ? numberFormatter.value.format(bMsg.byteLength) : undefined;
+	switch (kind) {
+		case CacheDiffKind.OnlyInB:
+			return charsB
+				? localize('chatDebug.cache.kind.added', "added {0} message ({1} chars)", role, charsB)
+				: localize('chatDebug.cache.kind.addedNoSize', "added {0} message", role);
+		case CacheDiffKind.OnlyInA:
+			return localize('chatDebug.cache.kind.dropped', "previous {0} message dropped", role);
+		case CacheDiffKind.ContentDrift:
+			return charsB
+				? localize('chatDebug.cache.kind.contentDrift', "{0} message body changed ({1} chars)", role, charsB)
+				: localize('chatDebug.cache.kind.contentDriftNoSize', "{0} message body changed", role);
+		case CacheDiffKind.LengthChange:
+			return charsB
+				? localize('chatDebug.cache.kind.lengthChange', "{0} message resized to {1} chars", role, charsB)
+				: localize('chatDebug.cache.kind.lengthChangeNoSize', "{0} message size changed", role);
+	}
+}
+
 function computeCacheHit(event: IChatDebugModelTurnEvent): number {
 	if (!event.inputTokens || event.cachedTokens === undefined) {
 		return 0;
 	}
 	return Math.min(100, (event.cachedTokens / event.inputTokens) * 100);
+}
+
+/**
+ * Maps a normalized message role onto the small set of CSS color classes
+ * the prompt-signature visualization recognizes. Unknown roles fall through
+ * to `tool` so they still get a swatch.
+ */
+function roleClass(role: string): string {
+	switch (role) {
+		case 'system':
+		case 'user':
+		case 'assistant':
+		case 'tool':
+			return role;
+		default:
+			return 'tool';
+	}
+}
+
+/**
+ * Format a cache hit percentage with 2-decimal precision, truncating rather
+ * than rounding so a value like 99.998% does not display as 100%. We only
+ * report a literal `100%` when the ratio is exactly 1.
+ */
+function formatCachePct(pct: number): string {
+	const truncated = Math.floor(pct * 100) / 100;
+	return truncated.toFixed(2);
+}
+
+/**
+ * Integer-precision variant of {@link formatCachePct} for the rail chip.
+ */
+function formatCachePctInt(pct: number): string {
+	return String(Math.floor(pct));
 }
 
 function formatTokens(value: number | undefined): string {
