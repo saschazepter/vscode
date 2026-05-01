@@ -111,6 +111,8 @@ suite('CopilotShellTools', () => {
 		// Unknown shells fall through to the platform default — just assert it's one of the known types.
 		const unknownDefault = shellTypeForExecutable('C:\\Windows\\System32\\cmd.exe');
 		assert.ok(unknownDefault === 'bash' || unknownDefault === 'powershell');
+	});
+
 	test('getOrCreateShell reuses an idle shell after the reference is disposed', async () => {
 		const terminalManager = new TestAgentHostTerminalManager();
 		// Pretend created terminals exist and are still running.
