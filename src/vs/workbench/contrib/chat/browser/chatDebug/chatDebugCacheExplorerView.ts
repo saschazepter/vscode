@@ -14,6 +14,8 @@ import { Disposable, DisposableStore } from '../../../../../base/common/lifecycl
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { defaultBreadcrumbsWidgetStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { linesDiffComputers } from '../../../../../editor/common/diff/linesDiffComputers.js';
+import { RangeMapping } from '../../../../../editor/common/diff/rangeMapping.js';
 import { IChatDebugEventModelTurnContent, IChatDebugMessageSection, IChatDebugModelTurnEvent, IChatDebugService, IChatDebugUserMessageEvent } from '../../common/chatDebugService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
@@ -663,13 +665,19 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		const grid = $('.chat-debug-cache-diff');
 		const colA = DOM.append(grid, $('.chat-debug-cache-diff-col'));
 		DOM.append(colA, $('h4', undefined, localize('chatDebug.cache.diffSideA', "Previous \u00b7 {0} B", numberFormatter.value.format(aSize))));
-		const aBody = DOM.append(colA, DOM.$('div'));
-		aBody.textContent = aText || localize('chatDebug.cache.notPresent', "(not present)");
+		const aBody = DOM.append(colA, $('.chat-debug-cache-diff-body'));
 
 		const colB = DOM.append(grid, $('.chat-debug-cache-diff-col'));
 		DOM.append(colB, $('h4', undefined, localize('chatDebug.cache.diffSideB', "Current \u00b7 {0} B", numberFormatter.value.format(bSize))));
-		const bBody = DOM.append(colB, DOM.$('div'));
-		bBody.textContent = bText || localize('chatDebug.cache.notPresent', "(not present)");
+		const bBody = DOM.append(colB, $('.chat-debug-cache-diff-body'));
+
+		if (!aText && !bText) {
+			aBody.textContent = localize('chatDebug.cache.notPresent', "(not present)");
+			bBody.textContent = localize('chatDebug.cache.notPresent', "(not present)");
+			return grid;
+		}
+
+		renderInlineDiff(aBody, bBody, aText, bText);
 		return grid;
 	}
 }
@@ -810,7 +818,132 @@ function formatCachePctInt(pct: number): string {
 
 function formatTokens(value: number | undefined): string {
 	if (value === undefined) {
-		return '—';
+		return '\u2014';
 	}
 	return numberFormatter.value.format(value);
+}
+
+const DIFF_OPTIONS = {
+	ignoreTrimWhitespace: false,
+	maxComputationTimeMs: 200,
+	computeMoves: false,
+} as const;
+
+/**
+ * Render a side-by-side line + character diff into the two body elements.
+ *
+ * Uses {@link linesDiffComputers.getDefault()} to compute a line-level diff
+ * with inner character-level mappings, then walks the result to emit one
+ * div per line. Lines belonging to a removed range are styled with the
+ * "remove" class on the previous side; added ranges with the "add" class
+ * on the current side; modified ranges appear on both sides with character
+ * spans highlighted within. Identical lines are placed on both sides as
+ * context.
+ */
+function renderInlineDiff(prevHost: HTMLElement, currHost: HTMLElement, prev: string, curr: string): void {
+	const prevLines = prev.split(/\r?\n/);
+	const currLines = curr.split(/\r?\n/);
+	const result = linesDiffComputers.getDefault().computeDiff(prevLines, currLines, DIFF_OPTIONS);
+
+	let prevIdx = 0;
+	let currIdx = 0;
+	for (const change of result.changes) {
+		const origStart = change.original.startLineNumber;
+		const origEnd = change.original.endLineNumberExclusive;
+		const modStart = change.modified.startLineNumber;
+		const modEnd = change.modified.endLineNumberExclusive;
+
+		// Emit identical context lines up to this change.
+		while (prevIdx + 1 < origStart && currIdx + 1 < modStart) {
+			appendLine(prevHost, prevLines[prevIdx], 'context');
+			appendLine(currHost, currLines[currIdx], 'context');
+			prevIdx++;
+			currIdx++;
+		}
+
+		// Emit changed lines on each side. Inner range mappings give us
+		// character-level spans; we apply them per line.
+		const innerByOrig = groupInnerChangesByLine(change.innerChanges, /* original */ true);
+		const innerByMod = groupInnerChangesByLine(change.innerChanges, /* original */ false);
+
+		for (let line = origStart; line < origEnd; line++) {
+			const lineText = prevLines[line - 1] ?? '';
+			appendChangedLine(prevHost, lineText, innerByOrig.get(line), 'remove');
+		}
+		prevIdx = origEnd - 1;
+
+		for (let line = modStart; line < modEnd; line++) {
+			const lineText = currLines[line - 1] ?? '';
+			appendChangedLine(currHost, lineText, innerByMod.get(line), 'add');
+		}
+		currIdx = modEnd - 1;
+	}
+
+	// Emit any trailing identical context.
+	while (prevIdx < prevLines.length && currIdx < currLines.length) {
+		appendLine(prevHost, prevLines[prevIdx], 'context');
+		appendLine(currHost, currLines[currIdx], 'context');
+		prevIdx++;
+		currIdx++;
+	}
+}
+
+function appendLine(host: HTMLElement, text: string, kind: 'context' | 'add' | 'remove'): void {
+	const line = DOM.append(host, $(`.chat-debug-cache-diff-line.${kind}`));
+	line.textContent = text === '' ? '\u00a0' : text;
+}
+
+interface IInnerChangeRange {
+	readonly startColumn: number;
+	readonly endColumn: number;
+}
+
+function appendChangedLine(host: HTMLElement, text: string, ranges: readonly IInnerChangeRange[] | undefined, kind: 'add' | 'remove'): void {
+	const line = DOM.append(host, $(`.chat-debug-cache-diff-line.${kind}`));
+	if (!ranges || ranges.length === 0) {
+		line.textContent = text === '' ? '\u00a0' : text;
+		return;
+	}
+	let cursor = 1; // 1-based column index
+	const sorted = [...ranges].sort((a, b) => a.startColumn - b.startColumn);
+	for (const r of sorted) {
+		if (r.startColumn > cursor) {
+			DOM.append(line, document.createTextNode(text.substring(cursor - 1, r.startColumn - 1)));
+		}
+		const span = DOM.append(line, $('span.chat-debug-cache-diff-inner'));
+		span.textContent = text.substring(r.startColumn - 1, r.endColumn - 1);
+		cursor = r.endColumn;
+	}
+	if (cursor - 1 < text.length) {
+		DOM.append(line, document.createTextNode(text.substring(cursor - 1)));
+	}
+}
+
+/**
+ * Group {@link DetailedLineRangeMapping.innerChanges} by line so the diff
+ * renderer can look up character ranges per line. Multi-line range
+ * mappings only contribute a partial range to their first/last line; we
+ * approximate by clamping to the line bounds.
+ */
+function groupInnerChangesByLine(
+	innerChanges: readonly RangeMapping[] | undefined,
+	useOriginal: boolean,
+): Map<number, IInnerChangeRange[]> {
+	const out = new Map<number, IInnerChangeRange[]>();
+	if (!innerChanges) {
+		return out;
+	}
+	for (const r of innerChanges) {
+		const range = useOriginal ? r.originalRange : r.modifiedRange;
+		// Only handle single-line inner ranges for v1. Multi-line spans
+		// are flagged at the line level via the surrounding add/remove
+		// styling, so we don't need pixel-perfect column highlights.
+		if (range.startLineNumber !== range.endLineNumber) {
+			continue;
+		}
+		const list = out.get(range.startLineNumber) ?? [];
+		list.push({ startColumn: range.startColumn, endColumn: range.endColumn });
+		out.set(range.startLineNumber, list);
+	}
+	return out;
 }
