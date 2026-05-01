@@ -98,7 +98,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 	private readonly resolvedCache = new Map<string, IChatDebugEventModelTurnContent | undefined>();
 
 	/** Components currently expanded (by component name). */
-	private readonly openComponents = new Set<string>(['system', 'tools']);
+	private readonly openComponents = new Set<string>(['system']);
 
 	/** Rail groups currently collapsed (by group key — the parent event id). */
 	private readonly collapsedGroups = new Set<string>();
@@ -166,7 +166,6 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			this.collapsedGroups.clear();
 			this.openComponents.clear();
 			this.openComponents.add('system');
-			this.openComponents.add('tools');
 			this.selectedIndex = -1;
 		}
 		this.currentSessionResource = sessionResource;
@@ -559,12 +558,12 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		DOM.append(driftEntry, $('span.chat-debug-cache-sig-swatch.role-drift'));
 		DOM.append(driftEntry, DOM.$('span', undefined, localize('chatDebug.cache.driftLegend', "drift")));
 
-		// Per-side byte sequences. We prepend a synthetic 'system' segment for
+		// Per-side char-length sequences. We prepend a synthetic 'system' segment for
 		// the system prompt so it shows up in the bar even though it's not in
 		// the inputMessages array.
 		interface ISegment {
 			readonly role: string;
-			readonly bytes: number;
+			readonly chars: number;
 			readonly drift: boolean;
 			readonly label: string;
 		}
@@ -573,7 +572,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			const sys = side.system;
 			if (sys) {
 				const other = isA ? b.system : a.system;
-				segs.push({ role: 'system', bytes: sys.length, drift: sys !== (other ?? ''), label: 'system' });
+				segs.push({ role: 'system', chars: sys.length, drift: sys !== (other ?? ''), label: 'system' });
 			}
 			side.inputMessages.forEach((m, i) => {
 				const tok = diff.signature[i];
@@ -582,23 +581,23 @@ export class ChatDebugCacheExplorerView extends Disposable {
 					|| kind === CacheDiffKind.LengthChange
 					|| (isA && kind === CacheDiffKind.OnlyInA)
 					|| (!isA && kind === CacheDiffKind.OnlyInB);
-				segs.push({ role: m.role, bytes: m.charLength, drift, label: m.name ? `${m.role}-${m.name}` : m.role });
+				segs.push({ role: m.role, chars: m.charLength, drift, label: m.name ? `${m.role}-${m.name}` : m.role });
 			});
 			return segs;
 		};
 
 		const aSegs = toSegments(a, true);
 		const bSegs = toSegments(b, false);
-		const totalA = aSegs.reduce((s, x) => s + x.bytes, 0);
-		const totalB = bSegs.reduce((s, x) => s + x.bytes, 0);
+		const totalA = aSegs.reduce((s, x) => s + x.chars, 0);
+		const totalB = bSegs.reduce((s, x) => s + x.chars, 0);
 		const max = Math.max(totalA, totalB, 1);
 
-		// Compute byte position of cache break inside each side's bar.
+		// Compute char position of cache break inside each side's bar.
 		// Returns undefined if the break index falls outside the side's
 		// segment list (e.g. break is at messages[N] but B has fewer
 		// messages); rendering that as the right edge of the bar would
 		// misleadingly suggest "the cache broke at the end".
-		const breakBytePos = (segs: readonly ISegment[]): number | undefined => {
+		const breakCharPos = (segs: readonly ISegment[]): number | undefined => {
 			if (!diff.break) {
 				return undefined;
 			}
@@ -608,14 +607,14 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			let idx = 0;
 			for (const s of segs) {
 				if (skipSystem) {
-					cumulative += s.bytes;
+					cumulative += s.chars;
 					skipSystem = false;
 					continue;
 				}
 				if (idx === diff.break.index) {
 					return cumulative;
 				}
-				cumulative += s.bytes;
+				cumulative += s.chars;
 				idx++;
 			}
 			return undefined;
@@ -627,21 +626,21 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			const bar = DOM.append(row, $('.chat-debug-cache-sig-bar'));
 			let sideTotal = 0;
 			for (const s of segs) {
-				if (s.bytes <= 0) {
-					sideTotal += s.bytes;
+				if (s.chars <= 0) {
+					sideTotal += s.chars;
 					continue;
 				}
-				const widthPct = (s.bytes / max) * 100;
+				const widthPct = (s.chars / max) * 100;
 				const seg = DOM.append(bar, $(`span.chat-debug-cache-sig-seg.role-${roleClass(s.role)}`));
 				if (s.drift) {
 					seg.classList.add('is-drift');
 				}
 				seg.style.width = `${widthPct}%`;
-				seg.title = `${s.label}: ${numberFormatter.value.format(s.bytes)} chars` + (s.drift ? ` \u2014 drift` : '');
-				if (s.bytes > max * 0.05) {
-					seg.textContent = `${s.label}:${numberFormatter.value.format(s.bytes)}`;
+				seg.title = `${s.label}: ${numberFormatter.value.format(s.chars)} chars` + (s.drift ? ` \u2014 drift` : '');
+				if (s.chars > max * 0.05) {
+					seg.textContent = `${s.label}:${numberFormatter.value.format(s.chars)}`;
 				}
-				sideTotal += s.bytes;
+				sideTotal += s.chars;
 			}
 			// Pad the lane so both sides share the same x scale.
 			if (sideTotal < max) {
@@ -658,8 +657,8 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		};
 
 		const lanes = DOM.append(section, $('.chat-debug-cache-sig-lanes'));
-		lanes.appendChild(buildLane(localize('chatDebug.cache.lanePrevious', "Previous"), aSegs, breakBytePos(aSegs)));
-		lanes.appendChild(buildLane(localize('chatDebug.cache.laneCurrent', "Current"), bSegs, breakBytePos(bSegs)));
+		lanes.appendChild(buildLane(localize('chatDebug.cache.lanePrevious', "Previous"), aSegs, breakCharPos(aSegs)));
+		lanes.appendChild(buildLane(localize('chatDebug.cache.laneCurrent', "Current"), bSegs, breakCharPos(bSegs)));
 
 		// Single-line text summary below the bars.
 		let shared = 0;

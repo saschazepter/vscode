@@ -25,7 +25,7 @@ export interface INormalizedMessage {
 	readonly name?: string;
 	/** Concatenation of all `text` parts in the message. */
 	readonly text: string;
-	/** Byte length of `text` (utf-16 code unit count is a close-enough proxy in JS). */
+	/** Character length of `text` as a UTF-16 code unit count (`text.length`). */
 	readonly charLength: number;
 }
 
@@ -47,8 +47,13 @@ export const enum CacheDiffKind {
  * A single token in the side-by-side prompt signature.
  *
  * The signature is computed by zipping A's and B's normalized messages
- * positionally; if they diverge, every position from the divergence onward
- * is reported as the appropriate non-identical kind.
+ * positionally and classifying each index independently. The first
+ * divergence is what breaks the prompt cache, but later positions can
+ * still be reported as {@link CacheDiffKind.Identical} if their content
+ * happens to match \u2014 we surface per-position truth here and let the
+ * UI decide how to interpret it (the cache-break marker, summary copy,
+ * and "Where the cache broke" line all key off the *first* divergent
+ * index, not the last).
  */
 export interface ICacheSignatureToken {
 	readonly index: number;
