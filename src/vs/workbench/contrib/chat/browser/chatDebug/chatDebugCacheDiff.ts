@@ -214,6 +214,10 @@ function stableStringify(value: unknown): string {
 
 /**
  * Returns true iff the two messages have the same role, name, and content.
+ *
+ * The `charLength` check is redundant with `text` equality but acts as a
+ * cheap fast-fail: comparing two large message bodies that already differ
+ * in length is wasted work.
  */
 function messagesEqual(a: INormalizedMessage, b: INormalizedMessage): boolean {
 	return a.role === b.role && a.name === b.name && a.charLength === b.charLength && a.text === b.text;

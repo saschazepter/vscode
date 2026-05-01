@@ -2254,21 +2254,14 @@ export function locationToIntent(location: ChatLocation): string {
  * (e.g. switching from `tool_choice: 'auto'` to `'required'`, raising
  * `reasoning_effort`, enabling thinking, changing the response format).
  *
- * Known cache-keying fields are surfaced explicitly. Anything else
- * unrecognized but present at the top level of the body is captured
- * under `extra` so we don't silently miss provider-specific knobs.
+ * Strict allowlist on purpose: we never want a future provider-specific
+ * body field (especially anything resembling auth headers, API keys, or
+ * personal identifiers) to silently leak into the OTel attribute or the
+ * on-disk debug log via a catch-all. New cache-keying knobs must be
+ * added explicitly here.
  */
 function pickCacheRelevantRequestOptions(body: IEndpointBody): Record<string, unknown> | undefined {
-	const known: Record<string, unknown> = {};
-	const seen = new Set<string>();
-	const take = (key: string) => {
-		seen.add(key);
-		const value = (body as Record<string, unknown>)[key];
-		if (value !== undefined) {
-			known[key] = value;
-		}
-	};
-
+	const out: Record<string, unknown> = {};
 	for (const key of [
 		'tool_choice', 'reasoning', 'reasoning_effort', 'thinking', 'thinking_budget',
 		'output_config', 'response_format', 'text', 'truncation', 'context_management',
@@ -2277,33 +2270,10 @@ function pickCacheRelevantRequestOptions(body: IEndpointBody): Record<string, un
 		'service_tier', 'metadata', 'verbosity', 'snippy', 'state', 'intent', 'intent_threshold',
 		'include',
 	] as const) {
-		take(key);
-	}
-
-	// Fields that are already on the OTel span as their own attributes are
-	// excluded here so we don't double-track them (model, temperature, top_p,
-	// max_tokens, max_output_tokens, max_completion_tokens). Messages, tools,
-	// system, prompt_cache_key are excluded because they're either tracked
-	// elsewhere or not stable for caching purposes.
-	const excluded = new Set([
-		'model', 'temperature', 'top_p',
-		'max_tokens', 'max_output_tokens', 'max_completion_tokens',
-		'messages', 'input', 'tools', 'system', 'instructions',
-		'prompt_cache_key', 'previous_response_id', 'n', 'prompt',
-		'dimensions', 'embed', 'qos', 'content', 'path', 'local_hashes',
-		'language_id', 'query', 'scopingQuery', 'scoping_query', 'limit', 'similarity',
-	]);
-
-	const extra: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
-		if (seen.has(key) || excluded.has(key) || value === undefined) {
-			continue;
+		const value = (body as Record<string, unknown>)[key];
+		if (value !== undefined) {
+			out[key] = value;
 		}
-		extra[key] = value;
 	}
-	if (Object.keys(extra).length > 0) {
-		known.extra = extra;
-	}
-
-	return Object.keys(known).length > 0 ? known : undefined;
+	return Object.keys(out).length > 0 ? out : undefined;
 }

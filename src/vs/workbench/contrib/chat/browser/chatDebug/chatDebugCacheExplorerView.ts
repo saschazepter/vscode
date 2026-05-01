@@ -9,6 +9,7 @@ import { BreadcrumbsWidget } from '../../../../../base/browser/ui/breadcrumbs/br
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { safeIntl } from '../../../../../base/common/date.js';
+import { equals } from '../../../../../base/common/objects.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -226,7 +227,10 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			return;
 		}
 
-		// Default to the most recent turn on first display. Clamp to a valid index.
+		// Default to the most recent turn on first display, and silently
+		// fall back to the most recent turn when switching to a session
+		// that has fewer turns than the previous selection \u2014 the rail
+		// re-renders so the new selection is still visible.
 		if (this.selectedIndex < 0 || this.selectedIndex >= this.modelTurns.length) {
 			this.selectedIndex = this.modelTurns.length - 1;
 		}
@@ -590,6 +594,10 @@ export class ChatDebugCacheExplorerView extends Disposable {
 		const max = Math.max(totalA, totalB, 1);
 
 		// Compute byte position of cache break inside each side's bar.
+		// Returns undefined if the break index falls outside the side's
+		// segment list (e.g. break is at messages[N] but B has fewer
+		// messages); rendering that as the right edge of the bar would
+		// misleadingly suggest "the cache broke at the end".
 		const breakBytePos = (segs: readonly ISegment[]): number | undefined => {
 			if (!diff.break) {
 				return undefined;
@@ -610,7 +618,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 				cumulative += s.bytes;
 				idx++;
 			}
-			return cumulative;
+			return undefined;
 		};
 
 		const buildLane = (label: string, segs: readonly ISegment[], breakPos: number | undefined): HTMLElement => {
@@ -710,7 +718,7 @@ export class ChatDebugCacheExplorerView extends Disposable {
 			const row = DOM.append(table, $('.chat-debug-cache-options-row'));
 			const av = prev[key];
 			const bv = curr[key];
-			const changed = !deepEqual(av, bv);
+			const changed = !equals(av, bv);
 			if (changed) {
 				row.classList.add('changed');
 			}
@@ -959,7 +967,7 @@ function computeOptionsDiff(a: ISideData, b: ISideData): readonly IOptionDelta[]
 	for (const key of keys) {
 		const av = prev[key];
 		const bv = curr[key];
-		if (!deepEqual(av, bv)) {
+		if (!equals(av, bv)) {
 			out.push({ key, previous: av, current: bv });
 		}
 	}
@@ -993,26 +1001,6 @@ function parseOptions(blob: string | undefined): Record<string, unknown> {
 	return flat;
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
-	if (a === b) {
-		return true;
-	}
-	if (a === undefined || b === undefined || a === null || b === null) {
-		return false;
-	}
-	if (typeof a !== typeof b) {
-		return false;
-	}
-	if (typeof a !== 'object') {
-		return false;
-	}
-	try {
-		return JSON.stringify(a) === JSON.stringify(b);
-	} catch {
-		return false;
-	}
-}
-
 function formatOptionValue(value: unknown): string {
 	if (value === undefined) {
 		return '\u2014';
@@ -1034,11 +1022,14 @@ function formatOptionValue(value: unknown): string {
 }
 
 /**
- * Cache "expiration" heuristic. We can't know for sure why a provider
- * decided to invalidate a cache entry, but if the structural diff says
- * the prompt prefix is byte-identical AND the request options match AND
- * the model still reports 0 cached input tokens, expiration is the most
- * likely cause.
+ * Cache "expiration" heuristic. The provider doesn't tell us *why* it
+ * invalidated a cache entry, so this is a best-effort guess: if the
+ * structural diff says the prompt prefix is byte-identical AND the
+ * request options match AND the model still reports 0 cached input
+ * tokens, expiration is the most likely cause. Other causes we cannot
+ * distinguish from this signal alone include provider-side eviction
+ * under cache pressure, server-side restarts, and per-tenant quota
+ * resets. The headline copy in the UI says "likely" for that reason.
  */
 function isLikelyCacheExpiration(hitPct: number, diff: ICacheDiffResult, optionsDiff: readonly IOptionDelta[]): boolean {
 	if (hitPct >= 1) {
@@ -1109,7 +1100,12 @@ function renderInlineDiff(prevHost: HTMLElement, currHost: HTMLElement, prev: st
 		currIdx = modEnd - 1;
 	}
 
-	// Emit any trailing identical context.
+	// Emit any trailing identical context. The line-level diff guarantees
+	// every change range is reported, so anything left over on both sides
+	// after the last change is identical context — the `&&` is intentional:
+	// if one side has more lines than the other at this point the overflow
+	// is already covered by the change ranges above (otherwise we'd have a
+	// bug in the diff computer).
 	while (prevIdx < prevLines.length && currIdx < currLines.length) {
 		appendLine(prevHost, prevLines[prevIdx], 'context');
 		appendLine(currHost, currLines[currIdx], 'context');
