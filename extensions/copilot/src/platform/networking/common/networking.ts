@@ -171,7 +171,10 @@ export interface IMakeChatRequestOptions {
 	messages: Raw.ChatMessage[];
 	/** Enable WebSocket transport for this request when supported. */
 	useWebSocket?: boolean;
+	/** Disable Responses API stateful marker reuse, preventing previous_response_id-based history slicing. */
 	ignoreStatefulMarker?: boolean;
+	/** Indicates whether the request's mode instructions changed from the previous turn. */
+	modeChanged?: boolean;
 	/** Streaming callback for each response part. */
 	finishedCb: FinishedCallback | undefined;
 	/** Location where the chat message is being sent. */
@@ -233,6 +236,10 @@ export type IChatRequestTelemetryProperties = {
 	parentToolCallId?: string;
 	/** For a subagent: The headerRequestId from the parent agent's fetch response that triggered this subagent invocation. */
 	parentHeaderRequestId?: string;
+	/** For a subagent: The modelCallId from the parent agent's model call that triggered this subagent invocation. */
+	parentModelCallId?: string;
+	/** The 0-based iteration number of the tool-calling loop that produced this request. */
+	iterationNumber?: string;
 };
 
 export interface ICreateEndpointBodyOptions extends IMakeChatRequestOptions {
