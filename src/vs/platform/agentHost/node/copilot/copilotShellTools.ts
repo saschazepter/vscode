@@ -58,10 +58,7 @@ export function shellTypeForExecutable(shellPath: string): ShellType {
 		case 'sh':
 		case 'zsh':
 		case 'fish':
-		case 'dash':
-		case 'ksh':
 		case 'wsl':
-		case 'git-cmd':
 			return 'bash';
 		default:
 			return platform.isWindows ? 'powershell' : 'bash';
