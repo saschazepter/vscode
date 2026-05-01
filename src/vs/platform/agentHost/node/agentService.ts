@@ -7,6 +7,7 @@ import { decodeBase64, VSBuffer } from '../../../base/common/buffer.js';
 import { toErrorMessage } from '../../../base/common/errorMessage.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { ResourceMap } from '../../../base/common/map.js';
 import { equals as objectEquals } from '../../../base/common/objects.js';
 import { observableValue } from '../../../base/common/observable.js';
 import { URI } from '../../../base/common/uri.js';
@@ -80,7 +81,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * {@link _maybeEvictIdleSession} is invoked to release any cached state
 	 * for it.
 	 */
-	private readonly _resourceSubscribers = new Map<string, Set<string>>();
+	private readonly _resourceSubscribers = new ResourceMap<Set<string>>();
 
 	/** Exposes the terminal manager for use by agent providers. */
 	get terminalManager(): IAgentHostTerminalManager { return this._terminalManager; }
@@ -431,57 +432,63 @@ export class AgentService extends Disposable implements IAgentService {
 	async subscribe(resource: URI, clientId: string): Promise<IStateSnapshot> {
 		this._logService.trace(`[AgentService] subscribe: ${resource.toString()}`);
 		const resourceStr = resource.toString();
+		// Register the subscriber up front so a concurrent unsubscribe cannot
+		// evict the session state while we are awaiting restore. On any failure
+		// path below we must roll the registration back, otherwise the leaked
+		// refcount would permanently pin (or block eviction of) the resource.
 		this.addSubscriber(resource, clientId);
-
-		// Check for terminal state
-		const terminalState = this._terminalManager.getTerminalState(resourceStr);
-		if (terminalState) {
-			return { resource: resourceStr, state: terminalState, fromSeq: this._stateManager.serverSeq };
-		}
-
-		let snapshot = this._stateManager.getSnapshot(resourceStr);
-		if (!snapshot) {
-			// Try subagent restore before regular session restore
-			const parsed = parseSubagentSessionUri(resourceStr);
-			if (parsed) {
-				await this._restoreSubagentSession(resourceStr, parsed.parentSession, parsed.toolCallId);
-			} else {
-				await this.restoreSession(resource);
+		try {
+			// Check for terminal state
+			const terminalState = this._terminalManager.getTerminalState(resourceStr);
+			if (terminalState) {
+				return { resource: resourceStr, state: terminalState, fromSeq: this._stateManager.serverSeq };
 			}
-			snapshot = this._stateManager.getSnapshot(resourceStr);
-		}
-		if (!snapshot) {
-			throw new Error(`Cannot subscribe to unknown resource: ${resourceStr}`);
-		}
 
-		// Ensure git state has been computed for this session. When the snapshot
-		// already existed (e.g. seeded by list query, or restored earlier), the
-		// restore path that normally calls `_attachGitState` is skipped — so
-		// trigger it lazily here for the first subscriber. `_attachGitState`
-		// is async and updates `_meta.git` once ready, which clients see via
-		// the normal state-update stream.
-		const sessionState = this._stateManager.getSessionState(resourceStr);
-		if (sessionState && readSessionGitState(sessionState._meta) === undefined) {
-			const wd = sessionState.summary?.workingDirectory;
-			this._attachGitState(resource, wd ? URI.parse(wd) : undefined);
-		}
+			let snapshot = this._stateManager.getSnapshot(resourceStr);
+			if (!snapshot) {
+				// Try subagent restore before regular session restore
+				const parsed = parseSubagentSessionUri(resourceStr);
+				if (parsed) {
+					await this._restoreSubagentSession(resourceStr, parsed.parentSession, parsed.toolCallId);
+				} else {
+					await this.restoreSession(resource);
+				}
+				snapshot = this._stateManager.getSnapshot(resourceStr);
+			}
+			if (!snapshot) {
+				throw new Error(`Cannot subscribe to unknown resource: ${resourceStr}`);
+			}
 
-		return snapshot;
+			// Ensure git state has been computed for this session. When the snapshot
+			// already existed (e.g. seeded by list query, or restored earlier), the
+			// restore path that normally calls `_attachGitState` is skipped — so
+			// trigger it lazily here for the first subscriber. `_attachGitState`
+			// is async and updates `_meta.git` once ready, which clients see via
+			// the normal state-update stream.
+			const sessionState = this._stateManager.getSessionState(resourceStr);
+			if (sessionState && readSessionGitState(sessionState._meta) === undefined) {
+				const wd = sessionState.summary?.workingDirectory;
+				this._attachGitState(resource, wd ? URI.parse(wd) : undefined);
+			}
+
+			return snapshot;
+		} catch (err) {
+			this.unsubscribe(resource, clientId);
+			throw err;
+		}
 	}
 
 	addSubscriber(resource: URI, clientId: string): void {
-		const key = resource.toString();
-		let set = this._resourceSubscribers.get(key);
+		let set = this._resourceSubscribers.get(resource);
 		if (!set) {
 			set = new Set();
-			this._resourceSubscribers.set(key, set);
+			this._resourceSubscribers.set(resource, set);
 		}
 		set.add(clientId);
 	}
 
 	unsubscribe(resource: URI, clientId: string): void {
-		const key = resource.toString();
-		const set = this._resourceSubscribers.get(key);
+		const set = this._resourceSubscribers.get(resource);
 		if (!set) {
 			return;
 		}
@@ -489,7 +496,7 @@ export class AgentService extends Disposable implements IAgentService {
 		if (set.size > 0) {
 			return;
 		}
-		this._resourceSubscribers.delete(key);
+		this._resourceSubscribers.delete(resource);
 		this._maybeEvictIdleSession(resource);
 	}
 
@@ -503,27 +510,27 @@ export class AgentService extends Disposable implements IAgentService {
 	 */
 	private _maybeEvictIdleSession(resource: URI): void {
 		const key = resource.toString();
-		if (this._resourceSubscribers.has(key)) {
+		if (this._resourceSubscribers.has(resource)) {
 			return;
 		}
 		const parsed = parseSubagentSessionUri(key);
 		let evictionTarget: string;
 		if (parsed) {
 			evictionTarget = parsed.parentSession;
-			if (this._resourceSubscribers.has(evictionTarget)) {
+			if (this._resourceSubscribers.has(URI.parse(evictionTarget))) {
 				return;
 			}
 			const parentPrefix = parsed.parentSession + '/subagent/';
-			for (const subscribedKey of this._resourceSubscribers.keys()) {
-				if (subscribedKey.startsWith(parentPrefix)) {
+			for (const subscribedUri of this._resourceSubscribers.keys()) {
+				if (subscribedUri.toString().startsWith(parentPrefix)) {
 					return;
 				}
 			}
 		} else {
 			evictionTarget = key;
 			const subagentPrefix = key + '/subagent/';
-			for (const subscribedKey of this._resourceSubscribers.keys()) {
-				if (subscribedKey.startsWith(subagentPrefix)) {
+			for (const subscribedUri of this._resourceSubscribers.keys()) {
+				if (subscribedUri.toString().startsWith(subagentPrefix)) {
 					return;
 				}
 			}

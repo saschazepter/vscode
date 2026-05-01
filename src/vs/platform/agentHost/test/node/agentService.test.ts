@@ -776,6 +776,24 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'idle created session should be evicted; next subscribe will rehydrate from the agent');
 		});
 
+		test('a session with an active turn is NOT evicted when its last subscriber drops', async () => {
+			service.registerProvider(copilotAgent);
+			const sessionResource = await service.createSession({ provider: 'copilot' });
+
+			service.addSubscriber(sessionResource, 'client-1');
+			// Simulate an in-flight turn — eviction must skip this session even
+			// when the refcount reaches zero, otherwise we'd drop live state
+			// mid-response.
+			service.dispatchAction(
+				{ type: ActionType.SessionTurnStarted, session: sessionResource.toString(), turnId: 'turn-1', userMessage: { text: 'hello' } },
+				'client-1', 1,
+			);
+
+			service.unsubscribe(sessionResource, 'client-1');
+
+			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'active-turn session must not be evicted');
+		});
+
 		test('a restored idle session is evicted when its last subscriber drops', async () => {
 			service.registerProvider(copilotAgent);
 			const { session } = await copilotAgent.createSession();
