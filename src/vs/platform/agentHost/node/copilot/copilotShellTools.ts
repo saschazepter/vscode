@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { Tool, ToolResultObject } from '@github/copilot-sdk';
-import { parse as pathParse } from '../../../../base/common/path.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { URI } from '../../../../base/common/uri.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
@@ -46,19 +45,37 @@ export type ShellType = 'bash' | 'powershell';
 /**
  * Routes a resolved shell executable to one of the Copilot SDK's two
  * built-in shell tools (`bash` / `powershell`). Falls back to the platform
- * default for unknown shells. Exported for tests.
+ * default for unknown shells.
  */
 export function shellTypeForExecutable(shellPath: string): ShellType {
-	switch (pathParse(shellPath).name.toLowerCase()) {
+	// Strip path on either separator and the .exe suffix.
+	const lastSep = Math.max(shellPath.lastIndexOf('/'), shellPath.lastIndexOf('\\'));
+	const base = shellPath.slice(lastSep + 1).toLowerCase().replace(/\.exe$/, '');
+	switch (base) {
+		// PowerShell
 		case 'pwsh':
 		case 'powershell':
 		case 'pwsh-preview':
 			return 'powershell';
+		// POSIX shells
 		case 'bash':
 		case 'sh':
 		case 'zsh':
 		case 'fish':
+		case 'csh':
+		case 'ksh':
+		case 'nu':
+		case 'xonsh':
+		// Git for Windows bash entry points
+		case 'git-cmd':
+		// WSL launchers — bash inside, but invoked via these stubs
 		case 'wsl':
+		case 'ubuntu':
+		case 'ubuntu1804':
+		case 'kali':
+		case 'debian':
+		case 'opensuse-42':
+		case 'sles-12':
 			return 'bash';
 		default:
 			return platform.isWindows ? 'powershell' : 'bash';
@@ -224,8 +241,6 @@ function buildSentinelCommand(sentinelId: string, shellType: ShellType): string 
  * settings in via the `VSCODE_PREVENT_SHELL_HISTORY` env var (set when the
  * terminal is created with `preventShellHistory: true`). PowerShell
  * suppresses history through PSReadLine instead, so no prefix is needed.
- *
- * Exported for tests.
  */
 export function prefixForHistorySuppression(shellType: ShellType): string {
 	return shellType === 'powershell' ? '' : ' ';
