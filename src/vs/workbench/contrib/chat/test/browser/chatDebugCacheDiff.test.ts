@@ -35,6 +35,25 @@ suite('chatDebugCacheDiff', () => {
 			assert.deepStrictEqual(parseInputMessages('not json'), []);
 			assert.deepStrictEqual(parseInputMessages('"a string"'), []);
 		});
+
+		test('extracts tool_call_response content and reclassifies role to tool', () => {
+			const json = JSON.stringify([
+				{ role: 'user', parts: [{ type: 'tool_call_response', id: 'call_1', response: 'Found 12 references.' }] },
+			]);
+			assert.deepStrictEqual(parseInputMessages(json), [
+				{ role: 'tool', name: undefined, text: 'Found 12 references.', byteLength: 'Found 12 references.'.length },
+			]);
+		});
+
+		test('extracts tool_call arguments on assistant messages', () => {
+			const json = JSON.stringify([
+				{ role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'fs_read', arguments: { path: '/etc/hosts' } }] },
+			]);
+			const expected = `call:fs_read${JSON.stringify({ path: '/etc/hosts' })}`;
+			assert.deepStrictEqual(parseInputMessages(json), [
+				{ role: 'assistant', name: undefined, text: expected, byteLength: expected.length },
+			]);
+		});
 	});
 
 	suite('diffPromptSignature', () => {

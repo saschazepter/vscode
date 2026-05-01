@@ -103,8 +103,11 @@ export interface ICacheDiffResult {
 
 interface IRawPart {
 	readonly type?: string;
-	readonly content?: string;
+	readonly content?: unknown;
 	readonly name?: string;
+	readonly id?: string;
+	readonly arguments?: unknown;
+	readonly response?: unknown;
 }
 
 interface IRawMessage {
@@ -138,19 +141,75 @@ export function parseInputMessages(inputMessagesJson: string | undefined): reado
 		if (!m || typeof m !== 'object') {
 			continue;
 		}
-		const role = typeof m.role === 'string' ? m.role : 'unknown';
+		let role = typeof m.role === 'string' ? m.role : 'unknown';
 		const name = typeof m.name === 'string' ? m.name : undefined;
 		let text = '';
+		let hasToolResponse = false;
+		let hasToolCall = false;
+		let hasText = false;
 		if (Array.isArray(m.parts)) {
 			for (const p of m.parts) {
-				if (p && typeof p === 'object' && (p.type === undefined || p.type === 'text') && typeof p.content === 'string') {
-					text += p.content;
+				if (!p || typeof p !== 'object') {
+					continue;
+				}
+				switch (p.type) {
+					case undefined:
+					case 'text':
+					case 'reasoning':
+						if (typeof p.content === 'string') {
+							text += p.content;
+							hasText = true;
+						}
+						break;
+					case 'tool_call_response':
+					case 'tool_result':
+						if (typeof p.response === 'string') {
+							text += p.response;
+						} else if (p.response !== undefined) {
+							text += stableStringify(p.response);
+						} else if (typeof p.content === 'string') {
+							text += p.content;
+						} else if (p.content !== undefined) {
+							text += stableStringify(p.content);
+						}
+						hasToolResponse = true;
+						break;
+					case 'tool_call':
+						// Tool calls live on assistant messages; include their
+						// stringified arguments so a tool-call argument change
+						// (e.g. file path) shows up as drift.
+						if (p.name) { text += `call:${p.name}`; }
+						if (p.arguments !== undefined) { text += stableStringify(p.arguments); }
+						hasToolCall = true;
+						break;
 				}
 			}
+		}
+		// If a message is dominated by tool I/O, label its role accordingly
+		// so the visualization labels it as `tool` rather than as a `user`
+		// or `assistant` message with mysterious empty content.
+		if (hasToolResponse && !hasText) {
+			role = 'tool';
+		} else if (hasToolCall && !hasText && role === 'assistant') {
+			role = 'assistant';
 		}
 		out.push({ role, name, text, byteLength: text.length });
 	}
 	return out;
+}
+
+/**
+ * Render an opaque value (tool arguments, response payload) as a string in
+ * a way that matches what an HTTP client would actually serialize. We do
+ * not normalize key order: if a provider's serializer differs between
+ * requests, that *is* a real cache break we want to surface.
+ */
+function stableStringify(value: unknown): string {
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return String(value);
+	}
 }
 
 /**
