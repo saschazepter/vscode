@@ -194,10 +194,12 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			if (review.planUri) {
 				dom.hide(elements.feedback); // Hidden until the user enters review mode or inline feedback exists.
 			} else {
-				// No plan file: keep the textarea visible from the start and
-				// treat as already in feedback mode.
-				this._isFeedbackMode = true;
-				this.domNode.classList.add('chat-plan-review-feedback-mode');
+				// No plan file: there's no inline editor surface to coordinate
+				// with, so we don't toggle into "feedback mode". Instead leave
+				// the textarea visible alongside the regular Approve/Reject
+				// buttons and let the user optionally type a comment that
+				// rides along with whichever action they pick.
+				this.domNode.classList.add('chat-plan-review-textarea-mode');
 			}
 		} else {
 			dom.hide(elements.feedback);
@@ -685,7 +687,16 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			}
 		}
 		this._isSubmitted = true;
-		this._options.onSubmit({ action: action.label, rejected: false });
+		// In the no-planUri "textarea mode" the user can optionally type a
+		// comment that rides along with the approval. Surface it as both
+		// `feedback` (for the agent) and `feedbackOverall` (for the chat
+		// transcript) so it renders next to the action label.
+		const textareaFeedback = this._feedbackTextarea?.value.trim();
+		this._options.onSubmit({
+			action: action.label,
+			rejected: false,
+			...(textareaFeedback ? { feedback: textareaFeedback, feedbackOverall: textareaFeedback } : {}),
+		});
 		this.markUsed();
 	}
 
@@ -694,7 +705,11 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return;
 		}
 		this._isSubmitted = true;
-		this._options.onSubmit({ rejected: true });
+		const textareaFeedback = this._feedbackTextarea?.value.trim();
+		this._options.onSubmit({
+			rejected: true,
+			...(textareaFeedback ? { feedback: textareaFeedback, feedbackOverall: textareaFeedback } : {}),
+		});
 		this.markUsed();
 	}
 

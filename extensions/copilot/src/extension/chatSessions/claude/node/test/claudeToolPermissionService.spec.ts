@@ -37,6 +37,7 @@ class MockToolsService implements IToolsService {
 
 	private _confirmationResult: 'yes' | 'no' = 'yes';
 	private _optionsConfirmationResult: string | undefined;
+	private _reviewPlanResult: { rejected: boolean; action?: string; feedback?: string } | undefined;
 	private _invokeToolCalls: Array<{ name: string; input: unknown }> = [];
 
 	setConfirmationResult(result: 'yes' | 'no'): void {
@@ -45,6 +46,10 @@ class MockToolsService implements IToolsService {
 
 	setOptionsConfirmationResult(result: string | undefined): void {
 		this._optionsConfirmationResult = result;
+	}
+
+	setReviewPlanResult(result: { rejected: boolean; action?: string; feedback?: string } | undefined): void {
+		this._reviewPlanResult = result;
 	}
 
 	get invokeToolCalls(): ReadonlyArray<{ name: string; input: unknown }> {
@@ -77,6 +82,14 @@ class MockToolsService implements IToolsService {
 			return {
 				content: this._optionsConfirmationResult !== undefined
 					? [new LanguageModelTextPart(this._optionsConfirmationResult)]
+					: []
+			};
+		}
+
+		if (name === ToolName.CoreReviewPlan) {
+			return {
+				content: this._reviewPlanResult !== undefined
+					? [new LanguageModelTextPart(JSON.stringify(this._reviewPlanResult))]
 					: []
 			};
 		}
@@ -277,36 +290,56 @@ describe('ClaudeToolPermissionService', () => {
 		describe('ExitPlanMode handler', () => {
 			const exitPlanModeInput = { plan: 'Step 1: Do something\nStep 2: Do another thing' };
 
-			it('allows when user clicks Approve', async () => {
-				mockToolsService.setOptionsConfirmationResult('Approve');
-				const context = createMockContext();
-
-				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, context);
-
-				expect(result.behavior).toBe('allow');
-				if (result.behavior === 'allow') {
-					expect(result.updatedInput).toEqual(exitPlanModeInput);
-				}
-			});
-
-			it('invokes CoreConfirmationToolWithOptions with Approve and Deny buttons', async () => {
-				mockToolsService.setOptionsConfirmationResult('Approve');
+			it('invokes CoreReviewPlan with Approve and Approve-with-Autopilot actions', async () => {
+				mockToolsService.setReviewPlanResult({ rejected: false, action: 'Approve' });
 				const context = createMockContext();
 
 				await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, context);
 
 				expect(mockToolsService.invokeToolCalls.length).toBe(1);
-				expect(mockToolsService.invokeToolCalls[0].name).toBe(ToolName.CoreConfirmationToolWithOptions);
-				const input = mockToolsService.invokeToolCalls[0].input as { title: string; message: string; buttons: string[] };
-				expect(input.buttons).toEqual(['Approve', 'Deny']);
-				expect(input.message).toContain('Step 1: Do something');
+				expect(mockToolsService.invokeToolCalls[0].name).toBe(ToolName.CoreReviewPlan);
+				const input = mockToolsService.invokeToolCalls[0].input as {
+					content: string;
+					actions: Array<{ label: string; default?: boolean; permissionLevel?: string }>;
+					canProvideFeedback: boolean;
+				};
+				expect(input.content).toContain('Step 1: Do something');
+				expect(input.canProvideFeedback).toBe(true);
+				expect(input.actions.map(a => a.label)).toEqual(['Approve', 'Approve & Bypass Permissions']);
+				expect(input.actions[1].permissionLevel).toBe('autopilot');
 			});
 
-			it('denies when user clicks Deny', async () => {
-				mockToolsService.setOptionsConfirmationResult('Deny');
-				const context = createMockContext();
+			it('allows when user picks Approve', async () => {
+				mockToolsService.setReviewPlanResult({ rejected: false, action: 'Approve' });
 
-				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, context);
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
+
+				expect(result.behavior).toBe('allow');
+				if (result.behavior === 'allow') {
+					expect(result.updatedInput).toEqual(exitPlanModeInput);
+					expect(result.updatedPermissions).toBeUndefined();
+				}
+			});
+
+			it('allows and switches to bypassPermissions when user picks Approve & Bypass Permissions', async () => {
+				mockToolsService.setReviewPlanResult({ rejected: false, action: 'Approve & Bypass Permissions' });
+
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
+
+				expect(result.behavior).toBe('allow');
+				if (result.behavior === 'allow') {
+					expect(result.updatedPermissions).toEqual([{
+						type: 'setMode',
+						mode: 'bypassPermissions',
+						destination: 'session',
+					}]);
+				}
+			});
+
+			it('denies when user rejects without feedback', async () => {
+				mockToolsService.setReviewPlanResult({ rejected: true });
+
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
 
 				expect(result.behavior).toBe('deny');
 				if (result.behavior === 'deny') {
@@ -314,22 +347,45 @@ describe('ClaudeToolPermissionService', () => {
 				}
 			});
 
-			it('denies when dialog returns empty content', async () => {
-				mockToolsService.setOptionsConfirmationResult(undefined);
-				const context = createMockContext();
+			it('denies and surfaces feedback when user rejects with feedback', async () => {
+				mockToolsService.setReviewPlanResult({ rejected: true, feedback: 'Please cover edge cases' });
 
-				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, context);
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
 
 				expect(result.behavior).toBe('deny');
 				if (result.behavior === 'deny') {
-					expect(result.message).toContain('declined');
+					expect(result.message).toContain('rejected');
+					expect(result.message).toContain('Please cover edge cases');
 				}
+			});
+
+			it('treats approval-with-feedback as deny so Claude revises the plan', async () => {
+				mockToolsService.setReviewPlanResult({
+					rejected: false,
+					action: 'Approve',
+					feedback: 'Please also add tests',
+				});
+
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
+
+				expect(result.behavior).toBe('deny');
+				if (result.behavior === 'deny') {
+					expect(result.message).toContain('Please also add tests');
+				}
+			});
+
+			it('denies when review plan tool returns no content', async () => {
+				mockToolsService.setReviewPlanResult(undefined);
+
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, exitPlanModeInput, createMockContext());
+
+				expect(result.behavior).toBe('deny');
 			});
 
 			it('denies with distinct message when tool invocation throws', async () => {
 				const failingService = new class extends MockToolsService {
 					override async invokeTool(name: string): Promise<vscode.LanguageModelToolResult2> {
-						if (name === ToolName.CoreConfirmationToolWithOptions) {
+						if (name === ToolName.CoreReviewPlan) {
 							throw new Error('Tool unavailable');
 						}
 						return { content: [] };
@@ -345,19 +401,18 @@ describe('ClaudeToolPermissionService', () => {
 
 				expect(result.behavior).toBe('deny');
 				if (result.behavior === 'deny') {
-					expect(result.message).toBe('Failed to show plan confirmation');
+					expect(result.message).toBe('Failed to show plan review.');
 				}
 			});
 
 			it('handles missing plan gracefully', async () => {
-				mockToolsService.setOptionsConfirmationResult('Approve');
-				const context = createMockContext();
+				mockToolsService.setReviewPlanResult({ rejected: false, action: 'Approve' });
 
-				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, {}, context);
+				const result = await service.canUseTool(ClaudeToolNames.ExitPlanMode, {}, createMockContext());
 
 				expect(result.behavior).toBe('allow');
-				const input = mockToolsService.invokeToolCalls[0].input as { message: string };
-				expect(input.message).toContain('');
+				const input = mockToolsService.invokeToolCalls[0].input as { content: string };
+				expect(input.content).toBe('');
 			});
 		});
 

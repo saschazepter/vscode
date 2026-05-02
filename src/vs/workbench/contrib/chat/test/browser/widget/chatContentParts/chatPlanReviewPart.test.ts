@@ -248,26 +248,44 @@ suite('ChatPlanReviewPart', () => {
 			assert.ok(buttons.some(b => b.textContent?.includes('Reject')), 'reject button should still be visible');
 		});
 
-		test('submitting feedback sends feedback value with rejected=false', () => {
-			// canProvideFeedback without planUri auto-shows the feedback section.
+		test('approving with textarea content sends approval + feedback', () => {
+			// canProvideFeedback without planUri shows the textarea alongside
+			// the regular Approve/Reject buttons; typed feedback rides along
+			// with whichever action the user picks.
 			createWidget(createMockReview({ canProvideFeedback: true }));
 
-			// Type feedback
 			const textarea = widget.domNode.querySelector('.chat-plan-review-feedback-textarea') as HTMLTextAreaElement;
 			assert.ok(textarea);
 			textarea.value = 'Please also add tests';
 			textarea.dispatchEvent(new Event('input'));
 
-			// Click submit
-			const submitButton = getFooterButtons(widget).find(b => b.textContent?.includes('Submit Feedback'));
-			assert.ok(submitButton, 'Submit Feedback button should exist');
-			submitButton!.click();
+			const approveButton = getFooterButtons(widget).find(b => b.textContent?.includes('Autopilot'));
+			assert.ok(approveButton, 'Approve button should be available even with canProvideFeedback');
+			approveButton!.click();
 
 			assert.deepStrictEqual(lastSubmitResult, {
+				action: 'Autopilot',
 				rejected: false,
 				feedback: 'Please also add tests',
 				feedbackOverall: 'Please also add tests',
-				feedbackInlineMarkdown: undefined,
+			});
+		});
+
+		test('rejecting with textarea content sends rejection + feedback', () => {
+			createWidget(createMockReview({ canProvideFeedback: true }));
+
+			const textarea = widget.domNode.querySelector('.chat-plan-review-feedback-textarea') as HTMLTextAreaElement;
+			textarea.value = 'Not the right approach';
+			textarea.dispatchEvent(new Event('input'));
+
+			const rejectButton = getFooterButtons(widget).find(b => b.textContent?.includes('Reject'));
+			assert.ok(rejectButton);
+			rejectButton!.click();
+
+			assert.deepStrictEqual(lastSubmitResult, {
+				rejected: true,
+				feedback: 'Not the right approach',
+				feedbackOverall: 'Not the right approach',
 			});
 		});
 
