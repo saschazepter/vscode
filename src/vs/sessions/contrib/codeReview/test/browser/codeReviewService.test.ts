@@ -7,7 +7,7 @@ import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { Range } from '../../../../../editor/common/core/range.js';
-import { IObservable, observableValue } from '../../../../../base/common/observable.js';
+import { IObservable, derived, observableValue } from '../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { DisposableStore, IDisposable, ImmortalReference, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
@@ -228,9 +228,20 @@ suite('CodeReviewService', () => {
 		getPullRequestCalls = 0;
 		getPullRequestReviewThreadsCalls = 0;
 
-		constructor() {
+		override readonly activeSessionPullRequestReviewThreadsObs: IObservable<GitHubPullRequestReviewThreadsModel | undefined>;
+
+		constructor(sessionsManagementService: MockSessionsManagementService) {
 			super();
 			this._reviewThreadsFetchers.set(this._key('owner', 'repo', 1), this.reviewThreadsFetcher);
+
+			this.activeSessionPullRequestReviewThreadsObs = derived(reader => {
+				const session = sessionsManagementService.activeSession.read(reader);
+				const gitHubInfo = session?.gitHubInfo.read(reader);
+				if (!gitHubInfo?.pullRequest) {
+					return undefined;
+				}
+				return this.getReviewThreadsModel(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+			});
 		}
 
 		getReviewThreadsFetcher(owner: string, repo: string, prNumber: number): MockReviewThreadsFetcher {
@@ -270,11 +281,12 @@ suite('CodeReviewService', () => {
 		instantiationService.stub(ICommandService, commandService);
 		const logService = new NullLogService();
 		instantiationService.stub(ILogService, logService);
-		gitHubService = new MockGitHubService();
-		instantiationService.stub(IGitHubService, gitHubService);
 
 		sessionsManagement = new MockSessionsManagementService(store);
 		instantiationService.stub(ISessionsManagementService, sessionsManagement);
+
+		gitHubService = new MockGitHubService(sessionsManagement);
+		instantiationService.stub(IGitHubService, gitHubService);
 
 		storageService = store.add(new InMemoryStorageService());
 		instantiationService.stub(IStorageService, storageService);
@@ -332,7 +344,7 @@ suite('CodeReviewService', () => {
 			}, {
 				comments: [{ id: 'thread-100', uri: 'file:///workspace/src/a.ts', body: 'Comment on src/a.ts', author: 'reviewer' }],
 				getPullRequestCalls: 0,
-				getPullRequestReviewThreadsCalls: 1,
+				getPullRequestReviewThreadsCalls: 0,
 				legacyThreadRefreshes: 0,
 				reviewThreadRefreshes: 1,
 			});

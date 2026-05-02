@@ -103,7 +103,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 			}
 
 			const prModelRef = this.createPullRequestModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequestNumber);
-			prModelRef.object.refresh();
 			reader.store.add(prModelRef);
 
 			return prModelRef.object;
@@ -118,7 +117,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 			}
 
 			const prModelRef = this.createPullRequestCIModelReference(pullRequestInfo.owner, pullRequestInfo.repo, pullRequestInfo.prNumber, pullRequestDetails.headSha);
-			prModelRef.object.refresh();
 			reader.store.add(prModelRef);
 
 			return prModelRef.object;
@@ -131,7 +129,6 @@ export class GitHubService extends Disposable implements IGitHubService {
 			}
 
 			const reviewThreadsModelRef = this.createPullRequestReviewThreadsModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequestNumber);
-			reviewThreadsModelRef.object.refresh();
 			reader.store.add(reviewThreadsModelRef);
 
 			return reviewThreadsModelRef.object;

@@ -36,9 +36,7 @@ export class ChecksViewModel extends Disposable {
 			// Use the PR's headSha (commit SHA) rather than the branch
 			// name so CI checks can still be fetched after branch deletion
 			// (e.g. after the PR is merged).
-			ciModel.refresh();
 			reader.store.add(ciModel.startPolling());
-
 			return ciModel;
 		});
 	}

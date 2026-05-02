@@ -7,8 +7,9 @@ import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
-import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, ImmortalReference, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { IObservable, observableValue } from '../../../../../base/common/observable.js';
+import { GitHubPullRequestModel } from '../../browser/models/githubPullRequestModel.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { mock } from '../../../../../base/test/common/mock.js';
@@ -202,6 +203,20 @@ class TestSession implements ISession {
 class TestGitHubService extends mock<IGitHubService>() {
 
 	private readonly _models = new Map<string, TestPullRequestModel>();
+
+	override readonly activeSessionPullRequestObs = observableValue('test.activePR', undefined);
+	override readonly activeSessionPullRequestCIObs = observableValue('test.activePRCI', undefined);
+	override readonly activeSessionPullRequestReviewThreadsObs = observableValue('test.activePRReviewThreads', undefined);
+
+	override createPullRequestModelReference(owner: string, repo: string, prNumber: number): IReference<GitHubPullRequestModel> {
+		const key = `${owner}/${repo}/${prNumber}`;
+		let model = this._models.get(key);
+		if (!model) {
+			model = new TestPullRequestModel();
+			this._models.set(key, model);
+		}
+		return new ImmortalReference(model as unknown as GitHubPullRequestModel);
+	}
 
 	snapshot(): Record<string, { startPollingCalls: number; stopPollingCalls: number; disposeCalls: number }> {
 		const entries = [...this._models.entries()].map(([key, model]) => [key, {

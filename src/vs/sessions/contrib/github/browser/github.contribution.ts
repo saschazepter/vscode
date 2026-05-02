@@ -38,12 +38,12 @@ export class GitHubPullRequestPollingContribution extends Disposable implements 
 			}
 
 			const prModel = this._gitHubService.activeSessionPullRequestObs.read(reader);
-			if (!prModel) {
-				return;
-			}
+			const prCIModel = this._gitHubService.activeSessionPullRequestCIObs.read(reader);
+			const prReviewThreadsModel = this._gitHubService.activeSessionPullRequestReviewThreadsObs.read(reader);
 
-			prModel.refresh();
-			reader.store.add(prModel);
+			prModel?.refresh();
+			prCIModel?.refresh();
+			prReviewThreadsModel?.refresh();
 		}));
 
 		this._sessionsManagementService.onDidChangeSessions(this._onDidChangeSessions, this, this._store);
