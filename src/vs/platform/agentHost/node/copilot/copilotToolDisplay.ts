@@ -105,9 +105,9 @@ function formatViewRange(view_range: number[] | undefined): { startLine: number;
 }
 
 /**
- * Parameters for the `grep` tool. Per the extension-host CLI parity reference
- * (`copilotCLITools.ts`), the Copilot CLI's `grep` accepts the same rich rg-flag
- * schema as `rg`; the older narrower shape (e.g. `include`) is no longer used.
+ * Parameters for the `grep` tool. The Copilot CLI's `grep` accepts the same
+ * rich rg-flag schema as `rg`; the older narrower shape (e.g. `include`) is
+ * no longer used.
  */
 interface ICopilotGrepToolArgs {
 	pattern: string;
@@ -356,9 +356,9 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 		case CopilotToolName.Rg: {
 			const args = parameters as ICopilotRgToolArgs | undefined;
 			if (args?.pattern) {
-				return md(localize('toolInvoke.rgPattern', "Searching for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
+				return md(localize('toolInvoke.grepPattern', "Searching for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
 			}
-			return localize('toolInvoke.rg', "Searching files");
+			return localize('toolInvoke.grep', "Searching files");
 		}
 		case CopilotToolName.Glob: {
 			const args = parameters as ICopilotGlobToolArgs | undefined;
@@ -444,9 +444,9 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 		case CopilotToolName.Rg: {
 			const args = parameters as ICopilotRgToolArgs | undefined;
 			if (args?.pattern) {
-				return md(localize('toolComplete.rgPattern', "Searched for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
+				return md(localize('toolComplete.grepPattern', "Searched for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
 			}
-			return localize('toolComplete.rg', "Searched files");
+			return localize('toolComplete.grep', "Searched files");
 		}
 		case CopilotToolName.Glob: {
 			const args = parameters as ICopilotGlobToolArgs | undefined;
