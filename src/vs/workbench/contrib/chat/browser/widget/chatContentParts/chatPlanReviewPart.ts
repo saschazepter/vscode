@@ -702,7 +702,7 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		const textareaFeedback = ridesAlong ? this._feedbackTextarea?.value.trim() : undefined;
 		this._options.onSubmit({
 			action: action.label,
-			actionId: action.id,
+			...(action.id ? { actionId: action.id } : {}),
 			rejected: false,
 			...(textareaFeedback ? { feedback: textareaFeedback, feedbackOverall: textareaFeedback } : {}),
 		});
