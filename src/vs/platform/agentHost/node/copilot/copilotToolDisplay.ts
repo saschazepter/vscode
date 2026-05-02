@@ -49,6 +49,7 @@ const enum CopilotToolName {
 	Edit = 'edit',
 	Create = 'create',
 	Grep = 'grep',
+	Rg = 'rg',
 	Glob = 'glob',
 	ApplyPatch = 'apply_patch',
 	GitApplyPatch = 'git_apply_patch',
@@ -103,11 +104,44 @@ function formatViewRange(view_range: number[] | undefined): { startLine: number;
 	return { startLine, endLine };
 }
 
-/** Parameters for the `grep` tool. */
+/**
+ * Parameters for the `grep` tool. Per the extension-host CLI parity reference
+ * (`copilotCLITools.ts`), the Copilot CLI's `grep` accepts the same rich rg-flag
+ * schema as `rg`; the older narrower shape (e.g. `include`) is no longer used.
+ */
 interface ICopilotGrepToolArgs {
 	pattern: string;
 	path?: string;
-	include?: string;
+	output_mode?: 'content' | 'files_with_matches' | 'count';
+	glob?: string;
+	type?: string;
+	'-i'?: boolean;
+	'-A'?: number;
+	'-B'?: number;
+	'-C'?: number;
+	'-n'?: boolean;
+	head_limit?: number;
+	multiline?: boolean;
+}
+
+/**
+ * Parameters for the `rg` tool. Mirrors {@link ICopilotGrepToolArgs} today but
+ * is kept as a distinct interface so the two tools can drift independently if
+ * the SDK ever differentiates them.
+ */
+interface ICopilotRgToolArgs {
+	pattern: string;
+	path?: string;
+	output_mode?: 'content' | 'files_with_matches' | 'count';
+	glob?: string;
+	type?: string;
+	'-i'?: boolean;
+	'-A'?: number;
+	'-B'?: number;
+	'-C'?: number;
+	'-n'?: boolean;
+	head_limit?: number;
+	multiline?: boolean;
 }
 
 /** Parameters for the `glob` tool. */
@@ -243,7 +277,8 @@ export function getToolDisplayName(toolName: string): string {
 		case CopilotToolName.View: return localize('toolName.view', "View File");
 		case CopilotToolName.Edit: return localize('toolName.edit', "Edit File");
 		case CopilotToolName.Create: return localize('toolName.create', "Create File");
-		case CopilotToolName.Grep: return localize('toolName.grep', "Search");
+		case CopilotToolName.Grep:
+		case CopilotToolName.Rg: return localize('toolName.grep', "Search");
 		case CopilotToolName.Glob: return localize('toolName.glob', "Find Files");
 		case CopilotToolName.ApplyPatch:
 		case CopilotToolName.GitApplyPatch: return localize('toolName.patch', "Patch");
@@ -317,6 +352,13 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 				return md(localize('toolInvoke.grepPattern', "Searching for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
 			}
 			return localize('toolInvoke.grep', "Searching files");
+		}
+		case CopilotToolName.Rg: {
+			const args = parameters as ICopilotRgToolArgs | undefined;
+			if (args?.pattern) {
+				return md(localize('toolInvoke.rgPattern', "Searching for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
+			}
+			return localize('toolInvoke.rg', "Searching files");
 		}
 		case CopilotToolName.Glob: {
 			const args = parameters as ICopilotGlobToolArgs | undefined;
@@ -398,6 +440,13 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 				return md(localize('toolComplete.grepPattern', "Searched for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
 			}
 			return localize('toolComplete.grep', "Searched files");
+		}
+		case CopilotToolName.Rg: {
+			const args = parameters as ICopilotRgToolArgs | undefined;
+			if (args?.pattern) {
+				return md(localize('toolComplete.rgPattern', "Searched for {0}", appendEscapedMarkdownInlineCode(truncate(args.pattern, 80))));
+			}
+			return localize('toolComplete.rg', "Searched files");
 		}
 		case CopilotToolName.Glob: {
 			const args = parameters as ICopilotGlobToolArgs | undefined;
@@ -521,6 +570,10 @@ export function getToolInputString(toolName: string, parameters: Record<string, 
 	switch (toolName) {
 		case CopilotToolName.Grep: {
 			const args = parameters as ICopilotGrepToolArgs | undefined;
+			return args?.pattern ?? rawArguments;
+		}
+		case CopilotToolName.Rg: {
+			const args = parameters as ICopilotRgToolArgs | undefined;
 			return args?.pattern ?? rawArguments;
 		}
 		default:
