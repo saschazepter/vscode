@@ -40,9 +40,7 @@ export abstract class BaseChatToolInvocationSubPart extends Disposable {
 		}
 
 		if (toolInvocation.toolSpecificData?.kind === 'search') {
-			return IChatToolInvocation.isComplete(toolInvocation)
-				? Codicon.search
-				: ThemeIcon.modify(Codicon.search, 'spin');
+			return Codicon.search;
 		}
 
 		return confirmState?.type === ToolConfirmKind.Denied ?
