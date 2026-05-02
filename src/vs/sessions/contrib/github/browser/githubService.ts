@@ -90,9 +90,9 @@ export class GitHubService extends Disposable implements IGitHubService {
 				}
 
 				return {
-					owner: gitHubInfo?.owner,
-					repo: gitHubInfo?.repo,
-					pullRequestNumber: gitHubInfo?.pullRequest?.number
+					owner: gitHubInfo.owner,
+					repo: gitHubInfo.repo,
+					pullRequestNumber: gitHubInfo.pullRequest.number
 				};
 			});
 
@@ -108,15 +108,30 @@ export class GitHubService extends Disposable implements IGitHubService {
 			return prModelRef.object;
 		});
 
-		this.activeSessionPullRequestCIObs = derived(reader => {
-			const pullRequestInfo = this.activeSessionPullRequestObs.read(reader);
-			const pullRequestDetails = pullRequestInfo?.pullRequest.read(reader);
+		const pullRequestInfoObs = derivedOpts<{ owner: string; repo: string; prNumber: number; headSha: string } | undefined>({ equalsFn: structuralEquals },
+			reader => {
+				const pullRequest = this.activeSessionPullRequestObs.read(reader);
+				const pullRequestDetails = pullRequest?.pullRequest.read(reader);
 
-			if (!pullRequestInfo || !pullRequestDetails) {
+				if (!pullRequest || !pullRequestDetails) {
+					return undefined;
+				}
+
+				return {
+					owner: pullRequest.owner,
+					repo: pullRequest.repo,
+					prNumber: pullRequest.prNumber,
+					headSha: pullRequestDetails.headSha
+				};
+			});
+
+		this.activeSessionPullRequestCIObs = derived(reader => {
+			const pullRequestInfo = pullRequestInfoObs.read(reader);
+			if (!pullRequestInfo) {
 				return undefined;
 			}
 
-			const prModelRef = this.createPullRequestCIModelReference(pullRequestInfo.owner, pullRequestInfo.repo, pullRequestInfo.prNumber, pullRequestDetails.headSha);
+			const prModelRef = this.createPullRequestCIModelReference(pullRequestInfo.owner, pullRequestInfo.repo, pullRequestInfo.prNumber, pullRequestInfo.headSha);
 			reader.store.add(prModelRef);
 
 			return prModelRef.object;
