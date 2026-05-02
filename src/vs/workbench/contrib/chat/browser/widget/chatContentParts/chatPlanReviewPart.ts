@@ -324,15 +324,21 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			this.updateSubmitButtonState();
 		}));
 
-		// Enter submits feedback; Shift+Enter inserts a newline.
-		this._register(dom.addDisposableListener(textarea, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			const ev = new StandardKeyboardEvent(e);
-			if (ev.keyCode === KeyCode.Enter && !ev.shiftKey) {
-				e.preventDefault();
-				e.stopPropagation();
-				this.submitFeedback();
-			}
-		}));
+		// Enter submits feedback; Shift+Enter inserts a newline. Only wired
+		// up in plan-mode (where Submit Feedback is the primary action).
+		// In the no-planUri textarea-only flow the user must explicitly pick
+		// Approve or Reject, so Enter falls through to the default newline
+		// behaviour to avoid an accidental feedback-only submit.
+		if (this.review.planUri) {
+			this._register(dom.addDisposableListener(textarea, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				const ev = new StandardKeyboardEvent(e);
+				if (ev.keyCode === KeyCode.Enter && !ev.shiftKey) {
+					e.preventDefault();
+					e.stopPropagation();
+					this.submitFeedback();
+				}
+			}));
+		}
 	}
 
 	private renderCommentsList(): void {
@@ -688,12 +694,15 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 		}
 		this._isSubmitted = true;
 		// In the no-planUri "textarea mode" the user can optionally type a
-		// comment that rides along with the approval. Surface it as both
-		// `feedback` (for the agent) and `feedbackOverall` (for the chat
-		// transcript) so it renders next to the action label.
-		const textareaFeedback = this._feedbackTextarea?.value.trim();
+		// comment that rides along with the approval. In the plan-file flow
+		// the textarea is part of feedback mode, where the user is expected
+		// to submit via the "Submit Feedback" button — silently attaching a
+		// stale draft to a later Approve click would be surprising.
+		const ridesAlong = !this.review.planUri;
+		const textareaFeedback = ridesAlong ? this._feedbackTextarea?.value.trim() : undefined;
 		this._options.onSubmit({
 			action: action.label,
+			actionId: action.id,
 			rejected: false,
 			...(textareaFeedback ? { feedback: textareaFeedback, feedbackOverall: textareaFeedback } : {}),
 		});
@@ -705,7 +714,10 @@ export class ChatPlanReviewPart extends Disposable implements IChatContentPart {
 			return;
 		}
 		this._isSubmitted = true;
-		const textareaFeedback = this._feedbackTextarea?.value.trim();
+		// Same scoping as `submitApproval`: only the textarea-only flow lets
+		// a typed comment ride along with the action click.
+		const ridesAlong = !this.review.planUri;
+		const textareaFeedback = ridesAlong ? this._feedbackTextarea?.value.trim() : undefined;
 		this._options.onSubmit({
 			rejected: true,
 			...(textareaFeedback ? { feedback: textareaFeedback, feedbackOverall: textareaFeedback } : {}),
