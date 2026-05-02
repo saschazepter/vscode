@@ -15,6 +15,8 @@ import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { AgentSession, IAgentConnection, IAgentSessionMetadata } from '../../../../platform/agentHost/common/agentService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { KNOWN_AUTO_APPROVE_VALUES, SessionConfigKey } from '../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { ResolveSessionConfigResult } from '../../../../platform/agentHost/common/state/protocol/commands.js';
 import { NotificationType } from '../../../../platform/agentHost/common/state/protocol/notifications.js';
 import { FileEdit, ModelSelection, RootConfigState, RootState, SessionState, SessionSummary, SessionStatus as ProtocolSessionStatus } from '../../../../platform/agentHost/common/state/protocol/state.js';
@@ -23,7 +25,7 @@ import { readSessionGitState, StateComponents, type ISessionGitState } from '../
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatSendRequestOptions, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSessionFileChange, IChatSessionFileChange2, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { diffsEqual, diffsToChanges, mapProtocolStatus } from './agentHostDiffs.js';
 import { buildMutableConfigSchema, IAgentHostSessionsProvider, resolvedConfigsEqual } from '../../../common/agentHostSessionsProvider.js';
@@ -381,6 +383,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		@IChatService protected readonly _chatService: IChatService,
 		@IChatWidgetService protected readonly _chatWidgetService: IChatWidgetService,
 		@ILanguageModelsService protected readonly _languageModelsService: ILanguageModelsService,
+		@IConfigurationService protected readonly _baseConfigurationService: IConfigurationService,
 	) {
 		super();
 	}
@@ -617,12 +620,29 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		this._currentNewSessionModelId = modelId;
 		this._currentNewSessionLoading = loading;
 		const agentProvider = sessionType.id;
+		const initialConfig = this._initialNewSessionConfig();
 		this._newSessionWorkspaces.set(session.sessionId, workspaceUri);
 		this._newSessionAgentProviders.set(session.sessionId, agentProvider);
-		this._newSessionConfigs.set(session.sessionId, { schema: { type: 'object', properties: {} }, values: {} });
+		this._newSessionConfigs.set(session.sessionId, { schema: { type: 'object', properties: {} }, values: { ...initialConfig } });
 		this._onDidChangeSessionConfig.fire(session.sessionId);
-		this._resolveSessionConfig(session.sessionId, agentProvider, workspaceUri, undefined);
+		this._resolveSessionConfig(session.sessionId, agentProvider, workspaceUri, initialConfig);
 		return session;
+	}
+
+	/**
+	 * Initial session-config values applied to a brand-new agent-host session
+	 * before its schema is resolved. The user-facing `chat.permissions.default`
+	 * setting seeds the `autoApprove` property so that agents which advertise
+	 * the well-known auto-approve enum (`default | autoApprove | autopilot`)
+	 * pick it up on their first `resolveSessionConfig` round-trip. Agents that
+	 * do not advertise `autoApprove` simply ignore the unknown key.
+	 */
+	private _initialNewSessionConfig(): Record<string, unknown> | undefined {
+		const configured = this._baseConfigurationService.getValue<string>(ChatConfiguration.DefaultPermissionLevel);
+		if (typeof configured !== 'string' || !KNOWN_AUTO_APPROVE_VALUES.has(configured)) {
+			return undefined;
+		}
+		return { [SessionConfigKey.AutoApprove]: configured };
 	}
 
 	// -- Dynamic session config ----------------------------------------------

@@ -200,7 +200,7 @@ export class RemoteAgentHostSessionsProvider extends BaseAgentHostSessionsProvid
 		@ILabelService private readonly _labelService: ILabelService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 	) {
-		super(chatSessionsService, chatService, chatWidgetService, languageModelsService);
+		super(chatSessionsService, chatService, chatWidgetService, languageModelsService, _configurationService);
 
 		this._connectionAuthority = agentHostAuthority(config.address);
 		this._connectOnDemand = config.connectOnDemand;

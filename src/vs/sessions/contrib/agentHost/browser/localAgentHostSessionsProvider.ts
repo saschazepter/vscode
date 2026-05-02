@@ -55,7 +55,7 @@ export class LocalAgentHostSessionsProvider extends BaseAgentHostSessionsProvide
 		@ILabelService private readonly _labelService: ILabelService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 	) {
-		super(chatSessionsService, chatService, chatWidgetService, languageModelsService);
+		super(chatSessionsService, chatService, chatWidgetService, languageModelsService, _configurationService);
 
 		this.label = localize('localAgentHostLabel', "Local Agent Host");
 
