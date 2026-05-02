@@ -108,7 +108,7 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private readonly _connectionStatusWatch = this._register(new MutableDisposable());
 
-	private _triggerElement: HTMLElement | undefined;
+	protected _triggerElement: HTMLElement | undefined;
 	private readonly _renderDisposables = this._register(new DisposableStore());
 
 	/** Cached VS Code recent folder URIs, resolved lazily. */
@@ -226,17 +226,7 @@ export class WorkspacePicker extends Disposable {
 		const delegate: IActionListDelegate<IWorkspacePickerItem> = {
 			onSelect: (item) => {
 				this.actionWidgetService.hide();
-				if (item.commandId) {
-					this.commandService.executeCommand(item.commandId);
-				} else if (item.selection && this._isProviderUnavailable(item.selection.providerId)) {
-					// Workspace belongs to an unavailable remote — ignore selection
-					return;
-				}
-				if (item.browseActionIndex !== undefined) {
-					this._executeBrowseAction(item.browseActionIndex);
-				} else if (item.selection) {
-					this._selectProject(item.selection);
-				}
+				this._dispatchPickerItem(item);
 			},
 			onHide: () => {
 				triggerElement.setAttribute('aria-expanded', 'false');
@@ -263,6 +253,26 @@ export class WorkspacePicker extends Disposable {
 			},
 			listOptions,
 		);
+	}
+
+	/**
+	 * Dispatch logic for a picker item once the user picks it. Shared
+	 * between the desktop action-widget delegate and any mobile sheet
+	 * subclass that opts to render a different UI but reuse the
+	 * selection semantics. Treats unavailable workspaces as a no-op.
+	 */
+	protected _dispatchPickerItem(item: IWorkspacePickerItem): void {
+		if (item.commandId) {
+			this.commandService.executeCommand(item.commandId);
+		} else if (item.selection && this._isProviderUnavailable(item.selection.providerId)) {
+			// Workspace belongs to an unavailable remote — ignore selection
+			return;
+		}
+		if (item.browseActionIndex !== undefined) {
+			this._executeBrowseAction(item.browseActionIndex);
+		} else if (item.selection) {
+			this._selectProject(item.selection);
+		}
 	}
 
 	/**

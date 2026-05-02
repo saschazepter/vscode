@@ -31,7 +31,8 @@ import { IsolationPicker } from './isolationPicker.js';
 import { BranchPicker } from './branchPicker.js';
 import { ModePicker } from './modePicker.js';
 import { CloudModelPicker } from './modelPicker.js';
-import { CopilotPermissionPickerDelegate, PermissionPicker } from './permissionPicker.js';
+import { CopilotPermissionPickerDelegate } from './permissionPicker.js';
+import { MobilePermissionPicker } from './mobilePermissionPicker.js';
 import { ClaudePermissionModePicker } from './claudePermissionModePicker.js';
 
 const IsActiveSessionCopilotCLI = ContextKeyExpr.equals(ActiveSessionTypeContext.key, COPILOT_CLI_SESSION_TYPE);
@@ -243,7 +244,7 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 			Menus.NewSessionControl, 'sessions.defaultCopilot.permissionPicker',
 			() => {
 				const delegate = instantiationService.createInstance(CopilotPermissionPickerDelegate);
-				const picker = instantiationService.createInstance(PermissionPicker, delegate);
+				const picker = instantiationService.createInstance(MobilePermissionPicker, delegate);
 				return new PickerActionViewItem(picker, delegate);
 			},
 		));
