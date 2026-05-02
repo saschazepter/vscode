@@ -602,23 +602,13 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			return;
 		}
 
-		// Performance optimization: avoid spawning `git rev-parse --show-toplevel` for paths
-		// that are already inside an opened repository. Spawning git is expensive (especially on
-		// Windows / network drives) and during initial scan many calls hit the same repo (one for
-		// each visible editor, sub-folder, etc.). If `repoPath` is contained in an opened repo
-		// (and not inside one of its submodules) and does not itself host a `.git` (which would
-		// indicate a nested repository to discover), we can safely skip.
-		const containingRepository = this.getRepository(Uri.file(repoPath));
+		// Perf: avoid spawning `git rev-parse --show-toplevel` for paths that are already inside an opened repository.
+		const containingRepository = this.getRepository(repoPath);
 		if (containingRepository && !pathEquals(containingRepository.root, repoPath)) {
-			let hasNestedDotGit = false;
 			try {
+				// Handle the case when repoPath is itself a git repository.
 				await fs.promises.access(path.join(repoPath, '.git'));
-				hasNestedDotGit = true;
 			} catch {
-				// no nested .git
-			}
-
-			if (!hasNestedDotGit) {
 				this.logger.trace(`[Model][openRepository] Path ${repoPath} is contained in already opened repository: ${containingRepository.root}`);
 				return;
 			}
