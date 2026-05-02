@@ -528,7 +528,7 @@ class CodeMain {
 				return true;
 			}
 		} catch (error) {
-			console.error('Failed to check Inno Setup mutex:', error);
+			logService.error('Failed to check Inno Setup mutex:', error);
 			return false;
 		}
 	}
