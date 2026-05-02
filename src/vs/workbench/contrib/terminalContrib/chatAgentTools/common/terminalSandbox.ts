@@ -5,7 +5,7 @@
 
 /**
  * Local type definition for sandbox runtime configuration to avoid importing external package
- * in the common layer. The actual type should match @anthropic-ai/sandbox-runtime.
+ * in the common layer. The actual type should match @vscode/sandbox-runtime.
  */
 export interface ITerminalSandboxRuntimeConfig {
 	network?: {
