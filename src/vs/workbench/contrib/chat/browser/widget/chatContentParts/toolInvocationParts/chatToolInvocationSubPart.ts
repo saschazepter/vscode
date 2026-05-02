@@ -9,7 +9,6 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../../../base/common/themables.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../../../common/chatService/chatService.js';
 import { IChatCodeBlockInfo } from '../../../chat.js';
-import { getToolInvocationIcon } from '../chatThinkingContentPart.js';
 
 export abstract class BaseChatToolInvocationSubPart extends Disposable {
 	protected static idPool = 0;
@@ -40,13 +39,15 @@ export abstract class BaseChatToolInvocationSubPart extends Disposable {
 			return Codicon.circleSlash;
 		}
 
-		if (confirmState?.type === ToolConfirmKind.Denied) {
-			return Codicon.error;
+		if (toolInvocation.toolSpecificData?.kind === 'search') {
+			return IChatToolInvocation.isComplete(toolInvocation)
+				? Codicon.search
+				: ThemeIcon.modify(Codicon.search, 'spin');
 		}
 
-		const icon = getToolInvocationIcon(toolInvocation.toolId, toolInvocation.icon ?? undefined);
-		return IChatToolInvocation.isComplete(toolInvocation)
-			? icon
-			: ThemeIcon.modify(icon, 'spin');
+		return confirmState?.type === ToolConfirmKind.Denied ?
+			Codicon.error :
+			IChatToolInvocation.isComplete(toolInvocation) ?
+				Codicon.check : ThemeIcon.modify(Codicon.loading, 'spin');
 	}
 }
