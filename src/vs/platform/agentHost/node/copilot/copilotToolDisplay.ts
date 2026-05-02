@@ -204,6 +204,12 @@ const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
 	'task',
 ]);
 
+/** Set of tool names that perform file/text search. */
+const SEARCH_TOOL_NAMES: ReadonlySet<string> = new Set([
+	CopilotToolName.Grep,
+	CopilotToolName.Rg,
+]);
+
 /**
  * Tools that should not be shown to the user. These are internal tools
  * used by the CLI for its own purposes (e.g., reporting intent to the model).
@@ -590,16 +596,19 @@ export function getToolInputString(toolName: string, parameters: Record<string, 
 }
 
 /**
- * Returns a rendering hint for the given tool. Currently only 'terminal' is
- * supported, which tells the renderer to display the tool as a terminal command
- * block.
+ * Returns a rendering hint for the given tool. Currently 'terminal', 'subagent',
+ * and 'search' are supported, which tell the renderer to display the tool with
+ * a terminal command block, a subagent widget, or a search icon respectively.
  */
-export function getToolKind(toolName: string): 'terminal' | 'subagent' | undefined {
+export function getToolKind(toolName: string): 'terminal' | 'subagent' | 'search' | undefined {
 	if (SHELL_TOOL_NAMES.has(toolName)) {
 		return 'terminal';
 	}
 	if (SUBAGENT_TOOL_NAMES.has(toolName)) {
 		return 'subagent';
+	}
+	if (SEARCH_TOOL_NAMES.has(toolName)) {
+		return 'search';
 	}
 	return undefined;
 }
