@@ -83,6 +83,7 @@ export function getToolInvocationIcon(toolId: string, registeredIcon?: ThemeIcon
 	if (
 		lowerToolId.includes('search') ||
 		lowerToolId.includes('grep') ||
+		lowerToolId === 'rg' ||
 		lowerToolId.includes('find') ||
 		lowerToolId.includes('list') ||
 		lowerToolId.includes('semantic') ||
