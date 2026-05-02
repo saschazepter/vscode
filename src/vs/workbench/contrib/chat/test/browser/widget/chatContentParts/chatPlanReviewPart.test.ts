@@ -624,13 +624,15 @@ suite('ChatPlanReviewPart', () => {
 		test('disables feedback textarea after submission', () => {
 			createWidget(createMockReview({ canProvideFeedback: true }));
 
-			// Without planUri the feedback section is auto-shown; just type and submit.
+			// In the no-planUri textarea mode the textarea sits alongside the
+			// regular Approve/Reject buttons; submit by clicking Approve.
 			const textarea = widget.domNode.querySelector('.chat-plan-review-feedback-textarea') as HTMLTextAreaElement;
 			textarea.value = 'some feedback';
 			textarea.dispatchEvent(new Event('input'));
 
-			const submitButton = getFooterButtons(widget).find(b => b.textContent?.includes('Submit Feedback'));
-			submitButton!.click();
+			const approveButton = getFooterButtons(widget).find(b => b.textContent?.includes('Autopilot'));
+			assert.ok(approveButton, 'Approve button should be available');
+			approveButton!.click();
 
 			assert.strictEqual(textarea.disabled, true, 'textarea should be disabled after submission');
 		});
