@@ -207,7 +207,7 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this.setActiveSession(session);
 
 		let path = 'normal';
-		let error = false;
+		let error = true;
 		try {
 			// Find the chat and update active chat
 			let chat: IChat | undefined;
@@ -225,14 +225,13 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			if (chat && chat.status.get() === SessionStatus.Untitled) {
 				this._isNewChatInSessionContext.set(true);
 				path = 'untitled';
+				error = false;
 				return;
 			}
 
 			this._isNewChatInSessionContext.set(false);
 			await this.chatWidgetService.openSession(chatUri, ChatViewPaneTarget);
-		} catch (err) {
-			error = true;
-			throw err;
+			error = false;
 		} finally {
 			this.logService.trace(`[SessionsManagement] openChat done total=${Date.now() - t0}ms path=${path}${error ? ' error=true' : ''}`);
 		}
@@ -250,15 +249,13 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 		this._isNewChatInSessionContext.set(false);
 		this.setActiveSession(sessionData);
 
-		let error = false;
+		let error = true;
 		try {
 			// Open the active chat (which may have been restored to the last active chat)
 			const activeChat = this._activeSession.get()?.activeChat.get();
 			const openUri = activeChat?.resource ?? sessionData.resource;
 			await this.chatWidgetService.openSession(openUri, ChatViewPaneTarget, { preserveFocus: options?.preserveFocus });
-		} catch (err) {
-			error = true;
-			throw err;
+			error = false;
 		} finally {
 			this.logService.trace(`[SessionsManagement] openSession done total=${Date.now() - t0}ms${error ? ' error=true' : ''}`);
 		}

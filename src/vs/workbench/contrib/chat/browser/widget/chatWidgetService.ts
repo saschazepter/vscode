@@ -111,13 +111,14 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		this.logService.trace(`[ChatWidgetService] openSession start uri=${sessionResource.toString()} target=${targetKind}`);
 
 		let path = 'unknown';
-		let error = false;
+		let error = true;
 		try {
 			// Reveal if already open unless instructed otherwise
 			if (typeof target === 'undefined' || options?.revealIfOpened) {
 				const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(sessionResource, options);
 				if (alreadyOpenWidget) {
 					path = 'reveal';
+					error = false;
 					return alreadyOpenWidget;
 				}
 			} else {
@@ -134,6 +135,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 						chatView.focusInput();
 					}
 				}
+				error = false;
 				return chatView?.widget;
 			}
 
@@ -146,10 +148,8 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 					revealIfOpened: options?.revealIfOpened ?? true // always try to reveal if already opened unless explicitly told not to
 				}
 			}, target);
+			error = false;
 			return pane instanceof ChatEditor ? pane.widget : undefined;
-		} catch (err) {
-			error = true;
-			throw err;
 		} finally {
 			this.logService.trace(`[ChatWidgetService] openSession done total=${Date.now() - t0}ms path=${path}${error ? ' error=true' : ''}`);
 		}
