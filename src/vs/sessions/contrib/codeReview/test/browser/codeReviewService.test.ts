@@ -10,7 +10,7 @@ import { Range } from '../../../../../editor/common/core/range.js';
 import { IObservable, derived, observableValue } from '../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
-import { DisposableStore, IDisposable, ImmortalReference, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, ImmortalReference, IReference } from '../../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { mock } from '../../../../../base/test/common/mock.js';
@@ -204,25 +204,11 @@ suite('CodeReviewService', () => {
 		}
 	}
 
-	class MockGitHubPullRequestReviewThreadsModel extends GitHubPullRequestReviewThreadsModel {
-		startPollingCalls = 0;
-		stopPollingCalls = 0;
-
-		override startPolling(intervalMs?: number): IDisposable {
-			this.startPollingCalls++;
-			const polling = super.startPolling(intervalMs);
-			return toDisposable(() => {
-				this.stopPollingCalls++;
-				polling.dispose();
-			});
-		}
-	}
-
 	class MockGitHubService extends mock<IGitHubService>() {
 		readonly legacyFetcher = new MockReviewThreadsFetcher();
 		readonly reviewThreadsFetcher = new MockReviewThreadsFetcher();
 
-		private readonly _reviewThreadsModels = new Map<string, MockGitHubPullRequestReviewThreadsModel>();
+		private readonly _reviewThreadsModels = new Map<string, GitHubPullRequestReviewThreadsModel>();
 		private readonly _reviewThreadsFetchers = new Map<string, MockReviewThreadsFetcher>();
 
 		getPullRequestCalls = 0;
@@ -254,11 +240,11 @@ suite('CodeReviewService', () => {
 			return fetcher;
 		}
 
-		getReviewThreadsModel(owner: string, repo: string, prNumber: number): MockGitHubPullRequestReviewThreadsModel {
+		getReviewThreadsModel(owner: string, repo: string, prNumber: number): GitHubPullRequestReviewThreadsModel {
 			const key = this._key(owner, repo, prNumber);
 			let model = this._reviewThreadsModels.get(key);
 			if (!model) {
-				model = store.add(new MockGitHubPullRequestReviewThreadsModel(owner, repo, prNumber, this.getReviewThreadsFetcher(owner, repo, prNumber) as unknown as GitHubPRFetcher, new NullLogService()));
+				model = store.add(new GitHubPullRequestReviewThreadsModel(owner, repo, prNumber, this.getReviewThreadsFetcher(owner, repo, prNumber) as unknown as GitHubPRFetcher, new NullLogService()));
 				this._reviewThreadsModels.set(key, model);
 			}
 			return model;
@@ -330,6 +316,10 @@ suite('CodeReviewService', () => {
 
 		sessionsManagement.setActiveSession(session);
 		await tick();
+
+		// Polling is owned by GitHubPullRequestPollingContribution; refresh
+		// manually here to seed the review threads model with data.
+		await gitHubService.getReviewThreadsModel('owner', 'repo', 1).refresh();
 		await tick();
 
 		const state = service.getPRReviewState(session).get();
@@ -349,65 +339,6 @@ suite('CodeReviewService', () => {
 				reviewThreadRefreshes: 1,
 			});
 		}
-	});
-
-	test('only active session PR review model is polled', async () => {
-		const session2 = URI.parse('test://session/2');
-		sessionsManagement.addSession(session);
-		sessionsManagement.setGitHubInfo(session, makeGitHubInfo(1));
-		sessionsManagement.addSession(session2);
-		sessionsManagement.setGitHubInfo(session2, makeGitHubInfo(2));
-		gitHubService.getReviewThreadsFetcher('owner', 'repo', 1).nextThreads = [makePRThread('thread-100', 'src/a.ts')];
-		gitHubService.getReviewThreadsFetcher('owner', 'repo', 2).nextThreads = [makePRThread('thread-200', 'src/b.ts')];
-
-		sessionsManagement.setActiveSession(session);
-		await tick();
-		await tick();
-
-		const session1Model = gitHubService.getReviewThreadsModel('owner', 'repo', 1);
-		const session2Model = gitHubService.getReviewThreadsModel('owner', 'repo', 2);
-		assert.deepStrictEqual({
-			session1StartPollingCalls: session1Model.startPollingCalls,
-			session1StopPollingCalls: session1Model.stopPollingCalls,
-			session2StartPollingCalls: session2Model.startPollingCalls,
-			session2StopPollingCalls: session2Model.stopPollingCalls,
-		}, {
-			session1StartPollingCalls: 1,
-			session1StopPollingCalls: 0,
-			session2StartPollingCalls: 0,
-			session2StopPollingCalls: 0,
-		});
-
-		sessionsManagement.setActiveSession(session2);
-		await tick();
-		await tick();
-
-		assert.deepStrictEqual({
-			session1StartPollingCalls: session1Model.startPollingCalls,
-			session1StopPollingCalls: session1Model.stopPollingCalls,
-			session2StartPollingCalls: session2Model.startPollingCalls,
-			session2StopPollingCalls: session2Model.stopPollingCalls,
-		}, {
-			session1StartPollingCalls: 1,
-			session1StopPollingCalls: 1,
-			session2StartPollingCalls: 1,
-			session2StopPollingCalls: 0,
-		});
-
-		sessionsManagement.setActiveSession(undefined);
-		await tick();
-
-		assert.deepStrictEqual({
-			session1StartPollingCalls: session1Model.startPollingCalls,
-			session1StopPollingCalls: session1Model.stopPollingCalls,
-			session2StartPollingCalls: session2Model.startPollingCalls,
-			session2StopPollingCalls: session2Model.stopPollingCalls,
-		}, {
-			session1StartPollingCalls: 1,
-			session1StopPollingCalls: 1,
-			session2StartPollingCalls: 1,
-			session2StopPollingCalls: 1,
-		});
 	});
 
 	test('resolvePRReviewThread uses dedicated review threads model', async () => {

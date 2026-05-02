@@ -27,23 +27,55 @@ export class GitHubPullRequestPollingContribution extends Disposable implements 
 		super();
 
 		const activeSessionResourceObs = derivedOpts<URI | undefined>({ equalsFn: isEqual }, reader => {
-			return this._sessionsManagementService.activeSession.read(reader)?.resource;
+			const activeSession = this._sessionsManagementService.activeSession.read(reader);
+			if (!activeSession || !activeSession.resource || activeSession.isArchived.read(reader)) {
+				return undefined;
+			}
+
+			return activeSession.resource;
 		});
 
+		// Pull request model
 		this._register(autorun(reader => {
 			const activeSessionResource = activeSessionResourceObs.read(reader);
-			const activeSession = this._sessionsManagementService.activeSession.read(reader);
-			if (!activeSessionResource || !activeSession || activeSession.isArchived.read(reader)) {
+			if (!activeSessionResource) {
 				return;
 			}
 
-			const prModel = this._gitHubService.activeSessionPullRequestObs.read(reader);
-			const prCIModel = this._gitHubService.activeSessionPullRequestCIObs.read(reader);
-			const prReviewThreadsModel = this._gitHubService.activeSessionPullRequestReviewThreadsObs.read(reader);
+			const model = this._gitHubService.activeSessionPullRequestObs.read(reader);
+			model?.refresh();
+		}));
 
-			prModel?.refresh();
-			prCIModel?.refresh();
-			prReviewThreadsModel?.refresh();
+		// Pull request CI model
+		this._register(autorun(reader => {
+			const activeSessionResource = activeSessionResourceObs.read(reader);
+			if (!activeSessionResource) {
+				return;
+			}
+
+			const model = this._gitHubService.activeSessionPullRequestCIObs.read(reader);
+			if (!model) {
+				return;
+			}
+
+			model.refresh();
+			reader.store.add(model.startPolling());
+		}));
+
+		// Pull request review threads model
+		this._register(autorun(reader => {
+			const activeSessionResource = activeSessionResourceObs.read(reader);
+			if (!activeSessionResource) {
+				return;
+			}
+
+			const model = this._gitHubService.activeSessionPullRequestReviewThreadsObs.read(reader);
+			if (!model) {
+				return;
+			}
+
+			model.refresh();
+			reader.store.add(model.startPolling());
 		}));
 
 		this._sessionsManagementService.onDidChangeSessions(this._onDidChangeSessions, this, this._store);

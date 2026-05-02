@@ -380,15 +380,6 @@ export class CodeReviewService extends Disposable implements ICodeReviewService 
 
 				data.state.set({ kind: PRReviewStateKind.Loaded, comments }, undefined);
 			}));
-
-			// Drive an initial refresh on activation. Refresh swallows errors
-			// internally; we still attach a catch in case of unexpected throws.
-			reviewThreadsModel.refresh().catch((err: unknown) => {
-				this._logService.error('[CodeReviewService] Failed to fetch PR review threads:', err);
-				data.state.set({ kind: PRReviewStateKind.Error, reason: String(err) }, undefined);
-			});
-
-			reader.store.add(reviewThreadsModel.startPolling());
 		}));
 	}
 

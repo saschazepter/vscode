@@ -21,23 +21,13 @@ export class ChecksViewModel extends Disposable {
 	) {
 		super();
 
-		this.activeSessionResourceObs = derivedOpts<URI | undefined>({ equalsFn: isEqual },
-			reader => {
-				const session = sessionManagementService.activeSession.read(reader);
-				return session?.resource;
-			});
+		this.activeSessionResourceObs = derivedOpts<URI | undefined>({ equalsFn: isEqual }, reader => {
+			const session = sessionManagementService.activeSession.read(reader);
+			return session?.resource;
+		});
 
 		this.checksObs = derived(this, reader => {
-			const ciModel = gitHubService.activeSessionPullRequestCIObs.read(reader);
-			if (!ciModel) {
-				return undefined;
-			}
-
-			// Use the PR's headSha (commit SHA) rather than the branch
-			// name so CI checks can still be fetched after branch deletion
-			// (e.g. after the PR is merged).
-			reader.store.add(ciModel.startPolling());
-			return ciModel;
+			return gitHubService.activeSessionPullRequestCIObs.read(reader);
 		});
 	}
 }
