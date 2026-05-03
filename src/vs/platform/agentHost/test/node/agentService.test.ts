@@ -987,6 +987,35 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'parent evicted after subagent drops');
 			assert.strictEqual(service.stateManager.getSessionState(childUri.toString()), undefined, 'child also evicted with parent');
 		});
+
+		test('nested subagent subscriber pins ancestor session against eviction', async () => {
+			service.registerProvider(copilotAgent);
+			const { session } = await copilotAgent.createSession();
+			const sessions = await copilotAgent.listSessions();
+			const sessionResource = sessions[0].session;
+
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Review', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: '', toolRequests: [{ toolCallId: 'tc-sub', name: 'task' }] },
+				{ type: 'tool_start', session, toolCallId: 'tc-sub', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating', toolKind: 'subagent' as const, subagentDescription: 'Find files', subagentAgentName: 'explore' },
+				{ type: 'subagent_started', session, toolCallId: 'tc-sub', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' },
+				{ type: 'tool_start', session, toolCallId: 'tc-inner', toolName: 'bash', displayName: 'Bash', invocationMessage: 'ls', parentToolCallId: 'tc-sub' },
+				{ type: 'tool_complete', session, toolCallId: 'tc-inner', result: { success: true, pastTenseMessage: 'ran', content: [{ type: ToolResultContentType.Text, text: 'a' }] }, parentToolCallId: 'tc-sub' },
+				{ type: 'tool_complete', session, toolCallId: 'tc-sub', result: { success: true, pastTenseMessage: 'done', content: [{ type: ToolResultContentType.Text, text: 'ok' }] } },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-3', content: 'Done', toolRequests: [] },
+			];
+			await service.restoreSession(sessionResource);
+			const childUri = URI.parse(buildSubagentSessionUri(sessionResource, 'tc-sub'));
+			await service.subscribe(childUri, 'client-child');
+			const nestedChildUri = URI.parse(buildSubagentSessionUri(childUri, 'tc-nested'));
+
+			service.addSubscriber(sessionResource, 'client-parent');
+			service.addSubscriber(nestedChildUri, 'client-nested-child');
+			service.unsubscribe(sessionResource, 'client-parent');
+
+			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'ancestor parent must stay while nested child is subscribed');
+			assert.ok(service.stateManager.getSessionState(childUri.toString()), 'intermediate child still present');
+		});
 	});
 
 	// ---- empty-session GC ----------------------------------------------
