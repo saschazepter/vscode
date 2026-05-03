@@ -56,9 +56,9 @@ export class CloudSessionStoreClient {
 
 	/**
 	 * Execute a SQL query against the cloud session store (user-scoped).
-	 * Returns an array of row objects on success, or undefined on failure.
+	 * Returns rows on success, an error string on query failure, or undefined on auth/network failure.
 	 */
-	async executeQuery(sql: string): Promise<{ rows: Record<string, unknown>[]; truncated: boolean } | undefined> {
+	async executeQuery(sql: string): Promise<{ rows: Record<string, unknown>[]; truncated: boolean } | { error: string } | undefined> {
 		try {
 			const copilotToken = await this._tokenManager.getCopilotToken();
 			const baseUrl = copilotToken.endpoints?.api;
@@ -85,7 +85,13 @@ export class CloudSessionStoreClient {
 			});
 
 			if (!res.ok) {
-				return undefined;
+				try {
+					const body = await res.json() as { error?: string; message?: string };
+					const msg = body?.error ?? body?.message ?? `HTTP ${res.status}`;
+					return { error: msg };
+				} catch {
+					return { error: `HTTP ${res.status}` };
+				}
 			}
 
 			const data = await res.json() as CloudQueryResponse;
