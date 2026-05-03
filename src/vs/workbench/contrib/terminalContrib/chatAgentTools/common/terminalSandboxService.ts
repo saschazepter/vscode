@@ -564,7 +564,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 				denyWritePaths = this._resolveLinuxFileSystemPaths(linuxFileSystemSetting.denyWrite);
 			}
 			const sandboxSettings = {
-				network: allowNetwork ? { enabled: false } : this.getResolvedNetworkDomains(),
+				network: allowNetwork ? { allowedDomains: [], deniedDomains: [], enabled: false } : this.getResolvedNetworkDomains(),
 				filesystem: {
 					denyRead: denyReadPaths,
 					allowRead: allowReadPaths,

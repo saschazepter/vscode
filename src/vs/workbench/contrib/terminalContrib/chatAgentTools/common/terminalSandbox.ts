@@ -11,6 +11,7 @@ export interface ITerminalSandboxRuntimeConfig {
 	network?: {
 		allowedDomains?: string[];
 		deniedDomains?: string[];
+		enabled?: boolean;
 	};
 	filesystem?: {
 		denyRead?: string[];
