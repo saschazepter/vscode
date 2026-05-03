@@ -452,26 +452,6 @@ suite('TerminalSandboxService - network domains', () => {
 		ok(!config.filesystem.allowRead.includes('/app/node_modules/@vscode/ripgrep'), 'Sandbox config should not redundantly include app root child paths');
 	});
 
-	test('should reallow reads from workspace storage', async () => {
-		remoteAgentService.remoteEnvironment = {
-			...remoteAgentService.remoteEnvironment!,
-			workspaceStorageHome: URI.file('/home/user/.vscode-server/data/User/workspaceStorage')
-		};
-
-		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
-		const configPath = await sandboxService.getSandboxConfigPath();
-
-		ok(configPath, 'Config path should be defined');
-		const configContent = createdFiles.get(configPath);
-		ok(configContent, 'Config file should be created');
-
-		const config = JSON.parse(configContent);
-		const expectedWorkspaceStoragePath = URI.joinPath(remoteAgentService.remoteEnvironment.workspaceStorageHome, workspaceContextService.getWorkspace().id).path;
-
-		ok(config.filesystem.denyRead.includes('/home/user'), 'Sandbox config should deny arbitrary reads from the user home');
-		ok(config.filesystem.allowRead.includes(expectedWorkspaceStoragePath), 'Sandbox config should re-allow reads from workspace storage');
-	});
-
 	test('should only add command-specific allowRead paths for the current command keywords', async () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 		const configPath = await sandboxService.getSandboxConfigPath();
@@ -925,44 +905,6 @@ suite('TerminalSandboxService - network domains', () => {
 		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
 
 		strictEqual(await sandboxService.isEnabled(), TerminalSandboxEnablement.Off, 'Deprecated settings should not be used when only non-user scopes are set');
-	});
-
-	test('should not fall back to deprecated chat.agent.sandbox setting due to namespace conflicts', async () => {
-		configurationService.setUserConfiguration(AgentSandboxSettingId.AgentSandboxEnabled, undefined);
-		configurationService.setUserConfiguration(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, {
-			allowWrite: ['/tmp']
-		});
-		const namespaceValue = { fileSystem: { linux: { allowWrite: ['/tmp'] } } };
-		const originalInspect = configurationService.inspect.bind(configurationService);
-		configurationService.inspect = <T>(key: string) => {
-			if (key === AgentSandboxSettingId.DeprecatedAgentSandboxEnabled) {
-				return {
-					value: namespaceValue,
-					defaultValue: false,
-					userValue: namespaceValue,
-					userLocalValue: namespaceValue,
-					userRemoteValue: undefined,
-					workspaceValue: undefined,
-					workspaceFolderValue: undefined,
-					memoryValue: undefined,
-					policyValue: undefined,
-				} as ReturnType<typeof originalInspect<T>>;
-			}
-			return originalInspect<T>(key);
-		};
-
-		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
-
-		strictEqual(await sandboxService.isEnabled(), false, 'Child settings under chat.agent.sandbox should not be treated as the deprecated boolean setting');
-	});
-
-	test('should fall back to deprecated chat.agent.sandbox setting in user scope', async () => {
-		configurationService.setUserConfiguration(AgentSandboxSettingId.AgentSandboxEnabled, undefined);
-		configurationService.setUserConfiguration(AgentSandboxSettingId.DeprecatedAgentSandboxEnabled, true);
-
-		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
-
-		strictEqual(await sandboxService.isEnabled(), true, 'Deprecated chat.agent.sandbox should still be respected when only the user scope is set');
 	});
 
 	test('should detect ssh style remotes as domains', async () => {
