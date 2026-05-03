@@ -35,7 +35,7 @@ Implement as a single atomic PR on top of the Phase 1 commit.
 **File:** `/package.json` line ~92 (after `@vscode/sandbox-runtime`)
 
 ```diff
-  "@vscode/sandbox-runtime": "0.0.49-dev",
+  "@vscode/sandbox-runtime": "0.0.1",
 + "@anthropic-ai/sdk": "^0.82.0",
 ```
 
