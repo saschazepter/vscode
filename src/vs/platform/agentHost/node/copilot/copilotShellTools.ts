@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { Tool, ToolResultObject } from '@github/copilot-sdk';
+import type { Tool, ToolInvocation, ToolResultObject } from '@github/copilot-sdk';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { URI } from '../../../../base/common/uri.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
@@ -11,6 +11,10 @@ import * as platform from '../../../../base/common/platform.js';
 import { DisposableStore, type IReference, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILogService } from '../../../log/common/log.js';
+import { AgentHostGenAiAttr, AgentHostGenAiOperationName, AgentHostGenAiProviderName, AgentHostOTelAttr } from '../../common/otel/agentHostOTelAttributes.js';
+import { parseTraceParent } from '../../common/otel/agentHostTraceContext.js';
+import { AgentHostSpanStatusCode, IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
+import { NoopAgentHostOTelService } from '../../common/otel/noopAgentHostOTelService.js';
 import { TerminalClaimKind, type TerminalSessionClaim } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 
@@ -473,6 +477,7 @@ export function createShellTools(
 	shellManager: ShellManager,
 	terminalManager: IAgentHostTerminalManager,
 	logService: ILogService,
+	agentHostOTelService: IAgentHostOTelService = NoopAgentHostOTelService.INSTANCE,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Tool<any>[] {
 	const shellType: ShellType = platform.isWindows ? 'powershell' : 'bash';
@@ -489,7 +494,7 @@ export function createShellTools(
 			required: ['command'],
 		},
 		overridesBuiltInTool: true,
-		handler: async (args, invocation) => {
+		handler: (args, invocation) => withToolHandlerSpan(agentHostOTelService, shellType, invocation, async () => {
 			const timeoutMs = args.timeout ?? DEFAULT_TIMEOUT_MS;
 			const ref = await shellManager.getOrCreateShell(
 				shellType,
@@ -501,7 +506,7 @@ export function createShellTools(
 			} finally {
 				ref.dispose();
 			}
-		},
+		}),
 	};
 
 	const readTool: Tool<IReadShellArgs> = {
@@ -515,7 +520,7 @@ export function createShellTools(
 		},
 		overridesBuiltInTool: true,
 		skipPermission: true,
-		handler: (args) => {
+		handler: (args, invocation) => withToolHandlerSpan(agentHostOTelService, `read_${shellType}`, invocation, () => {
 			const shells = shellManager.listShells();
 			const shell = args.shell_id
 				? shellManager.getShell(args.shell_id)
@@ -528,7 +533,7 @@ export function createShellTools(
 				return makeSuccessResult('(no output)');
 			}
 			return makeSuccessResult(prepareOutputForModel(content));
-		},
+		}),
 	};
 
 	const writeTool: Tool<IWriteShellArgs> = {
@@ -543,7 +548,7 @@ export function createShellTools(
 		},
 		overridesBuiltInTool: true,
 		skipPermission: true,
-		handler: (args) => {
+		handler: (args, invocation) => withToolHandlerSpan(agentHostOTelService, `write_${shellType}`, invocation, () => {
 			const shells = shellManager.listShells();
 			const shell = shells[shells.length - 1];
 			if (!shell) {
@@ -551,7 +556,7 @@ export function createShellTools(
 			}
 			terminalManager.writeInput(shell.terminalUri, args.command);
 			return makeSuccessResult('Input sent to shell.');
-		},
+		}),
 	};
 
 	const shutdownTool: Tool<IShutdownShellArgs> = {
@@ -565,7 +570,7 @@ export function createShellTools(
 		},
 		overridesBuiltInTool: true,
 		skipPermission: true,
-		handler: (args) => {
+		handler: (args, invocation) => withToolHandlerSpan(agentHostOTelService, shellType === 'bash' ? 'bash_shutdown' : `${shellType}_shutdown`, invocation, () => {
 			if (args.shell_id) {
 				const success = shellManager.shutdownShell(args.shell_id);
 				return success
@@ -579,7 +584,7 @@ export function createShellTools(
 			}
 			shellManager.shutdownShell(shell.id);
 			return makeSuccessResult('Shell stopped.');
-		},
+		}),
 	};
 
 	const listTool: Tool<Record<string, never>> = {
@@ -588,7 +593,7 @@ export function createShellTools(
 		parameters: { type: 'object', properties: {} },
 		overridesBuiltInTool: true,
 		skipPermission: true,
-		handler: () => {
+		handler: (_args, invocation) => withToolHandlerSpan(agentHostOTelService, `list_${shellType}`, invocation, () => {
 			const shells = shellManager.listShells();
 			if (shells.length === 0) {
 				return makeSuccessResult('No active shells.');
@@ -599,11 +604,36 @@ export function createShellTools(
 				return `- ${s.id}: ${s.shellType} [${status}]`;
 			});
 			return makeSuccessResult(descriptions.join('\n'));
-		},
+		}),
 	};
 
 	return [primaryTool, readTool, writeTool, shutdownTool, listTool];
 }
+
+async function withToolHandlerSpan<T>(agentHostOTelService: IAgentHostOTelService, toolName: string, invocation: ToolInvocation, fn: () => T | Promise<T>): Promise<T> {
+	const parentTraceContext = invocation.traceparent ? parseTraceParent(invocation.traceparent, invocation.tracestate) : undefined;
+	return agentHostOTelService.startActiveSpan(`vscode_agent_host.tool_handler ${toolName}`, {
+		parentTraceContext,
+		attributes: {
+			[AgentHostGenAiAttr.OPERATION_NAME]: AgentHostGenAiOperationName.EXECUTE_TOOL,
+			[AgentHostGenAiAttr.PROVIDER_NAME]: AgentHostGenAiProviderName.GITHUB,
+			[AgentHostGenAiAttr.TOOL_NAME]: toolName,
+			[AgentHostGenAiAttr.TOOL_CALL_ID]: invocation.toolCallId,
+			[AgentHostOTelAttr.SESSION_ID]: invocation.sessionId,
+			[AgentHostOTelAttr.TOOL_HANDLER]: true,
+		},
+	}, async span => {
+		try {
+			const result = await fn();
+			span.setStatus(AgentHostSpanStatusCode.OK);
+			return result;
+		} catch (error) {
+			span.recordException(error);
+			throw error;
+		}
+	});
+}
+
 interface ITerminalSandboxResolvedNetworkDomains {
 	allowedDomains: string[];
 	deniedDomains: string[];
