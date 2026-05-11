@@ -216,6 +216,40 @@ describe('CopilotCLITools', () => {
 			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 • 2x' });
 		});
 
+		it('uses persisted formattedDetails over model-level details on history rebuild', () => {
+			// When credits were persisted as formattedDetails, the history builder should
+			// prefer them over the model-level lookup (which only has name + multiplier).
+			const events: any[] = [
+				{ type: 'user.message', id: 'u1', data: { content: 'Hello', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Hi' } },
+			];
+			const detailsByEventId: Record<string, RequestIdDetails> = {
+				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4', formattedDetails: 'GPT 5.4 \u2022 3 credits' },
+			};
+			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
+
+			const turns = buildChatHistoryFromEvents('', 'gpt-5.4', events, lookup, delegationSummary, logger, undefined, undefined, new Map([['gpt-5.4', 'GPT 5.4 \u2022 2x']]));
+
+			expect(turns).toHaveLength(2);
+			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 \u2022 3 credits' });
+		});
+
+		it('falls back to model-level details when formattedDetails is not persisted', () => {
+			const events: any[] = [
+				{ type: 'user.message', id: 'u1', data: { content: 'Hello', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Hi' } },
+			];
+			const detailsByEventId: Record<string, RequestIdDetails> = {
+				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4' },
+			};
+			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
+
+			const turns = buildChatHistoryFromEvents('', 'gpt-5.4', events, lookup, delegationSummary, logger, undefined, undefined, new Map([['gpt-5.4', 'GPT 5.4 \u2022 2x']]));
+
+			expect(turns).toHaveLength(2);
+			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 \u2022 2x' });
+		});
+
 		it('uses persisted responseModelId to recover model details on reload for auto sessions', () => {
 			// Simulates a reloaded `auto` session: the SDK only persists `selectedModel: "auto"`
 			// (the `assistant.usage` event that carried the resolved model id is ephemeral and

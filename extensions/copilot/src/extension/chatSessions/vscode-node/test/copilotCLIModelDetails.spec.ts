@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { describe, expect, it } from 'vitest';
-import { getCopilotCLIModelDetails } from '../copilotCLIModelDetails';
+import { describe, expect, it, vi } from 'vitest';
+import { getCopilotCLIModelDetails, persistCopilotCLIResponseModelId } from '../copilotCLIModelDetails';
 import type { ICopilotCLISession } from '../../copilotcli/node/copilotcliSession';
 import type { ICopilotCLIModels, CopilotCLIModelInfo } from '../../copilotcli/node/copilotCli';
 import type { ILogService } from '../../../../platform/log/common/logService';
@@ -77,5 +77,41 @@ describe('getCopilotCLIModelDetails', () => {
 		const { result } = await getCopilotCLIModelDetails(session, undefined, models, nullLog, false, 5);
 
 		expect(result).toEqual({});
+	});
+});
+
+describe('persistCopilotCLIResponseModelId', () => {
+	it('persists both responseModelId and formattedDetails', () => {
+		const updateRequestDetails = vi.fn().mockResolvedValue(undefined);
+		const store = { updateRequestDetails } as any;
+
+		persistCopilotCLIResponseModelId('session-1', 'req-1', 'claude-sonnet-4', 'Claude Sonnet 4 \u2022 5 credits', store, nullLog);
+
+		expect(updateRequestDetails).toHaveBeenCalledWith('session-1', [{
+			vscodeRequestId: 'req-1',
+			responseModelId: 'claude-sonnet-4',
+			formattedDetails: 'Claude Sonnet 4 \u2022 5 credits',
+		}]);
+	});
+
+	it('persists only responseModelId when formattedDetails is undefined', () => {
+		const updateRequestDetails = vi.fn().mockResolvedValue(undefined);
+		const store = { updateRequestDetails } as any;
+
+		persistCopilotCLIResponseModelId('session-1', 'req-1', 'claude-sonnet-4', undefined, store, nullLog);
+
+		expect(updateRequestDetails).toHaveBeenCalledWith('session-1', [{
+			vscodeRequestId: 'req-1',
+			responseModelId: 'claude-sonnet-4',
+		}]);
+	});
+
+	it('does not persist when both responseModelId and formattedDetails are undefined', () => {
+		const updateRequestDetails = vi.fn().mockResolvedValue(undefined);
+		const store = { updateRequestDetails } as any;
+
+		persistCopilotCLIResponseModelId('session-1', 'req-1', undefined, undefined, store, nullLog);
+
+		expect(updateRequestDetails).not.toHaveBeenCalled();
 	});
 });
