@@ -250,6 +250,29 @@ describe('CopilotCLITools', () => {
 			expect((turns[1] as ChatResponseTurn2).result).toEqual({ details: 'GPT 5.4 \u2022 2x' });
 		});
 
+		it('uses per-request formattedDetails correctly in multi-turn sessions', () => {
+			const events: any[] = [
+				{ type: 'session.start', data: { selectedModel: 'gpt-5.4' } },
+				{ type: 'user.message', id: 'u1', data: { content: 'First', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'One' } },
+				{ type: 'user.message', id: 'u2', data: { content: 'Second', attachments: [] } },
+				{ type: 'assistant.message', data: { content: 'Two' } },
+			];
+			const detailsByEventId: Record<string, RequestIdDetails> = {
+				u1: { requestId: 'r1', toolIdEditMap: {}, responseModelId: 'gpt-5.4', formattedDetails: 'GPT 5.4 \u2022 3 credits' },
+				u2: { requestId: 'r2', toolIdEditMap: {}, responseModelId: 'gpt-5.4', formattedDetails: 'GPT 5.4 \u2022 7 credits' },
+			};
+			const lookup = (sdkRequestId: string) => detailsByEventId[sdkRequestId];
+
+			const turns = buildChatHistoryFromEvents('', 'gpt-5.4', events, lookup, delegationSummary, logger, undefined, undefined, new Map([['gpt-5.4', 'GPT 5.4 \u2022 2x']]));
+
+			expect(turns).toHaveLength(4);
+			expect(turns.filter(turn => turn instanceof ChatResponseTurn2).map(turn => (turn as ChatResponseTurn2).result)).toEqual([
+				{ details: 'GPT 5.4 \u2022 3 credits' },
+				{ details: 'GPT 5.4 \u2022 7 credits' },
+			]);
+		});
+
 		it('uses persisted responseModelId to recover model details on reload for auto sessions', () => {
 			// Simulates a reloaded `auto` session: the SDK only persists `selectedModel: "auto"`
 			// (the `assistant.usage` event that carried the resolved model id is ephemeral and

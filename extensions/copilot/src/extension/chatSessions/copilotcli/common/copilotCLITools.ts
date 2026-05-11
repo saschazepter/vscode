@@ -535,6 +535,7 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 	let isFirstUserMessage = true;
 	let currentModelId = modelId;
 	let currentResponseModelId: string | undefined;
+	let currentResponseFormattedDetails: string | undefined;
 	let currentRequestTurnIndex: number | undefined;
 	const currentAssistantMessage: { chunks: string[] } = { chunks: [] };
 	const processedMessages = new Set<string>();
@@ -556,10 +557,11 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 
 	function flushResponseParts() {
 		if (currentResponseParts.length > 0) {
-			turns.push(new ChatResponseTurn2(currentResponseParts, createResultForModel(currentResponseModelId ?? currentModelId, details?.formattedDetails), ''));
+			turns.push(new ChatResponseTurn2(currentResponseParts, createResultForModel(currentResponseModelId ?? currentModelId, currentResponseFormattedDetails), ''));
 			currentResponseParts = [];
 		}
 		currentResponseModelId = undefined;
+		currentResponseFormattedDetails = undefined;
 		currentRequestTurnIndex = undefined;
 	}
 
@@ -628,6 +630,7 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 				}
 				details = getVSCodeRequestId(event.id);
 				flushResponseParts();
+				currentResponseFormattedDetails = details?.formattedDetails;
 				// Filter out vscode instruction files from references when building session history
 				// TODO@rebornix filter instructions should be rendered as "references" in chat response like normal chat.
 				const references: ChatPromptReference[] = [];
