@@ -65,6 +65,13 @@ export interface RequestDetails {
 	 */
 	responseModelId?: string;
 
+	/**
+	 * The fully formatted details string (e.g. "Model • 5 credits") produced when the
+	 * request completed. Persisted so that history rebuilds preserve credit information
+	 * that is only available live via the quota service.
+	 */
+	formattedDetails?: string;
+
 	/** Checkpoint reference for this request (primary workspace). */
 	checkpointRef?: string;
 

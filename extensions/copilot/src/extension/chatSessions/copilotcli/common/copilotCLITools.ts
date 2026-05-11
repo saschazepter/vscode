@@ -519,6 +519,7 @@ export interface RequestIdDetails {
 	readonly toolIdEditMap: Record<string, string>;
 	readonly modeInstructions?: StoredModeInstructions;
 	readonly responseModelId?: string;
+	readonly formattedDetails?: string;
 }
 
 /**
@@ -545,14 +546,17 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 		return modelDetailsById.get(modelId.trim().toLowerCase());
 	}
 
-	function createResultForModel(modelId: string | undefined) {
+	function createResultForModel(modelId: string | undefined, formattedDetails: string | undefined) {
+		if (formattedDetails) {
+			return { details: formattedDetails };
+		}
 		const details = getModelDetails(modelId);
 		return details ? { details } : {};
 	}
 
 	function flushResponseParts() {
 		if (currentResponseParts.length > 0) {
-			turns.push(new ChatResponseTurn2(currentResponseParts, createResultForModel(currentResponseModelId ?? currentModelId), ''));
+			turns.push(new ChatResponseTurn2(currentResponseParts, createResultForModel(currentResponseModelId ?? currentModelId, details?.formattedDetails), ''));
 			currentResponseParts = [];
 		}
 		currentResponseModelId = undefined;

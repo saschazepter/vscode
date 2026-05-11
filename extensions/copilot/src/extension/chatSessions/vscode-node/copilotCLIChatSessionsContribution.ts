@@ -1567,7 +1567,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			const creditsUsed = this._chatQuotaService.getCreditsForTurn(request.id);
 			const { result, responseModelId } = await getCopilotCLIModelDetails(session.object, model, this.copilotCLIModels, this.logService, modelDetailsEnabled, creditsUsed);
 
-			persistCopilotCLIResponseModelId(sessionId, request.id, responseModelId, this.chatSessionMetadataStore, this.logService);
+			persistCopilotCLIResponseModelId(sessionId, request.id, responseModelId, result.details, this.chatSessionMetadataStore, this.logService);
 
 			if (isUntitled && request.command !== 'remote' && !token.isCancellationRequested) {
 				this.scheduleUntitledSessionSwap(id, request.id, request.prompt, session.object.sessionId, chatSessionContext.chatSessionItem);
