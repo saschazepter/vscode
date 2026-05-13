@@ -679,6 +679,13 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}
 		}));
 
+		// Clean up finished background terminals at the start of each new turn
+		// to prevent terminal accumulation across turns. Only disposes terminals
+		// that are background, finished (no active execution), and still hidden
+		// (not revealed by the user).
+		this._register(this._chatService.onDidSubmitRequest(e => {
+			this._cleanupFinishedBackgroundTerminals(e.chatSessionResource);
+		}));
 	}
 
 	async handleToolStream(context: IToolInvocationStreamContext, _token: CancellationToken): Promise<IStreamedToolInvocation | undefined> {
@@ -2330,6 +2337,68 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		}
 		for (const termId of terminalToRemove) {
 			RunInTerminalTool._activeExecutions.delete(termId);
+		}
+	}
+
+	/**
+	 * Disposes background terminals associated with a chat session that have
+	 * finished executing and are still hidden from the user. This prevents
+	 * terminal accumulation across turns — background terminals are not reused,
+	 * so once their command completes they serve no purpose.
+	 */
+	private _cleanupFinishedBackgroundTerminals(chatSessionResource: URI): void {
+		const sessionTerminals = this._sessionTerminalInstances.get(chatSessionResource);
+		if (!sessionTerminals || sessionTerminals.size === 0) {
+			return;
+		}
+
+		// Build a set of terminal instances that still have an active (in-flight) execution
+		const terminalsWithActiveExecution = new Set<ITerminalInstance>();
+		for (const execution of RunInTerminalTool._activeExecutions.values()) {
+			terminalsWithActiveExecution.add(execution.instance);
+		}
+
+		const terminalsToDispose: ITerminalInstance[] = [];
+		for (const terminal of sessionTerminals) {
+			if (terminal.isDisposed) {
+				continue;
+			}
+
+			// Only dispose terminals that are still hidden — if the user revealed
+			// a terminal, they may want to inspect its output or reuse it.
+			if (!terminal.shellLaunchConfig.hideFromUser) {
+				continue;
+			}
+
+			// Only dispose background terminals whose execution has finished.
+			// Foreground terminals are reused across turns; background terminals
+			// with active executions may still be running (servers, watchers, etc.).
+			if (terminalsWithActiveExecution.has(terminal)) {
+				continue;
+			}
+
+			// Skip the foreground terminal for this session — it is reused.
+			const toolTerminal = this._sessionTerminalAssociations.get(chatSessionResource);
+			if (toolTerminal?.instance === terminal && !toolTerminal.isBackground) {
+				continue;
+			}
+
+			terminalsToDispose.push(terminal);
+		}
+
+		if (terminalsToDispose.length === 0) {
+			return;
+		}
+
+		this._logService.debug(`RunInTerminalTool: Cleaning up ${terminalsToDispose.length} finished background terminal(s) for new turn on session ${chatSessionResource}`);
+		for (const terminal of terminalsToDispose) {
+			this._terminalsBeingDisposedBySessionCleanup.add(terminal);
+			sessionTerminals.delete(terminal);
+			terminal.dispose();
+		}
+
+		if (sessionTerminals.size === 0) {
+			this._sessionTerminalInstances.delete(chatSessionResource);
 		}
 	}
 
