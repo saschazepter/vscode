@@ -14,6 +14,7 @@ import { ILayoutService } from '../../../../platform/layout/browser/layoutServic
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import product from '../../../../platform/product/common/product.js';
 import { IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IssueFormService } from '../browser/issueFormService.js';
@@ -23,6 +24,7 @@ import { IScreenshotService } from '../browser/screenshotService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IIssueFormService, IssueReporterData } from '../common/issue.js';
+import { IssueReporter } from './issueReporterService.js';
 
 export class NativeIssueFormService extends IssueFormService implements IIssueFormService {
 
@@ -68,5 +70,27 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		}
 
 		return this.openEditorTabReporter(data);
+	}
+
+	/**
+	 * Desktop legacy path uses the native `IssueReporter` (so it can populate
+	 * system/performance info via `IProcessService`) and centers the auxiliary
+	 * window on the active window via `getActiveWindowPosition()`.
+	 */
+	override async openAuxIssueReporterLegacy(data: IssueReporterData): Promise<void> {
+		const bounds = await this.nativeHostService.getActiveWindowPosition();
+		await this.openAuxIssueReporter(data, bounds);
+
+		if (this.issueReporterWindow) {
+			const issueReporter = this.instantiationService.createInstance(
+				IssueReporter,
+				!!this.environmentService.disableExtensions,
+				data,
+				{ type: this.type, arch: this.arch, release: this.release },
+				product,
+				this.issueReporterWindow,
+			);
+			issueReporter.render();
+		}
 	}
 }

@@ -151,7 +151,7 @@ ${this.getInfos()}
 			info += this.getExtensionData();
 		}
 
-		if (this._data.includeSystemInfo && this._data.systemInfo) {
+		if (this._data.includeSystemInfo && (this._data.systemInfo || this._data.systemInfoWeb)) {
 			info += this.generateSystemInfoMd();
 		}
 
@@ -224,6 +224,8 @@ ${this.getInfos()}
 |VM|${remote.machineInfo.vmHint}|`;
 				}
 			});
+		} else if (this._data.systemInfoWeb) {
+			md += `|User Agent|${this._data.systemInfoWeb}|`;
 		}
 
 		md += '\n</details>';

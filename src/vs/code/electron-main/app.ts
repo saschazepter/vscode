@@ -13,7 +13,7 @@ import { toErrorMessage } from '../../base/common/errorMessage.js';
 import { Event } from '../../base/common/event.js';
 import { parse } from '../../base/common/jsonc.js';
 import { getPathLabel } from '../../base/common/labels.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { Schemas, VSCODE_AUTHORITY } from '../../base/common/network.js';
 import { join, posix } from '../../base/common/path.js';
 import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS } from '../../base/common/platform.js';
@@ -248,6 +248,11 @@ export class CodeApplication extends Disposable {
 		electronScreen.on('display-added', invalidateScreenSourceCache);
 		electronScreen.on('display-removed', invalidateScreenSourceCache);
 		electronScreen.on('display-metrics-changed', invalidateScreenSourceCache);
+		this._register(toDisposable(() => {
+			electronScreen.off('display-added', invalidateScreenSourceCache);
+			electronScreen.off('display-removed', invalidateScreenSourceCache);
+			electronScreen.off('display-metrics-changed', invalidateScreenSourceCache);
+		}));
 		if (!isMacintosh || systemPreferences.getMediaAccessStatus('screen') === 'granted') {
 			warmUpScreenSources();
 		}
