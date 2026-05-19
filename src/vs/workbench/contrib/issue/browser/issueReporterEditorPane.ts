@@ -54,21 +54,6 @@ export class IssueReporterEditorPane extends EditorPane {
 
 	static readonly ID = 'workbench.editor.issueReporter';
 
-	/**
-	 * Live registry of issue reporter panes so commands can target the wizard
-	 * even when its tab is not the active editor in its group.
-	 * (IEditorService.visibleEditorPanes only exposes the active pane per group.)
-	 */
-	private static readonly liveInstances = new Set<IssueReporterEditorPane>();
-	static getAnyLiveInstance(): IssueReporterEditorPane | undefined {
-		for (const inst of IssueReporterEditorPane.liveInstances) {
-			if (inst.wizard) {
-				return inst;
-			}
-		}
-		return undefined;
-	}
-
 	private container: HTMLElement | undefined;
 	private wizard: IssueReporterOverlay | undefined;
 	/** Survives the framework calling clearInput() when the user switches away. */
@@ -102,8 +87,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
-		IssueReporterEditorPane.liveInstances.add(this);
-		this._register({ dispose: () => IssueReporterEditorPane.liveInstances.delete(this) });
 	}
 
 	getWizard(): IssueReporterOverlay | undefined {

@@ -288,7 +288,13 @@ export class CodeApplication extends Disposable {
 					match = cachedScreenSources.find(s => s.display_id === String(targetDisplay.id));
 				}
 
-				callback({ video: match ?? cachedScreenSources[0] });
+				const chosen = match ?? cachedScreenSources[0];
+				if (!chosen) {
+					// No screen sources available (permission denied or transient failure).
+					callback({});
+					return;
+				}
+				callback({ video: chosen });
 			} catch {
 				callback({});
 			}

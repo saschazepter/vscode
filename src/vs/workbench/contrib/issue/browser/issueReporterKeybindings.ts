@@ -8,6 +8,7 @@ import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keyb
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ActiveEditorContext } from '../../../common/contextkeys.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
@@ -41,15 +42,17 @@ class IssueReporterOpenStateContribution extends Disposable {
 
 registerWorkbenchContribution2(IssueReporterOpenStateContribution.ID, IssueReporterOpenStateContribution, WorkbenchPhase.AfterRestored);
 
-function withWizard(fn: (pane: IssueReporterEditorPane, wizard: IssueReporterOverlay) => void): void {
-	// Look up any live issue reporter pane regardless of whether its tab is the
-	// active editor in its group. visibleEditorPanes only exposes the active
-	// pane per group, so we can't rely on it when the user has switched to
-	// another tab in the same group.
-	const pane = IssueReporterEditorPane.getAnyLiveInstance();
-	const wizard = pane?.getWizard();
-	if (pane && wizard) {
-		fn(pane, wizard);
+function withActiveWizard(accessor: ServicesAccessor, fn: (pane: IssueReporterEditorPane, wizard: IssueReporterOverlay) => void): void {
+	// Only act on the currently active editor pane. The keybinding's `when` clause
+	// already gates on activeEditor == IssueReporterEditorPane.ID, but resolving the
+	// pane through IEditorService.activeEditorPane (rather than a global registry of
+	// live wizards) guarantees we target the pane the user actually has focused.
+	const pane = accessor.get(IEditorService).activeEditorPane;
+	if (pane instanceof IssueReporterEditorPane) {
+		const wizard = pane.getWizard();
+		if (wizard) {
+			fn(pane, wizard);
+		}
 	}
 }
 
@@ -66,7 +69,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: issueReporterEditorActive,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyS,
-	handler: () => withWizard((_pane, wizard) => wizard.triggerCaptureScreenshot()),
+	handler: accessor => withActiveWizard(accessor, (_pane, wizard) => wizard.triggerCaptureScreenshot()),
 });
 
 KeybindingsRegistry.registerCommandAndKeybindingRule({
@@ -74,5 +77,5 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: issueReporterEditorActive,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyR,
-	handler: () => withWizard((_pane, wizard) => wizard.triggerToggleRecording()),
+	handler: accessor => withActiveWizard(accessor, (_pane, wizard) => wizard.triggerToggleRecording()),
 });
