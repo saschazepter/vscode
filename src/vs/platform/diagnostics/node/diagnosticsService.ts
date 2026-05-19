@@ -559,7 +559,11 @@ export class DiagnosticsService implements IDiagnosticsService {
 			const folder = folderUri.fsPath;
 			try {
 				const stats = await collectWorkspaceStats(folder, ['node_modules', '.git']);
-				stats.fileTypes.forEach(item => items.add(item.name));
+				stats.fileTypes.forEach(item => {
+					if (item.name !== NO_EXT_KEY) {
+						items.add(item.name);
+					}
+				});
 			} catch { }
 		}
 		return { extensions: [...items] };
@@ -602,6 +606,9 @@ export class DiagnosticsService implements IDiagnosticsService {
 					count: number;
 				};
 				stats.fileTypes.forEach(e => {
+					if (e.name === NO_EXT_KEY) {
+						return;
+					}
 					this.telemetryService.publicLog2<WorkspaceStatsFileEvent, WorkspaceStatsFileClassification>('workspace.stats.file', {
 						rendererSessionId: workspace.rendererSessionId,
 						type: e.name,

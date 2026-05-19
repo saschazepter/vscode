@@ -38,6 +38,7 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { URI } from '../../../../base/common/uri.js';
 import { LRUCache } from '../../../../base/common/map.js';
 import { hash } from '../../../../base/common/hash.js';
+import { decodeBase64 } from '../../../../base/common/buffer.js';
 import './media/issueReporter.css';
 
 const MAX_URL_LENGTH = 7500;
@@ -402,13 +403,11 @@ export class IssueFormService implements IIssueFormService {
 		if (commaIndex === -1) {
 			return undefined;
 		}
-		const base64 = dataUrl.substring(commaIndex + 1);
-		const binaryString = atob(base64);
-		const bytes = new Uint8Array(binaryString.length);
-		for (let i = 0; i < binaryString.length; i++) {
-			bytes[i] = binaryString.charCodeAt(i);
+		try {
+			return decodeBase64(dataUrl.substring(commaIndex + 1)).buffer;
+		} catch {
+			return undefined;
 		}
-		return bytes;
 	}
 
 	private parseImageDataUrl(dataUrl: string): { contentType: string; extension: string } {
