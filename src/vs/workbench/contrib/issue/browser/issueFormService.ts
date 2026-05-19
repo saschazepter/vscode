@@ -140,11 +140,12 @@ export class IssueFormService implements IIssueFormService {
 						filesToProcess.push({ key: `screenshot:${hash(dataUrl)}`, name: `screenshot-${i + 1}.${extension}`, bytes, contentType });
 					}
 				}
-				for (const rec of recordings) {
+				for (let i = 0; i < recordings.length; i++) {
+					const rec = recordings[i];
 					const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
 					const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
 					const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-					filesToProcess.push({ key: `recording:${rec.filePath}`, name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
+					filesToProcess.push({ key: `recording:${rec.filePath}`, name: `recording-${i + 1}.${ext}`, bytes: fileContent.value.buffer, contentType });
 				}
 
 				if (filesToProcess.length > 0) {
@@ -184,7 +185,7 @@ export class IssueFormService implements IIssueFormService {
 				}
 			} catch (err) {
 				this.logService.error('[IssueFormService] Upload failed:', err);
-				mediaMarkdown = '\n\n### Attachments\n\n> Upload failed. Please drag and drop attachments manually.\n\n';
+				mediaMarkdown = `\n\n### ${localize('issueReporter.attachmentsHeading', "Attachments")}\n\n> ${localize('issueReporter.attachmentsUploadFailed', "Upload failed. Please drag and drop attachments manually.")}\n\n`;
 			} finally {
 				wizard.setUploading(false);
 			}
