@@ -933,13 +933,17 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		}
 
 		// Step 3: Confirm upload
-		await net.fetch(`https://api.github.com${policy.asset_upload_url}`, {
+		const confirmResponse = await net.fetch(`https://api.github.com${policy.asset_upload_url}`, {
 			method: 'PUT',
 			headers: {
 				'Authorization': `Bearer ${token}`,
 				'Accept': 'application/json',
 			},
 		});
+		if (!confirmResponse.ok) {
+			const text = await confirmResponse.text();
+			throw new Error(`Asset upload confirmation failed ${confirmResponse.status}: ${text.substring(0, 300)}`);
+		}
 
 		return { fileName, assetUrl: asset.href as string, contentType };
 	}

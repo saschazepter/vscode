@@ -64,10 +64,9 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 
 		const useWizard = this.configurationService.getValue<boolean>('issueReporter.wizard.enabled');
 		if (!useWizard) {
-			this.openAuxIssueReporterLegacy(data);
-			return;
+			return this.openAuxIssueReporterLegacy(data);
 		}
 
-		this.openEditorTabReporter(data);
+		return this.openEditorTabReporter(data);
 	}
 }

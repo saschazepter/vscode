@@ -13,7 +13,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 
-const issueReporterIcon = registerIcon('issue-reporter', Codicon.report, localize('issueReporterIcon', 'Icon for the issue reporter editor.'));
+const issueReporterIcon = registerIcon('issue-reporter', Codicon.report, localize('issueReporterIcon', "Icon for the issue reporter editor."));
 
 export class IssueReporterEditorInput extends EditorInput {
 

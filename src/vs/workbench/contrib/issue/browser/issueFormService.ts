@@ -36,6 +36,8 @@ import { IEnvironmentService } from '../../../../platform/environment/common/env
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { URI } from '../../../../base/common/uri.js';
+import { LRUCache } from '../../../../base/common/map.js';
+import { hash } from '../../../../base/common/hash.js';
 import './media/issueReporter.css';
 
 const MAX_URL_LENGTH = 7500;
@@ -59,8 +61,8 @@ export class IssueFormService implements IIssueFormService {
 	protected release: string = '';
 	protected type: string = '';
 
-	/** Cache of already-uploaded attachments: key (data URL or file path) -> upload result */
-	private readonly uploadCache = new Map<string, import('./githubUploadService.js').IGitHubUploadResult>();
+	/** Bounded cache of already-uploaded attachments to avoid re-uploading on retry within a session. Uses a content hash so large data URLs aren't retained as keys. */
+	private readonly uploadCache = new LRUCache<string, import('./githubUploadService.js').IGitHubUploadResult>(32);
 
 	constructor(
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
@@ -88,18 +90,15 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
-		const useWizard = this.configurationService.getValue<boolean>('issueReporter.wizard.enabled');
-		if (!useWizard) {
-			this.openAuxIssueReporterLegacy(data);
-			return;
-		}
-
-		this.openEditorTabReporter(data);
+		// The wizard editor pane is only registered by the native contribution today,
+		// so the base (web) implementation always opens the legacy reporter.
+		// NativeIssueFormService overrides this method to opt into the wizard.
+		return this.openAuxIssueReporterLegacy(data);
 	}
 
-	protected openEditorTabReporter(data: IssueReporterData): void {
+	protected async openEditorTabReporter(data: IssueReporterData): Promise<void> {
 		const input = this.instantiationService.createInstance(IssueReporterEditorInput, data);
-		this.editorService.openEditor(input, { pinned: true });
+		await this.editorService.openEditor(input, { pinned: true });
 	}
 
 	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<boolean> {
@@ -130,20 +129,21 @@ export class IssueFormService implements IIssueFormService {
 			wizard.setUploading(true);
 
 			try {
-				// Collect files, keyed for cache lookup
+				// Collect files, keyed for cache lookup. We hash the data URL / file path so the
+				// (potentially very large) screenshot/recording payloads aren't retained as Map keys.
 				const filesToProcess: IssueUploadFile[] = [];
 				for (let i = 0; i < screenshots.length; i++) {
 					const dataUrl = screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl;
 					const bytes = this.dataUrlToBytes(dataUrl);
 					if (bytes) {
-						filesToProcess.push({ key: dataUrl, name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
+						filesToProcess.push({ key: `screenshot:${hash(dataUrl)}`, name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
 					}
 				}
 				for (const rec of recordings) {
 					const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
 					const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
 					const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-					filesToProcess.push({ key: rec.filePath, name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
+					filesToProcess.push({ key: `recording:${rec.filePath}`, name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
 				}
 
 				if (filesToProcess.length > 0) {
@@ -264,7 +264,7 @@ export class IssueFormService implements IIssueFormService {
 	}
 
 	private async uploadIssueDataFile(githubAccessToken: string, repoId: string, fileContent: string): Promise<import('./githubUploadService.js').IGitHubUploadResult> {
-		const key = `${ISSUE_DATA_ATTACHMENT_NAME}:${fileContent}`;
+		const key = `${ISSUE_DATA_ATTACHMENT_NAME}:${hash(fileContent)}`;
 		const cached = this.uploadCache.get(key);
 		if (cached) {
 			return cached;
