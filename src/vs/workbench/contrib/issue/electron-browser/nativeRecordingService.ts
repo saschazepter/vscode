@@ -157,9 +157,12 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 		if (this._state === RecordingState.Recording && this.mediaRecorder?.state === 'recording') {
 			const recorder = this.mediaRecorder;
 			await new Promise<void>(resolve => {
-				// Replace onstop entirely — the original handler fires setState(Stopped)
-				// which would cause re-entrant calls via onDidChangeState. Since this is
-				// an explicit stop, we handle state ourselves.
+				// Replace onstop entirely so the original "external stop" handler doesn't
+				// emit setState(Stopped) here. That event would re-enter the auto-stop
+				// listener (IssueReporterEditorPane) and recursively call stopRecording.
+				// Explicit stops own the state transitions themselves and end with
+				// setState(Idle) below, which still satisfies the IRecordingService
+				// contract by emitting the terminal Idle transition.
 				recorder.onstop = () => {
 					resolve();
 				};
@@ -172,7 +175,7 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 		this.stopTracks();
 
 		if (this.chunks.length === 0) {
-			this._state = RecordingState.Idle;
+			this.setState(RecordingState.Idle);
 			return undefined;
 		}
 
@@ -190,9 +193,7 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 
 		this.chunks = [];
 		this.mediaRecorder = undefined;
-		// Don't fire a state change here — the caller controls the UI state
-		// (e.g. showing "Save/Discard" in Stopped, or going back to Idle).
-		this._state = RecordingState.Idle;
+		this.setState(RecordingState.Idle);
 
 		return data;
 	}
