@@ -7,8 +7,9 @@ import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
+import { ActiveEditorContext } from '../../../common/contextkeys.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IssueReporterEditorPane, IssueReporterOpenContext } from './issueReporterEditorPane.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
@@ -52,10 +53,18 @@ function withWizard(fn: (pane: IssueReporterEditorPane, wizard: IssueReporterOve
 	}
 }
 
+// Scope the keybindings tightly to the case where the issue reporter wizard is
+// the active editor. issueReporterOpen alone would steal common chords like
+// Cmd/Ctrl+Shift+S (Save As) whenever any reporter tab is open in the background.
+const issueReporterEditorActive = ContextKeyExpr.and(
+	IssueReporterOpenContext,
+	ActiveEditorContext.isEqualTo(IssueReporterEditorPane.ID),
+);
+
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: ISSUE_REPORTER_CAPTURE_SCREENSHOT_COMMAND_ID,
 	weight: KeybindingWeight.WorkbenchContrib,
-	when: IssueReporterOpenContext,
+	when: issueReporterEditorActive,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyS,
 	handler: () => withWizard((_pane, wizard) => wizard.triggerCaptureScreenshot()),
 });
@@ -63,7 +72,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: ISSUE_REPORTER_TOGGLE_RECORDING_COMMAND_ID,
 	weight: KeybindingWeight.WorkbenchContrib,
-	when: IssueReporterOpenContext,
+	when: issueReporterEditorActive,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyR,
 	handler: () => withWizard((_pane, wizard) => wizard.triggerToggleRecording()),
 });

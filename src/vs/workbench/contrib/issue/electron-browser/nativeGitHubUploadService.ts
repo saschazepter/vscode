@@ -27,7 +27,7 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 
 	async resolveRepositoryId(owner: string, repo: string): Promise<string> {
 		this.logService.info(`[GitHubUpload] Resolving repo ID: ${owner}/${repo}`);
-		const r = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+		const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
 			headers: { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
 		});
 		if (!r.ok) {

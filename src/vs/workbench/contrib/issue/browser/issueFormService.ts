@@ -136,7 +136,8 @@ export class IssueFormService implements IIssueFormService {
 					const dataUrl = screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl;
 					const bytes = this.dataUrlToBytes(dataUrl);
 					if (bytes) {
-						filesToProcess.push({ key: `screenshot:${hash(dataUrl)}`, name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
+						const { contentType, extension } = this.parseImageDataUrl(dataUrl);
+						filesToProcess.push({ key: `screenshot:${hash(dataUrl)}`, name: `screenshot-${i + 1}.${extension}`, bytes, contentType });
 					}
 				}
 				for (const rec of recordings) {
@@ -407,6 +408,23 @@ export class IssueFormService implements IIssueFormService {
 			bytes[i] = binaryString.charCodeAt(i);
 		}
 		return bytes;
+	}
+
+	private parseImageDataUrl(dataUrl: string): { contentType: string; extension: string } {
+		const match = /^data:([^;,]+);base64,/i.exec(dataUrl);
+		const contentType = match ? match[1].toLowerCase() : 'image/png';
+		switch (contentType) {
+			case 'image/jpeg':
+			case 'image/jpg':
+				return { contentType: 'image/jpeg', extension: 'jpg' };
+			case 'image/gif':
+				return { contentType, extension: 'gif' };
+			case 'image/webp':
+				return { contentType, extension: 'webp' };
+			case 'image/png':
+			default:
+				return { contentType: 'image/png', extension: 'png' };
+		}
 	}
 
 	/** Opens the classic non-wizard reporter in an auxiliary window. */
