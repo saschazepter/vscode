@@ -68,6 +68,7 @@ export interface IssueReporterExtensionData {
 export interface IssueReporterData extends WindowData {
 	styles: IssueReporterStyles;
 	enabledExtensions: IssueReporterExtensionData[];
+	extensionsLoaded?: boolean;
 	issueType?: IssueType;
 	issueSource?: IssueSource;
 	extensionId?: string;

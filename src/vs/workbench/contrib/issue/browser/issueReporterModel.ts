@@ -276,6 +276,7 @@ ${this._data.experimentInfo}
 			if (!this._data.numberOfThemeExtesions) {
 				return 'Extensions: none';
 			}
+			return `Extensions: none (excluding ${this._data.numberOfThemeExtesions} theme extension${this._data.numberOfThemeExtesions === 1 ? '' : 's'})`;
 		}
 
 		let md = '';

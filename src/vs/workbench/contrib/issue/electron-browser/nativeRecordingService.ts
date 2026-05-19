@@ -114,8 +114,8 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 					return;
 				}
 				// Always accept the current chunk, then check if we've hit the limit.
-				// This means the file may overshoot by up to one chunk (~75 KB at 250ms),
-				// which is negligible at the 100 MB GitHub limit.
+				// This means the file may overshoot by up to one 1000ms chunk,
+				// which is small enough for the 100 MB GitHub limit.
 				this.chunks.push(e.data);
 				this.bytesRecorded += e.data.size;
 				if (this.bytesRecorded >= MAX_FILE_SIZE_BYTES * SIZE_LIMIT_THRESHOLD && this._state === RecordingState.Recording) {

@@ -20,14 +20,14 @@ import { EditorActivation, IEditorOptions } from '../../../../platform/editor/co
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { VSBuffer } from '../../../../base/common/buffer.js';
+import { decodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
-import { IIssueFormService } from '../common/issue.js';
+import { IIssueFormService, IssueReporterData } from '../common/issue.js';
 import { IssueFormService } from './issueFormService.js';
 import { IProcessService } from '../../../../platform/process/common/process.js';
 import { IWorkbenchAssignmentService } from '../../../services/assignment/common/assignmentService.js';
@@ -309,16 +309,15 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire open screenshot — save to temp file and open in editor
 		this.inputDisposables.add(this.wizard.onDidRequestOpenScreenshot(async (screenshot) => {
 			try {
-				const dataUrl = screenshot.annotatedDataUrl ?? screenshot.dataUrl;
-				const commaIndex = dataUrl.indexOf(',');
-				if (commaIndex === -1) {
+				const image = this.decodeDataUrl(screenshot.annotatedDataUrl ?? screenshot.dataUrl);
+				if (!image) {
 					return;
 				}
-				const base64 = dataUrl.substring(commaIndex + 1);
-				const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-				const fileName = `screenshot-${Date.now()}.jpg`;
-				const target = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings', fileName);
-				await this.fileService.writeFile(target, VSBuffer.wrap(bytes));
+				const folder = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-screenshots');
+				const fileName = `screenshot-${Date.now()}.${this.getImageExtension(image.contentType)}`;
+				const target = URI.joinPath(folder, fileName);
+				await this.fileService.createFolder(folder);
+				await this.fileService.writeFile(target, image.buffer);
 				await this.editorService.openEditor({ resource: target });
 			} catch (err) {
 				this.logService.error('[IssueReporterEditorPane] Open screenshot failed:', err);
@@ -437,9 +436,9 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.wizard?.updateModel({ experimentInfo: experiments?.join('\n') ?? localize('noExperiments', "No current experiments.") });
 		} catch {
 			// Ignore
-		}		// Extensions — data may have been populated by the issue service's async background task.
-		// Give it a moment to finish, then sync.
-		await new Promise(r => setTimeout(r, 500));
+		}
+
+		await this.waitForExtensions(data);
 		if (data && data.enabledExtensions.length > 0) {
 			const nonTheme = data.enabledExtensions.filter(e => !e.isTheme && !e.isBuiltin);
 			const themeCount = data.enabledExtensions.filter(e => e.isTheme).length;
@@ -457,6 +456,16 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.wizard?.setSettingsContent(settingsContent.value.toString());
 		} catch {
 			// Ignore — no settings file
+		}
+	}
+
+	private async waitForExtensions(data: IssueReporterData | undefined): Promise<void> {
+		if (!data || data.extensionsLoaded) {
+			return;
+		}
+
+		for (let attempt = 0; attempt < 50 && !data.extensionsLoaded; attempt++) {
+			await new Promise(resolve => setTimeout(resolve, 100));
 		}
 	}
 
@@ -508,9 +517,11 @@ export class IssueReporterEditorPane extends EditorPane {
 		try {
 			const extension = data.mimeType.includes('mp4') ? 'mp4' : 'webm';
 			const fileName = `vscode-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
-			const target = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings', fileName);
+			const folder = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings');
+			const target = URI.joinPath(folder, fileName);
 
 			const arrayBuffer = await data.blob.arrayBuffer();
+			await this.fileService.createFolder(folder);
 			await this.fileService.writeFile(target, VSBuffer.wrap(new Uint8Array(arrayBuffer)));
 			this.logService.info(`[IssueReporterEditorPane] Recording saved to ${target.toString()}`);
 
@@ -521,6 +532,32 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.wizard?.addRecording(target.fsPath, data.durationMs, thumbnailDataUrl);
 		} catch (err) {
 			this.logService.error('[IssueReporterEditorPane] Failed to save recording:', err);
+		}
+	}
+
+	private decodeDataUrl(dataUrl: string): { contentType: string; buffer: VSBuffer } | undefined {
+		const match = /^data:([^;,]+);base64,(.*)$/i.exec(dataUrl);
+		if (!match) {
+			return undefined;
+		}
+		return {
+			contentType: match[1],
+			buffer: VSBuffer.wrap(decodeBase64(match[2])),
+		};
+	}
+
+	private getImageExtension(contentType: string): string {
+		switch (contentType.toLowerCase()) {
+			case 'image/jpeg':
+				return 'jpg';
+			case 'image/png':
+				return 'png';
+			case 'image/gif':
+				return 'gif';
+			case 'image/webp':
+				return 'webp';
+			default:
+				return 'png';
 		}
 	}
 

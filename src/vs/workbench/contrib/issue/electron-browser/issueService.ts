@@ -54,6 +54,7 @@ export class NativeIssueService implements IWorkbenchIssueService {
 			styles: getIssueReporterStyles(theme),
 			zoomLevel: getZoomLevel(mainWindow),
 			enabledExtensions: [],
+			extensionsLoaded: false,
 			restrictedMode: !this.workspaceTrustManagementService.isWorkspaceTrusted(),
 			isUnsupported: false,
 			isSessionsWindow: this.environmentService.isSessionsWindow,
@@ -154,6 +155,8 @@ export class NativeIssueService implements IWorkbenchIssueService {
 			});
 		} catch (e) {
 			// Ignore — extensions will be empty
+		} finally {
+			data.extensionsLoaded = true;
 		}
 
 		// Experiments

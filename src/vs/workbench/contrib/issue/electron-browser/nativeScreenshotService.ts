@@ -6,6 +6,7 @@
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IRectangle } from '../../../../platform/window/common/window.js';
 import { IScreenshotService } from '../browser/screenshotService.js';
+import { encodeBase64 } from '../../../../base/common/buffer.js';
 
 export class NativeScreenshotService implements IScreenshotService {
 	readonly _serviceBrand: undefined;
@@ -20,15 +21,6 @@ export class NativeScreenshotService implements IScreenshotService {
 			return undefined;
 		}
 
-		// Convert VSBuffer to base64 data URL (JPEG from Electron's capturePage).
-		// Process in chunks to avoid stack overflow from spread on large arrays.
-		const bytes = buffer.buffer;
-		let binary = '';
-		const chunkSize = 32768;
-		for (let i = 0; i < bytes.length; i += chunkSize) {
-			binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
-		}
-		const base64 = btoa(binary);
-		return `data:image/jpeg;base64,${base64}`;
+		return `data:image/jpeg;base64,${encodeBase64(buffer)}`;
 	}
 }
