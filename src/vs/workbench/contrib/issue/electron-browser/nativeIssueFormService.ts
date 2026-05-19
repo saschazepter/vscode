@@ -15,6 +15,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import product from '../../../../platform/product/common/product.js';
+import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IssueFormService } from '../browser/issueFormService.js';
@@ -27,6 +28,13 @@ import { IIssueFormService, IssueReporterData } from '../common/issue.js';
 import { IssueReporter } from './issueReporterService.js';
 
 export class NativeIssueFormService extends IssueFormService implements IIssueFormService {
+
+	/**
+	 * Holds the currently-rendered legacy IssueReporter so its listeners on long-lived services
+	 * (e.g. authentication onDidChangeSessions) are released when the aux window closes or a new
+	 * reporter is opened.
+	 */
+	private readonly legacyReporter = this._register(new MutableDisposable<IssueReporter>());
 
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
@@ -90,6 +98,8 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 				product,
 				this.issueReporterWindow,
 			);
+			this.legacyReporter.value = issueReporter;
+			this.issueReporterWindow.addEventListener('beforeunload', () => this.legacyReporter.clear(), { once: true });
 			issueReporter.render();
 		}
 	}

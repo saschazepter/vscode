@@ -15,7 +15,7 @@ export const IGitHubUploadService = createDecorator<IGitHubUploadService>('githu
 
 export interface IGitHubUploadService {
 	readonly _serviceBrand: undefined;
-	resolveRepositoryId(owner: string, repo: string): Promise<string>;
+	resolveRepositoryId(owner: string, repo: string, token?: string): Promise<string>;
 	uploadViaMobileApi(token: string, repoId: string, files: { name: string; bytes: Uint8Array; contentType: string }[]): Promise<IGitHubUploadResult[]>;
 }
 

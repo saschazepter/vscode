@@ -25,11 +25,13 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 		super();
 	}
 
-	async resolveRepositoryId(owner: string, repo: string): Promise<string> {
+	async resolveRepositoryId(owner: string, repo: string, token?: string): Promise<string> {
 		this.logService.info(`[GitHubUpload] Resolving repo ID: ${owner}/${repo}`);
-		const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
-			headers: { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-		});
+		const headers: Record<string, string> = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
+		}
+		const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers });
 		if (!r.ok) {
 			throw new Error(`Repo ID lookup failed: ${r.status}`);
 		}

@@ -117,7 +117,7 @@ export class IssueFormService implements IIssueFormService {
 		const gitHubDetails = this.parseGitHubUrl(issueTarget.url);
 		let repoId: string | undefined;
 		const resolveRepoId = async () => {
-			repoId ??= await this.githubUploadService.resolveRepositoryId(gitHubDetails?.owner ?? 'microsoft', gitHubDetails?.repositoryName ?? 'vscode');
+			repoId ??= await this.githubUploadService.resolveRepositoryId(gitHubDetails?.owner ?? 'microsoft', gitHubDetails?.repositoryName ?? 'vscode', data.githubAccessToken);
 			return repoId;
 		};
 
