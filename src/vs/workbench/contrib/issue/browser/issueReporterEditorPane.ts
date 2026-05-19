@@ -55,17 +55,12 @@ export class IssueReporterEditorPane extends EditorPane {
 	static readonly ID = 'workbench.editor.issueReporter';
 
 	/**
-	 * Live registry of all currently-instantiated IssueReporter panes (one per
-	 * editor group). Commands like the screenshot keybinding need to reach the
-	 * wizard even when its tab is not the active editor in its group, and
-	 * {@link IEditorService.visibleEditorPanes} only exposes the active pane
-	 * per group. We track them ourselves.
+	 * Live registry of issue reporter panes so commands can target the wizard
+	 * even when its tab is not the active editor in its group.
+	 * (IEditorService.visibleEditorPanes only exposes the active pane per group.)
 	 */
 	private static readonly liveInstances = new Set<IssueReporterEditorPane>();
 	static getAnyLiveInstance(): IssueReporterEditorPane | undefined {
-		// Prefer one whose wizard exists (i.e. has been set up). Iteration order
-		// is insertion order, which gives a reasonable default if multiple are
-		// open (rare).
 		for (const inst of IssueReporterEditorPane.liveInstances) {
 			if (inst.wizard) {
 				return inst;
@@ -76,12 +71,7 @@ export class IssueReporterEditorPane extends EditorPane {
 
 	private container: HTMLElement | undefined;
 	private wizard: IssueReporterOverlay | undefined;
-	/**
-	 * Our own reference to the wizard's editor input that survives the framework
-	 * calling clearInput() when the user switches away from our tab. Without
-	 * this, revealAndActivate() can't reopen the wizard because this.input is
-	 * already undefined by the time the screenshot capture completes.
-	 */
+	/** Survives the framework calling clearInput() when the user switches away. */
 	private wizardInput: IssueReporterEditorInput | undefined;
 	private readonly inputDisposables = this._register(new DisposableStore());
 
@@ -121,29 +111,14 @@ export class IssueReporterEditorPane extends EditorPane {
 	}
 
 	/**
-	 * Bring this pane's tab to the front of its editor group and make that
-	 * group the active one. Awaits the open so callers can sequence subsequent
-	 * actions reliably.
-	 *
-	 * Why this needs both `activateGroup` and `openEditor`:
-	 *  - `group.openEditor(input)` activates the editor *within* its group, but
-	 *    the active *group* may still be a different one (e.g. user clicked
-	 *    into a different editor group, or the OS screenshot tool stole focus
-	 *    and Electron restored it elsewhere).
-	 *  - `editorGroupsService.activateGroup(group)` makes the wizard's group
-	 *    the active one so the activated editor actually receives keyboard
-	 *    focus and the user sees it.
+	 * Bring this pane's tab to the front of its group and activate that group
+	 * so the wizard receives keyboard focus.
 	 */
 	async revealAndActivate(): Promise<void> {
 		const input = this.wizardInput;
 		if (!input) {
 			return;
 		}
-		// Activate the wizard's group first so the editor service knows where
-		// to bring focus, then open the editor through the *service* (not the
-		// group). The service has the full machinery for cross-group activation;
-		// calling group.openEditor() alone may leave focus on a different group
-		// even after the wizard's tab becomes active in its own group.
 		this.editorGroupsService.activateGroup(this.group);
 		await this.editorService.openEditor(input, { activation: EditorActivation.ACTIVATE }, this.group);
 	}
@@ -171,9 +146,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			return;
 		}
 
-		// Hold our own reference to the input so revealAndActivate() can still
-		// reach it after the framework calls clearInput() when the user switches
-		// to another tab. The framework's this.input is undefined in that state.
+		// Keep our own input reference for revealAndActivate() after clearInput().
 		this.wizardInput = input;
 
 		// If the wizard is already built and its DOM is still attached, re-parent floating bar if needed
@@ -222,7 +195,6 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.group.closeEditor(this.input!);
 		}));
 
-		// Clean up wizard when the input is disposed (tab actually closed)
 		this.inputDisposables.add(input.onWillDispose(() => {
 			this.destroyWizard();
 		}));
@@ -264,10 +236,8 @@ export class IssueReporterEditorPane extends EditorPane {
 
 				this.wizard.addScreenshot({ dataUrl, width: img.naturalWidth, height: img.naturalHeight });
 
-				// Bring the issue reporter editor back into focus after the capture —
-				// the user may have switched to a different editor (or even a
-				// different group) to set up the shot. revealAndActivate() activates
-				// the editor in its own group regardless of where focus currently is.
+				// Bring the wizard back into focus after the capture in case
+				// the user switched editors/groups while setting up the shot.
 				await this.revealAndActivate();
 			} catch (err) {
 				setTimeout(() => this.wizard?.showFloatingBar(), 1000);
@@ -277,10 +247,8 @@ export class IssueReporterEditorPane extends EditorPane {
 
 		// Wire recording start
 		this.inputDisposables.add(this.wizard.onDidRequestStartRecording(async () => {
-			// Check screen-recording permission first (macOS-only concern; other
-			// platforms always report 'granted'). If denied or not-determined-
-			// and-already-prompted, surface the grant-permission notification
-			// without attempting getDisplayMedia (which would just fail again).
+			// macOS-only: skip getDisplayMedia when permission is denied and
+			// surface the grant-permission notification instead.
 			const permissionState = await this.nativeHostService.getMediaAccessStatus('screen');
 			if (permissionState === 'denied' || permissionState === 'restricted') {
 				this.showScreenRecordingPermissionNotification();
@@ -293,8 +261,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			} catch (err) {
 				this.logService.error('[IssueReporterEditorPane] Recording failed:', err);
 				this.wizard?.setRecordingState(RecordingState.Idle);
-				// Re-check permission state in case the OS prompt was just
-				// dismissed/denied during this getDisplayMedia call.
+				// Re-check in case the OS prompt was just denied during getDisplayMedia.
 				const postState = await this.nativeHostService.getMediaAccessStatus('screen');
 				if (postState === 'denied' || postState === 'restricted' || postState === 'not-determined') {
 					this.showScreenRecordingPermissionNotification();
@@ -508,10 +475,7 @@ export class IssueReporterEditorPane extends EditorPane {
 
 	/**
 	 * Surface a notification telling the user how to grant Screen Recording
-	 * permission. On macOS, includes a one-click action that deep-links to the
-	 * Privacy & Security pane in System Settings. On other platforms, surfaces
-	 * a generic explanation (the OS-level permission flow there typically
-	 * doesn't require a manual settings trip).
+	 * permission. On macOS, includes a deep-link to System Settings.
 	 */
 	private showScreenRecordingPermissionNotification(): void {
 		if (isMacintosh) {

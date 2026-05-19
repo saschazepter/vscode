@@ -115,9 +115,6 @@ export class IssueReporterOverlay {
 	// Step 0: Screenshots & Recording
 	private screenshotContainer!: HTMLElement;
 	private screenshotDelay = 0;
-	private captureBtn!: Button;
-	private recordBtn: Button | undefined;
-	private recordingElapsedLabel!: HTMLElement;
 	private recordingElapsedTimer: number | undefined;
 	private recordingStartTime = 0;
 	private currentRecordingState = RecordingState.Idle;
@@ -137,7 +134,6 @@ export class IssueReporterOverlay {
 	private includeExtensionData = false;
 	private includeSettings = true;
 	private settingsContent: string | undefined;
-	private workspaceSettingsContent: string | undefined;
 	private diagnosticBulkToggleButton: Button | undefined;
 	private diagnosticSectionStates: (() => boolean)[] = [];
 	private performanceInfoLoaded = false;
@@ -281,56 +277,9 @@ export class IssueReporterOverlay {
 			hint.appendChild(targetDocument.createTextNode('.'));
 		}
 
-		const actions = append(page, $('div.wizard-screenshot-actions'));
-
-		// Delay dropdown - Monaco SelectBox
-		const delayGroup = append(actions, $('div.wizard-delay-group'));
-		const delaySelectLabel = append(delayGroup, $('label.wizard-delay-label'));
-		delaySelectLabel.textContent = localize('delayLabel', "Capture delay:");
-		const delayOptions = this.getScreenshotDelayOptions();
-		const delaySelectContainer = append(delayGroup, $('div.wizard-delay-select'));
-		const delaySelectItems: ISelectOptionItem[] = delayOptions.map(option => ({ text: option.label }));
-		const delaySelect = this.disposables.add(new SelectBox(
-			delaySelectItems,
-			Math.max(0, delayOptions.findIndex(o => o.value === this.screenshotDelay)),
-			this.contextViewService,
-			defaultSelectBoxStyles,
-			{ ariaLabel: localize('delayLabel', "Capture delay:"), useCustomDrawn: true }
-		));
-		delaySelect.render(delaySelectContainer);
-		this.disposables.add(delaySelect.onDidSelect(({ index }) => {
-			this.screenshotDelay = delayOptions[index].value;
-		}));
-
-		this.captureBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles }));
-		this.captureBtn.label = localize('addScreenshot', "Add screenshot");
-		this.captureBtn.element.classList.add('wizard-capture-btn');
-		const cameraIcon = $('span.wizard-capture-icon');
-		cameraIcon.appendChild(renderIcon(Codicon.deviceCamera));
-		this.captureBtn.element.insertBefore(cameraIcon, this.captureBtn.element.firstChild);
-
-		this.disposables.add(this.captureBtn.onDidClick(() => this.triggerCaptureScreenshot()));
-
-		// Record video button (only when supported)
-		if (this.recordingSupported) {
-			this.recordBtn = this.disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-			this.recordBtn.label = localize('recordVideo', "Record video");
-			this.recordBtn.element.classList.add('wizard-record-btn');
-			const recordIcon = $('span.wizard-record-icon');
-			recordIcon.appendChild(renderIcon(Codicon.record));
-			this.recordBtn.element.insertBefore(recordIcon, this.recordBtn.element.firstChild);
-
-			this.recordingElapsedLabel = append(this.recordBtn.element, $('span.wizard-recording-elapsed'));
-			this.recordingElapsedLabel.style.display = 'none';
-
-			this.disposables.add(this.recordBtn.onDidClick(() => this.triggerToggleRecording()));
-		}
-
 		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
 		this.updateScreenshotThumbnails();
 
-		// Hide inline actions and use the floating capture bar instead
-		actions.style.display = 'none';
 		this.createFloatingCaptureBar();
 	}
 
@@ -1065,7 +1014,6 @@ export class IssueReporterOverlay {
 	}
 
 	private async searchVSCodeDuplicates(title: string, body: string): Promise<ISimilarIssue[]> {
-		// TODO: Check whether this duplicate candidate service is still alive or can be removed.
 		const response = await fetch('https://vscode-probot.westus.cloudapp.azure.com:7890/duplicate_candidates', {
 			method: 'POST',
 			body: JSON.stringify({ title, body }),
@@ -1580,12 +1528,6 @@ export class IssueReporterOverlay {
 					userLabel.textContent = localize('userSettings', "User Settings");
 					const userPre = append(container, $('pre.review-diag-pre'));
 					userPre.textContent = this.settingsContent!;
-					if (this.workspaceSettingsContent) {
-						const wsLabel = append(container, $('div.review-diag-sublabel'));
-						wsLabel.textContent = localize('workspaceSettings', "Workspace Settings");
-						const wsPre = append(container, $('pre.review-diag-pre'));
-						wsPre.textContent = this.workspaceSettingsContent;
-					}
 				},
 			});
 		}
@@ -1880,11 +1822,6 @@ export class IssueReporterOverlay {
 		this.wizardPanel.focus();
 	}
 
-	close(): void {
-		this.visible = false;
-		this._onDidClose.fire();
-	}
-
 	private getTotalAttachments(): number {
 		return this.screenshots.length + this.recordings.length;
 	}
@@ -1933,21 +1870,6 @@ export class IssueReporterOverlay {
 		// Record disabled when: at max, OR delayed screenshot will fill the last slot
 		const recordDisabled = atMax || (wouldReachMax && this.delayedScreenshotPending);
 
-		this.captureBtn.enabled = !screenshotDisabled;
-		this.captureBtn.label = screenshotDisabled
-			? maxMsg
-			: localize('addScreenshot', "Add screenshot");
-
-		if (this.recordBtn) {
-			if (this.currentRecordingState !== RecordingState.Recording) {
-				this.recordBtn.enabled = !recordDisabled;
-				this.recordBtn.label = recordDisabled
-					? maxMsg
-					: localize('recordVideo', "Record video");
-			}
-		}
-
-		// Floating bar buttons
 		if (this.captureStripCaptureBtn) {
 			this.captureStripCaptureBtn.enabled = !screenshotDisabled;
 			this.captureStripCaptureBtn.element.title = screenshotDisabled ? maxMsg : localize('screenshot', "Screenshot");
@@ -2099,18 +2021,6 @@ export class IssueReporterOverlay {
 
 	getRecordings(): readonly { filePath: string; durationMs: number; thumbnailDataUrl?: string }[] {
 		return this.recordings;
-	}
-
-	getIssueReporterData(): IssueReporterData {
-		this.updateIssueSourceFlags();
-		return {
-			...this.data,
-			issueType: this.selectedIssueType,
-			issueSource: this.selectedIssueSource,
-			extensionId: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.id : undefined,
-			uri: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.uri : this.data.uri,
-			privateUri: this.selectedIssueSource === IssueSource.Extension ? this.selectedExtension?.privateUri ?? this.data.privateUri : this.data.privateUri,
-		};
 	}
 
 	private buildIssueBody(): string {
@@ -2270,9 +2180,6 @@ export class IssueReporterOverlay {
 
 	private generateSettingsMd(): string {
 		const details = [`#### User Settings\n\n${this.createCodeBlock(this.settingsContent ?? '', 'json')}`];
-		if (this.workspaceSettingsContent) {
-			details.push(`#### Workspace Settings\n\n${this.createCodeBlock(this.workspaceSettingsContent, 'json')}`);
-		}
 		return this.createDetails('Settings', details.join('\n\n'));
 	}
 
@@ -2312,10 +2219,6 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		return value.replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
 	}
 
-	isVisible(): boolean {
-		return this.visible;
-	}
-
 	setUpdateAvailable(showUpdateBanner: boolean): void {
 		this.showUpdateBanner = showUpdateBanner;
 		if (this.updateBanner) {
@@ -2351,7 +2254,7 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		return this._hideToolbarInScreenshots;
 	}
 
-	/** Re-parent the floating bar into the current window (used after move to auxiliary window) */
+	/** Re-parent the floating bar into the wizard's current window. */
 	reparentFloatingBar(): void {
 		if (!this.floatingBar) {
 			return;
@@ -2387,12 +2290,7 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		}
 	}
 
-	/**
-	 * Called once the performance info load has resolved (regardless of whether
-	 * processInfo / workspaceInfo are actually present — both can legitimately be
-	 * empty, e.g. when no workspace folder is open). Suppresses the "Loading…"
-	 * placeholders that would otherwise show indefinitely.
-	 */
+	/** Called once performance info has resolved; suppresses "Loading…" placeholders. */
 	markPerformanceInfoLoaded(): void {
 		this.performanceInfoLoaded = true;
 		if (this.currentStep === WizardStep.Review) {
@@ -2402,9 +2300,8 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		}
 	}
 
-	setSettingsContent(userSettings: string, workspaceSettings?: string): void {
+	setSettingsContent(userSettings: string): void {
 		this.settingsContent = userSettings;
-		this.workspaceSettingsContent = workspaceSettings;
 		if (this.currentStep === WizardStep.Review) {
 			this.updateReviewDetails();
 		}
@@ -2448,7 +2345,6 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 			includeExtensionData: this.includeExtensionData,
 			includeSettings: this.includeSettings,
 			settingsContent: this.settingsContent,
-			workspaceSettingsContent: this.workspaceSettingsContent,
 			screenshots: this.screenshots.map(screenshot => screenshot.annotatedDataUrl ?? screenshot.dataUrl),
 			recordings: this.recordings.map(recording => recording.filePath),
 		});
@@ -2486,10 +2382,6 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		this.updateStepUI();
 	}
 
-	getWizardHeight(): number {
-		return this.wizardPanel.offsetHeight;
-	}
-
 	setRecordingState(state: RecordingState): void {
 		this.currentRecordingState = state;
 
@@ -2506,12 +2398,6 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 			const stopLabel = localize('stopRecording', "Stop recording");
 			const makeLabel = () => `$(stop-circle) ${stopLabel} ${formatTime()}`;
 
-			if (this.recordBtn) {
-				this.recordBtn.element.classList.add('recording');
-				this.recordBtn.label = makeLabel();
-				this.recordingElapsedLabel.style.display = 'none';
-			}
-
 			if (this.captureStripRecordBtn) {
 				this.captureStripRecordBtn.element.classList.add('recording');
 				this.captureStripRecordBtn.element.title = stopLabel;
@@ -2519,21 +2405,12 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 			}
 
 			this.recordingElapsedTimer = getWindow(this.container).setInterval(() => {
-				const label = makeLabel();
-				if (this.recordBtn) {
-					this.recordBtn.label = label;
-				}
 				if (this.captureStripRecordBtn) {
-					this.captureStripRecordBtn.label = label;
+					this.captureStripRecordBtn.label = makeLabel();
 				}
 			}, 1000);
 		} else {
 			// Back to idle
-			if (this.recordBtn) {
-				this.recordBtn.element.classList.remove('recording');
-				this.recordBtn.label = localize('recordVideo', "Record video");
-				this.recordingElapsedLabel.style.display = 'none';
-			}
 			if (this.recordingElapsedTimer !== undefined) {
 				getWindow(this.container).clearInterval(this.recordingElapsedTimer);
 				this.recordingElapsedTimer = undefined;
@@ -2573,10 +2450,7 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		if (this.currentStep !== WizardStep.Attachments) {
 			return;
 		}
-		// Prefer the floating-bar button when it's mounted (richer UX:
-		// countdown lock, label countdown). Fall back to the legacy inline
-		// button which now mainly exists for state tracking.
-		const btn = this.captureStripCaptureBtn ?? this.captureBtn;
+		const btn = this.captureStripCaptureBtn;
 		if (!btn?.enabled) {
 			return;
 		}
@@ -2592,7 +2466,7 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		if (this.currentStep !== WizardStep.Attachments || !this.recordingSupported) {
 			return;
 		}
-		const btn = this.captureStripRecordBtn ?? this.recordBtn;
+		const btn = this.captureStripRecordBtn;
 		if (!btn?.enabled) {
 			return;
 		}
@@ -2600,9 +2474,6 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 	}
 
 	private renderShortcutKeycap(parent: HTMLElement, keybinding: ResolvedKeybinding): void {
-		// Use the same widget the Keyboard Shortcuts editor uses so the rendering
-		// is identical: each modifier and each key in its own .monaco-keybinding-key
-		// rounded box, joined by a thin "+" separator span.
 		const label = this.disposables.add(new KeybindingLabel(parent, OS, { ...defaultKeybindingLabelStyles }));
 		label.set(keybinding);
 		label.element.classList.add('wizard-shortcut');

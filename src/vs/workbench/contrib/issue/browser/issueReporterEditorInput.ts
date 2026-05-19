@@ -20,7 +20,7 @@ export class IssueReporterEditorInput extends EditorInput {
 	static readonly ID = 'workbench.input.issueReporter';
 	static readonly RESOURCE = URI.from({ scheme: 'vscode-issue-reporter', path: 'reporter' });
 
-	private _data: IssueReporterData | undefined;
+	readonly data: IssueReporterData | undefined;
 
 	/** Set by the editor pane to check if user has entered data */
 	hasUserInputFn: (() => boolean) | undefined;
@@ -32,7 +32,7 @@ export class IssueReporterEditorInput extends EditorInput {
 		@IDialogService private readonly dialogService: IDialogService,
 	) {
 		super();
-		this._data = data;
+		this.data = data;
 
 		this.closeHandler = {
 			showConfirm: () => !!this.hasUserInputFn?.(),
@@ -46,14 +46,6 @@ export class IssueReporterEditorInput extends EditorInput {
 				return confirmed ? ConfirmResult.DONT_SAVE : ConfirmResult.CANCEL;
 			},
 		};
-	}
-
-	get data(): IssueReporterData | undefined {
-		return this._data;
-	}
-
-	set data(value: IssueReporterData | undefined) {
-		this._data = value;
 	}
 
 	override get typeId(): string {

@@ -228,16 +228,10 @@ export class CodeApplication extends Disposable {
 			return false;
 		});
 
-		// Allow getDisplayMedia() calls from the core window (e.g. issue reporter recording).
-		// Auto-select the screen containing the requesting VS Code window.
-		//
-		// We use desktopCapturer.getSources() as the source of truth for display
-		// selection. A previous synthetic "screen:<index>:0" fast path turned out
-		// to be unreliable on Windows multi-display setups because the internal
-		// capturer ordering did not consistently match electron.screen.getAllDisplays().
-		//
-		// To keep repeated recordings responsive we cache the real sources and
-		// invalidate the cache whenever display topology changes.
+		// Auto-select the screen containing the requesting window for getDisplayMedia()
+		// calls (e.g. issue reporter recording). Sources are cached and invalidated on
+		// display topology changes. On macOS, warm-up is gated on already-granted screen-
+		// recording permission to avoid triggering the TCC prompt outside the user flow.
 		let cachedScreenSources: Electron.DesktopCapturerSource[] | undefined;
 		const warmUpScreenSources = () => {
 			desktopCapturer.getSources({
@@ -245,10 +239,6 @@ export class CodeApplication extends Disposable {
 				thumbnailSize: { width: 0, height: 0 },
 			}).then(sources => { cachedScreenSources = sources; }).catch(() => { /* best-effort */ });
 		};
-		// Topology changes invalidate the cache; only re-warm if the OS already
-		// granted us screen-recording permission (see comment below) so display
-		// reconfiguration before the user clicks Record can't trigger the
-		// permission prompt either.
 		const invalidateScreenSourceCache = () => {
 			cachedScreenSources = undefined;
 			if (!isMacintosh || systemPreferences.getMediaAccessStatus('screen') === 'granted') {
@@ -258,16 +248,7 @@ export class CodeApplication extends Disposable {
 		electronScreen.on('display-added', invalidateScreenSourceCache);
 		electronScreen.on('display-removed', invalidateScreenSourceCache);
 		electronScreen.on('display-metrics-changed', invalidateScreenSourceCache);
-		// Pre-warm the cache so the first recording doesn't block on DXGI enumeration.
-		// On macOS, calling desktopCapturer.getSources(['screen']) triggers the
-		// TCC Screen Recording permission prompt the first time it runs. We only
-		// want that prompt to appear when the user explicitly clicks Record, so
-		// we gate the eager warm-up on the OS already having granted permission.
-		// systemPreferences.getMediaAccessStatus reads the cached TCC state
-		// without prompting; on platforms that don't have a per-app screen
-		// permission (Linux, Windows) it returns 'granted' so warm-up still runs.
-		const canWarmUpWithoutPrompt = !isMacintosh || systemPreferences.getMediaAccessStatus('screen') === 'granted';
-		if (canWarmUpWithoutPrompt) {
+		if (!isMacintosh || systemPreferences.getMediaAccessStatus('screen') === 'granted') {
 			warmUpScreenSources();
 		}
 		session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {

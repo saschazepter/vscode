@@ -76,7 +76,7 @@ export class BrowserRecordingService implements IRecordingService {
 		return [];
 	}
 
-	async startRecording(_mimeType?: string, _cropElement?: HTMLElement): Promise<void> {
+	async startRecording(_mimeType?: string): Promise<void> {
 		throw new Error('Recording is not supported in web browsers.');
 	}
 

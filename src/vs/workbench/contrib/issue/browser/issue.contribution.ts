@@ -20,6 +20,7 @@ import { BaseIssueContribution } from '../common/issue.contribution.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { BrowserScreenshotService, IScreenshotService } from './screenshotService.js';
 import { BrowserRecordingService, IRecordingService } from './recordingService.js';
+import { BrowserGitHubUploadService, IGitHubUploadService } from './githubUploadService.js';
 
 
 class WebIssueContribution extends BaseIssueContribution {
@@ -43,8 +44,6 @@ registerSingleton(IWorkbenchIssueService, BrowserIssueService, InstantiationType
 registerSingleton(IIssueFormService, IssueFormService, InstantiationType.Delayed);
 registerSingleton(IScreenshotService, BrowserScreenshotService, InstantiationType.Delayed);
 registerSingleton(IRecordingService, BrowserRecordingService, InstantiationType.Delayed);
-
-import { IGitHubUploadService, BrowserGitHubUploadService } from './githubUploadService.js';
 registerSingleton(IGitHubUploadService, BrowserGitHubUploadService, InstantiationType.Delayed);
 
 CommandsRegistry.registerCommand('_issues.getSystemStatus', (accessor) => {

@@ -33,15 +33,6 @@ const workspaceStatsCache = new Map<string, Promise<WorkspaceStats>>();
 /** Sentinel key in {@link WorkspaceStats.fileTypes} for files with no extension. */
 const NO_EXT_KEY = '\0no-extension';
 
-/**
- * Drop all entries from the workspace stats cache so the next call to
- * {@link collectWorkspaceStats} re-walks the filesystem. Used by the issue
- * reporter's "Refresh" action to pick up newly created/deleted files.
- */
-export function invalidateWorkspaceStatsCache(): void {
-	workspaceStatsCache.clear();
-}
-
 export async function collectWorkspaceStats(folder: string, filter: string[], options?: { skipCache?: boolean; unbounded?: boolean }): Promise<WorkspaceStats> {
 	const cacheKey = `${folder}::${filter.join(':')}`;
 	if (!options?.skipCache) {
