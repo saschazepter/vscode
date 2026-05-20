@@ -344,11 +344,13 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		}
 
 		if (data.uri) {
-			return { url: URI.revive(data.uri).toString(), external: false };
+			const url = URI.revive(data.uri).toString();
+			return { url, external: !this.isGitHubUrl(url) };
 		}
 
 		if (data.privateUri) {
-			return { url: URI.revive(data.privateUri).toString(), external: false };
+			const url = URI.revive(data.privateUri).toString();
+			return { url, external: !this.isGitHubUrl(url) };
 		}
 
 		return product.reportIssueUrl ? { url: product.reportIssueUrl, external: false } : undefined;
