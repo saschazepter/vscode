@@ -34,7 +34,9 @@ const workspaceStatsCache = new Map<string, Promise<WorkspaceStats>>();
 const NO_EXT_KEY = '\0no-extension';
 
 export async function collectWorkspaceStats(folder: string, filter: string[], options?: { skipCache?: boolean; unbounded?: boolean }): Promise<WorkspaceStats> {
-	const cacheKey = `${folder}::${filter.join(':')}`;
+	// Include `unbounded` in the cache key so a bounded (20k-cap) result is never
+	// returned for an unbounded request (which would silently truncate counts).
+	const cacheKey = `${folder}::${filter.join(':')}::${options?.unbounded ? 'unbounded' : 'bounded'}`;
 	if (!options?.skipCache) {
 		const cached = workspaceStatsCache.get(cacheKey);
 		if (cached) {
