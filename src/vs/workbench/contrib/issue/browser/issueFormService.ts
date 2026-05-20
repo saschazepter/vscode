@@ -12,7 +12,7 @@ import { localize } from '../../../../nls.js';
 import { IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ExtensionIdentifier, ExtensionIdentifierSet } from '../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
@@ -27,8 +27,6 @@ import { normalizeGitHubUrl } from '../common/issueReporterUtil.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import BaseHtml from './issueReporterPage.js';
 import { IssueWebReporter } from './issueReporterService.js';
-import { IRecordingService } from './recordingService.js';
-import { IScreenshotService } from './screenshotService.js';
 import { IGitHubUploadService } from './githubUploadService.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
@@ -73,11 +71,7 @@ export class IssueFormService implements IIssueFormService {
 		@ILogService protected readonly logService: ILogService,
 		@IDialogService protected readonly dialogService: IDialogService,
 		@IHostService protected readonly hostService: IHostService,
-		@ILayoutService protected readonly layoutService: ILayoutService,
-		@IScreenshotService protected readonly screenshotService: IScreenshotService,
 		@IOpenerService protected readonly openerService: IOpenerService,
-		@IRecordingService protected readonly recordingService: IRecordingService,
-		@IFileDialogService protected readonly fileDialogService: IFileDialogService,
 		@IFileService protected readonly fileService: IFileService,
 		@IEnvironmentService protected readonly environmentService: IEnvironmentService,
 		@IGitHubUploadService protected readonly githubUploadService: IGitHubUploadService,

@@ -6,11 +6,10 @@
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -20,8 +19,6 @@ import { IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/brows
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IssueFormService } from '../browser/issueFormService.js';
 import { IGitHubUploadService } from '../browser/githubUploadService.js';
-import { IRecordingService } from '../browser/recordingService.js';
-import { IScreenshotService } from '../browser/screenshotService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IIssueFormService, IssueReporterData } from '../common/issue.js';
@@ -44,11 +41,7 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		@IMenuService menuService: IMenuService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IHostService hostService: IHostService,
-		@ILayoutService layoutService: ILayoutService,
-		@IScreenshotService screenshotService: IScreenshotService,
 		@IOpenerService openerService: IOpenerService,
-		@IRecordingService recordingService: IRecordingService,
-		@IFileDialogService fileDialogService: IFileDialogService,
 		@IFileService fileService: IFileService,
 		@IEnvironmentService environmentService: IEnvironmentService,
 		@IGitHubUploadService githubUploadService: IGitHubUploadService,
@@ -57,7 +50,7 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		@IClipboardService clipboardService: IClipboardService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
-		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, layoutService, screenshotService, openerService, recordingService, fileDialogService, fileService, environmentService, githubUploadService, configurationService, editorService, clipboardService);
+		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, openerService, fileService, environmentService, githubUploadService, configurationService, editorService, clipboardService);
 	}
 
 	// override to grab platform info before routing

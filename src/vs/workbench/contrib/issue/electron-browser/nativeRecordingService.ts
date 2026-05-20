@@ -199,9 +199,14 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 	}
 
 	discardRecording(): void {
-		if (this._state === RecordingState.Recording && this.mediaRecorder?.state === 'recording') {
-			this.mediaRecorder.onstop = null; // Prevent state transition
-			this.mediaRecorder.stop();
+		if (this.mediaRecorder) {
+			// Clear handlers BEFORE stop() so any final ondataavailable fired after stop()
+			// does not append a chunk that we'd then have to GC explicitly.
+			this.mediaRecorder.ondataavailable = null;
+			this.mediaRecorder.onstop = null;
+			if (this._state === RecordingState.Recording && this.mediaRecorder.state === 'recording') {
+				this.mediaRecorder.stop();
+			}
 		}
 		this.cleanup();
 		this.setState(RecordingState.Idle);
