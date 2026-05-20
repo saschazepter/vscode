@@ -147,16 +147,12 @@ ${this.getInfos()}
 			return info;
 		}
 
-		const isBugOrPerformanceIssue = this._data.issueType === IssueType.Bug || this._data.issueType === IssueType.PerformanceIssue;
+		if (this._data.includeExtensionData && this._data.extensionData) {
+			info += this.getExtensionData();
+		}
 
-		if (isBugOrPerformanceIssue) {
-			if (this._data.includeExtensionData && this._data.extensionData) {
-				info += this.getExtensionData();
-			}
-
-			if (this._data.includeSystemInfo && (this._data.systemInfo || this._data.systemInfoWeb)) {
-				info += this.generateSystemInfoMd();
-			}
+		if (this._data.includeSystemInfo && this._data.systemInfo) {
+			info += this.generateSystemInfoMd();
 		}
 
 		if (this._data.issueType === IssueType.PerformanceIssue) {
@@ -169,14 +165,12 @@ ${this.getInfos()}
 			}
 		}
 
-		if (isBugOrPerformanceIssue) {
-			if (!this._data.fileOnExtension && this._data.includeExtensions) {
-				info += this.generateExtensionsMd();
-			}
+		if (!this._data.fileOnExtension && this._data.includeExtensions) {
+			info += this.generateExtensionsMd();
+		}
 
-			if (this._data.includeExperiments && this._data.experimentInfo) {
-				info += this.generateExperimentsInfoMd();
-			}
+		if (this._data.includeExperiments && this._data.experimentInfo) {
+			info += this.generateExperimentsInfoMd();
 		}
 
 		return info;
@@ -230,8 +224,6 @@ ${this.getInfos()}
 |VM|${remote.machineInfo.vmHint}|`;
 				}
 			});
-		} else if (this._data.systemInfoWeb) {
-			md += `|User Agent|${this._data.systemInfoWeb}|`;
 		}
 
 		md += '\n</details>';
@@ -284,7 +276,6 @@ ${this._data.experimentInfo}
 			if (!this._data.numberOfThemeExtesions) {
 				return 'Extensions: none';
 			}
-			return `Extensions: none (excluding ${this._data.numberOfThemeExtesions} theme extension${this._data.numberOfThemeExtesions === 1 ? '' : 's'})`;
 		}
 
 		let md = '';
@@ -296,10 +287,7 @@ ${this._data.experimentInfo}
 				return `${e.displayName || e.name}|${e.id}|${e.publisher ?? 'N/A'}|${e.version}`;
 			}).join('\n');
 
-			const themeNote = this._data.numberOfThemeExtesions
-				? ` (excluding ${this._data.numberOfThemeExtesions} theme extension${this._data.numberOfThemeExtesions === 1 ? '' : 's'})`
-				: '';
-			md += `<details><summary>Extensions (${this._data.enabledNonThemeExtesions.length})${themeNote}</summary>
+			md += `<details><summary>Extensions (${this._data.enabledNonThemeExtesions.length})</summary>
 
 ${tableHeader}
 ${table}

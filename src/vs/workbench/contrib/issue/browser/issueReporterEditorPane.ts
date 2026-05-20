@@ -7,7 +7,7 @@ import './media/issueReporterOverlay.css';
 import { $, append, clearNode, Dimension } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -27,7 +27,7 @@ import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
-import { IIssueFormService, IssueReporterData } from '../common/issue.js';
+import { IIssueFormService } from '../common/issue.js';
 import { IProcessService } from '../../../../platform/process/common/process.js';
 import { IWorkbenchAssignmentService } from '../../../services/assignment/common/assignmentService.js';
 import product from '../../../../platform/product/common/product.js';
@@ -451,7 +451,9 @@ export class IssueReporterEditorPane extends EditorPane {
 			// Ignore
 		}
 
-		await this.waitForExtensions(data);
+		// Wait for the issue service to finish enumerating installed extensions
+		// (it kicks off enumeration in parallel with this pane opening).
+		await data?.whenExtensionsLoaded;
 		if (data && data.enabledExtensions.length > 0) {
 			const nonTheme = data.enabledExtensions.filter(e => !e.isTheme && !e.isBuiltin);
 			const themeCount = data.enabledExtensions.filter(e => e.isTheme).length;
@@ -469,28 +471,6 @@ export class IssueReporterEditorPane extends EditorPane {
 			this.wizard?.setSettingsContent(settingsContent.value.toString());
 		} catch {
 			// Ignore — no settings file
-		}
-	}
-
-	private async waitForExtensions(data: IssueReporterData | undefined): Promise<void> {
-		if (!data || data.extensionsLoaded) {
-			return;
-		}
-
-		// Poll until the issue service flips `extensionsLoaded` (it does so in a `finally`,
-		// even on enumeration failure), or until either the pane is disposed or a 5s cap
-		// elapses. The cap is a safety net: if extension enumeration never finishes (e.g. a
-		// caller throws synchronously before reaching the try/finally) we still surface the
-		// wizard with empty extensions rather than blocking indefinitely.
-		const deadline = Date.now() + 5000;
-		let cancelled = false;
-		const cancelToken = this.inputDisposables.add(toDisposable(() => { cancelled = true; }));
-		try {
-			while (!data.extensionsLoaded && !cancelled && Date.now() < deadline) {
-				await new Promise(resolve => setTimeout(resolve, 100));
-			}
-		} finally {
-			cancelToken.dispose();
 		}
 	}
 

@@ -68,7 +68,12 @@ export interface IssueReporterExtensionData {
 export interface IssueReporterData extends WindowData {
 	styles: IssueReporterStyles;
 	enabledExtensions: IssueReporterExtensionData[];
-	extensionsLoaded?: boolean;
+	/**
+	 * Resolves once `enabledExtensions` has been populated (or failed to populate).
+	 * Lets the wizard pane wait for the async extension enumeration in
+	 * `NativeIssueService` to finish before rendering the extensions section.
+	 */
+	whenExtensionsLoaded?: Promise<void>;
 	issueType?: IssueType;
 	issueSource?: IssueSource;
 	extensionId?: string;

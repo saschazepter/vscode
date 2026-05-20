@@ -5,6 +5,7 @@
 
 import { getZoomLevel } from '../../../../base/browser/browser.js';
 import { mainWindow } from '../../../../base/browser/window.js';
+import { DeferredPromise } from '../../../../base/common/async.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IExtensionManagementService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { ExtensionType } from '../../../../platform/extensions/common/extensions.js';
@@ -50,11 +51,12 @@ export class NativeIssueService implements IWorkbenchIssueService {
 
 	private async openWizardReporter(dataOverrides: Partial<IssueReporterData>): Promise<void> {
 		const theme = this.themeService.getColorTheme();
+		const extensionsLoaded = new DeferredPromise<void>();
 		const issueReporterData: IssueReporterData = Object.assign({
 			styles: getIssueReporterStyles(theme),
 			zoomLevel: getZoomLevel(mainWindow),
 			enabledExtensions: [],
-			extensionsLoaded: false,
+			whenExtensionsLoaded: extensionsLoaded.p,
 			restrictedMode: !this.workspaceTrustManagementService.isWorkspaceTrusted(),
 			isUnsupported: false,
 			isSessionsWindow: this.environmentService.isSessionsWindow,
@@ -62,7 +64,7 @@ export class NativeIssueService implements IWorkbenchIssueService {
 		}, dataOverrides);
 
 		const openPromise = this.issueFormService.openReporter(issueReporterData);
-		void this.populateReporterDataAsync(issueReporterData, dataOverrides);
+		void this.populateReporterDataAsync(issueReporterData, dataOverrides, extensionsLoaded);
 		return openPromise;
 	}
 
@@ -141,7 +143,7 @@ export class NativeIssueService implements IWorkbenchIssueService {
 		return this.issueFormService.openReporter(issueReporterData);
 	}
 
-	private async populateReporterDataAsync(data: IssueReporterData, dataOverrides: Partial<IssueReporterData>): Promise<void> {
+	private async populateReporterDataAsync(data: IssueReporterData, dataOverrides: Partial<IssueReporterData>, extensionsLoaded?: DeferredPromise<void>): Promise<void> {
 		// Extensions
 		try {
 			const extensions = await this.extensionManagementService.getInstalled();
@@ -169,7 +171,7 @@ export class NativeIssueService implements IWorkbenchIssueService {
 		} catch (e) {
 			// Ignore — extensions will be empty
 		} finally {
-			data.extensionsLoaded = true;
+			extensionsLoaded?.complete();
 		}
 
 		// Experiments
