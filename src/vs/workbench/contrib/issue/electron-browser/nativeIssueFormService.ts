@@ -59,16 +59,24 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 			return;
 		}
 
-		// Get platform information for the issue body
-		const { arch, release, type } = await this.nativeHostService.getOSProperties();
-		this.arch = arch;
-		this.release = release;
-		this.type = type;
-
 		const useWizard = this.configurationService.getValue<boolean>('issueReporter.wizard.enabled');
 		if (!useWizard) {
+			// Legacy reporter needs OS properties synchronously for the issue body.
+			const { arch, release, type } = await this.nativeHostService.getOSProperties();
+			this.arch = arch;
+			this.release = release;
+			this.type = type;
 			return this.openAuxIssueReporterLegacy(data);
 		}
+
+		// Wizard path: open the editor tab immediately and fetch OS properties in the
+		// background so the IPC round-trip doesn't gate UI display. The wizard reads
+		// the populated arch/release/type lazily via populateReporterDataAsync.
+		void this.nativeHostService.getOSProperties().then(({ arch, release, type }) => {
+			this.arch = arch;
+			this.release = release;
+			this.type = type;
+		});
 
 		return this.openEditorTabReporter(data);
 	}

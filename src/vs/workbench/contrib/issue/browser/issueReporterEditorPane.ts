@@ -7,7 +7,7 @@ import './media/issueReporterOverlay.css';
 import { $, append, clearNode, Dimension } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -448,8 +448,18 @@ export class IssueReporterEditorPane extends EditorPane {
 			return;
 		}
 
-		for (let attempt = 0; attempt < 50 && !data.extensionsLoaded; attempt++) {
-			await new Promise(resolve => setTimeout(resolve, 100));
+		// Poll until the issue service flips extensionsLoaded (it does so in a `finally`,
+		// even on enumeration failure), or until the pane is disposed. A fixed cap would
+		// silently miss the model update on machines with many extensions where
+		// enumeration takes longer than the cap.
+		let cancelled = false;
+		const cancelToken = this.inputDisposables.add(toDisposable(() => { cancelled = true; }));
+		try {
+			while (!data.extensionsLoaded && !cancelled) {
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+		} finally {
+			cancelToken.dispose();
 		}
 	}
 

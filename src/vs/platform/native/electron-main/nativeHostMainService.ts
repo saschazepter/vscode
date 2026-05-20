@@ -915,12 +915,18 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		for (const [key, value] of Object.entries(formFields)) {
 			multipartBody += `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`;
 		}
-		multipartBody += `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${asset.name}"\r\nContent-Type: ${contentType}\r\n\r\n`;
+		// Sanitize the filename for multipart header safety: strip CR/LF (which would
+		// terminate the header / inject extra fields) and escape backslashes and double
+		// quotes (RFC 2616 quoted-string semantics).
+		const safeName = String(asset.name).replace(/[\r\n]+/g, ' ').replace(/[\\"]/g, '_');
+		multipartBody += `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeName}"\r\nContent-Type: ${contentType}\r\n\r\n`;
 		const epilogue = `\r\n--${boundary}--\r\n`;
 
 		const preambleBytes = Buffer.from(multipartBody, 'utf-8');
 		const epilogueBytes = Buffer.from(epilogue, 'utf-8');
-		const bodyBuffer = Buffer.concat([preambleBytes, Buffer.from(fileBytes.buffer), epilogueBytes]);
+		// Pass fileBytes.buffer (Uint8Array) directly to Buffer.concat instead of wrapping
+		// in Buffer.from(...) which would force an extra full-size copy of the payload.
+		const bodyBuffer = Buffer.concat([preambleBytes, fileBytes.buffer, epilogueBytes]);
 
 		const s3Response = await net.fetch(policy.upload_url as string, {
 			method: 'POST',
