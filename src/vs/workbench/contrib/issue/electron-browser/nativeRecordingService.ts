@@ -15,7 +15,12 @@ const SIZE_LIMIT_THRESHOLD = 0.9; // Stop at 90% to account for chunk overshoot
 
 export class NativeRecordingService extends Disposable implements IRecordingService {
 	readonly _serviceBrand: undefined;
-	readonly isSupported = true;
+	// MediaRecorder + getDisplayMedia may be absent if the renderer is run with reduced
+	// APIs (e.g. some test/runtime configurations); derive support from feature detection
+	// so startRecording can early-reject rather than blowing up with ReferenceError.
+	readonly isSupported = typeof MediaRecorder !== 'undefined'
+		&& typeof navigator !== 'undefined'
+		&& !!navigator.mediaDevices?.getDisplayMedia;
 
 	private _state = RecordingState.Idle;
 	private readonly _onDidChangeState = this._register(new Emitter<RecordingState>());

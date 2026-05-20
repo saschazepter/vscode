@@ -242,9 +242,12 @@ export class IssueReporterEditorPane extends EditorPane {
 			} catch (err) {
 				this.logService.error('[IssueReporterEditorPane] Recording failed:', err);
 				this.wizard?.setRecordingState(RecordingState.Idle);
-				// Re-check in case the OS prompt was just denied during getDisplayMedia.
+				// Only nudge the user to System Settings on an explicit deny/restrict. On macOS,
+				// `not-determined` can also mean the user just cancelled the getDisplayMedia
+				// picker (no TCC decision recorded) — surfacing a permission prompt then would
+				// be misleading, so we treat that as a silent cancel.
 				const postState = await this.recordingService.getScreenCapturePermissionStatus();
-				if (postState === 'denied' || postState === 'restricted' || postState === 'not-determined') {
+				if (postState === 'denied' || postState === 'restricted') {
 					this.showScreenRecordingPermissionNotification();
 				}
 			}
