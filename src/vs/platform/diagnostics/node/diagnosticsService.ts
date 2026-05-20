@@ -94,6 +94,15 @@ export async function collectWorkspaceStats(folder: string, filter: string[], op
 		const relativePath = dir.substring(root.length + 1);
 
 		return Promises.withAsyncBody(async resolve => {
+			// Bail before touching the filesystem when the cap has already been hit so
+			// sibling-directory recursion doesn't pay readdir IO after the scan is
+			// effectively done.
+			if (token.count >= MAX_FILES) {
+				token.maxReached = true;
+				resolve();
+				return;
+			}
+
 			let files: IDirent[];
 
 			token.readdirCount++;
