@@ -296,7 +296,10 @@ ${this._data.experimentInfo}
 				return `${e.displayName || e.name}|${e.id}|${e.publisher ?? 'N/A'}|${e.version}`;
 			}).join('\n');
 
-			md += `<details><summary>Extensions (${this._data.enabledNonThemeExtesions.length})</summary>
+			const themeNote = this._data.numberOfThemeExtesions
+				? ` (excluding ${this._data.numberOfThemeExtesions} theme extension${this._data.numberOfThemeExtesions === 1 ? '' : 's'})`
+				: '';
+			md += `<details><summary>Extensions (${this._data.enabledNonThemeExtesions.length})${themeNote}</summary>
 
 ${tableHeader}
 ${table}
