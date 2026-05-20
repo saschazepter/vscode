@@ -72,10 +72,12 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		// Wizard path: open the editor tab immediately and fetch OS properties in the
 		// background so the IPC round-trip doesn't gate UI display. The wizard reads
 		// the populated arch/release/type lazily via populateReporterDataAsync.
-		void this.nativeHostService.getOSProperties().then(({ arch, release, type }) => {
+		this.nativeHostService.getOSProperties().then(({ arch, release, type }) => {
 			this.arch = arch;
 			this.release = release;
 			this.type = type;
+		}, err => {
+			this.logService.error('[NativeIssueFormService] getOSProperties failed', err);
 		});
 
 		return this.openEditorTabReporter(data);
