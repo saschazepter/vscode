@@ -92,7 +92,20 @@ export class NativeIssueService implements IWorkbenchIssueService {
 				};
 			}));
 		} catch (e) {
-			// Ignore
+			// Surface the load failure in the issue body so triage doesn't mistake an
+			// empty list for "no extensions installed".
+			extensionData.push({
+				name: 'Extensions not loaded',
+				publisher: undefined,
+				version: '',
+				id: 'extensions-load-error',
+				isTheme: false,
+				isBuiltin: false,
+				displayName: undefined,
+				repositoryUrl: undefined,
+				bugsUrl: undefined,
+				extensionData: `Extensions could not be loaded: ${e instanceof Error ? e.message : String(e)}`,
+			});
 		}
 
 		const experiments = await this.experimentService.getCurrentExperiments();

@@ -43,14 +43,14 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		@IHostService hostService: IHostService,
 		@IOpenerService openerService: IOpenerService,
 		@IFileService fileService: IFileService,
-		@IEnvironmentService environmentService: IEnvironmentService,
+		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@IGitHubUploadService githubUploadService: IGitHubUploadService,
-		@IConfigurationService configurationService: IConfigurationService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEditorService editorService: IEditorService,
 		@IClipboardService clipboardService: IClipboardService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
-		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, openerService, fileService, environmentService, githubUploadService, configurationService, editorService, clipboardService);
+		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, openerService, fileService, githubUploadService, editorService, clipboardService);
 	}
 
 	// override to grab platform info before routing

@@ -29,8 +29,6 @@ import { IssueWebReporter } from './issueReporterService.js';
 import { IGitHubUploadService } from './githubUploadService.js';
 import { IssueReporterEditorInput } from './issueReporterEditorInput.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
-import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { URI } from '../../../../base/common/uri.js';
 import { LRUCache } from '../../../../base/common/map.js';
@@ -72,9 +70,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		@IHostService protected readonly hostService: IHostService,
 		@IOpenerService protected readonly openerService: IOpenerService,
 		@IFileService protected readonly fileService: IFileService,
-		@IEnvironmentService protected readonly environmentService: IEnvironmentService,
 		@IGitHubUploadService protected readonly githubUploadService: IGitHubUploadService,
-		@IConfigurationService protected readonly configurationService: IConfigurationService,
 		@IEditorService protected readonly editorService: IEditorService,
 		@IClipboardService protected readonly clipboardService: IClipboardService,
 	) {
