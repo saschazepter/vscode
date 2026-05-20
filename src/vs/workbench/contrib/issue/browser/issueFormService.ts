@@ -176,7 +176,7 @@ export class IssueFormService implements IIssueFormService {
 						wizard.setAttachmentUploadState(i, 'done');
 					}
 
-					mediaMarkdown = '\n\n### Attachments\n\n';
+					mediaMarkdown = `\n\n### ${localize('issueReporter.attachmentsHeading', "Attachments")}\n\n`;
 					for (const r of uploadResults) {
 						mediaMarkdown += r.contentType.startsWith('video/')
 							? `${r.assetUrl}\n\n`

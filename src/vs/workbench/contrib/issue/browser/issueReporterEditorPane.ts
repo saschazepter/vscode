@@ -185,7 +185,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		this.wizard.show();
 
 		// Populate system info in background (non-blocking)
-		this.populateSystemInfo();
+		void this.populateSystemInfo();
 
 		// Wire screenshot capture
 		this.inputDisposables.add(this.wizard.onDidRequestScreenshot(async () => {

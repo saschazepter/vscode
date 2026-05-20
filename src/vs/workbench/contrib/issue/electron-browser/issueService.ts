@@ -62,7 +62,7 @@ export class NativeIssueService implements IWorkbenchIssueService {
 		}, dataOverrides);
 
 		const openPromise = this.issueFormService.openReporter(issueReporterData);
-		this.populateReporterDataAsync(issueReporterData, dataOverrides);
+		void this.populateReporterDataAsync(issueReporterData, dataOverrides);
 		return openPromise;
 	}
 
