@@ -28,7 +28,6 @@ import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import { IRecordingService, IRecordingData, RecordingState } from './recordingService.js';
 import { IScreenshotService } from './screenshotService.js';
 import { IIssueFormService, IssueReporterData } from '../common/issue.js';
-import { IssueFormService } from './issueFormService.js';
 import { IProcessService } from '../../../../platform/process/common/process.js';
 import { IWorkbenchAssignmentService } from '../../../services/assignment/common/assignmentService.js';
 import product from '../../../../platform/product/common/product.js';
@@ -41,6 +40,7 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IUpdateService, StateType } from '../../../../platform/update/common/update.js';
 import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 
 /** Context key that's `true` whenever any IssueReporter editor is open in any group, even when not focused. */
@@ -52,6 +52,21 @@ export const IssueReporterOpenContext = new RawContextKey<boolean>('issueReporte
 export class IssueReporterEditorPane extends EditorPane {
 
 	static readonly ID = 'workbench.editor.issueReporter';
+
+	/**
+	 * Live registry of issue reporter panes so commands can target the wizard
+	 * even when its tab is not the active editor in its group.
+	 * (IEditorService.visibleEditorPanes only exposes the active pane per group.)
+	 */
+	private static readonly liveInstances = new Set<IssueReporterEditorPane>();
+	static getAnyLiveInstance(): IssueReporterEditorPane | undefined {
+		for (const inst of IssueReporterEditorPane.liveInstances) {
+			if (inst.wizard) {
+				return inst;
+			}
+		}
+		return undefined;
+	}
 
 	private container: HTMLElement | undefined;
 	private wizard: IssueReporterOverlay | undefined;
@@ -83,8 +98,11 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IUpdateService private readonly updateService: IUpdateService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@IExtensionService private readonly extensionService: IExtensionService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
+		IssueReporterEditorPane.liveInstances.add(this);
+		this._register({ dispose: () => IssueReporterEditorPane.liveInstances.delete(this) });
 	}
 
 	getWizard(): IssueReporterOverlay | undefined {
@@ -322,7 +340,7 @@ export class IssueReporterEditorPane extends EditorPane {
 			if (!this.wizard) {
 				return;
 			}
-			const opened = await (this.issueFormService as IssueFormService).submitIssue(this.wizard, data, title, body);
+			const opened = await this.issueFormService.submitIssue(this.wizard, data, title, body);
 			if (opened) {
 				// User opened the link — keep the wizard editable, but offer an explicit close action.
 				this.wizard.markPreviewOpened();
@@ -333,7 +351,18 @@ export class IssueReporterEditorPane extends EditorPane {
 		// Wire AI title generation
 		this.inputDisposables.add(this.wizard.onDidRequestGenerateTitle(async (description) => {
 			try {
-				const modelIds = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
+				// Wait for installed extensions to be registered so the Copilot Chat
+				// extension has had a chance to contribute its `copilot` language
+				// model vendor before we try to resolve a model.
+				await this.extensionService.whenInstalledExtensionsRegistered();
+
+				// Prefer the small/fast Copilot model (when contributed), falling
+				// back to any available Copilot model so title generation keeps
+				// working if the model id changes upstream.
+				let modelIds = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
+				if (modelIds.length === 0) {
+					modelIds = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot' });
+				}
 				if (modelIds.length === 0) {
 					this.logService.warn('[IssueReporterEditorPane] No language models available for title generation');
 					this.wizard?.resetGenerateButton();
@@ -448,14 +477,16 @@ export class IssueReporterEditorPane extends EditorPane {
 			return;
 		}
 
-		// Poll until the issue service flips extensionsLoaded (it does so in a `finally`,
-		// even on enumeration failure), or until the pane is disposed. A fixed cap would
-		// silently miss the model update on machines with many extensions where
-		// enumeration takes longer than the cap.
+		// Poll until the issue service flips `extensionsLoaded` (it does so in a `finally`,
+		// even on enumeration failure), or until either the pane is disposed or a 5s cap
+		// elapses. The cap is a safety net: if extension enumeration never finishes (e.g. a
+		// caller throws synchronously before reaching the try/finally) we still surface the
+		// wizard with empty extensions rather than blocking indefinitely.
+		const deadline = Date.now() + 5000;
 		let cancelled = false;
 		const cancelToken = this.inputDisposables.add(toDisposable(() => { cancelled = true; }));
 		try {
-			while (!data.extensionsLoaded && !cancelled) {
+			while (!data.extensionsLoaded && !cancelled && Date.now() < deadline) {
 				await new Promise(resolve => setTimeout(resolve, 100));
 			}
 		} finally {

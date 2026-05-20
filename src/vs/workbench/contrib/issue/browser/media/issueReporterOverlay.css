@@ -1711,7 +1711,10 @@ extension field is hidden (no fixed-width placeholder needed). */
 
 .wizard-record-btn.recording:hover,
 .monaco-button.wizard-record-btn.recording:hover {
-	background: var(--vscode-statusBarItem-errorHoverBackground, var(--vscode-statusBarItem-errorBackground, #a22)) !important;
+	background: var(--vscode-statusBarItem-errorBackground, #c33) !important;
+	border-color: var(--vscode-statusBarItem-errorBackground, #c33) !important;
+	color: var(--vscode-statusBarItem-errorForeground, var(--vscode-button-foreground, #fff)) !important;
+	filter: brightness(1.15);
 }
 
 .wizard-recording-elapsed {

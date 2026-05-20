@@ -92,6 +92,19 @@ export interface ISettingSearchResult {
 
 export const IIssueFormService = createDecorator<IIssueFormService>('issueFormService');
 
+/**
+ * Narrow surface of the issue reporter wizard that `IIssueFormService.submitIssue`
+ * relies on. Keeping this in `common/` (rather than depending on the browser-side
+ * `IssueReporterOverlay` class) lets the service interface be implemented and
+ * consumed cleanly across layers.
+ */
+export interface IIssueSubmissionHost {
+	getScreenshots(): readonly { readonly dataUrl: string; readonly annotatedDataUrl?: string }[];
+	getRecordings(): readonly { readonly filePath: string }[];
+	setUploading(uploading: boolean): void;
+	setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void;
+}
+
 export interface IIssueFormService {
 	readonly _serviceBrand: undefined;
 
@@ -102,6 +115,7 @@ export interface IIssueFormService {
 	showClipboardDialog(): Promise<boolean>;
 	sendReporterMenu(extensionId: string): Promise<IssueReporterData | undefined>;
 	closeReporter(): Promise<void>;
+	submitIssue(host: IIssueSubmissionHost, data: IssueReporterData, title: string, body: string): Promise<boolean>;
 }
 
 export const IWorkbenchIssueService = createDecorator<IWorkbenchIssueService>('workbenchIssueService');

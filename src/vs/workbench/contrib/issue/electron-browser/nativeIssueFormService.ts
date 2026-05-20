@@ -53,7 +53,6 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 		super(instantiationService, auxiliaryWindowService, menuService, contextKeyService, logService, dialogService, hostService, openerService, fileService, githubUploadService, editorService, clipboardService);
 	}
 
-	// override to grab platform info before routing
 	override async openReporter(data: IssueReporterData): Promise<void> {
 		if (this.hasToReload(data)) {
 			return;
@@ -69,17 +68,8 @@ export class NativeIssueFormService extends IssueFormService implements IIssueFo
 			return this.openAuxIssueReporterLegacy(data);
 		}
 
-		// Wizard path: open the editor tab immediately and fetch OS properties in the
-		// background so the IPC round-trip doesn't gate UI display. The wizard reads
-		// the populated arch/release/type lazily via populateReporterDataAsync.
-		this.nativeHostService.getOSProperties().then(({ arch, release, type }) => {
-			this.arch = arch;
-			this.release = release;
-			this.type = type;
-		}, err => {
-			this.logService.error('[NativeIssueFormService] getOSProperties failed', err);
-		});
-
+		// Wizard path pulls system info from IProcessService.getSystemInfo() inside
+		// the editor pane, so it does not depend on arch/release/type here.
 		return this.openEditorTabReporter(data);
 	}
 

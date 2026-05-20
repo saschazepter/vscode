@@ -99,6 +99,7 @@ type DrawAction = IAnnotationDrawAction;
 
 export interface IAnnotationEditorState {
 	readonly actions: readonly IAnnotationDrawAction[];
+	readonly undoneActions: readonly IAnnotationDrawAction[];
 	readonly crop: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null;
 }
 
@@ -851,10 +852,12 @@ export class ScreenshotAnnotationEditor {
 
 			// Restore prior actions (clone so undo/redo state survives reopens).
 			// Use a shared identity map so Move/Eraser sentinels keep pointing at
-			// the correct cloned action references.
-			if (this.initialState?.actions?.length) {
+			// the correct cloned action references, both in actions[] and
+			// undoneActions[].
+			if (this.initialState && (this.initialState.actions.length || this.initialState.undoneActions.length)) {
 				const identityMap = new Map<IAnnotationDrawAction, IAnnotationDrawAction>();
 				this.actions.push(...this.initialState.actions.map(a => cloneDrawAction(a, identityMap)));
+				this.undoneActions.push(...this.initialState.undoneActions.map(a => cloneDrawAction(a, identityMap)));
 				this.updateUndoRedoState();
 			}
 
@@ -912,6 +915,7 @@ export class ScreenshotAnnotationEditor {
 		const identityMap = new Map<IAnnotationDrawAction, IAnnotationDrawAction>();
 		return {
 			actions: this.actions.map(a => cloneDrawAction(a, identityMap)),
+			undoneActions: this.undoneActions.map(a => cloneDrawAction(a, identityMap)),
 			crop: this.currentCrop ? { ...this.currentCrop } : null,
 		};
 	}

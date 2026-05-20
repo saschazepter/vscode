@@ -21,9 +21,8 @@ import product from '../../../../platform/product/common/product.js';
 import { IRectangle } from '../../../../platform/window/common/window.js';
 import { AuxiliaryWindowMode, IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
-import { IIssueFormService, IssueReporterData, IssueReporterExtensionData, IssueSource } from '../common/issue.js';
+import { IIssueFormService, IIssueSubmissionHost, IssueReporterData, IssueReporterExtensionData, IssueSource } from '../common/issue.js';
 import { normalizeGitHubUrl } from '../common/issueReporterUtil.js';
-import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import BaseHtml from './issueReporterPage.js';
 import { IssueWebReporter } from './issueReporterService.js';
 import { IGitHubUploadService } from './githubUploadService.js';
@@ -93,9 +92,9 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		await this.editorService.openEditor(input, { pinned: true });
 	}
 
-	async submitIssue(wizard: IssueReporterOverlay, data: IssueReporterData, title: string, body: string): Promise<boolean> {
-		const screenshots = wizard.getScreenshots();
-		const recordings = wizard.getRecordings();
+	async submitIssue(host: IIssueSubmissionHost, data: IssueReporterData, title: string, body: string): Promise<boolean> {
+		const screenshots = host.getScreenshots();
+		const recordings = host.getRecordings();
 
 		const issueTarget = this.getIssueTarget(data);
 		if (!issueTarget?.url) {
@@ -122,9 +121,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		// GitHub repo. Otherwise we'd upload attachments to an unrelated repository (and
 		// potentially leak them) just because a GitHub token is present.
 		if (hasAttachments && data.githubAccessToken && gitHubDetails) {
-			this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
-
-			wizard.setUploading(true);
+			host.setUploading(true);
 
 			try {
 				// Collect files, keyed for cache lookup. We hash the data URL / file path so the
@@ -148,7 +145,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 
 				if (filesToProcess.length > 0) {
 					for (let i = 0; i < filesToProcess.length; i++) {
-						wizard.setAttachmentUploadState(i, 'pending');
+						host.setAttachmentUploadState(i, 'pending');
 					}
 
 					const uploadResults: import('./githubUploadService.js').IGitHubUploadResult[] = [];
@@ -157,8 +154,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 						const cached = this.uploadCache.get(file.key);
 						if (cached) {
 							uploadResults.push(cached);
-							wizard.setAttachmentUploadState(i, 'done');
-							this.logService.info(`[IssueFormService] Skipped re-upload (cached): ${file.name}`);
+							host.setAttachmentUploadState(i, 'done');
 							continue;
 						}
 
@@ -166,7 +162,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 						if (!resolvedRepoId) {
 							throw new Error('No GitHub repository resolved for attachment upload.');
 						}
-						wizard.setAttachmentUploadState(i, 'uploading');
+						host.setAttachmentUploadState(i, 'uploading');
 						const result = await this.githubUploadService.uploadViaMobileApi(
 							data.githubAccessToken, resolvedRepoId, [file]
 						);
@@ -174,7 +170,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 							this.uploadCache.set(file.key, r);
 						}
 						uploadResults.push(...result);
-						wizard.setAttachmentUploadState(i, 'done');
+						host.setAttachmentUploadState(i, 'done');
 					}
 
 					mediaMarkdown = `\n\n### ${localize('issueReporter.attachmentsHeading', "Attachments")}\n\n`;
@@ -183,25 +179,23 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 							? `${r.assetUrl}\n\n`
 							: `![${r.fileName}](${r.assetUrl})\n\n`;
 					}
-					this.logService.info(`[IssueFormService] Upload done: ${uploadResults.length} files`);
 				}
 			} catch (err) {
 				this.logService.error('[IssueFormService] Upload failed:', err);
 				mediaMarkdown = `\n\n### ${localize('issueReporter.attachmentsHeading', "Attachments")}\n\n> ${localize('issueReporter.attachmentsUploadFailed', "Upload failed. Please drag and drop attachments manually.")}\n\n`;
 			} finally {
-				wizard.setUploading(false);
+				host.setUploading(false);
 			}
 		}
 
 		const issueBody = body + mediaMarkdown;
-		this.logService.info(`[IssueFormService] Opening issue preview: bodyLen=${issueBody.length}`);
 
 		const baseUrl = this.getIssueUrlWithTitle(title, issueTarget.url, data.issueSource === IssueSource.Extension);
 		let previewBody = issueBody;
 		let url = this.createIssuePreviewUrl(baseUrl, previewBody, gitHubDetails, data.issueSource);
 
 		if (url.length > MAX_URL_LENGTH && data.githubAccessToken && gitHubDetails) {
-			const shortenedBody = await this.tryCreateBodyWithIssueDataAttachment(wizard, issueBody, baseUrl, gitHubDetails, data.issueSource, data.githubAccessToken, resolveRepoId);
+			const shortenedBody = await this.tryCreateBodyWithIssueDataAttachment(host, issueBody, baseUrl, gitHubDetails, data.issueSource, data.githubAccessToken, resolveRepoId);
 			if (shortenedBody) {
 				previewBody = shortenedBody;
 				url = this.createIssuePreviewUrl(baseUrl, previewBody, gitHubDetails, data.issueSource);
@@ -227,13 +221,18 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		// URLs that overflow the native confirmation dialog on macOS, and the
 		// destination is one we constructed ourselves so the trust check would
 		// always be a yes anyway.
+		//
+		// Pass the URL as a string (not as a URI). When `IOpenerService.open` is
+		// handed a URI, it rebuilds the href via `encodeURI(uri.toString(true))`,
+		// which double-encodes our already-percent-encoded query (`%23` becomes
+		// `%2523`, so GitHub renders `### Description` as literal `%23%23%23 Description`).
 		const uri = URI.parse(url);
 		const skipValidation = uri.scheme === 'https' && uri.authority === 'github.com';
-		return this.openerService.open(uri, { openExternal: true, skipValidation });
+		return this.openerService.open(url, { openExternal: true, skipValidation });
 	}
 
 	private async tryCreateBodyWithIssueDataAttachment(
-		wizard: IssueReporterOverlay,
+		host: IIssueSubmissionHost,
 		issueBody: string,
 		baseUrl: string,
 		gitHubDetails: { owner: string; repositoryName: string },
@@ -251,7 +250,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 			return undefined;
 		}
 
-		wizard.setUploading(true);
+		host.setUploading(true);
 		try {
 			const repoId = await resolveRepoId();
 			if (!repoId) {
@@ -267,7 +266,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 			this.logService.error('Uploading issue data attachment failed', error);
 			return undefined;
 		} finally {
-			wizard.setUploading(false);
+			host.setUploading(false);
 		}
 	}
 

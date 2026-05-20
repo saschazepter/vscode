@@ -26,7 +26,6 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 	}
 
 	async resolveRepositoryId(owner: string, repo: string, token?: string): Promise<string> {
-		this.logService.info(`[GitHubUpload] Resolving repo ID: ${owner}/${repo}`);
 		const headers: Record<string, string> = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
 		if (token) {
 			headers['Authorization'] = `Bearer ${token}`;
@@ -37,23 +36,18 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 			throw new Error(`Repo ID lookup failed for ${owner}/${repo}: ${r.status} ${r.statusText}${body ? ` — ${body.substring(0, 300)}` : ''}`);
 		}
 		const json = await r.json();
-		this.logService.info(`[GitHubUpload] Repo ID: ${json.id}`);
 		return String(json.id);
 	}
 
 	async uploadViaMobileApi(token: string, repoId: string, files: { name: string; bytes: Uint8Array; contentType: string }[]): Promise<IGitHubUploadResult[]> {
-		this.logService.info(`[GitHubUpload/MobileAPI] Uploading ${files.length} files via main process...`);
 		const results: IGitHubUploadResult[] = [];
-
 		for (const file of files) {
-			this.logService.info(`[GitHubUpload/MobileAPI] Uploading ${file.name} (${file.bytes.length} bytes, ${file.contentType})`);
 			const result = await this.nativeHostService.uploadFileViaMobileApi(
 				token, repoId, file.name, VSBuffer.wrap(file.bytes), file.contentType
 			);
-			this.logService.info(`[GitHubUpload/MobileAPI] Done: ${file.name} -> ${result.assetUrl}`);
+			this.logService.info(`[GitHubUpload] Uploaded ${file.name} (${file.bytes.length} bytes) -> ${result.assetUrl}`);
 			results.push(result);
 		}
-
 		return results;
 	}
 }

@@ -1372,21 +1372,9 @@ export class IssueReporterOverlay {
 
 			for (let i = 0; i < this.recordings.length; i++) {
 				const rec = this.recordings[i];
-				const card = append(thumbRow, $('div.wizard-screenshot-card.wizard-recording-card.review-attachment-card'));
-				if (rec.thumbnailDataUrl) {
-					const thumbImg = append(card, $('img')) as HTMLImageElement;
-					thumbImg.setAttribute('src', rec.thumbnailDataUrl);
-					thumbImg.alt = localize('recordingThumbnailAlt', "Recording {0}", i + 1);
-					thumbImg.setAttribute('draggable', 'false');
-				}
-				const playOverlay = append(card, $('div.wizard-recording-play'));
-				playOverlay.appendChild(renderIcon(Codicon.play));
+				const card = this.renderRecordingCard(thumbRow, rec, i);
+				card.classList.add('review-attachment-card');
 
-				const durSec = Math.floor(rec.durationMs / 1000);
-				const durLabel = append(card, $('div.wizard-recording-duration'));
-				durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
-
-				// Progress overlay (hidden initially)
 				const progressOverlay = append(card, $('div.review-progress-overlay'));
 				append(progressOverlay, $('div.review-progress-ring'));
 
@@ -1901,6 +1889,26 @@ export class IssueReporterOverlay {
 			: localize('previewOnGitHub', "Preview on GitHub");
 	}
 
+	private renderRecordingCard(parent: HTMLElement, rec: { filePath: string; durationMs: number; thumbnailDataUrl?: string }, index: number): HTMLElement {
+		const card = append(parent, $('div.wizard-screenshot-card.wizard-recording-card'));
+
+		if (rec.thumbnailDataUrl) {
+			const thumbImg = append(card, $('img.wizard-screenshot-img')) as HTMLImageElement;
+			thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+			thumbImg.alt = localize('recordingThumbnailAlt', "Recording {0}", index + 1);
+			thumbImg.setAttribute('draggable', 'false');
+		}
+
+		const playOverlay = append(card, $('div.wizard-recording-play'));
+		playOverlay.appendChild(renderIcon(Codicon.play));
+
+		const durSec = Math.floor(rec.durationMs / 1000);
+		const durLabel = append(card, $('div.wizard-recording-duration'));
+		durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
+
+		return card;
+	}
+
 	private updateScreenshotThumbnails(): void {
 		this.screenshotContainer.textContent = '';
 
@@ -1941,23 +1949,7 @@ export class IssueReporterOverlay {
 		// Recording thumbnails
 		for (let i = 0; i < this.recordings.length; i++) {
 			const rec = this.recordings[i];
-			const card = append(this.screenshotContainer, $('div.wizard-screenshot-card.wizard-recording-card'));
-
-			// Show video thumbnail if available
-			if (rec.thumbnailDataUrl) {
-				const thumbImg = append(card, $('img.wizard-screenshot-img')) as HTMLImageElement;
-				thumbImg.setAttribute('src', rec.thumbnailDataUrl);
-				thumbImg.alt = localize('recordingThumbnailAlt', "Recording {0}", i + 1);
-				thumbImg.setAttribute('draggable', 'false');
-			}
-
-			// Dark overlay with play icon
-			const playOverlay = append(card, $('div.wizard-recording-play'));
-			playOverlay.appendChild(renderIcon(Codicon.play));
-
-			const durSec = Math.floor(rec.durationMs / 1000);
-			const durLabel = append(card, $('div.wizard-recording-duration'));
-			durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
+			const card = this.renderRecordingCard(this.screenshotContainer, rec, i);
 
 			// Click to open from OS
 			this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
@@ -2000,6 +1992,12 @@ export class IssueReporterOverlay {
 			return;
 		}
 
+		// Per-editor lifecycle: each call creates a new editor that mounts an
+		// absolutely-positioned overlay on top of any previously-open editor and
+		// disposes itself on save/cancel. This gives us the stacking behavior the
+		// user expects when taking multiple screenshots in a row — the topmost
+		// editor handles save/cancel, then the previous one becomes visible
+		// again.
 		const screenshot = this.screenshots[index];
 		const editor = new ScreenshotAnnotationEditor(screenshot, this.wizardPanel, screenshot.annotationState);
 		this.disposables.add(editor);
@@ -2442,14 +2440,16 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 	}
 
 	/**
-	 * Trigger a screenshot capture as if the user clicked the capture button.
-	 * No-op when the wizard is not on the Attachments step or when the user has
-	 * already added the maximum number of attachments.
+	 * Trigger a screenshot capture as if the user clicked the screenshot button
+	 * on the floating capture bar. The floating bar is mounted at the workbench
+	 * root and the button is enabled regardless of the current wizard step, so
+	 * the shortcut works from any step without changing it. The existing
+	 * capture flow opens the annotation editor and re-activates the issue
+	 * reporter editor when the screenshot is added.
+	 *
+	 * No-op when the capture button is disabled (e.g. at the attachment limit).
 	 */
 	triggerCaptureScreenshot(): void {
-		if (this.currentStep !== WizardStep.Attachments) {
-			return;
-		}
 		const btn = this.captureStripCaptureBtn;
 		if (!btn?.enabled) {
 			return;
@@ -2459,11 +2459,11 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 
 	/**
 	 * Toggle screen recording on/off as if the user clicked the record button.
-	 * No-op when the wizard is not on the Attachments step or when recording
-	 * isn't supported in the current environment.
+	 * Works from any step without changing it. No-op when recording isn't
+	 * supported or the record button is disabled.
 	 */
 	triggerToggleRecording(): void {
-		if (this.currentStep !== WizardStep.Attachments || !this.recordingSupported) {
+		if (!this.recordingSupported) {
 			return;
 		}
 		const btn = this.captureStripRecordBtn;
