@@ -525,7 +525,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		}
 		return {
 			contentType: match[1],
-			buffer: VSBuffer.wrap(decodeBase64(match[2])),
+			buffer: decodeBase64(match[2]),
 		};
 	}
 

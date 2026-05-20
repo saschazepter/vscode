@@ -33,7 +33,8 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 		}
 		const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers });
 		if (!r.ok) {
-			throw new Error(`Repo ID lookup failed: ${r.status}`);
+			const body = await r.text().catch(() => '');
+			throw new Error(`Repo ID lookup failed for ${owner}/${repo}: ${r.status} ${r.statusText}${body ? ` — ${body.substring(0, 300)}` : ''}`);
 		}
 		const json = await r.json();
 		this.logService.info(`[GitHubUpload] Repo ID: ${json.id}`);

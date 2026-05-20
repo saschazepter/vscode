@@ -5,7 +5,7 @@
 import { safeSetInnerHtml } from '../../../../base/browser/domSanitize.js';
 import { createStyleSheet } from '../../../../base/browser/domStylesheets.js';
 import { getMenuWidgetCSS, Menu, unthemedMenuStyles } from '../../../../base/browser/ui/menu/menu.js';
-import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { isLinux, isWindows } from '../../../../base/common/platform.js';
 import Severity from '../../../../base/common/severity.js';
 import { localize } from '../../../../nls.js';
@@ -46,7 +46,7 @@ const ISSUE_DATA_ATTACHMENT_URL_PLACEHOLDER = 'https://github.com/user-attachmen
 type IssueUploadFile = { key: string; name: string; bytes: Uint8Array; contentType: string };
 type ExtractedIssueData = { body: string; fileContent: string };
 
-export class IssueFormService implements IIssueFormService {
+export class IssueFormService extends Disposable implements IIssueFormService {
 
 	readonly _serviceBrand: undefined;
 
@@ -77,7 +77,9 @@ export class IssueFormService implements IIssueFormService {
 		@IConfigurationService protected readonly configurationService: IConfigurationService,
 		@IEditorService protected readonly editorService: IEditorService,
 		@IClipboardService protected readonly clipboardService: IClipboardService,
-	) { }
+	) {
+		super();
+	}
 
 	async openReporter(data: IssueReporterData): Promise<void> {
 		if (this.hasToReload(data)) {

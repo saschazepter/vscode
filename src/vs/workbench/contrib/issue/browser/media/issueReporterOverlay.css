@@ -1692,26 +1692,26 @@ extension field is hidden (no fixed-width placeholder needed). */
 .wizard-record-btn .wizard-record-icon {
 	display: flex;
 	font-size: 14px;
-	color: #c33;
+	color: var(--vscode-charts-red, #c33);
 }
 
 .wizard-record-btn.recording,
 .monaco-button.wizard-record-btn.recording {
-	background: #c33 !important;
-	border-color: #c33 !important;
-	color: #fff !important;
+	background: var(--vscode-statusBarItem-errorBackground, #c33) !important;
+	border-color: var(--vscode-statusBarItem-errorBackground, #c33) !important;
+	color: var(--vscode-statusBarItem-errorForeground, var(--vscode-button-foreground, #fff)) !important;
 	animation: recording-pulse 1.5s ease-in-out infinite;
 	font-variant-numeric: tabular-nums;
 	min-width: 160px;
 }
 
 .wizard-record-btn.recording .wizard-record-icon {
-	color: #fff;
+	color: var(--vscode-statusBarItem-errorForeground, var(--vscode-button-foreground, #fff));
 }
 
 .wizard-record-btn.recording:hover,
 .monaco-button.wizard-record-btn.recording:hover {
-	background: #a22 !important;
+	background: var(--vscode-statusBarItem-errorHoverBackground, var(--vscode-statusBarItem-errorBackground, #a22)) !important;
 }
 
 .wizard-recording-elapsed {
@@ -1734,7 +1734,7 @@ extension field is hidden (no fixed-width placeholder needed). */
 
 /* -- Recording card -- */
 .wizard-recording-card {
-	background: #1a1a1a;
+	background: var(--vscode-editor-background, #1a1a1a);
 	display: flex;
 	align-items: center;
 	justify-content: center;
