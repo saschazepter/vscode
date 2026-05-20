@@ -111,15 +111,21 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 
 		const gitHubDetails = this.parseGitHubUrl(issueTarget.url);
 		let repoId: string | undefined;
-		const resolveRepoId = async () => {
-			repoId ??= await this.githubUploadService.resolveRepositoryId(gitHubDetails?.owner ?? 'microsoft', gitHubDetails?.repositoryName ?? 'vscode', data.githubAccessToken);
+		const resolveRepoId = async (): Promise<string | undefined> => {
+			if (!gitHubDetails) {
+				return undefined;
+			}
+			repoId ??= await this.githubUploadService.resolveRepositoryId(gitHubDetails.owner, gitHubDetails.repositoryName, data.githubAccessToken);
 			return repoId;
 		};
 
 		let mediaMarkdown = '';
 		const hasAttachments = screenshots.length > 0 || recordings.length > 0;
 
-		if (hasAttachments && data.githubAccessToken) {
+		// Only attempt the Mobile Upload API when the issue target actually resolves to a
+		// GitHub repo. Otherwise we'd upload attachments to an unrelated repository (and
+		// potentially leak them) just because a GitHub token is present.
+		if (hasAttachments && data.githubAccessToken && gitHubDetails) {
 			this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
 
 			wizard.setUploading(true);
@@ -160,9 +166,13 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 							continue;
 						}
 
+						const resolvedRepoId = await resolveRepoId();
+						if (!resolvedRepoId) {
+							throw new Error('No GitHub repository resolved for attachment upload.');
+						}
 						wizard.setAttachmentUploadState(i, 'uploading');
 						const result = await this.githubUploadService.uploadViaMobileApi(
-							data.githubAccessToken, await resolveRepoId(), [file]
+							data.githubAccessToken, resolvedRepoId, [file]
 						);
 						for (const r of result) {
 							this.uploadCache.set(file.key, r);
@@ -194,7 +204,7 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		let previewBody = issueBody;
 		let url = this.createIssuePreviewUrl(baseUrl, previewBody, gitHubDetails, data.issueSource);
 
-		if (url.length > MAX_URL_LENGTH && data.githubAccessToken) {
+		if (url.length > MAX_URL_LENGTH && data.githubAccessToken && gitHubDetails) {
 			const shortenedBody = await this.tryCreateBodyWithIssueDataAttachment(wizard, issueBody, baseUrl, gitHubDetails, data.issueSource, data.githubAccessToken, resolveRepoId);
 			if (shortenedBody) {
 				previewBody = shortenedBody;
@@ -230,10 +240,10 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 		wizard: IssueReporterOverlay,
 		issueBody: string,
 		baseUrl: string,
-		gitHubDetails: { owner: string; repositoryName: string } | undefined,
+		gitHubDetails: { owner: string; repositoryName: string },
 		issueSource: IssueSource | undefined,
 		githubAccessToken: string,
-		resolveRepoId: () => Promise<string>
+		resolveRepoId: () => Promise<string | undefined>
 	): Promise<string | undefined> {
 		const extracted = this.extractIssueData(issueBody);
 		if (!extracted) {
@@ -247,7 +257,11 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 
 		wizard.setUploading(true);
 		try {
-			const result = await this.uploadIssueDataFile(githubAccessToken, await resolveRepoId(), extracted.fileContent);
+			const repoId = await resolveRepoId();
+			if (!repoId) {
+				return undefined;
+			}
+			const result = await this.uploadIssueDataFile(githubAccessToken, repoId, extracted.fileContent);
 			const bodyWithLink = this.createBodyWithIssueDataLink(extracted.body, result.assetUrl);
 			if (this.createIssuePreviewUrl(baseUrl, bodyWithLink, gitHubDetails, issueSource).length > MAX_URL_LENGTH) {
 				return undefined;
