@@ -63,7 +63,7 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 	EditorPaneDescriptor.create(
 		IssueReporterEditorPane,
 		IssueReporterEditorPane.ID,
-		localize('issueReporter', "Issue Reporter")
+		localize('issueReporterEditorPaneTitle', "Issue Reporter")
 	),
 	[new SyncDescriptor(IssueReporterEditorInput)]
 );

@@ -80,6 +80,9 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 	}
 
 	async startRecording(preferredMimeType?: string): Promise<void> {
+		if (!this.isSupported) {
+			throw new Error('Recording is not supported in this environment (MediaRecorder / getDisplayMedia unavailable).');
+		}
 		if (this._state === RecordingState.Recording) {
 			throw new Error('Recording already in progress.');
 		}

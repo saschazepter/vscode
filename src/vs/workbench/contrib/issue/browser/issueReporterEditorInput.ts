@@ -61,7 +61,7 @@ export class IssueReporterEditorInput extends EditorInput {
 	}
 
 	override getName(): string {
-		return localize('issueReporter', "Report Issue");
+		return localize('issueReporterEditorInputName', "Report Issue");
 	}
 
 	override getIcon(): ThemeIcon | undefined {
