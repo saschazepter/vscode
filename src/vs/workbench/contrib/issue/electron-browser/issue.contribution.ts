@@ -18,7 +18,8 @@ import { IQuickAccessRegistry, Extensions as QuickAccessExtensions } from '../..
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions, IWorkbenchContributionsRegistry } from '../../../common/contributions.js';
 import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../browser/editor.js';
-import { EditorExtensions } from '../../../common/editor.js';
+import { EditorExtensions, IEditorFactoryRegistry, IEditorSerializer } from '../../../common/editor.js';
+import { EditorInput } from '../../../common/editor/editorInput.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { IssueQuickAccess } from '../browser/issueQuickAccess.js';
@@ -67,6 +68,28 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 	),
 	[new SyncDescriptor(IssueReporterEditorInput)]
 );
+
+/**
+ * Explicit opt-out serializer: the issue reporter wizard is transient (in-progress
+ * text, captured screenshots, recordings) and the IssueReporterData it needs to
+ * render comes from NativeIssueService at open time. Persisting/restoring it across
+ * window reloads would either silently drop user input or rehydrate stale state, so
+ * we explicitly opt out via canSerialize === false. Registering this makes the drop
+ * intentional rather than implicit.
+ */
+class IssueReporterEditorInputSerializer implements IEditorSerializer {
+	canSerialize(_editor: EditorInput): boolean {
+		return false;
+	}
+	serialize(_editor: EditorInput): undefined {
+		return undefined;
+	}
+	deserialize(): undefined {
+		return undefined;
+	}
+}
+Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory)
+	.registerEditorSerializer(IssueReporterEditorInput.ID, IssueReporterEditorInputSerializer);
 
 class NativeIssueContribution extends BaseIssueContribution {
 

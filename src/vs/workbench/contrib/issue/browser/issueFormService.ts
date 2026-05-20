@@ -452,8 +452,10 @@ export class IssueFormService extends Disposable implements IIssueFormService {
 
 		let issueReporterBounds: Partial<IRectangle> = { width: 700, height: 800 };
 
-		// Center Issue Reporter Window based on bounds from native host service
-		if (bounds && bounds.x && bounds.y) {
+		// Center Issue Reporter Window based on bounds from native host service.
+		// Use typeof checks so an active window at x:0 / y:0 (very common on the primary
+		// display) still gets centered — a truthy check would miss that case.
+		if (bounds && typeof bounds.x === 'number' && typeof bounds.y === 'number') {
 			const centerX = bounds.x + bounds.width / 2;
 			const centerY = bounds.y + bounds.height / 2;
 			issueReporterBounds = { ...issueReporterBounds, x: centerX - 350, y: centerY - 400 };
