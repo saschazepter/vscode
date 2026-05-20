@@ -41,7 +41,6 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IUpdateService, StateType } from '../../../../platform/update/common/update.js';
 import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
-import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 
 /** Context key that's `true` whenever any IssueReporter editor is open in any group, even when not focused. */
@@ -84,7 +83,6 @@ export class IssueReporterEditorPane extends EditorPane {
 		@IUpdateService private readonly updateService: IUpdateService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
-		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
 		super(IssueReporterEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -232,7 +230,7 @@ export class IssueReporterEditorPane extends EditorPane {
 		this.inputDisposables.add(this.wizard.onDidRequestStartRecording(async () => {
 			// macOS-only: skip getDisplayMedia when permission is denied and
 			// surface the grant-permission notification instead.
-			const permissionState = await this.nativeHostService.getMediaAccessStatus('screen');
+			const permissionState = await this.recordingService.getScreenCapturePermissionStatus();
 			if (permissionState === 'denied' || permissionState === 'restricted') {
 				this.showScreenRecordingPermissionNotification();
 				this.wizard?.setRecordingState(RecordingState.Idle);
@@ -245,7 +243,7 @@ export class IssueReporterEditorPane extends EditorPane {
 				this.logService.error('[IssueReporterEditorPane] Recording failed:', err);
 				this.wizard?.setRecordingState(RecordingState.Idle);
 				// Re-check in case the OS prompt was just denied during getDisplayMedia.
-				const postState = await this.nativeHostService.getMediaAccessStatus('screen');
+				const postState = await this.recordingService.getScreenCapturePermissionStatus();
 				if (postState === 'denied' || postState === 'restricted' || postState === 'not-determined') {
 					this.showScreenRecordingPermissionNotification();
 				}
@@ -478,8 +476,7 @@ export class IssueReporterEditorPane extends EditorPane {
 					{
 						label: localize('openSystemSettings', "Open System Settings"),
 						run: () => {
-							// Deep link to the Screen Recording pane in macOS Privacy & Security
-							void this.nativeHostService.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+							this.recordingService.openScreenCapturePermissionSettings();
 						},
 					},
 				],

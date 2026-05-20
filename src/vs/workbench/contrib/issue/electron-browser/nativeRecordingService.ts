@@ -5,7 +5,9 @@
 
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { isMacintosh } from '../../../../base/common/platform.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { IRecordingData, IRecordingService, RecordingState } from '../browser/recordingService.js';
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB — GitHub upload limit
@@ -28,10 +30,22 @@ export class NativeRecordingService extends Disposable implements IRecordingServ
 
 	constructor(
 		@ILogService private readonly logService: ILogService,
+		@INativeHostService private readonly nativeHostService: INativeHostService,
 	) {
 		super();
 
 		this._register(toDisposable(() => this.cleanup()));
+	}
+
+	getScreenCapturePermissionStatus(): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'> {
+		return this.nativeHostService.getMediaAccessStatus('screen');
+	}
+
+	openScreenCapturePermissionSettings(): void {
+		if (isMacintosh) {
+			// Deep-link to the Screen Recording pane in macOS Privacy & Security.
+			void this.nativeHostService.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+		}
 	}
 
 	get state(): RecordingState {

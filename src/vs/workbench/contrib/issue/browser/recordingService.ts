@@ -61,6 +61,19 @@ export interface IRecordingService {
 	 * Discard the current recording without saving.
 	 */
 	discardRecording(): void;
+
+	/**
+	 * Returns the current OS screen-capture permission status. On platforms where this
+	 * concept doesn't apply (e.g. web) implementations return 'granted' so callers can
+	 * proceed straight to the recording flow.
+	 */
+	getScreenCapturePermissionStatus(): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>;
+
+	/**
+	 * Opens the OS-level UI for granting screen-capture permission. No-op on platforms
+	 * where this isn't applicable.
+	 */
+	openScreenCapturePermissionSettings(): void;
 }
 
 /**
@@ -85,6 +98,14 @@ export class BrowserRecordingService implements IRecordingService {
 	}
 
 	discardRecording(): void {
+		// No-op
+	}
+
+	async getScreenCapturePermissionStatus(): Promise<'granted'> {
+		return 'granted';
+	}
+
+	openScreenCapturePermissionSettings(): void {
 		// No-op
 	}
 }
