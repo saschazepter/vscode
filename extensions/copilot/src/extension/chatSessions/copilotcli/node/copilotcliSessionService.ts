@@ -952,7 +952,21 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 			allOptions.reasoningEffort = options.reasoningEffort;
 		}
 
+		const sandboxConfig = this.getSandboxConfig();
+		if (sandboxConfig) {
+			allOptions.sandboxConfig = sandboxConfig;
+		}
+
 		return allOptions as Readonly<SessionOptions>;
+	}
+
+	private getSandboxConfig(): SessionOptions['sandboxConfig'] {
+		const sandboxSettingId = process.platform === 'win32' ? 'chat.agent.sandbox.enabledWindows' : 'chat.agent.sandbox.enabled';
+		return buildSandboxConfigForCLI(
+			process.platform,
+			this.configurationService.getNonExtensionConfig<string>(sandboxSettingId),
+			this.configurationService.getNonExtensionConfig<IAgentSandboxFileSystemSettings>('chat.agent.sandbox.fileSystem'),
+		);
 	}
 
 	public async getSession(options: IGetSessionOptions, token: CancellationToken): Promise<RefCountedSession | undefined> {
@@ -1540,4 +1554,79 @@ export class RefCountedSession extends RefCountedDisposable implements IReferenc
 	dispose(): void {
 		this.release();
 	}
+}
+
+export interface IAgentSandboxFileSystemSetting {
+	allowRead?: string[];
+	allowWrite?: string[];
+	denyRead?: string[];
+	denyWrite?: string[];
+}
+
+export interface IAgentSandboxFileSystemSettings {
+	linux?: IAgentSandboxFileSystemSetting;
+	mac?: IAgentSandboxFileSystemSetting;
+	windows?: IAgentSandboxFileSystemSetting;
+}
+
+/**
+ * Maps the workbench `chat.agent.sandbox.*` settings onto the SDK's
+ * {@link SessionOptions.sandboxConfig}.
+ *
+ * When the same path appears in multiple settings, the most restrictive
+ * setting wins: `denyRead` > `denyWrite` > `allowWrite` > `allowRead`. Each
+ * path is emitted in exactly one of `deniedPaths` / `readonlyPaths` /
+ * `readwritePaths`, regardless of how many settings reference it.
+ */
+export function buildSandboxConfigForCLI(
+	platform: NodeJS.Platform,
+	sandboxSetting: string | undefined,
+	fileSystemSetting: IAgentSandboxFileSystemSettings | undefined,
+): SessionOptions['sandboxConfig'] {
+	const sandboxEnabled = platform === 'win32'
+		? sandboxSetting === 'allowNetwork'
+		: sandboxSetting === 'on' || sandboxSetting === 'allowNetwork';
+	if (!sandboxEnabled) {
+		return undefined;
+	}
+
+	const fs = (platform === 'win32'
+		? fileSystemSetting?.windows
+		: platform === 'darwin'
+			? fileSystemSetting?.mac
+			: fileSystemSetting?.linux) ?? {};
+	const denied = new Set<string>(fs.denyRead ?? []);
+	const readonly = new Set<string>();
+	const readwrite = new Set<string>();
+	// `denyWrite` only blocks writes (mxc's `readonlyPaths`), losing only to `denyRead`.
+	for (const p of fs.denyWrite ?? []) {
+		if (!denied.has(p)) {
+			readonly.add(p);
+		}
+	}
+	for (const p of fs.allowWrite ?? []) {
+		if (!denied.has(p) && !readonly.has(p)) {
+			readwrite.add(p);
+		}
+	}
+	// `allowRead` is covered by `allowWrite`, so only add it when not already granted write access.
+	for (const p of fs.allowRead ?? []) {
+		if (!denied.has(p) && !readonly.has(p) && !readwrite.has(p)) {
+			readonly.add(p);
+		}
+	}
+
+	return {
+		enabled: true,
+		userPolicy: {
+			filesystem: {
+				...(readwrite.size ? { readwritePaths: [...readwrite] } : {}),
+				...(readonly.size ? { readonlyPaths: [...readonly] } : {}),
+				...(denied.size ? { deniedPaths: [...denied] } : {}),
+			},
+			network: {
+				allowOutbound: sandboxSetting === 'allowNetwork',
+			},
+		},
+	};
 }
