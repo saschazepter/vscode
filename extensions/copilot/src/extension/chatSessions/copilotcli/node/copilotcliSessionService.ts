@@ -962,11 +962,16 @@ export class CopilotCLISessionService extends Disposable implements ICopilotCLIS
 
 	private getSandboxConfig(): SessionOptions['sandboxConfig'] {
 		const sandboxSettingId = process.platform === 'win32' ? 'chat.agent.sandbox.enabledWindows' : 'chat.agent.sandbox.enabled';
-		return buildSandboxConfigForCLI(
-			process.platform,
-			this.configurationService.getNonExtensionConfig<string>(sandboxSettingId),
-			this.configurationService.getNonExtensionConfig<IAgentSandboxFileSystemSettings>('chat.agent.sandbox.fileSystem'),
-		);
+		const rawSandboxSetting = this.configurationService.getNonExtensionConfig<unknown>(sandboxSettingId);
+		const sandboxSetting = typeof rawSandboxSetting === 'string'
+			? rawSandboxSetting
+			: rawSandboxSetting === true ? 'on' : rawSandboxSetting === false ? 'off' : undefined;
+		const rawFileSystemSetting = this.configurationService.getNonExtensionConfig<unknown>('chat.agent.sandbox.fileSystem');
+		const fileSystemSetting = rawFileSystemSetting && typeof rawFileSystemSetting === 'object'
+			? rawFileSystemSetting as IAgentSandboxFileSystemSettings
+			: undefined;
+		return buildSandboxConfigForCLI(process.platform, sandboxSetting, fileSystemSetting);
+	}
 	}
 
 	public async getSession(options: IGetSessionOptions, token: CancellationToken): Promise<RefCountedSession | undefined> {
