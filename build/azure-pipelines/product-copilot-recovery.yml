@@ -48,6 +48,24 @@ extends:
 
       - template: copilot/setup-steps.yml
       - template: copilot/build-steps.yml
+      - script: |
+          set -e
+
+          ROOT="$(Build.SourcesDirectory)/extensions/copilot/node_modules"
+          if [ ! -d "$ROOT" ]; then
+            echo "No node_modules directory found at $ROOT, skipping native cleanup."
+            exit 0
+          fi
+
+          COUNT=$(find "$ROOT" -type f -name "*.node" -not -path "*prebuilds*" | wc -l | tr -d ' ')
+          if [ "$COUNT" = "0" ]; then
+            echo "No non-prebuild .node files found."
+            exit 0
+          fi
+
+          echo "Removing $COUNT non-prebuild .node files before platform verification."
+          find "$ROOT" -type f -name "*.node" -not -path "*prebuilds*" -print -delete
+        displayName: Prune non-prebuild native binaries before GLIBC check
 
     uploadSourceMaps:
       enabled: true
