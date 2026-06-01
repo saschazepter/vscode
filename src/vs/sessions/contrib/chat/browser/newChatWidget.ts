@@ -77,6 +77,7 @@ export class NewChatWidget extends Disposable {
 			sendRequest: async (text: string, attachedContext?: IChatRequestVariableEntry[]) => this._send(text, attachedContext),
 			canSendRequest,
 			loading,
+			historyKey: derived(reader => this.sessionsManagementService.activeSession.read(reader)?.sessionId),
 			renderSessionTypePickerInControls: false,
 		}));
 

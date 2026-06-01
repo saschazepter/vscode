@@ -54,6 +54,7 @@ export class NewChatInSessionWidget extends Disposable {
 			sendRequest: async (text: string, attachedContext?: IChatRequestVariableEntry[]) => this._send(text, attachedContext),
 			canSendRequest,
 			loading,
+			historyKey: derived(reader => this.sessionsManagementService.activeSession.read(reader)?.sessionId),
 			minEditorHeight: 64,
 			placeholder: localize('newChatInSessionPlaceholder', 'Ask a follow-up question or start a new topic within this session...'),
 		}));
