@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 use ahp_types::commands::{ListSessionsParams, ListSessionsResult};
+use ahp_types::common::ROOT_RESOURCE_URI;
 use ahp_types::state::{SessionStatus, SessionSummary};
 
 use crate::util::errors::AnyError;
@@ -18,7 +19,7 @@ pub async fn agent_ps(ctx: CommandContext, args: AgentPsArgs) -> Result<i32, Any
 	let client = agent::connect(&ctx, args.address.as_deref(), args.tunnel.as_deref()).await?;
 
 	let result: ListSessionsResult =
-		agent::request_with_auth(&ctx, &client, "listSessions", ListSessionsParams::default())
+		agent::request_with_auth(&ctx, &client, "listSessions", ListSessionsParams { channel: ROOT_RESOURCE_URI.to_string(), filter: None })
 			.await?;
 
 	client.shutdown().await;
