@@ -203,6 +203,8 @@ describe('CopilotCLI SDK Upgrade', function () {
 
 		// Exclude ripgrep files that we copy over in src/extension/chatSessions/copilotcli/node/ripgrepShim.ts (until we get better API/solution from SDK)
 		const ripgrepFilesWeCopy = path.join(copilotSDKPath, 'sdk', 'ripgrep', 'bin');
+		// Ignore these for now.
+		const tgrepFiles = path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin');
 
 		const errors: string[] = [];
 		// Look for new binaries
@@ -220,7 +222,7 @@ describe('CopilotCLI SDK Upgrade', function () {
 		}
 		// Look for removed binaries.
 		for (const binary of knownBinaries) {
-			if (binary.startsWith(ripgrepFilesWeCopy)) {
+			if (binary.startsWith(ripgrepFilesWeCopy) || binary.startsWith(tgrepFiles)) {
 				continue;
 			}
 			if (!existingBinaries.has(binary)) {
