@@ -39,6 +39,7 @@ node_modules/@github/copilot/sharp/**
 !node_modules/@github/copilot/sdk/prebuilds/*/conpty.node
 !node_modules/@github/copilot/sdk/prebuilds/*/conpty_console_list.node
 !node_modules/@github/copilot/sdk/prebuilds/*/conpty/**
+!node_modules/@github/copilot/sdk/tgrep/bin/*/**
 !CHANGELOG.md
 !README.md
 !package.json
