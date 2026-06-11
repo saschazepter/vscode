@@ -120,6 +120,15 @@ describe('CopilotCLI SDK Upgrade', function () {
 			path.join('tgrep', 'bin', 'linuxmusl-x64', 'tgrep'),
 			path.join('tgrep', 'bin', 'win32-arm64', 'tgrep.exe'),
 			path.join('tgrep', 'bin', 'win32-x64', 'tgrep.exe'),
+			// tgrep files
+			path.join('sdk', 'tgrep', 'bin', 'darwin-arm64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'darwin-x64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'linux-x64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'linux-arm64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'linuxmusl-arm64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'linuxmusl-x64', 'tgrep'),
+			path.join('sdk', 'tgrep', 'bin', 'win32-arm64', 'tgrep.exe'),
+			path.join('sdk', 'tgrep', 'bin', 'win32-x64', 'tgrep.exe'),
 			// cli-native to be included
 			path.join('sdk', 'prebuilds', 'darwin-arm64', 'cli-native.node'),
 			path.join('sdk', 'prebuilds', 'darwin-x64', 'cli-native.node'),
@@ -190,15 +199,6 @@ describe('CopilotCLI SDK Upgrade', function () {
 
 		const optionalKnownBinaries = new Set([
 			path.join(copilotSDKPath, 'mxc-bin', 'x64', 'mxc-exec-mac'),
-			// tgrep files
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'darwin-arm64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'darwin-x64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'linux-x64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'linux-arm64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'linuxmusl-arm64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'linuxmusl-x64', 'tgrep'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'win32-arm64', 'tgrep.exe'),
-			path.join(copilotSDKPath, 'sdk', 'tgrep', 'bin', 'win32-x64', 'tgrep.exe'),
 		]);
 
 		// Exclude ripgrep files that we copy over in src/extension/chatSessions/copilotcli/node/ripgrepShim.ts (until we get better API/solution from SDK)

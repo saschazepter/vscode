@@ -133,7 +133,8 @@ export function prepareBuiltInCopilotRipgrepShim(platform: string, arch: string,
 	if (!fs.existsSync(copilotSdkBase)) {
 		throw new Error(`[prepareBuiltInCopilotRipgrepShim] Copilot SDK directory not found at ${copilotSdkBase}`);
 	}
-	pruneNonTargetCopilotSdkPrebuilds(platformArch, copilotSdkBase);
+	pruneNonTargetCopilotSdkPrebuilds(platformArch, path.join(copilotSdkBase, 'prebuilds'));
+	pruneNonTargetCopilotSdkPrebuilds(platformArch, path.join(copilotSdkBase, path.join('tgrep', 'bin')));
 
 	const ripgrepSource = path.join(appNodeModulesDir, '@vscode', 'ripgrep-universal', 'bin', platformArch);
 	if (!fs.existsSync(ripgrepSource)) {
@@ -163,8 +164,7 @@ export function prepareBuiltInCopilotRipgrepShim(platform: string, arch: string,
 	}
 }
 
-function pruneNonTargetCopilotSdkPrebuilds(targetPlatformArch: string, copilotSdkBase: string): void {
-	const prebuildsDir = path.join(copilotSdkBase, 'prebuilds');
+function pruneNonTargetCopilotSdkPrebuilds(targetPlatformArch: string, prebuildsDir: string): void {
 	if (!fs.existsSync(prebuildsDir)) {
 		return;
 	}
