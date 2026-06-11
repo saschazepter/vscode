@@ -77,13 +77,6 @@ async function copyCopilotCliWorkerFiles() {
 	await copyCopilotCLIFolders(sourceDir, targetDir);
 }
 
-async function copyCopilotCliTGrepFiles() {
-	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'tgrep');
-	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'tgrep');
-
-	await copyCopilotCLIFolders(sourceDir, targetDir);
-}
-
 async function copyCopilotCliDefinitionFiles() {
 	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'definitions');
 	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'definitions');
@@ -194,7 +187,6 @@ async function main() {
 	await removeCopilotCLIShim();
 	await copyCopilotCliWorkerFiles();
 	await copyCopilotCliDefinitionFiles();
-	await copyCopilotCliTGrepFiles();
 	await copyCopilotCliSkillsFiles();
 	await copyCopilotCliQueryFiles();
 	await copyCopilotCliPrebuildFiles();

@@ -120,15 +120,6 @@ describe('CopilotCLI SDK Upgrade', function () {
 			path.join('tgrep', 'bin', 'linuxmusl-x64', 'tgrep'),
 			path.join('tgrep', 'bin', 'win32-arm64', 'tgrep.exe'),
 			path.join('tgrep', 'bin', 'win32-x64', 'tgrep.exe'),
-			// sdk tgrep files
-			path.join('sdk', 'tgrep', 'bin', 'darwin-arm64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'darwin-x64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'linux-x64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'linux-arm64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'linuxmusl-arm64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'linuxmusl-x64', 'tgrep'),
-			path.join('sdk', 'tgrep', 'bin', 'win32-arm64', 'tgrep.exe'),
-			path.join('sdk', 'tgrep', 'bin', 'win32-x64', 'tgrep.exe'),
 			// cli-native to be included
 			path.join('sdk', 'prebuilds', 'darwin-arm64', 'cli-native.node'),
 			path.join('sdk', 'prebuilds', 'darwin-x64', 'cli-native.node'),
