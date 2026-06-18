@@ -119,7 +119,7 @@ interface IProvisionalSession {
 	readonly project: IAgentSessionProjectInfo | undefined;
 }
 
-export { COPILOT_AGENT_HOST_SYSTEM_MESSAGE } from './copilotSessionLauncher.js';
+export { COPILOT_AGENT_HOST_SYSTEM_MESSAGE } from './prompts/systemMessage.js';
 
 interface ISerializedModelSelection {
 	id?: unknown;
