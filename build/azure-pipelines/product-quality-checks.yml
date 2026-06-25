@@ -159,8 +159,20 @@ jobs:
       # from a prior build.
       #
       # Fallback order:
-      #   1. Most recent successful run on the CURRENT branch
-      #   2. Most recent successful run on `main`
+      #   1. Most recent run on the CURRENT branch
+      #   2. Most recent run on `main`
+      #
+      # Carry-forward (critical for sustained outages): the cache download only
+      # ever looks at the SINGLE latest build (the task cannot search backwards
+      # for one that happens to contain the artifact). So the "last good NOTICE"
+      # must live on the latest build at all times -- otherwise a CG outage that
+      # spans more than one build breaks the chain: each failed build would have
+      # uploaded no `ThirdPartyNotices.generated.txt`, leaving nothing for the
+      # next build to fall back to (observed across builds 450982->451029).
+      # To prevent that, the "Upload CG NOTICE artifact" step below ALSO runs
+      # when this build fell back to a cached NOTICE, re-publishing that NOTICE
+      # as this build's own artifact. The last-good NOTICE is thus handed
+      # forward build-to-build for the entire outage, until CG recovers.
       #
       # TODO: consider enforcing a max-age check (~30 days) on cached NOTICEs.
       # Today the only signal is the warning emitted below.
@@ -287,16 +299,32 @@ jobs:
         condition: and(succeeded(), ne(variables.CG_NOTICE_OK, 'true'))
 
       - script: |
+          set -u
+          GEN="$(Build.SourcesDirectory)/ThirdPartyNotices.generated.txt"
           echo "=== CG NOTICE artifact ==="
-          if [ -f "$(Build.SourcesDirectory)/ThirdPartyNotices.generated.txt" ]; then
-            SIZE=$(wc -c < "$(Build.SourcesDirectory)/ThirdPartyNotices.generated.txt")
-            echo "Generated file size: $SIZE bytes"
-            cp "$(Build.SourcesDirectory)/ThirdPartyNotices.generated.txt" "$(Build.ArtifactStagingDirectory)/ThirdPartyNotices.generated.txt"
-            echo "##vso[artifact.upload containerfolder=notice_output;artifactname=notice_output]$(Build.ArtifactStagingDirectory)/ThirdPartyNotices.generated.txt"
 
-            # Write a sidecar so future runs (and humans) know what this NOTICE
-            # was built from. Consumed by the "Cache: apply NOTICE fallback" step
-            # of subsequent builds when they fall back to this artifact.
+          # Publish the CG NOTICE so future builds can fall back to it. This runs
+          # on BOTH paths: a fresh CG success, and a carry-forward (this build
+          # fell back to a cached NOTICE because CG failed). Re-publishing on the
+          # carry-forward path is what keeps the cache chain alive through a
+          # multi-build outage -- see the carry-forward note above.
+          if [ ! -f "$GEN" ] || [ "$(wc -c < "$GEN")" -le 1024 ]; then
+            echo "No usable ThirdPartyNotices.generated.txt to publish; skipping (no CG output and no cached fallback)."
+            exit 0
+          fi
+
+          SIZE=$(wc -c < "$GEN")
+          echo "Generated file size: $SIZE bytes (source: CG_NOTICE_OK=${CG_NOTICE_OK:-unset}, NOTICE_FROM_CACHE=${NOTICE_FROM_CACHE:-unset})"
+          cp "$GEN" "$(Build.ArtifactStagingDirectory)/ThirdPartyNotices.generated.txt"
+          echo "##vso[artifact.upload containerfolder=notice_output;artifactname=notice_output]$(Build.ArtifactStagingDirectory)/ThirdPartyNotices.generated.txt"
+
+          # Write the sidecar consumed by the "Cache: apply NOTICE fallback" step
+          # of subsequent builds. On a fresh CG run, record this build's
+          # provenance. On a carry-forward, PRESERVE the original provenance (so
+          # legal traceability still points at the build that truly generated the
+          # CG NOTICE) and append a carry-forward marker.
+          META_OUT="$(Build.ArtifactStagingDirectory)/notice-meta.txt"
+          if [ "${CG_NOTICE_OK:-}" = "true" ]; then
             {
               echo "built_at:          $(date -u +%Y-%m-%dT%H:%M:%SZ)"
               echo "source_branch:     $(Build.SourceBranch)"
@@ -304,13 +332,28 @@ jobs:
               echo "build_id:          $(Build.BuildId)"
               echo "build_number:      $(Build.BuildNumber)"
               echo "size_bytes:        $SIZE"
-            } > "$(Build.ArtifactStagingDirectory)/notice-meta.txt"
-            echo "##vso[artifact.upload containerfolder=notice_output;artifactname=notice_output]$(Build.ArtifactStagingDirectory)/notice-meta.txt"
+            } > "$META_OUT"
           else
-            echo "ERROR: ThirdPartyNotices.generated.txt not found — this step should not run without CG_NOTICE_OK=true"
+            case "${NOTICE_FROM_CACHE:-}" in
+              branch) SRC_META="$(Pipeline.Workspace)/cached-notice-branch/notice_output/notice-meta.txt" ;;
+              main)   SRC_META="$(Pipeline.Workspace)/cached-notice-main/notice_output/notice-meta.txt" ;;
+              *)      SRC_META="" ;;
+            esac
+            if [ -n "$SRC_META" ] && [ -f "$SRC_META" ]; then
+              cp "$SRC_META" "$META_OUT"
+            else
+              echo "original_provenance: unavailable (cached NOTICE predates the notice-meta.txt sidecar)" > "$META_OUT"
+            fi
+            {
+              echo "carried_forward_by_build:    $(Build.BuildId)"
+              echo "carried_forward_by_number:   $(Build.BuildNumber)"
+              echo "carried_forward_at:          $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "carried_forward_reason:      CG NOTICE generation failed; re-published last-good NOTICE to keep the cache chain alive."
+            } >> "$META_OUT"
           fi
-        displayName: "Upload CG NOTICE artifact"
-        condition: and(succeeded(), eq(variables.CG_NOTICE_OK, 'true'))
+          echo "##vso[artifact.upload containerfolder=notice_output;artifactname=notice_output]$META_OUT"
+        displayName: "Upload CG NOTICE artifact (fresh or carried-forward)"
+        condition: and(succeeded(), or(eq(variables.CG_NOTICE_OK, 'true'), in(variables.NOTICE_FROM_CACHE, 'branch', 'main')))
         continueOnError: true
 
       - script: |
