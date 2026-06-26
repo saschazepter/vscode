@@ -52,16 +52,15 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 	-days 365 \
 	-config "$TEMP_DIR/codesign.cnf" >&2
 
-openssl pkcs12 -export \
-	-inkey "$TEMP_DIR/codesign-key.pem" \
-	-in "$TEMP_DIR/codesign-cert.pem" \
-	-out "$TEMP_DIR/cert.p12" \
-	-name "$CERT_NAME" \
-	-passout pass:"$KEYCHAIN_PASSWORD" >&2
-
-# Import the certificate (and its private key) into the keychain and allow
-# codesign to use it without prompting.
-security import "$TEMP_DIR/cert.p12" -k "$KEYCHAIN" -P "$KEYCHAIN_PASSWORD" -T /usr/bin/codesign >&2
+# Import the private key and the certificate as separate PEM files. We avoid a
+# PKCS#12 bundle on purpose: depending on which `openssl` is first on PATH (the
+# build agents may resolve to OpenSSL 3.x), the generated PKCS#12 uses a MAC
+# algorithm that Apple's `security` tool cannot verify, which fails the import
+# with "MAC verification failed". Importing the PEM files individually sidesteps
+# this entirely; the keychain pairs the key and certificate into a usable
+# identity automatically once both are present.
+security import "$TEMP_DIR/codesign-key.pem" -k "$KEYCHAIN" -T /usr/bin/codesign >&2
+security import "$TEMP_DIR/codesign-cert.pem" -k "$KEYCHAIN" -T /usr/bin/codesign >&2
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >&2
 
 # Trust the self-signed certificate for code signing so that it is reported as a
@@ -69,7 +68,7 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN
 security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TEMP_DIR/codesign-cert.pem" >&2
 
 # Remove the intermediate key material now that it lives in the keychain.
-rm -f "$TEMP_DIR/codesign-key.pem" "$TEMP_DIR/codesign-cert.pem" "$TEMP_DIR/cert.p12" "$TEMP_DIR/codesign.cnf"
+rm -f "$TEMP_DIR/codesign-key.pem" "$TEMP_DIR/codesign-cert.pem" "$TEMP_DIR/codesign.cnf"
 
 # Emit the code signing identity (SHA-1) for the caller to consume.
 security find-identity -v -p codesigning "$KEYCHAIN" | grep -oEi "([0-9A-F]{40})" | head -n 1
