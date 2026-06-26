@@ -68,12 +68,13 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN
 # and accepted by `codesign`. `codesign` refuses to use an untrusted identity
 # ("no identity found" / CSSMERR_TP_NOT_TRUSTED), so trust is mandatory.
 #
-# Trust must be written to the admin domain of the System keychain: writing to
-# the user trust domain requires interactive authorization, which is not
-# available on the headless build agents ("SecTrustSettingsSetTrustSettings:
-# The authorization was denied since no user interaction was possible"). `sudo`
-# is passwordless on the build agents, so the admin domain can be updated
-# non-interactively.
+# Adding a trusted root normally requires interactive authorization, which is
+# not available on the headless build agents and fails even under `sudo`
+# ("SecTrustSettingsSetTrustSettings: The authorization was denied since no
+# user interaction was possible"). Relax the authorization right first so the
+# admin trust domain can be updated non-interactively, then trust the
+# certificate in the System keychain. `sudo` is passwordless on the agents.
+sudo -n security authorizationdb write com.apple.trust-settings.admin allow >&2
 sudo -n security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$TEMP_DIR/codesign-cert.pem" >&2
 
 # Remove the intermediate key material now that it lives in the keychain.
