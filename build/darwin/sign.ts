@@ -77,6 +77,13 @@ async function main(buildDir?: string): Promise<void> {
 	const appName = product.nameLong + '.app';
 	const infoPlistPath = path.resolve(appRoot, appName, 'Contents', 'Info.plist');
 
+	// An identity of '-' performs ad-hoc signing, which requires neither a
+	// certificate nor a keychain. We use it to apply the hardened runtime and
+	// entitlements before the binaries are properly re-signed and notarized by
+	// ESRP. Skip identity validation (there is no keychain identity to find) and
+	// don't reference a keychain in that case.
+	const adHoc = identity === '-';
+
 	const appOpts: SignOptions = {
 		app: path.join(appRoot, appName),
 		platform: 'darwin',
@@ -86,9 +93,10 @@ async function main(buildDir?: string): Promise<void> {
 		}),
 		preAutoEntitlements: false,
 		preEmbedProvisioningProfile: false,
-		keychain: path.join(tempDir, 'buildagent.keychain'),
+		keychain: adHoc ? undefined : path.join(tempDir, 'buildagent.keychain'),
 		version: getElectronVersion(),
 		identity,
+		identityValidation: adHoc ? false : undefined,
 	};
 
 	// Only overwrite plist entries for x64 and arm64 builds,

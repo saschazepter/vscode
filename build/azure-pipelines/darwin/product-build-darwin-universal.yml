@@ -121,7 +121,7 @@ jobs:
 
       - script: |
           set -e
-          export CODESIGN_IDENTITY=$(build/azure-pipelines/darwin/setup-codesign-keychain.sh $(agent.tempdirectory))
+          export CODESIGN_IDENTITY='-'
           DEBUG=electron-osx-sign* node build/darwin/sign.ts $(agent.builddirectory)
         displayName: Set Hardened Entitlements
 

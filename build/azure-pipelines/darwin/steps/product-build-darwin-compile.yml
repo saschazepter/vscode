@@ -275,13 +275,13 @@ steps:
     # * Running tests on Big Sur (because Big Sur has additional security precautions)
     - script: |
         set -e
-        export CODESIGN_IDENTITY=$(build/azure-pipelines/darwin/setup-codesign-keychain.sh $(agent.tempdirectory))
+        export CODESIGN_IDENTITY='-'
         DEBUG=electron-osx-sign* node build/darwin/sign.ts $(agent.builddirectory)
       displayName: Set Hardened Entitlements
 
     - script: |
         set -e
-        export CODESIGN_IDENTITY=$(security find-identity -v -p codesigning $(agent.tempdirectory)/buildagent.keychain | grep -oEi "([0-9A-F]{40})" | head -n 1)
+        export CODESIGN_IDENTITY='-'
         node build/darwin/sign-server.ts $(Agent.BuildDirectory)/vscode-server-darwin-$(VSCODE_ARCH)
         node build/darwin/sign-server.ts $(Agent.BuildDirectory)/vscode-server-darwin-$(VSCODE_ARCH)-web
       displayName: Sign server binaries

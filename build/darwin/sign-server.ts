@@ -54,6 +54,12 @@ async function main(serverDir: string): Promise<void> {
 	const baseDir = path.dirname(import.meta.dirname);
 	const entitlementsPath = path.join(baseDir, 'azure-pipelines', 'darwin', 'server-entitlements.plist');
 
+	// An identity of '-' performs ad-hoc signing, which references neither a
+	// keychain nor a certificate (so it cannot be timestamped). It is used to
+	// apply the hardened runtime and entitlements before the binaries are
+	// properly re-signed and notarized by ESRP.
+	const adHoc = identity === '-';
+
 	console.log(`Signing Mach-O binaries in: ${serverDir}`);
 	for (const entry of fs.readdirSync(serverDir, { withFileTypes: true, recursive: true })) {
 		if (entry.isFile()) {
@@ -62,9 +68,8 @@ async function main(serverDir: string): Promise<void> {
 				console.log(`Signing: ${filePath}`);
 				await spawn('codesign', [
 					'--sign', identity,
-					'--keychain', keychain,
+					...(adHoc ? [] : ['--keychain', keychain, '--timestamp']),
 					'--options', 'runtime',
-					'--timestamp',
 					'--force',
 					'--entitlements', entitlementsPath,
 					filePath
