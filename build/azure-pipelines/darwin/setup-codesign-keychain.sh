@@ -63,9 +63,18 @@ security import "$TEMP_DIR/codesign-key.pem" -k "$KEYCHAIN" -T /usr/bin/codesign
 security import "$TEMP_DIR/codesign-cert.pem" -k "$KEYCHAIN" -T /usr/bin/codesign >&2
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >&2
 
-# Trust the self-signed certificate for code signing so that it is reported as a
-# valid identity by `security find-identity -v -p codesigning`.
-security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TEMP_DIR/codesign-cert.pem" >&2
+# Trust the self-signed certificate as a code signing root so that it is
+# reported as a valid identity by `security find-identity -v -p codesigning`
+# and accepted by `codesign`. `codesign` refuses to use an untrusted identity
+# ("no identity found" / CSSMERR_TP_NOT_TRUSTED), so trust is mandatory.
+#
+# Trust must be written to the admin domain of the System keychain: writing to
+# the user trust domain requires interactive authorization, which is not
+# available on the headless build agents ("SecTrustSettingsSetTrustSettings:
+# The authorization was denied since no user interaction was possible"). `sudo`
+# is passwordless on the build agents, so the admin domain can be updated
+# non-interactively.
+sudo -n security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$TEMP_DIR/codesign-cert.pem" >&2
 
 # Remove the intermediate key material now that it lives in the keychain.
 rm -f "$TEMP_DIR/codesign-key.pem" "$TEMP_DIR/codesign-cert.pem" "$TEMP_DIR/codesign.cnf"
