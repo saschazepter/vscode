@@ -51,6 +51,7 @@ import { checkModeOption } from '../../common/chat.js';
 import { IChatAgentMetadata } from '../../common/participants/chatAgents.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatProgressResponseContent, IChatTextEditGroup } from '../../common/model/chatModel.js';
+import { ILanguageModelsService } from '../../common/languageModels.js';
 import { chatSubcommandLeader } from '../../common/requestParser/chatParserTypes.js';
 import { ChatAgentVoteDirection, ChatErrorLevel, ChatRequestQueueKind, IChatConfirmation, IChatContentReference, IChatDisabledClaudeHooksPart, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatExternalEdit, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatPlanReview, IChatPlanReviewResult, IChatPullRequestContent, IChatQuestionAnswerValue, IChatQuestionAnswers, IChatQuestionCarousel, IChatService, IChatTask, IChatTaskSerialized, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, isChatFollowup } from '../../common/chatService/chatService.js';
 import { ChatPlanReviewData } from '../../common/model/chatProgressTypes/chatPlanReviewData.js';
@@ -68,6 +69,7 @@ import { AgentHostSnapshotController } from '../agentSessions/agentHost/agentHos
 import { RestoreCheckpointActionId } from '../chatEditing/chatEditingActions.js';
 import { ChatRestoreCheckpointActionViewItem } from './chatRestoreCheckpointActionViewItem.js';
 import { ChatAgentHover, getChatAgentHoverOptions } from './chatAgentHover.js';
+import { ChatHelpfulnessBanner, IChatHelpfulnessFeedback } from './chatHelpfulnessBanner.js';
 import { ChatContentMarkdownRenderer } from './chatContentMarkdownRenderer.js';
 import { ChatAgentCommandContentPart } from './chatContentParts/chatAgentCommandContentPart.js';
 import { ChatAnonymousRateLimitedPart } from './chatContentParts/chatAnonymousRateLimitedPart.js';
@@ -150,6 +152,7 @@ export interface IChatListItemTemplate {
 	readonly header?: HTMLElement;
 	readonly footerToolbar: MenuWorkbenchToolBar;
 	readonly footerDetailsContainer: HTMLElement;
+	readonly helpfulnessBanner: ChatHelpfulnessBanner;
 	readonly avatarContainer: HTMLElement;
 	readonly username: HTMLElement;
 	readonly detail: HTMLElement;
@@ -344,6 +347,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		@IHoverService private readonly hoverService: IHoverService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IChatService private readonly chatService: IChatService,
 		@IAccessibilitySignalService private readonly accessibilitySignalService: IAccessibilitySignalService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
@@ -665,6 +669,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const footerDetailsContainer = dom.append(footerToolbar.getElement(), $('.chat-footer-details'));
 		footerDetailsContainer.tabIndex = 0;
 
+		const helpfulnessBanner = templateDisposables.add(new ChatHelpfulnessBanner(rowContainer));
+		templateDisposables.add(helpfulnessBanner.onDidSubmit(feedback => {
+			this.logHelpfulnessFeedbackTelemetry(template.currentElement, feedback);
+		}));
+
 		const checkpointRestoreContainer = dom.append(rowContainer, $('.checkpoint-restore-container'));
 		dom.append(checkpointRestoreContainer, $('.checkpoint-line-left'));
 		const label = dom.append(checkpointRestoreContainer, $('span.checkpoint-label-text'));
@@ -715,7 +724,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}));
 		const connectionObserver = document.createElement('connection-observer') as dom.ConnectionObserverElement;
 		dom.append(container, connectionObserver);
-		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer };
+		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerDetailsContainer, helpfulnessBanner, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer };
 
 		connectionObserver.onDidDisconnect = () => {
 			template.renderedPartsMounted = false;
@@ -819,6 +828,24 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.currentElement = undefined;
 	}
 
+	/**
+	 * The helpfulness banner prototype is only shown to Microsoft-internal users
+	 * whose response was produced by the MAI-Code-1-Flash model.
+	 */
+	private shouldShowHelpfulnessBanner(element: IChatResponseViewModel): boolean {
+		if (!this.chatEntitlementService.isInternal) {
+			return false;
+		}
+
+		const modelId = element.model.request?.modelId;
+		if (!modelId) {
+			return false;
+		}
+
+		const metadata = this.languageModelsService.lookupLanguageModel(modelId);
+		return metadata?.name === 'MAI-Code-1-Flash';
+	}
+
 	private renderChatTreeItem(element: ChatTreeItem, index: number, templateData: IChatListItemTemplate): void {
 		if (templateData.currentElement && templateData.currentElement.id !== element.id) {
 			this.traceLayout('renderChatTreeItem', `Rendering a different element into the template, index=${index}`);
@@ -878,6 +905,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		} else {
 			templateData.footerDetailsContainer.classList.add('hidden');
 		}
+
+		// Helpfulness banner prototype: only show for complete responses from
+		// Microsoft-internal users that used the MAI-Code-1-Flash model
+		templateData.helpfulnessBanner.reset();
+		templateData.helpfulnessBanner.setVisible(isResponseVM(element) && element.isComplete && this.shouldShowHelpfulnessBanner(element));
 
 		ChatContextKeys.responseHasError.bindTo(templateData.contextKeyService).set(isResponseVM(element) && !!element.errorDetails);
 		const isFiltered = !!(isResponseVM(element) && element.errorDetails?.responseIsFiltered);
@@ -1721,6 +1753,32 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				part.updateStreamRate(rate, isComplete);
 			}
 		}
+	}
+
+	private logHelpfulnessFeedbackTelemetry(element: ChatTreeItem | undefined, feedback: IChatHelpfulnessFeedback): void {
+		const requestId = isResponseVM(element) ? element.requestId : isRequestVM(element) ? element.id : '';
+		const harness = element ? getChatSessionType(element.sessionResource) : '';
+
+		type ChatHelpfulnessFeedbackEvent = {
+			vote: string;
+			detail: string;
+			requestId: string;
+			harness: string;
+		};
+		type ChatHelpfulnessFeedbackClassification = {
+			vote: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The initial positive or negative selection the user made on the response.' };
+			detail: { classification: 'CustomerContent'; purpose: 'FeatureInsight'; comment: 'The free-form feedback text the user provided.' };
+			requestId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The identifier of the chat request the feedback is about.' };
+			harness: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat session type/harness the feedback was submitted from.' };
+			owner: 'pwang347';
+			comment: 'Tracks user feedback submitted through the chat helpfulness banner.';
+		};
+		this.telemetryService.publicLog2<ChatHelpfulnessFeedbackEvent, ChatHelpfulnessFeedbackClassification>('chatHelpfulnessFeedback', {
+			vote: feedback.vote,
+			detail: feedback.detail,
+			requestId,
+			harness,
+		});
 	}
 
 	private logIncrementalRenderingTelemetry(): void {
