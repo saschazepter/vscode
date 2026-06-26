@@ -32,13 +32,6 @@ jobs:
       - template: ../distro/download-distro.yml@self
 
       - task: AzureKeyVault@2
-        displayName: "Azure Key Vault: Get Secrets"
-        inputs:
-          azureSubscription: vscode
-          KeyVaultName: vscode-build-secrets
-          SecretsFilter: "macos-developer-certificate,macos-developer-certificate-key"
-
-      - task: AzureKeyVault@2
         displayName: "Azure Key Vault: Get GitHub token"
         inputs:
           azureSubscription: vscode-oss-build-secrets
@@ -128,13 +121,7 @@ jobs:
 
       - script: |
           set -e
-          security create-keychain -p pwd $(agent.tempdirectory)/buildagent.keychain
-          security default-keychain -s $(agent.tempdirectory)/buildagent.keychain
-          security unlock-keychain -p pwd $(agent.tempdirectory)/buildagent.keychain
-          echo "$(macos-developer-certificate)" | base64 -D > $(agent.tempdirectory)/cert.p12
-          security import $(agent.tempdirectory)/cert.p12 -k $(agent.tempdirectory)/buildagent.keychain -P "$(macos-developer-certificate-key)" -T /usr/bin/codesign
-          export CODESIGN_IDENTITY=$(security find-identity -v -p codesigning $(agent.tempdirectory)/buildagent.keychain | grep -oEi "([0-9A-F]{40})" | head -n 1)
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k pwd $(agent.tempdirectory)/buildagent.keychain
+          export CODESIGN_IDENTITY=$(build/azure-pipelines/darwin/setup-codesign-keychain.sh $(agent.tempdirectory))
           DEBUG=electron-osx-sign* node build/darwin/sign.ts $(agent.builddirectory)
         displayName: Set Hardened Entitlements
 
