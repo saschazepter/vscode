@@ -66,6 +66,8 @@ suite('copilotToolDisplay — friendly tool names', () => {
 			['tool_search_tool_regex', 'Search Tools'],
 			['parallel_validation', 'Validate Changes'],
 			['codeql_checker', 'CodeQL Security Scan'],
+			['send_inbox', 'Send Message'],
+			['context_board', 'Update Context Board'],
 			['addComment', 'Add Comment'],
 			['listComments', 'List Comments'],
 			['deleteComments', 'Delete Comments'],
@@ -296,6 +298,57 @@ suite('view tool — view_range display', () => {
 		assert.ok(!invocation({ path: '/repo/file.ts', view_range: [10, 20, 30] }).includes(','));
 		// non-array
 		assert.ok(!invocation({ path: '/repo/file.ts', view_range: 'whatever' }).includes(','));
+	});
+});
+
+suite('copilotToolDisplay — built-in tool invocation/past-tense messages', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	function invocation(toolName: string, parameters: Record<string, unknown> | undefined): string {
+		const result = getInvocationMessage(toolName, getToolDisplayName(toolName), parameters);
+		return typeof result === 'string' ? result : result.markdown;
+	}
+
+	function pastTense(toolName: string, parameters: Record<string, unknown> | undefined): string {
+		const result = getPastTenseMessage(toolName, getToolDisplayName(toolName), parameters, true);
+		return typeof result === 'string' ? result : result.markdown;
+	}
+
+	test('read_agent / write_agent surface the agent id', () => {
+		assert.strictEqual(invocation('read_agent', { agent_id: 'math-helper' }), 'Reading agent `math-helper`');
+		assert.strictEqual(pastTense('read_agent', { agent_id: 'math-helper' }), 'Read agent `math-helper`');
+		assert.strictEqual(invocation('write_agent', { agent_id: 'math-helper', message: 'hi' }), 'Writing to agent `math-helper`');
+		assert.strictEqual(pastTense('write_agent', { agent_id: 'math-helper', message: 'hi' }), 'Wrote to agent `math-helper`');
+	});
+
+	test('agent tools fall back to a generic phrase without an agent id', () => {
+		assert.strictEqual(invocation('read_agent', {}), 'Reading agent');
+		assert.strictEqual(pastTense('write_agent', undefined), 'Wrote to agent');
+	});
+
+	test('arg-bearing tools surface their key argument', () => {
+		assert.strictEqual(invocation('web_search', { query: 'rust async' }), 'Searching the web for `rust async`');
+		assert.strictEqual(pastTense('web_search', { query: 'rust async' }), 'Searched the web for `rust async`');
+		assert.strictEqual(invocation('search_code_subagent', { query: 'auth flow' }), 'Searching code for `auth flow`');
+		assert.strictEqual(invocation('store_memory', { subject: 'build config' }), 'Storing memory about `build config`');
+		assert.strictEqual(invocation('create_pull_request', { title: 'Fix bug' }), 'Creating pull request `Fix bug`');
+		assert.strictEqual(invocation('tool_search_tool_regex', { pattern: 'edit.*' }), 'Searching tools for `edit.*`');
+		assert.ok(invocation('show_file', { path: '/repo/file.ts' }).startsWith('Showing ['));
+	});
+
+	test('no-arg tools use natural verb phrases instead of the generic fallback', () => {
+		assert.strictEqual(invocation('list_agents', {}), 'Listing agents');
+		assert.strictEqual(pastTense('list_agents', {}), 'Listed agents');
+		assert.strictEqual(invocation('code_review', {}), 'Reviewing code');
+		assert.strictEqual(pastTense('code_review', {}), 'Reviewed code');
+		assert.strictEqual(invocation('send_inbox', {}), 'Sending a message');
+		assert.strictEqual(invocation('context_board', {}), 'Updating the context board');
+	});
+
+	test('unknown tools still use the generic fallback', () => {
+		assert.strictEqual(invocation('some_new_tool', {}), 'Using "some_new_tool"');
+		assert.strictEqual(pastTense('some_new_tool', {}), 'Used "some_new_tool"');
 	});
 });
 
