@@ -72,15 +72,7 @@ export class SessionsTelemetryContribution extends Disposable implements IWorkbe
 			// `onDidSendNewChatRequest` fires.
 			this._startWorkspaceFileCountFetch(session.workspace.get());
 		}));
-		this._register(this._sessionsManagementService.onDidSendRequest(e => {
-			if (e.isNewChat) {
-				this._logNewChatRequestSent(e);
-			} else {
-				// Follow-up request within an existing chat: count it toward
-				// `requestsSent` without incrementing `chatCount`.
-				this._lifecycleTracker.recordRequestSent(e.session);
-			}
-		}));
+		this._register(this._sessionsManagementService.onDidSendRequest(e => this._logRequestSent(e)));
 		this._register(this._sessionsManagementService.onDidArchiveSession(session => this._logSessionArchived(session)));
 		this._register(this._sessionsManagementService.onDidUnarchiveSession(session => this._logSessionUnarchived(session)));
 		this._register(this._sessionsManagementService.onDidDeleteSession(session => this._logSessionDeleted(session)));
@@ -183,12 +175,20 @@ export class SessionsTelemetryContribution extends Disposable implements IWorkbe
 
 	// -- event handlers --------------------------------------------------------
 
-	private _logNewChatRequestSent(e: ISendRequestSentEvent): void {
-		const { session, chat, isNewSession, options } = e;
+	private _logRequestSent(e: ISendRequestSentEvent): void {
+		const { session, chat, isNewSession, isNewChat, options } = e;
 
 		const wasTracked = this._lifecycleTracker.isTracked(session.sessionId);
-		this._lifecycleTracker.recordNewChatRequestSent(session);
-		if (!wasTracked) {
+		// New-chat requests bump both requestsSent and chatCount; follow-up
+		// requests within an existing chat only bump requestsSent. Either way
+		// we emit one `agents/requestSent` event per user message so the event
+		// is a true per-message counter (see telemetry gap #5 in #8209).
+		if (isNewChat) {
+			this._lifecycleTracker.recordNewChatRequestSent(session);
+		} else {
+			this._lifecycleTracker.recordRequestSent(session);
+		}
+		if (isNewChat && !wasTracked) {
 			void this._sessionsTasksService.getAllTasks(session).then(tasks => {
 				const hasWorktreeCreatedTask = tasks.some(t => t.task.runOptions?.runOn === 'worktreeCreated');
 				this._lifecycleTracker.recordFirstRequestTaskInfo(session, { hasWorktreeCreatedTask, configuredTasksCount: tasks.length });
@@ -205,6 +205,7 @@ export class SessionsTelemetryContribution extends Disposable implements IWorkbe
 			: this._lifecycleTracker.getUserRequestCounters(session);
 		const sync = {
 			isNewSession,
+			isNewChat,
 			visibleSessionsCount,
 			...this._getRequestFields(options),
 			...this._getSessionFields(session),
@@ -794,6 +795,7 @@ type AllSessionsFields = {
 
 type SessionRequestSentEvent = {
 	isNewSession: boolean;
+	isNewChat: boolean;
 	visibleSessionsCount: number;
 	agentSessionId: string;
 	providerId: string;
@@ -853,6 +855,7 @@ type SessionRequestSentClassification = {
 	owner: 'benibenj';
 	comment: 'Reports when the user sends a request from a session in the Agents window, including the user state at the time of send.';
 	isNewSession: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'True when the request starts a brand-new session, false when it is a new or continued chat in an existing session.' };
+	isNewChat: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'True when the request opens a new chat in the session, false when it is a follow-up message within an existing chat. The event fires once per user message either way.' };
 	visibleSessionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'How many sessions are currently visible in the sessions grid.' };
 	agentSessionId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Globally unique session id (providerId:resourceUri), used to correlate events for the same session.' };
 	providerId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The sessions provider identifier (e.g., remote agent host or local).' };
