@@ -4,9 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Minimum interval between changeset-driven UI recomputes. While an agent
- * edits, the host streams many changeset envelopes per second; coalescing them
- * to ~10 updates/second keeps the Changes view responsive without perceptible
- * lag, and stops every envelope from forcing a full list relayout.
+ * A value paired with the `originalRowIndex` identifying its source row in the
+ * input container it was read from.
  */
-export const CHANGESET_UPDATE_THROTTLE_MS = 100;
+export type WithRowIndex<T> = {
+	readonly originalRowIndex: number;
+	readonly value: T;
+};
