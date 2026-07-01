@@ -137,6 +137,7 @@ async function startAgentHost(): Promise<void> {
 
 	// Create the real service implementation that lives in this process
 	let agentService: AgentService;
+	let copilotAgent: CopilotAgent;
 	let instantiationService: IInstantiationService;
 	// Hoisted out of the `try` below so the protocol handlers (constructed
 	// after the block) can forward agent-SDK download progress to clients.
@@ -221,7 +222,7 @@ async function startAgentHost(): Promise<void> {
 		diServices.set(IClaudeProxyService, claudeProxyService);
 		const codexProxyService = disposables.add(instantiationService.createInstance(CodexProxyService));
 		diServices.set(ICodexProxyService, codexProxyService);
-		agentService.registerProvider(instantiationService.createInstance(CopilotAgent));
+		agentService.registerProvider(copilotAgent = instantiationService.createInstance(CopilotAgent));
 		// Claude and Codex providers are gated on two things:
 		//  1. The user-facing enable toggle (`chat.agentHost.<x>Agent.enabled`,
 		//     forwarded as an env var by the starters). Claude defaults to on,
@@ -416,6 +417,9 @@ async function startAgentHost(): Promise<void> {
 				logService.warn(`[AgentHost] Unexpected inspector URL: ${url}`);
 				return undefined;
 			}
+		},
+		runtimeDiagnosticsHttpFetch(request) {
+			return copilotAgent.runtimeDiagnosticsHttpFetch(request);
 		},
 	};
 	const connectionTrackerChannel = ProxyChannel.fromService(connectionTrackerService, disposables);

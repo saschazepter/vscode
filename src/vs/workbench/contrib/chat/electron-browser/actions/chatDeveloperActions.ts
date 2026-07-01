@@ -11,6 +11,7 @@ import { INativeHostService } from '../../../../../platform/native/common/native
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { DebugAgentHostInDevToolsAction } from './debugAgentHostAction.js';
+import { NetworkDiagnosticsAction } from './networkDiagnosticsAction.js';
 import './exportAgentHostDebugLogsService.js';
 import { ProfileAgentHostAction, StopAgentHostProfileAction } from './profileAgentHostAction.js';
 
@@ -19,6 +20,7 @@ export function registerChatDeveloperActions() {
 	registerAction2(DebugAgentHostInDevToolsAction);
 	registerAction2(ProfileAgentHostAction);
 	registerAction2(StopAgentHostProfileAction);
+	registerAction2(NetworkDiagnosticsAction);
 }
 
 class OpenChatStorageFolderAction extends Action2 {

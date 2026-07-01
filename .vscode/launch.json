@@ -265,6 +265,8 @@
 				"VSCODE_EXTHOST_WILL_SEND_SOCKET": null,
 				"VSCODE_SKIP_PRELAUNCH": "1",
 				"VSCODE_DEV_DEBUG_OBSERVABLES": "1",
+				"HTTP_PROXY": "https://localhost:3133",
+				"HTTPS_PROXY": "https://localhost:3133",
 			},
 			"cleanUp": "wholeBrowser",
 			"killBehavior": "polite",

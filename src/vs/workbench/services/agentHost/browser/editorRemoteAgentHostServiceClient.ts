@@ -15,7 +15,7 @@ import { IObservable, ISettableObservable, observableValue } from '../../../../b
 import { URI } from '../../../../base/common/uri.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { AgentHostIpcChannels, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostInspectInfo, IAgentHostService, IAgentHostSocketInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification } from '../../../../platform/agentHost/common/agentService.js';
+import { AgentHostIpcChannels, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostHttpFetchRequest, IAgentHostHttpFetchResult, IAgentHostInspectInfo, IAgentHostService, IAgentHostSocketInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification } from '../../../../platform/agentHost/common/agentService.js';
 import { IAgentHostEnablementService } from '../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { AgentHostIpcChannelTransport } from '../../../../platform/agentHost/browser/agentHostIpcChannelTransport.js';
 import { RemoteAgentHostProtocolClient } from '../../../../platform/agentHost/browser/remoteAgentHostProtocolClient.js';
@@ -143,6 +143,10 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 
 	async getInspectInfo(_tryEnable: boolean): Promise<IAgentHostInspectInfo | undefined> {
 		return undefined;
+	}
+
+	async runtimeDiagnosticsHttpFetch(_request: IAgentHostHttpFetchRequest): Promise<IAgentHostHttpFetchResult> {
+		throw REMOTE_NOT_SUPPORTED('runtimeDiagnosticsHttpFetch');
 	}
 
 	// ---- IAgentConnection delegation ---------------------------------------

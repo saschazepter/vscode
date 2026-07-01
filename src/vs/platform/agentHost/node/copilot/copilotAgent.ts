@@ -39,7 +39,7 @@ import { CopilotCliConfigKey, copilotCliConfigSchema } from '../../common/copilo
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, ISchemaProperty, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, schemaProperty, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
-import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
+import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostHttpFetchRequest, IAgentHostHttpFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
@@ -1296,6 +1296,29 @@ export class CopilotAgent extends Disposable implements IAgent {
 			summary: sessionMetadata?.summary,
 			workingDirectory,
 			customizationDirectory: storedMetadata?.customizationDirectory,
+		};
+	}
+
+	async runtimeDiagnosticsHttpFetch(request: IAgentHostHttpFetchRequest): Promise<IAgentHostHttpFetchResult> {
+		this._logService.info(`[Copilot] Network diagnostics fetch: ${request.method ?? 'GET'} ${request.url}`);
+		const client = await this._ensureClient();
+		const result = await client.rpc.runtime.diagnostics.httpFetch({
+			url: request.url,
+			method: request.method,
+			headers: request.headers?.map(h => ({ name: h.name, value: h.value })),
+			body: request.body,
+			timeoutMs: request.timeoutMs,
+			redirect: request.redirect,
+		});
+		return {
+			url: result.url,
+			status: result.status,
+			statusText: result.statusText,
+			headers: result.headers.map(h => ({ name: h.name, value: h.value })),
+			body: result.body,
+			durationMs: result.durationMs,
+			proxyType: result.proxyType,
+			proxyAuthType: result.proxyAuthType,
 		};
 	}
 

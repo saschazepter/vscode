@@ -617,9 +617,48 @@ export interface IConnectionTrackerService {
 	 * enabled (e.g. running in an environment without `node:inspector`).
 	 */
 	getInspectInfo(tryEnable: boolean): Promise<IAgentHostInspectInfo | undefined>;
+
+	/**
+	 * Perform a single HTTP request through the agent runtime's own networking
+	 * stack (shared proxy, CA, and address handling) and return the buffered
+	 * response with timing and proxy details. A diagnostics aid that lets the
+	 * workbench probe connectivity using the exact networking the Copilot agent
+	 * uses for its own traffic, rather than the renderer's HTTP client.
+	 */
+	runtimeDiagnosticsHttpFetch(request: IAgentHostHttpFetchRequest): Promise<IAgentHostHttpFetchResult>;
 }
 
-// ---- IPC data types (serializable across MessagePort) -----------------------
+/** A single HTTP header name/value pair for {@link IAgentHostHttpFetchRequest}. */
+export interface IAgentHostHttpFetchHeader {
+	readonly name: string;
+	readonly value: string;
+}
+
+/** Request for {@link IConnectionTrackerService.runtimeDiagnosticsHttpFetch}. */
+export interface IAgentHostHttpFetchRequest {
+	readonly url: string;
+	readonly method?: string;
+	readonly headers?: readonly IAgentHostHttpFetchHeader[];
+	/** Optional request body, base64-encoded so binary payloads are preserved. */
+	readonly body?: string;
+	readonly timeoutMs?: number;
+	readonly redirect?: string;
+}
+
+/** Result of {@link IConnectionTrackerService.runtimeDiagnosticsHttpFetch}. */
+export interface IAgentHostHttpFetchResult {
+	readonly url: string;
+	readonly status: number;
+	readonly statusText: string;
+	readonly headers: readonly IAgentHostHttpFetchHeader[];
+	/** Response body, base64-encoded so binary payloads are preserved. */
+	readonly body: string;
+	readonly durationMs: number;
+	/** Proxy URL scheme used to reach the target, or `undefined` for a direct connection. */
+	readonly proxyType?: string;
+	/** Proxy authentication scheme used (`none`/`basic`/`negotiate`), or `undefined` for a direct connection. */
+	readonly proxyAuthType?: string;
+}
 
 export interface IAgentSessionMetadata {
 	readonly session: URI;
@@ -2044,4 +2083,11 @@ export interface IAgentHostService extends IAgentConnection {
 	 * enabled.
 	 */
 	getInspectInfo(tryEnable: boolean): Promise<IAgentHostInspectInfo | undefined>;
+
+	/**
+	 * Perform a single HTTP request through the agent runtime's own networking
+	 * stack and return the buffered response with timing and proxy details. See
+	 * {@link IConnectionTrackerService.runtimeDiagnosticsHttpFetch}.
+	 */
+	runtimeDiagnosticsHttpFetch(request: IAgentHostHttpFetchRequest): Promise<IAgentHostHttpFetchResult>;
 }
