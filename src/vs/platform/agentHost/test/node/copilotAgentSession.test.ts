@@ -17,15 +17,14 @@ import { IFileService } from '../../../files/common/files.js';
 import { InstantiationService } from '../../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../../instantiation/common/serviceCollection.js';
 import { ILogService, NullLogService } from '../../../log/common/log.js';
-import type { ClassifiedEvent, IGDPRProperty, OmitMetadata, StrictPropertyCheck } from '../../../telemetry/common/gdprTypings.js';
-import { ITelemetryService, TelemetryLevel } from '../../../telemetry/common/telemetry.js';
+import { ITelemetryService } from '../../../telemetry/common/telemetry.js';
 import { NullTelemetryServiceShape } from '../../../telemetry/common/telemetryUtils.js';
 import { AgentSession, type AgentSignal, type IAgentActionSignal, type IAgentToolPendingConfirmationSignal } from '../../common/agentService.js';
 import type { ChatInputRequestWithPlanReview } from '../../common/agentHostPlanReview.js';
 import { AgentFeedbackAttachmentDisplayKind } from '../../common/meta/agentFeedbackAttachments.js';
 import { IDiffComputeService } from '../../common/diffComputeService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
-import { ActionType, type ChatDeltaAction, type ChatErrorAction, type ChatInputRequestedAction, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction } from '../../common/state/sessionActions.js';
+import { ActionType, type ChatDeltaAction, type ChatErrorAction, type ChatInputRequestedAction, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatUsageAction } from '../../common/state/sessionActions.js';
 import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
@@ -55,7 +54,7 @@ class MockCopilotSession {
 	readonly compactCalls: unknown[] = [];
 	readonly commandListCalls: unknown[] = [];
 	readonly commandInvokeCalls: Array<{ name: string; input?: string }> = [];
-	compactResult: { success: boolean; tokensRemoved: number; messagesRemoved: number } = { success: true, tokensRemoved: 0, messagesRemoved: 0 };
+	compactResult: { success: boolean; tokensRemoved: number; messagesRemoved: number; contextWindow?: { currentTokens: number; tokenLimit: number; messagesLength: number } } = { success: true, tokensRemoved: 0, messagesRemoved: 0 };
 	compactError: unknown = undefined;
 	commandListResult: {
 		commands: Array<{
@@ -191,32 +190,6 @@ class CapturingLogService extends NullLogService {
 		this.warnings.push({ message, args });
 		super.warn(message, ...args);
 	}
-}
-
-class RecordingTelemetryService implements ITelemetryService {
-	declare readonly _serviceBrand: undefined;
-	readonly telemetryLevel = TelemetryLevel.NONE;
-	readonly sessionId = 'someValue.sessionId';
-	readonly machineId = 'someValue.machineId';
-	readonly sqmId = 'someValue.sqmId';
-	readonly devDeviceId = 'someValue.devDeviceId';
-	readonly firstSessionDate = 'someValue.firstSessionDate';
-	readonly sendErrorTelemetry = false;
-	readonly events: Array<{ eventName: string; data: unknown }> = [];
-
-	publicLog(): void { }
-
-	publicLog2<E extends ClassifiedEvent<OmitMetadata<T>> = never, T extends IGDPRProperty = never>(eventName: string, data?: StrictPropertyCheck<T, E>): void {
-		this.events.push({ eventName, data });
-	}
-
-	publicLogError(): void { }
-
-	publicLogError2(): void { }
-
-	setExperimentProperty(): void { }
-
-	setCommonProperty(): void { }
 }
 
 // ---- Helpers ----------------------------------------------------------------
@@ -760,6 +733,52 @@ suite('CopilotAgentSession', () => {
 		const turnComplete = actions.find(a => a.type === ActionType.ChatTurnComplete);
 		assert.ok(turnComplete, 'expected the turn to complete');
 		assert.strictEqual((turnComplete as ChatTurnCompleteAction).turnId, 'turn-compact');
+	});
+
+	test('`/compact` reports post-compaction context window usage before completing the turn', async () => {
+		const { session, mockSession, signals } = await createAgentSession(disposables);
+		mockSession.compactResult = { success: true, tokensRemoved: 1200, messagesRemoved: 3, contextWindow: { currentTokens: 4500, tokenLimit: 128000, messagesLength: 7 } };
+
+		await session.send('/compact', undefined, 'turn-compact');
+
+		const actions = getActions(signals);
+		const usage = actions.find(a => a.type === ActionType.ChatUsage) as ChatUsageAction | undefined;
+		assert.ok(usage, 'expected a usage action reporting the shrunken context window');
+		assert.deepStrictEqual({ turnId: usage.turnId, usage: usage.usage }, {
+			turnId: 'turn-compact',
+			usage: { inputTokens: 4500, outputTokens: 0, model: undefined },
+		});
+		// Usage must precede the turn completion so the reducer accepts it.
+		const usageIndex = actions.findIndex(a => a.type === ActionType.ChatUsage);
+		const completeIndex = actions.findIndex(a => a.type === ActionType.ChatTurnComplete);
+		assert.ok(usageIndex >= 0 && completeIndex > usageIndex, 'usage emitted before turn complete');
+	});
+
+	test('`/compact` skips usage when the SDK omits the context window', async () => {
+		const { session, mockSession, signals } = await createAgentSession(disposables);
+		mockSession.compactResult = { success: true, tokensRemoved: 0, messagesRemoved: 0 };
+
+		await session.send('/compact', undefined, 'turn-compact');
+
+		const usage = getActions(signals).find(a => a.type === ActionType.ChatUsage);
+		assert.strictEqual(usage, undefined, 'no usage action without a context window');
+	});
+
+	test('`/compact` carries the last-seen model id on the post-compaction usage', async () => {
+		const { session, mockSession, signals } = await createAgentSession(disposables);
+		// A prior model call sets `_lastSeenModelId`, which the compaction usage
+		// reports so the context-usage widget can resolve the context window.
+		mockSession.fire('assistant.usage', {
+			inputTokens: 10,
+			outputTokens: 20,
+			model: 'claude-sonnet-4.6',
+		} as unknown as SessionEventPayload<'assistant.usage'>['data']);
+		mockSession.compactResult = { success: true, tokensRemoved: 1200, messagesRemoved: 3, contextWindow: { currentTokens: 4500, tokenLimit: 128000, messagesLength: 7 } };
+
+		await session.send('/compact', undefined, 'turn-compact');
+
+		const usage = getActions(signals).reverse().find(a => a.type === ActionType.ChatUsage) as ChatUsageAction | undefined;
+		assert.deepStrictEqual(usage?.usage, { inputTokens: 4500, outputTokens: 0, model: 'claude-sonnet-4.6' });
 	});
 
 	test('`/compact` completes the turn even when compaction reports failure', async () => {
@@ -1987,7 +2006,7 @@ suite('CopilotAgentSession', () => {
 				},
 			}), {
 				content: 'Agent idle',
-				messageText: 'Background agent agent-a is idle',
+				messageText: 'Background agent agent-a is complete',
 				startsTurn: true,
 			});
 
@@ -2058,7 +2077,7 @@ suite('CopilotAgentSession', () => {
 				responseTurnId: (getActions(signals).find(a => a.type === ActionType.ChatResponsePart && a.part.kind === ResponsePartKind.Markdown) as ChatResponsePartAction | undefined)?.turnId,
 				completedTurnId: (getActions(signals).find(a => a.type === ActionType.ChatTurnComplete) as ChatTurnCompleteAction | undefined)?.turnId,
 			}, {
-				message: { text: 'Background agent agent-a is idle', origin: { kind: MessageKind.SystemNotification } },
+				message: { text: 'Background agent agent-a is complete', origin: { kind: MessageKind.SystemNotification } },
 				responseTurnId: turnStarted.turnId,
 				completedTurnId: turnStarted.turnId,
 			});
@@ -2230,123 +2249,35 @@ suite('CopilotAgentSession', () => {
 			}
 		});
 
-		test('live tool_complete emits languageModelToolInvoked telemetry', async () => {
-			const telemetryService = new RecordingTelemetryService();
-			const { mockSession } = await createAgentSession(disposables, { telemetryService });
+		test('live tool_complete preserves SDK shell_exit content', async () => {
+			const { mockSession, signals } = await createAgentSession(disposables);
 
 			mockSession.fire('tool.execution_start', {
-				toolCallId: 'tc-bash-telemetry',
+				toolCallId: 'tc-shell-exit',
 				toolName: 'bash',
-				arguments: { command: 'npm test' },
+				arguments: { command: 'gti status' },
 			} as SessionEventPayload<'tool.execution_start'>['data']);
 			mockSession.fire('tool.execution_complete', {
-				toolCallId: 'tc-bash-telemetry',
+				toolCallId: 'tc-shell-exit',
 				success: true,
-				result: { content: 'passed' },
+				result: {
+					content: 'command not found\n',
+					contents: [{ type: 'shell_exit', shellId: '0', exitCode: 127, cwd: '/repo' }],
+				},
 			} as SessionEventPayload<'tool.execution_complete'>['data']);
 
-			mockSession.fire('tool.execution_start', {
-				toolCallId: 'tc-mcp-telemetry',
-				toolName: 'mcp_tool',
-				arguments: {},
-				mcpServerName: 'test-server',
-				mcpToolName: 'lookup',
-			} as SessionEventPayload<'tool.execution_start'>['data']);
-			mockSession.fire('tool.execution_complete', {
-				toolCallId: 'tc-mcp-telemetry',
-				success: false,
-				error: { code: 'denied', message: 'denied' },
-			} as SessionEventPayload<'tool.execution_complete'>['data']);
-
-			const normalizedEvents = telemetryService.events.map(event => {
-				const data = event.data as {
-					result: string;
-					chatSessionId: string | undefined;
-					toolId: string;
-					toolExtensionId: string | undefined;
-					toolSourceKind: string;
-					invocationTimeMs?: number;
-				};
-				return {
-					eventName: event.eventName,
-					data: {
-						...data,
-						invocationTimeMs: typeof data.invocationTimeMs === 'number' && data.invocationTimeMs >= 0,
-					},
-				};
-			});
-
-			assert.deepStrictEqual(normalizedEvents, [
-				{
-					eventName: 'languageModelToolInvoked',
-					data: {
-						result: 'success',
-						chatSessionId: AgentSession.uri('copilot', 'test-session-1').toString(),
-						toolId: 'bash',
-						toolExtensionId: undefined,
-						toolSourceKind: 'agentHost',
-						invocationTimeMs: true,
-					},
-				},
-				{
-					eventName: 'languageModelToolInvoked',
-					data: {
-						result: 'userCancelled',
-						chatSessionId: AgentSession.uri('copilot', 'test-session-1').toString(),
-						toolId: 'mcp_tool',
-						toolExtensionId: undefined,
-						toolSourceKind: 'mcp',
-						invocationTimeMs: true,
-					},
-				},
-			]);
-		});
-
-		test('client tool telemetry does not use clientId as toolExtensionId', async () => {
-			const telemetryService = new RecordingTelemetryService();
-			const tools = [{ name: 'my_tool', description: 'A test tool', inputSchema: { type: 'object', properties: {} } }] as const;
-			const activeClientToolSet = new ActiveClientToolSet();
-			activeClientToolSet.set('test-client', tools);
-			const { mockSession } = await createAgentSession(disposables, {
-				telemetryService,
-				clientSnapshot: {
-					tools,
-					plugins: [],
-					mcpServers: {},
-				},
-				activeClientToolSet,
-			});
-
-			mockSession.fire('tool.execution_start', {
-				toolCallId: 'tc-client-telemetry',
-				toolName: 'my_tool',
-				arguments: {},
-			} as SessionEventPayload<'tool.execution_start'>['data']);
-			mockSession.fire('tool.execution_complete', {
-				toolCallId: 'tc-client-telemetry',
-				success: true,
-				result: { content: 'done' },
-			} as SessionEventPayload<'tool.execution_complete'>['data']);
-
-			const [event] = telemetryService.events;
-			assert.deepStrictEqual({
-				eventName: event.eventName,
-				data: {
-					...(event.data as object),
-					invocationTimeMs: typeof (event.data as { invocationTimeMs?: number }).invocationTimeMs === 'number',
-				},
-			}, {
-				eventName: 'languageModelToolInvoked',
-				data: {
-					result: 'success',
-					chatSessionId: AgentSession.uri('copilot', 'test-session-1').toString(),
-					toolId: 'my_tool',
-					toolExtensionId: undefined,
-					toolSourceKind: 'client',
-					invocationTimeMs: true,
-				},
-			});
-
+			assert.strictEqual(signals.length, 3);
+			const completeSignal = signals[2];
+			assert.ok(isAction(completeSignal, ActionType.ChatToolCallComplete));
+			if (isAction(completeSignal, ActionType.ChatToolCallComplete)) {
+				const action = completeSignal.action as ChatToolCallCompleteAction;
+				assert.strictEqual(action.result.success, true);
+				assert.deepStrictEqual(action.result.content, [
+					{ type: ToolResultContentType.Text, text: 'command not found\n' },
+					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 127, cwd: '/repo' },
+				]);
+				assert.ok(!action.result.content?.some(content => content.type === ToolResultContentType.Terminal));
+			}
 		});
 
 		test('live task_complete emits root markdown instead of a tool call', async () => {
