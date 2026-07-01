@@ -17,10 +17,16 @@ import { ISessionsProvidersChangeEvent, ISessionsProvidersService } from './sess
 import { IDeleteChatOptions, ISessionChangeEvent, ISessionsProvider } from '../common/sessionsProvider.js';
 import { IChat, ISession, ISessionWorkspace, SessionStatus, ISessionType } from '../common/session.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 
 export class SessionsManagementService extends Disposable implements ISessionsManagementService {
 
 	declare readonly _serviceBrand: undefined;
+
+	/** Legacy storage key previously owned by `SessionsListModelService`. */
+	private static readonly LEGACY_READ_SESSIONS_KEY = 'sessionsListControl.readSessions';
+	/** Flag marking the one-time migration of the legacy read set as complete. */
+	private static readonly READ_STATE_MIGRATED_KEY = 'sessions.readState.migratedFromListModel';
 
 	private readonly _onDidChangeSessions = this._register(new Emitter<ISessionsChangeEvent>());
 	readonly onDidChangeSessions: Event<ISessionsChangeEvent> = this._onDidChangeSessions.event;
@@ -77,6 +83,7 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@IChatService private readonly chatService: IChatService,
 		@IChatWidgetHistoryService private readonly chatWidgetHistoryService: IChatWidgetHistoryService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
 
@@ -87,6 +94,8 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		}));
 		this._subscribeToProviders(this.sessionsProvidersService.getProviders());
 		this._sessionTypes = this._collectSessionTypes();
+
+		this._migrateLegacyReadState();
 
 		// Mirror follow-up chat requests (sent from within an existing chat
 		// widget, not through our own send paths) onto `_onDidSendRequest` so
@@ -546,6 +555,83 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 	async unarchiveSession(session: ISession): Promise<void> {
 		await this._getProvider(session)?.unarchiveSession(session.sessionId);
 		this._onDidUnarchiveSession.fire(session);
+	}
+
+	async setSessionReadState(session: ISession, isRead: boolean): Promise<void> {
+		await this._getProvider(session)?.setSessionReadState(session.sessionId, isRead);
+	}
+
+	markRead(session: ISession): Promise<void> {
+		return this.setSessionReadState(session, true);
+	}
+
+	markUnread(session: ISession): Promise<void> {
+		return this.setSessionReadState(session, false);
+	}
+
+	async markAllRead(sessions: readonly ISession[]): Promise<void> {
+		await Promise.all(sessions.map(session => this.setSessionReadState(session, true)));
+	}
+
+	/**
+	 * One-time migration of the legacy view-level read set (previously owned by
+	 * `SessionsListModelService` under `sessionsListControl.readSessions`). The
+	 * stored session ids are now seeded into provider-owned read state: each
+	 * matching session is marked read through its provider as it surfaces, and
+	 * the legacy storage is dropped once every id has been processed.
+	 */
+	private _migrateLegacyReadState(): void {
+		if (this.storageService.getBoolean(SessionsManagementService.READ_STATE_MIGRATED_KEY, StorageScope.PROFILE, false)) {
+			return;
+		}
+
+		const pending = new Set(this._readLegacyReadSessionIds());
+		if (pending.size === 0) {
+			this._finishReadStateMigration();
+			return;
+		}
+
+		const migrationListener = this._register(new DisposableStore());
+		const seed = (sessions: readonly ISession[]) => {
+			let changed = false;
+			for (const session of sessions) {
+				if (pending.delete(session.sessionId)) {
+					changed = true;
+					this.setSessionReadState(session, true).catch(err => this.logService.error(err));
+				}
+			}
+			if (changed) {
+				if (pending.size === 0) {
+					this._finishReadStateMigration();
+					migrationListener.dispose();
+				} else {
+					this.storageService.store(SessionsManagementService.LEGACY_READ_SESSIONS_KEY, JSON.stringify([...pending]), StorageScope.PROFILE, StorageTarget.USER);
+				}
+			}
+		};
+
+		migrationListener.add(this.onDidChangeSessions(e => seed(e.added.concat(e.changed))));
+		seed(this.getSessions());
+	}
+
+	private _readLegacyReadSessionIds(): string[] {
+		const raw = this.storageService.get(SessionsManagementService.LEGACY_READ_SESSIONS_KEY, StorageScope.PROFILE);
+		if (raw) {
+			try {
+				const arr = JSON.parse(raw);
+				if (Array.isArray(arr)) {
+					return arr.filter((id): id is string => typeof id === 'string');
+				}
+			} catch {
+				// ignore corrupt data
+			}
+		}
+		return [];
+	}
+
+	private _finishReadStateMigration(): void {
+		this.storageService.remove(SessionsManagementService.LEGACY_READ_SESSIONS_KEY, StorageScope.PROFILE);
+		this.storageService.store(SessionsManagementService.READ_STATE_MIGRATED_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
 	}
 
 	async deleteSession(session: ISession): Promise<void> {

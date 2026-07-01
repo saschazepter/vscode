@@ -54,6 +54,7 @@ interface IStoredLocalSession {
 	readonly lastMessageDate: number;
 	readonly workingDirectory: UriComponents;
 	readonly archived?: boolean;
+	readonly isRead?: boolean;
 	/**
 	 * Resource of the primary (parent) chat when this entry is a subsequent
 	 * chat in a multi-chat session. `undefined`/absent for primary chats.
@@ -140,7 +141,8 @@ class LocalSession extends Disposable {
 
 	private readonly _isArchived = observableValue(this, false);
 	readonly isArchived: IObservable<boolean> = this._isArchived;
-	readonly isRead: IObservable<boolean> = constObservable(true);
+	private readonly _isRead = observableValue(this, true);
+	readonly isRead: IObservable<boolean> = this._isRead;
 	readonly description: IObservable<IMarkdownString | undefined> = constObservable(undefined);
 
 	private readonly _lastTurnEnd = observableValue<Date | undefined>(this, undefined);
@@ -348,6 +350,10 @@ class LocalSession extends Disposable {
 
 	setArchived(archived: boolean): void {
 		this._isArchived.set(archived, undefined);
+	}
+
+	setRead(isRead: boolean): void {
+		this._isRead.set(isRead, undefined);
 	}
 
 	private readonly _modelTracker = this._register(new MutableDisposable());
@@ -578,6 +584,9 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 			if (stored.archived) {
 				session.setArchived(true);
 			}
+			if (stored.isRead !== undefined) {
+				session.setRead(stored.isRead);
+			}
 			// Only honour the parent link when the primary is also present in
 			// storage; otherwise promote this orphan child to a primary.
 			if (stored.parentUri) {
@@ -651,6 +660,7 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 				title: session.title.get(),
 				lastMessageDate: session.updatedAt.get().getTime(),
 				archived: session.isArchived.get(),
+				isRead: session.isRead.get(),
 			};
 			this._writeStoredSessions(sessions);
 		}
@@ -773,6 +783,15 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 		const session = this._findSession(sessionId);
 		if (session) {
 			session.setArchived(false);
+			this._updateStoredSession(session);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._toISession(session)] });
+		}
+	}
+
+	async setSessionReadState(sessionId: string, isRead: boolean): Promise<void> {
+		const session = this._findSession(sessionId);
+		if (session && session.isRead.get() !== isRead) {
+			session.setRead(isRead);
 			this._updateStoredSession(session);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._toISession(session)] });
 		}

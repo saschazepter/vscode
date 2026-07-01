@@ -1798,6 +1798,15 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 	}
 
+	async setSessionReadState(sessionId: string, isRead: boolean): Promise<void> {
+		// Read/unread is tracked on the underlying agent session model, which
+		// persists it and propagates back to the adapter's `isRead` observable
+		// via `update()`. NEW (uncommitted) sessions have no backing model and
+		// are always considered read, so there is nothing to mark.
+		const agentSession = this._findAgentSession(sessionId);
+		agentSession?.setRead(isRead);
+	}
+
 	async deleteSession(sessionId: string): Promise<void> {
 		const chatIds = this._getChatIdsInGroup(sessionId);
 

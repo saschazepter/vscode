@@ -1722,7 +1722,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		this._register(autorun(reader => {
 			const activeSession = this._sessionsService.activeSession.read(reader);
 			if (activeSession) {
-				this._sessionsListModelService.markRead(activeSession);
+				this._sessionsManagementService.markRead(activeSession);
 			}
 			if (this.visible) {
 				this.update();
@@ -2480,15 +2480,15 @@ export class SessionsList extends Disposable implements ISessionsList {
 	// -- Read/Unread --
 
 	markRead(session: ISession): void {
-		this._sessionsListModelService.markRead(session);
+		this._sessionsManagementService.markRead(session);
 	}
 
 	markUnread(session: ISession): void {
-		this._sessionsListModelService.markUnread(session);
+		this._sessionsManagementService.markUnread(session);
 	}
 
 	isSessionRead(session: ISession): boolean {
-		return this._sessionsListModelService.isSessionRead(session);
+		return session.isRead.get();
 	}
 
 	// -- Session type filtering --

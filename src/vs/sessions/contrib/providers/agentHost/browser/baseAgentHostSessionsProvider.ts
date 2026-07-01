@@ -249,12 +249,11 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 	readonly mode: ISettableObservable<{ readonly id: string; readonly kind: string } | undefined>;
 	readonly loading: IObservable<boolean>;
 	readonly isArchived = observableValue('isArchived', false);
-	// Agent host sessions defer unread tracking to the workbench view-level
-	// state (see SessionsListModelService). The agent host protocol still
-	// carries an isRead bit but exposing it here would conflict with the
-	// view's own tracking, so we always report `true` from this observable
-	// and let the view be the source of truth.
-	readonly isRead = constObservable(true);
+	// Read/unread state is owned by the provider and backed by the agent host
+	// protocol's `IsRead` status bit (persisted as session metadata). It is
+	// seeded from the session metadata, kept in sync with protocol updates, and
+	// mutated via {@link BaseAgentHostSessionsProvider.setSessionReadState}.
+	readonly isRead = observableValue('isRead', true);
 	readonly description: IObservable<IMarkdownString | undefined>;
 	readonly lastTurnEnd: ISettableObservable<Date | undefined>;
 	readonly gitHubInfo: IObservable<IGitHubInfo | undefined>;
@@ -472,6 +471,10 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 
 		if (metadata.isArchived) {
 			this.isArchived.set(true, undefined);
+		}
+
+		if (metadata.isRead !== undefined) {
+			this.isRead.set(metadata.isRead, undefined);
 		}
 
 		this.isActiveSessionObs = derived(this, reader => {
@@ -761,6 +764,11 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 
 			if (metadata.isArchived !== undefined && metadata.isArchived !== this.isArchived.get()) {
 				this.isArchived.set(metadata.isArchived, tx);
+				didChange = true;
+			}
+
+			if (metadata.isRead !== undefined && metadata.isRead !== this.isRead.get()) {
+				this.isRead.set(metadata.isRead, tx);
 				didChange = true;
 			}
 
@@ -2381,6 +2389,21 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
+	async setSessionReadState(sessionId: string, isRead: boolean): Promise<void> {
+		const rawId = this._rawIdFromChatId(sessionId);
+		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
+		if (cached && rawId && cached.isRead.get() !== isRead) {
+			cached.isRead.set(isRead, undefined);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
+			const connection = this.connection;
+			if (connection) {
+				const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
+				const action = { type: ActionType.SessionIsReadChanged as const, isRead };
+				connection.dispatch(sessionUri.toString(), action);
+			}
+		}
+	}
+
 	async deleteSession(sessionId: string): Promise<void> {
 		await this.deleteSessions([sessionId]);
 	}
@@ -3212,6 +3235,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				this._handleAgentChanged(e.channel, e.action.agent);
 			} else if (e.action.type === ActionType.SessionIsArchivedChanged && isSessionAction(e.action)) {
 				this._handleIsArchivedChanged(e.channel, e.action.isArchived);
+			} else if (e.action.type === ActionType.SessionIsReadChanged && isSessionAction(e.action)) {
+				this._handleIsReadChanged(e.channel, e.action.isRead);
 			} else if (e.action.type === ActionType.SessionConfigChanged && isSessionAction(e.action)) {
 				this._handleConfigChanged(e.channel, e.action.config, e.action.replace === true);
 			} else if (e.action.type === ActionType.SessionChangesetsChanged && isSessionAction(e.action)) {
@@ -3250,6 +3275,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			workingDirectory: workingDir,
 			changes: summary.changes,
 			isArchived: !!(summary.status & ProtocolSessionStatus.IsArchived),
+			isRead: !!(summary.status & ProtocolSessionStatus.IsRead),
 		};
 		const cached = this.createAdapter(meta);
 		this._sessionCache.set(rawId, cached);
@@ -3315,6 +3341,15 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 	}
 
+	private _handleIsReadChanged(session: string, isRead: boolean): void {
+		const rawId = AgentSession.id(session);
+		const cached = this._sessionCache.get(rawId);
+		if (cached && cached.isRead.get() !== isRead) {
+			cached.isRead.set(isRead, undefined);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [cached] });
+		}
+	}
+
 	private _handleSessionSummaryChanged(session: string, changes: Partial<SessionSummary>): void {
 		transaction((tx) => {
 			const rawId = AgentSession.id(session);
@@ -3335,6 +3370,12 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				const isArchived = !!(changes.status & ProtocolSessionStatus.IsArchived);
 				if (isArchived !== cached.isArchived.get()) {
 					cached.isArchived.set(isArchived, tx);
+					didChange = true;
+				}
+
+				const isRead = !!(changes.status & ProtocolSessionStatus.IsRead);
+				if (isRead !== cached.isRead.get()) {
+					cached.isRead.set(isRead, tx);
 					didChange = true;
 				}
 			}
