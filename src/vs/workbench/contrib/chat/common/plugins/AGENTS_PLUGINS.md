@@ -144,6 +144,7 @@ Checked in order per repository:
 Orchestrates install and update workflows:
 
 - `installPlugin()` — checks marketplace trust, delegates to the appropriate source strategy to ensure files are locally available, and registers the plugin in installed storage.
+- `installPluginFromSource()` — installs from a source string: GitHub shorthand (`owner/repo`), a git clone URL, or a local folder path (`file://` URI, absolute path, or `~`-prefixed path). Local folders are inspected to decide whether they are a marketplace (registered under `chat.pluginMarketplaces`) or a standalone plugin (registered under `chat.pluginLocations`).
 - `updatePlugin()` / `updateAllPlugins()` — pulls latest changes for cloned repositories and re-runs package-manager installs where applicable.
 
 ### Plugin Source Strategies (IPluginSource)
