@@ -242,17 +242,10 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const voiceController = accessor.get(IVoiceSessionController);
-		// In auto-send mode, toggling voice mode off disconnects entirely.
-		// The auto-listen loop means there's no natural "idle" state to return to.
-		const configService = accessor.get(IConfigurationService);
-		const autoSendDelay = configService.getValue<number>('agents.voice.autoSendDelay') ?? 500;
-		if (autoSendDelay >= 0) {
-			voiceController.disconnect();
-		} else {
-			// Manual mode: just stop recording
-			voiceController.pttDown();
-			voiceController.pttUp();
-		}
+		// Stop recording and the auto-listen loop but keep the WebSocket
+		// connected so the user can resume without reconnecting. Use the
+		// separate "Disconnect Voice Mode" button to fully end the session.
+		voiceController.stopListening();
 	}
 });
 
@@ -269,6 +262,18 @@ registerAction2(class extends Action2 {
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
 				AGENTS_VOICE_CONNECTED.isEqualTo(true),
 			),
+			menu: {
+				id: MenuId.ChatExecute,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
+					ChatContextKeys.currentlyEditing.negate(),
+					AGENTS_VOICE_CONNECTED.isEqualTo(true),
+					AGENTS_VOICE_INITIATED_HERE.isEqualTo(true),
+				),
+				group: 'navigation',
+				order: -9
+			},
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {

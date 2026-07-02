@@ -83,6 +83,16 @@ export interface IVoiceSessionController {
 	pttUp(): void;
 
 	/**
+	 * Stop the current recording / auto-listen loop without disconnecting.
+	 * Any in-flight push-to-talk press is finished through the normal
+	 * `ptt_end` path (the backend finalizes the turn) and the auto-listen
+	 * re-arm loop is suppressed until the user talks again. The WebSocket
+	 * stays connected so the user can resume via the Voice Mode button
+	 * without a new handshake. Use `disconnect()` to fully end the session.
+	 */
+	stopListening(): void;
+
+	/**
 	 * Mark a session as having been cancelled by the user from VS Code UI. The
 	 * next state-change detected for this session (typically the chat model
 	 * transitioning to `idle`) will be suppressed so the backend doesn't
@@ -149,6 +159,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// --- Internal state ---
 	private _pttHeld = false;
 	private _pttToggleMode = false;
+	/** When true, the auto-listen loop is suppressed (user pressed Stop
+	 *  Recording). Cleared on the next explicit `pttDown` or on connect. */
+	private _autoListenSuppressed = false;
 	private _pttCurrentTurnId = '';
 	private _window: (Window & typeof globalThis) | undefined;
 	private readonly _voiceEventDisposables = this._register(new DisposableStore());
@@ -1117,6 +1130,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._clearAutoListenTimer();
 		this._clearAwaitingReply();
 		this._autoListenAfterGreeting = false;
+		this._autoListenSuppressed = false;
 		this._hasPlayedInitialListenCue = false;
 		this._replyPlayedSinceSend = false;
 		this._audioQueue.length = 0;
@@ -1205,6 +1219,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		if (this._pttHeld) { return; }
 		this._pttHeld = true;
+		this._autoListenSuppressed = false;
 		this._autoListenAfterGreeting = false;
 		this._clearAutoListenTimer();
 		this._pttCurrentTurnId = generateUuid();
@@ -1285,6 +1300,26 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 
 		this._finishPtt();
+	}
+
+	stopListening(): void {
+		// Stop the current recording / auto-listen loop WITHOUT tearing down
+		// the WebSocket. Any in-flight press is finished through the normal
+		// `ptt_end` path so the backend finalizes the turn; the auto-listen
+		// re-arm loop (auto-send mode) is suppressed until the user talks
+		// again. The connection stays open so the user can resume via the
+		// Voice Mode button without a new handshake.
+		if (!this._isConnected.get()) { return; }
+		this._autoListenSuppressed = true;
+		this._pttToggleMode = false;
+		this._clearAutoListenTimer();
+		this._clearAutoSendSilenceTimer();
+		if (this._pttHeld) {
+			this._finishPtt('local');
+		} else {
+			this._voiceState.set('idle', undefined);
+			this._statusText.set('Tap to start', undefined);
+		}
 	}
 
 	/**
@@ -1384,7 +1419,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Re-enter listening via synthetic short tap. */
 	private _enterAutoListen(): void {
 		this._clearAutoListenTimer();
-		if (!this._isConnected.get() || this._pttHeld) {
+		if (this._autoListenSuppressed || !this._isConnected.get() || this._pttHeld) {
 			return;
 		}
 		// Don't enter listening if audio is still playing or queued.
