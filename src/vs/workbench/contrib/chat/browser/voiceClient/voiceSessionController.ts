@@ -924,6 +924,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._startUserTurn();
 		}));
 
+		// Backend ended the held turn itself (server VAD silence / stop phrase).
+		// Treat it like a local ptt_end — stop capture, move to processing — but
+		// do NOT send our own ptt_end. Guard against double-ending: ignore if we
+		// already released locally, or if the id is for a different turn.
+		this._voiceEventDisposables.add(this.voiceClientService.onTurnAutoEnded(e => {
+			if (!this._pttHeld) { return; }
+			if (e.turnId && e.turnId !== this._pttCurrentTurnId) { return; }
+			this._pttToggleMode = false;
+			this._finishPtt('auto');
+		}));
+
 		// Transcription — mutate the current user turn at the tail of the buffer.
 		// We DO NOT send the transcript to chat here. The backend voice LLM
 		// decides whether the utterance is a task for the coding agent (→ emits
@@ -1276,7 +1287,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._finishPtt();
 	}
 
-	private _finishPtt(): void {
+	/**
+	 * Finish the current push-to-talk press.
+	 *
+	 * ``reason`` is ``'local'`` for a user-driven end (button release / toggle
+	 * tap / keyword) — the mic drains its tail and the ``onPttEnd`` → ``ptt_end``
+	 * path fires. It is ``'auto'`` when the backend ended the turn itself
+	 * (``turn_auto_ended``): the mic is aborted with no drain and NO ``ptt_end``
+	 * is sent for the turn.
+	 */
+	private _finishPtt(reason: 'local' | 'auto' = 'local'): void {
 		if (!this._pttHeld) { return; }
 		this._clearAutoSendSilenceTimer();
 		this._clearAutoListenTimer();
@@ -1293,7 +1313,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._replyPlayedSinceSend = false;
 		this._clearAwaitingReply();
 		this._suppressIncomingAudio = false;
-		this.micCaptureService.pttUp();
+		if (reason === 'auto') {
+			// Backend already ended the turn — stop capturing without draining
+			// more audio and without emitting our own ptt_end.
+			this.micCaptureService.abortPtt();
+		} else {
+			this.micCaptureService.pttUp();
+		}
 		if (this.accessibilityService.isScreenReaderOptimized()) {
 			this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStopped);
 		}
