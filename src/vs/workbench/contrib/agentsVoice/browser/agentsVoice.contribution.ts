@@ -472,10 +472,10 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
-			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn when `agents.voice.turn.autoEndMode` is `vad` or `both`. The backend may clamp this to a supported range."),
+			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn when `agents.voice.turn.autoEndMode` is `vad` or `both`. The backend clamps this to its supported range (currently 200–5000 ms) and is the source of truth."),
 			default: 800,
 			minimum: 200,
-			maximum: 10000,
+			maximum: 5000,
 			scope: ConfigurationScope.APPLICATION,
 			included: false,
 			tags: ['advanced'],
