@@ -94,6 +94,21 @@
 	font-size: var(--vscode-agents-fontSize-label1);
 	font-weight: var(--vscode-agents-fontWeight-semiBold);
 	padding: 2px 4px;
+
+	.working-set-lines-added,
+	.working-set-lines-removed {
+		position: relative;
+		display: inline-grid;
+		overflow: hidden;
+		justify-items: end;
+		line-height: 1;
+
+		span {
+			grid-area: 1 / 1;
+			display: block;
+			will-change: transform, opacity;
+		}
+	}
 }
 
 .changes-view-body .changes-files-header-right-toolbar .working-set-lines-added {

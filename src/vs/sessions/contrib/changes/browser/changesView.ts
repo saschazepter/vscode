@@ -1596,12 +1596,15 @@ registerAction2(RevealCIChecksAction);
 class ChangesDiffStatsActionItem extends ActionViewItem {
 	private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
 
+	private readonly addedLinesCounterWidget: AnimatedCounterWidget;
+	private readonly removedLinesCounterWidget: AnimatedCounterWidget;
+
 	constructor(
 		action: MenuItemAction,
 		options: IActionViewItemOptions,
 		@IChangesViewService changesViewService: IChangesViewService
 	) {
-		super(null, action, { ...options, icon: false, label: true });
+		super(null, action, { ...options, icon: false, label: false });
 
 		const diffStatsRawObs = derivedObservableWithCache<{ files: number; insertions: number; deletions: number } | undefined>(this,
 			(reader, lastValue) => {
@@ -1631,33 +1634,40 @@ class ChangesDiffStatsActionItem extends ActionViewItem {
 				return;
 			}
 
-			this.updateLabel();
 			this.updateTooltip();
 		}));
+
+		this.addedLinesCounterWidget = new AnimatedCounterWidget({
+			prefix: '+',
+			direction: 'topToBottom',
+			cssClassName: 'working-set-lines-added',
+			count: derivedObservableWithCache<number>(this, (reader) => {
+				const diffStats = this.diffStatsObs.read(reader);
+				return diffStats ? diffStats.insertions : 0;
+			})
+		});
+
+		this.removedLinesCounterWidget = new AnimatedCounterWidget({
+			prefix: '-',
+			direction: 'bottomToTop',
+			cssClassName: 'working-set-lines-removed',
+			count: derivedObservableWithCache<number>(this, (reader) => {
+				const diffStats = this.diffStatsObs.read(reader);
+				return diffStats ? diffStats.deletions : 0;
+			})
+		});
 	}
 
 	override render(container: HTMLElement): void {
 		super.render(container);
 		container.classList.add('changes-diff-stats-action');
-	}
 
-	protected override updateLabel(): void {
 		if (!this.label) {
 			return;
 		}
 
-		const diffStats = this.diffStatsObs.get();
-		if (diffStats === undefined) {
-			return;
-		}
-
-		const { insertions, deletions } = diffStats;
-
-		dom.reset(
-			this.label,
-			dom.$('span.working-set-lines-added', undefined, `+${insertions}`),
-			dom.$('span.working-set-lines-removed', undefined, `-${deletions}`)
-		);
+		this.addedLinesCounterWidget.render(this.label);
+		this.removedLinesCounterWidget.render(this.label);
 	}
 
 	protected override getTooltip(): string | undefined {
@@ -1668,5 +1678,88 @@ class ChangesDiffStatsActionItem extends ActionViewItem {
 
 		const { files, insertions, deletions } = diffStats;
 		return localize('changesView.diffStats.label', '{0} files, {1} additions, {2} deletions', files, insertions, deletions);
+	}
+}
+
+interface IAnimatedCounterWidgetOptions {
+	readonly prefix?: string;
+	readonly cssClassName?: string;
+	/**
+	 * The direction of the animation when the count
+	 * increases. The direction will be the opposite
+	 * when the count decreases.
+	 * */
+	readonly direction?: 'topToBottom' | 'bottomToTop';
+	readonly duration?: number;
+	readonly count: IObservable<number>;
+}
+
+class AnimatedCounterWidget extends Disposable {
+	private _element: HTMLElement | undefined;
+	private _count: number | undefined;
+	private readonly _animationOptions: KeyframeAnimationOptions;
+
+	constructor(private readonly _options: IAnimatedCounterWidgetOptions) {
+		super();
+
+		this._animationOptions = {
+			duration: _options.duration ?? 240,
+			easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+			fill: 'both',
+		} satisfies KeyframeAnimationOptions;
+	}
+
+	render(container: HTMLElement) {
+		const { cssClassName } = this._options;
+
+		this._element = cssClassName
+			? dom.$(`span.${cssClassName}`)
+			: dom.$('span');
+
+		this._element.appendChild(dom.$(`span`));
+		container.appendChild(this._element);
+
+		this._register(autorun(reader => {
+			this._update(this._options.count.read(reader));
+		}));
+	}
+
+	private _update(count: number): void {
+		if (!this._element || this._element.children.length === 0) {
+			return;
+		}
+
+		const outgoingElement = this._element.children[0];
+
+		// Create incoming element
+		const incomingElementText = `${this._options.prefix ?? ''}${count}`;
+		const incomingElement = dom.$(`span`, undefined, incomingElementText);
+		this._element?.appendChild(incomingElement);
+
+		const directionOption = this._options.direction ?? 'topToBottom';
+		const directionTopBottom = directionOption === 'topToBottom'
+			? count > (this._count ?? 0)
+			: count < (this._count ?? 0);
+
+		const enterFrom = directionTopBottom ? '-100%' : '100%';
+		const exitTo = directionTopBottom ? '100%' : '-100%';
+
+		incomingElement.animate([
+			{ transform: `translateY(${enterFrom})`, opacity: 0 },
+			{ transform: 'translateY(0)', opacity: 1 },
+		], this._animationOptions);
+
+		const exit = outgoingElement.animate([
+			{ transform: 'translateY(0)', opacity: 1 },
+			{ transform: `translateY(${exitTo})`, opacity: 0 },
+		], this._animationOptions);
+
+		const cleanup = () => {
+			this._count = count;
+			this._element?.removeChild(outgoingElement);
+		};
+
+		exit.addEventListener('cancel', cleanup);
+		exit.addEventListener('finish', cleanup);
 	}
 }
