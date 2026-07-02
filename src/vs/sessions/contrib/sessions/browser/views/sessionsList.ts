@@ -2163,8 +2163,8 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 			// Default collapse state for older time sections
 			let defaultCollapsed: boolean | ObjectTreeElementCollapseState = ObjectTreeElementCollapseState.PreserveOrExpanded;
-			if (grouping === SessionsGrouping.Date && hasTodaySessions) {
-				const olderSections = ['yesterday', 'thisWeek', 'older', 'archived'];
+			if (grouping === SessionsGrouping.Date && hasRecentSessions) {
+					const olderSections = ['older', 'archived'];
 				if (olderSections.includes(section.id)) {
 					defaultCollapsed = ObjectTreeElementCollapseState.PreserveOrCollapsed;
 				}
@@ -3215,27 +3215,26 @@ export function groupByWorkspace(sessions: ISession[]): ISessionSection[] {
 	return result;
 }
 
+/** Maximum number of sessions shown in the "Recent" date section. */
+const RECENT_SESSIONS_LIMIT = 10;
+
 export function groupByDate(sessions: ISession[], sorting: SessionsSorting, getSortKey?: (session: ISession, sorting: SessionsSorting) => number): ISessionSection[] {
 	const key = getSortKey ?? defaultSortKey;
 	const now = new Date();
 	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-	const startOfYesterday = startOfToday - 86_400_000;
 	const startOfWeek = startOfToday - 7 * 86_400_000;
 
-	const today: ISession[] = [];
-	const yesterday: ISession[] = [];
-	const week: ISession[] = [];
+	const recent: ISession[] = [];
 	const older: ISession[] = [];
 
+	// `sessions` arrive sorted most-recent-first, so the first sessions within
+	// the last 7 days (capped at RECENT_SESSIONS_LIMIT) form the "Recent"
+	// section; everything else falls into "Older".
 	for (const session of sessions) {
 		const time = key(session, sorting);
 
-		if (time >= startOfToday) {
-			today.push(session);
-		} else if (time >= startOfYesterday) {
-			yesterday.push(session);
-		} else if (time >= startOfWeek) {
-			week.push(session);
+		if (time >= startOfWeek && recent.length < RECENT_SESSIONS_LIMIT) {
+			recent.push(session);
 		} else {
 			older.push(session);
 		}
@@ -3248,9 +3247,7 @@ export function groupByDate(sessions: ISession[], sorting: SessionsSorting, getS
 		}
 	};
 
-	addGroup('today', localize('today', "Today"), today);
-	addGroup('yesterday', localize('yesterday', "Yesterday"), yesterday);
-	addGroup('thisWeek', localize('lastSevenDays', "Last 7 Days"), week);
+	addGroup('recent', localize('recent', "Recent"), recent);
 	addGroup('older', localize('older', "Older"), older);
 
 	return sections;
