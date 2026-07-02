@@ -12,27 +12,18 @@ import { ActionType } from '../../../../../../platform/agentHost/common/state/pr
 import { ROOT_STATE_URI } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 
 /**
- * A single agent-host root-config key managed by an
- * {@link AgentHostRootConfigForwarder}.
- *
- * A descriptor only says *what* its value is and *when* to recompute it - the
- * forwarder owns the schema gate, the value-equality guard, the dispatch, and
- * the hydration-retry. Adding a new managed key is one entry, no copy/paste.
+ * A single root-config key managed by an {@link AgentHostRootConfigForwarder}:
+ * says only *what* its value is and *when* to recompute it. The forwarder owns
+ * the schema gate, value-equality guard, dispatch, and hydration retry.
  */
 export interface IForwardedRootConfigKey {
 	/** The root-config key this descriptor owns. */
 	readonly key: AgentHostConfigKey | CopilotCliConfigKey;
 
-	/**
-	 * Compute the desired value for {@link key}. Return `undefined` to skip the
-	 * push (e.g. the value can't be resolved yet). May be async.
-	 */
+	/** Compute the desired value; return `undefined` to skip the push. May be async. */
 	computeValue(): unknown | Promise<unknown>;
 
-	/**
-	 * Wire up the events / settings whose change should re-push this key.
-	 * Disposables go in `store`; call `push` to trigger a re-push.
-	 */
+	/** Wire up the triggers that should re-push this key; add disposables to `store`, call `push`. */
 	registerTriggers(store: DisposableStore, push: () => void): void;
 }
 
@@ -42,8 +33,8 @@ export interface IForwardedRootConfigKey {
  * via `getRootValue`. Not a contribution itself: a workbench contribution
  * constructs one with its own {@link IForwardedRootConfigKey} table and drives
  * {@link start} / {@link stop} from its own enablement gate. Shared by
- * `AgentHostTerminalContribution` and `AgentHostCopilotPromptContribution` so
- * the three correctness constraints below live in exactly one place.
+ * `AgentHostTerminalContribution` and `AgentHostCopilotCliSettingsContribution`
+ * so the three correctness constraints below live in exactly one place.
  *
  * The three constraints forwarding into the shared root config requires:
  *  1. **Schema gate.** A key is dispatched only once the host advertises it in
@@ -72,9 +63,8 @@ export class AgentHostRootConfigForwarder extends Disposable {
 	private readonly _listeners = this._register(new MutableDisposable<DisposableStore>());
 
 	/**
-	 * Managed keys whose schema the host has already advertised. Used to re-push
-	 * only when a key's schema *first* appears (hydration) rather than on every
-	 * root-state change - see {@link _onRootStateChanged}.
+	 * Managed keys whose schema the host has already advertised, so a key is
+	 * re-pushed only when its schema *first* appears (see {@link _onRootStateChanged}).
 	 */
 	private readonly _schemaSeen = new Set<AgentHostConfigKey | CopilotCliConfigKey>();
 
@@ -87,8 +77,7 @@ export class AgentHostRootConfigForwarder extends Disposable {
 
 	/**
 	 * Begin listening for triggers / agent-host (re)starts / schema hydration and
-	 * do the initial push. Idempotent: a second call while already started is a
-	 * no-op.
+	 * do the initial push. Idempotent.
 	 */
 	start(): void {
 		if (this._listeners.value) {
@@ -100,9 +89,8 @@ export class AgentHostRootConfigForwarder extends Disposable {
 			entry.registerTriggers(store, () => this._push(entry));
 		}
 		store.add(this._agentHostService.rootState.onDidChange(() => this._onRootStateChanged()));
-		// Seed the schema-seen set from the current state so the immediate
-		// `reconcile()` below counts as the initial push for whatever keys are
-		// already advertised (rather than being re-fired by `_onRootStateChanged`).
+		// Seed schema-seen so the immediate reconcile() counts as the initial push
+		// for already-advertised keys (rather than being re-fired by _onRootStateChanged).
 		this._schemaSeen.clear();
 		for (const entry of this._keys) {
 			if (this._schemaHasKey(entry.key)) {
@@ -128,9 +116,9 @@ export class AgentHostRootConfigForwarder extends Disposable {
 
 	/**
 	 * Push managed values only for keys whose schema has just transitioned from
-	 * absent to present (host root-config hydration). Value-only changes - e.g.
-	 * another window writing a different value into the shared root config - are
-	 * intentionally ignored so multiple windows don't fight in an infinite loop.
+	 * absent to present (host root-config hydration). Value-only changes — e.g.
+	 * another window writing a different value — are ignored so windows don't
+	 * fight in an infinite loop.
 	 */
 	private _onRootStateChanged(): void {
 		for (const entry of this._keys) {
@@ -154,16 +142,11 @@ export class AgentHostRootConfigForwarder extends Disposable {
 	}
 
 	/**
-	 * Shared push pipeline for a managed root-config key:
-	 *
-	 * 1. No-op if the host's root-config schema doesn't advertise the key (the
-	 *    schema gate). Retried automatically when `rootState` hydrates (see
-	 *    {@link _onRootStateChanged}).
-	 * 2. Compute the desired value (may be async); `undefined` skips the push.
-	 * 3. Skip if the host already holds a structurally-equal value - avoids
-	 *    redundant dispatches and, critically, breaks cross-window update loops
-	 *    (#314385). Structural (not `===`) so an unchanged object value never
-	 *    re-dispatches.
+	 * Push pipeline for a managed key: no-op if the schema doesn't advertise it
+	 * (retried on hydration); compute the value (`undefined` skips); dispatch only
+	 * if the host doesn't already hold a structurally-equal value — which breaks
+	 * cross-window loops (#314385) and, being structural not `===`, never
+	 * re-dispatches an unchanged object value.
 	 */
 	private async _push(entry: IForwardedRootConfigKey): Promise<void> {
 		if (!this._schemaHasKey(entry.key)) {
@@ -180,10 +163,8 @@ export class AgentHostRootConfigForwarder extends Disposable {
 			return;
 		}
 
-		// Re-check after the await: a host restart / schema refresh may have
-		// landed while we resolved. Re-run the schema gate (not just a config
-		// existence check) so we never dispatch a key the *current* schema no
-		// longer advertises - protects older / 3rd-party hosts.
+		// Re-check after the await: a host restart / schema refresh may have landed
+		// while we resolved, so never dispatch a key the current schema dropped.
 		if (!this._schemaHasKey(entry.key)) {
 			return;
 		}

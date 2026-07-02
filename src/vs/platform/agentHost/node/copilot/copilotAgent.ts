@@ -2579,11 +2579,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const longContextWindow = this._longContextWindowFor(model.id);
 		const freeLongContext = this._isFreeLongContext(model.id);
 		const context = this._getChatContext(chat);
-		// Same override the launcher applies at session create (validated + logged
-		// once by resolveCopilotReasoningEffort), so a host-level reasoning-effort
-		// override survives a mid-session model change. Computed at the point of use
-		// so the provisional-session path — which stores the model and launches
-		// later via the create path — does not resolve or log it prematurely.
+		// Same override the launcher applies at create (validated + logged by
+		// resolveCopilotReasoningEffort); computed at the point of use so the
+		// provisional-session path doesn't resolve or log it prematurely.
 		if (context.isPeerChat) {
 			await context.target?.setModel(model.id, resolveCopilotReasoningEffort(model, this._configurationService, this._logService, context.sessionId), getCopilotContextTier(model, longContextWindow, freeLongContext));
 			const backing = this._chatBackings.get(context.chatKey);

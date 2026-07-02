@@ -8,59 +8,43 @@ import { createSchema, schemaProperty } from './agentHostSchema.js';
 import type { ModelSelection } from './state/protocol/state.js';
 
 /**
- * Root-config keys owned by the Copilot CLI (Copilot SDK) provider. Kept in
- * their own schema — separate from the provider-agnostic
- * `agentHostCustomizationConfigSchema` — because they are consumed exclusively
- * by the Copilot CLI session path (`CopilotSessionLauncher` / `CopilotAgent`);
- * the Claude and Codex providers never read them.
+ * Root-config keys consumed exclusively by the Copilot CLI provider
+ * (`CopilotSessionLauncher` / `CopilotAgent`) — kept out of the
+ * provider-agnostic `agentHostCustomizationConfigSchema`.
  */
 export const enum CopilotCliConfigKey {
-	/** When true, Copilot SDK sessions use Agent Host's custom terminal tool override instead of the SDK's default terminal behavior. Disabled by default. */
+	/** Use Agent Host's custom terminal tool instead of the SDK's default. Off by default. */
 	EnableCustomTerminalTool = 'enableCustomTerminalTool',
-	/** When true, Copilot SDK sessions enable the rubber duck critic subagent. */
+	/** Enable the rubber duck critic subagent. */
 	RubberDuck = 'rubberDuck',
-	/**
-	 * When true, Copilot SDK sessions running a Claude Opus 4.8 model apply the
-	 * Opus 4.8-tuned system-prompt section overrides on top of the SDK
-	 * foundation prompt. Opt-in; disabled by default.
-	 */
+	/** Apply Opus 4.8-tuned system-prompt overrides on Opus 4.8 models. Off by default. */
 	Opus48Prompt = 'opus48Prompt',
-	/**
-	 * Overrides the reasoning effort for Copilot SDK sessions regardless of
-	 * the per-model picker value. Applied at session create and on
-	 * mid-session model changes; an unsupported value is ignored. Mirrors the
-	 * Copilot extension's `chat.reasoningEffortOverride` eval/debug setting.
-	 */
+	/** Override reasoning effort regardless of the picker value; unsupported values are ignored. */
 	ReasoningEffortOverride = 'reasoningEffortOverride',
-	/**
-	 * Per-model capability overrides keyed by model id, mirroring the Copilot
-	 * extension's `chat.modelCapabilityOverrides` eval setting. Aliasing an
-	 * unknown/preview model id to a known `family` routes it to that family's
-	 * per-model system prompt (see `AgentHostPromptRegistry`); the model id
-	 * sent to the runtime is unaffected.
-	 */
+	/** Per-model capability overrides (family aliases) keyed by model id. */
 	ModelCapabilityOverrides = 'modelCapabilityOverrides',
 }
 
-/**
- * Per-model capability override, the agent-host equivalent of the Copilot
- * extension's `IModelCapabilityOverride`. Currently only prompt routing
- * consumes the alias; new family-based capability heuristics should honor it
- * too.
- */
+// VS Code `chat.agentHost.*` setting IDs that feed the root-config keys above,
+// kept beside the keys they forward to. Registered in `chat.shared.contribution.ts`
+// and forwarded into the host's root config by `AgentHostCopilotCliSettingsContribution`
+// (and, for the terminal-tool toggle, `AgentHostTerminalContribution`).
+
+export const AgentHostCustomTerminalToolEnabledSettingId = 'chat.agentHost.customTerminalTool.enabled';
+
+export const AgentHostOpus48PromptEnabledSettingId = 'chat.agentHost.opus48Prompt.enabled';
+
+export const AgentHostReasoningEffortOverrideSettingId = 'chat.agentHost.reasoningEffortOverride';
+
+export const AgentHostModelCapabilityOverridesSettingId = 'chat.agentHost.modelCapabilityOverrides';
+
+/** Per-model capability override; the agent-host equivalent of the extension's `IModelCapabilityOverride`. */
 interface ICopilotCliModelCapabilityOverride {
-	/**
-	 * Alias the model's family for prompt/capability routing (e.g. set to
-	 * `"claude-opus-4-8"` to make a preview model receive the Opus 4.8-tuned
-	 * system prompt).
-	 */
+	/** Alias the model's family for prompt/capability routing (e.g. `"claude-opus-4-8"`). */
 	readonly family?: string;
 }
 
-/**
- * Map of model id → capability override, as stored in the
- * {@link CopilotCliConfigKey.ModelCapabilityOverrides} root config value.
- */
+/** Map of model id → capability override. */
 export type CopilotCliModelCapabilityOverrides = Record<string, ICopilotCliModelCapabilityOverride>;
 
 export const copilotCliConfigSchema = createSchema({
@@ -108,24 +92,16 @@ export const copilotCliConfigSchema = createSchema({
 	}),
 });
 
-/**
- * Returns the family alias configured for `modelId`, or `undefined` when no
- * usable alias is configured. The values bag is forwarded from user settings,
- * so a malformed entry (missing or non-string `family`) is treated as unset.
- */
+/** Returns the configured family alias for `modelId`, or `undefined`. Malformed entries are treated as unset. */
 function getModelFamilyAlias(overrides: CopilotCliModelCapabilityOverrides | undefined, modelId: string): string | undefined {
 	const family = overrides?.[modelId]?.family;
 	return typeof family === 'string' && family.length > 0 ? family : undefined;
 }
 
 /**
- * Substitutes a configured family alias for the model id, the agent-host
- * equivalent of the Copilot extension aliasing an endpoint's `family`. Prompt
- * contributors match on model-id prefixes as the family stand-in, so an
- * aliased selection flows through both `familyPrefixes` matching and a
- * contributor's own version checks (e.g. `isOpus48`). Picker values in
- * `model.config` are preserved. Returns the input selection unchanged when no
- * usable alias is configured.
+ * Substitutes a configured family alias for the model id so an aliased preview model
+ * routes to a known family's prompt contributor. `model.config` picker values are
+ * preserved; returns the input unchanged when no alias applies.
  */
 export function applyModelFamilyAlias(model: ModelSelection | undefined, overrides: CopilotCliModelCapabilityOverrides | undefined): ModelSelection | undefined {
 	if (!model) {

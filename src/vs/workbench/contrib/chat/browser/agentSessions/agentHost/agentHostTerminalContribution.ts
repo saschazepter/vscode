@@ -6,9 +6,9 @@
 import { OS } from '../../../../../../base/common/platform.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../../nls.js';
-import { AgentHostCustomTerminalToolEnabledSettingId, AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
 import { AgentHostConfigKey } from '../../../../../../platform/agentHost/common/agentHostCustomizationConfig.js';
-import { CopilotCliConfigKey } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
+import { AgentHostCustomTerminalToolEnabledSettingId, CopilotCliConfigKey } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
@@ -35,7 +35,7 @@ const AGENT_HOST_SHELL_DEPENDENT_SETTINGS = [
  * and forwards the terminal-related agent-host root-config keys (the resolved
  * default shell and the custom-terminal-tool toggle) via the shared
  * {@link AgentHostRootConfigForwarder} (also used by
- * `AgentHostCopilotPromptContribution`).
+ * `AgentHostCopilotCliSettingsContribution`).
  *
  * Gated on the `chat.agentHost.enabled` setting.
  */

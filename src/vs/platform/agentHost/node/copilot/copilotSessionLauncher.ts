@@ -216,10 +216,8 @@ function shouldCreateEmptySessionAfterResumeError(err: unknown): boolean {
 }
 
 /**
- * Resolves the reasoning effort for a Copilot SDK session: a valid
- * {@link CopilotCliConfigKey.ReasoningEffortOverride} value wins over the
- * model picker's thinking level; an unsupported override value is ignored so
- * a typo degrades to the picker value rather than breaking the session.
+ * Resolves the reasoning effort: a valid override wins over the model picker's
+ * thinking level; an unsupported override is ignored (degrades to the picker).
  */
 export function getCopilotReasoningEffort(model: ModelSelection | undefined, effortOverride?: string): SessionConfig['reasoningEffort'] {
 	if (isReasoningEffort(effortOverride)) {
@@ -230,16 +228,9 @@ export function getCopilotReasoningEffort(model: ModelSelection | undefined, eff
 }
 
 /**
- * Resolves the reasoning effort for a Copilot SDK session, applying the
- * host-level {@link CopilotCliConfigKey.ReasoningEffortOverride}: a valid
- * override wins over the model picker's thinking level; an invalid one is
- * ignored (degrades to the picker value). Logged either way so an experiment
- * run can confirm from the log what effort a session launched — or a
- * mid-session model change resolved — with.
- *
- * Shared by the launcher (session create) and `CopilotAgent._changeModel`
- * (mid-session model change) so the override applies, and is observable,
- * consistently at both points.
+ * Resolves the reasoning effort, applying the host-level override and logging
+ * whether it applied. Shared by the launcher (create) and
+ * `CopilotAgent._changeModel` (mid-session model change) for consistency.
  */
 export function resolveCopilotReasoningEffort(model: ModelSelection | undefined, configurationService: IAgentConfigurationService, logService: ILogService, sessionId: string): SessionConfig['reasoningEffort'] {
 	const rawOverride = configurationService.getRootValue(copilotCliConfigSchema, CopilotCliConfigKey.ReasoningEffortOverride);
@@ -535,9 +526,8 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			hasClientTool: name => clientToolNames.has(name),
 			workspaceless: plan.workspaceless === true,
 		};
-		// Prompt routing sees the family-aliased selection so a preview model id
-		// gets a known family's tuned prompt; the wire model id in _createSession
-		// comes from plan.model and is unaffected.
+		// Prompt routing uses the family-aliased selection; the wire model id in
+		// _createSession comes from plan.model and is unaffected.
 		const effectiveModel = applyModelFamilyAlias(model, this._configurationService.getRootValue(copilotCliConfigSchema, CopilotCliConfigKey.ModelCapabilityOverrides));
 		if (model && effectiveModel !== model) {
 			this._logService.info(`[Copilot:${plan.sessionId}] Model capability override: routing prompt for '${model.id}' as family '${effectiveModel?.id}'`);

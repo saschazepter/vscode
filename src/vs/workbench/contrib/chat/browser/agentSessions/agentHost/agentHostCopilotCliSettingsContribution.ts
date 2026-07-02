@@ -5,26 +5,22 @@
 
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { isObject } from '../../../../../../base/common/types.js';
-import { AgentHostEnabledSettingId, AgentHostModelCapabilityOverridesSettingId, AgentHostOpus48PromptEnabledSettingId, AgentHostReasoningEffortOverrideSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
-import { CopilotCliConfigKey, type CopilotCliModelCapabilityOverrides } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
+import { AgentHostEnabledSettingId, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostModelCapabilityOverridesSettingId, AgentHostOpus48PromptEnabledSettingId, AgentHostReasoningEffortOverrideSettingId, CopilotCliConfigKey, type CopilotCliModelCapabilityOverrides } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
 import { AgentHostRootConfigForwarder, type IForwardedRootConfigKey } from './agentHostRootConfigForwarder.js';
 
 /**
- * Forwards the Copilot-SDK experimentation settings — the Opus 4.8 prompt
- * opt-in, the reasoning-effort override, and the per-model capability (family
- * alias) overrides — into the **local** agent host's root config so
- * `CopilotSessionLauncher` can read them at session launch via `getRootValue`.
- * Gated on `chat.agentHost.enabled`.
- *
- * The schema-gate + hydration-retry + cross-window loop-guard machinery lives
- * in the shared {@link AgentHostRootConfigForwarder} (also used by
- * `AgentHostTerminalContribution`); this contribution only declares which
- * settings map to which root-config keys and how to read them.
+ * Forwards the Copilot-CLI experimentation settings (Opus 4.8 prompt opt-in,
+ * reasoning-effort override, per-model family-alias overrides) into the
+ * **local** agent host's root config so `CopilotSessionLauncher` can read them
+ * at session launch. Gated on `chat.agentHost.enabled`. The schema-gate /
+ * hydration-retry / loop-guard machinery lives in the shared
+ * {@link AgentHostRootConfigForwarder}; this contribution only declares the keys.
  */
-export class AgentHostCopilotPromptContribution extends Disposable implements IWorkbenchContribution {
-	static readonly ID = 'workbench.contrib.agentHostCopilotPrompt';
+export class AgentHostCopilotCliSettingsContribution extends Disposable implements IWorkbenchContribution {
+	static readonly ID = 'workbench.contrib.agentHostCopilotCliSettings';
 
 	private readonly _forwarder: AgentHostRootConfigForwarder;
 

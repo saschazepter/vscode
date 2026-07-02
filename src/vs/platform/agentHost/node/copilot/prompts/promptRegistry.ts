@@ -139,11 +139,6 @@ export class AgentHostPromptRegistry {
 	 * model-agnostic section overrides from {@link _withUniversalSections}
 	 * layered on top.
 	 *
-	 * The launcher may pass a family-aliased selection here (see
-	 * `applyModelFamilyAlias` in `copilotCliConfig.ts`) so a preview model id
-	 * routes to a known family's contributor; the registry itself is
-	 * alias-agnostic.
-	 *
 	 * Lifetime: the SDK accepts a system message only at session create/resume
 	 * (there is no mid-session update), so this is resolved once per (re)launch
 	 * and any tool-gated content reflects the tool set at that moment. A change
