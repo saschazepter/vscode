@@ -216,8 +216,10 @@ function shouldCreateEmptySessionAfterResumeError(err: unknown): boolean {
 }
 
 /**
- * Resolves the reasoning effort: a valid override wins over the model picker's
- * thinking level; an unsupported override is ignored (degrades to the picker).
+ * Resolves the reasoning effort: a recognized override level wins over the
+ * model picker's thinking level; an unrecognized override is ignored (degrades
+ * to the picker). Validation is against the known effort levels only — the
+ * caller/operator is responsible for choosing a level the model supports.
  */
 export function getCopilotReasoningEffort(model: ModelSelection | undefined, effortOverride?: string): SessionConfig['reasoningEffort'] {
 	if (isReasoningEffort(effortOverride)) {
