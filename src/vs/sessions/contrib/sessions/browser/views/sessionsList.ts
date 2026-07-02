@@ -1045,6 +1045,8 @@ class SessionPlaceholderRenderer implements ITreeRenderer<SessionListItem, Fuzzy
 //#region Accessibility
 
 class SessionsAccessibilityProvider {
+	constructor(private readonly options: { sorting: () => SessionsSorting }) { }
+
 	getWidgetAriaLabel(): string {
 		return localize('sessionsList', "Sessions");
 	}
@@ -1072,8 +1074,11 @@ class SessionsAccessibilityProvider {
 			return element.label;
 		}
 		const title = element.title.get();
-		const created = fromNow(element.createdAt, true);
-		return localize('sessionItemAria', "{0}, created {1}", title, created);
+		const isUpdatedSort = this.options.sorting() === SessionsSorting.Updated;
+		const time = fromNow(isUpdatedSort ? element.updatedAt.get() : element.createdAt, true);
+		return isUpdatedSort
+			? localize('sessionItemAriaUpdated', "{0}, updated {1}", title, time)
+			: localize('sessionItemAriaCreated', "{0}, created {1}", title, time);
 	}
 }
 
@@ -1670,7 +1675,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 				placeholderRenderer,
 			],
 			{
-				accessibilityProvider: new SessionsAccessibilityProvider(),
+				accessibilityProvider: new SessionsAccessibilityProvider({ sorting: this.options.sorting }),
 				dnd: this._register(new SessionsListDragAndDrop({
 					isReorderable: session => this.isReorderable(session),
 					isSessionPinned: session => this.isSessionPinned(session),
