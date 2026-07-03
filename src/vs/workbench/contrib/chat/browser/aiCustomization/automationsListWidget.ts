@@ -285,18 +285,16 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			err.setAttribute('aria-live', 'polite');
 		}
 
-		if (run.sessionId) {
+		if (run.sessionResource) {
 			const openButton = DOM.append(li, $('span.automations-history-row-open.codicon.codicon-link-external'));
 			openButton.setAttribute('role', 'button');
 			openButton.setAttribute('tabindex', '0');
 			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
 			const openSession = (e: Event) => {
 				e.stopPropagation();
-				const colonIdx = run.sessionId!.indexOf(':');
-				const resourceStr = run.sessionId!.substring(colonIdx + 1);
 				const activeEditor = this.editorService.activeEditor;
 				const activeGroupId = this.editorGroupsService.activeGroup.id;
-				this.chatWidgetService.openSession(URI.parse(resourceStr)).then(() => {
+				this.chatWidgetService.openSession(URI.parse(run.sessionResource!)).then(() => {
 					if (activeEditor) {
 						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
 					}
