@@ -64,6 +64,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			tags: ['preview'],
 			description: localize('sessions.list.showEmptyDefaultGroups', "Controls whether the default groups (Pinned, Chats) are shown in the sessions list even when they are empty."),
 			default: true,
+			scope: ConfigurationScope.APPLICATION,
 			experiment: { mode: 'auto' }
 		},
 	},
