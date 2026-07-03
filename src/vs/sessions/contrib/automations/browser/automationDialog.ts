@@ -334,7 +334,6 @@ function createSessionTypeBinder(
 			return undefined;
 		}
 		return available.find(c => c.sessionTypeId === AgentSessionProviders.Background)
-			?? available.find(c => c.sessionTypeId === AgentSessionProviders.AgentHostCopilot)
 			?? available[0];
 	};
 
@@ -384,7 +383,7 @@ function createSessionTypeBinder(
 			}
 		},
 		isSessionTypeVisible: (type: AgentSessionTarget) => {
-			if (type !== AgentSessionProviders.Local && type !== AgentSessionProviders.Background && type !== AgentSessionProviders.AgentHostCopilot) {
+			if (type !== AgentSessionProviders.Background) {
 				return false;
 			}
 			if (!state.folderUri) {
