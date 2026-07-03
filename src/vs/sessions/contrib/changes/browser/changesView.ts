@@ -920,8 +920,7 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	private fireTreePaneSizeChange(): void {
-		const maximumSize = this.getTreePaneMaximumSize();
-		this.treePaneSizeChange.fire(Number.isFinite(maximumSize) ? maximumSize : undefined);
+		this.treePaneSizeChange.fire(undefined);
 	}
 
 	/** Layout the SplitView to fill available body space. */
