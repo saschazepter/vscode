@@ -1189,7 +1189,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
 				this._waitForPersistedLanguageModel.clear();
 				this._waitForSessionHistoryLanguageModel.clear();
-				this.setCurrentLanguageModel(model, !this.options.suppressModelPersistence, !this.options.suppressModelPersistence);
+				this.setCurrentLanguageModel(model, true, !this.options.suppressModelPersistence);
 				this.renderAttachedContext();
 			},
 			getModels: () => this.getModels(),
