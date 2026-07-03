@@ -9,14 +9,14 @@ import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, type IDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../../base/common/map.js';
-import { joinPath, dirname as uriDirname } from '../../../../base/common/resources.js';
+import { joinPath, dirname as uriDirname, isEqual, isEqualOrParent } from '../../../../base/common/resources.js';
 import { compare as compareStrings } from '../../../../base/common/strings.js';
 import { URI } from '../../../../base/common/uri.js';
 import { basename, isAbsolute } from '../../../../base/common/path.js';
 import { IFileService, IFileStatWithMetadata } from '../../../files/common/files.js';
 import { ILogService } from '../../../log/common/log.js';
 import type { AgentsDiscoverRequest } from './copilotRCP.js';
-import { AgentCustomization, ChildCustomization, CustomizationLoadStatus, CustomizationType, DirectoryCustomization, RuleCustomization, SkillCustomization, customizationId } from '../../common/state/sessionState.js';
+import { AgentCustomization, ChildCustomization, CustomizationLoadStatus, CustomizationType, DirectoryCustomization, HookCustomization, RuleCustomization, SkillCustomization, customizationId } from '../../common/state/sessionState.js';
 import { ChildCustomizationType } from '../../common/state/protocol/state.js';
 import { toAgentCustomizationMeta } from '../../common/meta/agentCustomizationMeta.js';
 import { raceCancellationError } from '../../../../base/common/async.js';
@@ -218,6 +218,8 @@ export class SessionCustomizationDiscovery extends Disposable {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
+	private _discoveredDirectories: readonly IDiscoveredDirectory[] | undefined = undefined;
+
 	private readonly _watchers = new ResourceMap<IWatchSpec & { readonly disposable: IDisposable }>();
 
 	constructor(
@@ -244,23 +246,188 @@ export class SessionCustomizationDiscovery extends Disposable {
 		this._onDidChange.fire();
 	}
 
+	private async getDiscoveredDirectories(client: CopilotClient, token: CancellationToken): Promise<readonly IDiscoveredDirectory[]> {
+		throwIfCancelled(token);
+
+		const p: AgentsDiscoverRequest = { projectPaths: [this._workingDirectory.fsPath] };
+		const result = this.getHooksDiscoveryPaths();
+
+		try {
+			const [agentDiscovery, instructionDiscovery, skillDiscovery] = await Promise.all([
+				raceCancellationError(client.rpc.agents.getDiscoveryPaths(p), token),
+				raceCancellationError(client.rpc.instructions.getDiscoveryPaths(p), token),
+				raceCancellationError(client.rpc.skills.getDiscoveryPaths(p), token)
+			]);
+
+			// Process agent discovery paths
+			for (const agentPath of agentDiscovery?.paths ?? []) {
+				throwIfCancelled(token);
+				result.push({
+					uri: URI.file(agentPath.path),
+					type: DiscoveredType.Agent,
+					files: [],
+					name: basename(agentPath.path),
+					writable: true
+				});
+			}
+
+			// Process instruction discovery paths
+			for (const instructionPath of instructionDiscovery?.paths ?? []) {
+				throwIfCancelled(token);
+				result.push({
+					uri: URI.file(instructionPath.path),
+					type: DiscoveredType.Instruction,
+					files: [],
+					name: basename(instructionPath.path),
+					writable: true
+				});
+			}
+
+			// Process skill discovery paths
+			for (const skillPath of skillDiscovery?.paths ?? []) {
+				throwIfCancelled(token);
+				result.push({
+					uri: URI.file(skillPath.path),
+					type: DiscoveredType.Skill,
+					files: [],
+					name: basename(skillPath.path),
+					writable: true
+				});
+			}
+
+		} catch (err) {
+			if (err instanceof CancellationError) {
+				throw err;
+			}
+			this._logService.debug(`[SessionCustomizationDiscovery] Error getting discovery paths: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		return result.sort(compareDiscoveredDirectory);
+	}
+
+	private getHooksDiscoveryPaths(): IDiscoveredDirectory[] {
+		const byUri = new ResourceMap<IDiscoveredDirectory>();
+		const add = (uri: URI, name: string): void => {
+			if (!byUri.has(uri)) {
+				byUri.set(uri, { uri, type: DiscoveredType.Hook, files: [], name, writable: true });
+			}
+		};
+
+		for (const root of searchRoots.workspace) {
+			if (root.type === DiscoveredType.Hook) {
+				add(joinPath(this._workingDirectory, ...root.path), root.name);
+			}
+		}
+		for (const root of searchRoots.user) {
+			if (root.type === DiscoveredType.Hook) {
+				add(joinPath(this._userHome, ...root.path), root.name);
+			}
+		}
+		for (const fixed of fixedDiscoveryFiles.workspace) {
+			if (fixed.type === DiscoveredType.Hook) {
+				const uri = joinPath(this._workingDirectory, ...fixed.path);
+				add(uri, basename(uri.path));
+			}
+		}
+		for (const fixed of fixedDiscoveryFiles.user) {
+			if (fixed.type === DiscoveredType.Hook) {
+				const uri = joinPath(this._userHome, ...fixed.path);
+				add(uri, basename(uri.path));
+			}
+		}
+
+		return [...byUri.values()];
+	}
+
+	private async _updateWatchers(discoveredDirectories: readonly IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
+		const nextWatchRootUris = new ResourceMap<IWatchSpec>();
+		const toResolve = new ResourceSet();
+		const recursiveByDirectory = new ResourceMap<boolean>();
+
+		for (const discoveredDir of discoveredDirectories) {
+			throwIfCancelled(token);
+
+			const dirUri = discoveredDir.uri;
+			const recursive = discoveredDir.type === DiscoveredType.Skill ||
+				discoveredDir.type === DiscoveredType.Instruction ||
+				discoveredDir.type === DiscoveredType.Hook;
+			recursiveByDirectory.set(dirUri, recursive);
+			toResolve.add(dirUri);
+
+			let current = dirUri;
+			while (!isEqual(current, this._workingDirectory) && !isEqual(current, this._userHome)) {
+				const parent = uriDirname(current);
+				if (isEqual(parent, current)) {
+					break;
+				}
+				toResolve.add(parent);
+				current = parent;
+			}
+		}
+
+		throwIfCancelled(token);
+
+		const toResolveArray = [...toResolve];
+		const statResults = await this._fileService.resolveAll(toResolveArray.map(resource => ({ resource })));
+		const existingDirectories = new ResourceSet();
+		for (let i = 0; i < statResults.length; i++) {
+			const result = statResults[i];
+			if (result.success && result.stat?.isDirectory) {
+				existingDirectories.add(toResolveArray[i]);
+			}
+		}
+
+		for (const discoveredDir of discoveredDirectories) {
+			throwIfCancelled(token);
+
+			const dirUri = discoveredDir.uri;
+			const recursive = recursiveByDirectory.get(dirUri) ?? false;
+			if (existingDirectories.has(dirUri)) {
+				addWatch(nextWatchRootUris, dirUri, recursive, dirUri);
+			}
+
+			let current = dirUri;
+			while (!isEqual(current, this._workingDirectory) && !isEqual(current, this._userHome)) {
+				const parent = uriDirname(current);
+				if (isEqual(parent, current)) {
+					break;
+				}
+				if (existingDirectories.has(parent)) {
+					addWatch(nextWatchRootUris, parent, false, current);
+				}
+				current = parent;
+			}
+		}
+
+		this._reconcileWatchers(nextWatchRootUris);
+	}
+
+
 	public async discover(client: CopilotClient, token: CancellationToken): Promise<readonly DirectoryCustomization[]> {
+		if (!this._discoveredDirectories) {
+			this._discoveredDirectories = await this.getDiscoveredDirectories(client, token);
+		}
+
 		throwIfCancelled(token);
 
 		const p: AgentsDiscoverRequest = { projectPaths: [this._workingDirectory.fsPath] };
 
 		try {
-			const [agents, rules, skills] = await Promise.all([
+			const [agents, rules, skills, hooks] = await Promise.all([
 				this.discoverAgents(p, client, token),
 				this.discoverRules(p, client, token),
-				this.discoverSkills(p, client, token)
+				this.discoverSkills(p, client, token),
+				this.discoverHooks(token),
+				this._updateWatchers(this._discoveredDirectories, token)
 			]);
+
 			throwIfCancelled(token);
 
 			const result: DirectoryCustomization[] = [];
-			this.toDirectoryCustomizations(CustomizationType.Agent, agents, result);
-			this.toDirectoryCustomizations(CustomizationType.Rule, rules, result);
-			this.toDirectoryCustomizations(CustomizationType.Skill, skills, result);
+			this.toDirectoryCustomizations(CustomizationType.Agent, agents, this._discoveredDirectories, result);
+			this.toDirectoryCustomizations(CustomizationType.Rule, rules, this._discoveredDirectories, result);
+			this.toDirectoryCustomizations(CustomizationType.Skill, skills, this._discoveredDirectories, result);
+			this.toDirectoryCustomizations(CustomizationType.Hook, hooks, this._discoveredDirectories, result);
 			return result.sort(compareDirectoryCustomization);
 		} catch (err) {
 			this._logService.error(`[SessionCustomizationDiscovery] Error during discovery: ${err instanceof Error ? err.message : String(err)}`);
@@ -310,32 +477,136 @@ export class SessionCustomizationDiscovery extends Disposable {
 		return skills;
 	}
 
-	private toDirectoryCustomizations(type: ChildCustomizationType, customizations: readonly ChildCustomization[], result: DirectoryCustomization[]): void {
-		const byParent = new ResourceMap<{ readonly uri: URI; readonly children: ChildCustomization[] }>();
+	private async discoverHooks(token: CancellationToken): Promise<HookCustomization[]> {
+		const seen = new ResourceSet();
+		const discoveredDirectories: IDiscoveredDirectory[] = [];
+
+		const hookRootsWorkspace = searchRoots.workspace.filter(root => root.type === DiscoveredType.Hook);
+		const hookRootsUser = searchRoots.user.filter(root => root.type === DiscoveredType.Hook);
+		const fixedHookFilesWorkspace = fixedDiscoveryFiles.workspace.filter(root => root.type === DiscoveredType.Hook);
+		const fixedHookFilesUser = fixedDiscoveryFiles.user.filter(root => root.type === DiscoveredType.Hook);
+
+		await Promise.all([
+			...hookRootsWorkspace.map(root => this._discoverHookRoot(this._workingDirectory, root, seen, discoveredDirectories, token)),
+			...hookRootsUser.map(root => this._discoverHookRoot(this._userHome, root, seen, discoveredDirectories, token)),
+			this._discoverFixedHookFiles(this._workingDirectory, fixedHookFilesWorkspace, seen, discoveredDirectories, token),
+			this._discoverFixedHookFiles(this._userHome, fixedHookFilesUser, seen, discoveredDirectories, token),
+		]);
+
+		const hooks: HookCustomization[] = [];
+		for (const directory of discoveredDirectories) {
+			for (const file of directory.files) {
+				const uri = file.uri.toString();
+				hooks.push({
+					type: CustomizationType.Hook,
+					id: customizationId(uri),
+					uri,
+					name: basename(file.uri.path),
+				});
+			}
+		}
+		hooks.sort((a, b) => compareStrings(a.uri, b.uri));
+		return hooks;
+	}
+
+	private async _discoverHookRoot(base: URI, root: ISearchRoot, seen: ResourceSet, result: IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
+		const rootUri = joinPath(base, ...root.path);
+		let stat: IFileStatWithMetadata | undefined = undefined;
+		try {
+			stat = await this._fileService.resolve(rootUri, { resolveMetadata: true });
+		} catch {
+			// Root does not exist (or is unreadable) — still discover as an empty source folder.
+		}
+		await this._scanForHooks(root, rootUri, stat, seen, result, token);
+	}
+
+	private async _discoverFixedHookFiles(base: URI, roots: readonly IFixedDiscoveryFile[], seen: ResourceSet, result: IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
+		for (const root of roots) {
+			throwIfCancelled(token);
+
+			const rootUri = joinPath(base, ...root.path);
+			const files: IDiscoveredFile[] = [];
+			let stat: IFileStatWithMetadata | undefined = undefined;
+			try {
+				stat = await this._fileService.resolve(rootUri, { resolveMetadata: true });
+			} catch {
+				// Root does not exist (or is unreadable) — still discover as an empty source folder.
+			}
+
+			for (const child of stat?.children ?? []) {
+				throwIfCancelled(token);
+
+				if (child.isFile && root.filenames.includes(child.name)) {
+					if (!seen.has(child.resource)) {
+						seen.add(child.resource);
+						files.push({ uri: child.resource, etag: child.etag });
+					}
+				}
+			}
+			result.push({ uri: rootUri, type: DiscoveredType.Hook, files: files.sort(compareDiscoveredFile), name: basename(rootUri.path), writable: true });
+		}
+	}
+
+	private toDirectoryCustomizations(type: ChildCustomizationType, customizations: readonly ChildCustomization[], allDiscoveredDirectories: readonly IDiscoveredDirectory[], result: DirectoryCustomization[]): void {
+		const discoveredType = type === CustomizationType.Agent
+			? DiscoveredType.Agent
+			: type === CustomizationType.Rule
+				? DiscoveredType.Instruction
+				: type === CustomizationType.Hook
+					? DiscoveredType.Hook
+					: DiscoveredType.Skill;
+
+		const discoveredDirectories = allDiscoveredDirectories.filter(d => d.type === discoveredType);
+		const byParent = new ResourceMap<{ readonly uri: URI; readonly name: string; readonly writable: boolean; readonly children: ChildCustomization[] }>();
+		for (const discoveredDirectory of discoveredDirectories) {
+			byParent.set(discoveredDirectory.uri, {
+				uri: discoveredDirectory.uri,
+				name: discoveredDirectory.name || basename(discoveredDirectory.uri.path),
+				writable: discoveredDirectory.writable,
+				children: []
+			});
+		}
+
 		for (const customization of customizations) {
 			if (customization.type !== type) {
 				continue;
 			}
+
 			const childUri = URI.parse(customization.uri);
-			const parentUri = uriDirname(childUri);
+			let bestParent = discoveredDirectories.find(d => isEqualOrParent(childUri, d.uri));
+			if (bestParent) {
+				for (const candidate of discoveredDirectories) {
+					if (isEqualOrParent(childUri, candidate.uri) && candidate.uri.path.length > bestParent.uri.path.length) {
+						bestParent = candidate;
+					}
+				}
+			}
+
+			const parentUri = bestParent?.uri ?? uriDirname(childUri);
 			let entry = byParent.get(parentUri);
 			if (!entry) {
-				entry = { uri: parentUri, children: [] };
+				this._logService.error(`[SessionCustomizationDiscovery] BUG: customization '${customization.uri}' of type '${customization.type}' is outside discovered directories; creating fallback directory '${parentUri.toString()}'.`);
+				entry = {
+					uri: parentUri,
+					name: basename(parentUri.path),
+					writable: true,
+					children: []
+				};
 				byParent.set(parentUri, entry);
 			}
 			entry.children.push(customization);
 		}
 
-		for (const { uri, children } of byParent.values()) {
+		for (const { uri, name, writable, children } of byParent.values()) {
 			children.sort((a, b) => compareStrings(a.uri, b.uri));
 			result.push({
 				type: CustomizationType.Directory,
 				id: customizationId(uri.toString()),
 				uri: uri.toString(),
-				name: basename(uri.path),
+				name,
 				enabled: true,
 				contents: type,
-				writable: true,
+				writable,
 				load: { kind: CustomizationLoadStatus.Loaded },
 				children,
 			});
@@ -577,44 +848,49 @@ export class SessionCustomizationDiscovery extends Disposable {
 			}
 			result.push({ uri: rootUri, type: root.type, files: files.sort(compareDiscoveredFile), name: root.name, writable: true });
 		} else if (root.type === DiscoveredType.Hook) {
-			const files: IDiscoveredFile[] = [];
-			// hooks are recursively discovered as `*.json` under the root.
-			const findHooks = async (directoryStat: IFileStatWithMetadata, recursionLevel: number): Promise<void> => {
-				throwIfCancelled(token);
-
-				for (const child of directoryStat.children ?? []) {
-					throwIfCancelled(token);
-
-					if (child.isFile) {
-						const name = child.name.toLowerCase();
-						if (name.endsWith(HOOK_FILE_SUFFIX) && !seen.has(child.resource)) {
-							seen.add(child.resource);
-							files.push({ uri: child.resource, etag: child.etag });
-						}
-					} else if (child.isDirectory && recursionLevel < MAX_HOOKS_RECURSION_DEPTH) {
-						let childStat: IFileStatWithMetadata | undefined = undefined;
-						try {
-							childStat = await this._fileService.resolve(child.resource, { resolveMetadata: true });
-						} catch {
-							// Ignore unreadable subdirectories.
-						}
-						if (childStat) {
-							await findHooks(childStat, recursionLevel + 1);
-						}
-					}
-				}
-			};
-			if (stat) {
-				await findHooks(stat, 0);
-			}
-			result.push({ uri: rootUri, type: root.type, files: files.sort(compareDiscoveredFile), name: root.name, writable: true });
-
+			await this._scanForHooks(root, rootUri, stat, seen, result, token);
 		} else {
 			this._logService.warn(`[SessionCustomizationDiscovery] Unrecognized root type '${root.type}' for root '${rootUri.toString()}'`);
 		}
+	}
+
+	private async _scanForHooks(root: ISearchRoot, rootUri: URI, stat: IFileStatWithMetadata | undefined, seen: ResourceSet, result: IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
+		const files: IDiscoveredFile[] = [];
+		// hooks are recursively discovered as `*.json` under the root.
+		const findHooks = async (directoryStat: IFileStatWithMetadata, recursionLevel: number): Promise<void> => {
+			throwIfCancelled(token);
+
+			for (const child of directoryStat.children ?? []) {
+				throwIfCancelled(token);
+
+				if (child.isFile) {
+					const name = child.name.toLowerCase();
+					if (name.endsWith(HOOK_FILE_SUFFIX) && !seen.has(child.resource)) {
+						seen.add(child.resource);
+						files.push({ uri: child.resource, etag: child.etag });
+					}
+				} else if (child.isDirectory && recursionLevel < MAX_HOOKS_RECURSION_DEPTH) {
+					let childStat: IFileStatWithMetadata | undefined = undefined;
+					try {
+						childStat = await this._fileService.resolve(child.resource, { resolveMetadata: true });
+					} catch {
+						// Ignore unreadable subdirectories.
+					}
+					if (childStat) {
+						await findHooks(childStat, recursionLevel + 1);
+					}
+				}
+			}
+		};
+		if (stat) {
+			await findHooks(stat, 0);
+		}
+		result.push({ uri: rootUri, type: root.type, files: files.sort(compareDiscoveredFile), name: root.name, writable: true });
 
 	}
 }
+
+
 
 // Test-only helpers — exported as `_internal` to discourage production use.
 export const _internal = {
@@ -625,5 +901,3 @@ export const _internal = {
 	fixedDiscoveryFiles,
 	agentInstructions,
 };
-
-

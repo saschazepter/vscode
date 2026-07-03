@@ -110,6 +110,104 @@ suite('SessionCustomizationDiscovery', () => {
 		]);
 	});
 
+	test('discover includes hooks from recursive and fixed hook locations', async () => {
+		await seed('/workspace/.github/hooks/pre-tool.json', '{"PreToolUse": []}');
+		await seed('/workspace/.github/copilot/settings.json', '{"hooks": {"PreToolUse": []}}');
+
+		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome));
+		const client = {
+			rpc: {
+				agents: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ agents: [] }),
+				},
+				instructions: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ sources: [] }),
+				},
+				skills: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ skills: [] }),
+				},
+			},
+		} as unknown as CopilotClient;
+
+		const customizations = await discovery.discover(client, CancellationToken.None);
+		const hookDirectories = customizations
+			.filter(customization => customization.contents === 'hook')
+			.map(customization => ({
+				uri: URI.parse(customization.uri).path,
+				children: (customization.children ?? []).map(child => URI.parse(child.uri).path).sort(),
+			}))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(hookDirectories, [
+			{ uri: '/home/.copilot/hooks', children: [] },
+			{ uri: '/workspace/.claude', children: [] },
+			{ uri: '/workspace/.github/copilot', children: ['/workspace/.github/copilot/settings.json'] },
+			{ uri: '/workspace/.github/hooks', children: ['/workspace/.github/hooks/pre-tool.json'] },
+		]);
+	});
+
+	test('discover returns working-directory agents, skills, instructions, and hooks but not agent instructions', async () => {
+		await seed('/workspace/.github/agents/foo.agent.md', 'agent body');
+		await seed('/workspace/.github/skills/bar/SKILL.md', 'skill body');
+		await seed('/workspace/.github/instructions/baz.instructions.md', 'instruction body');
+		await seed('/workspace/.github/hooks/pre-tool.json', '{"PreToolUse": []}');
+		await seed('/workspace/.github/copilot/settings.json', '{"hooks": {"PreToolUse": []}}');
+		await seed('/workspace/.github/copilot-instructions.md', 'workspace copilot instructions');
+		await seed('/workspace/AGENTS.md', 'workspace agents instructions');
+
+		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome));
+		const client = {
+			rpc: {
+				agents: {
+					getDiscoveryPaths: async () => ({ paths: [{ path: '/workspace/.github/agents' }] }),
+					discover: async () => ({
+						agents: [
+							{ id: 'agent', name: 'Agent', description: 'agent description', path: '/workspace/.github/agents/foo.agent.md', userInvocable: true },
+						],
+					}),
+				},
+				instructions: {
+					getDiscoveryPaths: async () => ({ paths: [{ path: '/workspace/.github/instructions' }] }),
+					discover: async () => ({
+						sources: [
+							{ id: 'rule', label: 'Rule', description: 'rule description', sourcePath: '/workspace/.github/instructions/baz.instructions.md', applyTo: [] },
+						],
+					}),
+				},
+				skills: {
+					getDiscoveryPaths: async () => ({ paths: [{ path: '/workspace/.github/skills' }] }),
+					discover: async () => ({
+						skills: [
+							{ name: 'Skill', description: 'skill description', path: '/workspace/.github/skills/bar/SKILL.md' },
+						],
+					}),
+				},
+			},
+		} as unknown as CopilotClient;
+
+		const customizations = await discovery.discover(client, CancellationToken.None);
+		const directories = customizations
+			.map(customization => ({
+				contents: customization.contents,
+				uri: URI.parse(customization.uri).path,
+				children: (customization.children ?? []).map(child => URI.parse(child.uri).path).sort(),
+			}))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(directories, [
+			{ contents: 'hook', uri: '/home/.copilot/hooks', children: [] },
+			{ contents: 'hook', uri: '/workspace/.claude', children: [] },
+			{ contents: 'agent', uri: '/workspace/.github/agents', children: ['/workspace/.github/agents/foo.agent.md'] },
+			{ contents: 'hook', uri: '/workspace/.github/copilot', children: ['/workspace/.github/copilot/settings.json'] },
+			{ contents: 'hook', uri: '/workspace/.github/hooks', children: ['/workspace/.github/hooks/pre-tool.json'] },
+			{ contents: 'rule', uri: '/workspace/.github/instructions', children: ['/workspace/.github/instructions/baz.instructions.md'] },
+			{ contents: 'skill', uri: '/workspace/.github/skills', children: ['/workspace/.github/skills/bar/SKILL.md'] },
+		]);
+	});
+
 	test('returns directories sorted by type and URI', async () => {
 		await seed('/workspace/.github/agents/aaa.agent.md', 'workspace agent a');
 		await seed('/workspace/.github/agents/foo.agent.md', 'workspace agent');
