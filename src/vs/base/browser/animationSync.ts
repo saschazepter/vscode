@@ -11,9 +11,9 @@ export interface ISynchronizeAnimationsOptions {
 	readonly subtree?: boolean;
 
 	/**
-	 * When provided, only CSS animations whose `animation-name` is in this set
-	 * are synchronized. Other animations (transitions, unrelated keyframes) are
-	 * left untouched.
+	 * When provided, further narrows synchronization to CSS animations whose
+	 * `animation-name` is in this set. Non-keyframe animations (e.g. transitions)
+	 * are always skipped regardless of this option.
 	 */
 	readonly animationNames?: ReadonlySet<string>;
 }
@@ -45,11 +45,14 @@ export function synchronizeCSSAnimations(element: HTMLElement, options?: ISynchr
 		return; // Web Animations API not available; leave animations as-is.
 	}
 	for (const animation of element.getAnimations({ subtree: options?.subtree })) {
-		if (options?.animationNames) {
-			const name = (animation as CSSAnimation).animationName;
-			if (name === undefined || !options.animationNames.has(name)) {
-				continue;
-			}
+		// Only CSS keyframe animations carry an `animationName`; skip transitions
+		// and other Web Animations so this helper strictly aligns CSS animations.
+		const animationName = (animation as CSSAnimation).animationName;
+		if (animationName === undefined) {
+			continue;
+		}
+		if (options?.animationNames && !options.animationNames.has(animationName)) {
+			continue;
 		}
 		// Anchor to a shared origin so all animations of the same duration display
 		// the same frame. Guard against the rare state where startTime is not yet

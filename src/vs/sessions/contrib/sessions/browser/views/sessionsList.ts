@@ -324,7 +324,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		// render each started on their own clock. Anchor every (re)start to the
 		// shared document timeline so all rows stay perfectly in phase. This fires
 		// once per start (not per frame), so it is effectively free.
-		disposables.add(DOM.addDisposableListener(titleContainer, 'animationstart', (e: AnimationEvent) => {
+		disposables.add(DOM.addDisposableListener(titleContainer, DOM.EventType.ANIMATION_START, (e: AnimationEvent) => {
 			if (e.target === titleContainer && e.animationName === SESSION_TITLE_SHIMMER_ANIMATION_NAME) {
 				synchronizeCSSAnimations(titleContainer, { animationNames: SESSION_TITLE_SHIMMER_ANIMATION_NAMES });
 			}
