@@ -282,6 +282,9 @@ export function fromGithub({ name, version, repo, sha256, metadata }: IExtension
 	const asset = options?.asset;
 	const latest = options?.latest ?? false;
 	fancyLog('Downloading extension from GH:', ansiColors.yellow(`${name}@${latest ? 'latest' : version}`), asset ? ansiColors.gray(`(${asset.assetName})`) : '', '...');
+	if (latest) {
+		fancyLog(ansiColors.yellow(`Warning: skipping checksum validation for ${name} (downloading latest release, no pinned checksum available)`));
+	}
 
 	const packageJsonFilter = filter('package.json', { restore: true });
 

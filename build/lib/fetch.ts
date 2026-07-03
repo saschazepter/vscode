@@ -131,7 +131,7 @@ export interface IGitHubAssetOptions {
 interface IGitHubRelease {
 	tag_name?: string;
 	draft?: boolean;
-	created_at?: string;
+	published_at?: string;
 	assets: { name: string; url: string }[];
 }
 
@@ -156,11 +156,11 @@ export function fetchGithub(repo: string, options: IGitHubAssetOptions): Stream 
 		const json = JSON.parse(file.contents.toString());
 		let release: IGitHubRelease;
 		if (options.latest) {
-			// The releases API returns entries ordered by `created_at` descending, but sort
-			// explicitly to be robust and skip drafts.
+			// Pick the most recently published non-draft release. Sort by `published_at` (when the
+			// release was made public) rather than `created_at` (when the draft was first created).
 			const releases = (json as IGitHubRelease[])
 				.filter(r => !r.draft)
-				.sort((a, b) => Date.parse(b.created_at ?? '') - Date.parse(a.created_at ?? ''));
+				.sort((a, b) => Date.parse(b.published_at ?? '') - Date.parse(a.published_at ?? ''));
 			if (releases.length === 0) {
 				return callback(new Error(`Could not find a release in ${repo}`));
 			}

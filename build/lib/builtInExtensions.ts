@@ -85,7 +85,14 @@ function getExtensionDownloadStream(extension: IExtensionDefinition) {
 	if (extension.vsix) {
 		input = ext.fromVsix(path.join(root, extension.vsix), extension);
 	} else if (extension.platformSpecific) {
-		input = ext.fromGithub(extension, { asset: resolvePlatformSpecificAsset(extension), latest: isInsiders() });
+		// A platform-specific extension publishes its VSIX assets on a GitHub release using a
+		// specific asset naming convention, so it is always downloaded from GitHub and never falls
+		// back to the Marketplace (which does not serve those assets) even when a gallery is configured.
+		const asset = resolvePlatformSpecificAsset(extension);
+		if (!asset) {
+			return es.readArray([]);
+		}
+		input = ext.fromGithub(extension, { asset, latest: isInsiders() });
 	} else if (productjson.extensionsGallery?.serviceUrl) {
 		input = ext.fromMarketplace(productjson.extensionsGallery.serviceUrl, extension);
 	} else {
@@ -95,12 +102,20 @@ function getExtensionDownloadStream(extension: IExtensionDefinition) {
 	return input.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`));
 }
 
-function resolvePlatformSpecificAsset(extension: IExtensionDefinition): { assetName: string; sha256: string } {
+function resolvePlatformSpecificAsset(extension: IExtensionDefinition): { assetName: string; sha256: string } | undefined {
 	const target = getCurrentExtensionTarget();
-	const sha256 = target ? extension.platformSpecific![target] : undefined;
+	if (!target) {
+		// Unsupported build platform (e.g. FreeBSD): no platform-specific asset can apply, so skip
+		// this extension gracefully instead of failing the whole build.
+		log(ansiColors.yellow('[skip]'), `${extension.name}: no platform-specific asset for unsupported platform '${process.platform}-${process.env['VSCODE_ARCH'] ?? process.arch}'`);
+		return undefined;
+	}
 
-	if (!target || !sha256) {
-		throw new Error(`Built-in extension '${extension.name}' is platform-specific but has no asset for target '${target ?? `${process.platform}-${process.env['VSCODE_ARCH'] ?? process.arch}`}'. Available targets: [${Object.keys(extension.platformSpecific!)}]`);
+	const sha256 = extension.platformSpecific![target];
+	if (!sha256) {
+		// The extension declares platform-specific assets but is missing one for this known target.
+		// This is a configuration error, so fail loudly.
+		throw new Error(`Built-in extension '${extension.name}' is platform-specific but has no asset for target '${target}'. Available targets: [${Object.keys(extension.platformSpecific!)}]`);
 	}
 
 	return { assetName: getPlatformSpecificAssetName(extension.name, target), sha256 };
