@@ -122,10 +122,17 @@ export interface IGitHubAssetOptions {
 	checksumSha256?: string;
 	verbose?: boolean;
 	/**
-	 * When set, ignore {@link IGitHubAssetOptions.version} and resolve the asset from the
-	 * latest GitHub pre-release instead of a specific tagged release.
+	 * When set, ignore {@link IGitHubAssetOptions.version} and resolve the asset from the latest
+	 * published GitHub release (including pre-releases) instead of a specific tagged release.
 	 */
-	prerelease?: boolean;
+	latest?: boolean;
+}
+
+interface IGitHubRelease {
+	tag_name?: string;
+	draft?: boolean;
+	created_at?: string;
+	assets: { name: string; url: string }[];
 }
 
 /**
@@ -136,9 +143,9 @@ export interface IGitHubAssetOptions {
  */
 export function fetchGithub(repo: string, options: IGitHubAssetOptions): Stream {
 	const cleanRepo = repo.replace(/^\/|\/$/g, '');
-	// When `prerelease` is set, list all releases and pick the latest pre-release (ignoring the
+	// When `latest` is set, list all releases and pick the most recently published one (ignoring the
 	// requested version). Otherwise fetch the specific tagged release.
-	const releaseUrl = options.prerelease
+	const releaseUrl = options.latest
 		? `/repos/${cleanRepo}/releases?per_page=100`
 		: `/repos/${cleanRepo}/releases/tags/v${options.version}`;
 	return fetchUrls(releaseUrl, {
@@ -147,21 +154,24 @@ export function fetchGithub(repo: string, options: IGitHubAssetOptions): Stream 
 		nodeFetchOptions: { headers: ghApiHeaders }
 	}).pipe(through2.obj(async function (file, _enc, callback) {
 		const json = JSON.parse(file.contents.toString());
-		let release: { tag_name?: string; assets: { name: string; url: string }[] };
-		if (options.prerelease) {
-			// The releases API returns entries ordered by `created_at` descending, so the first
-			// pre-release is the latest one.
-			release = json.find((r: { prerelease: boolean }) => r.prerelease);
-			if (!release) {
-				return callback(new Error(`Could not find a pre-release in ${repo}`));
+		let release: IGitHubRelease;
+		if (options.latest) {
+			// The releases API returns entries ordered by `created_at` descending, but sort
+			// explicitly to be robust and skip drafts.
+			const releases = (json as IGitHubRelease[])
+				.filter(r => !r.draft)
+				.sort((a, b) => Date.parse(b.created_at ?? '') - Date.parse(a.created_at ?? ''));
+			if (releases.length === 0) {
+				return callback(new Error(`Could not find a release in ${repo}`));
 			}
+			release = releases[0];
 		} else {
 			release = json;
 		}
 		const assetFilter = typeof options.name === 'string' ? (name: string) => name === options.name : options.name;
 		const asset = release.assets.find(a => assetFilter(a.name));
 		if (!asset) {
-			return callback(new Error(`Could not find asset in release of ${repo} @ ${options.prerelease ? release.tag_name : options.version}`));
+			return callback(new Error(`Could not find asset in release of ${repo} @ ${options.latest ? release.tag_name : options.version}`));
 		}
 		try {
 			callback(null, await fetchUrl(asset.url, {

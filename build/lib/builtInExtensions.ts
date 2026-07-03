@@ -85,11 +85,11 @@ function getExtensionDownloadStream(extension: IExtensionDefinition) {
 	if (extension.vsix) {
 		input = ext.fromVsix(path.join(root, extension.vsix), extension);
 	} else if (extension.platformSpecific) {
-		input = ext.fromGithub(extension, { asset: resolvePlatformSpecificAsset(extension), prerelease: isInsiders() });
+		input = ext.fromGithub(extension, { asset: resolvePlatformSpecificAsset(extension), latest: isInsiders() });
 	} else if (productjson.extensionsGallery?.serviceUrl) {
 		input = ext.fromMarketplace(productjson.extensionsGallery.serviceUrl, extension);
 	} else {
-		input = ext.fromGithub(extension, { prerelease: isInsiders() });
+		input = ext.fromGithub(extension, { latest: isInsiders() });
 	}
 
 	return input.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`));
