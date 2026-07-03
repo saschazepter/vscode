@@ -237,7 +237,6 @@
 	border-radius: var(--vscode-sash-size);
 }
 
-
 .style-override.monaco-workbench .pane-body.integrated-terminal .tabs-container.has-text .terminal-tabs-chat-entry .terminal-tabs-entry {
-	border-radius: var(--vscode-cornerRadius-small)
+	border-radius: var(--vscode-cornerRadius-small);
 }
