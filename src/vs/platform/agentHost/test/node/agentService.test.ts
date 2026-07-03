@@ -80,6 +80,7 @@ class TestCopilotApiService implements ICopilotApiService {
 	async models(): Promise<CCAModel[]> { return []; }
 	async responses(): Promise<Response> { throw new Error('not used'); }
 	async resolveRestrictedTelemetryContext() { return { restrictedTelemetryEnabled: false, trackingId: undefined, telemetryEndpoint: undefined }; }
+	async resolveApiEndpoint() { return undefined; }
 	async utilityChatCompletion(githubToken: string, request: ICopilotUtilityChatCompletionRequest, options?: ICopilotApiServiceRequestOptions): Promise<string> {
 		this.utilityCalls.push({ token: githubToken, request, options });
 		if (this.error) {
@@ -1314,6 +1315,9 @@ suite('AgentService (node dispatcher)', () => {
 				updateRef: async () => { },
 				deleteRefs: async () => { },
 				revParse: async () => undefined,
+				resolveBranchBaselineCommit: async () => undefined,
+				overlayPathIntoTree: async () => undefined,
+				diffTreePaths: async () => undefined,
 				computeFileDiffsBetweenRefs: async () => undefined,
 			};
 			const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
@@ -1410,6 +1414,9 @@ suite('AgentService (node dispatcher)', () => {
 				updateRef: async () => { },
 				deleteRefs: async () => { },
 				revParse: async () => undefined,
+				resolveBranchBaselineCommit: async () => undefined,
+				overlayPathIntoTree: async () => undefined,
+				diffTreePaths: async () => undefined,
 				computeFileDiffsBetweenRefs: async () => undefined,
 			};
 			const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
