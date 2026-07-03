@@ -174,7 +174,7 @@ registerAction2(class extends Action2 {
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
-					AGENTS_VOICE_ACTIVE.negate(),
+					AGENTS_VOICE_LISTENING.negate(),
 					AGENTS_VOICE_CONNECTING.negate(),
 				),
 				group: 'navigation',
@@ -215,7 +215,7 @@ registerAction2(class extends Action2 {
 			icon: Codicon.voiceMode,
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
-				AGENTS_VOICE_ACTIVE.isEqualTo(true),
+				AGENTS_VOICE_LISTENING.isEqualTo(true),
 			),
 			menu: {
 				id: MenuId.ChatExecute,
@@ -223,7 +223,7 @@ registerAction2(class extends Action2 {
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
-					AGENTS_VOICE_ACTIVE.isEqualTo(true),
+					AGENTS_VOICE_LISTENING.isEqualTo(true),
 					AGENTS_VOICE_INITIATED_HERE.isEqualTo(true),
 				),
 				group: 'navigation',
@@ -235,7 +235,7 @@ registerAction2(class extends Action2 {
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
 					ChatContextKeys.inChatInput,
-					AGENTS_VOICE_ACTIVE.isEqualTo(true),
+					AGENTS_VOICE_LISTENING.isEqualTo(true),
 				),
 			},
 		});
