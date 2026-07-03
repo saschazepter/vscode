@@ -67,6 +67,27 @@ export class AgentHostReviewService extends Disposable implements IAgentHostRevi
 		return this._sequencer.queue(sessionUri.toString(), () => this._getReviewedPaths(sessionUri, workingDirectory, baseBranch));
 	}
 
+	copyReviewedRef(sourceSessionUri: URI, targetSessionUri: URI, workingDirectory: URI): Promise<void> {
+		return this._sequencer.queue(targetSessionUri.toString(), () => this._copyReviewedRef(sourceSessionUri, targetSessionUri, workingDirectory));
+	}
+
+	private async _copyReviewedRef(sourceSessionUri: URI, targetSessionUri: URI, workingDirectory: URI): Promise<void> {
+		const repoRoot = await this._gitService.getRepositoryRoot(workingDirectory);
+		if (!repoRoot) {
+			return;
+		}
+		const sourceRef = buildReviewedRefName(this._sanitizedSessionId(sourceSessionUri));
+		const sourceCommit = await this._gitService.revParse(repoRoot, sourceRef);
+		if (!sourceCommit) {
+			// Nothing reviewed in the source — the fork simply starts unreviewed.
+			return;
+		}
+		const targetRef = buildReviewedRefName(this._sanitizedSessionId(targetSessionUri));
+		await this._gitService.updateRef(repoRoot, targetRef, sourceCommit);
+		await this._persistWorkingDirectory(targetSessionUri, workingDirectory);
+		this._logService.trace(`[AgentHostReview] Copied reviewed ref ${sourceRef} -> ${targetRef} for fork`);
+	}
+
 	private async _setReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI, reviewed: boolean): Promise<void> {
 		const context = await this._resolveContext(sessionUri, workingDirectory, baseBranch);
 		if (!context) {

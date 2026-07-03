@@ -167,6 +167,20 @@ suite('AgentHostReviewService (real git)', () => {
 		assert.deepStrictEqual({ beforeDispose, afterDispose }, { beforeDispose: 1, afterDispose: 0 });
 	});
 
+	(hasGit ? test : test.skip)('copies the reviewed ref to a forked session', async () => {
+		const fs = await import('fs/promises');
+		await initRepo({ 'a.txt': 'a-v1\n' });
+		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
+		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+
+		const forkUri = URI.parse('copilot:/forked-session');
+		await svc!.copyReviewedRef(sessionUri, forkUri, wd());
+
+		const forkReviewed = [...await svc!.getReviewedPaths(forkUri, wd(), undefined)].sort();
+		const sourceReviewed = await reviewedPaths();
+		assert.deepStrictEqual({ forkReviewed, sourceReviewed }, { forkReviewed: ['a.txt'], sourceReviewed: ['a.txt'] });
+	});
+
 	(hasGit ? test : test.skip)('is a no-op when the working directory is not a git repository', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'agent-host-review-nongit-'));
 		tmpRoot = dir;

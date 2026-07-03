@@ -66,6 +66,15 @@ export interface IAgentHostReviewService {
 	 * git work tree.
 	 */
 	getReviewedPaths(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined): Promise<ReadonlySet<string>>;
+
+	/**
+	 * Copies the reviewed ref from `sourceSessionUri` to `targetSessionUri` so a
+	 * forked session starts with the parent's review progress. Points the
+	 * target's reviewed ref at the same commit as the source's (git objects are
+	 * shared within the repository). No-op when the source has no reviewed ref or
+	 * the directory is not a git work tree.
+	 */
+	copyReviewedRef(sourceSessionUri: URI, targetSessionUri: URI, workingDirectory: URI): Promise<void>;
 }
 
 /**
@@ -78,4 +87,5 @@ export const NULL_REVIEW_SERVICE: IAgentHostReviewService = {
 	markFileReviewed: async () => { },
 	unmarkFileReviewed: async () => { },
 	getReviewedPaths: async () => new Set(),
+	copyReviewedRef: async () => { },
 };

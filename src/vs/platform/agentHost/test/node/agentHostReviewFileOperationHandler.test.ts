@@ -46,6 +46,8 @@ class TestReviewService implements IAgentHostReviewService {
 	async getReviewedPaths(): Promise<ReadonlySet<string>> {
 		return new Set();
 	}
+
+	async copyReviewedRef(): Promise<void> { }
 }
 
 function makeResourceTarget(resource: URI): InvokeChangesetOperationParams['target'] {
