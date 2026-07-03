@@ -95,6 +95,22 @@ When a chat turn produces new file changes, the side pane is **not** opened auto
 active view is not switched automatically — it stays as you left it. Only a new session opens it
 (D3b), and only the created transition switches it to Changes (D4).
 
+### Scenario: the side pane has nothing to show
+Some sessions gate off every auxiliary-bar view container — e.g. a workspace-less **quick chat**,
+where the Changes and Files containers are hidden — so the aux bar would otherwise be an empty column.
+
+#### D10 — An empty auxiliary bar is hidden
+When the auxiliary bar has **no active view container** (nothing to show), its part is kept **hidden**
+instead of showing an empty column, and the chat takes the space. This updates reactively as the active
+session flips (a container being gated off hides the part; a container becoming active again lets the
+normal restore rules D3/D8 reveal it). The controller only ever *hides* an empty aux bar — it never
+reveals one. Correspondingly, **Toggle Side Panel** only affects the part that has content: it reveals
+the editor when it has editors and the aux bar is empty, and never reveals an empty aux bar (when
+neither side has content the toggle-open is a no-op). For a **quick chat** — which has no side pane at
+all (workspace-less, so the aux bar stays hidden and the chat is full-width) — the **Toggle Side Panel**
+command is **disabled** outright (`precondition: IsQuickChatSessionContext.negate()`), so its menu item,
+keybinding, and command-palette entry are inert.
+
 ### Scenario: a cramped (small) window
 On a small window there isn't room for the sessions sidebar, the editor, and the side pane all at once.
 
@@ -142,6 +158,20 @@ defaults **on** in non-stable builds (Insiders / exploration) and **off** in sta
   its previous width.
 - **No auto-reveal [D6]** — the sync logic never opens the side pane or switches the active container
   in response to file changes; only D3b opens it, and D4 switches it to Changes.
+- **Empty aux bar [D10]** — `_registerAuxiliaryBarPartVisibility` re-checks `_hasActiveAuxViewContainers()`
+  (base; `IViewDescriptorService.getViewContainersByLocation(AuxiliaryBar)` filtered by
+  `IViewsService.isViewContainerActive`) on container add/remove
+  (`onDidChangeViewContainers`/`onDidChangeContainerLocation`), each aux container model's
+  `onDidChangeActiveViewDescriptors` (the `when`-gating signal), and aux-bar
+  `onDidChangeViewContainerVisibility`. `_syncAuxiliaryBarPartVisibility` hides `AUXILIARYBAR_PART` (via
+  `_hideAuxiliaryBarForRestore`, so [D2] doesn't record it) when there are no active containers, and
+  never reveals it — reveals stay with D3/D8. The base `toggleSidePane` re-open branch guards the aux-bar
+  un-hide with `_hasActiveAuxViewContainers()` symmetric to the editor's `hasEditors` guard, and the
+  "ensure a visible effect" fallback prefers the editor and only falls back to the aux bar when it has
+  active containers. The `Toggle Side Panel` command itself (`workbench.action.agentToggleSidePanel`,
+  registered by the base controller) carries `precondition: IsQuickChatSessionContext.negate()`, so it is
+  disabled (menu item, keybinding, palette) whenever the active session is a quick chat, which has no side
+  pane to toggle.
 - **First Changes open [D8]** — `_revealChangesViewOnFirstOpen`, registered on
   `IEditorService.onDidActiveEditorChange` **and** on `onDidChangePartVisibility` for `EDITOR_PART`
   becoming visible. The latter covers re-clicking the **Changes** button after the whole side pane was
@@ -161,21 +191,25 @@ defaults **on** in non-stable builds (Insiders / exploration) and **off** in sta
   entry point (the `Toggle Side Panel` action: menu item, keybinding, command-palette entry, toggled
   icon) is registered by the base controller in its constructor and calls `toggleSidePane` directly.
   The toggle hides/shows the editor area and auxiliary bar together (remembering which parts to restore
-  in `_lastVisibleSidePaneParts`) while `_togglingSidePane` is set, and sets `_sidePaneToggledClosed`
-  while the pane is collapsed. The [D2] listener skips capture while `_togglingSidePane` is set, so
-  closing or opening the whole side pane is never recorded as a per-session (created) aux-bar choice.
-  However, the **save-time** capture (`_captureViewState`, used on switch-away and shutdown) records the
-  aux bar as hidden *and* sets `auxiliaryBarHiddenByCollapse: true` while `_sidePaneToggledClosed` holds,
-  so a reload restores the side pane closed yet opening Changes (D8) still re-reveals it. The flag is
-  cleared when the pane is re-opened, on a session switch, and when the [D2] listener records a genuine
-  aux-bar change.
-- **New-session side-pane close [D9b]** — the base `toggleSidePane` calls the `_onSidePaneToggled` hook
-  at the end (still inside the `_togglingSidePane` window). The desktop controller overrides it: when
-  the active session is **uncreated** (and not multi-session / not maximized), it records the resulting
-  aux-bar visibility via `_setNewSessionViewState`, so a whole-side-pane close on a new session is
-  remembered just like hiding the aux bar alone. This is what makes a closed side pane survive both a
-  re-sync of the same new session and the creation of the next new session (D3b reads the recorded
-  state). For created sessions the hook is a no-op, preserving D9.
+  in `_lastVisibleSidePaneParts`) while `_togglingSidePane` is set. The [D2] listener skips capture
+  while `_togglingSidePane` is set, so closing or opening the whole side pane is never recorded by it.
+  Instead the `_onSidePaneToggled(collapsed, previousAuxiliaryBarVisible)` hook (D9b) records the result
+  for the **active** session: a full collapse of a previously-**visible** aux bar writes that session's
+  view state with `auxiliaryBarHiddenByCollapse: true`. The marker is therefore scoped to the session that
+  was actually collapsed — `_captureViewState` (save-time, on switch-away and shutdown) only **preserves**
+  an existing marker while the aux bar stays hidden and never fabricates one, so an explicit aux-bar hide
+  on another session is never mistaken for a collapse. On reload the side pane is restored closed, yet
+  opening Changes (D8) re-reveals it because the marker is present.
+- **New-session / side-pane close [D9b]** — the base `toggleSidePane` calls the
+  `_onSidePaneToggled(collapsed, previousAuxiliaryBarVisible)` hook at the end (still inside the
+  `_togglingSidePane` window). The desktop controller overrides it (skipped while multi-session /
+  maximized): for an **uncreated** session it records the resulting aux-bar visibility via
+  `_setNewSessionViewState` (so a closed side pane survives a re-sync of the same new session and the
+  creation of the next one, D3b). For a **created** session it marks `auxiliaryBarHiddenByCollapse: true`
+  **only** when the toggle fully collapsed a previously-visible aux bar; any other outcome (a re-open, or
+  collapsing an already editor-only state) just captures the resulting state, so an explicit aux-bar hide
+  — including one whose editor-only state is restored when the pane re-opens — is never turned into a
+  collapse.
 - **Responsive sidebar [D7]** — `_registerResponsiveSidebar` derives `spaceConstrained = enabled && small
   && editor visible && aux-bar visible && !multipleSessionsVisible` from the experimental setting
   `sessions.layout.autoCollapseSessionsSidebar` (`observableConfigValue`, default `product.quality !==

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { mainWindow } from '../../../../base/browser/window.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun, derived, observableFromEvent } from '../../../../base/common/observable.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -116,8 +117,6 @@ export class LayoutController extends BaseLayoutController {
 			const isSessionSwitch = previousSessionResource !== undefined && !isEqual(previousSessionResource, activeSessionResource);
 			if (isSessionSwitch) {
 				this._captureViewState(previousSessionResource!);
-				// [D9] The collapsed state belongs to the session we just left.
-				this._sidePaneToggledClosed = false;
 			}
 
 			// [D4] Submit: the same session transitions from new (uncreated) to real.
@@ -168,8 +167,6 @@ export class LayoutController extends BaseLayoutController {
 			if (this._layoutService.isEditorMaximized()) {
 				return;
 			}
-			// [D9] A genuine aux-bar change ends any collapsed-side-pane state.
-			this._sidePaneToggledClosed = false;
 			const activeSession = this._sessionsService.activeSession.get();
 			if (!activeSession) {
 				return;
@@ -200,6 +197,44 @@ export class LayoutController extends BaseLayoutController {
 		}));
 
 		this._registerResponsiveSidebar();
+		this._registerAuxiliaryBarPartVisibility();
+	}
+
+	/**
+	 * [D10] Keep the auxiliary-bar part hidden when it has no active view
+	 * containers (e.g. a workspace-less quick chat where Changes+Files are gated
+	 * off), so an empty column is never shown. Re-checks on container add/remove,
+	 * location moves, active-view-descriptor changes (the gating signal), and
+	 * aux-bar visibility changes. Only ever hides — reveals stay with [D3]/[D8].
+	 */
+	private _registerAuxiliaryBarPartVisibility(): void {
+		const modelListeners = this._register(new DisposableStore());
+		const rewire = (): void => {
+			modelListeners.clear();
+			for (const container of this._viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar)) {
+				modelListeners.add(this._viewDescriptorService.getViewContainerModel(container)
+					.onDidChangeActiveViewDescriptors(() => this._syncAuxiliaryBarPartVisibility()));
+			}
+			this._syncAuxiliaryBarPartVisibility();
+		};
+		this._register(this._viewDescriptorService.onDidChangeViewContainers(rewire));
+		this._register(this._viewDescriptorService.onDidChangeContainerLocation(rewire));
+		this._register(this._viewsService.onDidChangeViewContainerVisibility(e => {
+			if (e.location === ViewContainerLocation.AuxiliaryBar) {
+				this._syncAuxiliaryBarPartVisibility();
+			}
+		}));
+		rewire();
+	}
+
+	/** [D10] Hide the aux-bar part when it has no active view containers; never reveals it. */
+	private _syncAuxiliaryBarPartVisibility(): void {
+		if (this._hasActiveAuxViewContainers()) {
+			return;
+		}
+		if (this._layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
+			this._hideAuxiliaryBarForRestore();
+		}
 	}
 
 	/**
@@ -361,10 +396,14 @@ export class LayoutController extends BaseLayoutController {
 	}
 
 	/**
-	 * [D9b] Records a whole-side-pane toggle on a new (uncreated) session as the
-	 * shared new-session aux-bar choice. See `desktopSessionLayoutController.md`.
+	 * [D9b] Records a whole-side-pane toggle for the active session. For an
+	 * uncreated session it updates the shared new-session choice. For a created
+	 * session, only a full collapse of a previously-visible aux bar is marked as a
+	 * collapse-driven hide (so opening Changes later re-reveals it); any other
+	 * outcome just captures the resulting state, preserving an explicit aux-bar
+	 * hide. See `desktopSessionLayoutController.md`.
 	 */
-	protected override _onSidePaneToggled(): void {
+	protected override _onSidePaneToggled(collapsed: boolean, previousAuxiliaryBarVisible: boolean): void {
 		if (this.multipleSessionsVisibleObs.get()) {
 			return;
 		}
@@ -372,10 +411,25 @@ export class LayoutController extends BaseLayoutController {
 			return;
 		}
 		const activeSession = this._sessionsService.activeSession.get();
-		if (!activeSession || activeSession.isCreated.get()) {
+		if (!activeSession) {
 			return;
 		}
-		this._setNewSessionViewState({ auxiliaryBarVisible: this._layoutService.isVisible(Parts.AUXILIARYBAR_PART) });
+		if (!activeSession.isCreated.get()) {
+			this._setNewSessionViewState({ auxiliaryBarVisible: this._layoutService.isVisible(Parts.AUXILIARYBAR_PART) });
+			return;
+		}
+		if (collapsed && previousAuxiliaryBarVisible) {
+			const activeViewContainerId = this._paneCompositePartService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)?.getId();
+			this._viewStateBySession.set(activeSession.resource, {
+				auxiliaryBarVisible: false,
+				auxiliaryBarActiveViewContainerId: activeViewContainerId,
+				auxiliaryBarHiddenByCollapse: true,
+			});
+			return;
+		}
+		// Re-opened, or collapsed an already-hidden aux bar: capture the resulting
+		// state without fabricating a collapse marker (preserving explicit hides).
+		this._captureViewState(activeSession.resource);
 	}
 
 	// --- Auxiliary bar [D1] ---
@@ -383,8 +437,11 @@ export class LayoutController extends BaseLayoutController {
 	private _captureViewState(sessionResource: URI): void {
 		const auxiliaryBarVisible = this._layoutService.isVisible(Parts.AUXILIARYBAR_PART);
 		const activeViewContainerId = this._paneCompositePartService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)?.getId();
-		// [D9] An aux-bar hide caused only by collapsing the whole side pane.
-		const auxiliaryBarHiddenByCollapse = !auxiliaryBarVisible && this._sidePaneToggledClosed;
+		// [D9] Preserve a collapse marker while the aux bar stays hidden; the
+		// marker is only ever set by `_onSidePaneToggled` for the session that was
+		// collapsed, so an explicit aux-bar hide is never mistaken for a collapse.
+		const previous = this._viewStateBySession.get(sessionResource);
+		const auxiliaryBarHiddenByCollapse = !auxiliaryBarVisible && previous?.auxiliaryBarHiddenByCollapse === true;
 		this._viewStateBySession.set(sessionResource, {
 			auxiliaryBarVisible,
 			auxiliaryBarActiveViewContainerId: activeViewContainerId,

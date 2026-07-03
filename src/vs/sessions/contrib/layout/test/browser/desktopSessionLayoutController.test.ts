@@ -12,6 +12,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { StorageScope, WillSaveStateReason } from '../../../../../platform/storage/common/storage.js';
 import { Parts } from '../../../../../workbench/services/layout/browser/layoutService.js';
+import { ViewContainerLocation } from '../../../../../workbench/common/views.js';
 import { ISessionFileChange, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { LayoutController } from '../../browser/desktopSessionLayoutController.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../../../changes/common/changes.js';
@@ -852,6 +853,70 @@ suite('LayoutController (desktop)', () => {
 		);
 	});
 
+	test('[D9] does not turn an explicit aux-bar hide into a collapse when another session is collapsed', () => {
+		const workspaceFolders = [{ uri: URI.file('/repo') }];
+		const controller = createController({ useModal: 'some', workspaceFolders, revealAuxiliaryBarOnOpen: true });
+		const sessionExplicit = makeSession(URI.parse('session:explicit'));
+		const sessionCollapse = makeSession(URI.parse('session:collapse'));
+		harness.visibleEditorsList = [{}];
+
+		// Session A: open Changes (editor + aux visible), then explicitly hide just
+		// the aux bar while the editor stays open — an explicit aux-bar choice.
+		harness.activeSessionObs.set(sessionExplicit, undefined);
+		harness.activeEditorResource = harness.sessionChangesService.getChangesEditorResource(sessionExplicit.resource);
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		harness.onDidActiveEditorChange.fire();
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		assert.strictEqual(controller.getViewState(sessionExplicit.resource)?.auxiliaryBarHiddenByCollapse, undefined);
+
+		// Session B: collapse the whole side pane (marks B as collapse-hidden).
+		harness.activeSessionObs.set(sessionCollapse, undefined);
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, true);
+		controller.toggleSidePane();
+		assert.strictEqual(controller.getViewState(sessionCollapse.resource)?.auxiliaryBarHiddenByCollapse, true);
+
+		// Switching back to A captures it again — its explicit hide must remain
+		// explicit (no collapse marker leaking from session B's collapse).
+		harness.activeSessionObs.set(sessionExplicit, undefined);
+		harness.activeSessionObs.set(sessionCollapse, undefined);
+		assert.strictEqual(controller.getViewState(sessionExplicit.resource)?.auxiliaryBarHiddenByCollapse, undefined);
+	});
+
+	test('[D9] re-opening the side pane to editor-only does not mark an explicit aux-bar hide as a collapse', () => {
+		const workspaceFolders = [{ uri: URI.file('/repo') }];
+		const controller = createController({ useModal: 'some', workspaceFolders, revealAuxiliaryBarOnOpen: true });
+		const session = makeSession(URI.parse('session:1'));
+		harness.visibleEditorsList = [{}];
+
+		// Open Changes (editor + aux visible), then explicitly hide just the aux bar.
+		harness.activeSessionObs.set(session, undefined);
+		harness.activeEditorResource = harness.sessionChangesService.getChangesEditorResource(session.resource);
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		harness.onDidActiveEditorChange.fire();
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		assert.strictEqual(controller.getViewState(session.resource)?.auxiliaryBarHiddenByCollapse, undefined);
+
+		// Collapse the whole side pane, then re-open it: it restores the editor-only
+		// state (aux bar stays hidden because it was explicitly hidden before).
+		controller.toggleSidePane();
+		controller.toggleSidePane();
+
+		// The explicit aux-bar hide must not have become a collapse-driven hide.
+		assert.strictEqual(controller.getViewState(session.resource)?.auxiliaryBarHiddenByCollapse, undefined);
+
+		// Opening Changes must therefore not re-reveal the aux bar.
+		harness.openedViews = [];
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		harness.onDidActiveEditorChange.fire();
+		assert.ok(
+			!harness.openedViews.includes(CHANGES_VIEW_ID),
+			'an explicit aux-bar hide must not re-reveal after a collapse + editor-only re-open'
+		);
+	});
+
 	// --- [D7] Responsive sessions sidebar ---
 
 	function setPartVisible(part: Parts, visible: boolean): void {
@@ -1042,5 +1107,104 @@ suite('LayoutController (desktop)', () => {
 		resizeWindow(800);
 
 		assert.deepStrictEqual(sidebarHiddenCalls(), []);
+	});
+
+	// --- [D10] Auxiliary bar part hidden when it has no active view containers ---
+
+	test('[D10] hides the aux-bar part when its view containers are gated off', () => {
+		createController();
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, true);
+		harness.setPartHiddenCalls = [];
+
+		// A quick chat gates off Changes + Files, so the aux bar has no active
+		// view containers — the part must hide instead of showing an empty column.
+		harness.activeAuxViewContainerIds = [];
+		harness.onDidChangeActiveViewDescriptors.fire();
+
+		assert.ok(
+			harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === true),
+			'aux-bar part should hide when it has no active view containers'
+		);
+	});
+
+	test('[D10] never reveals an empty aux-bar part', () => {
+		createController({ activeAuxViewContainerIds: [] });
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.setPartHiddenCalls = [];
+
+		harness.onDidChangeActiveViewDescriptors.fire();
+
+		assert.ok(
+			!harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false),
+			'aux-bar part should never be revealed when it has no active view containers'
+		);
+	});
+
+	test('[D10] re-hides the aux-bar part if a session switch left it visible with no containers', () => {
+		createController({ activeAuxViewContainerIds: [] });
+		// Mirror a switch to a workspace-less quick chat where D3a returned early
+		// (no workspace) and left a previously-visible aux bar showing.
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, true);
+		harness.setPartHiddenCalls = [];
+
+		harness.onDidChangeViewContainerVisibility.fire({ id: CHANGES_VIEW_CONTAINER_ID, visible: false, location: ViewContainerLocation.AuxiliaryBar });
+
+		assert.ok(
+			harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === true),
+			'aux-bar part should be hidden reactively when it has no active view containers'
+		);
+	});
+
+	test('[D10] leaves the aux-bar part alone when it has active view containers', () => {
+		createController();
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, true);
+		harness.setPartHiddenCalls = [];
+
+		// Changes + Files still active (default) — the reactive sync must not touch the part.
+		harness.onDidChangeActiveViewDescriptors.fire();
+
+		assert.deepStrictEqual(
+			harness.setPartHiddenCalls.filter(c => c.part === Parts.AUXILIARYBAR_PART),
+			[],
+			'aux-bar part should be left as-is while it has active view containers'
+		);
+	});
+
+	// --- [D10] Toggle Side Panel with an empty aux bar ---
+
+	test('[D10] toggling the side pane with no aux containers reveals the editor, not an empty aux bar', () => {
+		const controller = createController({ activeAuxViewContainerIds: [] });
+		// Side pane fully closed; editors exist but no aux view containers.
+		harness.partVisibility.set(Parts.EDITOR_PART, false);
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.editorGroupsHaveContent = true;
+		harness.setPartHiddenCalls = [];
+
+		controller.toggleSidePane();
+
+		assert.ok(
+			harness.setPartHiddenCalls.some(c => c.part === Parts.EDITOR_PART && c.hidden === false),
+			'toggle should reveal the editor part'
+		);
+		assert.ok(
+			!harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false),
+			'toggle should never reveal an empty aux bar'
+		);
+	});
+
+	test('[D10] toggling the side pane with neither editors nor aux containers reveals nothing', () => {
+		const controller = createController({ activeAuxViewContainerIds: [] });
+		harness.partVisibility.set(Parts.EDITOR_PART, false);
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.editorGroupsHaveContent = false;
+		harness.setPartHiddenCalls = [];
+
+		controller.toggleSidePane();
+
+		assert.deepStrictEqual(
+			harness.setPartHiddenCalls.filter(c => c.hidden === false),
+			[],
+			'toggle should reveal nothing when there is no content on either side'
+		);
 	});
 });
