@@ -19,6 +19,7 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
+import { MultiDiffEditor } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffEditor.js';
 import { Menus } from '../../../browser/menus.js';
 import { SessionHeaderMetaActionViewItem } from '../../../browser/parts/sessionHeaderMetaActionViewItem.js';
 import { SessionHasChangesContext } from '../../../common/contextkeys.js';
@@ -29,6 +30,7 @@ import { IActiveSession } from '../../../services/sessions/common/sessionsManage
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesMultiDiffSourceResolver, SessionChangesFileResourceContext, SessionChangesReviewedFilesContext } from './changesMultiDiffSourceResolver.js';
 import { ISessionChangesService } from './sessionChangesService.js';
+import { isEqual } from '../../../../base/common/resources.js';
 
 // --- View All Changes action
 
@@ -313,14 +315,29 @@ class ChangesetOperationsActionControllerContribution extends Disposable impleme
 						});
 					}
 
-					async run(_accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
+					async run(accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
+						const activeEditorPane = accessor.get(IEditorService).activeEditorPane;
+
 						if (args.length === 0 || !(args[0] instanceof URI)) {
 							return;
 						}
 
+						const resource = args[0];
+						if (operation.id === 'mark-as-reviewed') {
+							if (activeEditorPane instanceof MultiDiffEditor) {
+								const viewModel = activeEditorPane.viewModel;
+								const item = viewModel?.items.read(undefined)
+									.find(i => isEqual(i.modifiedUri, resource) || isEqual(i.originalUri, resource));
+
+								if (item) {
+									viewModel!.collapse(item);
+								}
+							}
+						}
+
 						await changeset?.invokeOperation(operation.id, {
 							kind: 'resource',
-							resource: args[0],
+							resource,
 						});
 					}
 				}));
