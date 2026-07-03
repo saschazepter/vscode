@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IAgent, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostAuthTokenRequest, IAgentMaterializeSessionEvent, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession } from '../common/agentService.js';
+import { AgentProvider, AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IAgent, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostAuthTokenRequest, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { buildDefaultChangesetCatalogue, parseChangesetUri } from '../common/changesetUri.js';
 import { ActionType, ActionEnvelope, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction } from '../common/state/sessionActions.js';
@@ -29,7 +29,7 @@ import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } f
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { ChangesSummary, MessageAttachmentKind, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
 import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../common/state/protocol/actions.js';
-import { ISessionGitHubState, ISessionGitState, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SessionStatus, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, withSessionGitHubState, withSessionGitState, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
+import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SessionStatus, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, withSessionGitHubState, withSessionGitState, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { IProductService } from '../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentHostTerminalManager, type IAgentHostTerminalManager } from './agentHostTerminalManager.js';
@@ -40,6 +40,7 @@ import { IAgentHostGitService } from '../common/agentHostGitService.js';
 import { AgentSideEffects } from './agentSideEffects.js';
 import { AgentServerToolHost } from './shared/agentServerToolHost.js';
 import { serverToolGroups } from './shared/serverToolGroups.js';
+import { createSessionServerToolGroup, type ISessionServerToolAccessor } from './shared/sessionServerTools.js';
 import { AgentHostChangesetService } from './agentHostChangesetService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
 import { IAgentHostCheckpointService, NULL_CHECKPOINT_SERVICE } from '../common/agentHostCheckpointService.js';
@@ -335,7 +336,10 @@ export class AgentService extends Disposable implements IAgentService {
 		// state. Tool groups are contributed here at startup (feedback today) and
 		// handed to providers that support them during registration (see
 		// registerProvider).
-		this._serverToolHost = new AgentServerToolHost(this._stateManager, serverToolGroups);
+		this._serverToolHost = new AgentServerToolHost(this._stateManager, [
+			...serverToolGroups,
+			createSessionServerToolGroup(this._createSessionServerToolAccessor()),
+		]);
 	}
 
 	// ---- provider registration ----------------------------------------------
@@ -406,6 +410,38 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	// ---- session management -------------------------------------------------
+
+	/**
+	 * Builds the dependency surface the session server-tool group needs, bound
+	 * to this service so the group stays decoupled from the concrete host.
+	 */
+	private _createSessionServerToolAccessor(): ISessionServerToolAccessor {
+		return {
+			listSessions: () => this.listSessions(),
+			createSession: config => this.createSession(config),
+			getModels: () => {
+				const models: IAgentModelInfo[] = [];
+				for (const provider of this._providers.values()) {
+					models.push(...provider.models.get());
+				}
+				return models;
+			},
+			startPrompt: (session, chat, prompt) => this._startSessionPrompt(session, chat, prompt),
+			createChat: (session, chat, title) => this.createChat(session, chat, title !== undefined ? { title } : undefined),
+		};
+	}
+
+	/**
+	 * Starts the first turn on a freshly-created session by dispatching a
+	 * `ChatTurnStarted` and routing it through the same side-effects path a
+	 * client-initiated turn takes (which sends the message to the provider).
+	 */
+	private async _startSessionPrompt(session: URI, chat: URI, prompt: string): Promise<void> {
+		const message: Message = { text: prompt, origin: { kind: MessageKind.User } };
+		const action = { type: ActionType.ChatTurnStarted, turnId: generateUuid(), message } as const;
+		this._stateManager.dispatchServerAction(chat.toString(), action);
+		this._sideEffects.handleAction(chat.toString(), action);
+	}
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
 		this._logService.trace('[AgentService] listSessions called');

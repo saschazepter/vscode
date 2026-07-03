@@ -68,3 +68,11 @@ You **must** run these checks before declaring work complete:
 1. `npm run typecheck-client` — TypeScript compilation check. **Do not run `tsc` directly.**
 2. `npm run valid-layers-check` — **MANDATORY.** Catches layering violations. If this fails, fix the imports before proceeding.
 3. `scripts/test.sh --grep <pattern>` — unit tests for affected areas
+
+## Progress dashboards / local HTML in the integrated browser
+- The integrated browser blocks `file://` outside trusted workspace folders (403 "File does not reside within a trusted folder"). To preview session-folder HTML (e.g. a live progress dashboard), serve it over `http://127.0.0.1:<port>` with a background `python3 -m http.server` and open that URL instead.
+- For a self-updating dashboard, embed `<meta http-equiv="refresh" content="5">` and keep the HTML task data in lockstep with the todo store — update both at every task transition so they never drift.
+
+## Don't rely on the LLM to render links/actions from tool result text
+- Tool result text is fed to the model, which may drop or reformat markdown links (e.g. render a session URI as an inline code span), so an explicit `[label](uri)` in a tool result is NOT a reliable way to give the user a clickable action.
+- For a deterministic, client-rendered action (a "pill"/button) tied to a specific tool call, set `toolSpecificData` on the `ChatToolInvocation` in `stateToProgressAdapter.ts` (keyed on the tool name + parsed result) and add a custom subpart in `chatToolInvocationPart.ts` — the completed-state section already routes custom `toolSpecificData` kinds (see `resources`/`simpleToolInvocation`). Follow the `agentFeedbackReviewConfirmation` pattern.
