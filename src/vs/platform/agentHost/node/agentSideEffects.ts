@@ -86,6 +86,13 @@ interface IPendingSubagentSignal {
 	readonly agent: IAgent;
 }
 
+interface IPendingToolConfirmation {
+	readonly signal: IAgentToolPendingConfirmationSignal;
+	readonly sessionKey: ProtocolURI;
+	readonly turnId: string;
+	readonly agent: IAgent;
+}
+
 interface ISubagentSessionRef {
 	readonly parentChatUri: ProtocolURI;
 	readonly toolCallId: string;
@@ -107,6 +114,7 @@ export class AgentSideEffects extends Disposable {
 
 	/** Maps tool call IDs to the agent that owns them, for routing confirmations. */
 	private readonly _toolCallAgents = new Map<string, string>();
+	private readonly _pendingToolConfirmations = new Map<string, IPendingToolConfirmation>();
 	private _lastAgentInfos: readonly AgentInfo[] = [];
 
 	private readonly _permissionManager: SessionPermissionManager;
@@ -576,6 +584,7 @@ export class AgentSideEffects extends Disposable {
 		}
 
 		if (action.type === ActionType.ChatToolCallComplete) {
+			this._pendingToolConfirmations.delete(`${sessionKey}:${action.toolCallId}`);
 			// Emit `languageModelToolInvoked` telemetry for the completed tool
 			// call. `action.result` carries `success`/`error.code` even after the
 			// subagent-content merge above (which only touches `result.content`).
@@ -594,17 +603,20 @@ export class AgentSideEffects extends Disposable {
 		}
 
 		if (action.type === ActionType.ChatTurnComplete) {
+			this._clearPendingToolConfirmationsForChat(sessionKey);
 			this._turnTracker.turnCompleted(sessionKey, turnId, 'success');
 			this._toolCallTracker.clearSession(sessionKey);
 			this._runTurnCompleteSideEffects(sessionKey, turnId);
 		}
 
 		if (action.type === ActionType.ChatTurnCancelled) {
+			this._clearPendingToolConfirmationsForChat(sessionKey);
 			this._turnTracker.turnCompleted(sessionKey, turnId, 'cancelled');
 			this._toolCallTracker.clearSession(sessionKey);
 		}
 
 		if (action.type === ActionType.ChatError) {
+			this._clearPendingToolConfirmationsForChat(sessionKey);
 			this._turnTracker.turnCompleted(sessionKey, turnId, 'error');
 			this._toolCallTracker.clearSession(sessionKey);
 		}
@@ -780,6 +792,7 @@ export class AgentSideEffects extends Disposable {
 	 */
 	cancelSubagentSessions(parentChatURI: ProtocolURI): void {
 		for (const subagent of this._subagentChats.getAll(parentChatURI)) {
+			this._clearPendingToolConfirmationsForChat(subagent.chatUri);
 			const turnId = this._stateManager.getActiveTurnId(subagent.chatUri);
 			if (turnId) {
 				this._stateManager.dispatchServerAction(subagent.chatUri, {
@@ -813,6 +826,7 @@ export class AgentSideEffects extends Disposable {
 		if (!subagent) {
 			return;
 		}
+		this._clearPendingToolConfirmationsForChat(subagent.chatUri);
 
 		const turnId = this._stateManager.getActiveTurnId(subagent.chatUri);
 		if (turnId) {
@@ -831,6 +845,7 @@ export class AgentSideEffects extends Disposable {
 		const parentChatURIs = new Set<ProtocolURI>();
 		for (const subagent of this._subagentChats.values()) {
 			if (subagent.sessionUri === parentSession) {
+				this._clearPendingToolConfirmationsForChat(subagent.chatUri);
 				this._stateManager.removeChat(subagent.sessionUri, subagent.chatUri);
 				this._toolCallTracker.clearSession(subagent.chatUri);
 				parentChatURIs.add(subagent.parentChatUri);
@@ -892,6 +907,7 @@ export class AgentSideEffects extends Disposable {
 	 * for the client.
 	 */
 	private async _handleToolReady(e: IAgentToolPendingConfirmationSignal, sessionKey: ProtocolURI, turnId: string, agent: IAgent): Promise<void> {
+		const toolCallKey = `${sessionKey}:${e.state.toolCallId}`;
 		const approvalEvent = {
 			toolCallId: e.state.toolCallId,
 			session: e.chat,
@@ -909,15 +925,18 @@ export class AgentSideEffects extends Disposable {
 			&& contributor?.kind === ToolCallContributorKind.Client
 			&& !!e.state.confirmationTitle;
 		if (clientShouldAutoApprove) {
+			this._pendingToolConfirmations.delete(toolCallKey);
 			this._toolCallAgents.set(`${sessionKey}:${e.state.toolCallId}`, agent.id);
 			effective = { ...e, state: { ...e.state, _meta: { ...toolCall?._meta, ...e.state._meta, ...toToolCallMeta({ autoApproveBySetting: true }) } } };
 		} else if (autoApproval !== undefined) {
+			this._pendingToolConfirmations.delete(toolCallKey);
 			this._toolCallAgents.delete(`${sessionKey}:${e.state.toolCallId}`);
 			agent.respondToPermissionRequest(e.state.toolCallId, true);
 			// Strip confirmationTitle so createToolReadyAction emits the
 			// auto-approved (no-options) action.
 			effective = { ...e, state: { ...e.state, confirmationTitle: undefined } };
 		} else if (effective.state.confirmationTitle) {
+			this._pendingToolConfirmations.set(toolCallKey, { signal: e, sessionKey, turnId, agent });
 			// Make sure the agent is registered for the eventual `ChatToolCallConfirmed` response.
 			this._toolCallAgents.set(`${sessionKey}:${e.state.toolCallId}`, agent.id);
 		}
@@ -982,6 +1001,7 @@ export class AgentSideEffects extends Disposable {
 					throw new Error(`ChatToolCallConfirmed must be handled on an AHP chat channel: ${channel}`);
 				}
 				const toolCallKey = `${channel}:${action.toolCallId}`;
+				this._pendingToolConfirmations.delete(toolCallKey);
 				const agentId = this._toolCallAgents.get(toolCallKey);
 				if (agentId) {
 					this._toolCallAgents.delete(toolCallKey);
@@ -1012,6 +1032,7 @@ export class AgentSideEffects extends Disposable {
 				}
 				this._turnTracker.turnCompleted(channel, action.turnId, 'cancelled');
 				this._toolCallTracker.clearSession(channel);
+				this._clearPendingToolConfirmationsForChat(channel);
 				// Cancel all subagent sessions for this parent
 				this.cancelSubagentSessions(channel);
 				const agent = this._options.getAgent(sessionChannel);
@@ -1114,6 +1135,9 @@ export class AgentSideEffects extends Disposable {
 				if (values) {
 					this._persistSessionFlag(channel, 'configValues', JSON.stringify(values));
 				}
+				void this._retryPendingToolConfirmations(channel).catch(err => {
+					this._logService.error(`[AgentSideEffects] Failed to retry pending tool confirmations for ${channel}`, err);
+				});
 				break;
 			}
 			case ActionType.ChatToolCallComplete: {
@@ -1122,6 +1146,23 @@ export class AgentSideEffects extends Disposable {
 				}
 				this._notifyClientToolCallComplete(sessionChannel, chatChannel, action.toolCallId, action.result, 'client-dispatch');
 				break;
+			}
+		}
+	}
+
+	private async _retryPendingToolConfirmations(session: ProtocolURI): Promise<void> {
+		if (!this._permissionManager.isSessionAutoApproveEnabled(session)) {
+			return;
+		}
+		const pending = [...this._pendingToolConfirmations.values()].filter(item => parseRequiredSessionUriFromChatUri(item.sessionKey) === session);
+		await Promise.all(pending.map(item => this._handleToolReady(item.signal, item.sessionKey, item.turnId, item.agent)));
+	}
+
+	private _clearPendingToolConfirmationsForChat(chat: ProtocolURI): void {
+		const prefix = `${chat}:`;
+		for (const key of this._pendingToolConfirmations.keys()) {
+			if (key.startsWith(prefix)) {
+				this._pendingToolConfirmations.delete(key);
 			}
 		}
 	}
