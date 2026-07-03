@@ -272,6 +272,7 @@ function getInputStateStorageKey(widgetViewKindTag: string): string {
 	return `chat.untitledInputState.${widgetViewKindTag}`;
 }
 
+// Storage key for persisted input attachments, scoped per widget to avoid cross-pollination.
 function getInputAttachmentsStorageKey(widgetViewKindTag: string): string {
 	if (LEGACY_SHARED_INPUT_STATE_TAGS.has(widgetViewKindTag)) {
 		return 'chat.untitledInputAttachments';
@@ -299,14 +300,13 @@ function createEmptyInputStateMemento(widgetViewKindTag: string) {
 	});
 }
 
-function createEmptyInputAttachmentsMemento(widgetViewKindTag: string) {
-	return observableMemento<readonly IChatRequestVariableEntry[]>({
-		defaultValue: [],
-		key: getInputAttachmentsStorageKey(widgetViewKindTag),
-		toStorage: serializeUntitledInputAttachments,
-		fromStorage: deserializeUntitledInputAttachments,
-	});
-}
+// Per-widget attachments memento — uses getInputAttachmentsStorageKey for isolation.
+const emptyInputAttachments = (widgetViewKindTag: string) => observableMemento<readonly IChatRequestVariableEntry[]>({
+	defaultValue: [],
+	key: getInputAttachmentsStorageKey(widgetViewKindTag),
+	toStorage: serializeUntitledInputAttachments,
+	fromStorage: deserializeUntitledInputAttachments,
+});
 
 export class ChatInputPart extends Disposable implements IHistoryNavigationWidget {
 	private static _counter = 0;
@@ -711,7 +711,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this._syncInputStateToModel();
 		}, 150));
 		this._emptyInputState = this._register(createEmptyInputStateMemento(this.options.widgetViewKindTag)(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
-		this._emptyInputAttachments = this._register(createEmptyInputAttachmentsMemento(this.options.widgetViewKindTag)(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
+		this._emptyInputAttachments = this._register(emptyInputAttachments(this.options.widgetViewKindTag)(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
 
 		this._contextResourceLabels = this._register(this.instantiationService.createInstance(ResourceLabels, { onDidChangeVisibility: this._onDidChangeVisibility.event }));
 		this._currentModeObservable = observableValue<IChatMode>('currentMode', this.options.defaultMode ?? ChatMode.Agent);
@@ -3277,16 +3277,29 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					const itemDelegate: IModelPickerDelegate = this._createModelPickerDelegate();
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
-					const delegate: IModePickerDelegate = this._createModePickerDelegate();
-					const widget = this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
 					if (!this.options.supportsChangingModes) {
-						const originalRender = widget.render.bind(widget);
-						widget.render = (container: HTMLElement) => {
-							originalRender(container);
-							container.classList.add('chat-input-picker-disabled');
+						// Static disabled chip showing the current mode label
+						const currentMode = this._currentModeObservable.get();
+						const label = currentMode.label.get();
+						const icon = currentMode.icon.get();
+						const item = new class extends BaseActionViewItem {
+							constructor() { super(undefined, action); }
+							override render(container: HTMLElement): void {
+								super.render(container);
+								container.classList.add('chat-mode-picker-item');
+								container.style.pointerEvents = 'none';
+								container.style.opacity = '0.6';
+								const labelEl = dom.append(container, dom.$('.action-label'));
+								if (icon) {
+									labelEl.appendChild(dom.$(`span.codicon.codicon-${icon.id}`));
+								}
+								labelEl.appendChild(dom.$('span.chat-input-picker-label', undefined, label));
+							}
 						};
+						return this.modeWidget = item as any;
 					}
-					return widget;
+					const delegate: IModePickerDelegate = this._createModePickerDelegate();
+					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
 				} else if (action.id === OpenAutomationsWorkspacePickerAction.ID && action instanceof MenuItemAction) {
 					// Toolbar chip for an externally-owned workspace picker
 					// (today: the automations dialog's single picker instance,
