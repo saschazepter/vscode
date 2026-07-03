@@ -529,7 +529,7 @@ export function renderForm(
 		renderInputToolbarBelowInput: false,
 		renderWorkingSet: false,
 		enableImplicitContext: false,
-		supportsChangingModes: false,
+		supportsChangingModes: true,
 		hideCustomChatModes: true,
 		suppressModePreferredModel: true,
 		suppressModelPersistence: true,
@@ -581,20 +581,6 @@ export function renderForm(
 	);
 	chatInput.render(promptHost, initialPrompt, stubWidget as IChatWidget);
 	chatInput.inputEditor.updateOptions({ placeholder: localize('automation.form.prompt.placeholder', "Describe what you want to automate") });
-
-	// Render a static disabled mode chip in the toolbar (cosmetic, not interactive).
-	// Mirrors the DOM structure of ModePickerActionItem without instantiating the real widget.
-	const toolbar = promptHost.querySelector('.chat-input-toolbar');
-	if (toolbar) {
-		const chip = $('div.action-item.chat-input-picker-item.chat-mode-picker-item');
-		chip.style.pointerEvents = 'none';
-		chip.style.opacity = '0.6';
-		const label = $('a.action-label');
-		const modeLabel = initialMode === 'ask' ? 'Ask' : 'Agent';
-		label.appendChild($('span.chat-input-picker-label', undefined, modeLabel));
-		chip.appendChild(label);
-		toolbar.prepend(chip);
-	}
 
 	if (initialMode) {
 		const getUnfilteredInitialMode = () => {
