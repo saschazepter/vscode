@@ -5,15 +5,12 @@
 
 import { Emitter } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../../base/common/observable.js';
 import { equals } from '../../../../../base/common/objects.js';
 import { localize } from '../../../../../nls.js';
 import { registerAction2, Action2, MenuId } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
-import { ChatAutomationsEnabledContext } from '../../common/automations/automationsEnabled.js';
-import { IAutomationService } from '../../common/automations/automationService.js';
 import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderName } from './agentSessions.js';
 import { AgentSessionStatus, IAgentSession } from './agentSessionsModel.js';
 import { IAgentSessionsFilter, IAgentSessionsFilterExcludes } from './agentSessionsViewer.js';
@@ -59,7 +56,6 @@ const DEFAULT_EXCLUDES: IAgentSessionsFilterExcludes = Object.freeze({
 	states: [] as const,
 	archived: true as const /* archived are never excluded but toggle between expanded and collapsed */,
 	read: false as const,
-	automation: false as const,
 	repositoryGroupCapped: true as const /* when true, repo groups are capped at a limit with a "show more" item */,
 });
 
@@ -85,7 +81,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		private readonly options: IAgentSessionsFilterOptions,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IStorageService private readonly storageService: IStorageService,
-		@IAutomationService private readonly automationService: IAutomationService,
 	) {
 		super();
 
@@ -100,11 +95,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.updateFilterActions()));
 
 		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, this.STORAGE_KEY, this._store)(() => this.updateExcludes(true)));
-
-		this._register(autorun(reader => {
-			this.automationService.runs.read(reader);
-			this._automationSessionIds = undefined;
-		}));
 	}
 
 	private updateExcludes(fromEvent: boolean): void {
@@ -119,7 +109,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 			} else {
 				this.excludes = { ...DEFAULT_EXCLUDES };
 			}
-			this._automationSessionIds = undefined;
 		}
 
 		this.updateFilterActions();
@@ -131,7 +120,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 
 	private storeExcludes(excludes: IAgentSessionsFilterExcludes): void {
 		this.excludes = excludes;
-		this._automationSessionIds = undefined;
 
 		// Set guard before storage operation to prevent our own listener from
 		// re-triggering updateExcludes which would re-register actions mid-click
@@ -178,7 +166,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		this.registerStateActions(this.actionDisposables, menuId);
 		this.registerArchivedActions(this.actionDisposables, menuId);
 		this.registerReadActions(this.actionDisposables, menuId);
-		this.registerAutomationActions(this.actionDisposables, menuId);
 		this.registerResetAction(this.actionDisposables, menuId);
 	}
 
@@ -355,28 +342,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		}));
 	}
 
-	private registerAutomationActions(disposables: DisposableStore, menuId: MenuId): void {
-		const that = this;
-		disposables.add(registerAction2(class extends Action2 {
-			constructor() {
-				super({
-					id: `agentSessions.filter.toggleExcludeAutomation.${menuId.id.toLowerCase()}`,
-					title: localize('agentSessions.filter.automations', 'Automations'),
-					menu: {
-						id: menuId,
-						group: '3_props',
-						order: 2,
-						when: ChatAutomationsEnabledContext,
-					},
-					toggled: that.excludes.automation ? ContextKeyExpr.false() : ContextKeyExpr.true(),
-				});
-			}
-			run(): void {
-				that.storeExcludes({ ...that.excludes, automation: !that.excludes.automation });
-			}
-		}));
-	}
-
 	/**
 	 * Programmatically toggle the repository group capping state.
 	 */
@@ -428,10 +393,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 			return true;
 		}
 
-		if (this.excludes.automation && this.isAutomationSession(session)) {
-			return true;
-		}
-
 		if (this.excludes.providers.includes(session.providerType)) {
 			return true;
 		}
@@ -449,25 +410,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 
 	notifyResults(count: number): void {
 		this.options.notifyResults?.(count);
-	}
-
-	private _automationSessionIds: Set<string> | undefined;
-
-	private getAutomationSessionIds(): Set<string> {
-		if (!this._automationSessionIds) {
-			this._automationSessionIds = new Set<string>();
-			for (const run of this.automationService.runs.get()) {
-				if (run.sessionId) {
-					this._automationSessionIds.add(run.sessionId);
-				}
-			}
-		}
-		return this._automationSessionIds;
-	}
-
-	private isAutomationSession(session: IAgentSession): boolean {
-		const sessionId = `${session.providerType}:${session.resource.toString()}`;
-		return this.getAutomationSessionIds().has(sessionId);
 	}
 
 	reset(): void {

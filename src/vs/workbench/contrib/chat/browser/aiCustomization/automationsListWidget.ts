@@ -33,6 +33,7 @@ import { IAutomationService } from '../../common/automations/automationService.j
 import { IAutomationDialogService } from '../../common/automations/automationDialogService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { DAYS_OF_WEEK } from '../../common/automations/schedule.js';
+import { ISessionsService } from '../../../../../sessions/services/sessions/browser/sessionsService.js';
 
 const $ = DOM.$;
 
@@ -107,6 +108,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 	constructor(
 		private readonly widget: AutomationsListWidget,
 		private readonly hoverService: IHoverService,
+		private readonly sessionsService: ISessionsService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -276,6 +278,19 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			err.setAttribute('role', 'status');
 			err.setAttribute('aria-live', 'polite');
 		}
+
+		if (run.sessionId) {
+			const openButton = DOM.append(li, $('span.automations-history-row-open.codicon.codicon-link-external'));
+			openButton.setAttribute('role', 'button');
+			openButton.setAttribute('tabindex', '0');
+			openButton.title = localize('openRunSession', "Open session");
+			openButton.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const colonIdx = run.sessionId!.indexOf(':');
+				const resourceStr = run.sessionId!.substring(colonIdx + 1);
+				this.sessionsService.openSession(URI.parse(resourceStr));
+			});
+		}
 	}
 
 	private createIconButton(container: HTMLElement, icon: ThemeIcon, tooltip: string, disabled: boolean, disposables: DisposableStore): HTMLElement {
@@ -335,6 +350,7 @@ export class AutomationsListWidget extends Disposable {
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@ISessionsService private readonly sessionsService: ISessionsService,
 	) {
 		super();
 
@@ -371,7 +387,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
