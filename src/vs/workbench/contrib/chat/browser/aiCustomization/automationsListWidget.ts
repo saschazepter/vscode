@@ -289,13 +289,14 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			const openButton = DOM.append(li, $('span.automations-history-row-open.codicon.codicon-link-external'));
 			openButton.setAttribute('role', 'button');
 			openButton.setAttribute('tabindex', '0');
+			openButton.setAttribute('aria-label', localize('openRunSession', "Open session"));
 			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
 			const openSession = (e: Event) => {
 				e.stopPropagation();
 				const activeEditor = this.editorService.activeEditor;
 				const activeGroupId = this.editorGroupsService.activeGroup.id;
-				this.chatWidgetService.openSession(URI.parse(run.sessionResource!)).then(() => {
-					if (activeEditor) {
+				this.chatWidgetService.openSession(URI.parse(run.sessionResource!)).then((widget) => {
+					if (widget && activeEditor) {
 						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
 					}
 				}).catch(() => {

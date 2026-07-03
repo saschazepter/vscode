@@ -2133,8 +2133,14 @@ pane is first mounted. View switches inside the modal are not animated. */
 	font-size: 16px;
 }
 
-.automations-list-widget .automations-history-row:hover .automations-history-row-open {
+.automations-list-widget .automations-history-row:hover .automations-history-row-open,
+.automations-list-widget .automations-history-row-open:focus-visible {
 	opacity: 1;
+}
+
+.automations-list-widget .automations-history-row-open:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
 .automations-list-widget .automations-history-row-open:hover {

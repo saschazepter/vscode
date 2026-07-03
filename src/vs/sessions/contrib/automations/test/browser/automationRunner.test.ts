@@ -57,8 +57,8 @@ class FakeSessionsManagementService extends mock<ISessionsManagementService>() {
 	}
 }
 
-function fakeSession(resource: string): ISession {
-	return upcastPartial<ISession>({ sessionId: 'ignored', resource: URI.parse(resource) });
+function fakeSession(id: string): ISession {
+	return upcastPartial<ISession>({ sessionId: id, resource: URI.from({ scheme: 'vscode-chat-session', authority: 'test', path: `/${id}` }) });
 }
 
 suite('AutomationRunner', () => {
@@ -89,7 +89,7 @@ suite('AutomationRunner', () => {
 		const runs = service.runs.get();
 		assert.strictEqual(runs.length, 1);
 		assert.strictEqual(runs[0].status, 'completed');
-		assert.strictEqual(runs[0].sessionResource, 'vscode-chat-session://copilot/s1');
+		assert.strictEqual(runs[0].sessionResource, 'vscode-chat-session://test/s1');
 		assert.strictEqual(runs[0].trigger, 'schedule');
 		assert.strictEqual(runs[0].leaderWindowId, 99);
 	});
