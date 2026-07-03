@@ -11,6 +11,7 @@ import es from 'event-stream';
 import { rename } from './gulp/facade.ts';
 import vfs from 'vinyl-fs';
 import * as ext from './extensions.ts';
+import { getCurrentExtensionTarget, getPlatformSpecificAssetName } from './extensionTarget.ts';
 import fancyLog from 'fancy-log';
 import ansiColors from 'ansi-colors';
 import { Stream } from 'stream';
@@ -22,6 +23,12 @@ export interface IExtensionDefinition {
 	repo: string;
 	platforms?: string[];
 	vsix?: string;
+	/**
+	 * Per-target checksums for a platform-specific extension published to a GitHub release.
+	 * Keyed by marketplace target platform (e.g. `win32-x64`, `linux-armhf`, `alpine-x64`).
+	 * The matching release asset is resolved by convention as `<name>-<osAlias>-<arch>.vsix`.
+	 */
+	platformSpecific?: { [target: string]: string };
 	metadata: {
 		id: string;
 		publisherId: {
@@ -68,18 +75,35 @@ function isUpToDate(extension: IExtensionDefinition): boolean {
 	}
 }
 
+function isInsiders(): boolean {
+	return process.env['VSCODE_QUALITY'] === 'insider';
+}
+
 function getExtensionDownloadStream(extension: IExtensionDefinition) {
 	let input: Stream;
 
 	if (extension.vsix) {
 		input = ext.fromVsix(path.join(root, extension.vsix), extension);
+	} else if (extension.platformSpecific) {
+		input = ext.fromGithub(extension, { asset: resolvePlatformSpecificAsset(extension), prerelease: isInsiders() });
 	} else if (productjson.extensionsGallery?.serviceUrl) {
 		input = ext.fromMarketplace(productjson.extensionsGallery.serviceUrl, extension);
 	} else {
-		input = ext.fromGithub(extension);
+		input = ext.fromGithub(extension, { prerelease: isInsiders() });
 	}
 
 	return input.pipe(rename(p => p.dirname = `${extension.name}/${p.dirname}`));
+}
+
+function resolvePlatformSpecificAsset(extension: IExtensionDefinition): { assetName: string; sha256: string } {
+	const target = getCurrentExtensionTarget();
+	const sha256 = target ? extension.platformSpecific![target] : undefined;
+
+	if (!target || !sha256) {
+		throw new Error(`Built-in extension '${extension.name}' is platform-specific but has no asset for target '${target ?? `${process.platform}-${process.env['VSCODE_ARCH'] ?? process.arch}`}'. Available targets: [${Object.keys(extension.platformSpecific!)}]`);
+	}
+
+	return { assetName: getPlatformSpecificAssetName(extension.name, target), sha256 };
 }
 
 export function getExtensionStream(extension: IExtensionDefinition) {

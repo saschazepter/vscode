@@ -278,15 +278,20 @@ export function fromVsix(vsixPath: string, { name: extensionName, version, sha25
 }
 
 
-export function fromGithub({ name, version, repo, sha256, metadata }: IExtensionDefinition): Stream {
-	fancyLog('Downloading extension from GH:', ansiColors.yellow(`${name}@${version}`), '...');
+export function fromGithub({ name, version, repo, sha256, metadata }: IExtensionDefinition, options?: { asset?: { assetName: string; sha256: string }; prerelease?: boolean }): Stream {
+	const asset = options?.asset;
+	const prerelease = options?.prerelease ?? false;
+	fancyLog('Downloading extension from GH:', ansiColors.yellow(`${name}@${prerelease ? 'prerelease' : version}`), asset ? ansiColors.gray(`(${asset.assetName})`) : '', '...');
 
 	const packageJsonFilter = filter('package.json', { restore: true });
 
 	return fetchGithub(new URL(repo).pathname, {
 		version,
-		name: name => name.endsWith('.vsix'),
-		checksumSha256: sha256
+		name: asset ? asset.assetName : name => name.endsWith('.vsix'),
+		// The checksum is tied to a specific version; when resolving the latest pre-release the
+		// downloaded asset differs, so it cannot be validated against the pinned checksum.
+		checksumSha256: prerelease ? undefined : (asset ? asset.sha256 : sha256),
+		prerelease
 	})
 		.pipe(buffer())
 		.pipe(vinylZip.src())
