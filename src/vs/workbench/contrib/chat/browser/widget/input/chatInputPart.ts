@@ -3270,25 +3270,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
 					if (!this.options.supportsChangingModes) {
-						// Static disabled chip showing the current mode label
-						const currentMode = this._currentModeObservable.get();
-						const label = currentMode.label.get();
-						const icon = currentMode.icon.get();
-						const item = new class extends BaseActionViewItem {
-							constructor() { super(undefined, action); }
-							override render(container: HTMLElement): void {
-								super.render(container);
-								container.classList.add('chat-mode-picker-item');
-								container.style.pointerEvents = 'none';
-								container.style.opacity = '0.6';
-								const labelEl = dom.append(container, dom.$('.action-label'));
-								if (icon) {
-									labelEl.appendChild(dom.$(`span.codicon.codicon-${icon.id}`));
-								}
-								labelEl.appendChild(dom.$('span.chat-input-picker-label', undefined, label));
-							}
-						};
-						return this.modeWidget = item as any;
+						return new HiddenActionViewItem(action);
 					}
 					const delegate: IModePickerDelegate = this._createModePickerDelegate();
 					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);

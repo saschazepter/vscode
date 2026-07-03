@@ -582,6 +582,19 @@ export function renderForm(
 	chatInput.render(promptHost, initialPrompt, stubWidget as IChatWidget);
 	chatInput.inputEditor.updateOptions({ placeholder: localize('automation.form.prompt.placeholder', "Describe what you want to automate") });
 
+	// Render a static disabled mode chip in the toolbar (cosmetic, not interactive)
+	const toolbar = promptHost.querySelector('.chat-input-toolbar');
+	if (toolbar) {
+		const chip = $('.action-item.chat-mode-picker-item');
+		chip.style.pointerEvents = 'none';
+		chip.style.opacity = '0.6';
+		const label = $('.action-label');
+		label.appendChild($('span.codicon.codicon-' + (initialMode === 'ask' ? 'comment-discussion' : 'sparkle-filled')));
+		label.appendChild($('span.chat-input-picker-label', undefined, initialMode === 'ask' ? 'Ask' : 'Agent'));
+		chip.appendChild(label);
+		toolbar.prepend(chip);
+	}
+
 	if (initialMode) {
 		const getUnfilteredInitialMode = () => {
 			const modes = chatInput.currentChatModesObs.get();
