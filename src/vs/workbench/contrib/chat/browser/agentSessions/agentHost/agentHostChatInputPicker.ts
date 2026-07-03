@@ -18,6 +18,7 @@ import { localize } from '../../../../../../nls.js';
 import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
 import { KNOWN_AUTO_APPROVE_VALUES, SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { ClaudeSessionConfigKey } from '../../../../../../platform/agentHost/common/claudeSessionConfigKeys.js';
+import { CodexSessionConfigKey } from '../../../../../../platform/agentHost/common/codexSessionConfigKeys.js';
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import type { ResolveSessionConfigResult, SessionConfigPropertySchema, SessionConfigValueItem } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import type { SessionState } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
@@ -77,6 +78,13 @@ function getConfigIcon(property: string, value: unknown | undefined): ThemeIcon 
 			case 'plan': return Codicon.lightbulb;
 			case 'auto': return Codicon.sparkle;
 			case 'bypassPermissions': return Codicon.warning;
+		}
+	}
+	if (property === CodexSessionConfigKey.PermissionsPreset && typeof value === 'string') {
+		switch (value) {
+			case 'default': return Codicon.shield;
+			case 'auto-review': return Codicon.sparkle;
+			case 'full-access': return Codicon.warning;
 		}
 	}
 	return undefined;
@@ -139,6 +147,9 @@ function getEnumValueDescription(schema: SessionConfigPropertySchema, value: unk
 }
 
 export function getConfigPickerTriggerHover(property: string, schema: SessionConfigPropertySchema, value: unknown | undefined, isReadOnly: boolean): string {
+	if (property === CodexSessionConfigKey.PermissionsPreset) {
+		return getEnumValueDescription(schema, value) ?? schema.description ?? schema.title;
+	}
 	if (property !== SessionConfigKey.AutoApprove) {
 		return schema.description ?? schema.title;
 	}
@@ -220,6 +231,7 @@ export const WELL_KNOWN_PICKER_PROPERTIES: ReadonlySet<string> = new Set<string>
 	SessionConfigKey.Branch,
 	SessionConfigKey.Permissions,
 	ClaudeSessionConfigKey.PermissionMode,
+	CodexSessionConfigKey.PermissionsPreset,
 ]);
 
 /**
