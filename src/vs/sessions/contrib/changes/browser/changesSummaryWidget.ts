@@ -12,6 +12,7 @@ import { ISessionChangesSummary } from '../../../services/sessions/common/sessio
 import { IChangesViewService } from '../common/changesViewService.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { Throttler } from '../../../../base/common/async.js';
 
 export class ChangesSummaryWidget extends Disposable {
 	private readonly _summaryObs: IObservable<ISessionChangesSummary | undefined>;
@@ -93,6 +94,7 @@ class AnimatedCounterWidget extends Disposable {
 	private _element: HTMLElement;
 	private _count: number | undefined;
 	private readonly _animationOptions: KeyframeAnimationOptions;
+	private readonly _updateThrottler = this._register(new Throttler());
 
 	constructor(
 		container: HTMLElement,
@@ -117,11 +119,12 @@ class AnimatedCounterWidget extends Disposable {
 		} satisfies KeyframeAnimationOptions;
 
 		this._register(autorun(reader => {
-			this._update(this._options.count.read(reader));
+			const count = this._options.count.read(reader);
+			this._updateThrottler.queue(() => this._update(count));
 		}));
 	}
 
-	private _update(count: number | undefined): void {
+	private async _update(count: number | undefined): Promise<void> {
 		if (!this._element || this._element.children.length === 0) {
 			return;
 		}
@@ -183,12 +186,22 @@ class AnimatedCounterWidget extends Disposable {
 			{ transform: `translateY(${exitTo})`, opacity: 0 },
 		], this._animationOptions);
 
-		const cleanup = () => {
-			this._count = count;
-			this._element?.removeChild(outgoingElement);
-		};
+		await new Promise<void>(resolve => {
+			let didCleanup = false;
 
-		exit.addEventListener('cancel', cleanup);
-		exit.addEventListener('finish', cleanup);
+			const cleanup = () => {
+				if (didCleanup) {
+					return;
+				}
+
+				didCleanup = true;
+				this._count = count;
+				this._element?.removeChild(outgoingElement);
+				resolve();
+			};
+
+			exit.addEventListener('cancel', cleanup);
+			exit.addEventListener('finish', cleanup);
+		});
 	}
 }
