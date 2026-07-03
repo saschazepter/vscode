@@ -608,8 +608,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(localStateManager, new NullLogService())),
 				createOperationService(),
 				subscriptionService,
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 			return { service, localStateManager, computes, subscriptions: subscriptionService.subscriptions };
 		}
 
@@ -1038,8 +1038,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(localStateManager, new NullLogService())),
 				createOperationService(),
 				createSubscriptionService(buildTurnChangesetUri(sessionUri.toString(), 'turn-1')),
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 
 			localStateManager.createSession({
 				resource: sessionUri.toString(),
@@ -1119,8 +1119,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(stateManager, new NullLogService())),
 				createOperationService(),
 				createSubscriptionService(),
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 
 			const compareUri = await svc.computeCompareTurnsChangeset(sessionStr, 'orig', 'mod');
 
@@ -1153,8 +1153,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(stateManager, new NullLogService())),
 				createOperationService(),
 				createSubscriptionService(),
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 
 			const compareUri = await svc.computeCompareTurnsChangeset(sessionStr, 'orig', 'mod');
 
@@ -1184,8 +1184,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(stateManager, new NullLogService())),
 				createOperationService(),
 				createSubscriptionService(),
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 
 			const compareUri = await svc.computeCompareTurnsChangeset(sessionStr, 'orig', 'mod');
 
@@ -1216,8 +1216,8 @@ suite.skip('AgentHostChangesetService', () => {
 				disposables.add(new AgentConfigurationService(stateManager, new NullLogService())),
 				createOperationService(),
 				createSubscriptionService(),
-			NULL_REVIEW_SERVICE,
-		));
+				NULL_REVIEW_SERVICE,
+			));
 
 			const compareUri = await svc.computeCompareTurnsChangeset(sessionStr, 'orig', 'mod');
 
