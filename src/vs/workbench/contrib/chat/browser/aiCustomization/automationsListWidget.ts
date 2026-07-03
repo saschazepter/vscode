@@ -34,7 +34,7 @@ import { IAutomationService } from '../../common/automations/automationService.j
 import { IAutomationDialogService } from '../../common/automations/automationDialogService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { DAYS_OF_WEEK } from '../../common/automations/schedule.js';
-import { ISessionsService } from '../../../../../sessions/services/sessions/browser/sessionsService.js';
+import { IChatWidgetService } from '../chat.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 
@@ -111,7 +111,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 	constructor(
 		private readonly widget: AutomationsListWidget,
 		private readonly hoverService: IHoverService,
-		private readonly sessionsService: ISessionsService,
+		private readonly chatWidgetService: IChatWidgetService,
 		private readonly notificationService: INotificationService,
 		private readonly editorService: IEditorService,
 		private readonly editorGroupsService: IEditorGroupsService,
@@ -296,7 +296,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 				const resourceStr = run.sessionId!.substring(colonIdx + 1);
 				const activeEditor = this.editorService.activeEditor;
 				const activeGroupId = this.editorGroupsService.activeGroup.id;
-				this.sessionsService.openSession(URI.parse(resourceStr)).then(() => {
+				this.chatWidgetService.openSession(URI.parse(resourceStr)).then(() => {
 					if (activeEditor) {
 						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
 					}
@@ -371,7 +371,7 @@ export class AutomationsListWidget extends Disposable {
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@ISessionsService private readonly sessionsService: ISessionsService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
@@ -411,7 +411,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService, this.notificationService, this.editorService, this.editorGroupsService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.chatWidgetService, this.notificationService, this.editorService, this.editorGroupsService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
