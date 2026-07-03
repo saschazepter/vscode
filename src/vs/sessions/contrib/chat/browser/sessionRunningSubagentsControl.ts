@@ -25,6 +25,8 @@ const STEP_MAX_LENGTH = 48;
 
 interface IRunningSubagent {
 	readonly chat: IChat;
+	/** The subagent's display title. */
+	readonly title: string;
 	/** True when the subagent is blocked waiting for the user (needs attention). */
 	readonly needsAttention: boolean;
 	/** Short "current step" text (the subagent's live status description), if any. */
@@ -100,6 +102,7 @@ export class SessionRunningSubagentsControl extends Disposable {
 			.filter(({ status }) => status === SessionStatus.InProgress || status === SessionStatus.NeedsInput)
 			.map(({ chat, status }) => ({
 				chat,
+				title: chat.title.read(reader) || localize('runningSubagents.untitled', "Subagent"),
 				needsAttention: status === SessionStatus.NeedsInput,
 				step: this._stepText(chat, reader),
 			}))
@@ -125,8 +128,15 @@ export class SessionRunningSubagentsControl extends Disposable {
 		this.element.classList.toggle('needs-attention', attentionCount > 0);
 		if (attentionCount > 0) {
 			this._button.label = `$(${Codicon.warning.id}) ${localize('runningSubagents.attention', "{0} need attention", attentionCount)}`;
+		} else if (count === 1) {
+			// A single subagent: name it and surface its live progress inline.
+			const only = subagents[0];
+			const label = only.step
+				? localize('runningSubagents.singleWithStep', "Running subagent: {0} \u2014 {1}", only.title, only.step)
+				: localize('runningSubagents.single', "Running subagent: {0}", only.title);
+			this._button.label = `$(${Codicon.loading.id}~spin) ${label}`;
 		} else {
-			this._button.label = `$(${Codicon.loading.id}~spin) ${localize('runningSubagents.running', "{0} running", count)}`;
+			this._button.label = `$(${Codicon.loading.id}~spin) ${localize('runningSubagents.running', "{0} subagents running", count)}`;
 		}
 		this._setVisible(count > 0);
 	}
@@ -136,8 +146,7 @@ export class SessionRunningSubagentsControl extends Disposable {
 		if (!session || this._subagents.length === 0) {
 			return;
 		}
-		const actions = this._subagents.map(({ chat, needsAttention, step }) => {
-			const title = chat.title.get() || localize('runningSubagents.untitled', "Subagent");
+		const actions = this._subagents.map(({ chat, title, needsAttention, step }) => {
 			const label = needsAttention
 				? localize('runningSubagents.itemAttention', "{0} (needs attention)", title)
 				: (step ? `${title} \u2014 ${step}` : title);
