@@ -173,6 +173,9 @@ class TestAgentHostGitService implements IAgentHostGitService {
 	async revParse(_repositoryRoot: URI, expression: string): Promise<string | undefined> {
 		return expression === 'HEAD' ? this.headCommit : undefined;
 	}
+	async resolveBranchBaselineCommit(): Promise<string | undefined> { return undefined; }
+	async overlayPathIntoTree(): Promise<string | undefined> { return undefined; }
+	async diffTreePaths(): Promise<string[] | undefined> { return undefined; }
 	async computeFileDiffsBetweenRefs(): Promise<undefined> { return undefined; }
 }
 

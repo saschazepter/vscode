@@ -10,6 +10,7 @@ import { localize } from '../../../nls.js';
 import { ILogService } from '../../log/common/log.js';
 import { ChangesetKind, parseChangesetUri } from '../common/changesetUri.js';
 import { type IChangesetOperationHandler } from '../common/agentHostChangesetOperationService.js';
+import { IAgentHostChangesetService } from '../common/agentHostChangesetService.js';
 import { META_DIFF_BASE_BRANCH, resolveDiffBaseBranchName } from '../common/agentHostGitService.js';
 import { IAgentHostReviewService } from '../common/agentHostReviewService.js';
 import { ISessionDataService } from '../common/sessionDataService.js';
@@ -36,6 +37,7 @@ export class AgentHostReviewFileOperationHandler implements IChangesetOperationH
 		private readonly _reviewed: boolean,
 		private readonly _getSessionState: (sessionKey: string) => SessionState | undefined,
 		@IAgentHostReviewService private readonly _reviewService: IAgentHostReviewService,
+		@IAgentHostChangesetService private readonly _changesetService: IAgentHostChangesetService,
 		@ISessionDataService private readonly _sessionDataService: ISessionDataService,
 		@ILogService private readonly _logService: ILogService,
 	) { }
@@ -78,11 +80,13 @@ export class AgentHostReviewFileOperationHandler implements IChangesetOperationH
 			if (this._reviewed) {
 				this._logService.info(`[AgentHostReviewFileOperationHandler] Marking '${resource.fsPath}' as reviewed for session ${sessionUri}`);
 				await this._reviewService.markFileReviewed(URI.parse(sessionUri), workingDirectory, baseBranch, resource);
+				this._changesetService.refreshBranchChangeset(sessionUri);
 				return { message: { markdown: localize('agentHost.changeset.reviewFile.marked', "Marked `{0}` as reviewed.", basename(resource)) } };
 			}
 
 			this._logService.info(`[AgentHostReviewFileOperationHandler] Removing reviewed mark for '${resource.fsPath}' in session ${sessionUri}`);
 			await this._reviewService.unmarkFileReviewed(URI.parse(sessionUri), workingDirectory, baseBranch, resource);
+			this._changesetService.refreshBranchChangeset(sessionUri);
 			return { message: { markdown: localize('agentHost.changeset.reviewFile.unmarked', "Removed the reviewed mark from `{0}`.", basename(resource)) } };
 		} catch (err) {
 			this._throwIfCancelled(token);
