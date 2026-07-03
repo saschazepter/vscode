@@ -35,6 +35,8 @@ import { IAutomationDialogService } from '../../common/automations/automationDia
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { DAYS_OF_WEEK } from '../../common/automations/schedule.js';
 import { ISessionsService } from '../../../../../sessions/services/sessions/browser/sessionsService.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 
 const $ = DOM.$;
 
@@ -111,6 +113,8 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		private readonly hoverService: IHoverService,
 		private readonly sessionsService: ISessionsService,
 		private readonly notificationService: INotificationService,
+		private readonly editorService: IEditorService,
+		private readonly editorGroupsService: IEditorGroupsService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -232,7 +236,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		const runsList = DOM.append(panel, $('ul.automations-history-list'));
 		const visibleRuns = runs.slice(0, MAX_VISIBLE_RUNS);
 		for (const run of visibleRuns) {
-			this.renderRunRow(runsList, run);
+			this.renderRunRow(runsList, run, templateData.disposables);
 		}
 		if (runs.length > MAX_VISIBLE_RUNS) {
 			const more = DOM.append(panel, $('.automations-history-more'));
@@ -240,7 +244,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		}
 	}
 
-	private renderRunRow(container: HTMLElement, run: IAutomationRun): void {
+	private renderRunRow(container: HTMLElement, run: IAutomationRun, disposables: DisposableStore): void {
 		const li = DOM.append(container, $('li.automations-history-row', {
 			'data-run-id': run.id,
 			'data-run-status': run.status,
@@ -285,12 +289,18 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			const openButton = DOM.append(li, $('span.automations-history-row-open.codicon.codicon-link-external'));
 			openButton.setAttribute('role', 'button');
 			openButton.setAttribute('tabindex', '0');
-			openButton.title = localize('openRunSession', "Open session");
+			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
 			openButton.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const colonIdx = run.sessionId!.indexOf(':');
 				const resourceStr = run.sessionId!.substring(colonIdx + 1);
-				this.sessionsService.openSession(URI.parse(resourceStr)).catch(() => {
+				const activeEditor = this.editorService.activeEditor;
+				const activeGroupId = this.editorGroupsService.activeGroup.id;
+				this.sessionsService.openSession(URI.parse(resourceStr)).then(() => {
+					if (activeEditor) {
+						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
+					}
+				}).catch(() => {
 					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
 				});
 			});
@@ -356,6 +366,8 @@ export class AutomationsListWidget extends Disposable {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ISessionsService private readonly sessionsService: ISessionsService,
 		@INotificationService private readonly notificationService: INotificationService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 	) {
 		super();
 
@@ -392,7 +404,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService, this.notificationService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService, this.notificationService, this.editorService, this.editorGroupsService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
