@@ -14,6 +14,7 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { MultiDiffEditorInput } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffEditorInput.js';
 import { MultiDiffEditorItem } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffSourceResolverService.js';
+import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
 import { ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
 import { IChatResponseFileChangesService } from '../../../../workbench/contrib/chat/browser/chatResponseFileChangesService.js';
 import { IChatEditingService, IEditSessionEntryDiff } from '../../../../workbench/contrib/chat/common/editing/chatEditingService.js';
@@ -269,34 +270,26 @@ export class PromptTimelineModel extends Disposable {
 		return [...byPath.values()];
 	}
 
-	/** Opens the per-prompt diff: a single file's diff when given, otherwise a multi-file review. */
+	/**
+	 * Opens the per-prompt changes as a multi-file diff. When a specific file is
+	 * given (a file row in the card), the same multi-diff is opened but revealed
+	 * at that file, so per-file and whole-prompt review share one experience.
+	 */
 	async reviewChanges(tick: PromptTick, file?: URI): Promise<void> {
 		const files = this.getRequestFiles(tick);
 		if (files.length === 0) {
 			return;
 		}
-		if (file) {
-			const target = files.find(f => isEqual(f.modifiedURI, file)) ?? files[0];
-			const [originalURI, modifiedURI] = await this._readableSides(target);
-			if (!originalURI && !modifiedURI) {
-				return;
-			}
-			if (originalURI && modifiedURI) {
-				await this.editorService.openEditor({
-					original: { resource: originalURI },
-					modified: { resource: modifiedURI },
-					label: target.name,
-				});
-			} else {
-				await this.editorService.openEditor({ resource: (modifiedURI ?? originalURI)!, label: target.name });
-			}
-			return;
-		}
 		const items: MultiDiffEditorItem[] = [];
+		let revealResource: { original: URI | undefined; modified: URI | undefined } | undefined;
 		for (const f of files) {
 			const [originalURI, modifiedURI] = await this._readableSides(f);
-			if (originalURI || modifiedURI) {
-				items.push(new MultiDiffEditorItem(originalURI, modifiedURI, undefined));
+			if (!originalURI && !modifiedURI) {
+				continue;
+			}
+			items.push(new MultiDiffEditorItem(originalURI, modifiedURI, undefined));
+			if (file && isEqual(f.modifiedURI, file)) {
+				revealResource = { original: originalURI, modified: modifiedURI };
 			}
 		}
 		if (items.length === 0) {
@@ -310,7 +303,10 @@ export class PromptTimelineModel extends Disposable {
 			items,
 			false,
 		);
-		await this.editorService.openEditor(input);
+		const options: IMultiDiffEditorOptions | undefined = revealResource
+			? { viewState: { revealData: { resource: revealResource } } }
+			: undefined;
+		await this.editorService.openEditor(input, options);
 	}
 
 	/**
