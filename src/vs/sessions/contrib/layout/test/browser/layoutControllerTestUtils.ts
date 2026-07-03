@@ -25,6 +25,7 @@ import { IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
 import { ChatInteractivity, IChat, ISessionFileChange, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { ISessionChangesService, SessionChangesService } from '../../../changes/browser/sessionChangesService.js';
+import { IAgentWorkbenchLayoutService } from '../../../../browser/workbench.js';
 import { CHANGES_VIEW_CONTAINER_ID } from '../../../changes/common/changes.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../../files/browser/files.contribution.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
@@ -208,7 +209,9 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		visibleEditorsList: [],
 		activeEditorResource: undefined,
 		editorGroupsHaveContent: true,
-		sessionChangesService: new SessionChangesService(),
+		sessionChangesService: new SessionChangesService(new class extends mock<IEditorService>() { }, instaService, new class extends mock<IAgentWorkbenchLayoutService>() {
+			override get isSinglePaneLayoutEnabled() { return false; }
+		}),
 	};
 
 	instaService.stub(ISessionsManagementService, new class extends mock<ISessionsManagementService>() {
