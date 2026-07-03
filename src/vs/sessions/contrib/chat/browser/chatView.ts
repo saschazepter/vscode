@@ -307,13 +307,15 @@ export class ChatView extends AbstractChatView {
 	 */
 	private _ensureBannersMounted(): void {
 		const inputPartElement = this._widget.inputPart.element;
-		const bannersNode = this._banners.domNode;
-		if (inputPartElement.firstChild !== bannersNode) {
-			inputPartElement.insertBefore(bannersNode, inputPartElement.firstChild);
-		}
 		const subagentsNode = this._runningSubagents.element;
-		if (subagentsNode.parentElement !== inputPartElement || subagentsNode.nextSibling !== bannersNode) {
-			inputPartElement.insertBefore(subagentsNode, bannersNode);
+		const bannersNode = this._banners.domNode;
+		// Desired order at the top of the input part: [subagentsNode, bannersNode, ...].
+		// Keyed off the chip first so this is a true no-op once the DOM has settled.
+		if (inputPartElement.firstChild !== subagentsNode) {
+			inputPartElement.insertBefore(subagentsNode, inputPartElement.firstChild);
+		}
+		if (subagentsNode.nextSibling !== bannersNode) {
+			inputPartElement.insertBefore(bannersNode, subagentsNode.nextSibling);
 		}
 	}
 
