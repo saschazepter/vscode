@@ -1965,6 +1965,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		if (this._excludeRead) {
 			filtered = filtered.filter(s => !this.isSessionRead(s));
 		}
+
 		// Always include the active session even if it was filtered out,
 		// so it remains visible while selected
 		if (activeSession && !filtered.some(s => s.sessionId === activeSession.sessionId)) {
