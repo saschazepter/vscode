@@ -5,6 +5,7 @@
 
 import './media/emptyFileEditor.css';
 import { $, addDisposableListener, Dimension, EventType } from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -50,7 +51,12 @@ export class EmptyFileEditor extends EditorPane {
 		this.container.appendChild(message);
 		parent.appendChild(this.container);
 
-		this._register(addDisposableListener(this.container, EventType.CLICK, () => this.openQuickOpen()));
+		// Support touch (iOS): register a gesture target so `Tap` fires, and handle
+		// both click and tap to open the picker (see sessionTypePicker/sessionFilesWidget).
+		this._register(Gesture.addTarget(this.container));
+		for (const eventType of [EventType.CLICK, TouchEventType.Tap]) {
+			this._register(addDisposableListener(this.container, eventType, () => this.openQuickOpen()));
+		}
 		this._register(addDisposableListener(this.container, EventType.KEY_DOWN, e => {
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();

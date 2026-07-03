@@ -6,7 +6,7 @@
 import type { ResolveSessionConfigResult } from '../../platform/agentHost/common/state/protocol/commands.js';
 
 /**
- * [Option A] When enabled, the Agents window docks the detail panel (auxiliary
+ * When enabled, the Agents window docks the detail panel (auxiliary
  * bar) inside the editor part so a single editor tab bar spans the full width
  * across the editor content and the detail panel. Read once at startup; toggling
  * requires a window reload.

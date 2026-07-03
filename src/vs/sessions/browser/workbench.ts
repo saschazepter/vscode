@@ -299,16 +299,16 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	private sessionsPartView!: ISerializableView;
 
-	/** [Option A] The editor part container; the auxiliary bar is docked inside it. */
+	/** The editor part container; the auxiliary bar is docked inside it. */
 	private _editorPartContainer: HTMLElement | undefined;
-	/** [Option A] Whether the docked detail-panel (single-pane) layout is enabled. Backed by the layout policy. */
+	/** Whether the docked detail-panel (single-pane) layout is enabled. Backed by the layout policy. */
 	private get _dockDetailPanel(): boolean { return this.layoutPolicy.isSinglePane; }
 	get isSinglePaneLayoutEnabled(): boolean {
 		return this._configurationServiceForLayout?.getValue<boolean>(DOCK_DETAIL_PANEL_SETTING) === true;
 	}
-	/** [Option A] Current width of the docked auxiliary bar (detail panel). */
+	/** Current width of the docked auxiliary bar (detail panel). */
 	private _dockedAuxiliaryBarWidth = DockedAuxiliaryBarController.DEFAULT_WIDTH;
-	/** [Option A] Owns the docked detail-panel overlay + sash; created only in single-pane mode. */
+	/** Owns the docked detail-panel overlay + sash; created only in single-pane mode. */
 	private _dockedAuxBar: DockedAuxiliaryBarController | undefined;
 	private _configurationServiceForLayout: IConfigurationService | undefined;
 
@@ -1055,7 +1055,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.storageService = accessor.get(IStorageService);
 		accessor.get(ITitleService);
 
-		// [Option A] Resolve the single-pane layout mode once (reload to toggle).
+		// Resolve the single-pane layout mode once (reload to toggle).
 		this.layoutPolicy.setSinglePane(this.isSinglePaneLayoutEnabled);
 
 		// Register layout listeners
@@ -1339,7 +1339,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		const editorNode: ISerializedLeafNode = {
 			type: 'leaf',
 			data: { type: Parts.EDITOR_PART },
-			// [Option A] When the detail panel is docked, the editor part spans the
+			// When the detail panel is docked, the editor part spans the
 			// editor + auxiliary bar width (the aux bar is docked inside it, not a
 			// grid column) so the editor tab bar spans the full width.
 			size: this._dockDetailPanel ? effectiveEditorWidth + effectiveAuxBarWidth : effectiveEditorWidth,
@@ -1363,7 +1363,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		};
 
 		// Top right section: Chat Bar | Editor [| Auxiliary Bar] (horizontal).
-		// [Option A] When docked, the auxiliary bar is inside the editor part and
+		// When docked, the auxiliary bar is inside the editor part and
 		// omitted from the grid; otherwise it is its own trailing grid column.
 		const topRightSection: ISerializedNode = {
 			type: 'branch',
@@ -1490,7 +1490,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// Layout the grid widget
 		this.workbenchGrid.layout(gridWidth, gridHeight);
 
-		// [Option A] Dock + layout the auxiliary bar inside the editor part so the
+		// Dock + layout the auxiliary bar inside the editor part so the
 		// editor tab bar spans the full width above both.
 		this._ensureDockedAuxBarController();
 		this._dockedAuxBar?.layout();
@@ -1502,7 +1502,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	}
 
 	/**
-	 * [Option A] Create the docked detail-panel controller once (single-pane mode only),
+	 * Create the docked detail-panel controller once (single-pane mode only),
 	 * after the editor part and editor group service are available.
 	 */
 	private _ensureDockedAuxBarController(): void {
@@ -1773,7 +1773,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.mainContainer.classList.toggle(LayoutClasses.AUXILIARYBAR_HIDDEN, hidden);
 
 		if (this._dockDetailPanel) {
-			// [Option A] The auxiliary bar is docked inside the editor part (not a
+			// The auxiliary bar is docked inside the editor part (not a
 			// grid view), so drive its visibility through the docked layout and fire
 			// the visibility event the grid path would otherwise raise (the layout
 			// controller listens for it to capture per-session state).

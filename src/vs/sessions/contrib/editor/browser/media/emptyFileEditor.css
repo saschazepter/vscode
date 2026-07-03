@@ -11,6 +11,7 @@
 	color: var(--vscode-agentsPanel-foreground);
 	background: var(--vscode-editor-background);
 	cursor: pointer;
+	touch-action: manipulation;
 }
 
 .empty-file-editor:focus-visible {
