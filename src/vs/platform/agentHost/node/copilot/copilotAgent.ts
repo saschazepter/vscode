@@ -33,7 +33,7 @@ import { workspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { IAgentHostCheckpointService } from '../../common/agentHostCheckpointService.js';
 import { IAgentHostReviewService } from '../../common/agentHostReviewService.js';
 import { createPricingMetaFromBilling, hasLongContextSurcharge, type ICAPIModelBilling } from '../../common/agentModelPricing.js';
-import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
+import { AgentHostConfigKey, agentHostCustomizationConfigSchema, DEFAULT_SESSION_CUSTOMIZATION_DISCOVERY_MODE, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
 import { AgentHostMcpServersConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, ISchemaProperty, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, schemaProperty, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
@@ -490,7 +490,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		@IAgentHostProxyResolver private readonly _proxyResolver: IAgentHostProxyResolver,
 	) {
 		super();
-		this._plugins = this._register(this._instantiationService.createInstance(PluginController));
+		this._plugins = this._register(this._instantiationService.createInstance(PluginController, () => this._ensureClient()));
 		this._sessionLauncher = this._instantiationService.createInstance(CopilotSessionLauncher);
 		this.onDidCustomizationsChange = this._plugins.onDidChange;
 		// Mirror the sub-agent fan-out signals onto the first-class spawned-
@@ -3304,20 +3304,24 @@ class SessionDiscoveredEntry extends Disposable {
 	private _customizations: readonly DirectoryCustomization[] = [];
 	private _directories: readonly IDiscoveredDirectory[] | undefined;
 	private _settled: Promise<void>;
-	private readonly _fileService: IFileService;
 
 	constructor(
 		workingDirectory: URI,
 		userHome: URI,
+		private readonly _getClient: () => Promise<CopilotClient>,
 		private readonly _onDidRefresh: () => void,
+		private readonly _fileService: IFileService,
+		private readonly _configurationService: IAgentConfigurationService,
 		private readonly _logService: ILogService,
 		instantiationService: IInstantiationService,
 	) {
 		super();
 		this._discovery = this._register(instantiationService.createInstance(SessionCustomizationDiscovery, workingDirectory, userHome));
-		this._fileService = instantiationService.invokeFunction(accessor => accessor.get(IFileService));
 		this._settled = this._queueRefresh(false);
 		this._register(this._discovery.onDidChange(() => {
+			this._settled = this._queueRefresh(true);
+		}));
+		this._register(this._configurationService.onDidRootConfigChange(() => {
 			this._settled = this._queueRefresh(true);
 		}));
 	}
@@ -3370,6 +3374,23 @@ class SessionDiscoveredEntry extends Disposable {
 
 	private async _refresh(token: CancellationToken): Promise<boolean> {
 		try {
+			const mode = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.SessionCustomizationDiscoveryMode)
+				?? DEFAULT_SESSION_CUSTOMIZATION_DISCOVERY_MODE;
+			if (mode === 'discover') {
+				const customizations = await this._discovery.discover(await this._getClient(), token);
+				if (token.isCancellationRequested) {
+					return false;
+				}
+
+				if (equals(this._customizations, customizations)) {
+					return false;
+				}
+
+				this._customizations = customizations;
+				this._directories = undefined;
+				return true;
+			}
+
 			const directories = await this._discovery.scan(token);
 			if (token.isCancellationRequested) {
 				return false;
@@ -3587,6 +3608,7 @@ class PluginController extends Disposable {
 	private _lastAppliedRefs: readonly Customization[] = [];
 
 	constructor(
+		private readonly _getClient: () => Promise<CopilotClient>,
 		@IAgentPluginManager public readonly pluginManager: IAgentPluginManager,
 		@ILogService public readonly logService: ILogService,
 		@IFileService public readonly fileService: IFileService,
@@ -3607,6 +3629,10 @@ class PluginController extends Disposable {
 		return this._hostCustomizations.map(item => item.customization);
 	}
 
+	public get configurationService(): IAgentConfigurationService {
+		return this._configurationService;
+	}
+
 	/**
 	 * Snapshot the resolved host customizations (loading or loaded). Used by
 	 * {@link SessionPluginController} to compose its per-session view.
@@ -3622,6 +3648,10 @@ class PluginController extends Disposable {
 
 	public getUserHome(): URI {
 		return this._environmentService.userHome;
+	}
+
+	public async getClient(): Promise<CopilotClient> {
+		return this._getClient();
 	}
 
 	/**
@@ -4082,10 +4112,13 @@ class SessionPluginController extends Disposable {
 			this._sessionDiscovered.value = new SessionDiscoveredEntry(
 				this._directory,
 				this._parent.getUserHome(),
+				() => this._parent.getClient(),
 				() => this._onDidPublish.fire({
 					type: ActionType.SessionCustomizationsChanged,
 					customizations: [...this.getCustomizations()],
 				}),
+				this._parent.fileService,
+				this._parent.configurationService,
 				this._parent.logService,
 				this._parent.instantiationService,
 			);

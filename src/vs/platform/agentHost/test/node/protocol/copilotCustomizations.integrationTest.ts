@@ -14,8 +14,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { AgentHostConfigKey, type SessionCustomizationDiscoveryMode } from '../../../common/agentHostCustomizationConfig.js';
 import { ActionType, SessionCustomizationsChangedAction } from '../../../common/state/sessionActions.js';
-import { CustomizationType, type DirectoryCustomization } from '../../../common/state/sessionState.js';
+import { CustomizationType, ROOT_STATE_URI, type DirectoryCustomization } from '../../../common/state/sessionState.js';
 import { createRealSession, dispatchTurn, IRealSdkProviderConfig } from './realSdkTestHelpers.js';
 import { getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
 
@@ -87,11 +88,21 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 		]);
 	}
 
-	test('detects only directory customizations on an empty workspace via session/customizationsChanged after hello (mock LLM)', async function () {
-		this.timeout(TEST_TIMEOUT_MS);
+	async function setSessionCustomizationDiscoveryMode(mode: SessionCustomizationDiscoveryMode): Promise<void> {
+		client.dispatch({
+			channel: ROOT_STATE_URI,
+			clientSeq: 1,
+			action: {
+				type: ActionType.RootConfigChanged,
+				config: { [AgentHostConfigKey.SessionCustomizationDiscoveryMode]: mode },
+			},
+		});
+	}
 
+	async function runEmptyWorkspaceCustomizationsTest(discoveryMode: SessionCustomizationDiscoveryMode): Promise<void> {
 		const workspaceDir = await mkdtemp(`${tmpdir()}/ahp-customizations-empty-mock-`);
 		tempDirs.push(workspaceDir);
+		await setSessionCustomizationDiscoveryMode(discoveryMode);
 
 		const sessionUri = await createRealSession(client, COPILOT_CONFIG, 'real-sdk-customizations-empty-mock', createdSessions, URI.file(workspaceDir));
 		client.dispatch({
@@ -138,11 +149,9 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 		assert.strictEqual(actualByUri.size, expectedCustomizations.length, `expected ${expectedCustomizations.length} unique customizations, got: ${JSON.stringify(mappedCustomizations)}`);
 		const actualCustomizations = expectedCustomizations.map(expected => actualByUri.get(expected.uri));
 		assert.deepStrictEqual(actualCustomizations, expectedCustomizations);
-	});
+	}
 
-	test('detects workspace agents, instructions, skills, and hooks via session/customizationsChanged after hello (mock LLM)', async function () {
-		this.timeout(TEST_TIMEOUT_MS);
-
+	async function runWorkspaceCustomizationsTest(discoveryMode: SessionCustomizationDiscoveryMode): Promise<void> {
 		const workspaceDir = await mkdtemp(`${tmpdir()}/ahp-customizations-test-mock-`);
 		tempDirs.push(workspaceDir);
 		const githubDir = join(workspaceDir, '.github');
@@ -225,6 +234,7 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 			].join('\n')),
 			writeFile(userHookFile, JSON.stringify({ PreToolUse: [] }, undefined, 2)),
 		]);
+		await setSessionCustomizationDiscoveryMode(discoveryMode);
 
 		const sessionUri = await createRealSession(client, COPILOT_CONFIG, 'real-sdk-customizations-mock', createdSessions, URI.file(workspaceDir));
 		client.dispatch({
@@ -271,11 +281,29 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 		assert.strictEqual(actualByUri.size, expectedCustomizations.length, `expected ${expectedCustomizations.length} unique customizations, got: ${JSON.stringify(mappedCustomizations)}`);
 		const actualCustomizations = expectedCustomizations.map(expected => actualByUri.get(expected.uri));
 		assert.deepStrictEqual(actualCustomizations, expectedCustomizations);
+	}
+
+	test('detects only directory customizations on an empty workspace via session/customizationsChanged after hello (mock LLM) [scan]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runEmptyWorkspaceCustomizationsTest('scan');
 	});
 
-	test('emits session/customizationsChanged when customization files are edited, added, and removed (mock LLM)', async function () {
+	test('detects workspace agents, instructions, skills, and hooks via session/customizationsChanged after hello (mock LLM) [scan]', async function () {
 		this.timeout(TEST_TIMEOUT_MS);
+		await runWorkspaceCustomizationsTest('scan');
+	});
 
+	test('detects only directory customizations on an empty workspace via session/customizationsChanged after hello (mock LLM) [discover]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runEmptyWorkspaceCustomizationsTest('discover');
+	});
+
+	test('detects workspace agents, instructions, skills, and hooks via session/customizationsChanged after hello (mock LLM) [discover]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runWorkspaceCustomizationsTest('discover');
+	});
+
+	async function runCustomizationWatchTest(discoveryMode: SessionCustomizationDiscoveryMode): Promise<void> {
 		const workspaceDir = await mkdtemp(`${tmpdir()}/ahp-customizations-watch-mock-`);
 		tempDirs.push(workspaceDir);
 		const githubDir = join(workspaceDir, '.github');
@@ -368,6 +396,7 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 			].join('\n')),
 			writeFile(homeHookFile, JSON.stringify({ PreToolUse: [] }, undefined, 2)),
 		]);
+		await setSessionCustomizationDiscoveryMode(discoveryMode);
 
 		const sessionUri = await createRealSession(client, COPILOT_CONFIG, 'real-sdk-customizations-watch-mock', createdSessions, URI.file(workspaceDir));
 		client.dispatch({
@@ -643,7 +672,6 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 		client.clearReceived();
 		await rm(addedHomeInstructionFile, { force: true });
 		await waitForDirectoryChildNames(URI.file(homeInstructionsDir).toString(), CustomizationType.Rule, ['Home Policy Renamed']);
-
 		client.clearReceived();
 		await writeFile(homeHookFile, JSON.stringify({ PreToolUse: [{ command: 'echo home-changed' }] }, undefined, 2));
 		await waitForDirectoryChildNames(URI.file(homeHooksDir).toString(), CustomizationType.Hook, ['home-pre-tool.json']);
@@ -655,5 +683,17 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot customizatio
 		client.clearReceived();
 		await rm(addedHomeHookFile, { force: true });
 		await waitForDirectoryChildNames(URI.file(homeHooksDir).toString(), CustomizationType.Hook, ['home-pre-tool.json']);
+	}
+
+	test('emits session/customizationsChanged when customization files are edited, added, and removed (mock LLM) [scan]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runCustomizationWatchTest('scan');
+	});
+
+	test('emits session/customizationsChanged when customization files are edited, added, and removed (mock LLM) [discover]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runCustomizationWatchTest('discover');
+
+
 	});
 });

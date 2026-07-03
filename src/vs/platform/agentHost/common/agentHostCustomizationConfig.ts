@@ -37,7 +37,13 @@ export const enum AgentHostConfigKey {
 	 * the user's own credentials (BYO Anthropic — Phase 19).
 	 */
 	ClaudeUseCopilotProxy = 'claudeUseCopilotProxy',
+	/** Controls whether session-scoped file customizations come from local scan or SDK discovery. */
+	SessionCustomizationDiscoveryMode = 'sessionCustomizationDiscoveryMode',
 }
+
+export const SESSION_CUSTOMIZATION_DISCOVERY_MODES = ['scan', 'discover'] as const;
+export type SessionCustomizationDiscoveryMode = typeof SESSION_CUSTOMIZATION_DISCOVERY_MODES[number];
+export const DEFAULT_SESSION_CUSTOMIZATION_DISCOVERY_MODE: SessionCustomizationDiscoveryMode = 'scan';
 
 /**
  * Persisted on-disk shape for a host-configured plugin. Kept stable across
@@ -106,6 +112,13 @@ export const agentHostCustomizationConfigSchema = createSchema({
 		title: localize('agentHost.config.claudeUseCopilotProxy.title', "Route Claude Through Copilot"),
 		description: localize('agentHost.config.claudeUseCopilotProxy.description', "When enabled (the default), the Claude agent routes all requests through GitHub Copilot. When disabled, Claude talks to Anthropic directly using your own credentials (API key or Claude subscription)."),
 		default: true,
+	}),
+	[AgentHostConfigKey.SessionCustomizationDiscoveryMode]: schemaProperty<SessionCustomizationDiscoveryMode>({
+		type: 'string',
+		enum: [...SESSION_CUSTOMIZATION_DISCOVERY_MODES],
+		title: localize('agentHost.config.sessionCustomizationDiscoveryMode.title', "Session Customization Discovery Mode"),
+		description: localize('agentHost.config.sessionCustomizationDiscoveryMode.description', "Controls whether session-scoped customizations are populated from local file scanning or from Copilot SDK discovery."),
+		default: DEFAULT_SESSION_CUSTOMIZATION_DISCOVERY_MODE,
 	}),
 });
 
