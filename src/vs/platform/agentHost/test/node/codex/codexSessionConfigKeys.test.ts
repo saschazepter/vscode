@@ -5,26 +5,32 @@
 
 import assert from 'assert';
 import type { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { CodexSessionConfigKey, collaborationModeKind, narrowAdditionalDirectories, narrowApprovalPolicy, narrowBoolean, narrowPersonality, narrowReasoningEffort, narrowReasoningSummary, narrowSandboxMode, narrowWebSearchMode } from '../../../node/codex/codexSessionConfigKeys.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { IAgentHostGitService } from '../../../common/agentHostGitService.js';
 import { ISessionDataService } from '../../../common/sessionDataService.js';
 import { CodexAgent } from '../../../node/codex/codexAgent.js';
 import { ICodexProxyService } from '../../../node/codex/codexProxyService.js';
 import { IAgentConfigurationService } from '../../../node/agentConfigurationService.js';
 import { IAgentSdkDownloader } from '../../../node/agentSdkDownloader.js';
+import { IAgentBranchNameGenerator } from '../../../node/shared/agentBranchNameGenerator.js';
 import { ICopilotApiService } from '../../../node/shared/copilotApiService.js';
 import { SessionConfigKey } from '../../../common/sessionConfigKeys.js';
+import { createNoopGitService } from '../../common/sessionTestHelpers.js';
 
-function createAgent(disposables: Pick<DisposableStore, 'add'>): CodexAgent {
+function createAgent(disposables: Pick<DisposableStore, 'add'>, gitService?: IAgentHostGitService): CodexAgent {
 	const instantiationService = new TestInstantiationService();
 	instantiationService.stub(ISessionDataService, { _serviceBrand: undefined });
 	instantiationService.stub(ICopilotApiService, { _serviceBrand: undefined });
 	instantiationService.stub(ICodexProxyService, { _serviceBrand: undefined });
 	instantiationService.stub(IAgentConfigurationService, { _serviceBrand: undefined });
 	instantiationService.stub(IAgentSdkDownloader, { _serviceBrand: undefined });
+	instantiationService.stub(IAgentHostGitService, gitService ?? createNoopGitService());
+	instantiationService.stub(IAgentBranchNameGenerator, { _serviceBrand: undefined, generateBranchName: async () => 'agents/x' });
 	instantiationService.stub(IProductService, { _serviceBrand: undefined, version: '1.0.0-test' } as IProductService);
 	instantiationService.stub(ILogService, new NullLogService());
 	return disposables.add(instantiationService.createInstance(CodexAgent));
@@ -107,6 +113,47 @@ suite('codexSessionConfigKeys', () => {
 				additionalDirectories: undefined,
 				networkAccessEnabled: false,
 			},
+		});
+	});
+
+	test('resolveSessionConfig advertises shared isolation + branch alongside Codex config', async () => {
+		// Without a working directory the repo is unknown, so isolation is
+		// folder-only and no branch is offered.
+		const noRepoAgent = createAgent(disposables);
+		const noRepo = await noRepoAgent.resolveSessionConfig({});
+
+		// With a git repo (commits present) worktree isolation is offered and
+		// the branch property is contributed, matching Copilot/Claude.
+		const repoRoot = URI.file('/repo');
+		const gitService: IAgentHostGitService = {
+			...createNoopGitService(),
+			getRepositoryRoot: async () => repoRoot,
+			revParse: async (_root, expr) => expr === 'HEAD' ? 'abc123' : undefined,
+			getCurrentBranch: async () => 'feature',
+			getDefaultBranch: async () => 'main',
+		};
+		const repoAgent = createAgent(disposables, gitService);
+		const repo = await repoAgent.resolveSessionConfig({ workingDirectory: repoRoot });
+
+		assert.deepStrictEqual({
+			noRepoIsolation: noRepo.schema.properties[SessionConfigKey.Isolation]?.enum,
+			noRepoIsolationValue: noRepo.values[SessionConfigKey.Isolation],
+			noRepoHasBranch: noRepo.schema.properties[SessionConfigKey.Branch] !== undefined,
+			repoIsolation: repo.schema.properties[SessionConfigKey.Isolation]?.enum,
+			repoIsolationValue: repo.values[SessionConfigKey.Isolation],
+			repoHasBranch: repo.schema.properties[SessionConfigKey.Branch] !== undefined,
+			repoBranchValue: repo.values[SessionConfigKey.Branch],
+			// The Codex-specific keys are still present next to the shared ones.
+			codexKeysPresent: repo.schema.properties[CodexSessionConfigKey.SandboxMode] !== undefined,
+		}, {
+			noRepoIsolation: ['folder'],
+			noRepoIsolationValue: 'folder',
+			noRepoHasBranch: false,
+			repoIsolation: ['folder', 'worktree'],
+			repoIsolationValue: 'worktree',
+			repoHasBranch: true,
+			repoBranchValue: 'main',
+			codexKeysPresent: true,
 		});
 	});
 });

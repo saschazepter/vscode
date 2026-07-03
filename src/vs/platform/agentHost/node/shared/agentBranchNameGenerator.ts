@@ -5,14 +5,19 @@
 
 import { ILogService } from '../../../log/common/log.js';
 import { createDecorator } from '../../../instantiation/common/instantiation.js';
-import { ICopilotApiService, type ICopilotUtilityChatMessage } from '../shared/copilotApiService.js';
+import { ICopilotApiService, type ICopilotUtilityChatMessage } from './copilotApiService.js';
 
-export const COPILOT_BRANCH_PREFIX = 'agents/';
-const COPILOT_BRANCH_SESSION_ID_SUFFIX_LENGTH = 8;
+/**
+ * Branch-name prefix for worktree-isolated agent sessions, e.g.
+ * `agents/add-feature`. Shared by every agent-host provider (Copilot, Codex,
+ * Claude) via {@link WorktreeIsolation}.
+ */
+export const AGENT_BRANCH_PREFIX = 'agents/';
+const AGENT_BRANCH_SESSION_ID_SUFFIX_LENGTH = 8;
 const MAX_BRANCH_NAME_HINT_LENGTH = 48;
 const MIN_GENERATED_BRANCH_NAME_LENGTH = 8;
 
-export interface ICopilotBranchNameGeneratorRequest {
+export interface IAgentBranchNameGeneratorRequest {
 	readonly sessionId: string;
 	readonly message?: string;
 	readonly githubToken?: string;
@@ -25,14 +30,14 @@ export interface ICopilotBranchNameGeneratorRequest {
 	readonly branchExists?: (branchName: string) => Promise<boolean>;
 }
 
-export const ICopilotBranchNameGenerator = createDecorator<ICopilotBranchNameGenerator>('copilotBranchNameGenerator');
+export const IAgentBranchNameGenerator = createDecorator<IAgentBranchNameGenerator>('agentBranchNameGenerator');
 
-export interface ICopilotBranchNameGenerator {
+export interface IAgentBranchNameGenerator {
 	readonly _serviceBrand: undefined;
-	generateBranchName(request: ICopilotBranchNameGeneratorRequest): Promise<string>;
+	generateBranchName(request: IAgentBranchNameGeneratorRequest): Promise<string>;
 }
 
-export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
+export class AgentBranchNameGenerator implements IAgentBranchNameGenerator {
 	declare readonly _serviceBrand: undefined;
 
 	constructor(
@@ -40,12 +45,12 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
 		@ILogService private readonly _logService: ILogService,
 	) { }
 
-	async generateBranchName(request: ICopilotBranchNameGeneratorRequest): Promise<string> {
-		const branchNameHint = (await this._generateBranchNameHint(request)) ?? getCopilotBranchNameHintFromMessage(request.message ?? '');
+	async generateBranchName(request: IAgentBranchNameGeneratorRequest): Promise<string> {
+		const branchNameHint = (await this._generateBranchNameHint(request)) ?? getAgentBranchNameHintFromMessage(request.message ?? '');
 		return this._buildBranchName(request, branchNameHint);
 	}
 
-	private async _generateBranchNameHint(request: ICopilotBranchNameGeneratorRequest): Promise<string | undefined> {
+	private async _generateBranchNameHint(request: IAgentBranchNameGeneratorRequest): Promise<string | undefined> {
 		const message = request.message?.trim();
 		if (!message || !request.githubToken) {
 			return undefined;
@@ -70,7 +75,7 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
 				return undefined;
 			}
 
-			branchName = normalizeCopilotBranchName(branchName).slice(0, MAX_BRANCH_NAME_HINT_LENGTH).replace(/-+$/g, '');
+			branchName = normalizeAgentBranchName(branchName).slice(0, MAX_BRANCH_NAME_HINT_LENGTH).replace(/-+$/g, '');
 			if (branchName.length < MIN_GENERATED_BRANCH_NAME_LENGTH) {
 				this._logService.warn('Generated branch name is too short after normalization, discarding.');
 				return undefined;
@@ -78,7 +83,7 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
 
 			return branchName;
 		} catch (err) {
-			this._logService.warn('[CopilotBranchNameGenerator] Failed to generate branch name', err);
+			this._logService.warn('[AgentBranchNameGenerator] Failed to generate branch name', err);
 			return undefined;
 		}
 	}
@@ -104,24 +109,24 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
 		];
 	}
 
-	private async _buildBranchName(request: ICopilotBranchNameGeneratorRequest, branchNameHint: string | undefined): Promise<string> {
+	private async _buildBranchName(request: IAgentBranchNameGeneratorRequest, branchNameHint: string | undefined): Promise<string> {
 		if (!branchNameHint) {
 			// No usable hint - fall back to the (already unique) session id.
-			return `${COPILOT_BRANCH_PREFIX}${request.sessionId}`;
+			return `${AGENT_BRANCH_PREFIX}${request.sessionId}`;
 		}
 
 		// Prefer the bare hint and only append a short session-id suffix when
 		// the branch name would collide with an existing branch.
-		const branchName = `${COPILOT_BRANCH_PREFIX}${branchNameHint}`;
+		const branchName = `${AGENT_BRANCH_PREFIX}${branchNameHint}`;
 		if (request.branchExists && await request.branchExists(branchName)) {
-			return `${branchName}-${request.sessionId.substring(0, COPILOT_BRANCH_SESSION_ID_SUFFIX_LENGTH)}`;
+			return `${branchName}-${request.sessionId.substring(0, AGENT_BRANCH_SESSION_ID_SUFFIX_LENGTH)}`;
 		}
 
 		return branchName;
 	}
 }
 
-export function normalizeCopilotBranchName(branchName: string): string {
+export function normalizeAgentBranchName(branchName: string): string {
 	// Only support alphanumeric characters and dashes for simplicity.
 	let normalized = branchName.replace(/[^a-zA-Z0-9\-]/g, '').toLowerCase();
 	// Collapse consecutive dots (..) into a single dot
@@ -138,9 +143,9 @@ export function normalizeCopilotBranchName(branchName: string): string {
 
 /**
  * Derive a slug-style branch-name hint from the user's first message. Used as
- * a local fallback when Copilot utility branch name generation is unavailable.
+ * a local fallback when the utility branch name generation is unavailable.
  */
-export function getCopilotBranchNameHintFromMessage(message: string): string | undefined {
+export function getAgentBranchNameHintFromMessage(message: string): string | undefined {
 	const words = message
 		.toLowerCase()
 		.normalize('NFKD')

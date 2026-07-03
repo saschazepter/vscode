@@ -3872,11 +3872,14 @@ suite('ClaudeAgent', () => {
 		// Tested keys: presence + ordering of enum + the five-value
 		// canonical set (matching SDK `PermissionMode` typedef at
 		// `sdk.d.ts:1560`, excluding `dontAsk`, ratified in Phase 6.1 Cycle A
-		// under I2) + default. Skipped keys (AutoApprove, Mode, Isolation,
-		// Branch, BranchNameHint) MUST be absent — workbench
-		// `AgentHostModePicker` and friends key off these property names
-		// to decide what to render, and accidentally re-introducing
-		// `mode` would drop the wrong picker into the Claude UI.
+		// under I2) + default. Claude now advertises the shared `isolation`
+		// (folder / worktree) property so its sessions get the same worktree
+		// picker as Copilot; with no working directory the repo is unknown so
+		// isolation is folder-only and no `branch` is offered. Skipped keys
+		// (AutoApprove, Mode, BranchNameHint) MUST still be absent — workbench
+		// `AgentHostModePicker` and friends key off these property names to
+		// decide what to render, and accidentally re-introducing `mode` would
+		// drop the wrong picker into the Claude UI.
 		const { agent } = createTestContext(disposables);
 		const result = await agent.resolveSessionConfig({});
 		const properties = result.schema.properties;
@@ -3896,15 +3899,15 @@ suite('ClaudeAgent', () => {
 			branchAbsent: properties['branch'] === undefined,
 		}, {
 			topLevelType: 'object',
-			propertyKeys: ['permissionMode', 'permissions'],
+			propertyKeys: ['isolation', 'permissionMode', 'permissions'],
 			permissionModeType: 'string',
 			permissionModeEnum: ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'],
 			permissionModeDefault: 'default',
 			permissionsType: 'object',
-			values: { permissionMode: 'default' },
+			values: { isolation: 'folder', permissionMode: 'default' },
 			autoApproveAbsent: true,
 			modeAbsent: true,
-			isolationAbsent: true,
+			isolationAbsent: false,
 			branchAbsent: true,
 		});
 	});

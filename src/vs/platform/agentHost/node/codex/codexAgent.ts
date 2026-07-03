@@ -5,6 +5,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
+import { SequencerByKey } from '../../../../base/common/async.js';
 import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -25,7 +26,7 @@ import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProt
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn } from '../../common/state/sessionState.js';
+import { buildDefaultChatUri, parseChatUri, ResponsePartKind, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn } from '../../common/state/sessionState.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
@@ -46,6 +47,7 @@ import { buildUserInputRequest, emptyUserInputResponse, userInputResponseFromAns
 import { replayThreadToTurns } from './codexReplayMapper.js';
 import { CodexSessionMetadataStore } from './codexSessionMetadataStore.js';
 import { CodexSessionConfigKey, collaborationModeKind, narrowAdditionalDirectories, narrowApprovalPolicy, narrowBoolean, narrowPersonality, narrowReasoningEffort, narrowReasoningSummary, narrowSandboxMode, narrowWebSearchMode, type CodexApprovalPolicy } from './codexSessionConfigKeys.js';
+import { WorktreeIsolation } from '../shared/worktreeIsolation.js';
 import type { ReasoningEffort } from './protocol/generated/ReasoningEffort.js';
 import type { ReasoningSummary } from './protocol/generated/ReasoningSummary.js';
 import type { Personality } from './protocol/generated/Personality.js';
@@ -323,7 +325,31 @@ interface ICodexSession {
 	 */
 	threadId: string | undefined;
 	readonly sessionUri: URI;
-	readonly workingDirectory: URI | undefined;
+	/**
+	 * Effective working directory. Starts as the folder the client passed to
+	 * {@link CodexAgent.createSession}; when the session selects `worktree`
+	 * isolation it is replaced (once, at first materialization) with the
+	 * isolated worktree path before `thread/start` locks the codex subprocess
+	 * `cwd`. See {@link ICodexSession.worktreeResolved}.
+	 */
+	workingDirectory: URI | undefined;
+	/**
+	 * The isolation mode (`'folder'` / `'worktree'`) requested in the
+	 * {@link IAgentCreateSessionConfig.config} passed to
+	 * {@link CodexAgent.createSession}, captured verbatim. `createSession`
+	 * runs before {@link AgentService} seeds the resolved session config into
+	 * {@link IAgentConfigurationService}, so this is the only reliable signal
+	 * that a brand-new session wants worktree isolation — {@link _schedulePrewarm}
+	 * consults it to avoid prewarming a thread in the original folder.
+	 */
+	readonly requestedIsolation: string | undefined;
+	/**
+	 * True once worktree isolation has been resolved for this session (whether
+	 * or not a worktree was actually created). Guards against creating a second
+	 * worktree when the thread is restarted to pick up client tools
+	 * (`_restartThreadWithCurrentTools`) before the first turn commits.
+	 */
+	worktreeResolved: boolean;
 	readonly mapState: ICodexSessionMapState;
 	/**
 	 * Phase 4: parked deferreds for `item/commandExecution/requestApproval`,
@@ -569,6 +595,17 @@ export class CodexAgent extends Disposable implements IAgent {
 	private _connection: ConnectionState = { kind: 'idle' };
 	private _modelsRefreshPromise: Promise<void> | undefined;
 	private readonly _metadataStore: CodexSessionMetadataStore;
+	/** Shared git-worktree isolation machinery (folder / worktree + branch). */
+	private readonly _worktree: WorktreeIsolation;
+	/**
+	 * Per-session serializer for the worktree lifecycle. Materialization's
+	 * worktree-resolution step and archive/unarchive worktree cleanup queue on
+	 * the same session key so they never interleave — mirroring Copilot's use
+	 * of its session sequencer. Without this, an archive racing the first-send
+	 * materialization could read no worktree metadata and skip cleanup while
+	 * the thread later runs from a freshly created worktree.
+	 */
+	private readonly _worktreeSequencer = new SequencerByKey<string>();
 
 	/**
 	 * The agent host's server-tool host (feedback "comments" today, more in the
@@ -590,6 +627,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	) {
 		super();
 		this._metadataStore = instantiationService.createInstance(CodexSessionMetadataStore);
+		this._worktree = this._register(instantiationService.createInstance(WorktreeIsolation, 'Codex'));
 	}
 
 	// #region Auth
@@ -1674,6 +1712,8 @@ export class CodexAgent extends Disposable implements IAgent {
 			threadId: undefined,
 			sessionUri,
 			workingDirectory: config.workingDirectory,
+			requestedIsolation: typeof config.config?.[SessionConfigKey.Isolation] === 'string' ? config.config[SessionConfigKey.Isolation] as string : undefined,
+			worktreeResolved: false,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
 			pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
 			acceptedForSession: new Set<string>(),
@@ -1712,7 +1752,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * if `threadId` is already populated, just returns. Called from
 	 * `sendMessage` before the first `turn/start`.
 	 */
-	private async _materializeIfNeeded(session: ICodexSession, fireMaterializedEvent = true): Promise<void> {
+	private async _materializeIfNeeded(session: ICodexSession, fireMaterializedEvent = true, prompt?: string): Promise<void> {
 		if (session.disposed) {
 			return;
 		}
@@ -1729,7 +1769,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			}
 			return;
 		}
-		session.materializePromise = this._materialize(session).finally(() => {
+		session.materializePromise = this._materialize(session, prompt).finally(() => {
 			session.materializePromise = undefined;
 		});
 		await session.materializePromise;
@@ -1738,12 +1778,38 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 	}
 
-	private async _materialize(session: ICodexSession): Promise<void> {
+	private async _materialize(session: ICodexSession, prompt?: string): Promise<void> {
 		if (session.disposed) {
 			return;
 		}
 		if (!session.workingDirectory) {
 			throw new Error(`Cannot materialize codex session ${session.sessionId}: no working directory`);
+		}
+		// Resolve worktree isolation once, before `thread/start` locks the codex
+		// subprocess `cwd`. A restart to pick up client tools re-enters
+		// `_materialize` with `worktreeResolved` already set, so we never create
+		// a second worktree. The flag is only latched after a successful resolve
+		// so a failed `git worktree add` does not permanently downgrade the
+		// session to folder isolation on the next send. Queued on the worktree
+		// sequencer so it never interleaves with archive/unarchive cleanup for
+		// this session.
+		if (!session.worktreeResolved) {
+			await this._worktreeSequencer.queue(session.sessionId, async () => {
+				if (session.worktreeResolved || session.disposed) {
+					return;
+				}
+				const liveConfig = this._configurationService.getSessionConfigValues(session.sessionUri.toString());
+				const resolved = await this._worktree.resolveWorkingDirectory({
+					sessionUri: session.sessionUri,
+					sessionId: session.sessionId,
+					workingDirectory: session.workingDirectory,
+					config: liveConfig,
+					prompt: prompt || session.lastPromptText || undefined,
+					githubToken: this._githubToken,
+				});
+				session.workingDirectory = resolved ?? session.workingDirectory;
+				session.worktreeResolved = true;
+			});
 		}
 		const conn = await this._ensureConnection();
 		const config = this._readSessionConfig(session);
@@ -1822,6 +1888,18 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (!session.workingDirectory) {
 			return;
 		}
+		// Worktree-isolated sessions defer materialization to the first real
+		// send, where the user's prompt drives branch naming — prewarming would
+		// create the worktree eagerly (with a session-id branch) for a session
+		// the user may never message. Check both the isolation requested at
+		// `createSession` (captured on the session, since the resolved config
+		// is not yet seeded into `IAgentConfigurationService` when a brand-new
+		// session is created) and the live resolved config (for restored /
+		// reconfigured sessions).
+		if (session.requestedIsolation === 'worktree'
+			|| this._configurationService.getSessionConfigValues(session.sessionUri.toString())?.[SessionConfigKey.Isolation] === 'worktree') {
+			return;
+		}
 		void (async () => {
 			// Prewarm is a background latency optimization, not a user action,
 			// so it must NOT trigger a cold SDK download. When the SDK isn't
@@ -1897,7 +1975,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// `_materializeIfNeeded` is idempotent.
 		try {
 			this._claimPrewarm(session);
-			await this._materializeIfNeeded(session);
+			await this._materializeIfNeeded(session, true, prompt);
 			this._persistMaterializedSession(session);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -1955,6 +2033,17 @@ export class CodexAgent extends Disposable implements IAgent {
 		// Buffer the prompt text for `turn/started`'s userMessage fallback.
 		session.lastPromptText = prompt;
 		session.currentTurnId = effectiveTurnId;
+		// Surface the "Created isolated worktree" announcement as the first
+		// response part of the first turn (matches Copilot). On restore it is
+		// re-injected from persisted metadata by `getSessionMessages`.
+		const announcement = this._worktree.takePendingAnnouncement(sessionId);
+		if (announcement !== undefined) {
+			this._fire(sessionUri, {
+				type: ActionType.ChatResponsePart,
+				turnId: effectiveTurnId,
+				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
+			});
+		}
 		try {
 			const model = await this._resolveModel(session);
 			const turnOptions = this._turnStartOptions(session, model.id);
@@ -2110,6 +2199,11 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._logService.info(`[Codex:${threadId}] thread/unsubscribe failed: ${err instanceof Error ? err.message : String(err)}`);
 			}
 		}
+		// Remove any worktree created for this session in this process. Queued
+		// on the worktree sequencer so it never interleaves with an in-flight
+		// materialization's worktree resolution for this session (which already
+		// bails once `session.disposed` is set above).
+		await this._worktreeSequencer.queue(sessionId, () => this._worktree.removeCreatedWorktree(sessionId));
 	}
 
 	private async _changeModel(chat: URI, model: ModelSelection): Promise<void> {
@@ -2164,6 +2258,18 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	async onArchivedChanged(sessionUri: URI, isArchived: boolean): Promise<void> {
+		const sessionId = AgentSession.id(sessionUri);
+		// Mirror Copilot: on archive remove the (clean, branch-preserved)
+		// worktree so it can be recreated on unarchive without losing work.
+		// Queued on the worktree sequencer so it never interleaves with
+		// materialization's worktree resolution for this session.
+		await this._worktreeSequencer.queue(sessionId, async () => {
+			if (isArchived) {
+				await this._worktree.cleanupWorktreeOnArchive(sessionUri, sessionId);
+			} else {
+				await this._worktree.recreateWorktreeOnUnarchive(sessionUri, sessionId);
+			}
+		});
 		const threadId = await this._resolveThreadId(sessionUri);
 		if (threadId === undefined) {
 			return;
@@ -2221,7 +2327,10 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	getSessionMessages(chat: URI): Promise<readonly Turn[]> {
-		return this._readSession(this._sessionUriFromChat(chat)).then(read => read ? replayThreadToTurns(read.thread) : []);
+		const sessionUri = this._sessionUriFromChat(chat);
+		return this._readSession(sessionUri)
+			.then(read => read ? replayThreadToTurns(read.thread) : [])
+			.then(turns => this._worktree.applyRestoreAnnouncement(sessionUri, turns));
 	}
 
 	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
@@ -2243,6 +2352,8 @@ export class CodexAgent extends Disposable implements IAgent {
 				threadId,
 				sessionUri: session,
 				workingDirectory,
+				requestedIsolation: undefined,
+				worktreeResolved: true,
 				mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
 				pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
 				acceptedForSession: new Set<string>(),
@@ -2618,6 +2729,18 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	async shutdown(): Promise<void> {
+		this._teardownConnectionAndSessions();
+		// Remove any worktrees this process created, matching Copilot's
+		// shutdown drain.
+		await this._worktree.removeAllCreatedWorktrees();
+	}
+
+	/**
+	 * Synchronous teardown shared by {@link shutdown} and {@link dispose}:
+	 * drops the codex connection, unparks every session's pending requests,
+	 * and clears the in-memory session/thread/MCP maps.
+	 */
+	private _teardownConnectionAndSessions(): void {
 		if (this._connection.kind === 'ready') {
 			try { this._connection.client.dispose(); } catch { /* ignore */ }
 			try { this._connection.proxyHandle.dispose(); } catch { /* ignore */ }
@@ -2634,13 +2757,24 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._mcpInventory.clear();
 	}
 
-	resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
+	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
 		const values = codexSessionConfigSchema.validateOrDefault(params.config, codexSessionConfigDefaults);
 		const isWorkspaceWrite = values[CodexSessionConfigKey.SandboxMode] === 'workspace-write';
-		const schema = isWorkspaceWrite
-			? codexWorkspaceWriteSessionConfigSchema.toProtocol()
-			: codexVisibleSessionConfigSchema.toProtocol();
+		const baseSchema = isWorkspaceWrite
+			? codexWorkspaceWriteSessionConfigSchema
+			: codexVisibleSessionConfigSchema;
+
+		// Contribute the shared `isolation` (folder / worktree) + `branch`
+		// properties so Codex sessions get the same picker as Copilot.
+		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
+		const sessionSchema = createSchema({
+			[SessionConfigKey.Isolation]: iso.isolationProperty,
+			...baseSchema.definition,
+			...(iso.branchProperty ? { [SessionConfigKey.Branch]: iso.branchProperty } : {}),
+		});
+
 		const resolvedValues: Record<string, unknown> = {
+			[SessionConfigKey.Isolation]: iso.isolationValue,
 			[SessionConfigKey.Mode]: values[SessionConfigKey.Mode],
 			[CodexSessionConfigKey.ApprovalPolicy]: values[CodexSessionConfigKey.ApprovalPolicy],
 			[CodexSessionConfigKey.SandboxMode]: values[CodexSessionConfigKey.SandboxMode],
@@ -2651,10 +2785,18 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (isWorkspaceWrite) {
 			resolvedValues[CodexSessionConfigKey.NetworkAccessEnabled] = values[CodexSessionConfigKey.NetworkAccessEnabled];
 		}
-		return Promise.resolve({ values: resolvedValues, schema });
+		if (iso.branchProperty) {
+			resolvedValues[SessionConfigKey.Branch] = iso.branchProperty.validate(params.config?.[SessionConfigKey.Branch])
+				? params.config![SessionConfigKey.Branch]
+				: iso.branchDefault;
+		}
+		return { values: resolvedValues, schema: sessionSchema.toProtocol() };
 	}
 
 	async sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
+		if (params.property === SessionConfigKey.Branch) {
+			return this._worktree.branchCompletions(params.workingDirectory, params.query);
+		}
 		if (params.property !== CodexSessionConfigKey.AdditionalDirectories) {
 			return { items: [] };
 		}
@@ -2691,20 +2833,11 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	override dispose(): void {
-		if (this._connection.kind === 'ready') {
-			try { this._connection.client.dispose(); } catch { /* ignore */ }
-			try { this._connection.proxyHandle.dispose(); } catch { /* ignore */ }
-		}
-		this._connection = { kind: 'idle' };
-		for (const s of this._sessions.values()) {
-			s.pendingCommandApprovals.denyAll('decline');
-			s.pendingClientToolCalls.rejectAll(new CancellationError());
-			s.pendingUserInputs.rejectAll(new CancellationError());
-			s.mcpController?.dispose();
-		}
-		this._sessions.clear();
-		this._sessionIdByThreadId.clear();
-		this._mcpInventory.clear();
+		this._teardownConnectionAndSessions();
+		// Best-effort worktree cleanup on hard dispose. `removeAllCreatedWorktrees`
+		// swallows per-worktree failures internally, so the floating promise
+		// never rejects; it is a no-op when this process created no worktrees.
+		void this._worktree.removeAllCreatedWorktrees();
 		super.dispose();
 	}
 }

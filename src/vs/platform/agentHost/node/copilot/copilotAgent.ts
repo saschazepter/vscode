@@ -10,14 +10,13 @@ import { CancelablePromise, createCancelablePromise, Delayer, disposableTimeout,
 import { type CancellationToken } from '../../../../base/common/cancellation.js';
 import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { combinedDisposable, Disposable, DisposableMap, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { formatTokenCount } from '../../../../base/common/numbers.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun, observableValue, type ISettableObservable } from '../../../../base/common/observable.js';
-import { basename, delimiter, dirname, join } from '../../../../base/common/path.js';
+import { delimiter, dirname, join } from '../../../../base/common/path.js';
 import { basename as resourceBasename, isEqual, isEqualOrParent, joinPath as resourceJoinPath, relativePath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -33,7 +32,7 @@ import { workspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { IAgentHostCheckpointService } from '../../common/agentHostCheckpointService.js';
 import { createPricingMetaFromBilling, hasLongContextSurcharge, type ICAPIModelBilling } from '../../common/agentModelPricing.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
-import { AgentHostMcpServersConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, ISchemaProperty, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, schemaProperty, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
+import { AgentHostMcpServersConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
 import { AgentSession, AgentSignal, AuthenticateParams, GITHUB_COPILOT_PROTECTED_RESOURCE, GITHUB_REPO_PROTECTED_RESOURCE, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
@@ -46,14 +45,14 @@ import { ISessionDataService, SESSION_DB_FILENAME } from '../../common/sessionDa
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { ProtectedResourceMetadata, type AgentSelection, type ChildCustomizationType, type ConfigPropertySchema, type ConfigSchema, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { ActionType, type SessionAction } from '../../common/state/sessionActions.js';
-import { AgentCustomization, CustomizationLoadStatus, CustomizationType, ResponsePartKind, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, buildDefaultChatUri, isDefaultChatUri, parseChatUri, parseRequiredSessionUriFromChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ResponsePart, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { AgentCustomization, CustomizationLoadStatus, CustomizationType, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, buildDefaultChatUri, isDefaultChatUri, parseChatUri, parseRequiredSessionUriFromChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostCompletions } from '../agentHostCompletions.js';
-import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
+import { IAgentHostGitService } from '../../common/agentHostGitService.js';
 import { findMcpChildId, type IMcpServerRuntimeState } from '../shared/mcpCustomizationController.js';
 import { IByokLmBridgeRegistry } from '../byokLmBridgeRegistry.js';
-import { COPILOT_BRANCH_PREFIX, ICopilotBranchNameGenerator } from './copilotBranchNameGenerator.js';
+import { WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../shared/worktreeIsolation.js';
 import { CopilotAgentSession, type CopilotSdkMode } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
 import { parsedPluginsEqual, toChildCustomizations } from './copilotPluginConverters.js';
@@ -130,11 +129,6 @@ async function resolveCopilotCliPath(nodeModulesUri: URI): Promise<string> {
 	}
 
 	throw new Error(`Unable to resolve @github/copilot CLI path. Tried: ${tried.join(', ')}`);
-}
-
-interface ICreatedWorktree {
-	readonly repositoryRoot: URI;
-	readonly worktree: URI;
 }
 
 export type ICopilotPluginInfo = IParsedPlugin & { readonly pluginDir?: URI };
@@ -221,16 +215,11 @@ export interface IExitPlanModeResponse {
 }
 
 export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
-	return URI.joinPath(repositoryRoot, '..', `${basename(repositoryRoot.fsPath)}.worktrees`);
+	return getWorktreesRoot(repositoryRoot);
 }
 
 export function getCopilotWorktreeName(branchName: string): string {
-	// Strip the `agents/` branch prefix so the worktree directory name stays
-	// concise, then flatten any remaining path separators.
-	const withoutPrefix = branchName.startsWith(COPILOT_BRANCH_PREFIX)
-		? branchName.substring(COPILOT_BRANCH_PREFIX.length)
-		: branchName;
-	return withoutPrefix.replace(/\//g, '-');
+	return getWorktreeName(branchName);
 }
 
 /**
@@ -264,53 +253,6 @@ export function migrateEnablementKeys(enablement: ReadonlyMap<string, boolean>, 
 }
 
 /**
- * Builds the localized "Created isolated worktree for branch X" markdown
- * shown at the top of the first response in worktree-isolated sessions.
- * The branch name is wrapped as inline code so the localized template
- * doesn't have to embed markdown punctuation. The trailing blank line
- * keeps the announcement visually separated when it gets merged into the
- * same markdown part as the model's reply.
- */
-function buildWorktreeAnnouncementText(branchName: string): string {
-	return localize(
-		'copilotAgent.worktreeCreated',
-		"Created isolated worktree for branch {0}",
-		appendEscapedMarkdownInlineCode(branchName)
-	) + '\n\n';
-}
-
-/**
- * Returns a copy of `turns` where `announcement` has been prepended to the
- * first top-level assistant turn's first markdown response part. Used on
- * session restore so the worktree announcement remains visible after the
- * session is reopened. If no assistant content exists yet, a fresh
- * markdown part is inserted at the top of the first turn.
- */
-function prependAnnouncementToFirstTurn(
-	turns: readonly Turn[],
-	announcement: string,
-): readonly Turn[] {
-	if (turns.length === 0) {
-		return turns;
-	}
-	const result = turns.slice();
-	const first = result[0];
-	const part = first.responseParts[0];
-	if (part?.kind === ResponsePartKind.Markdown) {
-		const responseParts = first.responseParts.slice();
-		responseParts[0] = { ...part, content: announcement + part.content };
-		result[0] = { ...first, responseParts };
-	} else {
-		const responseParts: ResponsePart[] = [
-			{ kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
-			...first.responseParts,
-		];
-		result[0] = { ...first, responseParts };
-	}
-	return result;
-}
-
-/**
  * Per-session container. Owns the session's default (main) chat and any
  * additional peer chats, keeping all chats of a session together in a single
  * {@link CopilotAgent._sessions} map (no parallel maps). The default chat is
@@ -328,7 +270,6 @@ export class CopilotSessionEntry extends AgentSessionEntry<CopilotAgentSession> 
  */
 export class CopilotAgent extends Disposable implements IAgent {
 	readonly id = 'copilotcli' as const;
-	private static readonly _BRANCH_COMPLETION_LIMIT = 25;
 
 	private readonly _onDidSessionProgress = this._register(new Emitter<AgentSignal>());
 	readonly onDidSessionProgress = this._onDidSessionProgress.event;
@@ -436,17 +377,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * out of this map and into {@link _sessions}. See {@link IProvisionalSession}.
 	 */
 	private readonly _provisionalSessions = new Map<string, IProvisionalSession>();
-	private readonly _createdWorktrees = new Map<string, ICreatedWorktree>();
-	/**
-	 * Per-session announcement (markdown string) that should be emitted as
-	 * a synthetic streaming `delta` event the first time {@link sendMessage}
-	 * is called for the session. Currently used to surface the "Created
-	 * isolated worktree for branch X" message live during the first turn.
-	 * The same announcement is also injected on restore via
-	 * {@link getSessionMessages} by prepending to the first assistant
-	 * message's content so it stays visible after the session is reopened.
-	 */
-	private readonly _pendingFirstTurnAnnouncements = new Map<string, string>();
+	/** Shared git-worktree isolation machinery (folder / worktree + branch). */
+	private _worktree!: WorktreeIsolation;
 	private readonly _sessionSequencer = new SequencerByKey<string>();
 	private _shutdownPromise: Promise<void> | undefined;
 	private readonly _plugins: PluginController;
@@ -462,7 +394,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
 		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
 		@IAgentHostOTelService private readonly _otelService: IAgentHostOTelService,
-		@ICopilotBranchNameGenerator private readonly _branchNameGenerator: ICopilotBranchNameGenerator,
 		@IAgentHostCompletions completions: IAgentHostCompletions,
 		@IAgentHostCheckpointService private readonly _checkpointService: IAgentHostCheckpointService,
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
@@ -473,6 +404,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		super();
 		this._plugins = this._register(this._instantiationService.createInstance(PluginController));
 		this._sessionLauncher = this._instantiationService.createInstance(CopilotSessionLauncher);
+		this._worktree = this._register(this._instantiationService.createInstance(WorktreeIsolation, 'Copilot'));
 		this.onDidCustomizationsChange = this._plugins.onDidChange;
 		// Mirror the sub-agent fan-out signals onto the first-class spawned-
 		// chat channel so the orchestrator manages sub-agent chats
@@ -1705,60 +1637,23 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
-		const gitInfo = params.workingDirectory ? await this._getGitInfo(params.workingDirectory) : undefined;
-
-		const isolationProperty = schemaProperty<'folder' | 'worktree'>({
-			type: 'string',
-			title: localize('agentHost.sessionConfig.isolation', "Isolation"),
-			description: localize('agentHost.sessionConfig.isolationDescription', "Where the agent should make changes"),
-			enum: gitInfo ? ['folder', 'worktree'] : ['folder'],
-			enumLabels: gitInfo ? [localize('agentHost.sessionConfig.isolation.folder', "Folder"), localize('agentHost.sessionConfig.isolation.worktree', "Worktree")] : [localize('agentHost.sessionConfig.isolation.folder', "Folder")],
-			enumDescriptions: gitInfo ? [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder"), localize('agentHost.sessionConfig.isolation.worktreeDescription', "Create a Git worktree for isolation")] : [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder")],
-			default: gitInfo ? 'worktree' : 'folder',
-			readOnly: !gitInfo,
-			sessionMutable: false,
-		});
-
-		// Resolve isolation first — downstream schema shapes (branch's
-		// read-only mode + enum restriction) depend on the effective value.
-		const isolationDefault: 'folder' | 'worktree' = gitInfo ? 'worktree' : 'folder';
-		const isolationValue = isolationProperty.validate(params.config?.[SessionConfigKey.Isolation])
-			? params.config[SessionConfigKey.Isolation] as 'folder' | 'worktree'
-			: isolationDefault;
-
-		let branchProperty: ISchemaProperty<string> | undefined;
-		let branchDefault: string | undefined;
-		if (gitInfo) {
-			const branchReadOnly = isolationValue === 'folder';
-			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
-			branchProperty = schemaProperty<string>({
-				type: 'string',
-				title: localize('agentHost.sessionConfig.branch', "Branch"),
-				description: localize('agentHost.sessionConfig.branchDescription', "Base branch to work from"),
-				enum: [branchDefault],
-				enumLabels: [branchDefault],
-				default: branchDefault,
-				enumDynamic: !branchReadOnly,
-				readOnly: branchReadOnly,
-				sessionMutable: false,
-			});
-		}
+		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
 
 		const sessionSchema = createSchema({
-			[SessionConfigKey.Isolation]: isolationProperty,
+			[SessionConfigKey.Isolation]: iso.isolationProperty,
 			...platformSessionSchema.definition,
-			...(branchProperty ? { [SessionConfigKey.Branch]: branchProperty } : {}),
+			...(iso.branchProperty ? { [SessionConfigKey.Branch]: iso.branchProperty } : {}),
 		});
 
 		const values = sessionSchema.validateOrDefault(migrateLegacyAutopilotConfig(params.config), {
-			[SessionConfigKey.Isolation]: isolationValue,
+			[SessionConfigKey.Isolation]: iso.isolationValue,
 			[SessionConfigKey.AutoApprove]: 'default' satisfies AutoApproveLevel,
 			[SessionConfigKey.Mode]: 'interactive' satisfies SessionMode,
 			// Permissions intentionally omitted — leave unset so auto-approval
 			// falls through to the host-level `permissions` default, and only
 			// materializes on the session once the user hits "Allow in this
 			// Session".
-			...(branchDefault !== undefined ? { [SessionConfigKey.Branch]: branchDefault } : {}),
+			...(iso.branchDefault !== undefined ? { [SessionConfigKey.Branch]: iso.branchDefault } : {}),
 		});
 
 		return {
@@ -1768,12 +1663,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	async sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
-		if (params.property !== 'branch' || !params.workingDirectory) {
+		if (params.property !== SessionConfigKey.Branch) {
 			return { items: [] };
 		}
-
-		const branches = await this._getBranches(params.workingDirectory, params.query);
-		return { items: branches.map(branch => ({ value: branch, label: branch })) };
+		return this._worktree.branchCompletions(params.workingDirectory, params.query);
 	}
 
 	getOrCreateActiveClient(session: URI, client: { readonly clientId: string; readonly displayName?: string }): IActiveClient {
@@ -1887,9 +1780,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// delegating to the SDK. The SDK's subsequent deltas append to
 			// the same markdown part because the session has already
 			// allocated `_currentMarkdownPartId`.
-			const announcement = this._pendingFirstTurnAnnouncements.get(context.sessionId);
+			const announcement = this._worktree.takePendingAnnouncement(context.sessionId);
 			if (announcement !== undefined) {
-				this._pendingFirstTurnAnnouncements.delete(context.sessionId);
 				entry.emitInitialMarkdown(announcement);
 			}
 
@@ -2000,20 +1892,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const rawTurns = await entry.getMessages();
 
 		// If a worktree was created for this session at create-time, prepend
-		// If a worktree was created for this session at create-time, prepend
 		// the announcement to the first turn so it appears at the top of the
 		// first response when the session is reopened. The live path
 		// (sendMessage) handles the very first turn when the session is fresh;
-		// this path takes over on subsequent loads, where
-		// _pendingFirstTurnAnnouncements is empty.
-		const worktreeMeta = await this._readWorktreeMetadata(context.session).catch(err => {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to read worktree branch metadata`, err);
-			return undefined;
-		});
-		if (!worktreeMeta?.branchName) {
-			return rawTurns;
-		}
-		return prependAnnouncementToFirstTurn(rawTurns, buildWorktreeAnnouncementText(worktreeMeta.branchName));
+		// this path takes over on subsequent loads.
+		return this._worktree.applyRestoreAnnouncement(context.session, rawTurns);
 	}
 
 	async getSubagentSessions(session: URI): Promise<readonly IRestoredSubagentSession[]> {
@@ -2066,84 +1949,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const sessionId = AgentSession.id(session);
 		await this._sessionSequencer.queue(sessionId, async () => {
 			if (isArchived) {
-				await this._cleanupWorktreeOnArchive(session, sessionId);
+				await this._worktree.cleanupWorktreeOnArchive(session, sessionId);
 			} else {
-				await this._recreateWorktreeOnUnarchive(session, sessionId);
+				await this._worktree.recreateWorktreeOnUnarchive(session, sessionId);
 			}
 		});
-	}
-
-	private async _cleanupWorktreeOnArchive(session: URI, sessionId: string): Promise<void> {
-		const meta = await this._readWorktreeMetadata(session).catch(() => undefined);
-		if (!meta?.worktreePath || !meta.repositoryRoot) {
-			return;
-		}
-		const { branchName, worktreePath, repositoryRoot } = meta;
-
-		// Skip if the worktree directory is already gone — nothing to clean.
-		try {
-			await fs.access(worktreePath.fsPath);
-		} catch {
-			this._createdWorktrees.delete(sessionId);
-			return;
-		}
-
-		// Skip if the branch is missing — without it we can't safely recreate
-		// the worktree on unarchive, so leave the working tree intact.
-		const branchPresent = await this._gitService.branchExists(repositoryRoot, branchName).catch(() => false);
-		if (!branchPresent) {
-			this._logService.info(`[Copilot:${sessionId}] Skipping worktree cleanup: branch '${branchName}' is missing`);
-			return;
-		}
-
-		// Skip if there are uncommitted changes — don't silently destroy work.
-		const dirty = await this._gitService.hasUncommittedChanges(worktreePath).catch(() => true);
-		if (dirty) {
-			this._logService.info(`[Copilot:${sessionId}] Skipping worktree cleanup: '${worktreePath.fsPath}' has uncommitted changes`);
-			return;
-		}
-
-		try {
-			await this._gitService.removeWorktree(repositoryRoot, worktreePath);
-			this._logService.info(`[Copilot:${sessionId}] Removed worktree '${worktreePath.fsPath}' on archive`);
-		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to remove worktree '${worktreePath.fsPath}' on archive: ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			this._createdWorktrees.delete(sessionId);
-		}
-	}
-
-	private async _recreateWorktreeOnUnarchive(session: URI, sessionId: string): Promise<void> {
-		const meta = await this._readWorktreeMetadata(session).catch(() => undefined);
-		if (!meta?.worktreePath || !meta.repositoryRoot) {
-			return;
-		}
-		const { branchName, worktreePath, repositoryRoot } = meta;
-
-		// Skip if the worktree directory already exists — nothing to do.
-		try {
-			await fs.access(worktreePath.fsPath);
-			return;
-		} catch {
-			// expected when the worktree was cleaned up on archive
-		}
-
-		// Skip if the branch is missing — we have no commit to attach the
-		// recreated worktree to.
-		const branchPresent = await this._gitService.branchExists(repositoryRoot, branchName).catch(() => false);
-		if (!branchPresent) {
-			this._logService.info(`[Copilot:${sessionId}] Skipping worktree recreation: branch '${branchName}' is missing`);
-			return;
-		}
-
-		try {
-			await fs.mkdir(URI.joinPath(worktreePath, '..').fsPath, { recursive: true });
-			await this._gitService.addExistingWorktree(repositoryRoot, worktreePath, branchName);
-			this._createdWorktrees.set(sessionId, { repositoryRoot, worktree: worktreePath });
-			this._logService.info(`[Copilot:${sessionId}] Recreated worktree '${worktreePath.fsPath}' on unarchive`);
-		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to recreate worktree '${worktreePath.fsPath}' on unarchive: ${error instanceof Error ? error.message : String(error)}`);
-		}
 	}
 
 	private async _abortSession(chat: URI): Promise<void> {
@@ -2586,7 +2396,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// after teardown and resurrect the client.
 			this._modelRefreshRetry.clear();
 			this._logService.info('[Copilot] Shutting down...');
-			const sessionIds = new Set([...this._sessions.keys(), ...this._createdWorktrees.keys()]);
+			const sessionIds = new Set([...this._sessions.keys(), ...this._worktree.createdWorktreeSessionIds]);
 			for (const sessionId of sessionIds) {
 				await this._sessionSequencer.queue(sessionId, () => this._destroyAndDisposeSession(sessionId));
 			}
@@ -2845,79 +2655,26 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return agentSession;
 	}
 
-	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: string } | undefined> {
-		const repositoryRoot = await this._gitService.getRepositoryRoot(workingDirectory);
-		if (!repositoryRoot) {
-			return undefined;
-		}
-
-		// Skip worktree isolation for a repo with no commits yet (unborn HEAD); `git worktree add` would fail.
-		const headCommit = await this._gitService.revParse(repositoryRoot, 'HEAD').catch(() => undefined);
-		if (!headCommit) {
-			return undefined;
-		}
-
-		const currentBranch = await this._gitService.getCurrentBranch(repositoryRoot) ?? 'HEAD';
-		const defaultBranch = await this._gitService.getDefaultBranch(repositoryRoot) ?? currentBranch;
-		return { currentBranch, defaultBranch };
-	}
-
-	private async _getBranches(workingDirectory: URI, query?: string): Promise<string[]> {
-		return this._gitService.getBranches(workingDirectory, { query, limit: CopilotAgent._BRANCH_COMPLETION_LIMIT });
-	}
-
+	/**
+	 * Resolves the effective working directory for a session about to be
+	 * materialized, creating a git worktree when the session selected
+	 * `worktree` isolation. Delegates to the shared {@link WorktreeIsolation}
+	 * controller. Kept as a `protected` seam so tests can stub worktree
+	 * creation without shelling out to git.
+	 */
 	protected async _resolveSessionWorkingDirectory(config: IAgentCreateSessionConfig | undefined, sessionId: string, prompt?: string): Promise<URI | undefined> {
-		if (config?.config?.isolation !== 'worktree' || !config.workingDirectory || typeof config.config.branch !== 'string') {
-			return config?.workingDirectory;
-		}
-
-		const repositoryRoot = await this._gitService.getRepositoryRoot(config.workingDirectory);
-		if (!repositoryRoot) {
-			return config.workingDirectory;
-		}
-
-		const worktreesRoot = getCopilotWorktreesRoot(repositoryRoot);
-		const branchName = await this._branchNameGenerator.generateBranchName({
+		return this._worktree.resolveWorkingDirectory({
+			sessionUri: AgentSession.uri(this.id, sessionId),
 			sessionId,
-			message: prompt,
+			workingDirectory: config?.workingDirectory,
+			config: config?.config,
+			prompt,
 			githubToken: this._githubToken,
-			// Treat a failed existence check as a collision so we fall back to a
-			// suffixed branch name rather than risk `addWorktree` failing because
-			// the branch already exists.
-			branchExists: branchName => this._gitService.branchExists(repositoryRoot, branchName).catch(() => true),
 		});
-		const worktree = URI.joinPath(worktreesRoot, getCopilotWorktreeName(branchName));
-		await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
-		const baseBranch = typeof config.config[SessionConfigKey.Branch] === 'string' ? config.config[SessionConfigKey.Branch] as string : undefined;
-		// `addWorktree`'s signature requires a startPoint, but historically the
-		// runtime accepted undefined when `branch` was not set in config. Preserve
-		// that behavior by passing through whatever value (or undefined) was set.
-		await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch as string);
-		this._createdWorktrees.set(sessionId, { repositoryRoot, worktree });
-		// Queue the worktree announcement so the first turn (live) and any
-		// subsequent restore (history) both surface the message in the chat.
-		this._pendingFirstTurnAnnouncements.set(sessionId, buildWorktreeAnnouncementText(branchName));
-		const sessionUri = AgentSession.uri(this.id, sessionId);
-		try {
-			await this._writeWorktreeMetadata(sessionUri, { branchName, baseBranch, worktreePath: worktree, repositoryRoot });
-		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to persist worktree branch metadata: ${error instanceof Error ? error.message : String(error)}`);
-		}
-		return worktree;
 	}
 
 	private async _removeCreatedWorktree(sessionId: string): Promise<void> {
-		const worktree = this._createdWorktrees.get(sessionId);
-		if (!worktree) {
-			return;
-		}
-		try {
-			await this._gitService.removeWorktree(worktree.repositoryRoot, worktree.worktree);
-		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to remove worktree '${worktree.worktree.fsPath}': ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			this._createdWorktrees.delete(sessionId);
-		}
+		await this._worktree.removeCreatedWorktree(sessionId);
 	}
 
 	// ---- session metadata persistence --------------------------------------
@@ -2929,9 +2686,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private static readonly _META_PROJECT_RESOLVED = 'copilot.project.resolved';
 	private static readonly _META_PROJECT_URI = 'copilot.project.uri';
 	private static readonly _META_PROJECT_DISPLAY_NAME = 'copilot.project.displayName';
-	private static readonly _META_WORKTREE_BRANCH = 'copilot.worktree.branchName';
-	private static readonly _META_WORKTREE_PATH = 'copilot.worktree.path';
-	private static readonly _META_WORKTREE_REPOSITORY_ROOT = 'copilot.worktree.repositoryRoot';
 	/** Persisted catalog of additional (non-default) peer chats, keyed by chatId. */
 	private static readonly _META_CHATS = 'copilot.chats';
 
@@ -2978,45 +2732,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 	}
 
-
-	private async _writeWorktreeMetadata(session: URI, metadata: { branchName: string; baseBranch: string | undefined; worktreePath: URI; repositoryRoot: URI }): Promise<void> {
-		const dbRef = this._sessionDataService.openDatabase(session);
-		try {
-			const work: Promise<void>[] = [
-				dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_BRANCH, metadata.branchName),
-				dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_PATH, metadata.worktreePath.toString()),
-				dbRef.object.setMetadata(CopilotAgent._META_WORKTREE_REPOSITORY_ROOT, metadata.repositoryRoot.toString()),
-			];
-			if (metadata.baseBranch) {
-				work.push(dbRef.object.setMetadata(META_DIFF_BASE_BRANCH, metadata.baseBranch));
-			}
-			await Promise.all(work);
-		} finally {
-			dbRef.dispose();
-		}
-	}
-
-	private async _readWorktreeMetadata(session: URI): Promise<{ branchName: string; worktreePath?: URI; repositoryRoot?: URI } | undefined> {
-		const ref = await this._sessionDataService.tryOpenDatabase(session);
-		if (!ref) {
-			return undefined;
-		}
-		try {
-			const [branchName, worktreePathRaw, repositoryRootRaw] = await Promise.all([
-				ref.object.getMetadata(CopilotAgent._META_WORKTREE_BRANCH),
-				ref.object.getMetadata(CopilotAgent._META_WORKTREE_PATH),
-				ref.object.getMetadata(CopilotAgent._META_WORKTREE_REPOSITORY_ROOT),
-			]);
-			if (!branchName) {
-				return undefined;
-			}
-			const worktreePath = worktreePathRaw ? URI.parse(worktreePathRaw) : undefined;
-			const repositoryRoot = repositoryRootRaw ? URI.parse(repositoryRootRaw) : undefined;
-			return { branchName, worktreePath, repositoryRoot };
-		} finally {
-			ref.dispose();
-		}
-	}
 
 	private async _storeSessionMetadata(session: URI, model: ModelSelection | undefined, workingDirectory: URI | undefined, customizationDirectory: URI | undefined, project: IAgentSessionProjectInfo | undefined, projectResolved = project !== undefined): Promise<void> {
 		const dbRef = this._sessionDataService.openDatabase(session);

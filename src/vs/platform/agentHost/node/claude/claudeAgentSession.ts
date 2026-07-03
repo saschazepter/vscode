@@ -7,8 +7,9 @@ import type { McpSdkServerConfigWithInstance, Options, PermissionMode, SDKUserMe
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 import { INativeEnvironmentService } from '../../../environment/common/environment.js';
 import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
@@ -23,7 +24,7 @@ import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { ActionType } from '../../common/state/sessionActions.js';
 import { PendingMessage, ChatInputAnswer, ChatInputRequest, ChatInputResponseKind, ToolCallContributorKind, ToolCallPendingConfirmationState, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
-import { isDefaultChatUri, type Customization, type ToolCallResult } from '../../common/state/sessionState.js';
+import { isDefaultChatUri, ResponsePartKind, type Customization, type ToolCallResult } from '../../common/state/sessionState.js';
 import { IClaudeAgentSdkService } from './claudeAgentSdkService.js';
 import { buildClientMcpServers, buildOptions } from './claudeSdkOptions.js';
 import { toSdkModelId } from './claudeModelId.js';
@@ -117,8 +118,12 @@ export class ClaudeAgentSession extends Disposable {
 	private _provisionalAgent: AgentSelection | undefined;
 	/** Pre-materialize `IAgentCreateSessionConfig.config` bag. Read at materialize time. */
 	readonly provisionalConfig: Record<string, unknown> | undefined;
-	/** Resolved project metadata captured at create time (if any). */
-	readonly project: IAgentSessionProjectInfo | undefined;
+	/**
+	 * Resolved project metadata. Captured at create time and recomputed for
+	 * the isolated worktree by {@link setWorktreeWorkingDirectory} so the
+	 * materialize event and any consumer report the worktree's git context.
+	 */
+	project: IAgentSessionProjectInfo | undefined;
 	/** Always-present abort controller; wired into `Options.abortController` at materialize time. */
 	readonly abortController: AbortController;
 
@@ -126,6 +131,38 @@ export class ClaudeAgentSession extends Disposable {
 	get pendingClientToolCalls(): PendingRequestRegistry<CallToolResult> { return this._pendingClientToolCalls; }
 	/** Snapshot of permission-mode fallback used when live read is undefined. */
 	get permissionModeFallback(): ClaudePermissionMode { return this._permissionModeFallback; }
+
+	/**
+	 * Move the session into an isolated git worktree before {@link materialize}
+	 * locks the SDK subprocess `cwd` (the subprocess inherits `cwd` at fork
+	 * time and it cannot change afterwards). Re-anchors everything that follows
+	 * the working directory: the customization watcher is rebuilt against the
+	 * worktree and the project metadata is replaced with the worktree's git
+	 * context (recomputed by the agent, which owns the git service).
+	 */
+	setWorktreeWorkingDirectory(worktree: URI, project: IAgentSessionProjectInfo | undefined): void {
+		this.workingDirectory = worktree;
+		this.project = project;
+		this._installCustomizationWatcher();
+	}
+
+	/**
+	 * Emit a synthetic markdown response part as the first part of the given
+	 * turn. Used to surface the "Created isolated worktree" announcement live
+	 * on the first turn (matches Copilot); restore is handled separately from
+	 * persisted metadata.
+	 */
+	emitAnnouncement(content: string, turnId: string): void {
+		this._onDidSessionProgress.fire({
+			kind: 'action',
+			resource: this._chatChannelUri,
+			action: {
+				type: ActionType.ChatResponsePart,
+				turnId,
+				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content },
+			},
+		});
+	}
 
 	static createProvisional(
 		sessionId: string,
@@ -291,11 +328,19 @@ export class ClaudeAgentSession extends Disposable {
 		return { ...signal, action: { ...signal.action, contributor: { kind: ToolCallContributorKind.MCP, customizationId } } };
 	}
 
+	/**
+	 * The customization file watcher plus its change subscription, held in a
+	 * {@link MutableDisposable} so it can be re-anchored to the worktree when
+	 * the session's working directory changes. Replacing the value disposes the
+	 * previous watcher and subscription.
+	 */
+	private readonly _customizationWatcher = this._register(new MutableDisposable<DisposableStore>());
+
 	constructor(
 		readonly sessionId: string,
 		readonly sessionUri: URI,
 		readonly chatChannelUri: URI,
-		readonly workingDirectory: URI | undefined,
+		public workingDirectory: URI | undefined,
 		project: IAgentSessionProjectInfo | undefined,
 		model: ModelSelection | undefined,
 		agent: AgentSelection | undefined,
@@ -326,14 +371,23 @@ export class ClaudeAgentSession extends Disposable {
 		// Watch the on-disk Claude customization sources so edits made outside
 		// the session (a new `~/.claude/agents/*.md`, an edited skill, a changed
 		// `.mcp.json`) drive a workbench re-fetch. Active from construction so
-		// it covers the provisional (pre-materialize) window too.
-		const customizationWatcher = this._register(new ClaudeCustomizationWatcher(
+		// it covers the provisional (pre-materialize) window too, and re-anchored
+		// by {@link setWorktreeWorkingDirectory} when the session moves into a
+		// worktree.
+		this._installCustomizationWatcher();
+	}
+
+	/** (Re)create the customization watcher anchored to the current working directory. */
+	private _installCustomizationWatcher(): void {
+		const store = new DisposableStore();
+		const watcher = store.add(new ClaudeCustomizationWatcher(
 			this.workingDirectory,
 			this._environmentService.userHome,
 			this._fileService,
 			this._logService,
 		));
-		this._register(customizationWatcher.onDidChange(() => this._onDidCustomizationsChange.fire()));
+		store.add(watcher.onDidChange(() => this._onDidCustomizationsChange.fire()));
+		this._customizationWatcher.value = store;
 	}
 
 	/**
