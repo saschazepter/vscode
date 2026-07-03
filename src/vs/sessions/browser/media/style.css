@@ -624,6 +624,19 @@
 	background-color: transparent !important;
 }
 
+/* In the automations dialog the embedded composer zeroes its side margins,
+	but `ChatInputPart` still reserves that horizontal padding when sizing the
+	Monaco editor, so the editor is laid out slightly narrower than its
+	`.interactive-input-editor` wrapper. The rules above repaint the visible
+	editor with `--vscode-agentsChatInput-background`, but the wrapper itself is
+	left on a different (darker) token by the shared automations styles, so the
+	uncovered sliver on the right showed through as a phantom vertical bar.
+	Paint the wrapper with the same chat input background so the sliver blends
+	into the surrounding input. */
+.agent-sessions-workbench .automation-form-prompt-host .interactive-input-editor {
+	background-color: var(--vscode-agentsChatInput-background) !important;
+}
+
 /* Scoped to the chat panel (`.part.sessionspart`) and the chat editor host
  * (`.chat-editor-relative`) to avoid leaking into other chat surfaces such as
  * the inline chat widgets and agent-session hover widget. */
