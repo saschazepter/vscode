@@ -14,8 +14,9 @@ import { URI } from '../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { Menus } from '../../../browser/menus.js';
@@ -26,7 +27,7 @@ import { ISessionsService } from '../../../services/sessions/browser/sessionsSer
 import { SessionChangesetOperationScope, SessionChangesetOperationStatus } from '../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
 import { IChangesViewService } from '../common/changesViewService.js';
-import { ChangesMultiDiffSourceResolver, SessionChangesFileReviewedContext } from './changesMultiDiffSourceResolver.js';
+import { ChangesMultiDiffSourceResolver, SessionChangesFileResourceContext, SessionChangesReviewedFilesContext } from './changesMultiDiffSourceResolver.js';
 import { ISessionChangesService } from './sessionChangesService.js';
 
 // --- View All Changes action
@@ -252,12 +253,22 @@ class ChangesetOperationsActionControllerContribution extends Disposable impleme
 	static readonly ID = 'workbench.contrib.sessions.changesetOperationsActionController';
 
 	constructor(
-		@IChangesViewService private readonly _changesViewService: IChangesViewService
+		@IChangesViewService changesViewService: IChangesViewService,
+		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super();
 
+		this._register(bindContextKey<string[]>(SessionChangesReviewedFilesContext, contextKeyService, reader => {
+			const changes = changesViewService.activeSessionChangesObs.read(reader);
+
+			return changes
+				.filter(change => change.reviewed)
+				.map(change => change.modifiedUri?.toString() ?? change.originalUri?.toString())
+				.filter((uri: string | undefined) => uri !== undefined);
+		}));
+
 		this._register(autorun(reader => {
-			const changeset = this._changesViewService.activeSessionChangesetObs.read(reader);
+			const changeset = changesViewService.activeSessionChangesetObs.read(reader);
 			const resourceOperations = (changeset?.operations.read(reader) ?? [])
 				.filter(op => op.scopes.includes(SessionChangesetOperationScope.Resource));
 
@@ -276,7 +287,9 @@ class ChangesetOperationsActionControllerContribution extends Disposable impleme
 							precondition: operation.status === SessionChangesetOperationStatus.Disabled || operation.status === SessionChangesetOperationStatus.Running
 								? ContextKeyExpr.false()
 								: ContextKeyExpr.true(),
-							toggled: SessionChangesFileReviewedContext.isEqualTo(true),
+							toggled: ContextKeyExpr.in(
+								SessionChangesFileResourceContext.key,
+								SessionChangesReviewedFilesContext.key),
 							menu: {
 								id: MenuId.MultiDiffEditorFileToolbar,
 								// This is a temporary solution until the agent host protocol
@@ -285,10 +298,14 @@ class ChangesetOperationsActionControllerContribution extends Disposable impleme
 									? operation.id === 'mark-as-reviewed'
 										? ContextKeyExpr.and(
 											ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
-											SessionChangesFileReviewedContext.isEqualTo(false))
+											ContextKeyExpr.notIn(
+												SessionChangesFileResourceContext.key,
+												SessionChangesReviewedFilesContext.key))
 										: ContextKeyExpr.and(
 											ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
-											SessionChangesFileReviewedContext.isEqualTo(true))
+											ContextKeyExpr.in(
+												SessionChangesFileResourceContext.key,
+												SessionChangesReviewedFilesContext.key))
 									: ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
 								group: 'navigation',
 								order: 100

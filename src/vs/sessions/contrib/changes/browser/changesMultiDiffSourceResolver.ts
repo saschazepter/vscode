@@ -17,11 +17,20 @@ import { ISessionChangesService } from './sessionChangesService.js';
 import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 
 /**
- * Per-file context key set on each entry in the changes multi-diff editor.
- * Reflects whether the user has marked that file as reviewed, so file toolbar
- * menu items can toggle between "Mark as Reviewed" and "Unmark as Reviewed".
+ * Global context key holding the URIs (as strings) of every file the user has
+ * marked as reviewed in the active session. Combined with
+ * {@link SessionChangesFileResourceContext} via the `in` / `not in` operators,
+ * file toolbar menu items can toggle between "Mark as Reviewed" and
+ * "Unmark as Reviewed".
  */
-export const SessionChangesFileReviewedContext = new RawContextKey<boolean>('sessions.changesFileReviewed', false);
+export const SessionChangesReviewedFilesContext = new RawContextKey<string[]>('sessions.changesReviewedFiles', []);
+
+/**
+ * Per-file context key set on each entry in the changes multi-diff editor.
+ * Holds the URI (as a string) of the file shown in that diff row, so it can be
+ * tested for membership in {@link SessionChangesReviewedFilesContext}.
+ */
+export const SessionChangesFileResourceContext = new RawContextKey<string>('sessions.changesFileResource', undefined);
 
 function compareChanges(a: ISessionFileChange, b: ISessionFileChange): number {
 	const aPath = isIChatSessionFileChange2(a) ? a.uri.fsPath : a.modifiedUri.fsPath;
@@ -66,13 +75,12 @@ export class ChangesMultiDiffSourceResolver extends Disposable implements IMulti
 			owner: this,
 			equalsFn: (a, b) => arraysEqual(a, b, (x, y) =>
 				isEqual(x.originalUri, y.originalUri) &&
-				isEqual(x.modifiedUri, y.modifiedUri) &&
-				x.contextKeys?.[SessionChangesFileReviewedContext.key] === y.contextKeys?.[SessionChangesFileReviewedContext.key]),
+				isEqual(x.modifiedUri, y.modifiedUri)),
 		}, reader => {
 			const changes = changesObs.read(reader);
 			return [...changes].sort(compareChanges).map(change =>
 				new MultiDiffEditorItem(change.originalUri, change.modifiedUri, change.modifiedUri, undefined, {
-					[SessionChangesFileReviewedContext.key]: change.reviewed ?? false,
+					[SessionChangesFileResourceContext.key]: change.modifiedUri?.toString() ?? change.originalUri?.toString() ?? '',
 				}));
 		});
 
