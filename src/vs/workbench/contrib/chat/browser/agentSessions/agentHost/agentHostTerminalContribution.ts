@@ -11,6 +11,7 @@ import { AgentHostConfigKey } from '../../../../../../platform/agentHost/common/
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import { ROOT_STATE_URI } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
 import { IWorkbenchContribution } from '../../../../../../workbench/common/contributions.js';
 import { ITerminalProfileResolverService, ITerminalProfileService } from '../../../../../../workbench/contrib/terminal/common/terminal.js';
@@ -82,6 +83,7 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ITerminalProfileService private readonly _terminalProfileService: ITerminalProfileService,
 		@ITerminalProfileResolverService private readonly _terminalProfileResolverService: ITerminalProfileResolverService,
+		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 	) {
 		super();
 
@@ -107,6 +109,24 @@ export class AgentHostTerminalContribution extends Disposable implements IWorkbe
 							push();
 						}
 					}));
+				},
+			},
+			{
+				// Mirror the connected GitHub Enterprise host to the agent host so its
+				// GitHub resources / CAPI calls target the enterprise instance. Sourced
+				// from the account service — the authoritative "am I signed in to GHE"
+				// state — rather than reading the setting directly. Push `''` (not
+				// `undefined`) for github.com: the push pipeline skips `undefined`,
+				// which would strand a stale host on the agent host.
+				key: AgentHostConfigKey.GithubEnterpriseUri,
+				computeValue: () => {
+					const provider = this._defaultAccountService.getDefaultAccountAuthenticationProvider();
+					// `resolveGitHubUrl('')` yields the GitHub Enterprise base (e.g.
+					// `https://acme.ghe.com/`) when signed in via a GHE provider.
+					return provider.enterprise ? this._defaultAccountService.resolveGitHubUrl('').replace(/\/+$/, '') : '';
+				},
+				registerTriggers: (store, push) => {
+					store.add(this._defaultAccountService.onDidChangeDefaultAccount(() => push()));
 				},
 			},
 		];
