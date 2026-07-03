@@ -27,19 +27,16 @@ interface IRunningSubagent {
 	readonly chat: IChat;
 	/** The subagent's display title. */
 	readonly title: string;
-	/** True when the subagent is blocked waiting for the user (needs attention). */
-	readonly needsAttention: boolean;
 	/** Short "current step" text (the subagent's live status description), if any. */
 	readonly step: string | undefined;
 }
 
 /**
  * An ephemeral status chip shown above the chat input while the currently-viewed
- * chat has **running** (or attention-needing) subagents. It gives an at-a-glance
- * count of in-flight background workers and escalates to an attention state when
- * any is blocked waiting for the user. Activating it opens a menu of those
- * subagents; selecting one reveals its read-only chat. The chip hides entirely
- * when no subagent is running, so it adds no chrome while idle.
+ * chat has **running** subagents. It gives an at-a-glance view of in-flight
+ * background workers. Activating it opens a menu of those subagents; selecting
+ * one reveals its read-only chat. The chip hides entirely when no subagent is
+ * running, so it adds no chrome while idle.
  */
 export class SessionRunningSubagentsControl extends Disposable {
 
@@ -94,21 +91,13 @@ export class SessionRunningSubagentsControl extends Disposable {
 			.filter(c =>
 				c.origin?.kind === ChatOriginKind.Tool &&
 				!!c.origin.parentChat &&
-				isEqual(c.origin.parentChat, chatResource))
-			.map(chat => {
-				const status = chat.status.read(reader);
-				return { chat, status };
-			})
-			.filter(({ status }) => status === SessionStatus.InProgress || status === SessionStatus.NeedsInput)
-			.map(({ chat, status }) => ({
+				isEqual(c.origin.parentChat, chatResource) &&
+				c.status.read(reader) === SessionStatus.InProgress)
+			.map(chat => ({
 				chat,
 				title: chat.title.read(reader) || localize('runningSubagents.untitled', "Subagent"),
-				needsAttention: status === SessionStatus.NeedsInput,
 				step: this._stepText(chat, reader),
-			}))
-			// Surface attention-needing workers first: a blocked subagent stalls
-			// the whole background batch and is the thing the user must act on.
-			.sort((a, b) => (a.needsAttention === b.needsAttention) ? 0 : a.needsAttention ? -1 : 1);
+			}));
 	}
 
 	private _stepText(chat: IChat, reader: IReader): string | undefined {
@@ -124,11 +113,7 @@ export class SessionRunningSubagentsControl extends Disposable {
 		this._subagents = subagents;
 
 		const count = subagents.length;
-		const attentionCount = subagents.filter(s => s.needsAttention).length;
-		this.element.classList.toggle('needs-attention', attentionCount > 0);
-		if (attentionCount > 0) {
-			this._button.label = `$(${Codicon.warning.id}) ${localize('runningSubagents.attention', "{0} need attention", attentionCount)}`;
-		} else if (count === 1) {
+		if (count === 1) {
 			// A single subagent: name it and surface its live progress inline.
 			const only = subagents[0];
 			const label = only.step
@@ -146,17 +131,12 @@ export class SessionRunningSubagentsControl extends Disposable {
 		if (!session || this._subagents.length === 0) {
 			return;
 		}
-		const actions = this._subagents.map(({ chat, title, needsAttention, step }) => {
-			const label = needsAttention
-				? localize('runningSubagents.itemAttention', "{0} (needs attention)", title)
-				: (step ? `${title} \u2014 ${step}` : title);
-			return toAction({
-				id: `runningSubagents.open.${chat.resource.toString()}`,
-				label,
-				class: ThemeIcon.asClassName(needsAttention ? Codicon.warning : Codicon.loading),
-				run: () => this.sessionsService.openChat(session, chat.resource),
-			});
-		});
+		const actions = this._subagents.map(({ chat, title, step }) => toAction({
+			id: `runningSubagents.open.${chat.resource.toString()}`,
+			label: step ? `${title} \u2014 ${step}` : title,
+			class: ThemeIcon.asClassName(Codicon.loading),
+			run: () => this.sessionsService.openChat(session, chat.resource),
+		}));
 		this.contextMenuService.showContextMenu({
 			getAnchor: () => this._button.element,
 			getActions: () => actions,

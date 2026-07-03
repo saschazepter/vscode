@@ -18,10 +18,6 @@
 	font-size: var(--vscode-agents-fontSize-label2);
 }
 
-.session-running-subagents.needs-attention .session-running-subagents-button {
-	color: var(--vscode-notificationsWarningIcon-foreground);
-}
-
 .session-running-subagents .session-running-subagents-button .codicon {
 	font-size: var(--vscode-codiconFontSize-compact);
 }
