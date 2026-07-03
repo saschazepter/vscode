@@ -124,9 +124,17 @@ export class AgentHostResponseFileChangesProvider extends Disposable implements 
 			? toAgentHostUri(normalized.beforeContentUri, this._connectionAuthority)
 			: modifiedURI;
 
+		// The frozen after-turn snapshot, when the changeset provides one. Lets
+		// consumers show this turn's diff (before-snapshot -> after-snapshot)
+		// rather than before-snapshot -> live file (which includes later turns).
+		const modifiedContentURI = normalized.afterContentUri
+			? toAgentHostUri(normalized.afterContentUri, this._connectionAuthority)
+			: undefined;
+
 		return {
 			originalURI,
 			modifiedURI,
+			modifiedContentURI,
 			added: file.edit.diff?.added ?? 0,
 			removed: file.edit.diff?.removed ?? 0,
 			quitEarly: false,

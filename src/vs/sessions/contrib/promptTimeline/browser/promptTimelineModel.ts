@@ -32,7 +32,10 @@ export interface PromptDiffStat {
 export interface PromptFileDiff {
 	readonly name: string;
 	readonly originalURI: URI;
+	/** File identity / go-to-file target (may be the live working file). */
 	readonly modifiedURI: URI;
+	/** RHS content the diff should render; the frozen after-turn snapshot when available. */
+	readonly diffModifiedURI: URI;
 	readonly added: number;
 	readonly removed: number;
 }
@@ -261,6 +264,7 @@ export class PromptTimelineModel extends Disposable {
 						name: basename(diff.modifiedURI),
 						originalURI: diff.originalURI,
 						modifiedURI: diff.modifiedURI,
+						diffModifiedURI: diff.modifiedContentURI ?? diff.modifiedURI,
 						added: diff.added,
 						removed: diff.removed,
 					});
@@ -287,7 +291,8 @@ export class PromptTimelineModel extends Disposable {
 			if (!originalURI && !modifiedURI) {
 				continue;
 			}
-			items.push(new MultiDiffEditorItem(originalURI, modifiedURI, undefined));
+			// Diff the frozen before/after snapshots, but let "go to file" open the live file.
+			items.push(new MultiDiffEditorItem(originalURI, modifiedURI, f.modifiedURI));
 			if (file && isEqual(f.modifiedURI, file)) {
 				revealResource = { original: originalURI, modified: modifiedURI };
 			}
@@ -310,21 +315,24 @@ export class PromptTimelineModel extends Disposable {
 	}
 
 	/**
-	 * Resolves which sides of a file diff can actually be read. Agent-host
-	 * per-turn checkpoints can be missing a blob (e.g. an added file's original),
-	 * which would otherwise crash the diff editor; an unreadable side is dropped
-	 * so the file still opens as a pure add/delete.
+	 * Resolves which sides of a file diff can actually be read, diffing the
+	 * frozen before/after snapshots so only this turn's changes show. Agent-host
+	 * checkpoint blobs can be missing (e.g. an added file's original), which
+	 * would otherwise crash the diff editor; an unreadable side is dropped so the
+	 * file still opens as a pure add/delete.
 	 */
 	private async _readableSides(file: PromptFileDiff): Promise<[URI | undefined, URI | undefined]> {
-		// A created file reports the same URI on both sides; show it as a pure add.
-		if (isEqual(file.originalURI, file.modifiedURI)) {
-			return [undefined, (await this._canRead(file.modifiedURI)) ? file.modifiedURI : undefined];
-		}
-		const [originalExists, modifiedExists] = await Promise.all([
-			this._canRead(file.originalURI),
-			this._canRead(file.modifiedURI),
+		// The provider sets originalURI === modifiedURI when there is no "before"
+		// (a created file); show it as a pure add against the frozen after-content.
+		const hasOriginal = !isEqual(file.originalURI, file.modifiedURI);
+		const [originalReadable, modifiedReadable] = await Promise.all([
+			hasOriginal ? this._canRead(file.originalURI) : Promise.resolve(false),
+			this._canRead(file.diffModifiedURI),
 		]);
-		return [originalExists ? file.originalURI : undefined, modifiedExists ? file.modifiedURI : undefined];
+		return [
+			originalReadable ? file.originalURI : undefined,
+			modifiedReadable ? file.diffModifiedURI : undefined,
+		];
 	}
 
 	private async _canRead(resource: URI): Promise<boolean> {

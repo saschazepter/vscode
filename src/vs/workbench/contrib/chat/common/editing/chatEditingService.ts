@@ -291,6 +291,16 @@ export interface IEditSessionEntryDiff extends IEditSessionDiffStats {
 	originalURI: URI;
 	modifiedURI: URI;
 
+	/**
+	 * Optional frozen "after" content for the RHS. When set, this is the exact
+	 * modified-side snapshot the diff represents (e.g. an agent-host per-turn
+	 * checkpoint), as opposed to {@link modifiedURI} which may be the live
+	 * working file and therefore include later changes. Consumers that want the
+	 * changeset's own diff should prefer this when present; {@link modifiedURI}
+	 * remains the file's identity for labels and go-to-file.
+	 */
+	modifiedContentURI?: URI;
+
 	/** Diff state information: */
 	quitEarly: boolean;
 	identical: boolean;
