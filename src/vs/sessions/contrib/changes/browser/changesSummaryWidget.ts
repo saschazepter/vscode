@@ -145,8 +145,25 @@ class AnimatedCounterWidget extends Disposable {
 			return;
 		}
 
+		// Measure the current width before adding the incoming element so
+		// that a change in the number of digits can be animated smoothly.
+		const previousWidth = this._element.getBoundingClientRect().width;
+
 		const incomingElement = dom.$(`div`, undefined, incomingElementText);
 		this._element?.appendChild(incomingElement);
+
+		// The incoming element is content-sized, so its width is the width the
+		// container will have once the outgoing element is removed. Animate the
+		// container between the two widths for both growing and shrinking digit
+		// counts.
+		const nextWidth = incomingElement.getBoundingClientRect().width;
+
+		if (Math.abs(previousWidth - nextWidth) > 0.5) {
+			this._element.animate([
+				{ width: `${previousWidth}px` },
+				{ width: `${nextWidth}px` },
+			], this._animationOptions);
+		}
 
 		const directionOption = this._options.direction ?? 'topToBottom';
 		const directionTopBottom = directionOption === 'topToBottom'
