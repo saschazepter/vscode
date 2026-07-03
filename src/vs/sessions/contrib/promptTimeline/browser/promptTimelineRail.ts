@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, addDisposableGenericMouseMoveListener, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -11,32 +11,16 @@ import { localize } from '../../../../nls.js';
 import { PromptFileDiff, PromptTick } from './promptTimelineModel.js';
 import './media/promptTimeline.css';
 
-/** Radius (px) around the pointer within which ticks are magnified. */
-const MAGNIFY_RADIUS = 64;
-/** Horizontal scale added to the tick under the pointer (kept small so pills don't slide under the card). */
-const MAGNIFY_STRENGTH_X = 0.4;
-/** Vertical scale added to the tick under the pointer, so pills thicken near the pointer. */
-const MAGNIFY_STRENGTH_Y = 0.6;
-
 /** Layout constants for the vertical-fit calculation. */
 const VERTICAL_PADDING = 24;
-/** Minimum clickable target size (WCAG 2.5.8): each tick's hit area is at least this tall. */
+/** Resting size of each dense mark's slot; the mark under the pointer/focus expands to MIN_TARGET. */
+const DENSE_SLOT = 8;
+/** Minimum clickable target size (WCAG 2.5.8): the focused/hovered mark expands to at least this tall. */
 const MIN_TARGET = 24;
 /** Fewest ticks worth showing; below this the rail hides. */
 const MIN_VISIBLE_TICKS = 2;
 /** Below this transcript width the rail hides so it does not crowd the content. */
 const MIN_HOST_WIDTH = 320;
-
-/** Total-lines thresholds that map a diff to a magnitude bucket (drives tick width when engaged). */
-function magnitudeClass(totalLines: number): 'sm' | 'md' | 'lg' {
-	if (totalLines >= 150) {
-		return 'lg';
-	}
-	if (totalLines >= 30) {
-		return 'md';
-	}
-	return 'sm';
-}
 
 /** Short day label for grouped ticks (no time, since a bucket spans several prompts). */
 function formatTickDate(timestamp: number, now: Date): string {
@@ -70,10 +54,10 @@ export interface IPromptReviewFileEvent {
 }
 
 /**
- * Presentation-only vertical rail of ticks pinned to the right edge of the chat
- * transcript. Ticks stay neutral at rest and reveal green/red diff colors +
- * magnitude widths when the rail is focused or hovered. Hovering/focusing a tick
- * shows an interactive card (diff shortcut + files).
+ * Presentation-only vertical rail pinned to the right edge of the chat
+ * transcript. Marks stay quiet, gray and dense; only the mark under the pointer
+ * (or keyboard focus) expands to a >=24px pill and reveals its green/red diff.
+ * Hovering/focusing a mark shows an interactive card (diff shortcut + files).
  */
 export class PromptTimelineRail extends Disposable {
 
@@ -87,11 +71,8 @@ export class PromptTimelineRail extends Disposable {
 	private readonly _ticks: PromptTick[] = [];
 
 	private _activeRequestId: string | undefined;
-	private _reducedMotion: MediaQueryList | undefined;
 	private _resizeObserverReady = false;
 	private _hostWidth = Number.POSITIVE_INFINITY;
-	private _hoverEngaged = false;
-	private _focusEngaged = false;
 	private _cardHovered = false;
 	private _cardHideTimer: ReturnType<typeof setTimeout> | undefined;
 	private _capacity = Number.POSITIVE_INFINITY;
@@ -117,8 +98,8 @@ export class PromptTimelineRail extends Disposable {
 		this._domNode = $('nav.prompt-timeline-rail');
 		this._domNode.setAttribute('aria-label', localize('promptTimeline.railLabel', "Prompt timeline"));
 		this._domNode.setAttribute('role', 'toolbar');
-		// A pointer-events surface (inset from the transcript scrollbar) is the
-		// ancestor of the ticks so hover magnify is continuous and reliably resets.
+		// A pointer-events surface (inset from the transcript scrollbar) hosts the
+		// ticks and catches clicks that land between the dense marks.
 		this._surface = append(this._domNode, $('.prompt-timeline-surface'));
 		this._ticksContainer = append(this._surface, $('.prompt-timeline-ticks'));
 		this._card = append(this._domNode, $('.prompt-timeline-card'));
@@ -126,39 +107,18 @@ export class PromptTimelineRail extends Disposable {
 		this._register(addDisposableListener(this._card, EventType.MOUSE_ENTER, () => { this._cardHovered = true; }));
 		this._register(addDisposableListener(this._card, EventType.MOUSE_LEAVE, () => { this._cardHovered = false; this._scheduleHideCard(); }));
 
-		this._register(addDisposableGenericMouseMoveListener(this._surface, (e: MouseEvent) => {
-			this._hoverEngaged = true;
-			this._updateEngaged();
-			this._applyMagnify(e.clientY);
-		}));
-		this._register(addDisposableListener(this._surface, EventType.MOUSE_LEAVE, () => {
-			this._hoverEngaged = false;
-			this._updateEngaged();
-			this._applyMagnify(undefined);
-			this._scheduleHideCard();
-		}));
+		this._register(addDisposableListener(this._surface, EventType.MOUSE_LEAVE, () => this._scheduleHideCard()));
 		this._register(addDisposableListener(this._surface, EventType.CLICK, (e: MouseEvent) => {
 			if (e.target === this._surface) {
 				this._selectNearestTick(e.clientY);
 			}
 		}));
-		// Keyboard focus within the rail reveals the diff colors, like hover does.
-		this._register(addDisposableListener(this._domNode, EventType.FOCUS_IN, () => {
-			this._focusEngaged = true;
-			this._updateEngaged();
-		}));
+		// Hide the card when keyboard focus leaves the rail entirely.
 		this._register(addDisposableListener(this._domNode, EventType.FOCUS_OUT, () => {
 			if (!this._domNode.contains(getWindow(this._domNode).document.activeElement)) {
-				this._focusEngaged = false;
-				this._updateEngaged();
 				this._scheduleHideCard();
 			}
 		}));
-	}
-
-	/** Diff colors + magnitude widths are revealed while the rail is hovered or keyboard-focused. */
-	private _updateEngaged(): void {
-		this._domNode.classList.toggle('engaged', this._hoverEngaged || this._focusEngaged);
 	}
 
 	/** Provides the changed files for a tick, used to populate the card on demand. */
@@ -193,8 +153,9 @@ export class PromptTimelineRail extends Disposable {
 			const requestId = tick.requestId;
 			this._tickDisposables.add(addDisposableListener(button, EventType.CLICK, (e: MouseEvent) => {
 				this._onDidSelect.fire(requestId);
-				// A real mouse click (detail > 0) blurs the tick so the rail collapses back to
-				// its dense rest state; keyboard activation (detail === 0) keeps focus + engagement.
+				// A real mouse click (detail > 0) blurs the mark so it collapses back to the
+				// dense rest state; keyboard activation (detail === 0) keeps focus so the mark
+				// stays expanded for the next arrow key.
 				if (e.detail > 0) {
 					button.blur();
 				}
@@ -218,7 +179,7 @@ export class PromptTimelineRail extends Disposable {
 		clearNode(button);
 		button.className = 'prompt-timeline-tick';
 		button.setAttribute('aria-label', tick.ariaLabel);
-		// The button is the >=24px hit target (WCAG 2.5.8); the visible bar sits inside it.
+		// The button is the hit target; the visible bar sits inside it and expands to >=24px on hover/focus.
 		const bar = append(button, $('span.prompt-timeline-tick-bar'));
 		if (tick.count > 1) {
 			bar.classList.add('grouped');
@@ -229,10 +190,8 @@ export class PromptTimelineRail extends Disposable {
 			const delEl = append(bar, $('span.seg-del'));
 			addEl.style.flexGrow = String(stat.added);
 			delEl.style.flexGrow = String(stat.removed);
-			button.dataset.mag = magnitudeClass(stat.added + stat.removed);
 		} else {
 			bar.classList.add('no-edits');
-			delete button.dataset.mag;
 		}
 	}
 
@@ -349,11 +308,6 @@ export class PromptTimelineRail extends Disposable {
 		this._card.classList.add('hidden');
 	}
 
-	private _isReducedMotion(): boolean {
-		this._reducedMotion ??= getWindow(this._domNode).matchMedia('(prefers-reduced-motion: reduce)');
-		return this._reducedMotion.matches;
-	}
-
 	/** Reports the transcript width; a very narrow transcript hides the rail. */
 	setHostWidth(width: number): void {
 		if (width > 0 && width !== this._hostWidth) {
@@ -363,13 +317,13 @@ export class PromptTimelineRail extends Disposable {
 	}
 
 	/**
-	 * Measures how many ticks fit at >=24px each, reports that capacity (so the
-	 * model can reduce tick count), and hides the rail when fewer than two fit or
-	 * the transcript is too narrow.
+	 * Measures how many dense marks fit (reserving room for one to expand to a
+	 * >=24px target), reports that capacity so the model can cap the tick count,
+	 * and hides the rail when fewer than two fit or the transcript is too narrow.
 	 */
 	private _updateFit(): void {
-		// Resolved lazily so the observer binds to the mounted element's window
-		// (mirrors _isReducedMotion), which matters for auxiliary windows.
+		// Resolved lazily so the observer binds to the mounted element's window,
+		// which matters for auxiliary windows.
 		this._ensureResizeObserver();
 		const available = this._domNode.clientHeight;
 		// A zero height means the rail is not laid out yet (e.g. display:none via
@@ -377,7 +331,9 @@ export class PromptTimelineRail extends Disposable {
 		if (available <= 0) {
 			return;
 		}
-		const capacity = Math.max(0, Math.floor((available - VERTICAL_PADDING) / MIN_TARGET));
+		// Reserve headroom so the single expanded mark never clips the dense stack.
+		const expansionHeadroom = MIN_TARGET - DENSE_SLOT;
+		const capacity = Math.max(0, Math.floor((available - VERTICAL_PADDING - expansionHeadroom) / DENSE_SLOT));
 		const overflowing = this._hostWidth < MIN_HOST_WIDTH || capacity < MIN_VISIBLE_TICKS;
 		this._domNode.classList.toggle('overflowing', overflowing);
 
@@ -399,27 +355,6 @@ export class PromptTimelineRail extends Disposable {
 		const observer = new ResizeObserverCtor(() => this._updateFit());
 		observer.observe(this._domNode);
 		this._register(toDisposable(() => observer.disconnect()));
-	}
-
-	private _applyMagnify(pointerY: number | undefined): void {
-		const engaged = pointerY !== undefined;
-		const reduced = this._isReducedMotion();
-		for (const el of this._tickElements) {
-			let scaleX = 1;
-			let scaleY = 1;
-			if (engaged && !reduced) {
-				const rect = el.getBoundingClientRect();
-				const center = rect.top + rect.height / 2;
-				const distance = Math.abs(pointerY - center);
-				if (distance < MAGNIFY_RADIUS) {
-					const influence = 1 - distance / MAGNIFY_RADIUS;
-					scaleX = 1 + influence * MAGNIFY_STRENGTH_X;
-					scaleY = 1 + influence * MAGNIFY_STRENGTH_Y;
-				}
-			}
-			el.style.setProperty('--tick-scale', scaleX.toFixed(3));
-			el.style.setProperty('--tick-scale-y', scaleY.toFixed(3));
-		}
 	}
 
 	private _selectNearestTick(pointerY: number): void {

@@ -45,7 +45,7 @@
 	pointer-events: none;
 }
 
-/* Option 4: dense markers at rest (8px rhythm), expanding to full 24px slots when engaged. */
+/* Dense gray markers at rest. Only the mark under the pointer (or keyboard focus) expands to a 24px slot and reveals its diff colors; every other mark stays gray and dense. */
 .prompt-timeline-tick {
 	flex: 0 0 8px;
 	display: flex;
@@ -57,10 +57,11 @@
 	background: transparent;
 	cursor: pointer;
 	pointer-events: auto;
-	transition: flex-basis 120ms ease;
+	transition: flex-basis 150ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-.prompt-timeline-rail.engaged .prompt-timeline-tick {
+.prompt-timeline-tick:hover,
+.prompt-timeline-tick:focus-visible {
 	flex-basis: 24px;
 }
 
@@ -72,45 +73,40 @@
 	overflow: hidden;
 	background-color: var(--vscode-scrollbarSlider-background);
 	opacity: 1;
-	transform: scaleX(var(--tick-scale, 1)) scaleY(var(--tick-scale-y, 1));
-	transform-origin: right center;
-	transition: width 80ms ease, height 80ms ease, opacity 80ms ease, transform 80ms ease, background-color 80ms ease;
+	transition: width 150ms ease, height 150ms ease, border-radius 150ms ease, background-color 150ms ease;
 }
 
-/* Inner segments carry the add/removed split; neutral until the rail is engaged. */
+/* Inner segments carry the add/removed split; gray until the mark is expanded. */
 .prompt-timeline-tick-bar .seg-add,
 .prompt-timeline-tick-bar .seg-del {
 	height: 100%;
 	background-color: var(--vscode-scrollbarSlider-background);
-	transition: background-color 80ms ease;
+	transition: background-color 150ms ease;
 }
 
-/* Engaged (rail hovered or keyboard-focused): reveal diff colors at a fixed pill size. */
-.prompt-timeline-rail.engaged .prompt-timeline-tick-bar {
-	opacity: 1;
-	height: 4px;
-	width: 20px;
+/* The expanded (hovered/focused) mark grows to a fat pill and reveals its diff colors. */
+.prompt-timeline-tick:hover .prompt-timeline-tick-bar,
+.prompt-timeline-tick:focus-visible .prompt-timeline-tick-bar {
+	width: 22px;
+	height: 10px;
+	border-radius: 5px;
 }
 
-.prompt-timeline-rail.engaged .prompt-timeline-tick-bar .seg-add {
+.prompt-timeline-tick:hover .prompt-timeline-tick-bar .seg-add,
+.prompt-timeline-tick:focus-visible .prompt-timeline-tick-bar .seg-add {
 	background-color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
 }
 
-.prompt-timeline-rail.engaged .prompt-timeline-tick-bar .seg-del {
+.prompt-timeline-tick:hover .prompt-timeline-tick-bar .seg-del,
+.prompt-timeline-tick:focus-visible .prompt-timeline-tick-bar .seg-del {
 	background-color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
 }
 
-.prompt-timeline-tick:hover .prompt-timeline-tick-bar {
-	opacity: 1;
-}
-
-/* Active = the prompt currently in view: a clean solid accent (blue) pill. */
+/* Active = the prompt currently in view: a solid blue mark, even while dense or expanded. */
 .prompt-timeline-tick.active .prompt-timeline-tick-bar {
 	background-color: var(--vscode-focusBorder);
-	opacity: 1;
 }
 
-/* The active pill stays a solid blue fill in every state; its diff segments never show through. */
 .prompt-timeline-tick.active .prompt-timeline-tick-bar .seg-add,
 .prompt-timeline-tick.active .prompt-timeline-tick-bar .seg-del {
 	background-color: transparent;
@@ -124,8 +120,6 @@
 .prompt-timeline-rail .prompt-timeline-tick:focus-visible .prompt-timeline-tick-bar {
 	outline: 2px solid var(--vscode-focusBorder);
 	outline-offset: 2px;
-	border-radius: 2px;
-	opacity: 1;
 }
 
 /* Interactive hover/focus card: prompt text, clickable diff stat, and files. */
@@ -261,6 +255,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.prompt-timeline-tick,
 	.prompt-timeline-tick-bar,
 	.prompt-timeline-tick-bar .seg-add,
 	.prompt-timeline-tick-bar .seg-del {
