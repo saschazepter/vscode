@@ -457,14 +457,13 @@ class ResumePathCopilotAgent extends CopilotAgent {
 		@ISessionDataService sessionDataService: ISessionDataService,
 		@IAgentHostGitService gitService: IAgentHostGitService,
 		@IAgentConfigurationService configurationService: IAgentConfigurationService,
-		@ICopilotBranchNameGenerator branchNameGenerator: ICopilotBranchNameGenerator,
 		@IAgentHostCompletions completions: IAgentHostCompletions,
 		@INativeEnvironmentService environmentService: INativeEnvironmentService,
 		@IByokLmBridgeRegistry byokBridgeRegistry: IByokLmBridgeRegistry,
 		@IAgentHostProxyResolver proxyResolver: IAgentHostProxyResolver,
 		@ICopilotApiService copilotApiService: ICopilotApiService,
 	) {
-		super(logService, instantiationService, sessionDataService, gitService, configurationService, new MockAgentHostOTelService(), branchNameGenerator, completions, NULL_CHECKPOINT_SERVICE, NULL_REVIEW_SERVICE, environmentService, byokBridgeRegistry, NullTelemetryService, copilotApiService);
+		super(logService, instantiationService, sessionDataService, gitService, configurationService, new MockAgentHostOTelService(), completions, NULL_CHECKPOINT_SERVICE, NULL_REVIEW_SERVICE, environmentService, byokBridgeRegistry, NullTelemetryService, copilotApiService, proxyResolver);
 		this._enablePlanModeOnClient(this._copilotClient as CopilotClient);
 	}
 
@@ -494,7 +493,7 @@ class TestableCopilotAgent extends CopilotAgent {
 		@IAgentHostProxyResolver proxyResolver: IAgentHostProxyResolver,
 		@ICopilotApiService copilotApiService: ICopilotApiService,
 	) {
-		super(logService, instantiationService, sessionDataService, gitService, configurationService, new MockAgentHostOTelService(), branchNameGenerator, completions, NULL_CHECKPOINT_SERVICE, environmentService, byokBridgeRegistry, NullTelemetryService, copilotApiService);
+		super(logService, instantiationService, sessionDataService, gitService, configurationService, new MockAgentHostOTelService(), completions, NULL_CHECKPOINT_SERVICE, NULL_REVIEW_SERVICE, environmentService, byokBridgeRegistry, NullTelemetryService, copilotApiService, proxyResolver);
 		this._enablePlanModeOnClient(this._copilotClient as CopilotClient);
 	}
 
