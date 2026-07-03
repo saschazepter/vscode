@@ -14,7 +14,7 @@ import { ActionRunner, IAction, Separator, SubmenuAction, toAction } from '../..
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { Event } from '../../../../base/common/event.js';
-import { autorun, derived, derivedObservableWithCache, derivedOpts, IObservable, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
+import { autorun, derived, derivedObservableWithCache, IObservable, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
 import { CountBadge } from '../../../../base/browser/ui/countBadge/countBadge.js';
 import { ProgressBar } from '../../../../base/browser/ui/progressbar/progressbar.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
@@ -76,12 +76,12 @@ import { AGENT_HOST_SKILL_BUTTON_UPDATE_PR_ID, isAgentHostSkillButtonId } from '
 import { ActiveSessionContextKeys, CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesContextKeys, ChangesViewMode, IsolationMode, SESSIONS_CHANGES_OPEN_SINGLE_FILE_DIFF_SETTING } from '../common/changes.js';
 import { buildTreeChildren, ChangesTreeElement, ChangesTreeRenderer, IChangesFileItem, IChangesTreeRootInfo, isChangesFileItem, toIChangesFileItem } from './changesViewRenderer.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
-import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
 import { IMarkdownString } from '../../../../base/common/htmlContent.js';
 import { IChangesViewService } from '../common/changesViewService.js';
+import { ChangesSummaryWidget } from './changesSummaryWidget.js';
 
 const $ = dom.$;
 
@@ -1594,68 +1594,30 @@ class RevealCIChecksAction extends Action2 {
 registerAction2(RevealCIChecksAction);
 
 class ChangesDiffStatsActionItem extends ActionViewItem {
-	private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
+	// private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
 
-	private readonly addedLinesCounterWidget: AnimatedCounterWidget;
-	private readonly removedLinesCounterWidget: AnimatedCounterWidget;
+	// private readonly addedLinesCounterWidget: AnimatedCounterWidget;
+	// private readonly removedLinesCounterWidget: AnimatedCounterWidget;
+
+	private readonly _widget: ChangesSummaryWidget;
 
 	constructor(
 		action: MenuItemAction,
 		options: IActionViewItemOptions,
-		@IChangesViewService changesViewService: IChangesViewService
+		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super(null, action, { ...options, icon: false, label: false });
 
-		const diffStatsRawObs = derivedObservableWithCache<{ files: number; insertions: number; deletions: number } | undefined>(this,
-			(reader, lastValue) => {
-				const entries = changesViewService.activeSessionChangesObs.read(reader);
-				const isLoading = changesViewService.activeSessionLoadingObs.read(reader);
-
-				if (isLoading) {
-					return lastValue;
-				}
-
-				let insertions = 0, deletions = 0;
-				for (const entry of entries) {
-					insertions += entry.insertions;
-					deletions += entry.deletions;
-				}
-
-				return { files: entries.length, insertions, deletions };
-			});
-
-		this.diffStatsObs = derivedOpts<{ files: number; insertions: number; deletions: number } | undefined>({
-			equalsFn: structuralEquals
-		}, reader => diffStatsRawObs.read(reader));
+		this._widget = this._register(instantiationService.createInstance(ChangesSummaryWidget));
 
 		this._register(autorun(reader => {
-			const diffStats = this.diffStatsObs.read(reader);
-			if (diffStats === undefined) {
+			const changesSummary = this._widget.summary.read(reader);
+			if (changesSummary === undefined) {
 				return;
 			}
 
 			this.updateTooltip();
 		}));
-
-		this.addedLinesCounterWidget = new AnimatedCounterWidget({
-			prefix: '+',
-			direction: 'topToBottom',
-			cssClassName: 'working-set-lines-added',
-			count: derivedObservableWithCache<number>(this, (reader) => {
-				const diffStats = this.diffStatsObs.read(reader);
-				return diffStats ? diffStats.insertions : 0;
-			})
-		});
-
-		this.removedLinesCounterWidget = new AnimatedCounterWidget({
-			prefix: '-',
-			direction: 'bottomToTop',
-			cssClassName: 'working-set-lines-removed',
-			count: derivedObservableWithCache<number>(this, (reader) => {
-				const diffStats = this.diffStatsObs.read(reader);
-				return diffStats ? diffStats.deletions : 0;
-			})
-		});
 	}
 
 	override render(container: HTMLElement): void {
@@ -1666,100 +1628,16 @@ class ChangesDiffStatsActionItem extends ActionViewItem {
 			return;
 		}
 
-		this.addedLinesCounterWidget.render(this.label);
-		this.removedLinesCounterWidget.render(this.label);
+		this._widget.render(this.label);
 	}
 
 	protected override getTooltip(): string | undefined {
-		const diffStats = this.diffStatsObs.get();
-		if (diffStats === undefined) {
+		const changesSummary = this._widget.summary.get();
+		if (changesSummary === undefined) {
 			return undefined;
 		}
 
-		const { files, insertions, deletions } = diffStats;
-		return localize('changesView.diffStats.label', '{0} files, {1} additions, {2} deletions', files, insertions, deletions);
-	}
-}
-
-interface IAnimatedCounterWidgetOptions {
-	readonly prefix?: string;
-	readonly cssClassName?: string;
-	/**
-	 * The direction of the animation when the count
-	 * increases. The direction will be the opposite
-	 * when the count decreases.
-	 * */
-	readonly direction?: 'topToBottom' | 'bottomToTop';
-	readonly duration?: number;
-	readonly count: IObservable<number>;
-}
-
-class AnimatedCounterWidget extends Disposable {
-	private _element: HTMLElement | undefined;
-	private _count: number | undefined;
-	private readonly _animationOptions: KeyframeAnimationOptions;
-
-	constructor(private readonly _options: IAnimatedCounterWidgetOptions) {
-		super();
-
-		this._animationOptions = {
-			duration: _options.duration ?? 240,
-			easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-			fill: 'both',
-		} satisfies KeyframeAnimationOptions;
-	}
-
-	render(container: HTMLElement) {
-		const { cssClassName } = this._options;
-
-		this._element = cssClassName
-			? dom.$(`span.${cssClassName}`)
-			: dom.$('span');
-
-		this._element.appendChild(dom.$(`span`));
-		container.appendChild(this._element);
-
-		this._register(autorun(reader => {
-			this._update(this._options.count.read(reader));
-		}));
-	}
-
-	private _update(count: number): void {
-		if (!this._element || this._element.children.length === 0) {
-			return;
-		}
-
-		const outgoingElement = this._element.children[0];
-
-		// Create incoming element
-		const incomingElementText = `${this._options.prefix ?? ''}${count}`;
-		const incomingElement = dom.$(`span`, undefined, incomingElementText);
-		this._element?.appendChild(incomingElement);
-
-		const directionOption = this._options.direction ?? 'topToBottom';
-		const directionTopBottom = directionOption === 'topToBottom'
-			? count > (this._count ?? 0)
-			: count < (this._count ?? 0);
-
-		const enterFrom = directionTopBottom ? '-100%' : '100%';
-		const exitTo = directionTopBottom ? '100%' : '-100%';
-
-		incomingElement.animate([
-			{ transform: `translateY(${enterFrom})`, opacity: 0 },
-			{ transform: 'translateY(0)', opacity: 1 },
-		], this._animationOptions);
-
-		const exit = outgoingElement.animate([
-			{ transform: 'translateY(0)', opacity: 1 },
-			{ transform: `translateY(${exitTo})`, opacity: 0 },
-		], this._animationOptions);
-
-		const cleanup = () => {
-			this._count = count;
-			this._element?.removeChild(outgoingElement);
-		};
-
-		exit.addEventListener('cancel', cleanup);
-		exit.addEventListener('finish', cleanup);
+		const { files, additions, deletions } = changesSummary;
+		return localize('changesView.diffStats.label', '{0} files, {1} additions, {2} deletions', files, additions, deletions);
 	}
 }
