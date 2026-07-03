@@ -88,7 +88,7 @@ import type { McpServerElicitationRequestResponse } from './protocol/generated/v
 import type { ItemGuardianApprovalReviewCompletedNotification } from './protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
 import type { GuardianWarningNotification } from './protocol/generated/v2/GuardianWarningNotification.js';
 import type { ThreadApproveGuardianDeniedActionResponse } from './protocol/generated/v2/ThreadApproveGuardianDeniedActionResponse.js';
-import { summarizeGuardianReviewAction, toGuardianAssessmentEventJson } from './codexGuardianReview.js';
+import { formatGuardianDenialNotification, summarizeGuardianReviewAction, toGuardianAssessmentEventJson } from './codexGuardianReview.js';
 
 const CLIENT_INFO = {
 	name: 'vscode_agent_host',
@@ -360,6 +360,17 @@ interface ICodexSession {
 	 * on the same review if the completed notification is redelivered.
 	 */
 	readonly handledGuardianReviews: Set<string>;
+	/**
+	 * Host-side toolCallIds of the synthetic "Approve anyway" cards created for
+	 * guardian (auto-review) denials that are still awaiting a user decision.
+	 * Unlike codex's blocking command approvals, these cards live inside the
+	 * active turn but codex does *not* wait on them — so when the turn ends
+	 * (often via the auto-review circuit-breaker interrupt) the reducer cancels
+	 * the card. We use this set to unwind the parked deferred on turn end so the
+	 * suspended {@link CodexAgent._handleGuardianReviewCompleted} frame doesn't
+	 * leak.
+	 */
+	readonly pendingGuardianReviewCards: Set<string>;
 	/**
 	 * Steering messages handed to codex via `turn/steer` that are awaiting
 	 * the matching `userMessage` item echo, which promotes them into their
@@ -1307,6 +1318,17 @@ export class CodexAgent extends Disposable implements IAgent {
 		// Any steering still buffered was never echoed as a `userMessage`
 		// item; clear the pending bubble now that the turn is over.
 		this._drainPendingSteering(session);
+		// Unwind any still-pending "Approve anyway" guardian cards. codex does not
+		// block on them, so the reducer cancels the card when the turn ends; here
+		// we resolve the parked deferred (`cancel`) so the suspended
+		// {@link _handleGuardianReviewCompleted} frame unwinds instead of leaking
+		// until session dispose. The durable denial notification already emitted
+		// remains in the transcript.
+		if (session.pendingGuardianReviewCards.size > 0) {
+			for (const guardianToolCallId of [...session.pendingGuardianReviewCards]) {
+				session.pendingCommandApprovals.respond(guardianToolCallId, 'cancel');
+			}
+		}
 		return out;
 	}
 
@@ -1597,12 +1619,36 @@ export class CodexAgent extends Disposable implements IAgent {
 		session.handledGuardianReviews.add(params.reviewId);
 
 		const summary = summarizeGuardianReviewAction(params.action);
+
+		// Durable record: a system-notification response part survives turn
+		// completion (unlike the tool-call card below, which the reducer cancels
+		// when the turn ends). The auto-review circuit-breaker interrupts the turn
+		// after repeated denials, so without this the user could be left with no
+		// feedback at all. Surfacing the reviewer rationale here mirrors the
+		// manual-approval feedback the Default permissions preset provides.
+		this._fire(session.sessionUri, {
+			type: ActionType.ChatResponsePart,
+			turnId,
+			part: {
+				kind: ResponsePartKind.SystemNotification,
+				content: formatGuardianDenialNotification(summary, params.review.rationale),
+			},
+		});
+
+		// Best-effort in-turn override: while the turn is still running (before the
+		// circuit-breaker interrupt) the model keeps trying safer paths, so
+		// approving here lets codex retry the exact denied action. codex does not
+		// block on this card, so if the turn ends first the reducer cancels it and
+		// {@link _handleTurnCompletedNotification} unwinds the parked deferred.
 		const toolCallId = generateUuid();
 		const invocationMessage = summary.detail || summary.title;
 		const confirmationTitle = 'Approve anyway';
+		const meta = summary.toolKind ? toToolCallMeta({ toolKind: summary.toolKind }) : undefined;
 
+		session.pendingGuardianReviewCards.add(toolCallId);
+		let decision: CommandExecutionApprovalDecision;
 		try {
-			const decision = await session.pendingCommandApprovals.registerAndFire(toolCallId, () => {
+			decision = await session.pendingCommandApprovals.registerAndFire(toolCallId, () => {
 				this._fire(session.sessionUri, {
 					type: ActionType.ChatToolCallStart,
 					turnId,
@@ -1610,7 +1656,7 @@ export class CodexAgent extends Disposable implements IAgent {
 					toolName: 'auto_review_denied',
 					displayName: summary.title,
 					intention: invocationMessage,
-					_meta: summary.toolKind ? toToolCallMeta({ toolKind: summary.toolKind }) : undefined,
+					_meta: meta,
 				});
 				this._fire(session.sessionUri, {
 					type: ActionType.ChatToolCallReady,
@@ -1619,27 +1665,63 @@ export class CodexAgent extends Disposable implements IAgent {
 					invocationMessage,
 					toolInput: invocationMessage,
 					confirmationTitle,
-					_meta: summary.toolKind ? toToolCallMeta({ toolKind: summary.toolKind }) : undefined,
+					_meta: meta,
 				});
 			});
-
-			if (decision === 'accept' || decision === 'acceptForSession') {
-				await client.request<'thread/approveGuardianDeniedAction', ThreadApproveGuardianDeniedActionResponse>('thread/approveGuardianDeniedAction', {
-					threadId: params.threadId,
-					event: toGuardianAssessmentEventJson(params),
-				});
-				this._fire(session.sessionUri, {
-					type: ActionType.ChatToolCallComplete,
-					turnId,
-					toolCallId,
-					result: {
-						success: true,
-						pastTenseMessage: 'Approved anyway',
-					},
-				});
-			}
 		} catch (err) {
-			this._logService.warn(`[Codex:${sessionId}] autoApprovalReview/completed handling failed: ${err instanceof Error ? err.message : String(err)}`);
+			// The parked approval was rejected (session dispose / cancellation);
+			// there is no card lifecycle left to finalize.
+			this._logService.trace(`[Codex:${sessionId}] guardian approval cancelled for reviewId=${params.reviewId}: ${err instanceof Error ? err.message : String(err)}`);
+			return;
+		} finally {
+			session.pendingGuardianReviewCards.delete(toolCallId);
+		}
+
+		if (decision !== 'accept' && decision !== 'acceptForSession') {
+			// Declined, cancelled, or unwound by turn completion: the action stays
+			// blocked by codex. When the user declined, the UI already transitioned
+			// the card off the ChatToolCallConfirmed it dispatched; when the turn
+			// ended, the reducer cancelled it. Either way there is nothing to send.
+			return;
+		}
+
+		// If the turn ended between the user's approval and here, the card was
+		// already cancelled by the reducer and codex is no longer waiting on this
+		// action within the turn — skip the round-trip.
+		if (session.currentTurnId !== turnId) {
+			this._logService.trace(`[Codex:${sessionId}] turn ended before guardian approval could be applied for reviewId=${params.reviewId}`);
+			return;
+		}
+
+		try {
+			await client.request<'thread/approveGuardianDeniedAction', ThreadApproveGuardianDeniedActionResponse>('thread/approveGuardianDeniedAction', {
+				threadId: params.threadId,
+				event: toGuardianAssessmentEventJson(params),
+			});
+			this._fire(session.sessionUri, {
+				type: ActionType.ChatToolCallComplete,
+				turnId,
+				toolCallId,
+				result: {
+					success: true,
+					pastTenseMessage: 'Approved anyway',
+				},
+			});
+		} catch (err) {
+			// The user approved but the app-server rejected the round-trip; finalize
+			// the card as failed so it does not hang in the running state forever.
+			const message = err instanceof Error ? err.message : String(err);
+			this._logService.warn(`[Codex:${sessionId}] approveGuardianDeniedAction failed for reviewId=${params.reviewId}: ${message}`);
+			this._fire(session.sessionUri, {
+				type: ActionType.ChatToolCallComplete,
+				turnId,
+				toolCallId,
+				result: {
+					success: false,
+					pastTenseMessage: 'Approval failed',
+					error: { message },
+				},
+			});
 		}
 	}
 
@@ -1796,6 +1878,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
 			acceptedForSession: new Set<string>(),
 			handledGuardianReviews: new Set<string>(),
+			pendingGuardianReviewCards: new Set<string>(),
 			pendingSteeringFlips: new Map<string, PendingMessage>(),
 			clientToolSet,
 			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),
@@ -1844,6 +1927,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
 			acceptedForSession: new Set<string>(),
 			handledGuardianReviews: new Set<string>(),
+			pendingGuardianReviewCards: new Set<string>(),
 			pendingSteeringFlips: new Map<string, PendingMessage>(),
 			clientToolSet,
 			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),

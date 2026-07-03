@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { summarizeGuardianReviewAction, toGuardianAssessmentEventJson } from '../../../node/codex/codexGuardianReview.js';
+import { formatGuardianDenialNotification, summarizeGuardianReviewAction, toGuardianAssessmentEventJson } from '../../../node/codex/codexGuardianReview.js';
 import type { ItemGuardianApprovalReviewCompletedNotification } from '../../../node/codex/protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
 
 suite('codexGuardianReview', () => {
@@ -62,5 +62,71 @@ suite('codexGuardianReview', () => {
 			detail: 'https://developers.openai.com/codex/app-server',
 			toolKind: 'search',
 		});
+	});
+
+	const deniedPermissionsReview: ItemGuardianApprovalReviewCompletedNotification = {
+		threadId: 'thread-2',
+		turnId: 'turn-2',
+		startedAtMs: 10,
+		completedAtMs: 20,
+		reviewId: 'review-2',
+		targetItemId: null,
+		decisionSource: 'agent',
+		review: {
+			status: 'denied',
+			riskLevel: null,
+			userAuthorization: null,
+			rationale: null,
+		},
+		action: {
+			type: 'requestPermissions',
+			reason: 'Needs to read outside the workspace',
+			permissions: {
+				network: { enabled: true },
+				fileSystem: {
+					read: ['/etc/hosts'],
+					write: null,
+					globScanMaxDepth: 3,
+					entries: [{ path: { type: 'path', path: '/tmp/x' }, access: 'read' }],
+				},
+			},
+		},
+	};
+
+	test('toGuardianAssessmentEventJson snake_cases the requestPermissions profile', () => {
+		assert.deepStrictEqual(toGuardianAssessmentEventJson(deniedPermissionsReview), {
+			id: 'review-2',
+			turn_id: 'turn-2',
+			started_at_ms: 10,
+			completed_at_ms: 20,
+			status: 'denied',
+			decision_source: 'agent',
+			action: {
+				type: 'request_permissions',
+				reason: 'Needs to read outside the workspace',
+				permissions: {
+					network: { enabled: true },
+					file_system: {
+						read: ['/etc/hosts'],
+						write: null,
+						glob_scan_max_depth: 3,
+						entries: [{ path: { type: 'path', path: '/tmp/x' }, access: 'read' }],
+					},
+				},
+			},
+		});
+	});
+
+	test('formatGuardianDenialNotification renders the action summary and rationale', () => {
+		assert.deepStrictEqual(
+			[
+				formatGuardianDenialNotification({ title: 'Network access', detail: 'https://example.com' }, 'Blocked for safety.'),
+				formatGuardianDenialNotification({ title: 'Elevated permissions', detail: '' }, null),
+			],
+			[
+				'Auto-review denied — Network access: https://example.com\n\nBlocked for safety.',
+				'Auto-review denied — Elevated permissions',
+			]
+		);
 	});
 });

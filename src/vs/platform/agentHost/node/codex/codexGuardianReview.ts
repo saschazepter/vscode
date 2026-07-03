@@ -5,6 +5,7 @@
 
 import type { GuardianApprovalReviewAction } from './protocol/generated/v2/GuardianApprovalReviewAction.js';
 import type { ItemGuardianApprovalReviewCompletedNotification } from './protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
+import type { RequestPermissionProfile } from './protocol/generated/v2/RequestPermissionProfile.js';
 import type { JsonValue } from './protocol/generated/serde_json/JsonValue.js';
 
 /**
@@ -48,6 +49,30 @@ function networkProtocolToEvent(protocol: string): string {
 }
 
 /**
+ * camelCase {@link RequestPermissionProfile} -> snake_case. The `network`
+ * profile (`{ enabled }`) is identical in both casings, but the file-system
+ * profile renames `fileSystem` -> `file_system` and `globScanMaxDepth` ->
+ * `glob_scan_max_depth`. Its `read`/`write`/`entries` members (and the entry
+ * `path`/`access` fields) are already snake_case in the notification, so they
+ * round-trip verbatim.
+ */
+function requestPermissionProfileToEvent(profile: RequestPermissionProfile): JsonValue {
+	const fs = profile.fileSystem;
+	let fileSystem: JsonValue = null;
+	if (fs) {
+		const mapped: Record<string, JsonValue> = { read: fs.read, write: fs.write };
+		if (fs.globScanMaxDepth !== undefined) {
+			mapped.glob_scan_max_depth = fs.globScanMaxDepth;
+		}
+		if (fs.entries !== undefined) {
+			mapped.entries = fs.entries as JsonValue;
+		}
+		fileSystem = mapped;
+	}
+	return { network: profile.network as JsonValue, file_system: fileSystem };
+}
+
+/**
  * Translate the camelCase notification action into the snake_case
  * `GuardianAssessmentAction` (`#[serde(tag = "type", rename_all = "snake_case")]`)
  * that `thread/approveGuardianDeniedAction` deserializes.
@@ -65,7 +90,7 @@ export function guardianReviewActionToEventAction(action: GuardianApprovalReview
 		case 'mcpToolCall':
 			return { type: 'mcp_tool_call', server: action.server, tool_name: action.toolName, connector_id: action.connectorId, connector_name: action.connectorName, tool_title: action.toolTitle };
 		case 'requestPermissions':
-			return { type: 'request_permissions', reason: action.reason, permissions: action.permissions as JsonValue };
+			return { type: 'request_permissions', reason: action.reason, permissions: requestPermissionProfileToEvent(action.permissions) };
 	}
 }
 
@@ -129,4 +154,21 @@ export function summarizeGuardianReviewAction(action: GuardianApprovalReviewActi
 		case 'requestPermissions':
 			return { title: 'Elevated permissions', detail: action.reason ?? 'Requested additional permissions' };
 	}
+}
+
+/**
+ * Compose the durable system-notification text for an auto-review denial. This
+ * is surfaced as a response part (which survives turn completion) so the user
+ * always learns *why* an action was blocked — including the reviewer rationale
+ * — even when the turn ends before the transient "Approve anyway" card can be
+ * acted on.
+ */
+export function formatGuardianDenialNotification(summary: IGuardianActionSummary, rationale: string | null): string {
+	const detail = summary.detail?.trim();
+	const parts: string[] = [detail ? `Auto-review denied — ${summary.title}: ${detail}` : `Auto-review denied — ${summary.title}`];
+	const reason = rationale?.trim();
+	if (reason) {
+		parts.push(reason);
+	}
+	return parts.join('\n\n');
 }
