@@ -2118,6 +2118,28 @@ pane is first mounted. View switches inside the modal are not animated. */
 	word-break: break-word;
 }
 
+.automations-list-widget .automations-history-row-open {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	border-radius: 3px;
+	opacity: 0;
+	color: var(--vscode-descriptionForeground);
+}
+
+.automations-list-widget .automations-history-row:hover .automations-history-row-open {
+	opacity: 1;
+}
+
+.automations-list-widget .automations-history-row-open:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
 .automations-list-widget .automations-history-more {
 	font-size: 11px;
 	color: var(--vscode-descriptionForeground);

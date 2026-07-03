@@ -24,6 +24,7 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
@@ -109,6 +110,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		private readonly widget: AutomationsListWidget,
 		private readonly hoverService: IHoverService,
 		private readonly sessionsService: ISessionsService,
+		private readonly notificationService: INotificationService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -288,7 +290,9 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 				e.stopPropagation();
 				const colonIdx = run.sessionId!.indexOf(':');
 				const resourceStr = run.sessionId!.substring(colonIdx + 1);
-				this.sessionsService.openSession(URI.parse(resourceStr));
+				this.sessionsService.openSession(URI.parse(resourceStr)).catch(() => {
+					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
+				});
 			});
 		}
 	}
@@ -351,6 +355,7 @@ export class AutomationsListWidget extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ISessionsService private readonly sessionsService: ISessionsService,
+		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super();
 
@@ -387,7 +392,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.sessionsService, this.notificationService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
