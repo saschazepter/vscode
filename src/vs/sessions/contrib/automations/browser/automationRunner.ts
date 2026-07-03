@@ -91,11 +91,7 @@ export class AutomationRunner implements IAutomationRunner {
 
 			const session = await this.sessionsManagementService.createAndSendNewChatRequest(automation.folderUri, options, createOptions);
 
-				if (session) {
-					await this.automationService.updateRun(runId, { sessionId: session.sessionId });
-				}
-
-				// Re-check cancellation post-send so mid-flight timeouts surface as `failed`.
+			// Re-check cancellation post-send so mid-flight timeouts surface as `failed`.
 			if (token.isCancellationRequested) {
 				await this._markCancelled(runId, trigger, automation, startTimeMs);
 				return;
@@ -104,6 +100,7 @@ export class AutomationRunner implements IAutomationRunner {
 			await this.automationService.updateRun(runId, {
 				status: 'completed',
 				completedAt: new Date().toISOString(),
+				...(session ? { sessionId: session.sessionId } : {}),
 			});
 			publishAutomationRun(this.telemetryService, { trigger, automation, success: true, durationMs: Date.now() - startTimeMs });
 		} catch (err) {
