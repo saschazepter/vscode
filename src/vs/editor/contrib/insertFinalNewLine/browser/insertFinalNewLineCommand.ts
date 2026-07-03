@@ -40,13 +40,6 @@ export class InsertFinalNewLineCommand implements ICommand {
  */
 export function insertFinalNewLine(model: ITextModel): ISingleEditOperation | undefined {
 	const lineCount = model.getLineCount();
-	const lastLine = model.getLineContent(lineCount);
-	const lastLineIsEmptyOrWhitespace = strings.lastNonWhitespaceIndex(lastLine) === -1;
-
-	if (!lineCount || lastLineIsEmptyOrWhitespace) {
-		return;
-	}
-
 	return EditOperation.insert(
 		new Position(lineCount, model.getLineMaxColumn(lineCount)),
 		model.getEOL()
