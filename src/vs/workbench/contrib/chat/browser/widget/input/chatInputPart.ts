@@ -272,14 +272,6 @@ function getInputStateStorageKey(widgetViewKindTag: string): string {
 	return `chat.untitledInputState.${widgetViewKindTag}`;
 }
 
-// Storage key for persisted input attachments, scoped per widget to avoid cross-pollination.
-function getInputAttachmentsStorageKey(widgetViewKindTag: string): string {
-	if (LEGACY_SHARED_INPUT_STATE_TAGS.has(widgetViewKindTag)) {
-		return 'chat.untitledInputAttachments';
-	}
-	return `chat.untitledInputAttachments.${widgetViewKindTag}`;
-}
-
 function createEmptyInputStateMemento(widgetViewKindTag: string) {
 	return observableMemento<IChatModelInputState | undefined>({
 		defaultValue: undefined,
@@ -300,10 +292,10 @@ function createEmptyInputStateMemento(widgetViewKindTag: string) {
 	});
 }
 
-// Per-widget attachments memento — uses getInputAttachmentsStorageKey for isolation.
-const emptyInputAttachments = (widgetViewKindTag: string) => observableMemento<readonly IChatRequestVariableEntry[]>({
+// TODO: scope per widgetViewKindTag when automations supports attachments
+const emptyInputAttachments = observableMemento<readonly IChatRequestVariableEntry[]>({
 	defaultValue: [],
-	key: getInputAttachmentsStorageKey(widgetViewKindTag),
+	key: 'chat.untitledInputAttachments',
 	toStorage: serializeUntitledInputAttachments,
 	fromStorage: deserializeUntitledInputAttachments,
 });
@@ -711,7 +703,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this._syncInputStateToModel();
 		}, 150));
 		this._emptyInputState = this._register(createEmptyInputStateMemento(this.options.widgetViewKindTag)(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
-		this._emptyInputAttachments = this._register(emptyInputAttachments(this.options.widgetViewKindTag)(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
+		this._emptyInputAttachments = this._register(emptyInputAttachments(StorageScope.WORKSPACE, StorageTarget.USER, this.storageService));
 
 		this._contextResourceLabels = this._register(this.instantiationService.createInstance(ResourceLabels, { onDidChangeVisibility: this._onDidChangeVisibility.event }));
 		this._currentModeObservable = observableValue<IChatMode>('currentMode', this.options.defaultMode ?? ChatMode.Agent);
