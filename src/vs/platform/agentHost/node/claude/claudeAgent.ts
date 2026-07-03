@@ -1635,15 +1635,22 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return [];
 		}
 		return Promise.all(sdkEntries.map(async entry => {
+			const sessionUri = AgentSession.uri(this.id, entry.sessionId);
+			let base: IAgentSessionMetadata;
 			try {
-				const sessionUri = AgentSession.uri(this.id, entry.sessionId);
 				const overlay = await this._metadataStore.read(sessionUri);
-				return this._metadataStore.project(entry, overlay);
+				base = this._metadataStore.project(entry, overlay);
 			} catch (err) {
 				this._logService.warn(`[Claude] Overlay read failed for session ${entry.sessionId}`, err);
+				// External session, or DB read failed: surface what the SDK gave us.
+				base = this._metadataStore.project(entry, {});
 			}
-			// External session, or DB read failed: surface what the SDK gave us.
-			return this._metadataStore.project(entry, {});
+			// Worktree-isolated sessions run out of `<repo>.worktrees/<name>` but
+			// must group under the repository in the sessions UI. Merge the repo
+			// project (persisted alongside the worktree metadata) so the workspace
+			// name stays the repository. No-op for folder sessions.
+			const project = await this._worktree.resolveWorktreeProject(sessionUri);
+			return project ? { ...base, project } : base;
 		}));
 	}
 
@@ -1672,7 +1679,12 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		} catch (err) {
 			this._logService.warn(`[Claude] Overlay read failed for session ${sessionId}`, err);
 		}
-		return this._metadataStore.project(sdkInfo, overlay);
+		const base = this._metadataStore.project(sdkInfo, overlay);
+		// Merge the repository project for worktree-isolated sessions so the
+		// workspace groups under the repo (not the worktree dir). No-op for folder
+		// sessions. See WorktreeIsolation.resolveWorktreeProject.
+		const project = await this._worktree.resolveWorktreeProject(session);
+		return project ? { ...base, project } : base;
 	}
 
 	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {

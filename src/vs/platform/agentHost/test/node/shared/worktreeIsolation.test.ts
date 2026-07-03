@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { join } from '../../../../../base/common/path.js';
+import { basename } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../log/common/log.js';
@@ -191,6 +192,38 @@ suite('WorktreeIsolation', () => {
 			noBranch: repoRoot.toString(),
 			addWorktreeCallCount: 0,
 			createdSessions: [],
+		});
+	});
+
+	test('resolveWorktreeProject / createdWorktreeProject expose the repository as the session project', async () => {
+		// The worktree lives at `<repo>.worktrees/<name>`, but a worktree session
+		// must group under the repository in the sessions UI. Both accessors return
+		// the repo root as the project so agents can merge it into the reported
+		// `IAgentSessionMetadata` / materialize event. Folder (non-worktree)
+		// sessions have no worktree metadata and get `undefined`.
+		const isolation = createIsolation(disposables);
+		const expectedDisplayName = basename(repoRoot);
+
+		const beforeAsync = await isolation.resolveWorktreeProject(sessionUri);
+		const beforeSync = isolation.createdWorktreeProject(sessionId);
+
+		await isolation.resolveWorkingDirectory({ sessionUri, sessionId, workingDirectory: repoRoot, config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' } });
+
+		const afterAsync = await isolation.resolveWorktreeProject(sessionUri);
+		const afterSync = isolation.createdWorktreeProject(sessionId);
+
+		assert.deepStrictEqual({
+			beforeAsync,
+			beforeSync,
+			afterAsync: { uri: afterAsync?.uri.toString(), displayName: afterAsync?.displayName },
+			afterSync: { uri: afterSync?.uri.toString(), displayName: afterSync?.displayName },
+			unknownSession: isolation.createdWorktreeProject('does-not-exist'),
+		}, {
+			beforeAsync: undefined,
+			beforeSync: undefined,
+			afterAsync: { uri: repoRoot.toString(), displayName: expectedDisplayName },
+			afterSync: { uri: repoRoot.toString(), displayName: expectedDisplayName },
+			unknownSession: undefined,
 		});
 	});
 

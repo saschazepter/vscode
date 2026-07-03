@@ -1880,7 +1880,10 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._onDidMaterializeSession.fire({
 			session: session.sessionUri,
 			workingDirectory: session.workingDirectory,
-			project: undefined,
+			// Worktree-isolated sessions must group under the repository, not the
+			// `<repo>.worktrees/<name>` directory the codex subprocess runs in.
+			// `undefined` for folder sessions (project falls back to the folder).
+			project: this._worktree.createdWorktreeProject(session.sessionId),
 		});
 	}
 
@@ -2387,7 +2390,12 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._serverToolHost.advertise(restored.sessionUri.toString());
 			}
 		}
-		return this._threadToMetadata(read.thread, session);
+		const base = this._threadToMetadata(read.thread, session);
+		// Merge the repository project for worktree-isolated sessions so the
+		// workspace groups under the repo (not the worktree dir). No-op for folder
+		// sessions. See WorktreeIsolation.resolveWorktreeProject.
+		const project = await this._worktree.resolveWorktreeProject(session);
+		return project ? { ...base, project } : base;
 	}
 
 	private async _readSession(session: URI): Promise<ThreadReadResponse | undefined> {
@@ -2455,10 +2463,15 @@ export class CodexAgent extends Disposable implements IAgent {
 					liveUriByThreadId.set(s.threadId, s.sessionUri);
 				}
 			}
-			return response.data.map(t => this._threadToMetadata(
-				t,
-				liveUriByThreadId.get(t.id) ?? AgentSession.uri(this.id, t.id),
-			));
+			return Promise.all(response.data.map(async t => {
+				const sessionUri = liveUriByThreadId.get(t.id) ?? AgentSession.uri(this.id, t.id);
+				const base = this._threadToMetadata(t, sessionUri);
+				// Merge the repository project for worktree-isolated sessions so the
+				// workspace groups under the repo (not the worktree dir); a refresh
+				// would otherwise clear the project set by the materialize event.
+				const project = await this._worktree.resolveWorktreeProject(sessionUri);
+				return project ? { ...base, project } : base;
+			}));
 		} catch (err) {
 			this._logService.warn(`[Codex] thread/list failed: ${err instanceof Error ? err.message : String(err)}`);
 			return [];

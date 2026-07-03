@@ -11,6 +11,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../log/common/log.js';
+import { IAgentSessionProjectInfo } from '../../common/agentService.js';
 import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
 import { ISchemaProperty, schemaProperty } from '../../common/agentHostSchema.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
@@ -450,6 +451,36 @@ export class WorktreeIsolation extends Disposable {
 		return this._readWorktreeMetadata(sessionUri);
 	}
 
+	/**
+	 * Resolves the repository "project" for a worktree-isolated session from its
+	 * persisted worktree metadata. Worktree sessions run out of a
+	 * `<repo>.worktrees/<name>` directory, but in the sessions UI they must group
+	 * under the *repository* (e.g. `vscode`) — not the worktree folder — exactly
+	 * like Copilot. Returns the repository root as the project so agents can merge
+	 * it into the `project` field of the `IAgentSessionMetadata` reported from
+	 * `listSessions` / `getSessionMetadata`; without it a list refresh clears the
+	 * transient project set by the materialize event and the workspace reverts to
+	 * the worktree directory name. Returns `undefined` for sessions that were never
+	 * worktree-isolated, leaving the caller's own folder-based project untouched.
+	 */
+	async resolveWorktreeProject(sessionUri: URI): Promise<IAgentSessionProjectInfo | undefined> {
+		const meta = await this._readWorktreeMetadata(sessionUri).catch(() => undefined);
+		return meta?.repositoryRoot ? projectFromRepositoryRoot(meta.repositoryRoot) : undefined;
+	}
+
+	/**
+	 * Synchronous companion to {@link resolveWorktreeProject} for the
+	 * materialize-event path: the repository project for a worktree this agent
+	 * created in the current process, or `undefined` when the session has none.
+	 * Lets an agent supply the materialize event's `project` without an async
+	 * metadata read so a fresh worktree groups under the repository the moment it
+	 * materializes.
+	 */
+	createdWorktreeProject(sessionId: string): IAgentSessionProjectInfo | undefined {
+		const worktree = this._createdWorktrees.get(sessionId);
+		return worktree ? projectFromRepositoryRoot(worktree.repositoryRoot) : undefined;
+	}
+
 	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: string } | undefined> {
 		const repositoryRoot = await this._gitService.getRepositoryRoot(workingDirectory);
 		if (!repositoryRoot) {
@@ -505,6 +536,16 @@ export class WorktreeIsolation extends Disposable {
 			ref.dispose();
 		}
 	}
+}
+
+/**
+ * Derives the repository {@link IAgentSessionProjectInfo} from a repository
+ * root URI. The display name is the repo directory's basename (falling back to
+ * the URI string for pathological roots), matching how Copilot names the
+ * project via `resolveGitProject`.
+ */
+function projectFromRepositoryRoot(repositoryRoot: URI): IAgentSessionProjectInfo {
+	return { uri: repositoryRoot, displayName: basename(repositoryRoot.fsPath) || repositoryRoot.toString() };
 }
 
 function errorMessage(error: unknown): string {
