@@ -203,6 +203,20 @@ export interface IAgentHostGitService {
 	revParse(repositoryRoot: URI, expression: string): Promise<string | undefined>;
 
 	/**
+	 * Builds a new tree from `baseTreeOid` in which the single repo-relative
+	 * `path` is replaced by its content (blob + mode) from `sourceTreeOid`, or
+	 * removed when the path is absent in `sourceTreeOid`. All other paths are
+	 * copied verbatim from `baseTreeOid`. Uses a throwaway `GIT_INDEX_FILE` so
+	 * the user's real index is untouched. Returns the new tree OID, or
+	 * `undefined` on git failure.
+	 *
+	 * File-level building block for review (see `IAgentHostReviewService`): to
+	 * mark a file reviewed, overlay it from the working-tree snapshot tree; to
+	 * unmark, overlay it from the baseline tree.
+	 */
+	overlayPathIntoTree(repositoryRoot: URI, baseTreeOid: string, path: string, sourceTreeOid: string): Promise<string | undefined>;
+
+	/**
 	 * Computes per-file diffs between two refs (typically two consecutive
 	 * checkpoint refs) by shelling out to
 	 * `git diff --raw --numstat --diff-filter=ADMR -z <fromRef> <toRef>`.

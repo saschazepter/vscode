@@ -245,6 +245,7 @@ export function createNoopGitService(): import('../../common/agentHostGitService
 		updateRef: async () => { },
 		deleteRefs: async () => { },
 		revParse: async () => undefined,
+		overlayPathIntoTree: async () => undefined,
 		computeFileDiffsBetweenRefs: async () => undefined,
 	};
 }

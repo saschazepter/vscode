@@ -405,6 +405,44 @@ export class AgentHostGitService implements IAgentHostGitService {
 		return out?.trim() || undefined;
 	}
 
+	async overlayPathIntoTree(repositoryRoot: URI, baseTreeOid: string, path: string, sourceTreeOid: string): Promise<string | undefined> {
+		// Build a throwaway index seeded from `baseTreeOid`, replace/remove the
+		// single `path` using `sourceTreeOid`, and write the result back out as
+		// a new tree. The user's real index is never touched (mirrors the
+		// temp-index technique used by `captureWorkingTreeAsTree`).
+		const tempDir = URI.joinPath(this._environmentService.tmpDir, `agent-host-review-overlay-${generateUuid()}`);
+		await this._fileService.createFolder(tempDir);
+		const indexFile = URI.joinPath(tempDir, 'index').fsPath;
+		const env: Record<string, string> = { GIT_INDEX_FILE: indexFile, COMMAND_HOOK_LOCK: '1' };
+		try {
+			if (await this._runGit(repositoryRoot, ['read-tree', baseTreeOid], { env, throwOnError: false }) === undefined) {
+				return undefined;
+			}
+
+			// Resolve the source blob (mode + oid) for `path`. `-z` avoids
+			// path quoting; an empty result means the path is absent in the
+			// source tree, so the overlay removes it from the base.
+			const lsTreeOut = await this._runGit(repositoryRoot, ['ls-tree', '-z', sourceTreeOid, '--', path], { env });
+			const entry = parseSingleLsTreeEntry(lsTreeOut);
+			if (entry) {
+				if (await this._runGit(repositoryRoot, ['update-index', '--add', '--cacheinfo', `${entry.mode},${entry.oid},${path}`], { env, throwOnError: false }) === undefined) {
+					return undefined;
+				}
+			} else {
+				// `--force-remove` tolerates the path already being absent from
+				// the index, so removing an untracked/added path is a no-op.
+				if (await this._runGit(repositoryRoot, ['update-index', '--force-remove', '--', path], { env, throwOnError: false }) === undefined) {
+					return undefined;
+				}
+			}
+
+			const tree = (await this._runGit(repositoryRoot, ['write-tree'], { env }))?.trim();
+			return tree || undefined;
+		} finally {
+			try { await this._fileService.del(tempDir, { recursive: true, useTrash: false }); } catch { /* best-effort */ }
+		}
+	}
+
 	async computeFileDiffsBetweenRefs(workingDirectory: URI, options: { readonly sessionUri: string; readonly fromRef: string; readonly toRef: string }): Promise<readonly ISessionFileDiff[] | undefined> {
 		const repositoryRoot = await this.getRepositoryRoot(workingDirectory);
 		if (!repositoryRoot) {
@@ -624,6 +662,30 @@ export function parseChangedPaths(output: string | undefined, includeStatus: (st
 		}
 	}
 	return result;
+}
+
+/**
+ * Parses NUL-terminated `git ls-tree -z <tree> -- <path>` output for a single
+ * path and returns its `{ mode, oid }`, or `undefined` when the path is absent
+ * from the tree (empty output). Each entry has the form
+ * `<mode> SP <type> SP <oid> TAB <path> NUL`; we only need the mode and oid.
+ *
+ * Exported for tests.
+ */
+export function parseSingleLsTreeEntry(output: string | undefined): { mode: string; oid: string } | undefined {
+	if (!output) {
+		return undefined;
+	}
+	const entry = output.split('\x00')[0];
+	if (!entry) {
+		return undefined;
+	}
+	const tabIndex = entry.indexOf('\t');
+	const meta = (tabIndex === -1 ? entry : entry.substring(0, tabIndex)).split(' ');
+	if (meta.length < 3) {
+		return undefined;
+	}
+	return { mode: meta[0], oid: meta[2] };
 }
 
 /**
