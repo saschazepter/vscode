@@ -290,7 +290,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			openButton.setAttribute('role', 'button');
 			openButton.setAttribute('tabindex', '0');
 			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
-			openButton.addEventListener('click', (e) => {
+			const openSession = (e: Event) => {
 				e.stopPropagation();
 				const colonIdx = run.sessionId!.indexOf(':');
 				const resourceStr = run.sessionId!.substring(colonIdx + 1);
@@ -303,7 +303,14 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 				}).catch(() => {
 					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
 				});
-			});
+			};
+			disposables.add(DOM.addDisposableListener(openButton, 'click', openSession));
+			disposables.add(DOM.addDisposableListener(openButton, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					openSession(e);
+				}
+			}));
 		}
 	}
 
