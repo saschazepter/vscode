@@ -76,6 +76,8 @@ import { AgentHostGitService } from './agentHostGitService.js';
 import { IAgentHostGitService } from '../common/agentHostGitService.js';
 import { AgentHostCheckpointService } from './agentHostCheckpointService.js';
 import { IAgentHostCheckpointService } from '../common/agentHostCheckpointService.js';
+import { AgentHostReviewService } from './agentHostReviewService.js';
+import { IAgentHostReviewService } from '../common/agentHostReviewService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
 import { createAgentHostTelemetryService } from './agentHostTelemetryService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
@@ -245,6 +247,8 @@ async function main(): Promise<void> {
 	diServices.set(IAgentHostGitService, gitService);
 	const checkpointService = disposables.add(instantiationService.createInstance(AgentHostCheckpointService));
 	diServices.set(IAgentHostCheckpointService, checkpointService);
+	const reviewService = disposables.add(instantiationService.createInstance(AgentHostReviewService));
+	diServices.set(IAgentHostReviewService, reviewService);
 
 	// Create the agent service (owns AgentHostStateManager + AgentSideEffects internally)
 	const agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, checkpointService, rootConfigResource, telemetryService, fileMonitorService);

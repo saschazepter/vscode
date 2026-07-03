@@ -1,0 +1,69 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { URI } from '../../../base/common/uri.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
+
+export const IAgentHostReviewService = createDecorator<IAgentHostReviewService>('agentHostReviewService');
+
+/**
+ * Returns the canonical name for a session's synthetic **reviewed** ref.
+ * Lives under the same `refs/agents/<sid>/…` namespace as checkpoint refs so
+ * the two coexist safely and never surface to the user as branches/tags.
+ */
+export function buildReviewedRefName(sanitizedSessionId: string): string {
+	return `refs/agents/${sanitizedSessionId}/reviewed`;
+}
+
+/**
+ * `session_metadata` key under which the working directory used to build the
+ * reviewed ref is persisted (set on the first successful mark). Read by
+ * `disposeSessionData` so it can resolve the repository root and delete the
+ * reviewed ref without per-call working-directory plumbing. Stored as
+ * `URI.toString()`.
+ */
+export const META_REVIEW_WORKING_DIR = 'review.workingDir';
+
+/**
+ * Tracks which files in a session's **Branch Changes** the user has reviewed,
+ * as a session-private synthetic git ref (`refs/agents/<sid>/reviewed`) whose
+ * tree snapshots the reviewed content. A file is reviewed when its content in
+ * the reviewed tree matches the current working tree; re-editing a reviewed
+ * file therefore auto-unreviews it.
+ *
+ * All operations are keyed on the Branch Changes baseline (the merge-base of
+ * `HEAD` and the session's base branch). The `baseBranch` argument is the
+ * already-resolved base-branch **name** (see `resolveDiffBaseBranchName`),
+ * shared with the changeset service so both agree on the baseline.
+ *
+ * Operations are no-ops when the working directory is not inside a git
+ * repository; a future milestone will add a non-git fallback (see the
+ * DB-backed reviewed-file store on `ISessionDatabase`).
+ */
+export interface IAgentHostReviewService {
+	readonly _serviceBrand: undefined;
+
+	/**
+	 * Marks a single file reviewed at its current working-tree content by
+	 * overlaying that content into the reviewed tree and advancing the
+	 * reviewed ref. No-op when the file is already reviewed at that content.
+	 */
+	markFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
+
+	/**
+	 * Clears the reviewed mark for a single file by resetting its entry in the
+	 * reviewed tree back to the baseline content and advancing the reviewed
+	 * ref. No-op when the file is not currently reviewed.
+	 */
+	unmarkFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
+
+	/**
+	 * Returns the set of reviewed repo-relative paths within the current Branch
+	 * Changes: the changed files whose reviewed-tree content matches the
+	 * working tree. Empty when nothing is reviewed or the directory is not a
+	 * git work tree.
+	 */
+	getReviewedPaths(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined): Promise<ReadonlySet<string>>;
+}

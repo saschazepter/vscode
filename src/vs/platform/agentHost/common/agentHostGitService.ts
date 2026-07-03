@@ -242,6 +242,14 @@ export interface IAgentHostGitService {
 	overlayPathIntoTree(repositoryRoot: URI, baseTreeOid: string, path: string, sourceTreeOid: string): Promise<string | undefined>;
 
 	/**
+	 * Returns the repo-relative paths that differ between two tree-ish (commit
+	 * or tree) objects via `git diff --name-only --no-renames -z`. Rename
+	 * detection is off so a rename shows as delete(old) + add(new). Returns
+	 * `undefined` on git failure (e.g. not a git work tree).
+	 */
+	diffTreePaths(repositoryRoot: URI, fromTreeish: string, toTreeish: string): Promise<string[] | undefined>;
+
+	/**
 	 * Computes per-file diffs between two refs (typically two consecutive
 	 * checkpoint refs) by shelling out to
 	 * `git diff --raw --numstat --diff-filter=ADMR -z <fromRef> <toRef>`.
