@@ -1594,11 +1594,6 @@ class RevealCIChecksAction extends Action2 {
 registerAction2(RevealCIChecksAction);
 
 class ChangesDiffStatsActionItem extends ActionViewItem {
-	// private readonly diffStatsObs: IObservable<{ files: number; insertions: number; deletions: number } | undefined>;
-
-	// private readonly addedLinesCounterWidget: AnimatedCounterWidget;
-	// private readonly removedLinesCounterWidget: AnimatedCounterWidget;
-
 	private readonly _widget: ChangesSummaryWidget;
 
 	constructor(
