@@ -115,6 +115,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		private readonly notificationService: INotificationService,
 		private readonly editorService: IEditorService,
 		private readonly editorGroupsService: IEditorGroupsService,
+		private readonly logService: ILogService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -293,13 +294,21 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
 			const openSession = (e: Event) => {
 				e.stopPropagation();
+				const sessionResource = URI.parse(run.sessionResource!);
+				this.logService.debug(`[AutomationsListWidget] Opening session: ${sessionResource.toString()}`);
 				const activeEditor = this.editorService.activeEditor;
 				const activeGroupId = this.editorGroupsService.activeGroup.id;
-				this.chatWidgetService.openSession(URI.parse(run.sessionResource!)).then((widget) => {
-					if (widget && activeEditor) {
+				this.chatWidgetService.openSession(sessionResource).then((widget) => {
+					if (!widget) {
+						this.logService.warn(`[AutomationsListWidget] openSession resolved without a widget for ${sessionResource.toString()}`);
+						this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
+						return;
+					}
+					if (activeEditor) {
 						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
 					}
-				}).catch(() => {
+				}).catch((err) => {
+					this.logService.error(`[AutomationsListWidget] openSession failed for ${sessionResource.toString()}`, err);
 					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
 				});
 			};
@@ -410,7 +419,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService, this.chatWidgetService, this.notificationService, this.editorService, this.editorGroupsService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.chatWidgetService, this.notificationService, this.editorService, this.editorGroupsService, this.logService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
