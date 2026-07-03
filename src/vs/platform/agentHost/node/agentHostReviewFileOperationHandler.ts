@@ -79,14 +79,16 @@ export class AgentHostReviewFileOperationHandler implements IChangesetOperationH
 		try {
 			if (this._reviewed) {
 				this._logService.info(`[AgentHostReviewFileOperationHandler] Marking '${resource.fsPath}' as reviewed for session ${sessionUri}`);
-				await this._reviewService.markFileReviewed(URI.parse(sessionUri), workingDirectory, baseBranch, resource);
+				await this._reviewService.markFileReviewed(sessionUri, workingDirectory, baseBranch, resource);
 				this._changesetService.refreshBranchChangeset(sessionUri);
+
 				return { message: { markdown: localize('agentHost.changeset.reviewFile.marked', "Marked `{0}` as reviewed.", basename(resource)) } };
 			}
 
 			this._logService.info(`[AgentHostReviewFileOperationHandler] Removing reviewed mark for '${resource.fsPath}' in session ${sessionUri}`);
-			await this._reviewService.unmarkFileReviewed(URI.parse(sessionUri), workingDirectory, baseBranch, resource);
+			await this._reviewService.markFileUnreviewed(sessionUri, workingDirectory, baseBranch, resource);
 			this._changesetService.refreshBranchChangeset(sessionUri);
+
 			return { message: { markdown: localize('agentHost.changeset.reviewFile.unmarked', "Removed the reviewed mark from `{0}`.", basename(resource)) } };
 		} catch (err) {
 			this._throwIfCancelled(token);

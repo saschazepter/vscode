@@ -52,8 +52,8 @@ export class AgentHostReviewOperationContribution extends Disposable implements 
 			},
 			{
 				id: AgentHostReviewFileOperationHandler.OPERATION_MARK_AS_UNREVIEWED,
-				label: localize('agentHost.changeset.markAsUnreviewed', "Mark as Not Reviewed"),
-				icon: 'circle-outline',
+				label: localize('agentHost.changeset.markAsUnreviewed', "Mark as Unreviewed"),
+				icon: 'check',
 				group: 'review',
 				scopes: [ChangesetOperationScope.Resource],
 				status: ChangesetOperationStatus.Idle,

@@ -74,8 +74,6 @@ import { AgentHostGitService } from './agentHostGitService.js';
 import { IAgentHostGitService } from '../common/agentHostGitService.js';
 import { AgentHostCheckpointService } from './agentHostCheckpointService.js';
 import { IAgentHostCheckpointService } from '../common/agentHostCheckpointService.js';
-import { AgentHostReviewService } from './agentHostReviewService.js';
-import { IAgentHostReviewService } from '../common/agentHostReviewService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
 import { registerPendingEditContentProvider } from './copilot/pendingEditContentStore.js';
 import { join } from '../../../base/common/path.js';
@@ -175,8 +173,6 @@ async function startAgentHost(): Promise<void> {
 		// pipeline / end-of-turn capture).
 		const checkpointService = disposables.add(instantiationService.createInstance(AgentHostCheckpointService));
 		diServices.set(IAgentHostCheckpointService, checkpointService);
-		const reviewService = disposables.add(instantiationService.createInstance(AgentHostReviewService));
-		diServices.set(IAgentHostReviewService, reviewService);
 		// Register the agent SDK downloader BEFORE any service that injects it
 		// (ClaudeAgentSdkService and CodexAgent below). The downloader resolves
 		// dev-override env var → on-disk cache → product.agentSdks download.
@@ -203,7 +199,7 @@ async function startAgentHost(): Promise<void> {
 		diServices.set(IByokLmProxyService, byokLmProxyService);
 		const agentHostOTelService = disposables.add(instantiationService.createInstance(AgentHostOTelService));
 		diServices.set(IAgentHostOTelService, agentHostOTelService);
-		agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, checkpointService, rootConfigResource, telemetryService, fileMonitorService, undefined, reviewService);
+		agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, checkpointService, rootConfigResource, telemetryService, fileMonitorService, undefined);
 		diServices.set(IAgentService, agentService);
 		const pluginManager = new AgentPluginManager(URI.file(environmentService.userDataPath), fileService, logService);
 		diServices.set(IAgentPluginManager, pluginManager);

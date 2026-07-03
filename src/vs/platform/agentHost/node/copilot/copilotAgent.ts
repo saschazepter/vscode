@@ -1492,7 +1492,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				// the parent's review progress (best-effort; a failure just means
 				// the fork starts unreviewed).
 				try {
-					await this._reviewService.copyReviewedRef(sessionConfig.fork!.session, session, workingDirectory);
+					await this._reviewService.copyReviewedRef(sessionConfig.fork!.session.toString(), session.toString(), workingDirectory);
 				} catch (err) {
 					this._logService.warn(`[Copilot] Failed to copy reviewed ref for fork: ${err instanceof Error ? err.message : String(err)}`);
 				}

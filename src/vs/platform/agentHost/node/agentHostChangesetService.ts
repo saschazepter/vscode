@@ -1083,18 +1083,22 @@ export class AgentHostChangesetService extends Disposable implements IAgentHostC
 		if (!workingDirectory) {
 			return undefined;
 		}
+
 		let workingDirectoryUri: URI;
 		try {
 			workingDirectoryUri = URI.parse(workingDirectory);
 		} catch {
 			return undefined;
 		}
+
 		const repoRoot = await this._gitService.getRepositoryRoot(workingDirectoryUri);
 		if (!repoRoot) {
 			return undefined;
 		}
+
 		const baseBranch = await this._resolveBranchBaseBranch(session, db);
-		const paths = await this._reviewService.getReviewedPaths(URI.parse(session), workingDirectoryUri, baseBranch);
+		const paths = await this._reviewService.getReviewedPaths(session, workingDirectoryUri, baseBranch);
+
 		return { repoRoot, paths };
 	}
 

@@ -14,13 +14,13 @@ import { META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
 import type { IAgentHostReviewService } from '../../common/agentHostReviewService.js';
 import { ChangesetOperationTargetKind, type InvokeChangesetOperationParams } from '../../common/state/protocol/channels-changeset/commands.js';
 import { AHP_SESSION_NOT_FOUND, JsonRpcErrorCodes, ProtocolError } from '../../common/state/sessionProtocol.js';
-import { SessionStatus } from '../../common/state/sessionState.js';
+import { SessionStatus, } from '../../common/state/sessionState.js';
 import { AgentHostReviewFileOperationHandler } from '../../node/agentHostReviewFileOperationHandler.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import { createNoopChangesetService, createSessionDataService, TestSessionDatabase } from '../common/sessionTestHelpers.js';
 
 interface IRecordedCall {
-	readonly sessionUri: string;
+	readonly session: string;
 	readonly workingDirectory: string;
 	readonly baseBranch: string | undefined;
 	readonly resource: string;
@@ -33,13 +33,13 @@ class TestReviewService implements IAgentHostReviewService {
 	readonly unmarkCalls: IRecordedCall[] = [];
 	error: Error | undefined;
 
-	async markFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void> {
-		this.markCalls.push({ sessionUri: sessionUri.toString(), workingDirectory: workingDirectory.toString(), baseBranch, resource: resource.toString() });
+	async markFileReviewed(session: string, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void> {
+		this.markCalls.push({ session, workingDirectory: workingDirectory.toString(), baseBranch, resource: resource.toString() });
 		if (this.error) { throw this.error; }
 	}
 
-	async unmarkFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void> {
-		this.unmarkCalls.push({ sessionUri: sessionUri.toString(), workingDirectory: workingDirectory.toString(), baseBranch, resource: resource.toString() });
+	async markFileUnreviewed(session: string, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void> {
+		this.unmarkCalls.push({ session, workingDirectory: workingDirectory.toString(), baseBranch, resource: resource.toString() });
 		if (this.error) { throw this.error; }
 	}
 

@@ -19,13 +19,14 @@ import { Schemas } from '../../../../base/common/network.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../log/common/log.js';
-import { INativeEnvironmentService } from '../../../environment/common/environment.js';
 import { FileService } from '../../../files/common/fileService.js';
 import { DiskFileSystemProvider } from '../../../files/node/diskFileSystemProvider.js';
 import { AgentHostGitService } from '../../node/agentHostGitService.js';
 import { AgentHostReviewService } from '../../node/agentHostReviewService.js';
 import { buildReviewedRefName } from '../../common/agentHostReviewService.js';
 import { createSessionDataService, TestSessionDatabase } from '../common/sessionTestHelpers.js';
+import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
+import { INativeEnvironmentService } from '../../../environment/common/environment.js';
 
 function rmDirWithRetry(path: string | undefined): void {
 	if (!path) {
@@ -52,10 +53,12 @@ suite('AgentHostReviewService (real git)', () => {
 		const logService = new NullLogService();
 		const fileService = store.add(new FileService(logService));
 		store.add(fileService.registerProvider(Schemas.file, store.add(new DiskFileSystemProvider(logService))));
-		const gitService = new AgentHostGitService(fileService, { tmpDir: URI.file(tmpdir()) } as INativeEnvironmentService, logService);
+		const env: Partial<INativeEnvironmentService> = { tmpDir: URI.file(tmpdir()) };
+		const gitService = new AgentHostGitService(fileService, env as INativeEnvironmentService, logService);
 		db = new TestSessionDatabase();
 		const sessionDataService = createSessionDataService(db);
-		return store.add(new AgentHostReviewService(gitService, sessionDataService, logService));
+		const stateManager = disposables.add(new AgentHostStateManager(logService));
+		return store.add(new AgentHostReviewService(stateManager, gitService, sessionDataService, logService,));
 	}
 
 	setup(() => {
@@ -84,7 +87,7 @@ suite('AgentHostReviewService (real git)', () => {
 	}
 
 	const wd = () => URI.file(tmpRoot!);
-	const reviewedPaths = async () => [...await svc!.getReviewedPaths(sessionUri, wd(), undefined)].sort();
+	const reviewedPaths = async () => [...await svc!.getReviewedPaths(sessionUri.toString(), wd(), undefined)].sort();
 	const chainLength = () => {
 		const ref = buildReviewedRefName('review-test-session');
 		// Count only the review commits layered on top of the baseline (HEAD),
@@ -98,9 +101,9 @@ suite('AgentHostReviewService (real git)', () => {
 		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
 
 		const beforeMark = await reviewedPaths();
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const afterMark = await reviewedPaths();
-		await svc!.unmarkFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileUnreviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const afterUnmark = await reviewedPaths();
 
 		assert.deepStrictEqual(
@@ -112,7 +115,7 @@ suite('AgentHostReviewService (real git)', () => {
 		const fs = await import('fs/promises');
 		await initRepo({ 'a.txt': 'a-v1\n' });
 		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const reviewed = await reviewedPaths();
 
 		// Agent edits the file again -> its working content no longer matches
@@ -129,8 +132,8 @@ suite('AgentHostReviewService (real git)', () => {
 		await fs.writeFile(join(tmpRoot!, 'fresh.txt'), 'fresh\n');
 		await fs.unlink(join(tmpRoot!, 'gone.txt'));
 
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'fresh.txt')));
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'gone.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'fresh.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'gone.txt')));
 
 		assert.deepStrictEqual(await reviewedPaths(), ['fresh.txt', 'gone.txt']);
 	});
@@ -141,12 +144,12 @@ suite('AgentHostReviewService (real git)', () => {
 		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
 
 		const initial = chainLength();
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const afterMark = chainLength();
 		// Marking the same content again is a no-op and must not grow the chain.
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const afterDup = chainLength();
-		await svc!.unmarkFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileUnreviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const afterUnmark = chainLength();
 
 		assert.deepStrictEqual(
@@ -158,10 +161,10 @@ suite('AgentHostReviewService (real git)', () => {
 		const fs = await import('fs/promises');
 		await initRepo({ 'a.txt': 'a-v1\n' });
 		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 		const beforeDispose = chainLength();
 
-		await svc!.disposeSessionData(sessionUri);
+		await svc!.disposeSessionData(sessionUri.toString());
 		const afterDispose = chainLength();
 
 		assert.deepStrictEqual({ beforeDispose, afterDispose }, { beforeDispose: 1, afterDispose: 0 });
@@ -171,12 +174,12 @@ suite('AgentHostReviewService (real git)', () => {
 		const fs = await import('fs/promises');
 		await initRepo({ 'a.txt': 'a-v1\n' });
 		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'a-v2\n');
-		await svc!.markFileReviewed(sessionUri, wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
+		await svc!.markFileReviewed(sessionUri.toString(), wd(), undefined, URI.file(join(tmpRoot!, 'a.txt')));
 
 		const forkUri = URI.parse('copilot:/forked-session');
-		await svc!.copyReviewedRef(sessionUri, forkUri, wd());
+		await svc!.copyReviewedRef(sessionUri.toString(), forkUri.toString(), wd());
 
-		const forkReviewed = [...await svc!.getReviewedPaths(forkUri, wd(), undefined)].sort();
+		const forkReviewed = [...await svc!.getReviewedPaths(forkUri.toString(), wd(), undefined)].sort();
 		const sourceReviewed = await reviewedPaths();
 		assert.deepStrictEqual({ forkReviewed, sourceReviewed }, { forkReviewed: ['a.txt'], sourceReviewed: ['a.txt'] });
 	});
@@ -184,7 +187,7 @@ suite('AgentHostReviewService (real git)', () => {
 	(hasGit ? test : test.skip)('is a no-op when the working directory is not a git repository', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'agent-host-review-nongit-'));
 		tmpRoot = dir;
-		await svc!.markFileReviewed(sessionUri, URI.file(dir), undefined, URI.file(join(dir, 'a.txt')));
-		assert.deepStrictEqual([...await svc!.getReviewedPaths(sessionUri, URI.file(dir), undefined)], []);
+		await svc!.markFileReviewed(sessionUri.toString(), URI.file(dir), undefined, URI.file(join(dir, 'a.txt')));
+		assert.deepStrictEqual([...await svc!.getReviewedPaths(sessionUri.toString(), URI.file(dir), undefined)], []);
 	});
 });

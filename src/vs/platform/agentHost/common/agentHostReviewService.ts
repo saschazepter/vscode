@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../base/common/uri.js';
+import type { URI as ProtocolURI } from './state/sessionState.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 
 export const IAgentHostReviewService = createDecorator<IAgentHostReviewService>('agentHostReviewService');
@@ -16,15 +17,6 @@ export const IAgentHostReviewService = createDecorator<IAgentHostReviewService>(
 export function buildReviewedRefName(sanitizedSessionId: string): string {
 	return `refs/agents/${sanitizedSessionId}/reviewed`;
 }
-
-/**
- * `session_metadata` key under which the working directory used to build the
- * reviewed ref is persisted (set on the first successful mark). Read by
- * `disposeSessionData` so it can resolve the repository root and delete the
- * reviewed ref without per-call working-directory plumbing. Stored as
- * `URI.toString()`.
- */
-export const META_REVIEW_WORKING_DIR = 'review.workingDir';
 
 /**
  * Tracks which files in a session's **Branch Changes** the user has reviewed,
@@ -50,14 +42,14 @@ export interface IAgentHostReviewService {
 	 * overlaying that content into the reviewed tree and advancing the
 	 * reviewed ref. No-op when the file is already reviewed at that content.
 	 */
-	markFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
+	markFileReviewed(session: ProtocolURI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
 
 	/**
-	 * Clears the reviewed mark for a single file by resetting its entry in the
+	 * Marks a single file as unreviewed by resetting its entry in the
 	 * reviewed tree back to the baseline content and advancing the reviewed
 	 * ref. No-op when the file is not currently reviewed.
 	 */
-	unmarkFileReviewed(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
+	markFileUnreviewed(session: ProtocolURI, workingDirectory: URI, baseBranch: string | undefined, resource: URI): Promise<void>;
 
 	/**
 	 * Returns the set of reviewed repo-relative paths within the current Branch
@@ -65,7 +57,7 @@ export interface IAgentHostReviewService {
 	 * working tree. Empty when nothing is reviewed or the directory is not a
 	 * git work tree.
 	 */
-	getReviewedPaths(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined): Promise<ReadonlySet<string>>;
+	getReviewedPaths(session: ProtocolURI, workingDirectory: URI, baseBranch: string | undefined): Promise<ReadonlySet<string>>;
 
 	/**
 	 * Copies the reviewed ref from `sourceSessionUri` to `targetSessionUri` so a
@@ -74,7 +66,7 @@ export interface IAgentHostReviewService {
 	 * shared within the repository). No-op when the source has no reviewed ref or
 	 * the directory is not a git work tree.
 	 */
-	copyReviewedRef(sourceSessionUri: URI, targetSessionUri: URI, workingDirectory: URI): Promise<void>;
+	copyReviewedRef(sourceSession: ProtocolURI, targetSession: ProtocolURI, workingDirectory: URI): Promise<void>;
 }
 
 /**
@@ -85,7 +77,7 @@ export interface IAgentHostReviewService {
 export const NULL_REVIEW_SERVICE: IAgentHostReviewService = {
 	_serviceBrand: undefined,
 	markFileReviewed: async () => { },
-	unmarkFileReviewed: async () => { },
+	markFileUnreviewed: async () => { },
 	getReviewedPaths: async () => new Set(),
 	copyReviewedRef: async () => { },
 };

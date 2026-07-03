@@ -43,7 +43,7 @@ import { serverToolGroups } from './shared/serverToolGroups.js';
 import { AgentHostChangesetService } from './agentHostChangesetService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
 import { IAgentHostCheckpointService, NULL_CHECKPOINT_SERVICE } from '../common/agentHostCheckpointService.js';
-import { IAgentHostReviewService, NULL_REVIEW_SERVICE } from '../common/agentHostReviewService.js';
+import { IAgentHostReviewService } from '../common/agentHostReviewService.js';
 import { AgentHostChangesetCoordinator } from './agentHostChangesetCoordinator.js';
 import { AgentHostCompletions, IAgentHostCompletions } from './agentHostCompletions.js';
 import { AgentHostFileCompletionProvider } from './agentHostFileCompletionProvider.js';
@@ -70,6 +70,7 @@ import { AgentHostDiscardChangesOperationContribution } from './agentHostDiscard
 import { AgentHostReviewOperationContribution } from './agentHostReviewOperationProvider.js';
 import { AgentHostPullRequestOperationContribution } from './agentHostPullRequestOperationProvider.js';
 import { AgentHostSyncOperationContribution } from './agentHostSyncOperationProvider.js';
+import { AgentHostReviewService } from './agentHostReviewService.js';
 
 /**
  * Grace period before an empty, unsubscribed session is garbage-collected
@@ -271,7 +272,6 @@ export class AgentService extends Disposable implements IAgentService {
 		private readonly _telemetryService: ITelemetryService = NullTelemetryService,
 		_fileMonitorService?: IAgentHostFileMonitorService,
 		copilotApiService?: ICopilotApiService,
-		private readonly _reviewService: IAgentHostReviewService = NULL_REVIEW_SERVICE,
 	) {
 		super();
 		this._logService.info('AgentService initialized');
@@ -324,11 +324,6 @@ export class AgentService extends Disposable implements IAgentService {
 		// side effects can resolve it via DI.
 		services.set(IAgentHostCheckpointService, this._checkpointService);
 
-		// The review service is likewise constructed in the outer agent-host DI
-		// scope and passed via {@link _reviewService}; register it so the review
-		// operation contribution / handler can resolve it via DI.
-		services.set(IAgentHostReviewService, this._reviewService);
-
 		// The subscription service manages the lifecycle of changeset subscriptions. The service
 		// is also consulted by other services when refreshing changesets and changeset operations.
 		this._changesetSubscriptions = instantiationService.createInstance(AgentHostChangesetSubscriptionService);
@@ -337,6 +332,10 @@ export class AgentService extends Disposable implements IAgentService {
 		// The operation contribution service manages the lifecycle of changeset operations.
 		this._changesetOperationService = this._register(instantiationService.createInstance(AgentHostChangesetOperationService, this._stateManager));
 		services.set(IAgentHostChangesetOperationService, this._changesetOperationService);
+
+		// The changes review service is responsible for managing review/unreview state for changeset changes.
+		const reviewService = this._register(instantiationService.createInstance(AgentHostReviewService, this._stateManager));
+		services.set(IAgentHostReviewService, reviewService);
 
 		// The changeset service is responsible for computing, publishing, and persisting changesets.
 		this._changesets = this._register(instantiationService.createInstance(AgentHostChangesetService, this._stateManager));

@@ -249,6 +249,7 @@ export class AgentHostGitService implements IAgentHostGitService {
 		if (!repositoryRoot) {
 			return undefined;
 		}
+
 		return this._resolveBranchMergeBaseCommit(repositoryRoot, baseBranch);
 	}
 
@@ -271,10 +272,8 @@ export class AgentHostGitService implements IAgentHostGitService {
 		if (!mergeBaseCommit) {
 			mergeBaseCommit = (await this._runGit(repositoryRoot, ['rev-parse', 'HEAD']))?.trim();
 		}
-		if (!mergeBaseCommit) {
-			mergeBaseCommit = EMPTY_TREE_OBJECT;
-		}
-		return mergeBaseCommit;
+
+		return mergeBaseCommit ?? EMPTY_TREE_OBJECT;
 	}
 
 	private async _runWithTempIndex(repositoryRoot: URI, mergeBaseCommit: string, changedPaths: readonly string[]): Promise<string | undefined> {
@@ -431,8 +430,10 @@ export class AgentHostGitService implements IAgentHostGitService {
 		await this._fileService.createFolder(tempDir);
 		const indexFile = URI.joinPath(tempDir, 'index').fsPath;
 		const env: Record<string, string> = { GIT_INDEX_FILE: indexFile, COMMAND_HOOK_LOCK: '1' };
+
 		try {
-			if (await this._runGit(repositoryRoot, ['read-tree', baseTreeOid], { env, throwOnError: false }) === undefined) {
+			const readTreeOut = await this._runGit(repositoryRoot, ['read-tree', baseTreeOid], { env, throwOnError: false });
+			if (readTreeOut === undefined) {
 				return undefined;
 			}
 
@@ -442,21 +443,25 @@ export class AgentHostGitService implements IAgentHostGitService {
 			const lsTreeOut = await this._runGit(repositoryRoot, ['ls-tree', '-z', sourceTreeOid, '--', path], { env });
 			const entry = parseSingleLsTreeEntry(lsTreeOut);
 			if (entry) {
-				if (await this._runGit(repositoryRoot, ['update-index', '--add', '--cacheinfo', `${entry.mode},${entry.oid},${path}`], { env, throwOnError: false }) === undefined) {
+				const updateIndexOut = await this._runGit(repositoryRoot, ['update-index', '--add', '--cacheinfo', `${entry.mode},${entry.oid},${path}`], { env, throwOnError: false });
+				if (updateIndexOut === undefined) {
 					return undefined;
 				}
 			} else {
 				// `--force-remove` tolerates the path already being absent from
 				// the index, so removing an untracked/added path is a no-op.
-				if (await this._runGit(repositoryRoot, ['update-index', '--force-remove', '--', path], { env, throwOnError: false }) === undefined) {
+				const updateIndexOut = await this._runGit(repositoryRoot, ['update-index', '--force-remove', '--', path], { env, throwOnError: false });
+				if (updateIndexOut === undefined) {
 					return undefined;
 				}
 			}
 
-			const tree = (await this._runGit(repositoryRoot, ['write-tree'], { env }))?.trim();
-			return tree || undefined;
+			const writeTreeOut = await this._runGit(repositoryRoot, ['write-tree'], { env });
+			return writeTreeOut?.trim();
 		} finally {
-			try { await this._fileService.del(tempDir, { recursive: true, useTrash: false }); } catch { /* best-effort */ }
+			try {
+				await this._fileService.del(tempDir, { recursive: true, useTrash: false });
+			} catch { /* best-effort */ }
 		}
 	}
 
