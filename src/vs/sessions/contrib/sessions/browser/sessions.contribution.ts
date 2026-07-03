@@ -18,7 +18,7 @@ import { SessionConversationsMenuContribution, SessionNewChatActionViewItemContr
 import { SessionsView, SessionsViewId } from './views/sessionsView.js';
 import './views/sessionsViewActions.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
-import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { SESSIONS_LIST_SHOW_EMPTY_DEFAULT_GROUPS_SETTING } from './views/sessionsList.js';
 
 const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
@@ -64,7 +64,6 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			tags: ['preview'],
 			description: localize('sessions.list.showEmptyDefaultGroups', "Controls whether the default groups (Pinned, Chats) are shown in the sessions list even when they are empty."),
 			default: true,
-			scope: ConfigurationScope.APPLICATION,
 			experiment: { mode: 'auto' }
 		},
 	},
