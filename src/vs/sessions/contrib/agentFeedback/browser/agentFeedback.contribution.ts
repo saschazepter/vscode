@@ -6,6 +6,7 @@
 import './agentFeedbackEditorInputContribution.js';
 import './agentFeedbackEditorWidgetContribution.js';
 import './agentFeedbackOverviewRulerContribution.js';
+import './mainThreadAgentEditorComments.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, observableFromEvent } from '../../../../base/common/observable.js';
 import { localize } from '../../../../nls.js';
