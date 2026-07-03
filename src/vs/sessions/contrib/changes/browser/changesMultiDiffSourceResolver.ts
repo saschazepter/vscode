@@ -14,6 +14,14 @@ import { IMultiDiffSourceResolver, IMultiDiffSourceResolverService, IResolvedMul
 import { ISessionFileChange } from '../../../services/sessions/common/session.js';
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ISessionChangesService } from './sessionChangesService.js';
+import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+
+/**
+ * Per-file context key set on each entry in the changes multi-diff editor.
+ * Reflects whether the user has marked that file as reviewed, so file toolbar
+ * menu items can toggle between "Mark as Reviewed" and "Unmark as Reviewed".
+ */
+export const SessionChangesFileReviewedContext = new RawContextKey<boolean>('sessions.changesFileReviewed', false);
 
 function compareChanges(a: ISessionFileChange, b: ISessionFileChange): number {
 	const aPath = isIChatSessionFileChange2(a) ? a.uri.fsPath : a.modifiedUri.fsPath;
@@ -58,11 +66,14 @@ export class ChangesMultiDiffSourceResolver extends Disposable implements IMulti
 			owner: this,
 			equalsFn: (a, b) => arraysEqual(a, b, (x, y) =>
 				isEqual(x.originalUri, y.originalUri) &&
-				isEqual(x.modifiedUri, y.modifiedUri)),
+				isEqual(x.modifiedUri, y.modifiedUri) &&
+				x.contextKeys?.[SessionChangesFileReviewedContext.key] === y.contextKeys?.[SessionChangesFileReviewedContext.key]),
 		}, reader => {
 			const changes = changesObs.read(reader);
 			return [...changes].sort(compareChanges).map(change =>
-				new MultiDiffEditorItem(change.originalUri, change.modifiedUri, change.modifiedUri));
+				new MultiDiffEditorItem(change.originalUri, change.modifiedUri, change.modifiedUri, undefined, {
+					[SessionChangesFileReviewedContext.key]: change.reviewed ?? false,
+				}));
 		});
 
 		return { resources: new ValueWithChangeEventFromObservable(resourcesObs) };

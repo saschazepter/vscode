@@ -26,7 +26,7 @@ import { ISessionsService } from '../../../services/sessions/browser/sessionsSer
 import { SessionChangesetOperationScope, SessionChangesetOperationStatus } from '../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
 import { IChangesViewService } from '../common/changesViewService.js';
-import { ChangesMultiDiffSourceResolver } from './changesMultiDiffSourceResolver.js';
+import { ChangesMultiDiffSourceResolver, SessionChangesFileReviewedContext } from './changesMultiDiffSourceResolver.js';
 import { ISessionChangesService } from './sessionChangesService.js';
 
 // --- View All Changes action
@@ -276,9 +276,20 @@ class ChangesetOperationsActionControllerContribution extends Disposable impleme
 							precondition: operation.status === SessionChangesetOperationStatus.Disabled || operation.status === SessionChangesetOperationStatus.Running
 								? ContextKeyExpr.false()
 								: ContextKeyExpr.true(),
+							toggled: SessionChangesFileReviewedContext.isEqualTo(true),
 							menu: {
 								id: MenuId.MultiDiffEditorFileToolbar,
-								when: ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
+								// This is a temporary solution until the agent host protocol
+								// adds support to specify operations for each individual file
+								when: operation.group === 'review'
+									? operation.id === 'mark-as-reviewed'
+										? ContextKeyExpr.and(
+											ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
+											SessionChangesFileReviewedContext.isEqualTo(false))
+										: ContextKeyExpr.and(
+											ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
+											SessionChangesFileReviewedContext.isEqualTo(true))
+									: ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
 								group: 'navigation',
 								order: 100
 							}
