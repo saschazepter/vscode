@@ -451,6 +451,8 @@ suite('stateToProgressAdapter', () => {
 				// description is the TASK description from _meta, not the agent description
 				assert.strictEqual(serialized.toolSpecificData.description, 'Find related files');
 				assert.strictEqual(serialized.toolSpecificData.result, 'Agent result');
+				// The subagent chat resource is carried so the UI can offer "Open chat".
+				assert.strictEqual(serialized.toolSpecificData.chatResource, 'copilot://session/subagent/tc-1');
 			}
 		});
 
@@ -811,7 +813,7 @@ suite('stateToProgressAdapter', () => {
 			return message;
 		}
 
-		test('renders comment icon, tool name, truncated quoted preview and a reveal command link', () => {
+		test('renders tool name, truncated quoted preview and a reveal command link', () => {
 			const tc = createToolCallState({ toolName: 'addComment', invocationMessage: 'Adding comment', toolInput: addCommentInput('This comment is quite long and should be truncated') });
 			const message = markdown(toolCallStateToInvocation(tc).invocationMessage);
 
@@ -822,7 +824,7 @@ suite('stateToProgressAdapter', () => {
 					isTrusted: message.isTrusted,
 				},
 				{
-					value: `$(comment) [addComment "This comment is quit…"](command:_agentFeedbackReview.revealAt?${encodeURIComponent(JSON.stringify(['file:///workspace/a.ts', commentRange]))})`,
+					value: `[addComment "This comment is quite long and should be…"](command:_agentFeedbackReview.revealAt?${encodeURIComponent(JSON.stringify(['file:///workspace/a.ts', commentRange]))})`,
 					supportThemeIcons: true,
 					isTrusted: { enabledCommands: ['_agentFeedbackReview.revealAt'] },
 				},
