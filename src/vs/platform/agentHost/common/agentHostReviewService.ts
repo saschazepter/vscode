@@ -67,3 +67,15 @@ export interface IAgentHostReviewService {
 	 */
 	getReviewedPaths(sessionUri: URI, workingDirectory: URI, baseBranch: string | undefined): Promise<ReadonlySet<string>>;
 }
+
+/**
+ * A no-op {@link IAgentHostReviewService} used as the default for the optional
+ * `_reviewService` parameter on `AgentService` so existing test callsites keep
+ * compiling without forced fixture updates.
+ */
+export const NULL_REVIEW_SERVICE: IAgentHostReviewService = {
+	_serviceBrand: undefined,
+	markFileReviewed: async () => { },
+	unmarkFileReviewed: async () => { },
+	getReviewedPaths: async () => new Set(),
+};

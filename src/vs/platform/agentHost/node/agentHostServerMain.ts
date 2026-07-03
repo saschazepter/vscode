@@ -251,7 +251,7 @@ async function main(): Promise<void> {
 	diServices.set(IAgentHostReviewService, reviewService);
 
 	// Create the agent service (owns AgentHostStateManager + AgentSideEffects internally)
-	const agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, checkpointService, rootConfigResource, telemetryService, fileMonitorService);
+	const agentService = new AgentService(logService, fileService, sessionDataService, productService, gitService, checkpointService, rootConfigResource, telemetryService, fileMonitorService, undefined, reviewService);
 	disposables.add(agentService);
 	diServices.set(IAgentService, agentService);
 
