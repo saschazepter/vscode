@@ -6,7 +6,7 @@
 import { Sequencer } from '../../../../base/common/async.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { autorun, IReader, observableFromEvent } from '../../../../base/common/observable.js';
+import { autorun, IObservable, IReader, observableFromEvent } from '../../../../base/common/observable.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { EditorInput } from '../../../../workbench/common/editor/editorInput.js';
 import { BrowserEditorInput } from '../../../../workbench/contrib/browserView/common/browserEditorInput.js';
@@ -28,8 +28,8 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 
 	static readonly ID = 'workbench.contrib.sessions.detailPanelController';
 
-	private readonly _activeEditorObs = observableFromEvent(this, this._editorService.onDidActiveEditorChange, () => this._editorService.activeEditor);
-	private readonly _auxBarVisibleObs = observableFromEvent(this, this._layoutService.onDidChangePartVisibility, () => this._layoutService.isVisible(Parts.AUXILIARYBAR_PART));
+	private readonly _activeEditorObs: IObservable<EditorInput | undefined>;
+	private readonly _auxBarVisibleObs: IObservable<boolean>;
 	private readonly _sequencer = new Sequencer();
 	private _generation = 0;
 
@@ -41,6 +41,9 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 		@ISessionChangesService private readonly _sessionChangesService: ISessionChangesService,
 	) {
 		super();
+
+		this._activeEditorObs = observableFromEvent(this, this._editorService.onDidActiveEditorChange, () => this._editorService.activeEditor);
+		this._auxBarVisibleObs = observableFromEvent(this, this._layoutService.onDidChangePartVisibility, () => this._layoutService.isVisible(Parts.AUXILIARYBAR_PART));
 
 		this._register(autorun(reader => {
 			const target = this._computeTarget(reader);
