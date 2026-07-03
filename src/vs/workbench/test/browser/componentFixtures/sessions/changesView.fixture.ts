@@ -24,6 +24,7 @@ import { isIChatSessionFileChange2 } from '../../../../contrib/chat/common/chatS
 import { IDecorationsService } from '../../../../services/decorations/common/decorations.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
+import { ILifecycleService, LifecyclePhase, StartupKind } from '../../../../services/lifecycle/common/lifecycle.js';
 import { INotebookDocumentService } from '../../../../services/notebook/common/notebookDocumentService.js';
 import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
 import { FixtureMenuService } from '../chat/chatFixtureUtils.js';
@@ -413,6 +414,18 @@ function renderChangesView(ctx: ComponentFixtureContext, options: IChangesViewFi
 				override async openEditor(): Promise<undefined> { return undefined; }
 			}());
 			reg.defineInstance(IExtensionService, new class extends mock<IExtensionService>() { override readonly onDidChangeExtensions = Event.None; }());
+			reg.defineInstance(ILifecycleService, new class extends mock<ILifecycleService>() {
+				override readonly startupKind = StartupKind.NewWindow;
+				override phase = LifecyclePhase.Restored;
+				override readonly onBeforeShutdown = Event.None;
+				override readonly onShutdownVeto = Event.None;
+				override readonly onBeforeShutdownError = Event.None;
+				override readonly onWillShutdown = Event.None;
+				override readonly willShutdown = false;
+				override readonly onDidShutdown = Event.None;
+				override async when(): Promise<void> { }
+				override async shutdown(): Promise<void> { }
+			}());
 		},
 	});
 
