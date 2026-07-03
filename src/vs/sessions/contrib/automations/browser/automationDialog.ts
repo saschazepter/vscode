@@ -539,6 +539,12 @@ export function renderForm(
 		},
 		widgetViewKindTag: 'automations-dialog',
 		inputEditorMinLines: 3,
+		// The dialog renders the composer flush with its form column (the
+		// `.interactive-input-part` margin is zeroed in CSS), so there is no
+		// outer horizontal gutter. Without this, ChatInputPart would still
+		// reserve the default 24px margin and lay the editor out too narrow,
+		// leaving its scrollbar floating ~24px in from the right wall.
+		inputPartHorizontalPadding: 0,
 		sessionTypePickerDelegate: sessionTypeBinder,
 		workspacePickerInput: workspacePicker,
 		secondaryToolbarActionViewItemProvider: (action, itemOptions) => {
