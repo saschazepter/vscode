@@ -149,7 +149,7 @@ suite('SessionCustomizationDiscovery', () => {
 		]);
 	});
 
-	test('discover returns working-directory agents, skills, instructions, and hooks but not agent instructions', async () => {
+	test('discover returns working-directory agents, skills, instructions, hooks, and agent instructions', async () => {
 		await seed('/workspace/.github/agents/foo.agent.md', 'agent body');
 		await seed('/workspace/.github/skills/bar/SKILL.md', 'skill body');
 		await seed('/workspace/.github/instructions/baz.instructions.md', 'instruction body');
@@ -157,6 +157,7 @@ suite('SessionCustomizationDiscovery', () => {
 		await seed('/workspace/.github/copilot/settings.json', '{"hooks": {"PreToolUse": []}}');
 		await seed('/workspace/.github/copilot-instructions.md', 'workspace copilot instructions');
 		await seed('/workspace/AGENTS.md', 'workspace agents instructions');
+		await seed('/home/.copilot/copilot-instructions.md', 'user copilot instructions');
 
 		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome));
 		const client = {
@@ -193,18 +194,21 @@ suite('SessionCustomizationDiscovery', () => {
 			.map(customization => ({
 				contents: customization.contents,
 				uri: URI.parse(customization.uri).path,
+				writable: customization.writable,
 				children: (customization.children ?? []).map(child => URI.parse(child.uri).path).sort(),
 			}))
 			.sort((a, b) => a.uri.localeCompare(b.uri));
 
 		assert.deepStrictEqual(directories, [
-			{ contents: 'hook', uri: '/home/.copilot/hooks', children: [] },
-			{ contents: 'hook', uri: '/workspace/.claude', children: [] },
-			{ contents: 'agent', uri: '/workspace/.github/agents', children: ['/workspace/.github/agents/foo.agent.md'] },
-			{ contents: 'hook', uri: '/workspace/.github/copilot', children: ['/workspace/.github/copilot/settings.json'] },
-			{ contents: 'hook', uri: '/workspace/.github/hooks', children: ['/workspace/.github/hooks/pre-tool.json'] },
-			{ contents: 'rule', uri: '/workspace/.github/instructions', children: ['/workspace/.github/instructions/baz.instructions.md'] },
-			{ contents: 'skill', uri: '/workspace/.github/skills', children: ['/workspace/.github/skills/bar/SKILL.md'] },
+			{ contents: 'rule', uri: '/home', writable: false, children: ['/home/.copilot/copilot-instructions.md'] },
+			{ contents: 'hook', uri: '/home/.copilot/hooks', writable: true, children: [] },
+			{ contents: 'rule', uri: '/workspace', writable: false, children: ['/workspace/.github/copilot-instructions.md', '/workspace/AGENTS.md'] },
+			{ contents: 'hook', uri: '/workspace/.claude', writable: true, children: [] },
+			{ contents: 'agent', uri: '/workspace/.github/agents', writable: true, children: ['/workspace/.github/agents/foo.agent.md'] },
+			{ contents: 'hook', uri: '/workspace/.github/copilot', writable: true, children: ['/workspace/.github/copilot/settings.json'] },
+			{ contents: 'hook', uri: '/workspace/.github/hooks', writable: true, children: ['/workspace/.github/hooks/pre-tool.json'] },
+			{ contents: 'rule', uri: '/workspace/.github/instructions', writable: true, children: ['/workspace/.github/instructions/baz.instructions.md'] },
+			{ contents: 'skill', uri: '/workspace/.github/skills', writable: true, children: ['/workspace/.github/skills/bar/SKILL.md'] },
 		]);
 	});
 

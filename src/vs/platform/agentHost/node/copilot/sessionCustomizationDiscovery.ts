@@ -250,7 +250,10 @@ export class SessionCustomizationDiscovery extends Disposable {
 		throwIfCancelled(token);
 
 		const p: AgentsDiscoverRequest = { projectPaths: [this._workingDirectory.fsPath] };
-		const result = this.getHooksDiscoveryPaths();
+		const result = [
+			...this.getHooksDiscoveryPaths(),
+			...this.getAgentInstructionPaths(),
+		];
 
 		try {
 			const [agentDiscovery, instructionDiscovery, skillDiscovery] = await Promise.all([
@@ -339,6 +342,29 @@ export class SessionCustomizationDiscovery extends Disposable {
 		return [...byUri.values()];
 	}
 
+	private getAgentInstructionPaths(): IDiscoveredDirectory[] {
+		const toFiles = (base: URI, roots: readonly IFixedDiscoveryFile[]): IDiscoveredFile[] => {
+			const files: IDiscoveredFile[] = [];
+			for (const root of roots) {
+				if (root.type !== DiscoveredType.AgentInstruction) {
+					continue;
+				}
+				for (const filename of root.filenames) {
+					files.push({
+						uri: joinPath(base, ...root.path, filename),
+						etag: '',
+					});
+				}
+			}
+			return files.sort(compareDiscoveredFile);
+		};
+
+		return [
+			{ uri: this._workingDirectory, type: DiscoveredType.AgentInstruction, files: toFiles(this._workingDirectory, fixedDiscoveryFiles.workspace), name: '', writable: false },
+			{ uri: this._userHome, type: DiscoveredType.AgentInstruction, files: toFiles(this._userHome, fixedDiscoveryFiles.user), name: '', writable: false },
+		];
+	}
+
 	private async _updateWatchers(discoveredDirectories: readonly IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
 		const nextWatchRootUris = new ResourceMap<IWatchSpec>();
 		const toResolve = new ResourceSet();
@@ -362,6 +388,20 @@ export class SessionCustomizationDiscovery extends Disposable {
 				}
 				toResolve.add(parent);
 				current = parent;
+			}
+
+			for (const file of discoveredDir.files) {
+				throwIfCancelled(token);
+
+				let currentFilePath = file.uri;
+				while (!isEqual(currentFilePath, this._workingDirectory) && !isEqual(currentFilePath, this._userHome)) {
+					const parent = uriDirname(currentFilePath);
+					if (isEqual(parent, currentFilePath)) {
+						break;
+					}
+					toResolve.add(parent);
+					currentFilePath = parent;
+				}
 			}
 		}
 
@@ -397,6 +437,22 @@ export class SessionCustomizationDiscovery extends Disposable {
 				}
 				current = parent;
 			}
+
+			for (const file of discoveredDir.files) {
+				throwIfCancelled(token);
+
+				let currentFilePath = file.uri;
+				while (!isEqual(currentFilePath, this._workingDirectory) && !isEqual(currentFilePath, this._userHome)) {
+					const parent = uriDirname(currentFilePath);
+					if (isEqual(parent, currentFilePath)) {
+						break;
+					}
+					if (existingDirectories.has(parent)) {
+						addWatch(nextWatchRootUris, parent, false, currentFilePath);
+					}
+					currentFilePath = parent;
+				}
+			}
 		}
 
 		this._reconcileWatchers(nextWatchRootUris);
@@ -413,19 +469,18 @@ export class SessionCustomizationDiscovery extends Disposable {
 		const p: AgentsDiscoverRequest = { projectPaths: [this._workingDirectory.fsPath] };
 
 		try {
-			const [agents, rules, skills, hooks] = await Promise.all([
+			const [agents, rules, skills, hooks, agentInstructions] = await Promise.all([
 				this.discoverAgents(p, client, token),
 				this.discoverRules(p, client, token),
 				this.discoverSkills(p, client, token),
 				this.discoverHooks(token),
+				this.discoverAgentInstructions(token),
 				this._updateWatchers(this._discoveredDirectories, token)
 			]);
-
 			throwIfCancelled(token);
-
 			const result: DirectoryCustomization[] = [];
 			this.toDirectoryCustomizations(CustomizationType.Agent, agents, this._discoveredDirectories, result);
-			this.toDirectoryCustomizations(CustomizationType.Rule, rules, this._discoveredDirectories, result);
+			this.toDirectoryCustomizations(CustomizationType.Rule, [...rules, ...agentInstructions], this._discoveredDirectories, result);
 			this.toDirectoryCustomizations(CustomizationType.Skill, skills, this._discoveredDirectories, result);
 			this.toDirectoryCustomizations(CustomizationType.Hook, hooks, this._discoveredDirectories, result);
 			return result.sort(compareDirectoryCustomization);
@@ -509,6 +564,52 @@ export class SessionCustomizationDiscovery extends Disposable {
 		return hooks;
 	}
 
+	private async discoverAgentInstructions(token: CancellationToken): Promise<RuleCustomization[]> {
+		const files = await Promise.all([
+			this._discoverFixedAgentInstructionFiles(this._workingDirectory, fixedDiscoveryFiles.workspace.filter(root => root.type === DiscoveredType.AgentInstruction), token),
+			this._discoverFixedAgentInstructionFiles(this._userHome, fixedDiscoveryFiles.user.filter(root => root.type === DiscoveredType.AgentInstruction), token),
+		]);
+
+		return files
+			.flat()
+			.map(file => ({
+				type: CustomizationType.Rule,
+				alwaysApply: true,
+				id: customizationId(file.uri.toString()),
+				uri: file.uri.toString(),
+				name: basename(file.uri.path),
+			} satisfies RuleCustomization))
+			.sort((a, b) => compareStrings(a.uri, b.uri));
+	}
+
+	private async _discoverFixedAgentInstructionFiles(base: URI, roots: readonly IFixedDiscoveryFile[], token: CancellationToken): Promise<readonly IDiscoveredFile[]> {
+		const seen = new ResourceSet();
+		const files: IDiscoveredFile[] = [];
+
+		for (const root of roots) {
+			throwIfCancelled(token);
+
+			const rootUri = joinPath(base, ...root.path);
+			let stat: IFileStatWithMetadata | undefined = undefined;
+			try {
+				stat = await this._fileService.resolve(rootUri, { resolveMetadata: true });
+			} catch {
+				// Root does not exist (or is unreadable) — skip.
+			}
+
+			for (const child of stat?.children ?? []) {
+				throwIfCancelled(token);
+
+				if (child.isFile && root.filenames.includes(child.name) && !seen.has(child.resource)) {
+					seen.add(child.resource);
+					files.push({ uri: child.resource, etag: child.etag });
+				}
+			}
+		}
+
+		return files.sort(compareDiscoveredFile);
+	}
+
 	private async _discoverHookRoot(base: URI, root: ISearchRoot, seen: ResourceSet, result: IDiscoveredDirectory[], token: CancellationToken): Promise<void> {
 		const rootUri = joinPath(base, ...root.path);
 		let stat: IFileStatWithMetadata | undefined = undefined;
@@ -548,17 +649,23 @@ export class SessionCustomizationDiscovery extends Disposable {
 	}
 
 	private toDirectoryCustomizations(type: ChildCustomizationType, customizations: readonly ChildCustomization[], allDiscoveredDirectories: readonly IDiscoveredDirectory[], result: DirectoryCustomization[]): void {
-		const discoveredType = type === CustomizationType.Agent
-			? DiscoveredType.Agent
-			: type === CustomizationType.Rule
-				? DiscoveredType.Instruction
-				: type === CustomizationType.Hook
-					? DiscoveredType.Hook
-					: DiscoveredType.Skill;
-
-		const discoveredDirectories = allDiscoveredDirectories.filter(d => d.type === discoveredType);
+		const discoveredDirectories = allDiscoveredDirectories.filter(d => {
+			if (type === CustomizationType.Agent) {
+				return d.type === DiscoveredType.Agent;
+			}
+			if (type === CustomizationType.Rule) {
+				return d.type === DiscoveredType.Instruction || d.type === DiscoveredType.AgentInstruction;
+			}
+			if (type === CustomizationType.Hook) {
+				return d.type === DiscoveredType.Hook;
+			}
+			return d.type === DiscoveredType.Skill;
+		});
+		const outputDirectories = type === CustomizationType.Rule
+			? discoveredDirectories.filter(d => d.type !== DiscoveredType.AgentInstruction || isEqual(d.uri, this._workingDirectory) || isEqual(d.uri, this._userHome))
+			: discoveredDirectories;
 		const byParent = new ResourceMap<{ readonly uri: URI; readonly name: string; readonly writable: boolean; readonly children: ChildCustomization[] }>();
-		for (const discoveredDirectory of discoveredDirectories) {
+		for (const discoveredDirectory of outputDirectories) {
 			byParent.set(discoveredDirectory.uri, {
 				uri: discoveredDirectory.uri,
 				name: discoveredDirectory.name || basename(discoveredDirectory.uri.path),
@@ -573,9 +680,12 @@ export class SessionCustomizationDiscovery extends Disposable {
 			}
 
 			const childUri = URI.parse(customization.uri);
-			let bestParent = discoveredDirectories.find(d => isEqualOrParent(childUri, d.uri));
+			let bestParent = outputDirectories.find(d => isEqualOrParent(childUri, d.uri));
+			if (!bestParent && customization.type === CustomizationType.Rule && customization.alwaysApply && customization.name.match(/\.md$/i)) {
+				bestParent = outputDirectories.find(d => d.type === DiscoveredType.AgentInstruction);
+			}
 			if (bestParent) {
-				for (const candidate of discoveredDirectories) {
+				for (const candidate of outputDirectories) {
 					if (isEqualOrParent(childUri, candidate.uri) && candidate.uri.path.length > bestParent.uri.path.length) {
 						bestParent = candidate;
 					}
