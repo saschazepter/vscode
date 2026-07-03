@@ -58,8 +58,6 @@ export function diffToChange(file: ChangesetFile, mapUri?: (uri: URI) => URI): I
 
 	// Extract reviewed status from meta
 	const meta = readChangesetFileMeta(file);
-	const reviewed = meta?.reviewed !== undefined
-		? meta?.reviewed : undefined;
 
 	return {
 		uri,
@@ -67,7 +65,7 @@ export function diffToChange(file: ChangesetFile, mapUri?: (uri: URI) => URI): I
 		originalUri,
 		insertions: file.edit?.diff?.added ?? 0,
 		deletions: file.edit?.diff?.removed ?? 0,
-		reviewed
+		reviewed: meta?.reviewed
 	} satisfies IChatSessionFileChange2;
 }
 

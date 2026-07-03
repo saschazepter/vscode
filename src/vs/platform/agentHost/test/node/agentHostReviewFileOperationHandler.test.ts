@@ -107,7 +107,7 @@ suite('AgentHostReviewFileOperationHandler', () => {
 			refreshedSessions,
 			message: result.message,
 		}, {
-			markCalls: [{ sessionUri: session.toString(), workingDirectory: URI.file('/repo').toString(), baseBranch: 'main', resource: target.toString() }],
+			markCalls: [{ session: session.toString(), workingDirectory: URI.file('/repo').toString(), baseBranch: 'main', resource: target.toString() }],
 			unmarkCalls: [],
 			refreshedSessions: [session.toString()],
 			message: { markdown: 'Marked `file.ts` as reviewed.' },
@@ -131,7 +131,7 @@ suite('AgentHostReviewFileOperationHandler', () => {
 			message: result.message,
 		}, {
 			markCalls: [],
-			unmarkCalls: [{ sessionUri: session.toString(), workingDirectory: URI.file('/repo').toString(), baseBranch: undefined, resource: target.toString() }],
+			unmarkCalls: [{ session: session.toString(), workingDirectory: URI.file('/repo').toString(), baseBranch: undefined, resource: target.toString() }],
 			refreshedSessions: [session.toString()],
 			message: { markdown: 'Removed the reviewed mark from `file.ts`.' },
 		});
