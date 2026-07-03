@@ -33,7 +33,7 @@ import {
 } from '../common/state/sessionState.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
 import { IAgentConfigurationService } from './agentConfigurationService.js';
-import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../common/agentHostGitService.js';
+import { IAgentHostGitService, META_DIFF_BASE_BRANCH, resolveDiffBaseBranchName } from '../common/agentHostGitService.js';
 import { IAgentHostCheckpointService } from '../common/agentHostCheckpointService.js';
 import { NodeWorkerDiffComputeService } from './diffComputeService.js';
 import { computeSessionDiffs, computeTurnDiffs, computeUnionedDiffs, type IIncrementalDiffOptions, type ISessionDiffSource } from './sessionDiffAggregator.js';
@@ -1034,7 +1034,7 @@ export class AgentHostChangesetService extends Disposable implements IAgentHostC
 		// Branch
 		const persistedBaseBranch = await db.getMetadata(META_DIFF_BASE_BRANCH);
 		const gitStateBaseBranch = readSessionGitState(this._stateManager.getSessionState(session)?._meta)?.baseBranchName;
-		const baseBranch = persistedBaseBranch ?? gitStateBaseBranch;
+		const baseBranch = resolveDiffBaseBranchName(persistedBaseBranch, gitStateBaseBranch);
 		if (!persistedBaseBranch && gitStateBaseBranch) {
 			this._logService.debug(`[AgentHostChangesetService] Using _meta.git base branch fallback for Branch Changes in ${session}: ${gitStateBaseBranch}`);
 		}

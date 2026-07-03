@@ -686,3 +686,73 @@ suite('AgentHostGitService - overlayPathIntoTree (real git)', () => {
 		assert.strictEqual(result, undefined);
 	});
 });
+
+suite('AgentHostGitService - resolveBranchBaselineCommit (real git)', () => {
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	const hasGit = (() => {
+		try { cp.execFileSync('git', ['--version'], { stdio: 'ignore' }); return true; } catch { return false; }
+	})();
+
+	let tmpRoot: string | undefined;
+	let svc: AgentHostGitService | undefined;
+	const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+
+	setup(() => {
+		tmpRoot = undefined;
+		svc = createGitService(disposables);
+	});
+
+	teardown(() => {
+		rmDirWithRetry(tmpRoot);
+	});
+
+	function initRepo(): (...args: string[]) => Buffer {
+		tmpRoot = mkdtempSync(join(tmpdir(), 'agent-host-git-baseline-'));
+		const run = (...args: string[]) => cp.execFileSync('git', args, { cwd: tmpRoot!, env, stdio: 'pipe' });
+		run('init', '-q', '-b', 'main');
+		return run;
+	}
+
+	(hasGit ? test : test.skip)('returns the merge-base of HEAD and the base branch', async () => {
+		const fs = await import('fs/promises');
+		const run = initRepo();
+		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'base\n');
+		run('add', '.');
+		run('commit', '-q', '-m', 'base');
+		const baseCommit = run('rev-parse', 'HEAD').toString().trim();
+
+		// Diverge onto a feature branch with an extra commit.
+		run('checkout', '-q', '-b', 'feature');
+		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'feature\n');
+		run('commit', '-q', '-am', 'feature');
+
+		const result = await svc!.resolveBranchBaselineCommit(URI.file(tmpRoot!), 'main');
+		assert.strictEqual(result, baseCommit);
+	});
+
+	(hasGit ? test : test.skip)('falls back to HEAD when no base branch is given', async () => {
+		const fs = await import('fs/promises');
+		const run = initRepo();
+		await fs.writeFile(join(tmpRoot!, 'a.txt'), 'base\n');
+		run('add', '.');
+		run('commit', '-q', '-m', 'base');
+		const headCommit = run('rev-parse', 'HEAD').toString().trim();
+
+		const result = await svc!.resolveBranchBaselineCommit(URI.file(tmpRoot!));
+		assert.strictEqual(result, headCommit);
+	});
+
+	(hasGit ? test : test.skip)('falls back to the empty tree for a repo with no commits', async () => {
+		initRepo();
+		const result = await svc!.resolveBranchBaselineCommit(URI.file(tmpRoot!));
+		assert.strictEqual(result, '4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+	});
+
+	(hasGit ? test : test.skip)('returns undefined for a non-git directory', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'agent-host-nongit-baseline-'));
+		tmpRoot = dir;
+		const result = await svc!.resolveBranchBaselineCommit(URI.file(dir), 'main');
+		assert.strictEqual(result, undefined);
+	});
+});

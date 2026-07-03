@@ -239,6 +239,7 @@ export function createNoopGitService(): import('../../common/agentHostGitService
 		push: async () => { },
 		getSessionGitState: async () => undefined,
 		computeSessionFileDiffs: async () => undefined,
+		resolveBranchBaselineCommit: async () => undefined,
 		showBlob: async () => undefined,
 		captureWorkingTreeAsTree: async () => undefined,
 		commitTree: async () => undefined,

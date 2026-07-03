@@ -216,24 +216,8 @@ export class AgentHostGitService implements IAgentHostGitService {
 			return undefined;
 		}
 
-		// Resolve the merge-base commit. With a base branch, prefer the
-		// corresponding origin/<base> remote-tracking ref when it exists so
-		// branch changes match a PR-style comparison even if the local base
-		// branch is stale. Without a usable base, fall back to HEAD itself,
-		// which surfaces uncommitted work but no committed-on-branch work -
-		// the best we can do without context. For empty repos with no HEAD,
-		// fall back to the well-known empty-tree object.
-		let mergeBaseCommit: string | undefined;
-		if (options.baseBranch) {
-			const baseBranch = await this._resolveRemoteTrackingBranch(repositoryRoot, options.baseBranch) ?? options.baseBranch;
-			mergeBaseCommit = (await this._runGit(repositoryRoot, ['merge-base', 'HEAD', baseBranch]))?.trim();
-		}
-		if (!mergeBaseCommit) {
-			mergeBaseCommit = (await this._runGit(repositoryRoot, ['rev-parse', 'HEAD']))?.trim();
-		}
-		if (!mergeBaseCommit) {
-			mergeBaseCommit = EMPTY_TREE_OBJECT;
-		}
+		// Resolve the merge-base commit the Branch Changes diff is anchored on.
+		const mergeBaseCommit = await this._resolveBranchMergeBaseCommit(repositoryRoot, options.baseBranch);
 
 		// Detect whether the working tree has any untracked files. If so we
 		// have to use the temp-index trick so the untracked content is
@@ -258,6 +242,39 @@ export class AgentHostGitService implements IAgentHostGitService {
 		}
 
 		return parseGitDiffRawNumstat(rawDiffOutput, repositoryRoot, options.sessionUri, mergeBaseCommit);
+	}
+
+	async resolveBranchBaselineCommit(workingDirectory: URI, baseBranch?: string): Promise<string | undefined> {
+		const repositoryRoot = await this.getRepositoryRoot(workingDirectory);
+		if (!repositoryRoot) {
+			return undefined;
+		}
+		return this._resolveBranchMergeBaseCommit(repositoryRoot, baseBranch);
+	}
+
+	/**
+	 * Resolves the merge-base commit-ish the Branch Changes baseline is anchored
+	 * on. With a base branch, prefers the corresponding `origin/<base>`
+	 * remote-tracking ref when it exists so branch changes match a PR-style
+	 * comparison even if the local base branch is stale. Without a usable base,
+	 * falls back to `HEAD` (surfaces uncommitted work but no committed-on-branch
+	 * work). For empty repos with no `HEAD`, falls back to the empty-tree object.
+	 * Always resolves to a commit-ish (never `undefined`) once the repository
+	 * root is known.
+	 */
+	private async _resolveBranchMergeBaseCommit(repositoryRoot: URI, baseBranch?: string): Promise<string> {
+		let mergeBaseCommit: string | undefined;
+		if (baseBranch) {
+			const resolvedBase = await this._resolveRemoteTrackingBranch(repositoryRoot, baseBranch) ?? baseBranch;
+			mergeBaseCommit = (await this._runGit(repositoryRoot, ['merge-base', 'HEAD', resolvedBase]))?.trim();
+		}
+		if (!mergeBaseCommit) {
+			mergeBaseCommit = (await this._runGit(repositoryRoot, ['rev-parse', 'HEAD']))?.trim();
+		}
+		if (!mergeBaseCommit) {
+			mergeBaseCommit = EMPTY_TREE_OBJECT;
+		}
+		return mergeBaseCommit;
 	}
 
 	private async _runWithTempIndex(repositoryRoot: URI, mergeBaseCommit: string, changedPaths: readonly string[]): Promise<string | undefined> {
