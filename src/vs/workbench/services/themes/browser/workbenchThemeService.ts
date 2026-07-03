@@ -536,7 +536,6 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 	}
 
 	public async restoreColorTheme(): Promise<boolean> {
-		console.log('restoreColorTheme');
 		return this.colorThemeSequencer.queue(async () => {
 			const settingId = this.settings.colorTheme;
 			const theme = this.colorThemeRegistry.findThemeBySettingsId(settingId);
