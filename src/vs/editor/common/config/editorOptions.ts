@@ -716,7 +716,7 @@ export interface IEditorOptions {
 	 * Enable experimental rendering using WebGPU.
 	 * Defaults to 'off'.
 	 */
-	experimentalGpuAcceleration?: 'on' | 'off';
+	experimentalGpuAcceleration?: 'on' | 'off' | 'editorView';
 	/**
 	 * Enable experimental whitespace rendering.
 	 * Defaults to 'svg'.
@@ -6264,13 +6264,14 @@ export const EditorOptions = {
 	stickyScroll: register(new EditorStickyScroll()),
 	experimentalGpuAcceleration: register(new EditorStringEnumOption(
 		EditorOption.experimentalGpuAcceleration, 'experimentalGpuAcceleration',
-		'off' as 'off' | 'on',
-		['off', 'on'] as const,
+		'off' as 'off' | 'on' | 'editorView',
+		['off', 'on', 'editorView'] as const,
 		{
 			tags: ['experimental'],
 			enumDescriptions: [
 				nls.localize('experimentalGpuAcceleration.off', "Use regular DOM-based rendering."),
 				nls.localize('experimentalGpuAcceleration.on', "Use GPU acceleration."),
+				nls.localize('experimentalGpuAcceleration.editorView', "Use the experimental @vscode/editor-view (Rust/WASM) GPU renderer."),
 			],
 			description: nls.localize('experimentalGpuAcceleration', "Controls whether to use the experimental GPU acceleration to render the editor.")
 		}

@@ -57,6 +57,7 @@ import { IInstantiationService } from '../../platform/instantiation/common/insta
 import { IColorTheme, getThemeTypeSelector } from '../../platform/theme/common/themeService.js';
 import { ViewGpuContext } from './gpu/viewGpuContext.js';
 import { ViewLinesGpu } from './viewParts/viewLinesGpu/viewLinesGpu.js';
+import { EditorViewGpu } from './viewParts/editorViewGpu/editorViewGpu.js';
 import { AbstractEditContext } from './controller/editContext/editContext.js';
 import { IClipboardCopyEvent, IClipboardPasteEvent } from './controller/editContext/clipboardUtils.js';
 import { IVisibleRangeProvider, TextAreaEditContext } from './controller/editContext/textArea/textAreaEditContext.js';
@@ -95,6 +96,9 @@ export class View extends ViewEventHandler {
 	// The view lines
 	private readonly _viewLines: ViewLines;
 	private readonly _viewLinesGpu?: ViewLinesGpu;
+
+	// Experimental @vscode/editor-view (Rust/WASM) renderer
+	private readonly _editorViewGpu?: EditorViewGpu;
 
 	// These are parts, but we must do some API related calls on them, so we keep a reference
 	private readonly _viewZones: ViewZones;
@@ -188,8 +192,12 @@ export class View extends ViewEventHandler {
 		// Set role 'code' for better screen reader support https://github.com/microsoft/vscode/issues/93438
 		this.domNode.setAttribute('role', 'code');
 
-		if (this._context.configuration.options.get(EditorOption.experimentalGpuAcceleration) === 'on') {
+		const gpuAcceleration = this._context.configuration.options.get(EditorOption.experimentalGpuAcceleration);
+		if (gpuAcceleration === 'on') {
 			this._viewGpuContext = this._instantiationService.createInstance(ViewGpuContext, this._context);
+		} else if (gpuAcceleration === 'editorView') {
+			this._editorViewGpu = new EditorViewGpu(this._context);
+			this._viewParts.push(this._editorViewGpu);
 		}
 
 		this._scrollbar = new EditorScrollbar(this._context, this._linesContent, this.domNode, this._overflowGuardContainer);
@@ -282,6 +290,9 @@ export class View extends ViewEventHandler {
 		this._overflowGuardContainer.appendChild(this._scrollbar.getDomNode());
 		if (this._viewGpuContext) {
 			this._overflowGuardContainer.appendChild(this._viewGpuContext.canvas);
+		}
+		if (this._editorViewGpu) {
+			this._overflowGuardContainer.appendChild(this._editorViewGpu.canvas);
 		}
 		this._overflowGuardContainer.appendChild(scrollDecoration.getDomNode());
 		this._overflowGuardContainer.appendChild(this._overlayWidgets.getDomNode());
@@ -632,8 +643,17 @@ export class View extends ViewEventHandler {
 			renderText: (viewportData: ViewportData): [ViewPart[], RenderingContext] => {
 
 				if (this._viewLines.shouldRender()) {
-					this._viewLines.renderText(viewportData);
-					this._viewLines.onDidRender();
+					if (this._editorViewGpu) {
+						// editorView mode: the @vscode/editor-view canvas renders
+						// the text, so skip the DOM view-lines work entirely (the
+						// per-line DOM build in `renderText` is the expensive
+						// part). We still consume the render flag so the frame
+						// loop doesn't keep re-scheduling.
+						this._viewLines.onDidRender();
+					} else {
+						this._viewLines.renderText(viewportData);
+						this._viewLines.onDidRender();
+					}
 				}
 
 				if (this._viewLinesGpu?.shouldRender()) {

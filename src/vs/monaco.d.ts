@@ -3871,7 +3871,7 @@ declare namespace monaco.editor {
 		 * Enable experimental rendering using WebGPU.
 		 * Defaults to 'off'.
 		 */
-		experimentalGpuAcceleration?: 'on' | 'off';
+		experimentalGpuAcceleration?: 'on' | 'off' | 'editorView';
 		/**
 		 * Enable experimental whitespace rendering.
 		 * Defaults to 'svg'.
@@ -5313,7 +5313,7 @@ declare namespace monaco.editor {
 		editContext: IEditorOption<EditorOption.editContext, boolean>;
 		renderRichScreenReaderContent: IEditorOption<EditorOption.renderRichScreenReaderContent, boolean>;
 		stickyScroll: IEditorOption<EditorOption.stickyScroll, Readonly<Required<IEditorStickyScrollOptions>>>;
-		experimentalGpuAcceleration: IEditorOption<EditorOption.experimentalGpuAcceleration, 'on' | 'off'>;
+		experimentalGpuAcceleration: IEditorOption<EditorOption.experimentalGpuAcceleration, 'on' | 'off' | 'editorView'>;
 		experimentalWhitespaceRendering: IEditorOption<EditorOption.experimentalWhitespaceRendering, 'off' | 'svg' | 'font'>;
 		extraEditorClassName: IEditorOption<EditorOption.extraEditorClassName, string>;
 		fastScrollSensitivity: IEditorOption<EditorOption.fastScrollSensitivity, number>;
