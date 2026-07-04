@@ -3768,13 +3768,15 @@ suite('AgentHostChatContribution', () => {
 
 			await timeout(10);
 
-			// The tool call should have produced a ChatToolInvocation in WaitingForConfirmation state
-			// After toolCallStart (Streaming) and toolCallReady without confirmed (PendingConfirmation),
-			// the handler emits two progress events — we want the last one (with confirmation).
+			// After toolCallStart (Streaming) and toolCallReady without
+			// `confirmed` (PendingConfirmation), the streaming invocation is
+			// driven into WaitingForConfirmation in place — exactly ONE card,
+			// not a settled placeholder plus a replacement (#314858).
 			const toolInvocations = collected.flat().filter(p => p.kind === 'toolInvocation');
-			assert.ok(toolInvocations.length >= 1, 'Should have received tool confirmation progress');
-			const permInvocation = toolInvocations[toolInvocations.length - 1] as IChatToolInvocation;
+			assert.strictEqual(toolInvocations.length, 1, 'Should have exactly one tool invocation card');
+			const permInvocation = toolInvocations[0] as IChatToolInvocation;
 			assert.strictEqual(permInvocation.kind, 'toolInvocation');
+			assert.strictEqual(permInvocation.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation);
 
 			// Confirm the tool
 			IChatToolInvocation.confirmWith(permInvocation, { type: ToolConfirmKind.UserAction });
@@ -3843,7 +3845,8 @@ suite('AgentHostChatContribution', () => {
 
 			await timeout(10);
 			const toolInvocations = collected.flat().filter(p => p.kind === 'toolInvocation');
-			const permInvocation = toolInvocations[toolInvocations.length - 1] as IChatToolInvocation;
+			assert.strictEqual(toolInvocations.length, 1, 'Should have exactly one tool invocation card');
+			const permInvocation = toolInvocations[0] as IChatToolInvocation;
 			assert.strictEqual(permInvocation.toolSpecificData?.kind, 'input');
 			const inputData = permInvocation.toolSpecificData as IChatToolInputInvocationData;
 			assert.deepStrictEqual(inputData.rawInput, { input: 'echo hello' });
@@ -3852,6 +3855,53 @@ suite('AgentHostChatContribution', () => {
 			await timeout(10);
 			fire({ type: 'chat/turnComplete', session, turnId } as ChatAction);
 			await turnPromise;
+		}));
+
+		test('terminal command needing confirmation renders exactly one card (#314858)', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+
+			const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables);
+
+			// A terminal command streams its arguments first, then requests
+			// confirmation. Firing start and ready in separate ticks exercises
+			// the Streaming → PendingConfirmation transition that used to emit a
+			// settled placeholder plus a replacement confirmation card.
+			fire({ type: 'chat/toolCallStart', session, turnId, toolCallId: 'tc-term-confirm', toolName: 'bash', displayName: 'Bash', _meta: { toolKind: 'terminal', language: 'shellscript' } } as ChatAction);
+			await timeout(1);
+			fire({
+				type: 'chat/toolCallReady', session, turnId, toolCallId: 'tc-term-confirm',
+				invocationMessage: 'Running `rm -rf build`', toolInput: 'rm -rf build', confirmationTitle: 'Run command?',
+			} as ChatAction);
+			await timeout(10);
+
+			// Exactly one card — a terminal confirmation — not two.
+			const toolInvocations = collected.flat().filter(p => p.kind === 'toolInvocation') as IChatToolInvocation[];
+			assert.strictEqual(toolInvocations.length, 1, 'exactly one terminal confirmation card');
+			const inv = toolInvocations[0];
+			assert.strictEqual(inv.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation);
+			assert.strictEqual(inv.toolSpecificData?.kind, 'terminal');
+
+			// Confirm → exactly one dispatch, then echo Running and complete.
+			IChatToolInvocation.confirmWith(inv, { type: ToolConfirmKind.UserAction });
+			await timeout(10);
+			const confirmed = agentHostService.dispatchedActions.filter(a =>
+				a.action.type === 'chat/toolCallConfirmed' && (a.action as IToolCallConfirmedAction).toolCallId === 'tc-term-confirm');
+			assert.strictEqual(confirmed.length, 1, 'exactly one toolCallConfirmed dispatch');
+
+			agentHostService.fireAction({
+				channel: confirmed[0].channel.toString(), action: confirmed[0].action,
+				serverSeq: 100, origin: { clientId: agentHostService.clientId, clientSeq: confirmed[0].clientSeq },
+			});
+			fire({
+				type: 'chat/toolCallComplete', session, turnId, toolCallId: 'tc-term-confirm',
+				result: { success: true, pastTenseMessage: 'Ran command', content: [{ type: 'text', text: 'done\n' }] },
+			} as ChatAction);
+			fire({ type: 'chat/turnComplete', session, turnId } as ChatAction);
+			await turnPromise;
+
+			// Still exactly one card across the whole turn.
+			const finalInvocations = collected.flat().filter(p => p.kind === 'toolInvocation');
+			assert.strictEqual(finalInvocations.length, 1, 'still exactly one card across the whole turn');
 		}));
 
 		test('read permission shows input-style confirmation data', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -3886,13 +3936,15 @@ suite('AgentHostChatContribution', () => {
 			// from a `tc.status` *transition*, not from invocation-state
 			// comparison.
 			//
-			// Baseline (bug-free) flow for a tool needing initial confirmation:
-			//   toolCallStart      → emit placeholder invocation (count=1)
-			//   toolCallReady      → status: Streaming → PendingConfirmation,
-			//                        settle placeholder, emit confirm invocation (count=2)
+			// Baseline (bug-free) flow for a tool needing initial confirmation
+			// (Option A single-card streaming, #314858):
+			//   toolCallStart      → emit streaming invocation (count=1)
+			//   toolCallReady      → Streaming → PendingConfirmation: drive the
+			//                        SAME invocation into WaitingForConfirmation
+			//                        via transitionFromStreaming (count stays 1)
 			//   user confirms      → invocation.state: WaitingForConfirmation → Executing
-			//                        (count must NOT change — this is the regression)
-			//   server echoes      → tc.status: PendingConfirmation → Running (count=2)
+			//                        (count must NOT change)
+			//   server echoes      → tc.status: PendingConfirmation → Running (count=1)
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
 
 			const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables);
@@ -3905,6 +3957,7 @@ suite('AgentHostChatContribution', () => {
 			await timeout(10);
 
 			const beforeConfirm = collected.flat().filter(p => p.kind === 'toolInvocation') as IChatToolInvocation[];
+			assert.strictEqual(beforeConfirm.length, 1, 'a single confirmation card is emitted for the streaming tool');
 			const permInvocation = beforeConfirm[beforeConfirm.length - 1];
 			assert.strictEqual(permInvocation.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation);
 

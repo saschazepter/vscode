@@ -88,7 +88,7 @@ import { AgentHostSessionReferenceAttachmentDisplayKind, AgentHostSessionReferen
 import { buildHostLocalEventsPath } from '../../copilotCliEventsUri.js';
 import { toolDataToDefinition } from './agentHostToolUtils.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
-import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, formatTurnResponseDetails, getTerminalContentUri, isSubagentTool, makeAhpTerminalToolSessionId, messageAttachmentsToVariableData, messageToVariableData, parseAhpTerminalToolSessionId, rawMarkdownToString, rewriteAgentHostLinkTarget, stringOrMarkdownToString, systemNotificationToChatPart, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, usageInfoToChatUsage, usageInfoToQuotas, type IToolCallFileEdit, type TurnModelLookup } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, formatTurnResponseDetails, getTerminalContentUri, isSubagentTool, makeAhpTerminalToolSessionId, messageAttachmentsToVariableData, messageToVariableData, parseAhpTerminalToolSessionId, rawMarkdownToString, rewriteAgentHostLinkTarget, stringOrMarkdownToString, systemNotificationToChatPart, toolCallStateToInvocation, toolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, turnsToHistory, updateRunningToolSpecificData, usageInfoToChatUsage, usageInfoToQuotas, type IToolCallFileEdit, type TurnModelLookup } from './stateToProgressAdapter.js';
 import { resolveMcpServerAuthentication, agentHostMcpServerId } from './agentHostAuth.js';
 export { toolDataToDefinition };
 
@@ -2224,9 +2224,20 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const toolCallId = initial.toolCallId;
 		const subAgentInvocationId = opts.subAgentInvocationId;
 		const adopted = opts.adoptInvocations?.get(toolCallId);
-		let invocation = adopted
-			?? toolCallStateToInvocation(initial, subAgentInvocationId, opts.backendSession, this._config.connectionAuthority);
-		if (!adopted) {
+		// Tools that stream their arguments (reliably: terminal/bash commands)
+		// are first observed in `Streaming`. Represent them with a native
+		// streaming `ChatToolInvocation` and later drive it through
+		// `transitionFromStreaming` (see the autorun below), so a single card
+		// spans the whole lifecycle instead of a settled placeholder plus a
+		// separate confirmation card (#314858).
+		let invocation: ChatToolInvocation;
+		if (adopted) {
+			invocation = adopted;
+		} else if (initial.status === ToolCallStatus.Streaming) {
+			invocation = toolCallStateToStreamingInvocation(initial, subAgentInvocationId);
+			opts.sink([invocation]);
+		} else {
+			invocation = toolCallStateToInvocation(initial, subAgentInvocationId, opts.backendSession, this._config.connectionAuthority);
 			opts.sink([invocation]);
 		}
 
@@ -2291,31 +2302,53 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
 		};
 
-		// Initial confirmation hookup. The autorun below only handles
-		// *transitions* back into `PendingConfirmation` (server-driven
-		// re-confirmation), not the initial state, because
-		// `toolCallStateToInvocation` already created the invocation in
-		// `WaitingForConfirmation`. Without this explicit call, no listener
-		// would observe the user's confirmation answer.
+		// Initial confirmation hookup. This handles a tool first observed
+		// *already* in `PendingConfirmation` (created directly by
+		// `toolCallStateToInvocation` in `WaitingForConfirmation`). Tools first
+		// observed in `Streaming` get their confirmation hookup later, when the
+		// autorun drives them out of the native streaming state. Without this
+		// explicit call, no listener would observe the user's confirmation
+		// answer.
 		if (initial.status === ToolCallStatus.PendingConfirmation && !IChatToolInvocation.isComplete(invocation)) {
 			this._awaitToolConfirmation(invocation, toolCallId, opts.backendSession, opts.turnId, opts.cancellationToken, initial.options, opts.chatURI);
 		}
 		tryObserveSubagent(initial);
 
-		// Stream subsequent status transitions. Re-confirmation is detected
-		// from a `tc.status` transition (Running → PendingConfirmation), not
-		// from comparing against `invocation.state`: the user's local
-		// confirmation flips `invocation.state` to `Executing` before the
-		// server echoes Running, and a state-comparison check would
-		// spuriously trigger re-confirmation in that gap.
+		// Stream subsequent status transitions. Two distinct confirmation
+		// paths must not be conflated:
+		//   - First-time confirmation of a streaming tool (`Streaming →
+		//     PendingConfirmation`) drives the *same* invocation out of the
+		//     native streaming state via `transitionFromStreaming` — no second
+		//     card (#314858).
+		//   - Genuine server re-confirmation (`Running → PendingConfirmation`,
+		//     e.g. write confirmation after edit) settles the old invocation
+		//     and emits a fresh one.
+		// Re-confirmation is detected from a `tc.status` transition, not from
+		// comparing against `invocation.state`: the user's local confirmation
+		// flips `invocation.state` to `Executing` before the server echoes
+		// Running, and a state-comparison check would spuriously trigger
+		// re-confirmation in that gap.
 		let previousStatus: ToolCallStatus | undefined;
 		store.add(autorun(reader => {
 			const tc = part$.read(reader).toolCall;
 			const status = tc.status;
-			const isReconfirmation = previousStatus !== undefined
+			// First transition out of the native `Streaming` state. Read
+			// `invocation.state` untracked (`.read(undefined)`): subscribing
+			// here would re-run this autorun on the user's local confirmation
+			// and race the server echo.
+			const leftStreaming = invocation.state.read(undefined).type === IChatToolInvocation.StateKind.Streaming
+				&& status !== ToolCallStatus.Streaming;
+			const isReconfirmation = !leftStreaming
+				&& previousStatus !== undefined
 				&& previousStatus !== ToolCallStatus.PendingConfirmation
 				&& status === ToolCallStatus.PendingConfirmation;
 			previousStatus = status;
+
+			if (leftStreaming) {
+				// Drive the streaming invocation into its confirmation/running
+				// presentation. Hooks up confirmation when the tool needs it.
+				this._transitionStreamingToolInvocation(invocation, tc, opts);
+			}
 
 			if (isReconfirmation) {
 				// Server bounced the call back to PendingConfirmation
@@ -2354,6 +2387,26 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				invocation.didExecuteTool(undefined);
 			}
 		}));
+	}
+
+	/**
+	 * Drives a tool invocation out of the native {@link
+	 * IChatToolInvocation.StateKind.Streaming} state once its AHP status leaves
+	 * `Streaming`. Reuses {@link toolCallStateToPreparedInvocation} so the
+	 * confirmation, terminal, and other `toolSpecificData` rendering matches a
+	 * tool first observed past `Streaming`, then wires up confirmation when the
+	 * tool needs it.
+	 */
+	private _transitionStreamingToolInvocation(
+		invocation: ChatToolInvocation,
+		tc: ToolCallState,
+		opts: IObserveTurnOptions,
+	): void {
+		const prepared = toolCallStateToPreparedInvocation(tc, opts.backendSession, this._config.connectionAuthority);
+		invocation.transitionFromStreaming(prepared, undefined, undefined);
+		if (tc.status === ToolCallStatus.PendingConfirmation && !IChatToolInvocation.isComplete(invocation)) {
+			this._awaitToolConfirmation(invocation, tc.toolCallId, opts.backendSession, opts.turnId, opts.cancellationToken, tc.options, opts.chatURI);
+		}
 	}
 
 	/**

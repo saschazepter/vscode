@@ -12,7 +12,7 @@ import { fromAgentHostUri } from '../../../../../../platform/agentHost/common/ag
 import { MessageKind, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, type ActiveTurn, type ICompletedToolCall, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, type IChatMarkdownContent, type IChatThinkingPart, type IChatUsage } from '../../../common/chatService/chatService.js';
 import { isToolResultInputOutputDetails, type IToolResultInputOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
-import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, toolCallStateToPreparedInvocation as rawToolCallStateToPreparedInvocation, toolCallStateToStreamingInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 
 // ---- Helper factories -------------------------------------------------------
 
@@ -59,6 +59,10 @@ function message(text: string, kind = MessageKind.User): Message {
 
 function toolCallStateToInvocation(tc: Parameters<typeof rawToolCallStateToInvocation>[0], subAgentInvocationId?: string) {
 	return rawToolCallStateToInvocation(tc, subAgentInvocationId, URI.file('/'), 'local');
+}
+
+function toolCallStateToPreparedInvocation(tc: Parameters<typeof rawToolCallStateToPreparedInvocation>[0]) {
+	return rawToolCallStateToPreparedInvocation(tc, URI.file('/'), 'local');
 }
 
 function finalizeToolInvocation(invocation: Parameters<typeof rawFinalizeToolInvocation>[0], tc: Parameters<typeof rawFinalizeToolInvocation>[1]) {
@@ -875,6 +879,54 @@ suite('stateToProgressAdapter', () => {
 				const tc = createToolCallState({ toolName: 'addComment', invocationMessage: 'Adding comment', toolInput: JSON.stringify({ resourceUri: 'file:///workspace/a.ts', range, text: 'hi' }) });
 				assert.strictEqual(toolCallStateToInvocation(tc).invocationMessage, 'Adding comment', JSON.stringify(range));
 			}
+		});
+	});
+
+	suite('streaming tool invocations (#314858)', () => {
+
+		type AnyToolCallState = Parameters<typeof rawToolCallStateToPreparedInvocation>[0];
+
+		test('toolCallStateToStreamingInvocation starts in the native Streaming state', () => {
+			const tc: AnyToolCallState = { toolCallId: 'tc-stream', toolName: 'bash', displayName: 'Bash', status: ToolCallStatus.Streaming };
+			const invocation = toolCallStateToStreamingInvocation(tc, undefined);
+			assert.strictEqual(invocation.toolCallId, 'tc-stream');
+			assert.strictEqual(invocation.toolId, 'bash');
+			assert.strictEqual(invocation.state.get().type, IChatToolInvocation.StateKind.Streaming);
+			assert.strictEqual(IChatToolInvocation.isComplete(invocation), false);
+		});
+
+		test('transitionFromStreaming with a pending terminal prepared invocation yields a single terminal confirmation card', () => {
+			// A terminal command streamed its args, then requested confirmation.
+			const streaming = toolCallStateToStreamingInvocation({ toolCallId: 'tc-term', toolName: 'bash', displayName: 'Bash', status: ToolCallStatus.Streaming }, undefined);
+			const pending: AnyToolCallState = {
+				toolCallId: 'tc-term',
+				toolName: 'bash',
+				displayName: 'Bash',
+				invocationMessage: 'Running `rm -rf build`',
+				toolInput: 'rm -rf build',
+				status: ToolCallStatus.PendingConfirmation,
+				_meta: { toolKind: 'terminal' },
+				confirmationTitle: 'Run command?',
+			};
+
+			const prepared = toolCallStateToPreparedInvocation(pending);
+			assert.strictEqual(prepared.confirmationMessages?.title, 'Run command?');
+			assert.strictEqual(prepared.toolSpecificData?.kind, 'terminal');
+
+			streaming.transitionFromStreaming(prepared, undefined, undefined);
+			assert.strictEqual(streaming.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation);
+			assert.strictEqual(streaming.toolSpecificData?.kind, 'terminal');
+		});
+
+		test('transitionFromStreaming with a non-confirmation prepared invocation goes straight to Executing', () => {
+			const streaming = toolCallStateToStreamingInvocation({ toolCallId: 'tc-run', toolName: 'read_file', displayName: 'Read File', status: ToolCallStatus.Streaming }, undefined);
+			const running: AnyToolCallState = { toolCallId: 'tc-run', toolName: 'read_file', displayName: 'Read File', invocationMessage: 'Reading file', status: ToolCallStatus.Running, confirmed: ToolCallConfirmationReason.NotNeeded };
+
+			const prepared = toolCallStateToPreparedInvocation(running);
+			assert.strictEqual(prepared.confirmationMessages, undefined);
+
+			streaming.transitionFromStreaming(prepared, undefined, undefined);
+			assert.strictEqual(streaming.state.get().type, IChatToolInvocation.StateKind.Executing);
 		});
 	});
 
