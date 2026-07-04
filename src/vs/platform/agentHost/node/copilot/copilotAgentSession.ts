@@ -2704,11 +2704,8 @@ export class CopilotAgentSession extends Disposable {
 				return;
 			}
 
-			// For client tools, do NOT auto-ready — the tool handler will fire
-			// a separate tool_ready signal once the deferred is in place (or
-			// the permission flow fires it first). MCP tools have no such
-			// handler and are auto-readied below alongside built-in tools.
-			if (contributor?.kind === ToolCallContributorKind.Client) {
+			const shouldWaitForClientToolReady = contributor?.kind === ToolCallContributorKind.Client && !isAgentCoordinationTool(e.data.toolName);
+			if (shouldWaitForClientToolReady) {
 				return;
 			}
 
