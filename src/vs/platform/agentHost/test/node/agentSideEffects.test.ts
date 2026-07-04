@@ -418,6 +418,24 @@ suite('AgentSideEffects', () => {
 			const errorAction = envelopes.find(e => e.action.type === ActionType.ChatError);
 			assert.ok(errorAction, 'should dispatch session/error');
 		});
+
+		test('rejects a turn on an archived session without calling the agent', () => {
+			setupSession();
+			stateManager.dispatchServerAction(sessionUri.toString(), { type: ActionType.SessionIsArchivedChanged, isArchived: true });
+
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			sideEffects.handleAction(defaultChatUri, {
+				type: ActionType.ChatTurnStarted,
+				turnId: 'turn-1',
+				message: { text: 'hello', origin: { kind: MessageKind.User } },
+			});
+
+			const errorAction = envelopes.find(e => e.action.type === ActionType.ChatError);
+			assert.ok(errorAction, 'should dispatch a chat error for an archived session');
+			assert.deepStrictEqual(agent.sendMessageCalls, []);
+		});
 	});
 
 	// ---- handleAction: generic /rename slash command ---------------------

@@ -6,6 +6,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
 import { buildMutableConfigSchema } from '../../common/agentHostSessionsProvider.js';
+import { ChatInteractivity, effectiveChatInteractivity } from '../../services/sessions/common/session.js';
 
 suite('buildMutableConfigSchema', () => {
 
@@ -42,6 +43,26 @@ suite('buildMutableConfigSchema', () => {
 			permissions: { type: 'object', title: 'permissions', sessionMutable: true },
 			// `undefined` and `null` are omitted — they aren't representable in
 			// the config schema.
+		});
+	});
+});
+
+suite('effectiveChatInteractivity', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('archived sessions force every chat read-only; otherwise the chat keeps its interactivity', () => {
+		const actual = {
+			archivedFull: effectiveChatInteractivity(true, ChatInteractivity.Full),
+			archivedReadOnly: effectiveChatInteractivity(true, ChatInteractivity.ReadOnly),
+			activeFull: effectiveChatInteractivity(false, ChatInteractivity.Full),
+			activeReadOnly: effectiveChatInteractivity(false, ChatInteractivity.ReadOnly),
+		};
+		assert.deepStrictEqual(actual, {
+			archivedFull: ChatInteractivity.ReadOnly,
+			archivedReadOnly: ChatInteractivity.ReadOnly,
+			activeFull: ChatInteractivity.Full,
+			activeReadOnly: ChatInteractivity.ReadOnly,
 		});
 	});
 });

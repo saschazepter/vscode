@@ -44,7 +44,7 @@ import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
 import { AgentHostCompletions, IAgentHostCompletions } from '../../node/agentHostCompletions.js';
-import { COPILOT_AGENT_HOST_SYSTEM_MESSAGE, CopilotAgent, CopilotSessionEntry, getCopilotWorktreeName, getCopilotWorktreesRoot, migrateEnablementKeys, rebaseUnder } from '../../node/copilot/copilotAgent.js';
+import { COPILOT_AGENT_HOST_SYSTEM_MESSAGE, CopilotAgent, CopilotSessionEntry, getCopilotWorktreeName, getCopilotWorktreesRoot, migrateEnablementKeys, rebaseUnder, SessionWorkingDirectoryMissingError } from '../../node/copilot/copilotAgent.js';
 import { NULL_CHECKPOINT_SERVICE } from '../../common/agentHostCheckpointService.js';
 import { IAgentHostReviewService, NULL_REVIEW_SERVICE } from '../../common/agentHostReviewService.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
@@ -1120,6 +1120,84 @@ suite('CopilotAgent', () => {
 				await assert.rejects(() => fs.access(scratchDir.fsPath));
 			} finally {
 				await fs.rm(userHome.fsPath, { recursive: true, force: true });
+				await disposeAgent(agent);
+			}
+		}).timeout(30_000);
+	});
+
+	suite('resume working directory fallback', () => {
+		test('resumes against the repository root when the worktree working dir is missing', async () => {
+			const repoRoot = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-repo-`));
+			const existingWorktree = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-live-`));
+			const missingWorktree = URI.joinPath(repoRoot, '..', `gone-worktree-${Date.now()}`);
+			const sessionId = 'wt-resume';
+			const session = AgentSession.uri('copilotcli', sessionId);
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const db = sessionDataService.openDatabase(session);
+			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
+			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
+			await db.object.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString());
+			db.dispose();
+			const agent = createTestAgent(disposables, { sessionDataService });
+			const internals = agent as unknown as {
+				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+			};
+			try {
+				const outcomes = {
+					missingWorktreeFallsBackToRepoRoot: (await internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree)).fsPath,
+					existingWorktreeUsedUnchanged: (await internals._resolveResumeWorkingDirectory(session, sessionId, existingWorktree)).fsPath,
+				};
+				assert.deepStrictEqual(outcomes, {
+					missingWorktreeFallsBackToRepoRoot: repoRoot.fsPath,
+					existingWorktreeUsedUnchanged: existingWorktree.fsPath,
+				});
+			} finally {
+				await fs.rm(repoRoot.fsPath, { recursive: true, force: true });
+				await fs.rm(existingWorktree.fsPath, { recursive: true, force: true });
+				await disposeAgent(agent);
+			}
+		}).timeout(30_000);
+
+		test('throws when neither the working dir nor a recorded repository root exists', async () => {
+			const missingWorktree = URI.file(`${os.tmpdir()}/gone-worktree-noroot-${Date.now()}`);
+			const sessionId = 'wt-resume-noroot';
+			const session = AgentSession.uri('copilotcli', sessionId);
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const agent = createTestAgent(disposables, { sessionDataService });
+			const internals = agent as unknown as {
+				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+			};
+			try {
+				await assert.rejects(
+					() => internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree),
+					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
+				);
+			} finally {
+				await disposeAgent(agent);
+			}
+		}).timeout(30_000);
+
+		test('throws when the working dir is missing and the recorded repository root is also gone', async () => {
+			const missingRepoRoot = URI.file(`${os.tmpdir()}/gone-repo-${Date.now()}`);
+			const missingWorktree = URI.joinPath(missingRepoRoot, '..', `gone-worktree-${Date.now()}`);
+			const sessionId = 'wt-resume-noroot-2';
+			const session = AgentSession.uri('copilotcli', sessionId);
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const db = sessionDataService.openDatabase(session);
+			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
+			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
+			await db.object.setMetadata('copilot.worktree.repositoryRoot', missingRepoRoot.toString());
+			db.dispose();
+			const agent = createTestAgent(disposables, { sessionDataService });
+			const internals = agent as unknown as {
+				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+			};
+			try {
+				await assert.rejects(
+					() => internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree),
+					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
+				);
+			} finally {
 				await disposeAgent(agent);
 			}
 		}).timeout(30_000);
@@ -3518,9 +3596,9 @@ suite('CopilotAgent', () => {
 			_resumeSession: (id: string) => Promise<CopilotAgentSession>;
 		};
 
-		function createResumeFailingClient(message: string, code = -32603): { readonly client: TestCopilotClient; readonly getCreateSessionCalls: () => number } {
+		function createResumeFailingClient(message: string, workingDirectory: string, code = -32603): { readonly client: TestCopilotClient; readonly getCreateSessionCalls: () => number } {
 			let createSessionCalls = 0;
-			const client = new TestCopilotClient([sdkSession('s1', '/workspace')]);
+			const client = new TestCopilotClient([sdkSession('s1', workingDirectory)]);
 			client.resumeSession = async () => {
 				throw new TestSdkError(message, code);
 			};
@@ -3536,7 +3614,8 @@ suite('CopilotAgent', () => {
 			// session has zero events, so the SDK's resumeSession refuses to
 			// resume it. The exact wording varies across SDK versions, so we
 			// assert on the general -32603 + "no events" shape.
-			const { client, getCreateSessionCalls } = createResumeFailingClient(`Request session.resume failed with message: LocalRpcSession: 'session.getMessages' returned no events for session s1`);
+			const workingDirectory = await fs.mkdtemp(`${os.tmpdir()}/resume-fallback-`);
+			const { client, getCreateSessionCalls } = createResumeFailingClient(`Request session.resume failed with message: LocalRpcSession: 'session.getMessages' returned no events for session s1`, workingDirectory);
 			const agent = createTestAgent(disposables, { copilotClient: client, useRealResumePath: true, sessionDataService: disposables.add(new TestSessionDataService()) });
 			const internals = agent as unknown as AgentInternals;
 			try {
@@ -3544,6 +3623,7 @@ suite('CopilotAgent', () => {
 				await internals._resumeSession('s1');
 				assert.strictEqual(getCreateSessionCalls(), 1);
 			} finally {
+				await fs.rm(workingDirectory, { recursive: true, force: true });
 				await disposeAgent(agent);
 			}
 		});
@@ -3552,7 +3632,8 @@ suite('CopilotAgent', () => {
 			// Defensive: if the SDK starts emitting some other generic
 			// "cannot resume this session" message, we should still recover
 			// rather than leaving the user with an unopenable session.
-			const { client, getCreateSessionCalls } = createResumeFailingClient('Request session.resume failed: something went wrong');
+			const workingDirectory = await fs.mkdtemp(`${os.tmpdir()}/resume-fallback-`);
+			const { client, getCreateSessionCalls } = createResumeFailingClient('Request session.resume failed: something went wrong', workingDirectory);
 			const agent = createTestAgent(disposables, { copilotClient: client, useRealResumePath: true, sessionDataService: disposables.add(new TestSessionDataService()) });
 			const internals = agent as unknown as AgentInternals;
 			try {
@@ -3560,12 +3641,14 @@ suite('CopilotAgent', () => {
 				await internals._resumeSession('s1');
 				assert.strictEqual(getCreateSessionCalls(), 1);
 			} finally {
+				await fs.rm(workingDirectory, { recursive: true, force: true });
 				await disposeAgent(agent);
 			}
 		});
 
 		test('does not replace a corrupted session file with an empty session', async () => {
-			const { client, getCreateSessionCalls } = createResumeFailingClient('Request session.resume failed with message: Session file is corrupted (line 19567: data.compactionTokensUsed.copilotUsage.tokenDetails.0.batchSize: Number must be greater than 0)');
+			const workingDirectory = await fs.mkdtemp(`${os.tmpdir()}/resume-fallback-`);
+			const { client, getCreateSessionCalls } = createResumeFailingClient('Request session.resume failed with message: Session file is corrupted (line 19567: data.compactionTokensUsed.copilotUsage.tokenDetails.0.batchSize: Number must be greater than 0)', workingDirectory);
 			const agent = createTestAgent(disposables, { copilotClient: client, useRealResumePath: true, sessionDataService: disposables.add(new TestSessionDataService()) });
 			const internals = agent as unknown as AgentInternals;
 			try {
@@ -3573,6 +3656,7 @@ suite('CopilotAgent', () => {
 				await assert.rejects(() => internals._resumeSession('s1'), /Session file is corrupted/);
 				assert.strictEqual(getCreateSessionCalls(), 0);
 			} finally {
+				await fs.rm(workingDirectory, { recursive: true, force: true });
 				await disposeAgent(agent);
 			}
 		});

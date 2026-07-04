@@ -34,6 +34,7 @@ import {
 	PendingMessageKind,
 	ResponsePartKind,
 	ROOT_STATE_URI,
+	SessionStatus,
 	ToolCallStatus,
 	ToolResultContentType,
 	type ErrorInfo,
@@ -1321,6 +1322,23 @@ export class AgentSideEffects extends Disposable {
 		senderClientId: string | undefined;
 	}): Promise<void> {
 		const { agent, turnChannel, chat, message, turnId, senderClientId } = options;
+
+		// Archived sessions are read-only: reject any turn dispatched to them.
+		// This is the enforcement behind the UI hiding the composer, so a buggy
+		// or remote client cannot run work in an archived session (which may no
+		// longer have its isolated worktree on disk).
+		const sessionSummary = this._stateManager.getSessionSummary(options.sessionChannel);
+		if (sessionSummary && (sessionSummary.status & SessionStatus.IsArchived) === SessionStatus.IsArchived) {
+			this._logService.warn(`[AgentSideEffects] Rejecting turn on archived session=${options.sessionChannel}, turnId=${turnId}`);
+			this._stateManager.dispatchServerAction(turnChannel, {
+				type: ActionType.ChatError,
+				turnId,
+				error: { errorType: 'archived', message: 'Cannot send a message to an archived session. Unarchive it to continue.' },
+			});
+			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
+			this._toolCallTracker.clearSession(turnChannel);
+			return;
+		}
 
 		const chatUri = URI.parse(chat);
 

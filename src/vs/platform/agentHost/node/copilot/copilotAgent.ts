@@ -13,7 +13,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { combinedDisposable, Disposable, DisposableMap, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
-import { FileAccess } from '../../../../base/common/network.js';
+import { FileAccess, Schemas } from '../../../../base/common/network.js';
 import { formatTokenCount } from '../../../../base/common/numbers.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun, observableValue, type ISettableObservable } from '../../../../base/common/observable.js';
@@ -233,6 +233,21 @@ export interface IExitPlanModeResponse {
 
 export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
 	return URI.joinPath(repositoryRoot, '..', `${basename(repositoryRoot.fsPath)}.worktrees`);
+}
+
+/**
+ * Thrown when a session cannot be resumed because its working directory — and
+ * the worktree repository-root fallback — no longer exist on disk. The Copilot
+ * SDK can only read a session's transcript through a live session bound to an
+ * existing directory, so this is unrecoverable. Surfaced (rather than swallowed
+ * into an empty transcript) so opening such a session shows a clear error
+ * instead of a blank chat.
+ */
+export class SessionWorkingDirectoryMissingError extends Error {
+	constructor(readonly workingDirectory: URI) {
+		super(`This session could not be loaded because its working directory no longer exists: ${workingDirectory.fsPath}`);
+		this.name = 'SessionWorkingDirectoryMissingError';
+	}
 }
 
 export function getCopilotWorktreeName(branchName: string): string {
@@ -2025,6 +2040,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return [];
 		}
 		const entry = context.target ?? await this._resumeSession(sessionId).catch(err => {
+			if (err instanceof SessionWorkingDirectoryMissingError) {
+				// Unrecoverable: surface to the restore/subscribe path so the
+				// client shows a clear error instead of a silently empty chat.
+				throw err;
+			}
 			this._logService.warn(`[Copilot:${sessionId}] Failed to resume session for message lookup`, err);
 			return undefined;
 		});
@@ -2915,14 +2935,23 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// A workspace-less chat's working directory is a stable per-session scratch dir
 		// that may have been reaped (OS temp cleanup, reboot) while the session
 		// persisted. Recreate it (mkdir -p) so shell/git/scratch ops don't fail.
+		let resolvedWorkingDirectory = workingDirectory;
 		if (storedMetadata.workspaceless) {
 			await this._ensureWorkspacelessScratchDir(workingDirectory, sessionId);
+		} else {
+			// A worktree-isolated session's working directory may have been removed
+			// (archive cleanup deletes the worktree while keeping the branch). The
+			// SDK requires an existing directory to bring up the session — the only
+			// path to read the transcript. Fall back to the persisted repository
+			// root so the session resumes for history. Turns on archived sessions
+			// are rejected host-side, so nothing runs in this directory.
+			resolvedWorkingDirectory = await this._resolveResumeWorkingDirectory(sessionUri, sessionId, workingDirectory);
 		}
 		// Anchor customization discovery to the working directory (the worktree for
 		// worktree-isolated sessions), matching how the session was materialized.
 		// Older sessions persisted `customizationDirectory` as the user-picked
 		// folder; preferring the working directory corrects them on resume.
-		const customizationDirectory = workingDirectory;
+		const customizationDirectory = resolvedWorkingDirectory;
 		// Always create an ActiveClient so the snapshot includes host +
 		// session-discovered customizations, even when no client has
 		// registered an active-client handle yet.
@@ -2930,13 +2959,13 @@ export class CopilotAgent extends Disposable implements IAgent {
 		activeClient.pluginController.reanchor(customizationDirectory);
 		const snapshot = await activeClient.snapshot();
 
-		const shellManager = this._instantiationService.createInstance(ShellManager, sessionUri, workingDirectory);
+		const shellManager = this._instantiationService.createInstance(ShellManager, sessionUri, resolvedWorkingDirectory);
 		const resolvedAgentName = storedMetadata.agent ? await this._resolveAgentName(sessionUri, snapshot, storedMetadata.agent) : undefined;
 		const launchPlan: CopilotSessionLaunchPlan = {
 			kind: 'resume',
 			client,
 			sessionId,
-			workingDirectory,
+			workingDirectory: resolvedWorkingDirectory,
 			resolvedAgentName,
 			snapshot,
 			activeClientToolSet: activeClient.toolSet,
@@ -2960,6 +2989,50 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._registerInitializedSession(sessionId, agentSession);
 
 		return agentSession;
+	}
+
+	/**
+	 * Resolves the directory to resume a session's SDK bring-up against.
+	 *
+	 * Normally this is the session's persisted `workingDirectory`. But a
+	 * worktree-isolated session's worktree may have been removed (archive
+	 * cleanup deletes the worktree while keeping the branch), and the SDK
+	 * refuses to resume/create a session against a missing directory — which is
+	 * the only path to reading the transcript. When the working directory is
+	 * gone, fall back to the persisted repository root (from worktree metadata)
+	 * so the session can be resumed for history. Turns on archived sessions are
+	 * rejected host-side, so nothing actually runs in this directory.
+	 *
+	 * If neither the working directory nor the repository-root fallback exists,
+	 * throws {@link SessionWorkingDirectoryMissingError} so the unrecoverable
+	 * load failure is surfaced to the client instead of silently producing an
+	 * empty transcript.
+	 *
+	 * Uses the persisted `repositoryRoot` rather than deriving it from the
+	 * working directory (see the `_readWorktreeMetadata` gotcha).
+	 */
+	private async _resolveResumeWorkingDirectory(session: URI, sessionId: string, workingDirectory: URI): Promise<URI> {
+		if (workingDirectory.scheme !== Schemas.file) {
+			return workingDirectory;
+		}
+		try {
+			await fs.access(workingDirectory.fsPath);
+			return workingDirectory;
+		} catch {
+			// Working directory is missing — try the worktree repository-root fallback.
+		}
+		const meta = await this._readWorktreeMetadata(session).catch(() => undefined);
+		if (meta?.repositoryRoot) {
+			try {
+				await fs.access(meta.repositoryRoot.fsPath);
+				this._logService.info(`[Copilot:${sessionId}] Working directory '${workingDirectory.fsPath}' is missing; resuming against repository root '${meta.repositoryRoot.fsPath}' for history`);
+				return meta.repositoryRoot;
+			} catch {
+				// Repository root is gone too — fall through to the unrecoverable case.
+			}
+		}
+		this._logService.warn(`[Copilot:${sessionId}] Cannot resume: working directory '${workingDirectory.fsPath}' does not exist and no usable repository-root fallback was found`);
+		throw new SessionWorkingDirectoryMissingError(workingDirectory);
 	}
 
 	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: string } | undefined> {

@@ -878,6 +878,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					// separate chat channel, so reading them before the chat
 					// subscription lands would yield an empty history.
 					await this._whenSubscriptionHydrated(sub, token);
+					// A failed subscription surfaces as an `Error` value; rethrow it
+					// so the real reason (e.g. the working directory no longer
+					// exists) is logged and rendered instead of a generic message.
+					if (sub.value instanceof Error) {
+						throw sub.value;
+					}
 					const rawState = this._getRawSessionState(resolvedSession.toString());
 					if (!rawState) {
 						throw new Error(`Session state did not hydrate for ${resolvedSession.toString()}`);
@@ -952,6 +958,27 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					}
 				} catch (err) {
 					this._logService.warn(`[AgentHost] Failed to subscribe to existing session: ${resolvedSession.toString()}`, err);
+					// Surface a hard load failure as a visible chat error instead of
+					// a silently empty session. Only when nothing else rendered, so a
+					// partially-hydrated history isn't clobbered. A bare response is
+					// dropped without a preceding request, so anchor it with a
+					// system-initiated request (renders as a compact notice, not a
+					// user bubble) and attach the error to its response.
+					if (history.length === 0) {
+						history.push({
+							type: 'request',
+							prompt: '',
+							participant: this._config.agentId,
+							isSystemInitiated: true,
+							systemInitiatedLabel: localize('agentHost.sessionLoadFailedLabel', "Couldn't open session"),
+						});
+						history.push({
+							type: 'response',
+							parts: [],
+							participant: this._config.agentId,
+							errorDetails: { message: localize('agentHost.sessionLoadFailed', "This session couldn't be loaded. Its working directory may no longer exist.") },
+						});
+					}
 				}
 			}
 		} finally {
