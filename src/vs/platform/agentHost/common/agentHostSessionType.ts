@@ -72,6 +72,10 @@ export function parseRemoteAgentHostHarness(sessionType: string): string | undef
 	const harness = sessionType.slice(lastDash + 1);
 	return harness || undefined;
 }
+
+/**
+ * Extracts the connection authority from a remote agent host session type when the provider is known.
+ */
 export function parseRemoteAgentHostSessionTypeAuthority(sessionType: string, agentProvider: AgentProvider): string | undefined {
 	if (!isRemoteAgentHostSessionType(sessionType)) {
 		return undefined;

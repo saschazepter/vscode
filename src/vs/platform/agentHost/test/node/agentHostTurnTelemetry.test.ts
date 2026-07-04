@@ -194,7 +194,6 @@ suite('AgentSideEffects — turn tracker telemetry', () => {
 		const data = events[0].data as Record<string, unknown>;
 		assert.strictEqual(data.provider, 'mock');
 		assert.strictEqual(data.agentSessionId, 'session-1');
-		assert.strictEqual(data.isSubagentSession, false);
 		assert.strictEqual(data.result, 'success');
 		assert.strictEqual(data.model, 'gpt-5.5');
 		assert.strictEqual(data.permissionLevel, 'autopilot');
