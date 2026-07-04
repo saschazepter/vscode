@@ -2704,14 +2704,11 @@ export class CopilotAgentSession extends Disposable {
 				return;
 			}
 
-			// Client tools normally defer readiness to the permission flow,
-			// which owns their invocation message. The agent-coordination
-			// tools are auto-approved and never hit that flow, so without an
-			// explicit ready their invocation would render the generic
-			// "Running {displayName}…" fallback. Auto-ready just those so they
-			// show our tailored message; all other client tools keep deferring
-			// to the permission flow / owning client.
-			if (contributor?.kind === ToolCallContributorKind.Client && !isAgentCoordinationTool(e.data.toolName)) {
+			// For client tools, do NOT auto-ready — the tool handler will fire
+			// a separate tool_ready signal once the deferred is in place (or
+			// the permission flow fires it first). MCP tools have no such
+			// handler and are auto-readied below alongside built-in tools.
+			if (contributor?.kind === ToolCallContributorKind.Client) {
 				return;
 			}
 
