@@ -8,7 +8,7 @@ import './media/style.css';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../base/common/lifecycle.js';
 import { DockedAuxiliaryBarController } from './dockedAuxiliaryBarController.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
-import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, isHTMLElement, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
+import { addDisposableListener, getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, isHTMLElement, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
 import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
 import { isFullscreen, onDidChangeFullscreen, isChrome, isFirefox, isSafari } from '../../base/browser/browser.js';
 import { mark } from '../../base/common/performance.js';
@@ -736,11 +736,17 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			return this.workbenchGrid.getViewCachedVisibleSize(view);
 		};
 
+		const editorGridWidth = getSize(this.editorPartView, 'width', this.partVisibility.editor);
+		// The docked panel lives inside the editor grid node; exclude it to avoid reload drift.
+		const editorWidth = this._dockDetailPanel && typeof editorGridWidth === 'number'
+			? Math.max(0, editorGridWidth - this._dockedAuxiliaryBarWidth)
+			: editorGridWidth;
+
 		const sizes: IPartSizesState = {
 			sidebar: getSize(this.sideBarPartView, 'width', this.partVisibility.sidebar),
 			auxiliaryBar: this._dockDetailPanel ? this._dockedAuxiliaryBarWidth : getSize(this.auxiliaryBarPartView, 'width', this.partVisibility.auxiliaryBar),
 			sessions: getSize(this.sessionsPartView, 'width', this.partVisibility.sessions),
-			editor: getSize(this.editorPartView, 'width', this.partVisibility.editor),
+			editor: editorWidth,
 			panel: getSize(this.panelPartView, 'height', this.partVisibility.panel),
 		};
 
@@ -1157,8 +1163,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		// Window resize — needed for device emulation and mobile viewport changes
 		const onWindowResize = () => this.layout();
-		mainWindow.addEventListener('resize', onWindowResize);
-		this._register({ dispose: () => mainWindow.removeEventListener('resize', onWindowResize) });
+		this._register(addDisposableListener(mainWindow, 'resize', onWindowResize));
 	}
 
 	private updateFullscreenClass(): void {
@@ -1777,6 +1782,12 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			// grid view), so drive its visibility through the docked layout and fire
 			// the visibility event the grid path would otherwise raise (the layout
 			// controller listens for it to capture per-session state).
+			if (this.workbenchGrid) {
+				this.workbenchGrid.setViewVisible(
+					this.editorPartView,
+					this.partVisibility.editor || this.partVisibility.auxiliaryBar
+				);
+			}
 			this._dockedAuxBar?.layout();
 			this._onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: !hidden });
 			this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
@@ -1840,7 +1851,10 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 				? this.workbenchGrid.getViewSize(this.sessionsPartView).width
 				: 0;
 
-			this.workbenchGrid.setViewVisible(this.editorPartView, !hidden);
+			this.workbenchGrid.setViewVisible(
+				this.editorPartView,
+				this._dockDetailPanel ? (this.partVisibility.editor || this.partVisibility.auxiliaryBar) : !hidden
+			);
 
 			if (shouldApplyEvenSplit) {
 				this._hasAppliedInitialEditorSplit = true;
@@ -1967,7 +1981,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	setSize(part: Parts, size: IViewSize): void {
 		if (part === Parts.AUXILIARYBAR_PART && this._dockDetailPanel) {
-			this._dockedAuxiliaryBarWidth = Math.max(0, size.width);
+			this._dockedAuxiliaryBarWidth = Math.max(DockedAuxiliaryBarController.MIN_WIDTH, size.width);
 			this._dockedAuxBar?.layout();
 			return;
 		}
@@ -1979,7 +1993,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void {
 		if (part === Parts.AUXILIARYBAR_PART && this._dockDetailPanel) {
-			this._dockedAuxiliaryBarWidth = Math.max(0, this._dockedAuxiliaryBarWidth + sizeChangeWidth);
+			this._dockedAuxiliaryBarWidth = Math.max(DockedAuxiliaryBarController.MIN_WIDTH, this._dockedAuxiliaryBarWidth + sizeChangeWidth);
 			this._dockedAuxBar?.layout();
 			return;
 		}
@@ -2122,6 +2136,9 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			// Restore the editor part width captured before maximizing.
 			if (this.editorPartView && size) {
 				this.workbenchGrid.resizeView(this.editorPartView, size);
+			}
+			if (this._dockDetailPanel) {
+				this._dockedAuxBar?.layout();
 			}
 		}
 

@@ -40,8 +40,8 @@ the **first** time (no remembered choice yet) and again after the whole side pan
 including after a reload (the pane is restored closed, but opening Changes re-reveals it). If
 you explicitly closed just the side pane (while keeping the editor open), it stays closed on later
 opens (and across reloads). An already-open side pane is left on whatever view you chose. Skipped while
-the editor is maximized (D5) or multiple sessions are visible, where the side pane is managed by other
-rules.
+the editor is maximized (D5), multiple sessions are visible, or single-pane detail-panel mode is enabled,
+where the side pane is managed by other rules.
 
 #### D9 — Closing the whole side pane is not an aux-bar choice
 The "side pane" is the editor area together with the auxiliary bar. Closing it (e.g. from the side
@@ -187,6 +187,9 @@ defaults **on** in non-stable builds (Insiders / exploration) and **off** in sta
   visible. A hide that came from collapsing the whole side pane (D9) sets `auxiliaryBarHiddenByCollapse:
   true`, so opening a Changes editor re-reveals the aux bar even across a reload (the pane is still
   restored closed). The reveal flows through the [D2] listener, which records `{ auxiliaryBarVisible: true }`.
+  In single-pane detail-panel mode these listeners are not registered; the DetailPanelController maps the
+  active editor to a container only while the panel is already visible, so existing sessions are never
+  auto-opened by an auto-managed Changes tab.
 - **Side-pane close [D9]** — the side-pane toggle lives on the controller (`toggleSidePane`). Its UI
   entry point (the `Toggle Side Panel` action: menu item, keybinding, command-palette entry, toggled
   icon) is registered by the base controller in its constructor and calls `toggleSidePane` directly.

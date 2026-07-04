@@ -7,13 +7,18 @@ import { Sequencer } from '../../../../base/common/async.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { autorun, IObservable, IReader, observableFromEvent } from '../../../../base/common/observable.js';
+import { isEqualOrParent } from '../../../../base/common/resources.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { EditorInput } from '../../../../workbench/common/editor/editorInput.js';
 import { BrowserEditorInput } from '../../../../workbench/contrib/browserView/common/browserEditorInput.js';
+import { FileEditorInput } from '../../../../workbench/contrib/files/browser/editors/fileEditorInput.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { Parts, IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
+import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
+import type { ISessionWorkspace } from '../../../services/sessions/common/session.js';
 import { CHANGES_VIEW_CONTAINER_ID } from '../common/changes.js';
+import { EmptyFileEditorInput } from '../../editor/browser/emptyFileEditorInput.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../files/browser/files.contribution.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { ISessionChangesService } from './sessionChangesService.js';
@@ -21,7 +26,8 @@ import { ISessionChangesService } from './sessionChangesService.js';
 const enum DetailPanelTarget {
 	Hidden,
 	Changes,
-	Files
+	Files,
+	Preserve
 }
 
 export class DetailPanelController extends Disposable implements IWorkbenchContribution {
@@ -30,6 +36,7 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 
 	private readonly _activeEditorObs: IObservable<EditorInput | undefined>;
 	private readonly _auxBarVisibleObs: IObservable<boolean>;
+	private readonly _editorMaximizedObs: IObservable<boolean>;
 	private readonly _sequencer = new Sequencer();
 	private _generation = 0;
 
@@ -37,13 +44,14 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 		@ISessionsService private readonly _sessionsService: ISessionsService,
 		@IEditorService private readonly _editorService: IEditorService,
 		@IViewsService private readonly _viewsService: IViewsService,
-		@IWorkbenchLayoutService private readonly _layoutService: IWorkbenchLayoutService,
+		@IAgentWorkbenchLayoutService private readonly _layoutService: IAgentWorkbenchLayoutService,
 		@ISessionChangesService private readonly _sessionChangesService: ISessionChangesService,
 	) {
 		super();
 
 		this._activeEditorObs = observableFromEvent(this, this._editorService.onDidActiveEditorChange, () => this._editorService.activeEditor);
 		this._auxBarVisibleObs = observableFromEvent(this, this._layoutService.onDidChangePartVisibility, () => this._layoutService.isVisible(Parts.AUXILIARYBAR_PART));
+		this._editorMaximizedObs = observableFromEvent(this, this._layoutService.onDidChangeEditorMaximized, () => this._layoutService.isEditorMaximized());
 
 		this._register(autorun(reader => {
 			const target = this._computeTarget(reader);
@@ -56,9 +64,13 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 	private _computeTarget(reader: IReader): DetailPanelTarget {
 		const activeSession = this._sessionsService.activeSession.read(reader);
 		const isQuickChat = activeSession?.isQuickChat?.read(reader) ?? false;
-		const sessionHasWorkspace = !!activeSession?.workspace.read(reader);
-		if (isQuickChat || !sessionHasWorkspace) {
+		const workspace = activeSession?.workspace.read(reader);
+		if (isQuickChat || !workspace) {
 			return DetailPanelTarget.Hidden;
+		}
+
+		if (this._editorMaximizedObs.read(reader)) {
+			return DetailPanelTarget.Changes;
 		}
 
 		const activeEditor = this._activeEditorObs.read(reader);
@@ -70,7 +82,15 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 			return DetailPanelTarget.Hidden;
 		}
 
-		return this._isChangesEditor(activeEditor) ? DetailPanelTarget.Changes : DetailPanelTarget.Files;
+		if (this._isChangesEditor(activeEditor)) {
+			return DetailPanelTarget.Changes;
+		}
+
+		if (this._isFileEditor(activeEditor, workspace)) {
+			return DetailPanelTarget.Files;
+		}
+
+		return DetailPanelTarget.Preserve;
 	}
 
 	private async _syncTarget(target: DetailPanelTarget, auxBarVisible: boolean, generation: number): Promise<void> {
@@ -94,11 +114,22 @@ export class DetailPanelController extends Disposable implements IWorkbenchContr
 					await this._viewsService.openViewContainer(SESSIONS_FILES_CONTAINER_ID, false);
 				}
 				return;
+			case DetailPanelTarget.Preserve:
+				return;
 		}
 	}
 
 	private _isChangesEditor(editor: EditorInput): boolean {
 		const resource = editor.resource;
 		return !!resource && this._sessionChangesService.getSessionResource(resource) !== undefined;
+	}
+
+	private _isFileEditor(editor: EditorInput, workspace: ISessionWorkspace): boolean {
+		if (editor instanceof EmptyFileEditorInput) {
+			return true;
+		}
+		const resource = editor instanceof FileEditorInput ? editor.resource : undefined;
+		return !!resource && workspace.folders.some(folder =>
+			isEqualOrParent(resource, folder.root) || isEqualOrParent(resource, folder.workingDirectory));
 	}
 }

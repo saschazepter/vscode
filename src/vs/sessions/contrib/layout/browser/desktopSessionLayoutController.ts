@@ -13,6 +13,7 @@ import product from '../../../../platform/product/common/product.js';
 import { StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { DOCK_DETAIL_PANEL_SETTING } from '../../../common/sessionConfig.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../../changes/common/changes.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../files/browser/files.contribution.js';
 import { BaseLayoutController } from './baseSessionLayoutController.js';
@@ -181,20 +182,23 @@ export class LayoutController extends BaseLayoutController {
 			}
 		}));
 
-		// [D8] Reveal the Changes view in the side pane the first time a Changes
-		// editor is opened for an existing session; afterwards respect the
-		// remembered per-session choice (D1/D2/D3).
-		this._register(this._editorService.onDidActiveEditorChange(() => this._revealChangesViewOnFirstOpen()));
+		const isSinglePane = this._configurationService.getValue<boolean>(DOCK_DETAIL_PANEL_SETTING) === true;
+		if (!isSinglePane) {
+			// [D8] Reveal the Changes view in the side pane the first time a Changes
+			// editor is opened for an existing session; afterwards respect the
+			// remembered per-session choice (D1/D2/D3).
+			this._register(this._editorService.onDidActiveEditorChange(() => this._revealChangesViewOnFirstOpen()));
 
-		// [D8] Re-opening the Changes editor while it is already the active editor
-		// (e.g. after the whole side pane was closed, which only hides the editor
-		// part) re-reveals the editor part without firing an active-editor change,
-		// so also react to the editor part becoming visible.
-		this._register(this._layoutService.onDidChangePartVisibility(e => {
-			if (e.partId === Parts.EDITOR_PART && e.visible) {
-				this._revealChangesViewOnFirstOpen();
-			}
-		}));
+			// [D8] Re-opening the Changes editor while it is already the active editor
+			// (e.g. after the whole side pane was closed, which only hides the editor
+			// part) re-reveals the editor part without firing an active-editor change,
+			// so also react to the editor part becoming visible.
+			this._register(this._layoutService.onDidChangePartVisibility(e => {
+				if (e.partId === Parts.EDITOR_PART && e.visible) {
+					this._revealChangesViewOnFirstOpen();
+				}
+			}));
+		}
 
 		this._registerResponsiveSidebar();
 		this._registerAuxiliaryBarPartVisibility();
