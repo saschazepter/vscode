@@ -2680,7 +2680,7 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(totalContent, 'hello world');
 		}));
 
-		test('system notification response parts become live progress messages', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		test('system notification response parts become live system notifications', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
 			const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables);
 
@@ -2693,8 +2693,8 @@ suite('AgentHostChatContribution', () => {
 			fire({ type: 'chat/turnComplete', session, turnId } as ChatAction);
 			await turnPromise;
 
-			const progressMessages = collected.flat().filter(part => part.kind === 'progressMessage');
-			assert.deepStrictEqual(progressMessages.map(part => part.content.value), ['Background command completed']);
+			const notifications = collected.flat().filter(part => part.kind === 'systemNotification');
+			assert.deepStrictEqual(notifications.map(part => part.content.value), ['Background command completed']);
 		}));
 
 		test('live turn marks chat session complete after turnComplete', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -6428,8 +6428,8 @@ suite('AgentHostChatContribution', () => {
 			const session = await sessionHandler.provideChatSessionContent(sessionResource, CancellationToken.None);
 			disposables.add(toDisposable(() => session.dispose()));
 
-			const progressMessages = (session.progressObs?.get() ?? []).filter(part => part.kind === 'progressMessage');
-			assert.deepStrictEqual(progressMessages.map(part => part.content.value), ['Background command completed']);
+			const notifications = (session.progressObs?.get() ?? []).filter(part => part.kind === 'systemNotification');
+			assert.deepStrictEqual(notifications.map(part => part.content.value), ['Background command completed']);
 		});
 
 		test('provides interruptActiveResponseCallback when reconnecting', async () => {
