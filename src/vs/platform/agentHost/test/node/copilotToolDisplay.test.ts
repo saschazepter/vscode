@@ -66,8 +66,6 @@ suite('copilotToolDisplay — friendly tool names', () => {
 			['tool_search_tool_regex', 'Search Tools'],
 			['parallel_validation', 'Validate Changes'],
 			['codeql_checker', 'CodeQL Security Scan'],
-			['send_inbox', 'Send Message'],
-			['context_board', 'Update Context Board'],
 			['addComment', 'Add Comment'],
 			['listComments', 'List Comments'],
 			['deleteComments', 'Delete Comments'],
@@ -327,28 +325,20 @@ suite('copilotToolDisplay — built-in tool invocation/past-tense messages', () 
 		assert.strictEqual(pastTense('write_agent', undefined), 'Wrote to agent');
 	});
 
-	test('arg-bearing tools surface their key argument', () => {
-		assert.strictEqual(invocation('web_search', { query: 'rust async' }), 'Searching the web for `rust async`');
-		assert.strictEqual(pastTense('web_search', { query: 'rust async' }), 'Searched the web for `rust async`');
-		assert.strictEqual(invocation('search_code_subagent', { query: 'auth flow' }), 'Searching code for `auth flow`');
-		assert.strictEqual(invocation('store_memory', { subject: 'build config' }), 'Storing memory about `build config`');
-		assert.strictEqual(invocation('create_pull_request', { title: 'Fix bug' }), 'Creating pull request `Fix bug`');
-		assert.strictEqual(invocation('tool_search_tool_regex', { pattern: 'edit.*' }), 'Searching tools for `edit.*`');
-		assert.ok(invocation('show_file', { path: '/repo/file.ts' }).startsWith('Showing ['));
-	});
-
-	test('no-arg tools use natural verb phrases instead of the generic fallback', () => {
+	test('list_agents and task use natural verb phrases', () => {
 		assert.strictEqual(invocation('list_agents', {}), 'Listing agents');
 		assert.strictEqual(pastTense('list_agents', {}), 'Listed agents');
-		assert.strictEqual(invocation('code_review', {}), 'Reviewing code');
-		assert.strictEqual(pastTense('code_review', {}), 'Reviewed code');
-		assert.strictEqual(invocation('send_inbox', {}), 'Sending a message');
-		assert.strictEqual(invocation('context_board', {}), 'Updating the context board');
+		assert.strictEqual(invocation('task', {}), 'Delegating task');
+		assert.strictEqual(pastTense('task', {}), 'Delegated task');
 	});
 
-	test('unknown tools still use the generic fallback', () => {
-		assert.strictEqual(invocation('some_new_tool', {}), 'Using "some_new_tool"');
-		assert.strictEqual(pastTense('some_new_tool', {}), 'Used "some_new_tool"');
+	test('unhandled tools fall back to just the display name', () => {
+		// Known tool with no tailored message: uses its friendly display name.
+		assert.strictEqual(invocation('store_memory', {}), 'Store Memory');
+		assert.strictEqual(pastTense('store_memory', {}), 'Store Memory');
+		// Unknown tool: display name is the raw tool name.
+		assert.strictEqual(invocation('some_new_tool', {}), 'some_new_tool');
+		assert.strictEqual(pastTense('some_new_tool', {}), 'some_new_tool');
 	});
 });
 
