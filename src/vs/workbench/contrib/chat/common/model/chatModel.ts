@@ -556,7 +556,7 @@ class AbstractResponse implements IResponse {
 			const part = parts[j];
 			if (part.kind === 'inlineReference') {
 				segments.push(this.inlineRefToRepr(part));
-			} else if (part.kind === 'markdownContent' || part.kind === 'markdownVuln' || part.kind === 'systemNotification') {
+			} else if (part.kind === 'markdownContent' || part.kind === 'markdownVuln') {
 				if (part.content.value.length > 0) {
 					segments.push(part.content.value);
 				}
