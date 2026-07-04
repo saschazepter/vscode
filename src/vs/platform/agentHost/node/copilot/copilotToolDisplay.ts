@@ -390,6 +390,18 @@ export function isHiddenTool(toolName: string): boolean {
 }
 
 /**
+ * Returns true for the auto-approved agent-coordination tools (list/read/write
+ * agents). These are client-contributed tools that never go through the
+ * permission flow, so the agent host auto-readies them at start to surface a
+ * tailored invocation message instead of the generic fallback.
+ */
+export function isAgentCoordinationTool(toolName: string): boolean {
+	return toolName === CopilotToolName.ListAgents
+		|| toolName === CopilotToolName.ReadAgent
+		|| toolName === CopilotToolName.WriteAgent;
+}
+
+/**
  * Returns true when the tool is Copilot's internal Autopilot completion signal.
  */
 export function isTaskCompleteTool(toolName: string): boolean {
@@ -655,22 +667,13 @@ export function getInvocationMessage(toolName: string, displayName: string, para
 			return localize('toolInvoke.exitPlanMode', "Presenting plan");
 		case CopilotToolName.Task:
 			return localize('toolInvoke.task', "Delegating task");
+		// The agent-coordination tools (list/read/write agents) are fast, so
+		// they use a single message for both the running and completed states:
+		// the past-tense phrasing. See getPastTenseMessage.
 		case CopilotToolName.ListAgents:
-			return localize('toolInvoke.listAgents', "Listing agents");
-		case CopilotToolName.ReadAgent: {
-			const args = parameters as ICopilotAgentToolArgs | undefined;
-			if (args?.agent_id) {
-				return md(localize('toolInvoke.readAgent', "Reading agent {0}", appendEscapedMarkdownInlineCode(args.agent_id)));
-			}
-			return localize('toolInvoke.readAgentGeneric', "Reading agent");
-		}
-		case CopilotToolName.WriteAgent: {
-			const args = parameters as ICopilotAgentToolArgs | undefined;
-			if (args?.agent_id) {
-				return md(localize('toolInvoke.writeAgent', "Writing to agent {0}", appendEscapedMarkdownInlineCode(args.agent_id)));
-			}
-			return localize('toolInvoke.writeAgentGeneric', "Writing to agent");
-		}
+		case CopilotToolName.ReadAgent:
+		case CopilotToolName.WriteAgent:
+			return getPastTenseMessage(toolName, displayName, parameters, true);
 		default:
 			return displayName;
 	}

@@ -313,21 +313,25 @@ suite('copilotToolDisplay — built-in tool invocation/past-tense messages', () 
 		return typeof result === 'string' ? result : result.markdown;
 	}
 
-	test('read_agent / write_agent surface the agent id', () => {
-		assert.strictEqual(invocation('read_agent', { agent_id: 'math-helper' }), 'Reading agent `math-helper`');
+	test('agent-coordination tools use a single message (past tense) for both invocation and completion', () => {
+		// read/write agents surface the agent id, and the invocation message
+		// matches the past-tense message (these tools are fast).
+		assert.strictEqual(invocation('read_agent', { agent_id: 'math-helper' }), 'Read agent `math-helper`');
 		assert.strictEqual(pastTense('read_agent', { agent_id: 'math-helper' }), 'Read agent `math-helper`');
-		assert.strictEqual(invocation('write_agent', { agent_id: 'math-helper', message: 'hi' }), 'Writing to agent `math-helper`');
+		assert.strictEqual(invocation('write_agent', { agent_id: 'math-helper', message: 'hi' }), 'Wrote to agent `math-helper`');
 		assert.strictEqual(pastTense('write_agent', { agent_id: 'math-helper', message: 'hi' }), 'Wrote to agent `math-helper`');
 	});
 
 	test('agent tools fall back to a generic phrase without an agent id', () => {
-		assert.strictEqual(invocation('read_agent', {}), 'Reading agent');
+		assert.strictEqual(invocation('read_agent', {}), 'Read agent');
 		assert.strictEqual(pastTense('write_agent', undefined), 'Wrote to agent');
 	});
 
-	test('list_agents and task use natural verb phrases', () => {
-		assert.strictEqual(invocation('list_agents', {}), 'Listing agents');
+	test('list_agents shares one message; task keeps distinct present/past phrases', () => {
+		// list_agents is a fast agent-coordination tool: one message.
+		assert.strictEqual(invocation('list_agents', {}), 'Listed agents');
 		assert.strictEqual(pastTense('list_agents', {}), 'Listed agents');
+		// task delegates to a (possibly slow) subagent, so it keeps a present-tense invocation.
 		assert.strictEqual(invocation('task', {}), 'Delegating task');
 		assert.strictEqual(pastTense('task', {}), 'Delegated task');
 	});
