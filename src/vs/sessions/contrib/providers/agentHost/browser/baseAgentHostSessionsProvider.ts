@@ -3257,7 +3257,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				continue;
 			}
 			for (const cached of this._sessionCache.values()) {
-				if (cached.resource.toString() === session.resource.toString()) {
+				if (isEqual(cached.resource, session.resource)) {
 					nowVisible.add(cached.sessionId);
 					break;
 				}

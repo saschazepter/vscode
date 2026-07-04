@@ -3574,13 +3574,9 @@ suite('LocalAgentHostSessionsProvider', () => {
 	}));
 
 	test('keeps a visible session subscribed so host-spawned subagent chats keep reaching the catalog', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
-		// Regression for the "Open Subagent" pill: a subagent is added to the
-		// session catalog by the host spontaneously (no client action), so it
-		// only reaches `cached.chats` while the session's state subscription is
-		// alive. Passively watching a long delegation used to let the idle timer
-		// release that subscription mid-view, dropping the subagent's `chatAdded`
-		// until the session was re-subscribed (e.g. switched away and back).
-		// Pinning visible sessions keeps the catalog fresh.
+		// Regression for the "Open Subagent" pill: a passively-watched session
+		// must stay subscribed so a host-spawned subagent's `chatAdded` keeps
+		// reaching the catalog past the idle-release window.
 		agentHost.addSession(createSession('subagent-live', { summary: 'Lead' }));
 		const visibleSessions = observableValue<readonly (IActiveSession | undefined)[]>('visible', []);
 		const provider = createProvider(disposables, agentHost, undefined, { visibleSessions });
