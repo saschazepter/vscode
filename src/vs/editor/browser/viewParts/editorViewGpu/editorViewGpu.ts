@@ -97,11 +97,17 @@ export class EditorViewGpu extends ViewPart {
 	private _buildConfig(): EditorViewConfig {
 		const options = this._context.configuration.options;
 		const fontInfo = options.get(EditorOption.fontInfo);
+		const layoutInfo = options.get(EditorOption.layoutInfo);
 		return {
 			fontFamily: fontInfo.fontFamily,
 			fontSize: fontInfo.fontSize,
 			lineHeight: fontInfo.lineHeight,
 			fontLigatures: !!options.get(EditorOption.fontLigatures),
+			// Match the DOM editor's geometry so text/line-numbers land at the
+			// same x offset: reserve exactly the editor's content-left as the
+			// gutter, and expand tabs by the model's tab size.
+			gutterWidth: layoutInfo.contentLeft,
+			tabSize: this._context.viewModel.model.getOptions().tabSize,
 			background: this._packColor(this._context.theme.getColor(editorBackground), 0x1e1e1eff),
 			foreground: this._packColor(this._context.theme.getColor(editorForeground), 0xd4d4d4ff),
 		};
