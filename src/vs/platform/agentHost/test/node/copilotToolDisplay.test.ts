@@ -327,6 +327,13 @@ suite('copilotToolDisplay — built-in tool invocation/past-tense messages', () 
 		assert.strictEqual(pastTense('write_agent', undefined), 'Wrote to agent');
 	});
 
+	test('agent tools ignore a malformed (non-string) agent id instead of throwing', () => {
+		// agent_id comes from untrusted JSON, so a non-string must not reach the
+		// markdown inline-code formatter (which would throw).
+		assert.strictEqual(invocation('read_agent', { agent_id: 123 }), 'Read agent');
+		assert.strictEqual(pastTense('write_agent', { agent_id: '' }), 'Wrote to agent');
+	});
+
 	test('list_agents shares one message; task keeps distinct present/past phrases', () => {
 		// list_agents is a fast agent-coordination tool: one message.
 		assert.strictEqual(invocation('list_agents', {}), 'Listed agents');

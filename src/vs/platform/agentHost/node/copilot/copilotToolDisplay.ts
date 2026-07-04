@@ -203,6 +203,17 @@ interface ICopilotAgentToolArgs {
 }
 
 /**
+ * Reads a well-formed `agent_id` from untrusted tool parameters. Since these are
+ * parsed from JSON they may not match the expected shape, so the id is returned
+ * only when it is a non-empty string and is therefore safe to render as inline
+ * markdown code.
+ */
+function getAgentId(parameters: Record<string, unknown> | undefined): string | undefined {
+	const agentId = (parameters as ICopilotAgentToolArgs | undefined)?.agent_id;
+	return typeof agentId === 'string' && agentId.length > 0 ? agentId : undefined;
+}
+
+/**
  * Parameters for the `apply_patch` / `git_apply_patch` tools. The patch text
  * itself lives in `input` using the V4A diff format (file headers like
  * `*** Update File: <path>`), so file paths must be parsed out of the body
@@ -794,16 +805,16 @@ export function getPastTenseMessage(toolName: string, displayName: string, param
 		case CopilotToolName.ListAgents:
 			return localize('toolComplete.listAgents', "Listed agents");
 		case CopilotToolName.ReadAgent: {
-			const args = parameters as ICopilotAgentToolArgs | undefined;
-			if (args?.agent_id) {
-				return md(localize('toolComplete.readAgent', "Read agent {0}", appendEscapedMarkdownInlineCode(args.agent_id)));
+			const agentId = getAgentId(parameters);
+			if (agentId) {
+				return md(localize('toolComplete.readAgent', "Read agent {0}", appendEscapedMarkdownInlineCode(agentId)));
 			}
 			return localize('toolComplete.readAgentGeneric', "Read agent");
 		}
 		case CopilotToolName.WriteAgent: {
-			const args = parameters as ICopilotAgentToolArgs | undefined;
-			if (args?.agent_id) {
-				return md(localize('toolComplete.writeAgent', "Wrote to agent {0}", appendEscapedMarkdownInlineCode(args.agent_id)));
+			const agentId = getAgentId(parameters);
+			if (agentId) {
+				return md(localize('toolComplete.writeAgent', "Wrote to agent {0}", appendEscapedMarkdownInlineCode(agentId)));
 			}
 			return localize('toolComplete.writeAgentGeneric', "Wrote to agent");
 		}
