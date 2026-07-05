@@ -112,6 +112,32 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 	}
 
 	/**
+	 * A session-switch restore closes/opens the docked editors (empty working-set
+	 * apply, managed-tab reconciliation), so suppress editor-part auto-visibility
+	 * for the whole restore to avoid closing the side pane or mistaking a
+	 * layout-driven close for a user dismissing a managed tab.
+	 */
+	protected override _suppressEditorVisibilityDuringRestore(): IDisposable | undefined {
+		return this._layoutService.suppressEditorPartAutoVisibility();
+	}
+
+	/**
+	 * The docked editor lives in the grid even when `useModal` is `'all'`, and a
+	 * created session shows the docked Changes editor by default (Editor-only), so
+	 * reveal the editor part for a created session unless it was explicitly hidden.
+	 * New-session views keep their editor closed (R1), so they are excluded.
+	 */
+	protected override _shouldRevealEditorPartOnApply(editorPartHidden: boolean, _isModal: boolean): boolean {
+		const isCreatedSession = this._sessionsService.activeSession.get()?.isCreated.get() ?? false;
+		return !editorPartHidden && isCreatedSession;
+	}
+
+	/** A created single-pane session with no saved editors still shows its managed Changes editor. */
+	protected override _shouldRevealEditorPartForEmptyWorkingSet(revealEditorPart: boolean): boolean {
+		return revealEditorPart;
+	}
+
+	/**
 	 * Registers the single-pane managed-tab and detail-panel behaviours once
 	 * editors are restored, so the managed tabs are reconciled on top of the
 	 * restored group rather than racing it.
