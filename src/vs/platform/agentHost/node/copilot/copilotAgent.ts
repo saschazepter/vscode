@@ -236,16 +236,20 @@ export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
 }
 
 /**
- * Thrown when a session cannot be resumed because its working directory — and
- * the worktree repository-root fallback — no longer exist on disk. The Copilot
- * SDK can only read a session's transcript through a live session bound to an
- * existing directory, so this is unrecoverable. Surfaced (rather than swallowed
- * into an empty transcript) so opening such a session shows a clear error
- * instead of a blank chat.
+ * Thrown when a session cannot be resumed because its working directory is gone
+ * and could not be repaired: the worktree could not be recreated (for a live
+ * session), or the repository-root fallback is also missing (for an archived
+ * session). The Copilot SDK can only read a session's transcript through a live
+ * session bound to an existing directory, so this is unrecoverable. Surfaced
+ * (rather than swallowed into an empty transcript) so opening such a session
+ * shows a clear error — including the underlying {@link reason} (e.g. the git
+ * failure) when one is available — instead of a blank chat.
  */
 export class SessionWorkingDirectoryMissingError extends Error {
-	constructor(readonly workingDirectory: URI) {
-		super(`This session could not be loaded because its working directory no longer exists: ${workingDirectory.fsPath}`);
+	constructor(readonly workingDirectory: URI, readonly reason?: string) {
+		super(reason
+			? localize('sessionWorkingDirectoryMissingWithReason', "This session couldn't be loaded because its worktree is missing and could not be recreated: {0}", reason)
+			: localize('sessionWorkingDirectoryMissing', "This session couldn't be loaded because its working directory no longer exists: {0}", workingDirectory.fsPath));
 		this.name = 'SessionWorkingDirectoryMissingError';
 	}
 }
@@ -3034,18 +3038,21 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// Live worktree session whose worktree vanished: recreate it rather than
 		// silently degrading to the source repository (which would lose the
 		// session's isolation).
+		let recreateFailureReason: string | undefined;
 		if (meta?.worktreePath && meta.repositoryRoot) {
 			const recreated = await this._recreateWorktree(sessionId, { branchName: meta.branchName, worktreePath: meta.worktreePath, repositoryRoot: meta.repositoryRoot });
-			if (recreated) {
+			if (recreated.ok) {
 				this._logService.info(`[Copilot:${sessionId}] Recreated missing worktree '${meta.worktreePath.fsPath}' for a live session on resume`);
 				return meta.worktreePath;
 			}
+			recreateFailureReason = recreated.reason;
 		}
 
 		// Not a worktree session, or the worktree could not be recreated: surface
-		// the failure instead of running in the wrong place.
-		this._logService.warn(`[Copilot:${sessionId}] Cannot resume: working directory '${workingDirectory.fsPath}' is missing and its worktree could not be recreated`);
-		throw new SessionWorkingDirectoryMissingError(workingDirectory);
+		// the failure (with the git reason when we have one) instead of running in
+		// the wrong place.
+		this._logService.warn(`[Copilot:${sessionId}] Cannot resume: working directory '${workingDirectory.fsPath}' is missing and its worktree could not be recreated${recreateFailureReason ? `: ${recreateFailureReason}` : ''}`);
+		throw new SessionWorkingDirectoryMissingError(workingDirectory, recreateFailureReason);
 	}
 
 	/**
@@ -3072,28 +3079,31 @@ export class CopilotAgent extends Disposable implements IAgent {
 	/**
 	 * Recreates a worktree from its persisted branch via `git worktree add`.
 	 * Shared by the unarchive path ({@link _recreateWorktreeOnUnarchive}) and the
-	 * resume repair path ({@link _ensureResumeWorkingDirectory}). Returns `true`
-	 * on success, `false` when the branch is missing or the git operation fails
-	 * (both logged); callers decide how to proceed.
+	 * resume repair path ({@link _ensureResumeWorkingDirectory}). Resolves to
+	 * `{ ok: true }` on success, or `{ ok: false, reason }` with a
+	 * human-readable reason (branch missing, or the git error) when it cannot
+	 * recreate; both cases are logged. Callers decide how to surface the reason.
 	 */
-	private async _recreateWorktree(sessionId: string, meta: { readonly branchName: string; readonly worktreePath: URI; readonly repositoryRoot: URI }): Promise<boolean> {
+	private async _recreateWorktree(sessionId: string, meta: { readonly branchName: string; readonly worktreePath: URI; readonly repositoryRoot: URI }): Promise<{ readonly ok: true } | { readonly ok: false; readonly reason: string }> {
 		const { branchName, worktreePath, repositoryRoot } = meta;
 		// Skip if the branch is missing — we have no commit to attach the
 		// recreated worktree to.
 		const branchPresent = await this._gitService.branchExists(repositoryRoot, branchName).catch(() => false);
 		if (!branchPresent) {
+			const reason = localize('worktreeRecreateBranchMissing', "the branch '{0}' no longer exists", branchName);
 			this._logService.info(`[Copilot:${sessionId}] Cannot recreate worktree: branch '${branchName}' is missing`);
-			return false;
+			return { ok: false, reason };
 		}
 		try {
 			await fs.mkdir(URI.joinPath(worktreePath, '..').fsPath, { recursive: true });
 			await this._gitService.addExistingWorktree(repositoryRoot, worktreePath, branchName);
 			this._createdWorktrees.set(sessionId, { repositoryRoot, worktree: worktreePath });
 			this._logService.info(`[Copilot:${sessionId}] Recreated worktree '${worktreePath.fsPath}'`);
-			return true;
+			return { ok: true };
 		} catch (error) {
-			this._logService.warn(`[Copilot:${sessionId}] Failed to recreate worktree '${worktreePath.fsPath}': ${error instanceof Error ? error.message : String(error)}`);
-			return false;
+			const reason = error instanceof Error ? error.message : String(error);
+			this._logService.warn(`[Copilot:${sessionId}] Failed to recreate worktree '${worktreePath.fsPath}': ${reason}`);
+			return { ok: false, reason };
 		}
 	}
 

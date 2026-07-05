@@ -1212,7 +1212,9 @@ suite('CopilotAgent', () => {
 			try {
 				await assert.rejects(
 					() => internals._ensureResumeWorkingDirectory(session, sessionId, missingWorktree),
-					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
+					(err: Error) => err instanceof SessionWorkingDirectoryMissingError
+						&& (err as SessionWorkingDirectoryMissingError).reason !== undefined
+						&& /branch 'feature\/x' no longer exists/.test(err.message),
 				);
 				assert.strictEqual(gitService.addedExistingWorktrees.length, 0);
 			} finally {

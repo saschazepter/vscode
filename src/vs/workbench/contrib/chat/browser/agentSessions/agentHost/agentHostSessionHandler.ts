@@ -192,6 +192,22 @@ function userOriginMessage(text: string, attachments: readonly MessageAttachment
 }
 
 /**
+ * Extracts a user-facing message from a session-load failure so the actual cause
+ * (e.g. a git worktree-recreation error) is shown instead of a generic message.
+ * Strips the `Failed to restore session <uri>: ` wrapper that `AgentService`
+ * adds around restore failures. Returns `undefined` when no message is available.
+ */
+export function unwrapSessionLoadErrorMessage(err: unknown): string | undefined {
+	const message = err instanceof Error ? err.message : (typeof err === 'string' ? err : undefined);
+	if (!message) {
+		return undefined;
+	}
+	// The session URI in the prefix contains `scheme:/…` (colon-slash), never
+	// `: ` (colon-space), so the non-greedy match stops at the wrapper separator.
+	return message.replace(/^Failed to restore session .+?: /, '');
+}
+
+/**
  * Resolves a session's last-used model selection from its live turns. Model
  * selection moved off the session/chat summary and onto each {@link Message};
  * the value to default to is the one carried by the most recent turn (the
@@ -963,9 +979,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					// partially-hydrated history isn't clobbered. A bare response is
 					// dropped without a preceding request, so anchor it with a
 					// system-initiated request (renders as a compact notice, not a
-					// user bubble) and attach the error to its response. The specific
-					// cause can't be reliably distinguished at this layer, so the
-					// message stays generic.
+					// user bubble) and attach the error to its response. Prefer the
+					// underlying error message (e.g. the git worktree-recreation
+					// failure) so the user sees the actual cause, falling back to a
+					// generic message.
 					if (history.length === 0) {
 						history.push({
 							type: 'request',
@@ -978,7 +995,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 							type: 'response',
 							parts: [],
 							participant: this._config.agentId,
-							errorDetails: { message: localize('agentHost.sessionLoadFailed', "This session couldn't be loaded.") },
+							errorDetails: { message: unwrapSessionLoadErrorMessage(err) ?? localize('agentHost.sessionLoadFailed', "This session couldn't be loaded.") },
 						});
 					}
 				}
