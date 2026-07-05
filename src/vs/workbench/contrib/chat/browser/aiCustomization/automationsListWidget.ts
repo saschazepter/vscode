@@ -367,7 +367,6 @@ export class AutomationsListWidget extends Disposable {
 	private readonly listContainer: HTMLElement;
 	private readonly emptyContainer: HTMLElement;
 	private list!: WorkbenchList<IAutomationListEntry>;
-	private newEmptyStateButton: Button | undefined;
 
 	private readonly newButtonHover = this._register(new MutableDisposable());
 	private readonly newEmptyStateButtonHover = this._register(new MutableDisposable());
@@ -485,7 +484,6 @@ export class AutomationsListWidget extends Disposable {
 		this.element.classList.remove('automations-empty');
 		this.emptyContainer.style.display = 'none';
 		this.listContainer.style.display = '';
-		this.newEmptyStateButton = undefined;
 		this.newEmptyStateButtonHover.clear();
 
 		this.displayEntries = items.map(automation => ({
@@ -512,7 +510,6 @@ export class AutomationsListWidget extends Disposable {
 		ctaButton.label = localize('automationsEmptyCta', "Create automation");
 		ctaButton.element.classList.add('automations-empty-cta');
 		this._emptyStateStore.add(ctaButton.onDidClick(() => this.openCreateDialog()));
-		this.newEmptyStateButton = ctaButton;
 		this.newEmptyStateButtonHover.value = this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), ctaButton.element, localize('newAutomationTooltip', "Create a new automation"));
 	}
 
