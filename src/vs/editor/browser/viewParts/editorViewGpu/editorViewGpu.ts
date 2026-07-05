@@ -10,6 +10,7 @@ import { Color } from '../../../../base/common/color.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
+import { editorActiveLineNumber, editorLineNumbers } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption } from '../../../common/config/editorOptions.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
 import type { ViewContext } from '../../../common/viewModel/viewContext.js';
@@ -38,6 +39,8 @@ export class EditorViewGpu extends ViewPart {
 	private _editorView: EditorView | undefined;
 	private _disposed = false;
 	private _linesDirty = true;
+	/** View line (1-based) holding the primary cursor; its number is highlighted. */
+	private _activeLineNumber = 1;
 
 	constructor(context: ViewContext) {
 		super(context);
@@ -107,9 +110,14 @@ export class EditorViewGpu extends ViewPart {
 			// same x offset: reserve exactly the editor's content-left as the
 			// gutter, and expand tabs by the model's tab size.
 			gutterWidth: layoutInfo.contentLeft,
+			lineNumbersRight: layoutInfo.lineNumbersLeft + layoutInfo.lineNumbersWidth,
 			tabSize: this._context.viewModel.model.getOptions().tabSize,
 			background: this._packColor(this._context.theme.getColor(editorBackground), 0x1e1e1eff),
 			foreground: this._packColor(this._context.theme.getColor(editorForeground), 0xd4d4d4ff),
+			lineNumberForeground: this._packColor(this._context.theme.getColor(editorLineNumbers), 0x858585ff),
+			lineNumberActiveForeground: this._packColor(this._context.theme.getColor(editorActiveLineNumber), 0xc6c6c6ff),
+			// 0-based view line of the primary cursor, drawn with the active color.
+			activeLine: this._activeLineNumber - 1,
 		};
 	}
 
@@ -181,6 +189,16 @@ export class EditorViewGpu extends ViewPart {
 	public override onConfigurationChanged(e: viewEvents.ViewConfigurationChangedEvent): boolean {
 		this._linesDirty = true;
 		return true;
+	}
+	public override onCursorStateChanged(e: viewEvents.ViewCursorStateChangedEvent): boolean {
+		// Track the primary cursor's view line so its number is highlighted with
+		// `editorLineNumber.activeForeground`, matching the DOM line-numbers view.
+		const activeLineNumber = e.selections[0].getPosition().lineNumber;
+		if (activeLineNumber !== this._activeLineNumber) {
+			this._activeLineNumber = activeLineNumber;
+			return true;
+		}
+		return false;
 	}
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
 		this._linesDirty = true;
