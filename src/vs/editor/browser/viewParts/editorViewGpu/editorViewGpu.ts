@@ -3,14 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { EditorView, EditorViewConfig, LineInput, ModelDeltaInput, TokenInput } from '@vscode/editor-view';
+import type { EditorView, EditorViewConfig, LineInput, ModelDeltaInput, SelectionInput, TokenInput } from '@vscode/editor-view';
 import { getActiveWindow } from '../../../../base/browser/dom.js';
 import { createFastDomNode, type FastDomNode } from '../../../../base/browser/fastDomNode.js';
 import { Color } from '../../../../base/common/color.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
-import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
-import { editorActiveLineNumber, editorGutter, editorLineNumbers } from '../../../common/core/editorColorRegistry.js';
+import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption } from '../../../common/config/editorOptions.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
@@ -19,6 +19,67 @@ import type { ViewContext } from '../../../common/viewModel/viewContext.js';
 import type { RenderingContext, RestrictedRenderingContext } from '../../view/renderingContext.js';
 import { ViewPart } from '../../view/viewPart.js';
 import { EditorViewModelSync } from './editorViewModelSync.js';
+
+/**
+ * Which editor surfaces the `@vscode/editor-view` (Rust/WASM) renderer draws
+ * itself. Each `true` means "the GPU canvas owns this surface", so the matching
+ * DOM view part is **not constructed, mounted or ticked** — see the gating in
+ * `view.ts`. Flip a flag to `true` only once the renderer draws that surface
+ * pixel-faithfully (guarded by the `@vscode/editor-view` `test/compare` harness),
+ * so we progressively shed the parallel DOM editor's CPU/DOM cost one surface at
+ * a time instead of in a risky big-bang cutover.
+ */
+export interface EditorViewGpuCapabilities {
+	/** Text glyphs (DOM `ViewLines.renderText` is skipped). */
+	readonly text: boolean;
+	/** Selection highlight (`SelectionsOverlay`). */
+	readonly selection: boolean;
+	/** Current-line highlight, content + margin (`CurrentLine*Overlay`). */
+	readonly currentLine: boolean;
+	/** Text caret (`ViewCursors`). */
+	readonly cursor: boolean;
+	/** Gutter line numbers (`LineNumbersOverlay`). */
+	readonly lineNumbers: boolean;
+	/**
+	 * Content/margin decorations: squiggles, inline/line decorations, indent
+	 * guides, rendered whitespace (`DecorationsOverlay`, `IndentGuidesOverlay`,
+	 * `WhitespaceOverlay`, `LinesDecorationsOverlay`,
+	 * `MarginViewLineDecorationsOverlay`).
+	 */
+	readonly decorations: boolean;
+	/** Vertical rulers (`Rulers`). */
+	readonly rulers: boolean;
+	/** Minimap (`Minimap`). */
+	readonly minimap: boolean;
+	/** Overview ruler marks (`DecorationsOverviewRuler`). */
+	readonly overviewRuler: boolean;
+	/** Scroll shadow (`ScrollDecorationViewPart`). */
+	readonly scrollDecoration: boolean;
+	/** Block decorations outline (`BlockDecorations`). */
+	readonly blockDecorations: boolean;
+}
+
+/**
+ * What the Rust renderer draws **today**. Only text is owned so far (the DOM
+ * `ViewLines.renderText` is already skipped in `editorView` mode); every other
+ * surface still falls to its DOM view part until the renderer grows it. This is
+ * a synchronous, static descriptor (it reflects what the renderer can do, not
+ * runtime state), so `view.ts` can consult it while constructing the view even
+ * though the renderer itself initializes asynchronously.
+ */
+export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
+	text: true,
+	selection: true,
+	currentLine: true,
+	cursor: false,
+	lineNumbers: false,
+	decorations: false,
+	rulers: false,
+	minimap: false,
+	overviewRuler: false,
+	scrollDecoration: false,
+	blockDecorations: false,
+};
 
 /**
  * Experimental integration of the `@vscode/editor-view` (Rust/WASM) GPU renderer.
@@ -49,6 +110,18 @@ export class EditorViewGpu extends ViewPart {
 	private readonly _sync = new EditorViewModelSync(EditorViewGpu.MAX_LINES);
 	/** View line (1-based) holding the primary cursor; its number is highlighted. */
 	private _activeLineNumber = 1;
+	/** Current selections in renderer coordinates (0-based line, 0-based UTF-16 column). */
+	private _selections: SelectionInput[] = [];
+	/** 0-based view lines carrying a cursor (deduped), on which the current-line highlight is painted. */
+	private _cursorLines: number[] = [0];
+	/** Whether every selection is empty (a bare cursor); gates the content current-line highlight. */
+	private _selectionIsEmpty = true;
+	/**
+	 * Whether the editor is focused. Selection and current-line highlight colors
+	 * differ between the focused and inactive states, mirroring the DOM editor's
+	 * `.focused` CSS. Starts `false` and tracks {@link onFocusChanged}.
+	 */
+	private _focused = false;
 
 	constructor(context: ViewContext) {
 		super(context);
@@ -133,6 +206,57 @@ export class EditorViewGpu extends ViewPart {
 			lineNumberActiveForeground: this._packColor(this._context.theme.getColor(editorActiveLineNumber), 0xc6c6c6ff),
 			// 0-based view line of the primary cursor, drawn with the active color.
 			activeLine: this._activeLineNumber - 1,
+			selections: this._selections,
+			...this._highlightColors(),
+		};
+	}
+
+	/**
+	 * Resolve the selection and current-line highlight state, mirroring
+	 * `currentLineHighlight.ts` and `selections.css`:
+	 * - Selection uses `editor.selectionBackground` when focused,
+	 *   `editor.inactiveSelectionBackground` otherwise.
+	 * - The current-line highlight is drawn in the **content** area when
+	 *   `renderLineHighlight` is `line`/`all`, the selection is empty, and focus
+	 *   permits; in the **gutter** when `gutter`/`all` and focus permits (not
+	 *   gated on the selection). Its fill uses `editor.lineHighlightBackground`
+	 *   (focused) / `editor.inactiveLineHighlightBackground` (unfocused); the 2px
+	 *   `editor.lineHighlightBorder` box is drawn when there is no opaque fill or
+	 *   the theme explicitly defines a border. `renderLineHighlightOnlyWhenFocus`
+	 *   suppresses both when unfocused.
+	 */
+	private _highlightColors(): Pick<EditorViewConfig, 'selectionBackground' | 'lineHighlightBackground' | 'lineHighlightBorder' | 'highlightLines' | 'highlightContent' | 'highlightMargin'> {
+		const theme = this._context.theme;
+		const options = this._context.configuration.options;
+		const selection = this._focused
+			? theme.getColor(editorSelectionBackground)
+			: theme.getColor(editorInactiveSelection);
+
+		const mode = options.get(EditorOption.renderLineHighlight);
+		const focusOk = !options.get(EditorOption.renderLineHighlightOnlyWhenFocus) || this._focused;
+		const highlightContent = (mode === 'line' || mode === 'all') && this._selectionIsEmpty && focusOk;
+		const highlightMargin = (mode === 'gutter' || mode === 'all') && focusOk;
+
+		const lineHighlight = theme.getColor(editorLineHighlight);
+		const inactiveLineHighlight = theme.getColor(editorInactiveLineHighlight);
+		// Focused prefers the active color and falls back to the inactive one
+		// (the `.focused` background rule is only emitted when the active color
+		// exists); unfocused always uses the inactive color.
+		const fill = this._focused ? (lineHighlight ?? inactiveLineHighlight) : inactiveLineHighlight;
+		const hasOpaqueFill = !!fill && !fill.isTransparent();
+
+		let lineHighlightBorder = 0;
+		if (!lineHighlight || lineHighlight.isTransparent() || theme.value.defines(editorLineHighlightBorder)) {
+			lineHighlightBorder = this._packColor(theme.getColor(editorLineHighlightBorder), 0);
+		}
+
+		return {
+			selectionBackground: this._packColor(selection, 0),
+			lineHighlightBackground: hasOpaqueFill ? this._packColor(fill, 0) : 0,
+			lineHighlightBorder,
+			highlightLines: this._cursorLines,
+			highlightContent,
+			highlightMargin,
 		};
 	}
 
@@ -337,13 +461,32 @@ export class EditorViewGpu extends ViewPart {
 	}
 	public override onCursorStateChanged(e: viewEvents.ViewCursorStateChangedEvent): boolean {
 		// Track the primary cursor's view line so its number is highlighted with
-		// `editorLineNumber.activeForeground`, matching the DOM line-numbers view.
+		// `editorLineNumber.activeForeground`, mirror the full selection set so the
+		// renderer can paint it, and derive the current-line highlight state
+		// (cursor lines + whether the selection is empty).
 		const activeLineNumber = e.selections[0].getPosition().lineNumber;
-		if (activeLineNumber !== this._activeLineNumber) {
-			this._activeLineNumber = activeLineNumber;
-			return true;
+		// View selections are 1-based (line, column); the renderer is 0-based.
+		const selections: SelectionInput[] = e.selections.map(s => ({
+			startLine: s.startLineNumber - 1,
+			startColumn: s.startColumn - 1,
+			endLine: s.endLineNumber - 1,
+			endColumn: s.endColumn - 1,
+		}));
+		// Distinct 0-based cursor (position) lines — VS Code highlights each one.
+		const cursorLines = Array.from(new Set(e.selections.map(s => s.getPosition().lineNumber - 1))).sort((a, b) => a - b);
+		this._activeLineNumber = activeLineNumber;
+		this._selections = selections;
+		this._cursorLines = cursorLines;
+		this._selectionIsEmpty = e.selections.every(s => s.isEmpty());
+		return true;
+	}
+	public override onFocusChanged(e: viewEvents.ViewFocusChangedEvent): boolean {
+		if (this._focused === e.isFocused) {
+			return false;
 		}
-		return false;
+		// Focus flips selection / current-line highlight to their active colors.
+		this._focused = e.isFocused;
+		return true;
 	}
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
 		// The whole model was replaced (e.g. a different document).
