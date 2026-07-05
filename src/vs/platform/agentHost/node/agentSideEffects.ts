@@ -28,6 +28,7 @@ import {
 	isAhpChatChannel,
 	isDefaultChatUri,
 	isSubagentChatUri,
+	isChatReadOnly,
 	MessageKind,
 	parseChatUri,
 	parseRequiredSessionUriFromChatUri,
@@ -1330,17 +1331,22 @@ export class AgentSideEffects extends Disposable {
 	}): Promise<void> {
 		const { agent, turnChannel, chat, message, turnId, senderClientId } = options;
 
-		// Archived sessions are read-only: reject any turn dispatched to them.
-		// This is the enforcement behind the UI hiding the composer, so a buggy
-		// or remote client cannot run work in an archived session (which may no
-		// longer have its isolated worktree on disk).
-		const sessionSummary = this._stateManager.getSessionSummary(options.sessionChannel);
-		if (sessionSummary && (sessionSummary.status & SessionStatus.IsArchived) === SessionStatus.IsArchived) {
-			this._logService.warn(`[AgentSideEffects] Rejecting turn on archived session=${options.sessionChannel}, turnId=${turnId}`);
+		// Read-only chats reject user-dispatched turns. `interactivity` is the
+		// general signal (e.g. subagent worker chats are `ReadOnly`), and an
+		// archived session downgrades its interactive chats to read-only too — so
+		// enforce off the chat's effective interactivity rather than special-casing
+		// archived. This is the enforcement behind the UI hiding the composer, so a
+		// buggy or remote client cannot run work in a read-only or archived session
+		// (which may no longer have its isolated worktree on disk).
+		const chatState = this._stateManager.getChatState(chat);
+		const sessionStatus = this._stateManager.getSessionSummary(options.sessionChannel)?.status ?? 0;
+		const sessionArchived = (sessionStatus & SessionStatus.IsArchived) === SessionStatus.IsArchived;
+		if (isChatReadOnly(chatState?.interactivity, sessionArchived)) {
+			this._logService.warn(`[AgentSideEffects] Rejecting turn on read-only chat=${chat} (archived=${sessionArchived}), turnId=${turnId}`);
 			this._stateManager.dispatchServerAction(turnChannel, {
 				type: ActionType.ChatError,
 				turnId,
-				error: { errorType: 'archived', message: 'Cannot send a message to an archived session. Unarchive it to continue.' },
+				error: { errorType: 'readOnly', message: sessionArchived ? 'Cannot send a message to an archived session. Unarchive it to continue.' : 'This chat is read-only.' },
 			});
 			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
 			this._toolCallTracker.clearSession(turnChannel);

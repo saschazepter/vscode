@@ -20,6 +20,7 @@ import {
 	ToolResultContentType,
 	ToolResultFileEditContent,
 	ChatOriginKind,
+	ChatInteractivity,
 	type ActiveTurn,
 	type ChangesetState,
 	type ChatState,
@@ -55,12 +56,13 @@ export {
 	ChatInputAnswerValueKind as SessionInputAnswerValueKind,
 	ChatInputQuestionKind as SessionInputQuestionKind,
 	ChatInputResponseKind as SessionInputResponseKind,
+	ChatInteractivity,
 	ChatOriginKind,
 	SessionLifecycle,
 	SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallStatus,
 	ToolResultContentType,
 	TurnState, type ActiveTurn, type AgentCustomization, type AgentCapabilities, type AgentInfo, type AgentSelection, type Annotation, type AnnotationEntry, type AnnotationsState, type AnnotationsSummary, type Changeset, type ChangesetFile,
-	type ChangesetOperation, type ChangesetState, type ChatState, type ChatSummary, type ChatInteractivity, type ChatOrigin, type ChildCustomization, type ClientPluginCustomization, type ConfigPropertySchema,
+	type ChangesetOperation, type ChangesetState, type ChatState, type ChatSummary, type ChatOrigin, type ChildCustomization, type ClientPluginCustomization, type ConfigPropertySchema,
 	type ConfigSchema,
 	type ContentRef, type Customization, type CustomizationDegradedState,
 	type CustomizationErrorState, type CustomizationLoadedState, type CustomizationLoadingState, type CustomizationLoadState, type DirectoryCustomization, type ErrorInfo, type HookCustomization, type FileEdit as ISessionFileDiff, type ToolResultEmbeddedResourceContent as IToolResultBinaryContent, type MarkdownResponsePart, type McpServerCustomization, type MessageAttachment,
@@ -558,6 +560,38 @@ export function chatSummaryFromState(state: ChatState): ChatSummary {
 	if (state.interactivity !== undefined) { summary.interactivity = state.interactivity; }
 	if (state.workingDirectory !== undefined) { summary.workingDirectory = state.workingDirectory; }
 	return summary;
+}
+
+/**
+ * The effective interactivity of a chat given its session's archived state.
+ *
+ * `interactivity` is the general read-only mechanism (e.g. subagent worker
+ * chats are `ReadOnly`). An archived session is read-only too, so its
+ * interactive chats are downgraded to `ReadOnly`. `Hidden` chats stay hidden —
+ * archiving only downgrades `Full` chats. Absent interactivity defaults to
+ * `Full` for backward compatibility.
+ *
+ * The host uses this to enforce read-only turns off a single signal
+ * ({@link isChatReadOnly}) rather than special-casing archived; the same rule
+ * is mirrored client-side to hide the composer.
+ */
+export function effectiveChatInteractivity(interactivity: ChatInteractivity | undefined, sessionArchived: boolean): ChatInteractivity {
+	if (interactivity === ChatInteractivity.Hidden) {
+		return ChatInteractivity.Hidden;
+	}
+	if (sessionArchived) {
+		return ChatInteractivity.ReadOnly;
+	}
+	return interactivity ?? ChatInteractivity.Full;
+}
+
+/**
+ * Whether a chat rejects user-dispatched turns, given its own interactivity and
+ * its session's archived state. `true` for `ReadOnly` chats (including archived
+ * sessions' interactive chats). See {@link effectiveChatInteractivity}.
+ */
+export function isChatReadOnly(interactivity: ChatInteractivity | undefined, sessionArchived: boolean): boolean {
+	return effectiveChatInteractivity(interactivity, sessionArchived) === ChatInteractivity.ReadOnly;
 }
 
 export function createActiveTurn(id: string, message: Message): ActiveTurn {
