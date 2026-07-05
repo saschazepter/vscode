@@ -196,14 +196,13 @@ suite('ProductionEndpointProvider — utility model overrides', () => {
 		assert.strictEqual(endpoint.model, 'copilot-utility');
 	});
 
-	test('no override configured — does not use a Copilot utility model when the selected main model is BYOK', async () => {
+	test('no override configured — falls back to the built-in Copilot utility model when the selected main model is BYOK', async () => {
 		setFetcher([makeChatModel('copilot-utility')]);
 		await endpointProvider.getChatEndpoint(makeFakeLanguageModelChat({ vendor: 'anthropic' }));
 
-		await assert.rejects(
-			() => endpointProvider.getChatEndpoint('copilot-utility'),
-			/No utility model is configured/
-		);
+		const endpoint = await endpointProvider.getChatEndpoint('copilot-utility');
+
+		assert.strictEqual(endpoint.model, 'copilot-utility');
 	});
 
 	test('Copilot utility model opt-in applies when the selected main model is BYOK', async () => {
