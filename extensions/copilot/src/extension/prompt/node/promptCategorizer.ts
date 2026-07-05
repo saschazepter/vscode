@@ -180,7 +180,14 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 		const timeoutHandle = setTimeout(() => cts.cancel(), CATEGORIZATION_TIMEOUT_MS);
 
 		try {
-			const endpoint = await this._resolveCategorizationEndpoint(request);
+			const endpoint = await this._resolveCategorizationEndpoint();
+			if (!endpoint) {
+				// The utility model can't be resolved (e.g. a BYOK main model is
+				// selected and no utility model is configured). Skip
+				// categorization entirely rather than falling back to the
+				// request's main model.
+				return;
+			}
 
 			const { messages } = await renderPromptElement(
 				this.instantiationService,
@@ -385,18 +392,18 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 	}
 
 	/**
-	 * Resolves the endpoint used for categorization. Prefers the fast
-	 * `copilot-utility-small` model, but that resolution throws when the
-	 * selected main model is BYOK and no utility model is configured. In that
-	 * case, fall back to the request's selected main model so categorization can
-	 * still proceed instead of failing.
+	 * Resolves the endpoint used for categorization using the fast
+	 * `copilot-utility-small` model. That resolution throws when the selected
+	 * main model is BYOK and no utility model is configured. In that case,
+	 * return `undefined` so categorization is skipped rather than falling back
+	 * to the request's selected main model.
 	 */
-	private async _resolveCategorizationEndpoint(request: vscode.ChatRequest): Promise<IChatEndpoint> {
+	private async _resolveCategorizationEndpoint(): Promise<IChatEndpoint | undefined> {
 		try {
 			return await this.endpointProvider.getChatEndpoint('copilot-utility-small');
 		} catch (err) {
-			this.logService.debug(`[PromptCategorizer] Falling back to the selected main model for categorization: ${err instanceof Error ? err.message : String(err)}`);
-			return this.endpointProvider.getChatEndpoint(request);
+			this.logService.debug(`[PromptCategorizer] Skipping categorization; no utility model available: ${err instanceof Error ? err.message : String(err)}`);
+			return undefined;
 		}
 	}
 }
