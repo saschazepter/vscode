@@ -697,10 +697,7 @@ export class AutomationsListWidget extends Disposable {
 	focus(): void {
 		if (this.list.length > 0) {
 			this.list.domFocus();
-			this.list.setFocus([0]);
-			return;
 		}
-		this.newEmptyStateButton?.focus();
 	}
 }
 
