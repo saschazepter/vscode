@@ -1897,6 +1897,7 @@ pane is first mounted. View switches inside the modal are not animated. */
 	gap: 12px;
 	padding: 12px 16px;
 	border-radius: 6px;
+	cursor: pointer;
 }
 
 .automations-list-widget .automations-row:not(.automations-row-disabled):hover {

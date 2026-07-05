@@ -176,6 +176,13 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		templateData.promptEl.textContent = truncate(automation.prompt, 160);
 		templateData.promptEl.title = automation.prompt;
 
+		templateData.disposables.add(DOM.addDisposableListener(templateData.row, 'click', (e) => {
+			if (DOM.isAncestor(e.target as HTMLElement, templateData.actions)) {
+				return;
+			}
+			this.widget.toggleExpanded(automation.id);
+		}));
+
 		DOM.clearNode(templateData.actions);
 		this.renderActions(templateData, automation, expanded, inFlight);
 
