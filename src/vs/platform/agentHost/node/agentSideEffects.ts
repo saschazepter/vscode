@@ -1346,7 +1346,9 @@ export class AgentSideEffects extends Disposable {
 			this._stateManager.dispatchServerAction(turnChannel, {
 				type: ActionType.ChatError,
 				turnId,
-				error: { errorType: 'readOnly', message: sessionArchived ? 'Cannot send a message to an archived session. Unarchive it to continue.' : 'This chat is read-only.' },
+				error: sessionArchived
+					? { errorType: 'archived', message: 'This session is archived and read-only. Restore the session to continue the conversation.' }
+					: { errorType: 'readOnly', message: 'This chat is read-only.' },
 			});
 			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
 			this._toolCallTracker.clearSession(turnChannel);
