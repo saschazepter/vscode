@@ -179,13 +179,7 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 		}
 
 		if (!this._useCopilotModelsForUtilityModelsByDefault()) {
-			// The selected main model is BYOK and the user hasn't configured a
-			// utility model or opted into using Copilot models for utility
-			// purposes. Rather than throwing — which would break utility-driven
-			// chat features such as prompt categorization and intent detection —
-			// fall back to the built-in Copilot utility model as a best effort so
-			// the chat can still proceed.
-			this._logService.warn(`[ProductionEndpointProvider] No utility model is configured for '${family}' while the selected main model is BYOK; falling back to the built-in Copilot utility model.`);
+			throw new Error(`No utility model is configured for '${family}' while the selected main model is BYOK.`);
 		}
 
 		switch (family) {

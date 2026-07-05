@@ -9,6 +9,7 @@ import { ChatFetchResponseType, ChatLocation } from '../../../platform/chat/comm
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
 import { ILogService } from '../../../platform/log/common/logService';
 import { ICopilotToolCall } from '../../../platform/networking/common/fetch';
+import { IChatEndpoint } from '../../../platform/networking/common/networking';
 import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
 import { IRequestLogger } from '../../../platform/requestLogger/common/requestLogger';
 import { ITabsAndEditorsService } from '../../../platform/tabs/common/tabsAndEditorsService';
@@ -179,7 +180,7 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 		const timeoutHandle = setTimeout(() => cts.cancel(), CATEGORIZATION_TIMEOUT_MS);
 
 		try {
-			const endpoint = await this.endpointProvider.getChatEndpoint('copilot-utility-small');
+			const endpoint = await this._resolveCategorizationEndpoint(request);
 
 			const { messages } = await renderPromptElement(
 				this.instantiationService,
@@ -381,5 +382,21 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 		);
 
 		this.logService.debug(`[PromptCategorizer] Classification complete: outcome=${outcome || 'success'}, latencyMs=${latencyMs}, intent=${classification?.intent}, domain=${classification?.domain}, scope=${classification?.scope}`);
+	}
+
+	/**
+	 * Resolves the endpoint used for categorization. Prefers the fast
+	 * `copilot-utility-small` model, but that resolution throws when the
+	 * selected main model is BYOK and no utility model is configured. In that
+	 * case, fall back to the request's selected main model so categorization can
+	 * still proceed instead of failing.
+	 */
+	private async _resolveCategorizationEndpoint(request: vscode.ChatRequest): Promise<IChatEndpoint> {
+		try {
+			return await this.endpointProvider.getChatEndpoint('copilot-utility-small');
+		} catch (err) {
+			this.logService.debug(`[PromptCategorizer] Falling back to the selected main model for categorization: ${err instanceof Error ? err.message : String(err)}`);
+			return this.endpointProvider.getChatEndpoint(request);
+		}
 	}
 }
