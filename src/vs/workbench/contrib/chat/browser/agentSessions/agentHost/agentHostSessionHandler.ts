@@ -963,7 +963,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					// partially-hydrated history isn't clobbered. A bare response is
 					// dropped without a preceding request, so anchor it with a
 					// system-initiated request (renders as a compact notice, not a
-					// user bubble) and attach the error to its response.
+					// user bubble) and attach the error to its response. The specific
+					// cause can't be reliably distinguished at this layer, so the
+					// message stays generic.
 					if (history.length === 0) {
 						history.push({
 							type: 'request',
@@ -976,7 +978,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 							type: 'response',
 							parts: [],
 							participant: this._config.agentId,
-							errorDetails: { message: localize('agentHost.sessionLoadFailed', "This session couldn't be loaded. Its working directory may no longer exist.") },
+							errorDetails: { message: localize('agentHost.sessionLoadFailed', "This session couldn't be loaded.") },
 						});
 					}
 				}

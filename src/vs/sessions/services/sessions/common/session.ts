@@ -69,11 +69,15 @@ export const enum ChatInteractivity {
 /**
  * The effective interactivity of a chat given its session's archived state.
  *
- * An archived session is read-only: every chat in it must hide its composer
- * regardless of the chat's own protocol interactivity. When not archived, the
- * chat keeps its own interactivity.
+ * An archived session is read-only: its interactive chats must hide their
+ * composer. `Hidden` chats are internal workers filtered out of the UI, so they
+ * stay hidden — archiving only downgrades `Full` chats to `ReadOnly`. When not
+ * archived, the chat keeps its own interactivity.
  */
 export function effectiveChatInteractivity(isArchived: boolean, interactivity: ChatInteractivity): ChatInteractivity {
+	if (interactivity === ChatInteractivity.Hidden) {
+		return ChatInteractivity.Hidden;
+	}
 	return isArchived ? ChatInteractivity.ReadOnly : interactivity;
 }
 
