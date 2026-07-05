@@ -1021,6 +1021,19 @@ export const SESSION_META_WORKSPACELESS_KEY = 'workspaceless';
 export const AH_META_WORKSPACELESS_DB_KEY = 'agentHost.workspaceless';
 
 /**
+ * Session-database metadata key recording whether a session is archived. Written by
+ * the AH orchestrator (`AgentSideEffects` on `SessionIsArchivedChanged`) and read by
+ * both the orchestrator (`AgentService` restore/list) and agents (e.g. `CopilotAgent`
+ * decides whether to recreate a missing worktree vs. resume read-only for history).
+ * {@link AH_META_IS_DONE_DB_KEY} is the legacy name kept for sessions persisted before
+ * the rename; readers fall back to it when {@link AH_META_IS_ARCHIVED_DB_KEY} is absent.
+ */
+export const AH_META_IS_ARCHIVED_DB_KEY = 'isArchived';
+
+/** Legacy metadata key for the archived flag; see {@link AH_META_IS_ARCHIVED_DB_KEY}. */
+export const AH_META_IS_DONE_DB_KEY = 'isDone';
+
+/**
  * Reads the workspace-less marker from {@link SessionSummaryMeta}. Returns
  * `true` only when the well-known key is present and set to boolean `true`.
  */

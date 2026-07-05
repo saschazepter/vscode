@@ -33,7 +33,7 @@ import { AgentHostConfigKey } from '../../common/agentHostCustomizationConfig.js
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, type AgentSignal, type IAgentActionSignal, type IAgentCreateChatForkSource, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
-import { buildDefaultChatUri, buildChatUri, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, CustomizationLoadStatus, MessageKind, ResponsePartKind, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, customizationId, type ClientPluginCustomization, type MarkdownResponsePart, type PluginCustomization, type ToolCallResult, type Turn, RuleCustomization } from '../../common/state/sessionState.js';
+import { buildDefaultChatUri, buildChatUri, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, AH_META_IS_ARCHIVED_DB_KEY, CustomizationLoadStatus, MessageKind, ResponsePartKind, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, customizationId, type ClientPluginCustomization, type MarkdownResponsePart, type PluginCustomization, type ToolCallResult, type Turn, RuleCustomization } from '../../common/state/sessionState.js';
 import { CustomizationType, ToolCallContributorKind, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { ActionType, type ChatAction, type IDeltaAction, type SessionAction } from '../../common/state/sessionActions.js';
 
@@ -1173,7 +1173,7 @@ suite('CopilotAgent', () => {
 			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
 			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
 			await db.object.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString());
-			await db.object.setMetadata('isArchived', 'true');
+			await db.object.setMetadata(AH_META_IS_ARCHIVED_DB_KEY, 'true');
 			db.dispose();
 			const gitService = new TestAgentHostGitService();
 			gitService.existingBranches.add('feature/x');
@@ -1250,7 +1250,7 @@ suite('CopilotAgent', () => {
 			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
 			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
 			await db.object.setMetadata('copilot.worktree.repositoryRoot', missingRepoRoot.toString());
-			await db.object.setMetadata('isArchived', 'true');
+			await db.object.setMetadata(AH_META_IS_ARCHIVED_DB_KEY, 'true');
 			db.dispose();
 			const agent = createTestAgent(disposables, { sessionDataService });
 			const internals = agent as unknown as {

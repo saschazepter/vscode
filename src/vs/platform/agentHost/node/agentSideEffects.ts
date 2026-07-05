@@ -29,6 +29,7 @@ import {
 	isDefaultChatUri,
 	isSubagentChatUri,
 	isChatReadOnly,
+	AH_META_IS_ARCHIVED_DB_KEY,
 	MessageKind,
 	parseChatUri,
 	parseRequiredSessionUriFromChatUri,
@@ -1139,7 +1140,7 @@ export class AgentSideEffects extends Disposable {
 				break;
 			}
 			case ActionType.SessionIsArchivedChanged: {
-				this._persistSessionFlag(channel, 'isArchived', action.isArchived ? 'true' : '');
+				this._persistSessionFlag(channel, AH_META_IS_ARCHIVED_DB_KEY, action.isArchived ? 'true' : '');
 				const agent = this._options.getAgent(channel);
 				agent?.onArchivedChanged?.(URI.parse(channel), action.isArchived).catch(err => {
 					this._logService.warn(`[AgentSideEffects] onArchivedChanged failed for ${channel}`, err);
