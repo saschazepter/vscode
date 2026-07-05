@@ -129,7 +129,7 @@ interface IPartSizesState {
 
 //#endregion
 
-export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService {
+export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService, IDockedEditorLayout {
 	isEditorMaximized(): boolean;
 	setEditorMaximized(maximized: boolean): void;
 
@@ -144,6 +144,22 @@ export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService {
 	 */
 	readonly isSinglePaneLayoutEnabled: boolean;
 
+	/**
+	 * Suppresses the automatic editor part show/hide that normally fires from
+	 * `editorService.onWillOpenEditor` / `onDidCloseEditor`. Use this around
+	 * programmatic editor operations (e.g. applying a working set) so that the
+	 * editor part visibility is not changed as a side-effect. Dispose the
+	 * returned handle to release the suppression. Calls nest via a counter.
+	 */
+	suppressEditorPartAutoVisibility(): IDisposable;
+}
+
+/**
+ * Docked-editor (single-pane detail panel) concerns of the layout service, kept
+ * separate from the general contract so features that do not care about the
+ * docked layout are not coupled to it.
+ */
+export interface IDockedEditorLayout {
 	handleDockedEditorPartLayout(nodeWidth: number): void;
 
 	/**
@@ -153,17 +169,6 @@ export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService {
 	 * uses this to avoid re-hiding an editor the user explicitly asked to show.
 	 */
 	isEditorRevealedExplicitly(): boolean;
-
-	/**
-	 * Suppresses the automatic editor part show/hide that normally fires from
-	 * `editorService.onWillOpenEditor` / `onDidCloseEditor`. Use this around
-	 * programmatic editor operations (e.g. applying a working set) so that the
-	 * editor part visibility is not changed as a side-effect. Dispose the
-	 * returned handle to release the suppression. Calls nest via a counter.
-	 *
-	 * Comment: We should consider movin mximization logic into layoutController
-	 */
-	suppressEditorPartAutoVisibility(): IDisposable;
 }
 
 export const IAgentWorkbenchLayoutService = refineServiceDecorator<IWorkbenchLayoutService, IAgentWorkbenchLayoutService>(IWorkbenchLayoutService);
