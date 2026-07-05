@@ -34,7 +34,8 @@ import { IAutomationService } from '../../common/automations/automationService.j
 import { IAutomationDialogService } from '../../common/automations/automationDialogService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { DAYS_OF_WEEK } from '../../common/automations/schedule.js';
-import { IChatWidgetService } from '../chat.js';
+import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
+import { openSession as openSessionFromOpener } from '../agentSessions/agentSessionsOpener.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 
@@ -111,11 +112,12 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 	constructor(
 		private readonly widget: AutomationsListWidget,
 		private readonly hoverService: IHoverService,
-		private readonly chatWidgetService: IChatWidgetService,
 		private readonly notificationService: INotificationService,
 		private readonly editorService: IEditorService,
 		private readonly editorGroupsService: IEditorGroupsService,
 		private readonly logService: ILogService,
+		private readonly agentSessionsService: IAgentSessionsService,
+		private readonly instantiationService: IInstantiationService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -298,12 +300,13 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 				this.logService.debug(`[AutomationsListWidget] Opening session: ${sessionResource.toString()}`);
 				const activeEditor = this.editorService.activeEditor;
 				const activeGroupId = this.editorGroupsService.activeGroup.id;
-				this.chatWidgetService.openSession(sessionResource).then((widget) => {
-					if (!widget) {
-						this.logService.warn(`[AutomationsListWidget] openSession resolved without a widget for ${sessionResource.toString()}`);
-						this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
-						return;
-					}
+				const agentSession = this.agentSessionsService.getSession(sessionResource);
+				if (!agentSession) {
+					this.logService.warn(`[AutomationsListWidget] Session not found for ${sessionResource.toString()}`);
+					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
+					return;
+				}
+				this.instantiationService.invokeFunction(openSessionFromOpener, agentSession).then(() => {
 					if (activeEditor) {
 						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
 					}
@@ -379,10 +382,10 @@ export class AutomationsListWidget extends Disposable {
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 	) {
 		super();
 
@@ -419,7 +422,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService, this.chatWidgetService, this.notificationService, this.editorService, this.editorGroupsService, this.logService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.notificationService, this.editorService, this.editorGroupsService, this.logService, this.agentSessionsService, this.instantiationService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
