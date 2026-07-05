@@ -1913,11 +1913,6 @@ pane is first mounted. View switches inside the modal are not animated. */
 	outline-offset: -1px;
 }
 
-.automations-list-widget .monaco-list-row.selected,
-.automations-list-widget .monaco-list-row.focused {
-	background-color: transparent !important;
-}
-
 .automations-list-widget .automations-row-disabled {
 	opacity: 0.6;
 }
