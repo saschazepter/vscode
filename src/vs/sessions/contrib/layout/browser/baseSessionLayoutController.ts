@@ -206,6 +206,28 @@ export abstract class BaseLayoutController extends Disposable {
 			}
 		}));
 
+		// [B2] Track editor-part (docked side-pane) visibility changes by the user
+		// so a session's closed/open editor state is captured at the moment it
+		// changes — not lazily re-read at switch-away time, which races with the
+		// incoming session's async layout restore (the switch derive lags behind
+		// the raw active-session change, so by the time the previous session is
+		// saved the editor part may already reflect the new session). Skipped
+		// while multiple sessions are visible (the editor area is shared) and
+		// during a session-switch restore (those changes are layout-driven, not
+		// user choices).
+		this._register(this._layoutService.onDidChangePartVisibility(e => {
+			if (e.partId !== Parts.EDITOR_PART || this._isRestoringSessionLayout) {
+				return;
+			}
+			if (this.multipleSessionsVisibleObs.get()) {
+				return;
+			}
+			const activeSession = this._sessionsService.activeSession.get();
+			if (activeSession) {
+				this._editorPartHiddenBySession.set(activeSession.resource, !e.visible);
+			}
+		}));
+
 		// [B2] Editor working sets
 
 		this._useModalConfigObs = observableConfigValue<'off' | 'some' | 'all'>('workbench.editor.useModal', 'all', this._configurationService);
@@ -703,13 +725,10 @@ export abstract class BaseLayoutController extends Disposable {
 	private _saveWorkingSet(sessionResource: URI): void {
 		this._deleteWorkingSet(sessionResource);
 
-		// Remember the editor part's hidden state so restoring the session does
-		// not force it back open (see _applyWorkingSet). Skipped while multiple
-		// sessions are visible: the editor area is shared across them, so its
-		// visibility is not a per-session choice.
-		if (this._sessionsService.visibleSessions.get().length <= 1) {
-			this._editorPartHiddenBySession.set(sessionResource, !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow));
-		}
+		// Note: the editor part's hidden state is captured eagerly by the [B2]
+		// part-visibility listener at the moment the user changes it, not here —
+		// re-reading it lazily at switch-away time races with the incoming
+		// session's async layout restore and could record the wrong value.
 
 		if (this._editorService.visibleEditors.length > 0) {
 			const workingSetName = `session-working-set:${sessionResource.toString()}`;

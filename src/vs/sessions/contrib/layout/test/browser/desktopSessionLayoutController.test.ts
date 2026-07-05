@@ -39,12 +39,21 @@ suite('LayoutController (desktop)', () => {
 		getViewState(sessionResource: URI) {
 			return this._viewStateBySession.get(sessionResource);
 		}
+		getEditorPartHidden(sessionResource: URI): boolean | undefined {
+			return this._editorPartHiddenBySession.get(sessionResource);
+		}
+		runWithRestore(work: () => void | Promise<unknown>): void {
+			this._withSessionLayoutRestore(work);
+		}
 	}
 
 	class TestSinglePaneController extends SinglePaneDesktopSessionLayoutController {
 		/** Runs `work` while a session-switch layout restore is held (see `_withSessionLayoutRestore`). */
 		runWithRestore(work: () => void | Promise<unknown>): void {
 			this._withSessionLayoutRestore(work);
+		}
+		getEditorPartHidden(sessionResource: URI): boolean | undefined {
+			return this._editorPartHiddenBySession.get(sessionResource);
 		}
 	}
 
@@ -525,6 +534,45 @@ suite('LayoutController (desktop)', () => {
 			aux: false,
 			editor: false,
 		});
+	});
+
+	test('[B2] captures editor-part hidden state eagerly when the user closes the side pane', () => {
+		const controller = createController();
+		const session = makeSession(URI.parse('session:1'));
+		harness.activeSessionObs.set(session, undefined);
+
+		// User closes the side pane (editor part hidden) while on the session.
+		setPartVisible(Parts.EDITOR_PART, false);
+
+		assert.strictEqual(controller.getEditorPartHidden(session.resource), true,
+			'editor-part hidden must be captured at the moment the user closes it');
+
+		// User reopens it.
+		setPartVisible(Parts.EDITOR_PART, true);
+		assert.strictEqual(controller.getEditorPartHidden(session.resource), false,
+			'editor-part hidden must update when the user reopens it');
+	});
+
+	test('[B2] a later transient editor reveal does not overwrite a session\'s captured closed state during a switch', () => {
+		const controller = createController();
+		const sessionA = makeSession(URI.parse('session:a'));
+		const sessionB = makeSession(URI.parse('session:b'));
+		harness.activeSessionObs.set(sessionA, undefined);
+
+		// A: user closes the editor part -> captured hidden.
+		setPartVisible(Parts.EDITOR_PART, false);
+		assert.strictEqual(controller.getEditorPartHidden(sessionA.resource), true);
+
+		// Simulate the switch-time race: while switching to B the editor part is
+		// revealed by B's layout restore (the capture listener ignores changes
+		// during a restore). A's captured closed state must be preserved.
+		controller.runWithRestore(() => {
+			harness.activeSessionObs.set(sessionB, undefined);
+			setPartVisible(Parts.EDITOR_PART, true);
+		});
+
+		assert.strictEqual(controller.getEditorPartHidden(sessionA.resource), true,
+			'a restore-driven editor reveal must not overwrite session A\'s captured closed state');
 	});
 
 	test('[D4] keeps the open side pane and shows Changes when a new session is submitted', () => {
