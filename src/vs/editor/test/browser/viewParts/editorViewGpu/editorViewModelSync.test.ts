@@ -1,0 +1,314 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import assert from 'assert';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { EditorViewModelSync } from '../../../../browser/viewParts/editorViewGpu/editorViewModelSync.js';
+
+/**
+ * Cross-checks {@link EditorViewModelSync} against a plain reference model.
+ *
+ * The `reference` arrays are the ground truth (what the view model looks like);
+ * every simulated edit mutates them directly. The `mirror` arrays start empty and
+ * are updated **only** by executing the plan the planner produces — inserting
+ * placeholders for structural inserts and reading final content for dirty lines,
+ * exactly as `EditorViewGpu` does at present time. After each `sync()` the mirror
+ * must equal the reference (capped at `maxLines`).
+ */
+class Sim {
+
+	private readonly _sync: EditorViewModelSync;
+
+	// Ground-truth view model: text + a per-line token "signature".
+	private _refText: string[];
+	private _refSig: string[];
+
+	// Renderer mirror, only ever mutated by executing plans.
+	private _mirText: string[] = [];
+	private _mirSig: string[] = [];
+
+	private _sigCounter = 0;
+
+	constructor(initial: string[], private readonly _maxLines = 1_000_000) {
+		this._sync = new EditorViewModelSync(this._maxLines);
+		this._refText = initial.slice();
+		this._refSig = initial.map(() => this._nextSig());
+	}
+
+	private _nextSig(): string {
+		return `s${this._sigCounter++}`;
+	}
+
+	public get lineCount(): number {
+		return this._refText.length;
+	}
+
+	public planner(): EditorViewModelSync {
+		return this._sync;
+	}
+
+	// --- simulated edits: mutate reference + notify planner -------------------
+
+	public change(fromLineNumber: number, count: number): void {
+		const to = fromLineNumber + count - 1;
+		for (let line = fromLineNumber; line <= to; line++) {
+			this._refText[line - 1] = `changed(${this._nextSig()})`;
+			this._refSig[line - 1] = this._nextSig(); // a content change re-tokenizes
+		}
+		this._sync.onLinesChanged(fromLineNumber, count, this._refText.length);
+	}
+
+	public insert(fromLineNumber: number, count: number): void {
+		const newText: string[] = [];
+		const newSig: string[] = [];
+		for (let i = 0; i < count; i++) {
+			newText.push(`inserted(${this._nextSig()})`);
+			newSig.push(this._nextSig());
+		}
+		this._refText.splice(fromLineNumber - 1, 0, ...newText);
+		this._refSig.splice(fromLineNumber - 1, 0, ...newSig);
+		this._sync.onLinesInserted(fromLineNumber, fromLineNumber + count - 1, this._refText.length);
+	}
+
+	public delete(fromLineNumber: number, count: number): void {
+		this._refText.splice(fromLineNumber - 1, count);
+		this._refSig.splice(fromLineNumber - 1, count);
+		this._sync.onLinesDeleted(fromLineNumber, fromLineNumber + count - 1, this._refText.length);
+	}
+
+	public tokens(fromLineNumber: number, toLineNumber: number): void {
+		for (let line = fromLineNumber; line <= toLineNumber; line++) {
+			this._refSig[line - 1] = this._nextSig();
+		}
+		this._sync.onTokensChanged([{ fromLineNumber, toLineNumber }], this._refText.length);
+	}
+
+	public flush(): void {
+		this._sync.scheduleFullReload();
+	}
+
+	// --- plan execution -------------------------------------------------------
+
+	public sync(): void {
+		const plan = this._sync.takePlan();
+		if (plan.fullReload) {
+			this._mirText = this._refText.slice(0, this._maxLines);
+			this._mirSig = this._refSig.slice(0, this._maxLines);
+			return;
+		}
+		for (const delta of plan.structural) {
+			assert.strictEqual(delta.type, 'replaceLines', 'structural deltas must be replaceLines');
+			if (delta.type === 'replaceLines') {
+				const placeholderText = delta.insert.map(l => l.text); // planner inserts empty placeholders
+				const placeholderSig = delta.insert.map(() => '<placeholder>');
+				this._mirText.splice(delta.start, delta.deleteCount, ...placeholderText);
+				this._mirSig.splice(delta.start, delta.deleteCount, ...placeholderSig);
+			}
+		}
+		// Content refresh reads final text + tokens (present-time, final coords).
+		for (const line of plan.contentLines) {
+			if (line >= 1 && line <= this._mirText.length) {
+				this._mirText[line - 1] = this._refText[line - 1];
+				this._mirSig[line - 1] = this._refSig[line - 1];
+			}
+		}
+		// Token-only refresh reads final tokens.
+		for (const line of plan.tokenLines) {
+			if (line >= 1 && line <= this._mirSig.length) {
+				this._mirSig[line - 1] = this._refSig[line - 1];
+			}
+		}
+	}
+
+	public assertSynced(message?: string): void {
+		const cappedText = this._refText.slice(0, this._maxLines);
+		const cappedSig = this._refSig.slice(0, this._maxLines);
+		assert.deepStrictEqual(this._mirText, cappedText, `text mismatch${message ? ': ' + message : ''}`);
+		assert.deepStrictEqual(this._mirSig, cappedSig, `token mismatch${message ? ': ' + message : ''}`);
+	}
+}
+
+suite('EditorViewModelSync', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('initial state schedules a full reload, then a clean incremental state', () => {
+		const sync = new EditorViewModelSync(1000);
+		assert.strictEqual(sync.pendingFullReload, true);
+		const plan = sync.takePlan();
+		assert.strictEqual(plan.fullReload, true);
+		assert.strictEqual(sync.pendingFullReload, false);
+		const next = sync.takePlan();
+		assert.deepStrictEqual(next, { fullReload: false, structural: [], contentLines: [], tokenLines: [] });
+	});
+
+	test('single-line content change -> one content refresh', () => {
+		const sim = new Sim(['a', 'b', 'c']);
+		sim.sync(); // initial full reload
+		sim.assertSynced('after initial load');
+
+		sim.change(2, 1);
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.fullReload, false);
+		assert.deepStrictEqual(plan.structural, []);
+		assert.deepStrictEqual(plan.contentLines, [2]);
+		assert.deepStrictEqual(plan.tokenLines, []);
+	});
+
+	test('token change -> token-only refresh (no content, no structure)', () => {
+		const sim = new Sim(['a', 'b', 'c', 'd']);
+		sim.sync();
+		sim.tokens(2, 3);
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.fullReload, false);
+		assert.deepStrictEqual(plan.structural, []);
+		assert.deepStrictEqual(plan.contentLines, []);
+		assert.deepStrictEqual(plan.tokenLines, [2, 3]);
+	});
+
+	test('content dirty wins over token dirty for the same line', () => {
+		const sim = new Sim(['a', 'b', 'c']);
+		sim.sync();
+		sim.tokens(2, 2);
+		sim.change(2, 1);
+		const plan = sim.planner().takePlan();
+		assert.deepStrictEqual(plan.contentLines, [2]);
+		assert.deepStrictEqual(plan.tokenLines, [], 'line 2 is covered by the content refresh');
+	});
+
+	test('insert emits a placeholder splice + content refresh of the new lines', () => {
+		const sim = new Sim(['a', 'b', 'c']);
+		sim.sync();
+		sim.insert(2, 2); // insert two lines before old line 2
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.structural.length, 1);
+		const delta = plan.structural[0];
+		assert.strictEqual(delta.type, 'replaceLines');
+		if (delta.type === 'replaceLines') {
+			assert.strictEqual(delta.start, 1);
+			assert.strictEqual(delta.deleteCount, 0);
+			assert.deepStrictEqual(delta.insert, [{ text: '', tokens: [] }, { text: '', tokens: [] }]);
+		}
+		assert.deepStrictEqual(plan.contentLines, [2, 3]);
+	});
+
+	test('delete emits a structural splice and no content refresh', () => {
+		const sim = new Sim(['a', 'b', 'c', 'd']);
+		sim.sync();
+		sim.delete(2, 2);
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.structural.length, 1);
+		const delta = plan.structural[0];
+		assert.strictEqual(delta.type, 'replaceLines');
+		if (delta.type === 'replaceLines') {
+			assert.strictEqual(delta.start, 1);
+			assert.strictEqual(delta.deleteCount, 2);
+			assert.deepStrictEqual(delta.insert, []);
+		}
+		assert.deepStrictEqual(plan.contentLines, []);
+		assert.deepStrictEqual(plan.tokenLines, []);
+	});
+
+	test('a change is shifted by a later insert above it', () => {
+		const sim = new Sim(['a', 'b', 'c', 'd', 'e']);
+		sim.sync();
+		sim.change(4, 1);   // mark line 4 dirty
+		sim.insert(2, 2);   // insert 2 lines at 2 -> old line 4 becomes line 6
+		sim.sync();
+		sim.assertSynced();
+	});
+
+	test('a dirty line removed by a later delete is dropped', () => {
+		const sim = new Sim(['a', 'b', 'c', 'd', 'e']);
+		sim.sync();
+		sim.tokens(3, 3);   // mark line 3 token-dirty
+		sim.delete(3, 1);   // delete line 3
+		const plan = sim.planner().takePlan();
+		assert.deepStrictEqual(plan.tokenLines, [], 'the deleted line is no longer dirty');
+		assert.strictEqual(plan.structural.length, 1);
+	});
+
+	test('interleaved insert + change + delete + tokens stays consistent', () => {
+		const sim = new Sim(['l1', 'l2', 'l3', 'l4', 'l5', 'l6']);
+		sim.sync();
+		sim.insert(2, 1);
+		sim.change(5, 2);
+		sim.delete(1, 1);
+		sim.tokens(3, 4);
+		sim.sync();
+		sim.assertSynced();
+	});
+
+	test('exceeding the line cap escalates to a full reload', () => {
+		const sim = new Sim(['a', 'b'], /* maxLines */ 3);
+		sim.sync();
+		sim.insert(3, 5); // now 7 lines > cap of 3
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.fullReload, true, 'over-cap edits force a rebuild');
+	});
+
+	test('scheduleFullReload discards pending incremental work', () => {
+		const sim = new Sim(['a', 'b', 'c']);
+		sim.sync();
+		sim.change(1, 1);
+		sim.insert(2, 1);
+		sim.flush(); // full reload supersedes the above
+		const plan = sim.planner().takePlan();
+		assert.strictEqual(plan.fullReload, true);
+		assert.deepStrictEqual(plan.structural, []);
+		assert.deepStrictEqual(plan.contentLines, []);
+		assert.deepStrictEqual(plan.tokenLines, []);
+	});
+
+	test('empty plan when nothing changed', () => {
+		const sim = new Sim(['a', 'b']);
+		sim.sync();
+		const plan = sim.planner().takePlan();
+		assert.deepStrictEqual(plan, { fullReload: false, structural: [], contentLines: [], tokenLines: [] });
+	});
+
+	test('randomized edit sequences keep the mirror in sync with the reference', () => {
+		// Deterministic LCG so failures reproduce.
+		let seed = 0x9e3779b9;
+		const rnd = () => {
+			seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+			return seed / 0xffffffff;
+		};
+		const randInt = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
+
+		for (let trial = 0; trial < 40; trial++) {
+			const initial: string[] = [];
+			for (let i = 0, n = randInt(1, 8); i < n; i++) {
+				initial.push(`init${i}`);
+			}
+			const sim = new Sim(initial);
+			sim.sync();
+			sim.assertSynced(`trial ${trial} init`);
+
+			for (let step = 0; step < 60; step++) {
+				const len = sim.lineCount;
+				const op = randInt(0, 4);
+				if (op === 0 && len > 0) {
+					const from = randInt(1, len);
+					sim.change(from, randInt(1, Math.min(3, len - from + 1)));
+				} else if (op === 1) {
+					sim.insert(randInt(1, len + 1), randInt(1, 3));
+				} else if (op === 2 && len > 0) {
+					const from = randInt(1, len);
+					sim.delete(from, randInt(1, Math.min(3, len - from + 1)));
+				} else if (op === 3 && len > 0) {
+					const from = randInt(1, len);
+					sim.tokens(from, Math.min(from + randInt(0, 2), len));
+				} else if (op === 4) {
+					// Occasionally coalesce and verify mid-stream.
+					sim.sync();
+					sim.assertSynced(`trial ${trial} step ${step}`);
+				}
+			}
+			sim.sync();
+			sim.assertSynced(`trial ${trial} final`);
+		}
+	});
+});

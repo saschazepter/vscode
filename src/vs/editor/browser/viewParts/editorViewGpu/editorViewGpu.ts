@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { EditorView, EditorViewConfig, LineInput } from '@vscode/editor-view';
+import type { EditorView, EditorViewConfig, LineInput, ModelDeltaInput, TokenInput } from '@vscode/editor-view';
 import { getActiveWindow } from '../../../../base/browser/dom.js';
 import { createFastDomNode, type FastDomNode } from '../../../../base/browser/fastDomNode.js';
 import { Color } from '../../../../base/common/color.js';
@@ -12,19 +12,22 @@ import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
 import { editorActiveLineNumber, editorLineNumbers } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption } from '../../../common/config/editorOptions.js';
+import { TokenizationRegistry } from '../../../common/languages.js';
+import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
 import type { ViewContext } from '../../../common/viewModel/viewContext.js';
 import type { RenderingContext, RestrictedRenderingContext } from '../../view/renderingContext.js';
 import { ViewPart } from '../../view/viewPart.js';
+import { EditorViewModelSync } from './editorViewModelSync.js';
 
 /**
  * Experimental integration of the `@vscode/editor-view` (Rust/WASM) GPU renderer.
  *
  * This is a **read-only proof of concept**: it mounts a canvas over the editor
- * content and mirrors the current document's lines, font and theme colors onto
- * the external renderer, keeping it in sync as the document, viewport, theme or
- * configuration change. Input, selections and hit-testing are still handled by
- * the regular (DOM) editor underneath.
+ * content and mirrors the current document's lines, tokens, font and theme
+ * colors onto the external renderer, keeping it in sync as the document,
+ * viewport, theme or configuration change. Input, selections and hit-testing
+ * are still handled by the regular (DOM) editor underneath.
  *
  * It is only constructed when `editor.experimentalGpuAcceleration` is set to
  * `'editorView'`; with any other value nothing here runs.
@@ -38,7 +41,12 @@ export class EditorViewGpu extends ViewPart {
 
 	private _editorView: EditorView | undefined;
 	private _disposed = false;
-	private _linesDirty = true;
+	/**
+	 * Turns view events into the minimal set of model deltas (or a full reload).
+	 * Renderer-free and unit-tested; this ViewPart only handles renderer readiness
+	 * and executes the plan it produces.
+	 */
+	private readonly _sync = new EditorViewModelSync(EditorViewGpu.MAX_LINES);
 	/** View line (1-based) holding the primary cursor; its number is highlighted. */
 	private _activeLineNumber = 1;
 
@@ -79,7 +87,8 @@ export class EditorViewGpu extends ViewPart {
 				return;
 			}
 
-			this._linesDirty = true;
+			// The renderer is ready; the planner still holds its initial full-reload
+			// state, so the first present loads the whole model.
 			this._present();
 		} catch (err) {
 			onUnexpectedError(err);
@@ -130,13 +139,144 @@ export class EditorViewGpu extends ViewPart {
 	}
 
 	private _gatherLines(): LineInput[] {
-		const model = this._context.viewModel;
-		const lineCount = Math.min(model.getLineCount(), EditorViewGpu.MAX_LINES);
+		const lineCount = Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES);
+		const ctx = this._tokenColorContext();
 		const lines: LineInput[] = new Array(lineCount);
 		for (let i = 0; i < lineCount; i++) {
-			lines[i] = { text: model.getLineContent(i + 1) };
+			lines[i] = this._buildLine(i + 1, ctx.colorMap, ctx.defaultForeground);
 		}
 		return lines;
+	}
+
+	/** Build one view line's `{ text, tokens }` payload from the view model. */
+	private _buildLine(viewLineNumber: number, colorMap: number[], defaultForeground: number): LineInput {
+		const lineData = this._context.viewModel.getViewLineData(viewLineNumber);
+		return {
+			text: lineData.content,
+			tokens: this._buildTokens(lineData.tokens, colorMap, defaultForeground),
+		};
+	}
+
+	/**
+	 * The token color palette (indexed by `ColorId`, pre-packed) plus the default
+	 * foreground, resolved once so a batch of line/token rebuilds shares them.
+	 */
+	private _tokenColorContext(): { colorMap: number[]; defaultForeground: number } {
+		return {
+			colorMap: this._buildTokenColorMap(),
+			defaultForeground: this._packColor(this._context.theme.getColor(editorForeground), 0xd4d4d4ff),
+		};
+	}
+
+	/**
+	 * Convert VS Code's `IViewLineTokens` (offsets + `ColorId`/font-style
+	 * metadata) into the renderer's packed-color {@link TokenInput}s. The
+	 * renderer lays runs out consecutively and does not fill gaps, so the tokens
+	 * must tile the whole line — which they always do, so we derive each token's
+	 * start from the previous token's end offset.
+	 *
+	 * Offsets are UTF-16 code-unit offsets into the line content, matching the
+	 * string handed to the renderer.
+	 */
+	private _buildTokens(tokens: IViewLineTokens, colorMap: number[], defaultForeground: number): TokenInput[] {
+		const count = tokens.getCount();
+		const result: TokenInput[] = new Array(count);
+		let start = 0;
+		for (let i = 0; i < count; i++) {
+			const end = tokens.getEndOffset(i);
+			const p = tokens.getPresentation(i);
+			result[i] = {
+				startColumn: start,
+				endColumn: end,
+				foreground: colorMap[p.foreground] ?? defaultForeground,
+				bold: p.bold,
+				italic: p.italic,
+				underline: p.underline,
+				strikethrough: p.strikethrough,
+			};
+			start = end;
+		}
+		return result;
+	}
+
+	/**
+	 * The theme's token color palette, indexed by `ColorId` and pre-packed into
+	 * the renderer's `0xRRGGBBAA` format. Rebuilt on every refresh so theme and
+	 * color-map changes are reflected (see `onThemeChanged`/`onTokensColorsChanged`).
+	 */
+	private _buildTokenColorMap(): number[] {
+		const themeColorMap = TokenizationRegistry.getColorMap();
+		if (!themeColorMap) {
+			return [];
+		}
+		const result: number[] = new Array(themeColorMap.length);
+		for (let i = 0; i < themeColorMap.length; i++) {
+			result[i] = this._packColor(themeColorMap[i], 0xd4d4d4ff);
+		}
+		return result;
+	}
+
+	// --- incremental sync ----------------------------------------------------
+
+	/**
+	 * Record an edit with the planner, unless the renderer isn't ready yet — in
+	 * which case escalate to a full reload so the first present captures everything.
+	 */
+	private _recordEdit(record: (sync: EditorViewModelSync) => void): void {
+		if (!this._editorView) {
+			this._sync.scheduleFullReload();
+			return;
+		}
+		record(this._sync);
+	}
+
+	/** Apply a delta to the mirror; on failure fall back to a full reload. */
+	private _applyDelta(delta: ModelDeltaInput): void {
+		try {
+			this._editorView!.applyDelta(delta);
+		} catch (err) {
+			onUnexpectedError(err);
+			this._sync.scheduleFullReload();
+		}
+	}
+
+	/**
+	 * Execute the planner's batch at present time, reading line content in the (now
+	 * final) view-model state — mirroring how the DOM `ViewLines` reads line data
+	 * lazily at render time rather than in the event handlers.
+	 */
+	private _syncModel(): void {
+		const plan = this._sync.takePlan();
+		if (plan.fullReload) {
+			this._editorView!.setLines(this._gatherLines());
+			return;
+		}
+		if (plan.structural.length === 0 && plan.contentLines.length === 0 && plan.tokenLines.length === 0) {
+			return;
+		}
+		// Structural splices first so the mirror's line count matches the view model,
+		// then fill in the (final-coordinate) dirty lines' content and tokens.
+		for (const delta of plan.structural) {
+			this._applyDelta(delta);
+		}
+		const lineCount = this._context.viewModel.getLineCount();
+		const ctx = this._tokenColorContext();
+		for (const line of plan.contentLines) {
+			if (line >= 1 && line <= lineCount) {
+				this._applyDelta({
+					type: 'replaceLines',
+					start: line - 1,
+					deleteCount: 1,
+					insert: [this._buildLine(line, ctx.colorMap, ctx.defaultForeground)],
+				});
+			}
+		}
+		for (const line of plan.tokenLines) {
+			if (line >= 1 && line <= lineCount) {
+				const tokens = this._buildTokens(this._context.viewModel.getViewLineData(line).tokens, ctx.colorMap, ctx.defaultForeground);
+				this._applyDelta({ type: 'setTokens', line: line - 1, tokens });
+			}
+		}
 	}
 
 	// --- rendering -----------------------------------------------------------
@@ -157,10 +297,7 @@ export class EditorViewGpu extends ViewPart {
 		}
 
 		this._editorView.setConfig(this._buildConfig());
-		if (this._linesDirty) {
-			this._editorView.setLines(this._gatherLines());
-			this._linesDirty = false;
-		}
+		this._syncModel();
 		this._editorView.setViewport({
 			width,
 			height,
@@ -187,7 +324,9 @@ export class EditorViewGpu extends ViewPart {
 	// --- events --------------------------------------------------------------
 
 	public override onConfigurationChanged(e: viewEvents.ViewConfigurationChangedEvent): boolean {
-		this._linesDirty = true;
+		// Font/layout/tab changes don't alter the model's text or tokens; the
+		// fresh config is pushed on every present, so just request a repaint.
+		// (Wrapping-column changes surface separately via `onLineMappingChanged`.)
 		return true;
 	}
 	public override onCursorStateChanged(e: viewEvents.ViewCursorStateChangedEvent): boolean {
@@ -201,28 +340,46 @@ export class EditorViewGpu extends ViewPart {
 		return false;
 	}
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
-		this._linesDirty = true;
+		// The whole model was replaced (e.g. a different document).
+		this._sync.scheduleFullReload();
+		return true;
+	}
+	public override onLineMappingChanged(e: viewEvents.ViewLineMappingChangedEvent): boolean {
+		// View↔model line mapping changed (word wrap / folding): view lines are
+		// remapped wholesale, so incremental tracking no longer applies.
+		this._sync.scheduleFullReload();
 		return true;
 	}
 	public override onLinesChanged(e: viewEvents.ViewLinesChangedEvent): boolean {
-		this._linesDirty = true;
+		this._recordEdit(sync => sync.onLinesChanged(e.fromLineNumber, e.count, this._context.viewModel.getLineCount()));
 		return true;
 	}
 	public override onLinesDeleted(e: viewEvents.ViewLinesDeletedEvent): boolean {
-		this._linesDirty = true;
+		this._recordEdit(sync => sync.onLinesDeleted(e.fromLineNumber, e.toLineNumber, this._context.viewModel.getLineCount()));
 		return true;
 	}
 	public override onLinesInserted(e: viewEvents.ViewLinesInsertedEvent): boolean {
-		this._linesDirty = true;
+		this._recordEdit(sync => sync.onLinesInserted(e.fromLineNumber, e.toLineNumber, this._context.viewModel.getLineCount()));
 		return true;
 	}
 	public override onScrollChanged(e: viewEvents.ViewScrollChangedEvent): boolean {
 		return true;
 	}
 	public override onThemeChanged(e: viewEvents.ViewThemeChangedEvent): boolean {
+		// Base colors are re-pushed via config every present, but token foreground
+		// colors are baked into per-line tokens, so rebuild them all.
+		this._sync.scheduleFullReload();
 		return true;
 	}
 	public override onTokensChanged(e: viewEvents.ViewTokensChangedEvent): boolean {
+		// Background tokenization (the hot path): refresh only the reported lines'
+		// tokens, not the whole document.
+		this._recordEdit(sync => sync.onTokensChanged(e.ranges, this._context.viewModel.getLineCount()));
+		return true;
+	}
+	public override onTokensColorsChanged(e: viewEvents.ViewTokensColorsChangedEvent): boolean {
+		// The theme's token color map changed; every line's token colors are stale.
+		this._sync.scheduleFullReload();
 		return true;
 	}
 	public override onZonesChanged(e: viewEvents.ViewZonesChangedEvent): boolean {
