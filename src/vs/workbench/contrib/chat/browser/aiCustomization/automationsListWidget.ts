@@ -184,6 +184,9 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		}));
 
 		DOM.clearNode(templateData.actions);
+		templateData.disposables.add(DOM.addDisposableListener(templateData.actions, 'click', (e) => {
+			e.stopPropagation();
+		}));
 		this.renderActions(templateData, automation, expanded, inFlight);
 
 		DOM.clearNode(templateData.historyPanel);
