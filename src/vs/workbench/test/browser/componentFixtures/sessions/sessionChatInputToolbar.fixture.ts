@@ -95,7 +95,9 @@ async function renderChatViewWithPills(ctx: ComponentFixtureContext, session: IA
 		messages,
 		decorateInputPart: (inputPart, instantiationService) => {
 			// Both pills are off by default; enable them so the fixture renders.
-			(instantiationService.get(IConfigurationService) as TestConfigurationService).setUserConfiguration(ChatConfiguration.TurnStatusPills, { changes: true, preview: true });
+			instantiationService.invokeFunction(accessor => {
+				(accessor.get(IConfigurationService) as TestConfigurationService).setUserConfiguration(ChatConfiguration.TurnStatusPills, { changes: true, preview: true });
+			});
 			const pills = ctx.disposableStore.add(instantiationService.createInstance(SessionChatInputToolbar));
 			pills.setSession(session);
 			// Mount above the input, mirroring the sessions ChatView.
