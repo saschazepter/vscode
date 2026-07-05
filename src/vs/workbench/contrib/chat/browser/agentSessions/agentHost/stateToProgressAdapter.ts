@@ -664,7 +664,16 @@ export function activeTurnToProgress(sessionResource: URI, activeTurn: ActiveTur
 				const tc = rp.toolCall;
 				if (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) {
 					parts.push(completedToolCallToSerialized(tc as ICompletedToolCall, undefined, sessionResource, connectionAuthority));
-				} else if (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Streaming || tc.status === ToolCallStatus.PendingConfirmation) {
+				} else if (tc.status === ToolCallStatus.Streaming) {
+					// Reconnect snapshot of a tool still streaming its
+					// arguments: adopt a native streaming invocation so the live
+					// observer can drive it through `transitionFromStreaming`
+					// (single card). Using `toolCallStateToInvocation` here would
+					// yield an Executing placeholder that then triggers the
+					// duplicate-confirmation path on the subsequent
+					// `Streaming → PendingConfirmation` transition (#314858).
+					parts.push(toolCallStateToStreamingInvocation(tc, undefined));
+				} else if (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.PendingConfirmation) {
 					parts.push(toolCallStateToInvocation(tc, undefined, sessionResource, connectionAuthority));
 				}
 				break;

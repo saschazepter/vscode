@@ -928,6 +928,36 @@ suite('stateToProgressAdapter', () => {
 			streaming.transitionFromStreaming(prepared, undefined, undefined);
 			assert.strictEqual(streaming.state.get().type, IChatToolInvocation.StateKind.Executing);
 		});
+
+		test('requestConfirmation re-arms confirmation from Executing (Copilot Running → PendingConfirmation)', () => {
+			// Real Copilot flow: onToolStart readies the tool (Running/Executing)
+			// before the permission callback bounces it to PendingConfirmation.
+			// requestConfirmation must move the SAME invocation back to
+			// WaitingForConfirmation so a single card spans the lifecycle.
+			const streaming = toolCallStateToStreamingInvocation({ toolCallId: 'tc-term', toolName: 'bash', displayName: 'Bash', status: ToolCallStatus.Streaming }, undefined);
+
+			// Streaming → Running (confirmed: not-needed) → Executing.
+			const running: AnyToolCallState = { toolCallId: 'tc-term', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running command', status: ToolCallStatus.Running, confirmed: ToolCallConfirmationReason.NotNeeded, _meta: { toolKind: 'terminal' } };
+			streaming.transitionFromStreaming(toolCallStateToPreparedInvocation(running), undefined, undefined);
+			assert.strictEqual(streaming.state.get().type, IChatToolInvocation.StateKind.Executing);
+
+			// Running → PendingConfirmation via the permission callback.
+			const pending: AnyToolCallState = { toolCallId: 'tc-term', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running `rm -rf build`', toolInput: 'rm -rf build', status: ToolCallStatus.PendingConfirmation, _meta: { toolKind: 'terminal' }, confirmationTitle: 'Run command?' };
+			streaming.requestConfirmation(toolCallStateToPreparedInvocation(pending));
+			assert.strictEqual(streaming.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation);
+			assert.strictEqual(streaming.toolSpecificData?.kind, 'terminal');
+		});
+
+		test('requestConfirmation no-ops on a completed invocation', () => {
+			const streaming = toolCallStateToStreamingInvocation({ toolCallId: 'tc-done', toolName: 'bash', displayName: 'Bash', status: ToolCallStatus.Streaming }, undefined);
+			streaming.transitionFromStreaming(toolCallStateToPreparedInvocation({ toolCallId: 'tc-done', toolName: 'bash', displayName: 'Bash', invocationMessage: 'run', status: ToolCallStatus.Running, confirmed: ToolCallConfirmationReason.NotNeeded }), undefined, undefined);
+			streaming.didExecuteTool(undefined);
+			assert.strictEqual(IChatToolInvocation.isComplete(streaming), true);
+
+			const pending: AnyToolCallState = { toolCallId: 'tc-done', toolName: 'bash', displayName: 'Bash', invocationMessage: 'confirm', status: ToolCallStatus.PendingConfirmation, confirmationTitle: 'Confirm?' };
+			streaming.requestConfirmation(toolCallStateToPreparedInvocation(pending));
+			assert.strictEqual(IChatToolInvocation.isComplete(streaming), true, 'completed invocation is not re-armed');
+		});
 	});
 
 	suite('finalizeToolInvocation', () => {
