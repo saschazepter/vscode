@@ -6,7 +6,6 @@
 import '../../workbench/browser/style.js';
 import './media/style.css';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../base/common/lifecycle.js';
-import { DockedSidePaneStrategy, GridSidePaneStrategy, IPartVisibilityState, ISidePaneLayoutHost, ISidePaneLayoutStrategy } from './sidePaneLayoutStrategy.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
 import { addDisposableListener, getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, isHTMLElement, size, Dimension, runWhenWindowIdle } from '../../base/browser/dom.js';
 import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
@@ -19,7 +18,6 @@ import { ILayoutOffsetInfo } from '../../platform/layout/browser/layoutService.j
 import { Part } from '../../workbench/browser/part.js';
 import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISerializedNode, IViewSize, Orientation, SerializableGrid } from '../../base/browser/ui/grid/grid.js';
 import { IEditorGroupsService } from '../../workbench/services/editor/common/editorGroupsService.js';
-import { EditorPart } from '../../workbench/browser/parts/editor/editorPart.js';
 import { IEditorService } from '../../workbench/services/editor/common/editorService.js';
 import { IPaneCompositePartService } from '../../workbench/services/panecomposite/browser/panecomposite.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../workbench/common/views.js';
@@ -111,6 +109,15 @@ enum LayoutClasses {
 
 //#region Part Visibility State
 
+/** Visibility of each workbench part in the Agents window layout. */
+export interface IPartVisibilityState {
+	sidebar: boolean;
+	auxiliaryBar: boolean;
+	editor: boolean;
+	panel: boolean;
+	sessions: boolean;
+}
+
 interface IPartSizesState {
 	sidebar?: number;
 	auxiliaryBar?: number;
@@ -118,6 +125,9 @@ interface IPartSizesState {
 	editor?: number;
 	panel?: number;
 }
+
+/** Opaque per-transition capture returned by `Workbench._prepareSideBarResize`. */
+export interface ISideBarResizeContext { }
 
 //#endregion
 
@@ -167,7 +177,7 @@ export const IAgentWorkbenchLayoutService = refineServiceDecorator<IWorkbenchLay
 
 export const CLOSE_MOBILE_SIDEBAR_DRAWER_COMMAND_ID = 'sessions.closeMobileSidebarDrawer';
 
-export class Workbench extends Disposable implements IAgentWorkbenchLayoutService, ISidePaneLayoutHost {
+export class Workbench extends Disposable implements IAgentWorkbenchLayoutService {
 
 	declare readonly _serviceBrand: undefined;
 
@@ -296,31 +306,26 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	//#region State
 
 	private readonly parts = new Map<string, Part>();
-	workbenchGrid!: SerializableGrid<ISerializableView>;
+	protected workbenchGrid!: SerializableGrid<ISerializableView>;
 
 	private titleBarPartView!: ISerializableView;
-	sideBarPartView!: ISerializableView;
+	protected sideBarPartView!: ISerializableView;
 	private panelPartView!: ISerializableView;
-	auxiliaryBarPartView!: ISerializableView;
-	editorPartView!: ISerializableView;
+	protected auxiliaryBarPartView!: ISerializableView;
+	protected editorPartView!: ISerializableView;
 
-	sessionsPartView!: ISerializableView;
+	protected sessionsPartView!: ISerializableView;
 
 	/** The editor part container; the auxiliary bar is docked inside it. */
-	private _editorPartContainer: HTMLElement | undefined;
-	get editorPartContainer(): HTMLElement | undefined { return this._editorPartContainer; }
-	/** Whether the docked detail-panel (single-pane) layout is enabled. Backed by the layout policy. */
-	private get _dockDetailPanel(): boolean { return this.layoutPolicy.isSinglePane; }
+	protected _editorPartContainer: HTMLElement | undefined;
 	get isSinglePaneLayoutEnabled(): boolean {
 		return this._configurationServiceForLayout?.getValue<boolean>(DOCK_DETAIL_PANEL_SETTING) === true;
 	}
-	/** Presentation strategy for the side pane (editor + auxiliary bar). Selected once in {@link initLayout}. */
-	private _sidePane!: ISidePaneLayoutStrategy;
 	/** `true` while the editor's current visible state was produced by an explicit user reveal (opening an editor, or toggling the detail panel off) rather than an automatic layout/working-set reveal. Read by the single-pane new-session rule (R1) so it does not undo an explicit reveal. */
-	private _editorRevealedExplicitly = false;
+	protected _editorRevealedExplicitly = false;
 	private _configurationServiceForLayout: IConfigurationService | undefined;
 
-	readonly partVisibility: IPartVisibilityState = {
+	protected readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
 		auxiliaryBar: true,
 		editor: false,
@@ -330,7 +335,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	private mainWindowFullscreen = false;
 	private readonly maximized = new Set<number>();
-	private readonly layoutPolicy = this._register(new SessionsLayoutPolicy());
+	protected readonly layoutPolicy = this._register(new SessionsLayoutPolicy());
 	private readonly mobileNavStack = this._register(new MobileNavigationStack());
 	private mobileTopBarElement: HTMLElement | undefined;
 	private readonly mobileTopBarDisposables = this._register(new DisposableStore());
@@ -339,8 +344,8 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	private _editorLastNonMaximizedVisibility: IPartVisibilityState | undefined;
 	private _editorLastNonMaximizedSize: IViewSize | undefined;
 	private _restoreAttachedEditorMaximizedOnShow = false;
-	private _editorPartAutoVisibilitySuppressionCount = 0;
-	private _hasAppliedInitialEditorSplit = false;
+	protected _editorPartAutoVisibilitySuppressionCount = 0;
+	protected _hasAppliedInitialEditorSplit = false;
 
 	private readonly restoredPromise = new DeferredPromise<void>();
 	readonly whenRestored = this.restoredPromise.p;
@@ -357,7 +362,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	//#region Services
 
-	private editorGroupService!: IEditorGroupsService;
+	protected editorGroupService!: IEditorGroupsService;
 	private editorService!: IEditorService;
 	private paneCompositeService!: IPaneCompositePartService;
 	private viewDescriptorService!: IViewDescriptorService;
@@ -703,7 +708,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.partVisibility.sidebar = savedPartVisibility.sidebar ?? this.partVisibility.sidebar;
 	}
 
-	private _savePartVisibility(): void {
+	protected _savePartVisibility(): void {
 		if (this.layoutPolicy.viewportClass.get() === 'phone') {
 			return;
 		}
@@ -745,11 +750,11 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		};
 
 		const editorGridWidth = getSize(this.editorPartView, 'width', this.partVisibility.editor);
-		const editorWidth = this._sidePane.getPersistedEditorWidth(editorGridWidth);
+		const editorWidth = this._persistedEditorWidth(editorGridWidth);
 
 		const sizes: IPartSizesState = {
 			sidebar: getSize(this.sideBarPartView, 'width', this.partVisibility.sidebar),
-			auxiliaryBar: this._sidePane.getPersistedAuxiliaryBarWidth(getSize(this.auxiliaryBarPartView, 'width', this.partVisibility.auxiliaryBar)),
+			auxiliaryBar: this._persistedAuxiliaryBarWidth(getSize(this.auxiliaryBarPartView, 'width', this.partVisibility.auxiliaryBar)),
 			sessions: getSize(this.sessionsPartView, 'width', this.partVisibility.sessions),
 			editor: editorWidth,
 			panel: getSize(this.panelPartView, 'height', this.partVisibility.panel),
@@ -783,7 +788,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// dimensions across reloads.
 		this._savedPartSizes = this._loadPartSizes(storageService);
 		if (this._savedPartSizes.auxiliaryBar !== undefined) {
-			this._sidePane.restoreAuxiliaryBarWidth(this._savedPartSizes.auxiliaryBar);
+			this._restoreAuxiliaryBarWidth(this._savedPartSizes.auxiliaryBar);
 		}
 
 		// State specific classes
@@ -1068,9 +1073,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		// Resolve the single-pane layout mode once (reload to toggle).
 		this.layoutPolicy.setSinglePane(this.isSinglePaneLayoutEnabled);
-		this._sidePane = this._register(this._dockDetailPanel
-			? new DockedSidePaneStrategy(this)
-			: new GridSidePaneStrategy(this));
 
 		// Register layout listeners
 		this.registerLayoutListeners();
@@ -1141,7 +1143,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			return;
 		}
 
-		this._sidePane.handleAllEditorsClosed();
+		this._handleAllEditorsClosed();
 	}
 
 	suppressEditorPartAutoVisibility(): IDisposable {
@@ -1156,7 +1158,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		});
 	}
 
-	rememberAttachedEditorMaximizedState(): void {
+	protected rememberAttachedEditorMaximizedState(): void {
 		this._restoreAttachedEditorMaximizedOnShow = this._editorMaximized && this.partVisibility.auxiliaryBar;
 	}
 
@@ -1169,44 +1171,139 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		}
 	}
 
-	//#region ISidePaneLayoutHost
+	//#region Side-pane layout hooks (classic grid defaults; overridden by SinglePaneWorkbench)
 
-	get hasAppliedInitialEditorSplit(): boolean { return this._hasAppliedInitialEditorSplit; }
-	set hasAppliedInitialEditorSplit(value: boolean) { this._hasAppliedInitialEditorSplit = value; }
-
-	get isEditorPartAutoVisibilitySuppressed(): boolean { return this._editorPartAutoVisibilitySuppressionCount > 0; }
-
-	getAuxiliaryBarPart(): Part { return this.getPart(Parts.AUXILIARYBAR_PART); }
-
-	getEditorMainPart(): EditorPart { return this.editorGroupService.mainPart as EditorPart; }
-
-	fireDidChangePartVisibility(partId: Parts, visible: boolean): void {
+	protected _fireDidChangePartVisibility(partId: Parts, visible: boolean): void {
 		this._onDidChangePartVisibility.fire({ partId, visible });
 	}
 
-	notifyContainerDidLayout(): void {
+	protected _notifyContainerDidLayout(): void {
 		this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
 	}
 
-	savePartVisibility(): void {
-		this._savePartVisibility();
-	}
-
-	applyEditorEvenSplit(mainAreaWidthBeforeReveal: number): void {
-		this._applyEditorSplitSize(mainAreaWidthBeforeReveal);
-	}
-
-	setEditorRevealedExplicitly(value: boolean): void {
-		this._editorRevealedExplicitly = value;
-	}
-
-	setMainEditorAreaHiddenClass(hidden: boolean): void {
+	protected _setMainEditorAreaHidden(hidden: boolean): void {
 		this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
 	}
 
-	isAuxViewContainerActive(containerId: string): boolean {
-		return this._isAuxViewContainerActive(containerId);
+	protected get _isEditorPartAutoVisibilitySuppressed(): boolean {
+		return this._editorPartAutoVisibilitySuppressionCount > 0;
 	}
+
+	/** Toggles the container marker class for the side-pane layout. */
+	protected _applyLayoutContainerClass(): void {
+		this.mainContainer.classList.toggle('dock-detail-panel', false);
+	}
+
+	/** Width the auxiliary bar occupies when visible (for max-editor-dimension math). */
+	protected _auxiliaryBarLayoutWidth(): number {
+		return this.workbenchGrid ? this.workbenchGrid.getViewSize(this.auxiliaryBarPartView).width : 0;
+	}
+
+	protected _auxiliaryBarViewSize(): IViewSize {
+		if (!this.workbenchGrid || !this.auxiliaryBarPartView) {
+			return { width: 0, height: 0 };
+		}
+		return this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+	}
+
+	protected _setAuxiliaryBarViewSize(size: IViewSize): void {
+		if (this.auxiliaryBarPartView) {
+			this.workbenchGrid.resizeView(this.auxiliaryBarPartView, size);
+		}
+	}
+
+	protected _resizeAuxiliaryBarBy(deltaWidth: number, deltaHeight: number): void {
+		if (!this.auxiliaryBarPartView) {
+			return;
+		}
+		const currentSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+		this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+			width: currentSize.width + deltaWidth,
+			height: currentSize.height + deltaHeight
+		});
+	}
+
+	protected _restoreAuxiliaryBarWidth(_width: number): void { }
+
+	protected _persistedEditorWidth(editorGridWidth: number | undefined): number | undefined {
+		return editorGridWidth;
+	}
+
+	protected _persistedAuxiliaryBarWidth(gridWidth: number | undefined): number | undefined {
+		return gridWidth;
+	}
+
+	protected _defaultSideBarSize(policySideBarSize: number): number {
+		return policySideBarSize;
+	}
+
+	protected _editorNodeSize(effectiveEditorWidth: number, _effectiveAuxBarWidth: number): number {
+		return effectiveEditorWidth;
+	}
+
+	protected _editorNodeVisible(editorVisible: boolean, _auxBarVisible: boolean): boolean {
+		return editorVisible;
+	}
+
+	protected _topRightSectionChildren(sessionsNode: ISerializedNode, editorNode: ISerializedNode, auxiliaryBarNode: ISerializedNode): ISerializedNode[] {
+		return [sessionsNode, editorNode, auxiliaryBarNode];
+	}
+
+	/** Attach any per-layout controllers once the editor part container exists. */
+	protected _attachSidePane(): void { }
+	/** Lay out any docked overlay. */
+	protected _layoutSidePane(): void { }
+	/** React to a whole-grid change (e.g. a sash drag) after the grid rebuilds. */
+	protected _onGridDidChange(): void { }
+	/** React to the editor grid node being resized to `nodeWidth`. */
+	protected _onEditorNodeResized(_nodeWidth: number): void { }
+
+	/** Run editor-node work with the reveal-sync suspended (no-op for the grid layout). */
+	protected _runWithEditorResizeSyncSuspended(fn: () => void): void {
+		fn();
+	}
+
+	protected _applyEditorVisibility(hidden: boolean): void {
+		const shouldApplyEvenSplit = !hidden && !this._hasAppliedInitialEditorSplit;
+		const mainAreaWidthBeforeReveal = shouldApplyEvenSplit
+			? this.workbenchGrid.getViewSize(this.sessionsPartView).width
+			: 0;
+
+		this.workbenchGrid.setViewVisible(this.editorPartView, !hidden);
+
+		if (shouldApplyEvenSplit) {
+			this._hasAppliedInitialEditorSplit = true;
+			this._applyEditorSplitSize(mainAreaWidthBeforeReveal);
+		}
+	}
+
+	protected _onWillHideAuxiliaryBar(_hidden: boolean): void { }
+
+	protected _applyAuxiliaryBarVisibility(hidden: boolean): void {
+		// Skipped before the grid exists: during startup the layout controller (a
+		// BlockRestore contribution) runs before createWorkbenchLayout(), so the
+		// visibility is recorded in partVisibility and applied when the grid is built.
+		if (this.workbenchGrid) {
+			this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
+		}
+	}
+
+	protected _shouldOpenAuxiliaryPaneComposite(_containerId: string): boolean {
+		return true;
+	}
+
+	protected _handleAllEditorsClosed(): void {
+		if (this.partVisibility.editor) {
+			this.rememberAttachedEditorMaximizedState();
+			this.setEditorHidden(true);
+		}
+	}
+
+	protected _prepareSideBarResize(_hidden: boolean): ISideBarResizeContext {
+		return {};
+	}
+
+	protected _applySideBarResize(_hidden: boolean, _context: ISideBarResizeContext): void { }
 
 	//#endregion
 
@@ -1238,7 +1335,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	//#region Workbench Layout Creation
 
 	createWorkbenchLayout(): void {
-		this._sidePane.applyContainerClass(this.mainContainer);
+		this._applyLayoutContainerClass();
 
 		const titleBar = this.getPart(Parts.TITLEBAR_PART);
 		const editorPart = this.getPart(Parts.EDITOR_PART);
@@ -1276,7 +1373,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.workbenchGrid = workbenchGrid;
 		this.workbenchGrid.edgeSnapping = this.mainWindowFullscreen;
 		this._register(this.workbenchGrid.onDidChange(() => {
-			this._sidePane.onGridDidChange();
+			this._onGridDidChange();
 		}));
 
 		// If the editor is restored visible, it already has an established
@@ -1356,7 +1453,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		const sizes = this.layoutPolicy.getPartSizes(width, height);
 		// For hidden parts, still provide a reasonable cached size for when they're shown later.
 		// Saved sizes from a previous session take precedence over policy defaults.
-		const defaultSideBarSize = this._sidePane.getDefaultSideBarSize(sizes.sideBarSize);
+		const defaultSideBarSize = this._defaultSideBarSize(sizes.sideBarSize);
 		const sideBarSize = this._savedPartSizes.sidebar
 			?? (this.partVisibility.sidebar ? defaultSideBarSize : Math.max(defaultSideBarSize, 250));
 		const auxiliaryBarSize = this._savedPartSizes.auxiliaryBar
@@ -1407,8 +1504,8 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		const editorNode: ISerializedLeafNode = {
 			type: 'leaf',
 			data: { type: Parts.EDITOR_PART },
-			size: this._sidePane.getEditorNodeSize(effectiveEditorWidth, effectiveAuxBarWidth),
-			visible: this._sidePane.isEditorNodeVisible(this.partVisibility.editor, this.partVisibility.auxiliaryBar)
+			size: this._editorNodeSize(effectiveEditorWidth, effectiveAuxBarWidth),
+			visible: this._editorNodeVisible(this.partVisibility.editor, this.partVisibility.auxiliaryBar)
 		};
 
 		const auxiliaryBarNode: ISerializedLeafNode = {
@@ -1430,7 +1527,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// omitted from the grid; otherwise it is its own trailing grid column.
 		const topRightSection: ISerializedNode = {
 			type: 'branch',
-			data: this._sidePane.getTopRightSectionChildren(sessionsNode, editorNode, auxiliaryBarNode),
+			data: this._topRightSectionChildren(sessionsNode, editorNode, auxiliaryBarNode),
 			size: topRightHeight
 		};
 
@@ -1555,8 +1652,8 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		// Dock + layout the auxiliary bar inside the editor part so the
 		// editor tab bar spans the full width above both.
-		this._sidePane.attach();
-		this._sidePane.layout();
+		this._attachSidePane();
+		this._layoutSidePane();
 
 		this.layoutMobileSidebar();
 
@@ -1565,7 +1662,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	}
 
 	handleDockedEditorPartLayout(nodeWidth: number): void {
-		this._sidePane.onEditorNodeResized(nodeWidth);
+		this._onEditorNodeResized(nodeWidth);
 	}
 
 	isEditorRevealedExplicitly(): boolean {
@@ -1782,7 +1879,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			return;
 		}
 
-		const resizeContext = this._sidePane.prepareSideBarResize(hidden);
+		const resizeContext = this._prepareSideBarResize(hidden);
 
 		this.partVisibility.sidebar = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.SIDEBAR_HIDDEN, hidden);
@@ -1793,7 +1890,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			!hidden,
 		);
 
-		this._sidePane.applySideBarResize(hidden, resizeContext);
+		this._applySideBarResize(hidden, resizeContext);
 
 		// If sidebar becomes hidden, also hide the current active pane composite
 		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
@@ -1822,12 +1919,12 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			this._restoreAttachedEditorMaximizedOnShow = false;
 		}
 
-		this._sidePane.onWillHideAuxiliaryBar(hidden);
+		this._onWillHideAuxiliaryBar(hidden);
 
 		this.partVisibility.auxiliaryBar = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.AUXILIARYBAR_HIDDEN, hidden);
 
-		this._sidePane.applyAuxiliaryBarVisibility(hidden);
+		this._applyAuxiliaryBarVisibility(hidden);
 
 		// If auxiliary bar becomes hidden, also hide the current active pane composite
 		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
@@ -1838,7 +1935,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
 			const paneCompositeToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.AuxiliaryBar) ??
 				this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar)?.id;
-			if (paneCompositeToOpen && this._sidePane.shouldOpenAuxiliaryPaneComposite(paneCompositeToOpen)) {
+			if (paneCompositeToOpen && this._shouldOpenAuxiliaryPaneComposite(paneCompositeToOpen)) {
 				this.paneCompositeService.openPaneComposite(paneCompositeToOpen, ViewContainerLocation.AuxiliaryBar);
 			}
 		}
@@ -1852,7 +1949,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	 * only active once it has at least one active view descriptor). Used to avoid
 	 * presenting an empty docked detail panel.
 	 */
-	private _isAuxViewContainerActive(containerId: string): boolean {
+	protected _isAuxViewContainerActive(containerId: string): boolean {
 		const viewContainer = this.viewDescriptorService.getViewContainerById(containerId);
 		if (!viewContainer) {
 			return false;
@@ -1872,7 +1969,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// not undo it. Any hide clears it; an automatic reveal leaves it false.
 		this._editorRevealedExplicitly = !hidden && explicit;
 
-		this._sidePane.suspendEditorNodeResizeSync(() => {
+		this._runWithEditorResizeSyncSuspended(() => {
 			// If hiding the editor while maximized
 			if (hidden && this._editorMaximized) {
 				this.setEditorMaximized(false);
@@ -1882,7 +1979,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
 
 			if (this.editorPartView) {
-				this._sidePane.applyEditorVisibility(hidden);
+				this._applyEditorVisibility(hidden);
 			}
 
 			this._savePartVisibility();
@@ -1898,7 +1995,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	 * editor was revealed (i.e. the full main area width, since the editor was
 	 * hidden).
 	*/
-	private _applyEditorSplitSize(mainAreaWidth: number): void {
+	protected _applyEditorSplitSize(mainAreaWidth: number): void {
 		const targetEditorWidth = Math.max(300, Math.floor(mainAreaWidth / 2));
 		const currentEditorSize = this.workbenchGrid.getViewSize(this.editorPartView);
 		this.workbenchGrid.resizeView(this.editorPartView, {
@@ -1994,7 +2091,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	getSize(part: Parts): IViewSize {
 		if (part === Parts.AUXILIARYBAR_PART) {
-			return this._sidePane.getAuxiliaryBarSize();
+			return this._auxiliaryBarViewSize();
 		}
 		const view = this.getPartView(part);
 		if (!view) {
@@ -2005,7 +2102,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	setSize(part: Parts, size: IViewSize): void {
 		if (part === Parts.AUXILIARYBAR_PART) {
-			this._sidePane.setAuxiliaryBarSize(size);
+			this._setAuxiliaryBarViewSize(size);
 			return;
 		}
 		const view = this.getPartView(part);
@@ -2016,7 +2113,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void {
 		if (part === Parts.AUXILIARYBAR_PART) {
-			this._sidePane.resizeAuxiliaryBar(sizeChangeWidth, sizeChangeHeight);
+			this._resizeAuxiliaryBarBy(sizeChangeWidth, sizeChangeHeight);
 			return;
 		}
 		const view = this.getPartView(part);
@@ -2054,7 +2151,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// Return the available space for editor (excluding other parts)
 		const sidebarWidth = this.partVisibility.sidebar ? this.workbenchGrid.getViewSize(this.sideBarPartView).width : 0;
 		const auxiliaryBarWidth = this.partVisibility.auxiliaryBar
-			? this._sidePane.getAuxiliaryBarLayoutWidth()
+			? this._auxiliaryBarLayoutWidth()
 			: 0;
 		const panelHeight = this.partVisibility.panel ? this.workbenchGrid.getViewSize(this.panelPartView).height : 0;
 		const titleBarHeight = this.workbenchGrid.getViewSize(this.titleBarPartView).height;
@@ -2159,7 +2256,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			if (this.editorPartView && size) {
 				this.workbenchGrid.resizeView(this.editorPartView, size);
 			}
-			this._sidePane.layout();
+			this._layoutSidePane();
 		}
 
 		this._onDidChangeEditorMaximized.fire();
