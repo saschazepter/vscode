@@ -10,7 +10,7 @@ import { Color } from '../../../../base/common/color.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
-import { editorActiveLineNumber, editorLineNumbers } from '../../../common/core/editorColorRegistry.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption } from '../../../common/config/editorOptions.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
@@ -122,6 +122,12 @@ export class EditorViewGpu extends ViewPart {
 			lineNumbersRight: layoutInfo.lineNumbersLeft + layoutInfo.lineNumbersWidth,
 			tabSize: this._context.viewModel.model.getOptions().tabSize,
 			background: this._packColor(this._context.theme.getColor(editorBackground), 0x1e1e1eff),
+			// `editorGutter.background` defaults to `editor.background`; mirror that
+			// fallback so the margin matches the DOM view in every theme.
+			gutterBackground: this._packColor(
+				this._context.theme.getColor(editorGutter) ?? this._context.theme.getColor(editorBackground),
+				0x1e1e1eff,
+			),
 			foreground: this._packColor(this._context.theme.getColor(editorForeground), 0xd4d4d4ff),
 			lineNumberForeground: this._packColor(this._context.theme.getColor(editorLineNumbers), 0x858585ff),
 			lineNumberActiveForeground: this._packColor(this._context.theme.getColor(editorActiveLineNumber), 0xc6c6c6ff),
