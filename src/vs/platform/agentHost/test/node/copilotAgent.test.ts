@@ -1126,12 +1126,12 @@ suite('CopilotAgent', () => {
 		}).timeout(30_000);
 	});
 
-	suite('resume working directory fallback', () => {
-		test('resumes against the repository root when the worktree working dir is missing', async () => {
+	suite('resume working directory repair', () => {
+		test('recreates the worktree when a live (non-archived) session\'s worktree is missing', async () => {
 			const repoRoot = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-repo-`));
 			const existingWorktree = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-live-`));
 			const missingWorktree = URI.joinPath(repoRoot, '..', `gone-worktree-${Date.now()}`);
-			const sessionId = 'wt-resume';
+			const sessionId = 'wt-recreate';
 			const session = AgentSession.uri('copilotcli', sessionId);
 			const sessionDataService = disposables.add(new TestSessionDataService());
 			const db = sessionDataService.openDatabase(session);
@@ -1139,18 +1139,22 @@ suite('CopilotAgent', () => {
 			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
 			await db.object.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString());
 			db.dispose();
-			const agent = createTestAgent(disposables, { sessionDataService });
+			const gitService = new TestAgentHostGitService();
+			gitService.existingBranches.add('feature/x');
+			const agent = createTestAgent(disposables, { sessionDataService, gitService });
 			const internals = agent as unknown as {
-				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+				_ensureResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
 			};
 			try {
 				const outcomes = {
-					missingWorktreeFallsBackToRepoRoot: (await internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree)).fsPath,
-					existingWorktreeUsedUnchanged: (await internals._resolveResumeWorkingDirectory(session, sessionId, existingWorktree)).fsPath,
+					missingWorktreeRecreated: (await internals._ensureResumeWorkingDirectory(session, sessionId, missingWorktree)).fsPath,
+					existingWorktreeUsedUnchanged: (await internals._ensureResumeWorkingDirectory(session, sessionId, existingWorktree)).fsPath,
+					recreatedWorktrees: gitService.addedExistingWorktrees.map(w => ({ worktree: w.worktree.fsPath, branchName: w.branchName })),
 				};
 				assert.deepStrictEqual(outcomes, {
-					missingWorktreeFallsBackToRepoRoot: repoRoot.fsPath,
+					missingWorktreeRecreated: missingWorktree.fsPath,
 					existingWorktreeUsedUnchanged: existingWorktree.fsPath,
+					recreatedWorktrees: [{ worktree: missingWorktree.fsPath, branchName: 'feature/x' }],
 				});
 			} finally {
 				await fs.rm(repoRoot.fsPath, { recursive: true, force: true });
@@ -1159,18 +1163,76 @@ suite('CopilotAgent', () => {
 			}
 		}).timeout(30_000);
 
-		test('throws when neither the working dir nor a recorded repository root exists', async () => {
-			const missingWorktree = URI.file(`${os.tmpdir()}/gone-worktree-noroot-${Date.now()}`);
-			const sessionId = 'wt-resume-noroot';
+		test('resumes an archived session against the repository root without recreating the worktree', async () => {
+			const repoRoot = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-repo-`));
+			const missingWorktree = URI.joinPath(repoRoot, '..', `gone-worktree-${Date.now()}`);
+			const sessionId = 'wt-archived';
+			const session = AgentSession.uri('copilotcli', sessionId);
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const db = sessionDataService.openDatabase(session);
+			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
+			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
+			await db.object.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString());
+			await db.object.setMetadata('isArchived', 'true');
+			db.dispose();
+			const gitService = new TestAgentHostGitService();
+			gitService.existingBranches.add('feature/x');
+			const agent = createTestAgent(disposables, { sessionDataService, gitService });
+			const internals = agent as unknown as {
+				_ensureResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+			};
+			try {
+				const outcomes = {
+					resolved: (await internals._ensureResumeWorkingDirectory(session, sessionId, missingWorktree)).fsPath,
+					worktreesRecreated: gitService.addedExistingWorktrees.length,
+				};
+				assert.deepStrictEqual(outcomes, { resolved: repoRoot.fsPath, worktreesRecreated: 0 });
+			} finally {
+				await fs.rm(repoRoot.fsPath, { recursive: true, force: true });
+				await disposeAgent(agent);
+			}
+		}).timeout(30_000);
+
+		test('throws when a live worktree session cannot be recreated because its branch is gone', async () => {
+			const repoRoot = URI.file(await fs.mkdtemp(`${os.tmpdir()}/wt-repo-`));
+			const missingWorktree = URI.joinPath(repoRoot, '..', `gone-worktree-${Date.now()}`);
+			const sessionId = 'wt-branchgone';
+			const session = AgentSession.uri('copilotcli', sessionId);
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const db = sessionDataService.openDatabase(session);
+			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
+			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
+			await db.object.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString());
+			db.dispose();
+			const gitService = new TestAgentHostGitService(); // branch not registered
+			const agent = createTestAgent(disposables, { sessionDataService, gitService });
+			const internals = agent as unknown as {
+				_ensureResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+			};
+			try {
+				await assert.rejects(
+					() => internals._ensureResumeWorkingDirectory(session, sessionId, missingWorktree),
+					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
+				);
+				assert.strictEqual(gitService.addedExistingWorktrees.length, 0);
+			} finally {
+				await fs.rm(repoRoot.fsPath, { recursive: true, force: true });
+				await disposeAgent(agent);
+			}
+		}).timeout(30_000);
+
+		test('throws when a live session has no worktree metadata to repair', async () => {
+			const missingDir = URI.file(`${os.tmpdir()}/gone-dir-${Date.now()}`);
+			const sessionId = 'wt-nometa';
 			const session = AgentSession.uri('copilotcli', sessionId);
 			const sessionDataService = disposables.add(new TestSessionDataService());
 			const agent = createTestAgent(disposables, { sessionDataService });
 			const internals = agent as unknown as {
-				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+				_ensureResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
 			};
 			try {
 				await assert.rejects(
-					() => internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree),
+					() => internals._ensureResumeWorkingDirectory(session, sessionId, missingDir),
 					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
 				);
 			} finally {
@@ -1178,24 +1240,25 @@ suite('CopilotAgent', () => {
 			}
 		}).timeout(30_000);
 
-		test('throws when the working dir is missing and the recorded repository root is also gone', async () => {
+		test('throws when an archived session\'s working dir and repository root are both gone', async () => {
 			const missingRepoRoot = URI.file(`${os.tmpdir()}/gone-repo-${Date.now()}`);
 			const missingWorktree = URI.joinPath(missingRepoRoot, '..', `gone-worktree-${Date.now()}`);
-			const sessionId = 'wt-resume-noroot-2';
+			const sessionId = 'wt-archived-noroot';
 			const session = AgentSession.uri('copilotcli', sessionId);
 			const sessionDataService = disposables.add(new TestSessionDataService());
 			const db = sessionDataService.openDatabase(session);
 			await db.object.setMetadata('copilot.worktree.branchName', 'feature/x');
 			await db.object.setMetadata('copilot.worktree.path', missingWorktree.toString());
 			await db.object.setMetadata('copilot.worktree.repositoryRoot', missingRepoRoot.toString());
+			await db.object.setMetadata('isArchived', 'true');
 			db.dispose();
 			const agent = createTestAgent(disposables, { sessionDataService });
 			const internals = agent as unknown as {
-				_resolveResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
+				_ensureResumeWorkingDirectory: (session: URI, id: string, wd: URI) => Promise<URI>;
 			};
 			try {
 				await assert.rejects(
-					() => internals._resolveResumeWorkingDirectory(session, sessionId, missingWorktree),
+					() => internals._ensureResumeWorkingDirectory(session, sessionId, missingWorktree),
 					(err: Error) => err instanceof SessionWorkingDirectoryMissingError,
 				);
 			} finally {
