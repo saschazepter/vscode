@@ -149,7 +149,7 @@ export class AgentSideEffects extends Disposable {
 		super();
 		this._telemetryReporter = new AgentHostTelemetryReporter(this._telemetryService);
 		this._turnTracker = new AgentHostTurnTracker(this._telemetryReporter);
-		this._toolCallTracker = new AgentHostToolCallTracker(this._telemetryReporter);
+		this._toolCallTracker = this._register(new AgentHostToolCallTracker(this._telemetryReporter));
 		this._permissionManager = this._register(instantiationService.createInstance(SessionPermissionManager, this._stateManager));
 		this._localCommands = this._register(instantiationService.createInstance(
 			AgentHostLocalCommands,
@@ -351,10 +351,17 @@ export class AgentSideEffects extends Disposable {
 			return;
 		}
 		this._stateManager.dispatchServerAction(sessionUri, { type: ActionType.SessionInputNeededSet, request });
+		if (request.kind !== SessionInputRequestKind.ChatInput) {
+			const agent = this._options.getAgent(sessionUri);
+			if (agent) {
+				this._toolCallTracker.toolCallBlocked(agent.id, chatUri, request);
+			}
+		}
 	}
 
 	private _removeSessionInputNeeded(chatUri: ProtocolURI, id: string): void {
 		const sessionUri = parseRequiredSessionUriFromChatUri(chatUri);
+		this._toolCallTracker.toolCallUnblocked(chatUri, id);
 		if (!this._stateManager.getSessionState(sessionUri)?.inputNeeded?.some(r => r.id === id)) {
 			return;
 		}
@@ -365,7 +372,7 @@ export class AgentSideEffects extends Disposable {
 		const sessionUri = parseRequiredSessionUriFromChatUri(chatUri);
 		for (const request of this._stateManager.getSessionState(sessionUri)?.inputNeeded ?? []) {
 			if (request.chat === chatUri) {
-				this._stateManager.dispatchServerAction(sessionUri, { type: ActionType.SessionInputNeededRemoved, id: request.id });
+				this._removeSessionInputNeeded(chatUri, request.id);
 			}
 		}
 	}
