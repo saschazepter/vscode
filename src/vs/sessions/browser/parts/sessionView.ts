@@ -24,6 +24,7 @@ import { SessionHeader, SessionViewFloatingToolbar } from './sessionHeader.js';
 import { ISessionContext, SessionContext } from '../../services/sessions/browser/sessionContext.js';
 import { autorun, observableValue, observableSignalFromEvent } from '../../../base/common/observable.js';
 import { SessionIsMaximizedContext, SessionHasTerminalsContext } from '../../common/contextkeys.js';
+import { UNARCHIVE_SESSION_COMMAND_ID } from '../../common/sessionCommands.js';
 import { setActiveSessionContextKeys } from '../../services/sessions/common/sessionContextKeys.js';
 import { ISessionTerminalsService } from '../../services/sessions/browser/sessionTerminalsService.js';
 import { activeSessionViewBackground, activeSessionViewForeground, inactiveSessionViewBackground, inactiveSessionViewForeground } from '../../common/theme.js';
@@ -156,10 +157,10 @@ export class SessionView extends Disposable implements ISerializableView {
 				const archived = !!session && session.isArchived.read(reader);
 				if (archived && session) {
 					this._readOnlyBanner.setContent({
-						message: localize('sessionReadOnlyBanner.archived', "This session is archived and read-only."),
+						message: localize('sessionReadOnlyBanner.archived', "Archived sessions are read-only."),
 						action: {
 							label: localize('sessionReadOnlyBanner.restore', "Restore"),
-							run: () => this.commandService.executeCommand('sessionsViewPane.unarchiveSession', session),
+							run: () => this.commandService.executeCommand(UNARCHIVE_SESSION_COMMAND_ID, session),
 						},
 					});
 				} else {
