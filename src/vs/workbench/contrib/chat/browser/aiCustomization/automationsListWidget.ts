@@ -7,7 +7,7 @@ import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
-import { IListRenderer, IListVirtualDelegate } from '../../../../../base/browser/ui/list/list.js';
+import { IListRenderer, IListVirtualDelegate, NotSelectableGroupId } from '../../../../../base/browser/ui/list/list.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../base/common/event.js';
@@ -459,6 +459,9 @@ export class AutomationsListWidget extends Disposable {
 				identityProvider: {
 					getId(element: IAutomationListEntry) {
 						return element.automation.id;
+					},
+					getGroupId() {
+						return NotSelectableGroupId;
 					}
 				}
 			}
