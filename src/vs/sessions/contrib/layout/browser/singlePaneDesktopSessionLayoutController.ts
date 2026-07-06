@@ -8,15 +8,18 @@ import { Sequencer } from '../../../../base/common/async.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Event } from '../../../../base/common/event.js';
+import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, IObservable, IReader, observableFromEvent, observableSignalFromEvent } from '../../../../base/common/observable.js';
 import { isEqual, isEqualOrParent } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { EditorActivation, IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { ContextKeyExpr, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { EditorInput } from '../../../../workbench/common/editor/editorInput.js';
+import { IUntypedEditorInput } from '../../../../workbench/common/editor.js';
 import { AuxiliaryBarVisibleContext, IsAuxiliaryWindowContext, IsSessionsWindowContext, IsTopRightEditorGroupContext, MainEditorAreaVisibleContext } from '../../../../workbench/common/contextkeys.js';
 import { BrowserEditorInput } from '../../../../workbench/contrib/browserView/common/browserEditorInput.js';
 import { FileEditorInput } from '../../../../workbench/contrib/files/browser/editors/fileEditorInput.js';
@@ -55,6 +58,11 @@ interface IManagedTabTargetState {
 	ensureFileTab: boolean;
 }
 
+interface IManagedFilesTabState {
+	readonly placeholder: EmptyFileEditorInput | undefined;
+	readonly shouldShow: boolean;
+}
+
 const enum DetailPanelTarget {
 	Hidden,
 	BrowserHidden,
@@ -89,6 +97,12 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 	private readonly _internallyClosingEditors = new Set<EditorInput>();
 	private _lastSyncedSessionKey: string | undefined;
 	private _sidePaneWasVisible = false;
+
+	// --- Editor-area tab collapse state ---
+	/** Non-managed editors closed (captured as reopenable inputs + their tab index) while the editor area is hidden. */
+	private _collapsedEditors: { readonly editor: IUntypedEditorInput; readonly index: number }[] | undefined;
+	/** Last observed editor-area visibility, to act only on transitions. */
+	private _editorAreaVisible: boolean | undefined;
 
 	// --- Detail panel state ---
 	private _changesOrFilesActiveContext: IContextKey<boolean> | undefined;
@@ -125,16 +139,32 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 	 * The docked editor lives in the grid even when `useModal` is `'all'`, and a
 	 * created session shows the docked Changes editor by default (Editor-only), so
 	 * reveal the editor part for a created session unless it was explicitly hidden.
-	 * New-session views keep their editor closed (R1), so they are excluded.
+	 * New-session views keep their editor closed (R1), so they are excluded. Quick
+	 * chats have no side pane at all, so their editor part is never auto-revealed.
 	 */
 	protected override _shouldRevealEditorPartOnApply(editorPartHidden: boolean, _isModal: boolean): boolean {
-		const isCreatedSession = this._sessionsService.activeSession.get()?.isCreated.get() ?? false;
-		return !editorPartHidden && isCreatedSession;
+		const activeSession = this._sessionsService.activeSession.get();
+		const isCreatedSession = activeSession?.isCreated.get() ?? false;
+		const isQuickChat = activeSession?.isQuickChat?.get() ?? false;
+		return !editorPartHidden && isCreatedSession && !isQuickChat;
 	}
 
 	/** A created single-pane session with no saved editors still shows its managed Changes editor. */
 	protected override _shouldRevealEditorPartForEmptyWorkingSet(revealEditorPart: boolean): boolean {
 		return revealEditorPart;
+	}
+
+	/**
+	 * A created single-pane session that had its docked editor closed (Detail-only
+	 * or whole side pane closed) must be restored to that state on switch — the
+	 * editor part is actively hidden rather than left visible from the previous
+	 * session. New-session views (R1) and quick chats are handled separately.
+	 */
+	protected override _shouldHideEditorPartOnApply(editorPartHidden: boolean): boolean {
+		const activeSession = this._sessionsService.activeSession.get();
+		const isCreatedSession = activeSession?.isCreated.get() ?? false;
+		const isQuickChat = activeSession?.isQuickChat?.get() ?? false;
+		return editorPartHidden && isCreatedSession && !isQuickChat;
 	}
 
 	/**
@@ -147,8 +177,15 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 			if (this._store.isDisposed) {
 				return;
 			}
+			// Managed tabs (Changes multi-diff, Files placeholder) surface their
+			// content in the detail panel, so opening them must not reveal the editor
+			// area. Own that policy here rather than hardcoding editor ids in the core
+			// workbench.
+			this._register(this._layoutService.setEditorRevealOnOpenExclusion(editor => this._isManagedEditor(editor)));
 			this._registerManagedTabs();
+			this._registerEditorAreaTabCollapse();
 			this._registerDetailPanel();
+			this._registerQuickChatEditorHide();
 		});
 	}
 
@@ -176,6 +213,97 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 		// A user-initiated close of a managed tab is remembered so the sync does not
 		// immediately re-create it.
 		this._register(this._editorService.onDidCloseEditor(e => this._handleManagedTabClosed(e.editor)));
+	}
+
+	// --- Editor-area tab collapse (only Changes + Files tabs while the editor area is hidden) ---
+
+	/**
+	 * When the editor area is hidden (detail-only), closes the non-managed (real
+	 * file) editors so only the managed Changes and Files tabs remain, capturing
+	 * them so they are reopened when the editor area is shown again.
+	 */
+	private _registerEditorAreaTabCollapse(): void {
+		const editorAreaVisibleObs = observableFromEvent(this, this._layoutService.onDidChangePartVisibility,
+			() => this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow));
+
+		this._register(autorun(reader => {
+			const visible = editorAreaVisibleObs.read(reader);
+			if (this._editorAreaVisible === undefined) {
+				this._editorAreaVisible = visible;
+				return;
+			}
+			if (visible === this._editorAreaVisible) {
+				return;
+			}
+			this._editorAreaVisible = visible;
+
+			// Session-switch restores toggle editor-area visibility as a side effect;
+			// those are layout-driven, not a user hide/show, so skip them.
+			if (this._isRestoringSessionLayout) {
+				return;
+			}
+
+			void this._tabSyncSequencer.queue(() => visible ? this._restoreCollapsedTabs() : this._collapseNonManagedTabs()).catch(onUnexpectedError);
+		}));
+	}
+
+	private async _collapseNonManagedTabs(): Promise<void> {
+		if (this._collapsedEditors) {
+			return; // already collapsed
+		}
+
+		const group = this._editorGroupsService.mainPart.activeGroup;
+		const captured: { editor: IUntypedEditorInput; index: number }[] = [];
+		const toClose: EditorInput[] = [];
+		group.editors.forEach((editor, index) => {
+			if (this._isManagedEditor(editor) || editor.isDirty()) {
+				return;
+			}
+			const untyped = editor.toUntyped();
+			if (untyped) {
+				captured.push({ editor: untyped, index });
+				toClose.push(editor);
+			}
+		});
+		if (toClose.length === 0) {
+			return;
+		}
+
+		this._collapsedEditors = captured;
+		toClose.forEach(editor => this._internallyClosingEditors.add(editor));
+		const suppressEditorPartAutoVisibility = this._layoutService.suppressEditorPartAutoVisibility();
+		try {
+			await this._editorService.closeEditors(toClose.map(editor => ({ groupId: group.id, editor })), { preserveFocus: true });
+		} finally {
+			toClose.forEach(editor => this._internallyClosingEditors.delete(editor));
+			suppressEditorPartAutoVisibility.dispose();
+		}
+	}
+
+	private async _restoreCollapsedTabs(): Promise<void> {
+		const captured = this._collapsedEditors;
+		this._collapsedEditors = undefined;
+		if (!captured || captured.length === 0) {
+			return;
+		}
+
+		const group = this._editorGroupsService.mainPart.activeGroup;
+		const suppressEditorPartAutoVisibility = this._layoutService.suppressEditorPartAutoVisibility();
+		try {
+			// Reopen in ascending index order, each at its original tab position, so
+			// the tabs return to where they were before the editor area was hidden.
+			await this._editorService.openEditors(
+				[...captured]
+					.sort((a, b) => a.index - b.index)
+					.map(({ editor, index }) => ({ ...editor, options: { ...editor.options, index, inactive: true, preserveFocus: true, pinned: true } })),
+				group);
+		} finally {
+			suppressEditorPartAutoVisibility.dispose();
+		}
+	}
+
+	private _isManagedEditor(editor: EditorInput): boolean {
+		return editor instanceof EmptyFileEditorInput || this._getChangesEditorResource(editor) !== undefined;
 	}
 
 	private _handleManagedTabClosed(editor: EditorInput): void {
@@ -221,6 +349,11 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 		if (sessionKey !== this._lastSyncedSessionKey || (sidePaneVisible && !this._sidePaneWasVisible)) {
 			this._dismissedManagedTabs.clear();
 		}
+		if (sessionKey !== this._lastSyncedSessionKey) {
+			// A new session has its own editors; drop any tabs captured while the
+			// previous session's editor area was hidden so they are not reopened here.
+			this._collapsedEditors = undefined;
+		}
 		this._lastSyncedSessionKey = sessionKey;
 		this._sidePaneWasVisible = sidePaneVisible;
 
@@ -260,19 +393,34 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 				return;
 			}
 
-			// The managed Files tab is only removed when the user explicitly closes
-			// it (tracked via `_dismissedManagedTabs`); it is never auto-removed
-			// based on editor-area visibility, which caused a transient removal on
-			// reload that emptied the group and closed the whole side pane.
-			if (this._dismissedManagedTabs.has('files') && group.editors.some(editor => editor instanceof EmptyFileEditorInput)) {
-				this._dismissedManagedTabs.delete('files');
-			}
-
-			if (!this._dismissedManagedTabs.has('files')) {
+			const filesTabState = this._getManagedFilesTabState(group);
+			if (!filesTabState.shouldShow) {
+				await this._removeDefaultFileTab(group, filesTabState.placeholder);
+			} else if (!this._dismissedManagedTabs.has('files')) {
 				await this._ensureDefaultFileTab(group);
 			}
 		} finally {
 			suppressEditorPartAutoVisibility.dispose();
+		}
+	}
+
+	private _getManagedFilesTabState(group: IEditorGroup): IManagedFilesTabState {
+		const placeholder = group.editors.find((editor): editor is EmptyFileEditorInput => editor instanceof EmptyFileEditorInput);
+		const editorVisible = this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow);
+		const hasRealEditor = group.editors.some(editor => !this._isManagedEditor(editor));
+		return { placeholder, shouldShow: !editorVisible || !hasRealEditor };
+	}
+
+	private async _removeDefaultFileTab(group: IEditorGroup, editor: EmptyFileEditorInput | undefined): Promise<void> {
+		if (!editor) {
+			return;
+		}
+
+		this._internallyClosingEditors.add(editor);
+		try {
+			await this._editorService.closeEditors([{ groupId: group.id, editor }], { preserveFocus: true });
+		} finally {
+			this._internallyClosingEditors.delete(editor);
 		}
 	}
 
@@ -485,6 +633,39 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 			isEqualOrParent(resource, folder.root) || isEqualOrParent(resource, folder.workingDirectory));
 	}
 
+	// --- Quick chats: no side pane ---
+
+	/**
+	 * A quick chat has no side pane (no workspace, Changes/Files gated off). The
+	 * detail panel target is `Hidden` (aux bar hidden), but the docked editor part
+	 * can still be left visible when switching in from a session that had it open.
+	 * Hide the editor part while a quick chat's editor group is empty so the whole
+	 * side pane collapses and the chat is full-width. Gated on emptiness so a real
+	 * editor (e.g. the integrated browser) opened in a quick chat is never hidden.
+	 */
+	private _registerQuickChatEditorHide(): void {
+		const mainPartEmptyObs = observableFromEvent(this,
+			Event.any(this._editorService.onDidActiveEditorChange, this._editorService.onDidEditorsChange, this._editorService.onDidCloseEditor),
+			() => this._isMainPartEmpty());
+
+		this._register(autorun(reader => {
+			const activeSession = this._sessionsService.activeSession.read(reader);
+			const isQuickChat = activeSession?.isQuickChat?.read(reader) ?? false;
+			if (!isQuickChat || !mainPartEmptyObs.read(reader)) {
+				return;
+			}
+			if (!this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
+				return;
+			}
+			const suppression = this._layoutService.suppressEditorPartAutoVisibility();
+			try {
+				this._layoutService.setPartHidden(true, Parts.EDITOR_PART);
+			} finally {
+				suppression.dispose();
+			}
+		}));
+	}
+
 	// --- [D7 single-pane] Responsive sessions-list auto-hide ---
 
 	/**
@@ -531,6 +712,24 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 			}
 			this._sidebarAutoHidden = false;
 		}));
+
+		// Restore an auto-collapsed sessions list once the side pane is fully
+		// hidden — there is no side pane to make room for anymore. This covers
+		// closing the whole side pane and switching to a session with no side pane
+		// (a quick chat), so the list is never left collapsed while the side pane
+		// is hidden. `observableFromEvent` dedupes on the computed value, so hiding
+		// the sidebar itself (a different part) never re-triggers this, and the
+		// pre-reveal auto-hide from opening an editor is not undone.
+		const sidePaneVisibleObs = observableFromEvent(this,
+			this._layoutService.onDidChangePartVisibility,
+			() => this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow) || this._layoutService.isVisible(Parts.AUXILIARYBAR_PART));
+		this._register(autorun(reader => {
+			if (sidePaneVisibleObs.read(reader) || !this._sidebarAutoHidden) {
+				return;
+			}
+			this._setSidebarAutoHidden(false);
+			this._sidebarAutoHidden = false;
+		}));
 	}
 
 	/**
@@ -565,6 +764,14 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 					icon: Codicon.listSelection,
 					f1: false,
 					toggled: AuxiliaryBarVisibleContext,
+					keybinding: {
+						weight: KeybindingWeight.SessionsContrib,
+						primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyL,
+						when: ContextKeyExpr.and(
+							IsSessionsWindowContext,
+							IsAuxiliaryWindowContext.toNegated(),
+							ContextKeyExpr.equals(`config.${DOCK_DETAIL_PANEL_SETTING}`, true))
+					},
 					menu: {
 						id: MenuId.EditorTitle,
 						group: 'navigation',

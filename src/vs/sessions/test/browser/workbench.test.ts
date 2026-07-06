@@ -328,6 +328,7 @@ suite('Sessions - Workbench', () => {
 
 	interface IWillOpenTestHarness {
 		_editorPartAutoVisibilitySuppressionCount: number;
+		_editorRevealOnOpenExclusion?: (editor: { typeId: string }) => boolean;
 		partVisibility: { editor: boolean };
 		editorGroupService: { mainPart: { groups: { id: number }[] } };
 		setEditorHidden(hidden: boolean, explicit?: boolean): void;
@@ -338,6 +339,11 @@ suite('Sessions - Workbench', () => {
 		const setEditorHiddenCalls: { hidden: boolean; explicit?: boolean }[] = [];
 		const harness: IWillOpenTestHarness = {
 			_editorPartAutoVisibilitySuppressionCount: 0,
+			// Mirrors the predicate the single-pane layout controller registers for the
+			// managed Changes and Files tabs (their content lives in the detail panel).
+			_editorRevealOnOpenExclusion: editor =>
+				editor.typeId === 'workbench.editors.agentSessions.emptyFile' ||
+				editor.typeId === 'workbench.input.agentSessions.sessionChanges',
 			partVisibility: { editor: false },
 			editorGroupService: { mainPart: { groups: [{ id: 1 }] } },
 			setEditorHidden: (hidden, explicit) => setEditorHiddenCalls.push({ hidden, explicit }),
@@ -352,6 +358,15 @@ suite('Sessions - Workbench', () => {
 
 		// Closing the Changes tab activates the managed empty Files placeholder.
 		handleWillOpenEditor.call(harness, { groupId: 1, editor: { typeId: 'workbench.editors.agentSessions.emptyFile' } });
+
+		assert.deepStrictEqual(setEditorHiddenCalls, []);
+	});
+
+	test('[Scenario 5] does not reveal a hidden editor when the managed Changes tab is activated', () => {
+		const { harness, setEditorHiddenCalls } = createWillOpenHarness({ partVisibility: { editor: false } });
+
+		// Clicking the Changes tab activates the managed Changes multi-diff editor.
+		handleWillOpenEditor.call(harness, { groupId: 1, editor: { typeId: 'workbench.input.agentSessions.sessionChanges' } });
 
 		assert.deepStrictEqual(setEditorHiddenCalls, []);
 	});
@@ -673,7 +688,9 @@ suite('Sessions - Workbench', () => {
 			isEditorAreaVisible: () => true,
 			isEditorVisible: () => editorVisible,
 			isAuxiliaryBarVisible: () => true,
+			hideAuxiliaryBar: () => { },
 			setEditorContentRightInset: px => insets.push(px),
+			getHeaderHeight: () => 0,
 		};
 		const controller = new DockedAuxiliaryBarController(editorContainer, auxiliaryBarPart, host);
 
@@ -745,7 +762,9 @@ suite('Sessions - Workbench', () => {
 			isEditorAreaVisible: () => true,
 			isEditorVisible: () => true,
 			isAuxiliaryBarVisible: () => true,
+			hideAuxiliaryBar: () => { },
 			setEditorContentRightInset: px => insets.push(px),
+			getHeaderHeight: () => 0,
 		};
 		const controller = new DockedAuxiliaryBarController(editorContainer, auxiliaryBarPart, host);
 
@@ -769,6 +788,54 @@ suite('Sessions - Workbench', () => {
 			},
 			sashState: SashState.Enabled,
 		});
+
+		controller.dispose();
+	});
+
+	test('hides the docked detail panel when its sash collapses to zero width', () => {
+		const editorContainer = document.createElement('div');
+		const auxiliaryBarContainer = document.createElement('div');
+		const persistedWidths: number[] = [];
+		let hideCount = 0;
+
+		Object.defineProperty(editorContainer, 'clientWidth', { value: 800 });
+		Object.defineProperty(editorContainer, 'clientHeight', { value: 600 });
+		editorContainer.getBoundingClientRect = () => ({
+			width: 800,
+			height: 600,
+			top: 0,
+			right: 800,
+			bottom: 600,
+			left: 0,
+			x: 0,
+			y: 0,
+			toJSON: () => undefined,
+		});
+
+		const auxiliaryBarPart = {
+			getContainer: () => auxiliaryBarContainer,
+			layout: () => { },
+		} as unknown as Part;
+		const host: IDockedAuxiliaryBarHost = {
+			getWidth: () => 260,
+			setWidth: width => persistedWidths.push(width),
+			isEditorAreaVisible: () => true,
+			isEditorVisible: () => true,
+			isAuxiliaryBarVisible: () => true,
+			hideAuxiliaryBar: () => hideCount++,
+			setEditorContentRightInset: () => { },
+			getHeaderHeight: () => 0,
+		};
+		const controller = new DockedAuxiliaryBarController(editorContainer, auxiliaryBarPart, host);
+
+		controller.layout();
+		const sash = Reflect.get(controller, '_sash');
+		const start = Reflect.get(sash, '_onDidStart') as { fire(e: unknown): void };
+		const change = Reflect.get(sash, '_onDidChange') as { fire(e: unknown): void };
+		start.fire({ startX: 0, currentX: 0, startY: 0, currentY: 0, altKey: false });
+		change.fire({ startX: 0, currentX: 270, startY: 0, currentY: 0, altKey: false });
+
+		assert.deepStrictEqual({ hideCount, persistedWidths }, { hideCount: 1, persistedWidths: [] });
 
 		controller.dispose();
 	});

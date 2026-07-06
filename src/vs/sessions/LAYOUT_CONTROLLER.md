@@ -74,6 +74,9 @@ Skipped entirely on mobile web (`isWeb && isMobile`) to avoid disruptive auto-ex
 > unchanged and still toggles visibility via `IWorkbenchLayoutService.setPartHidden(AUXILIARYBAR_PART)`; the
 > workbench fires `onDidChangePartVisibility` for the docked part so these capture/restore rules apply in both
 > modes. When the setting is off, everything below applies unchanged.
+> Docked sash collapse is also expressed through the same visibility API: the left grid sash hides editor content
+> when the editor node reaches the detail width, and the middle docked sash hides the auxiliary bar when the raw
+> dragged detail width reaches ~0.
 > Single-pane also keeps new-session views Files-first: when an uncreated workspace session is entered,
 > `SinglePaneDesktopSessionLayoutController` hides the editor content once under editor-auto-visibility
 > suppression so the editor tab bar and Files detail panel remain visible. Later user reveals are respected.
@@ -235,6 +238,11 @@ saved for the incoming session — it never applies `'empty'`, to avoid closing 
 On this initial restore the working set is applied under `suppressEditorPartAutoVisibility()` and the
 editor part is **not** revealed, so whatever visibility the workbench restored (possibly hidden,
 because the user closed the Side Panel) is preserved across reloads.
+
+In single-pane mode, layout-driven managed Changes/File tab opens remain excluded from automatic
+editor reveal. The session header **Changes** pill is an explicit user open, so its action reveals the
+editor part before opening the managed Changes editor; this keeps tab activation/layout restores
+non-revealing while the pill reliably shows the multi-diff editor.
 
 ### 5.3 Cleanup
 

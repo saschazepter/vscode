@@ -494,6 +494,16 @@ export abstract class BaseLayoutController extends Disposable {
 		return false;
 	}
 
+	/**
+	 * Hook deciding whether {@link _applyWorkingSet} actively hides the editor part
+	 * when restoring a session that had it hidden. The base never hides (in the
+	 * classic layout the editor part visibility is not a per-session choice); the
+	 * single-pane layout restores its docked editor part both ways.
+	 */
+	protected _shouldHideEditorPartOnApply(_editorPartHidden: boolean): boolean {
+		return false;
+	}
+
 	// --- Editor part reveal ---
 
 	/**
@@ -502,6 +512,11 @@ export abstract class BaseLayoutController extends Disposable {
 	 */
 	private _revealEditorPartForWorkingSet(): void {
 		this._layoutService.setPartHidden(false, Parts.EDITOR_PART);
+	}
+
+	/** Hides the editor part to restore a session that had its docked editor closed. */
+	private _hideEditorPartForWorkingSet(): void {
+		this._layoutService.setPartHidden(true, Parts.EDITOR_PART);
 	}
 
 	// --- Persistence [B3] ---
@@ -641,11 +656,19 @@ export abstract class BaseLayoutController extends Disposable {
 			const editorPartHidden = sessionResource ? this._editorPartHiddenBySession.get(sessionResource) === true : false;
 			const revealEditorPart = !options?.isInitialRestore
 				&& this._shouldRevealEditorPartOnApply(editorPartHidden, isModal);
+			// Restore a session that had its (docked) editor part closed by actively
+			// hiding it, so returning from a session that had it open does not leave
+			// it visible. Mutually exclusive with revealing.
+			const hideEditorPart = !options?.isInitialRestore
+				&& !revealEditorPart
+				&& this._shouldHideEditorPartOnApply(editorPartHidden);
 
 			if (workingSet === 'empty') {
 				await this._editorGroupsService.applyWorkingSet(workingSet, { preserveFocus });
 				if (this._shouldRevealEditorPartForEmptyWorkingSet(revealEditorPart) && !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
 					this._revealEditorPartForWorkingSet();
+				} else if (hideEditorPart && this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
+					this._hideEditorPartForWorkingSet();
 				}
 				return;
 			}
@@ -664,11 +687,15 @@ export abstract class BaseLayoutController extends Disposable {
 
 			if (revealEditorPart && !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
 				this._revealEditorPartForWorkingSet();
+			} else if (hideEditorPart && this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
+				this._hideEditorPartForWorkingSet();
 			}
 
 			const result = await this._editorGroupsService.applyWorkingSet(workingSet, { preserveFocus });
 			if (revealEditorPart && result && !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
 				this._revealEditorPartForWorkingSet();
+			} else if (hideEditorPart && this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)) {
+				this._hideEditorPartForWorkingSet();
 			}
 		});
 	}

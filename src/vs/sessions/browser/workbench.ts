@@ -42,6 +42,7 @@ import { setBaseLayerHoverDelegate } from '../../base/browser/ui/hover/hoverDele
 import { Registry } from '../../platform/registry/common/platform.js';
 import { IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from '../../workbench/common/contributions.js';
 import { IEditorFactoryRegistry, EditorExtensions, IEditorWillOpenEvent } from '../../workbench/common/editor.js';
+import { EditorInput } from '../../workbench/common/editor/editorInput.js';
 import { setARIAContainer } from '../../base/browser/ui/aria/aria.js';
 import { FontMeasurements } from '../../editor/browser/config/fontMeasurements.js';
 import { createBareFontInfoFromRawSettings } from '../../editor/common/config/fontInfoFromSettings.js';
@@ -171,12 +172,29 @@ export interface IDockedEditorLayout {
 	isEditorRevealedExplicitly(): boolean;
 
 	/**
+	 * Reveals the (possibly hidden) editor part as an *explicit* user reveal, so
+	 * the automatic single-pane hide rules (R1 / working-set apply) do not undo it.
+	 * Use for deliberate opens like the session-header Changes pill or opening a
+	 * file diff — not for automatic/layout-driven reveals.
+	 */
+	revealEditorPartExplicitly(): void;
+
+	/**
 	 * The docked auxiliary bar (detail panel) width, owned by the workbench's
 	 * single-pane layout state and read/written by the docked controller that the
 	 * editor part owns. Trivial in the classic layout.
 	 */
 	getDockedAuxiliaryBarWidth(): number;
 	setDockedAuxiliaryBarWidth(width: number): void;
+
+	/**
+	 * Sets a predicate deciding which editors, when opened while the editor area is
+	 * hidden, should NOT reveal it (their content lives in the detail panel, e.g. the
+	 * managed Changes and Files tabs). Lets contrib own the policy — including the
+	 * editor types involved — instead of the core workbench hardcoding type ids.
+	 * Returns a disposable that clears the predicate.
+	 */
+	setEditorRevealOnOpenExclusion(predicate: (editor: EditorInput) => boolean): IDisposable;
 }
 
 export const IAgentWorkbenchLayoutService = refineServiceDecorator<IWorkbenchLayoutService, IAgentWorkbenchLayoutService>(IWorkbenchLayoutService);
@@ -352,6 +370,7 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	private _restoreAttachedEditorMaximizedOnShow = false;
 	protected _editorPartAutoVisibilitySuppressionCount = 0;
 	protected _hasAppliedInitialEditorSplit = false;
+	private _editorRevealOnOpenExclusion: ((editor: EditorInput) => boolean) | undefined;
 
 	private readonly restoredPromise = new DeferredPromise<void>();
 	readonly whenRestored = this.restoredPromise.p;
@@ -1132,8 +1151,10 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			return;
 		}
 
-		// `EmptyFileEditorInput.ID` — kept as a literal to avoid a core -> contrib import.
-		if (e.editor.typeId === 'workbench.editors.agentSessions.emptyFile') {
+		// A contrib-provided policy decides which editors surface their content in
+		// the detail panel (e.g. the managed Changes and Files tabs) and so must not
+		// reveal the hidden editor area when opened.
+		if (this._editorRevealOnOpenExclusion?.(e.editor)) {
 			return;
 		}
 
@@ -1160,6 +1181,15 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			}
 			disposed = true;
 			this._editorPartAutoVisibilitySuppressionCount--;
+		});
+	}
+
+	setEditorRevealOnOpenExclusion(predicate: (editor: EditorInput) => boolean): IDisposable {
+		this._editorRevealOnOpenExclusion = predicate;
+		return toDisposable(() => {
+			if (this._editorRevealOnOpenExclusion === predicate) {
+				this._editorRevealOnOpenExclusion = undefined;
+			}
 		});
 	}
 
@@ -1672,6 +1702,14 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	isEditorRevealedExplicitly(): boolean {
 		return this._editorRevealedExplicitly;
+	}
+
+	revealEditorPartExplicitly(): void {
+		// Mark the reveal explicit so R1 / the working-set apply do not re-hide it.
+		// Re-assert the flag even when already visible (the early-return in
+		// setEditorHidden would otherwise skip it).
+		this._editorRevealedExplicitly = true;
+		this.setEditorHidden(false, /* explicit */ true);
 	}
 
 	getDockedAuxiliaryBarWidth(): number {

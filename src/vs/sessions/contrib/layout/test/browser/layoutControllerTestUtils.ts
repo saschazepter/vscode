@@ -25,7 +25,7 @@ import { IPaneCompositePartService } from '../../../../../workbench/services/pan
 import { IPaneComposite } from '../../../../../workbench/common/panecomposite.js';
 import { IViewsService } from '../../../../../workbench/services/views/common/viewsService.js';
 import { EditorInput } from '../../../../../workbench/common/editor/editorInput.js';
-import { IEditorWillOpenEvent } from '../../../../../workbench/common/editor.js';
+import { IEditorWillOpenEvent, IUntypedEditorInput, isResourceEditorInput } from '../../../../../workbench/common/editor.js';
 import { IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
 import { ChatInteractivity, IChat, ISessionFileChange, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
@@ -46,6 +46,7 @@ export class TestStubEditorInput extends EditorInput {
 	constructor(private readonly _resource: URI) { super(); }
 	override get typeId(): string { return 'test.stubEditor'; }
 	override get resource(): URI { return this._resource; }
+	override toUntyped(): IUntypedEditorInput { return { resource: this._resource }; }
 }
 
 export function makeSession(resource: URI, opts?: {
@@ -175,6 +176,8 @@ export interface ITestLayoutHarness {
 	setPartHiddenCalls: { hidden: boolean; part: Parts }[];
 	/** Value returned by the layout service's `isEditorRevealedExplicitly()` mock. */
 	editorRevealedExplicitly: boolean;
+	/** Predicate registered via `setEditorRevealOnOpenExclusion()` (managed editors that shouldn't reveal the editor area). */
+	editorRevealOnOpenExclusion: ((editor: EditorInput) => boolean) | undefined;
 	/** Current suppression depth for `suppressEditorPartAutoVisibility()`. */
 	editorPartAutoVisibilitySuppressionDepth: number;
 	/** Whether the lifecycle `Restored` phase has resolved (activates single-pane managed-tab / detail-panel behaviour). */
@@ -183,6 +186,8 @@ export interface ITestLayoutHarness {
 	activeGroupEditors: EditorInput[];
 	/** Records editors closed via `IEditorService.closeEditors`. */
 	closedEditors: EditorInput[];
+	/** Records untyped editors reopened via `IEditorService.openEditors`. */
+	openedEditors: IUntypedEditorInput[];
 	/** Records the depth-at-close for each `closeEditors` call, to assert layout-driven closes happen while suppressed. */
 	closeSuppressionFlags: boolean[];
 	activePaneCompositeId: string | undefined;
@@ -254,10 +259,12 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		openedViews: [],
 		setPartHiddenCalls: [],
 		editorRevealedExplicitly: false,
+		editorRevealOnOpenExclusion: undefined,
 		editorPartAutoVisibilitySuppressionDepth: 0,
 		activateAux: options.activateAux ?? false,
 		activeGroupEditors: [],
 		closedEditors: [],
+		openedEditors: [],
 		closeSuppressionFlags: [],
 		activePaneCompositeId: undefined,
 		pinnedAuxiliaryBarContainerIds: [SESSIONS_FILES_CONTAINER_ID, CHANGES_VIEW_CONTAINER_ID],
@@ -328,7 +335,15 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 			harness.editorPartAutoVisibilitySuppressionDepth++;
 			return toDisposable(() => harness.editorPartAutoVisibilitySuppressionDepth--);
 		}
+		setEditorRevealOnOpenExclusion(predicate: (editor: EditorInput) => boolean): IDisposable {
+			harness.editorRevealOnOpenExclusion = predicate;
+			return toDisposable(() => { harness.editorRevealOnOpenExclusion = undefined; });
+		}
 		isEditorRevealedExplicitly(): boolean { return harness.editorRevealedExplicitly; }
+		revealEditorPartExplicitly(): void {
+			harness.editorRevealedExplicitly = true;
+			this.setPartHidden(false, Parts.EDITOR_PART);
+		}
 		override readonly onDidChangePartVisibility = harness.onDidChangePartVisibility.event;
 		isEditorMaximized(): boolean { return harness.editorMaximized; }
 		get isSinglePaneLayoutEnabled(): boolean { return options.singlePaneLayoutEnabled ?? false; }
@@ -417,6 +432,22 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 				harness.activeGroupEditors.push(store.add(editor));
 			}
 			return undefined;
+		}
+		override async openEditors(editors: readonly IUntypedEditorInput[]): Promise<never[]> {
+			for (const editor of editors) {
+				harness.openedEditors.push(editor);
+				const resource = isResourceEditorInput(editor) ? editor.resource : undefined;
+				if (resource) {
+					const stub = store.add(new TestStubEditorInput(resource));
+					const index = editor.options?.index;
+					if (typeof index === 'number' && index >= 0 && index <= harness.activeGroupEditors.length) {
+						harness.activeGroupEditors.splice(index, 0, stub);
+					} else {
+						harness.activeGroupEditors.push(stub);
+					}
+				}
+			}
+			return [];
 		}
 		override async closeEditors(editors: readonly { editor: EditorInput }[]): Promise<void> {
 			for (const { editor } of editors) {

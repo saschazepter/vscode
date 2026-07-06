@@ -401,7 +401,8 @@
 	--part-background: var(--vscode-editor-background);
 	--vscode-sideBar-background: var(--vscode-editor-background);
 	background: var(--vscode-editor-background);
-	border-left: var(--vscode-strokeThickness) solid var(--part-border-color, transparent);
+	border-left: var(--vscode-strokeThickness) solid var(--vscode-agentsPanel-border, transparent);
+	border-top: var(--vscode-strokeThickness) solid var(--vscode-agentsPanel-border, transparent);
 	box-sizing: border-box;
 	z-index: 2;
 }

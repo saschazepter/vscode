@@ -69,13 +69,14 @@ visible at a real width) captures a width to restore later.
 | Control | Location | Effect |
 |---------|----------|--------|
 | **Hide Editor** (chevron `>`) | Editor title bar, primary inline, **before** Maximize | Closes the editor content, keeps the detail (→ *Detail only*). The docked side pane shrinks to the detail width so the freed editor width goes to the **chat** (not the detail), and the **sessions list is reshown** (it may have been auto-collapsed when details was opened). Shown **only** when the active tab is **Changes or Files** (not Browser). Hidden when the editor is already closed, and hidden while the editor area is **maximized**. |
-| **Toggle Details** (`≡`) | Editor title bar, primary inline, after Maximize | Shows/hides the detail panel. Hiding the detail **while the editor is hidden reveals the editor** (→ *Editor only*), so the pane is never left empty — this applies in the **new-session view** too (revealing the empty editor rather than closing the whole pane). Opening the detail panel via this action auto-collapses the **sessions list** to free width for the editor area; closing it restores the sessions list. Its `toggled` state (`AuxiliaryBarVisibleContext`) is kept **in sync with the actual rendering**: the toggle reads "on" iff the detail panel is rendered with an active view container — an empty (gated-off) container is never shown, and the layout controller (D10) reconciles the part away if it becomes visible with nothing to render. |
-| **Maximize / Restore** | Editor title bar, primary inline | Maximizes the editor area (forces the Changes detail while maximized; restores on un-maximize). |
+| **Toggle Details** (`≡`) | Editor title bar, primary inline, after Maximize | Shows/hides the detail panel (default keybinding **`⌥⌘L`**). Hiding the detail **while the editor is hidden reveals the editor** (→ *Editor only*), so the pane is never left empty — this applies in the **new-session view** too (revealing the empty editor rather than closing the whole pane). Opening the detail panel via this action auto-collapses the **sessions list** to free width for the editor area; closing it restores the sessions list. Its `toggled` state (`AuxiliaryBarVisibleContext`) is kept **in sync with the actual rendering**: the toggle reads "on" iff the detail panel is rendered with an active view container — an empty (gated-off) container is never shown, and the layout controller (D10) reconciles the part away if it becomes visible with nothing to render. |
+| **Maximize / Restore** | Editor title bar, primary inline | Maximizes the editor area (forces the Changes detail while maximized; restores on un-maximize). Default keybinding **`⌥⌘E`** toggles maximize/restore while the editor area is visible. |
 | **Collapse All Diffs** | Changes editor header, primary inline | Collapses every file in the Changes multi-diff (`SessionChangesEditor.collapseAllDiffs`). |
 | **`+` Add Tab** | End of the tab strip | Opens the Add Tab menu (New File `⌘K B`, New Browser `⇧⌘K B`). **Hidden when the editor area is closed.** |
 | **Toggle Side Panel** | Command / keybinding | Closes/opens the **whole** side pane (editor + detail together) → chat-only and back. |
-| **Toggle Sessions List** | Title bar / command | Collapses/opens the left sessions list. Collapsing it gives the freed width to the editor/detail side pane (not the chat); reopening restores the previous editor/detail width so the chat gets that space back. The list is **also** auto-collapsed when the user opens the detail panel via **Toggle Details**, or when they open a real file/diff into the editor area **in an existing (created) session while the editor area is currently closed** (and restored when they close it), unless the user has since reopened it manually. |
+| **Toggle Sessions List** | Title bar / command | Collapses/opens the left sessions list. Collapsing it gives the freed width to the editor/detail side pane (not the chat); reopening restores the previous editor/detail width so the chat gets that space back. The list is **also** auto-collapsed when the user opens the detail panel via **Toggle Details**, or when they open a real file/diff into the editor area **in an existing (created) session while the editor area is currently closed** (and restored when they close it), unless the user has since reopened it manually. An auto-collapsed list is **also restored once the side pane becomes fully hidden** (both editor and detail closed) — e.g. switching to a quick chat, which has no side pane — so the list is never left collapsed with nothing to make room for. A list the user closed **manually** stays closed. |
 | **Grid sash** | Between the chat and the third pane | In a **created** session, dragging it wider re-reveals the editor content and re-syncs state (the Hide Editor chevron reappears); dragging it narrow enough that the editor content is squeezed to the detail width **hides** the editor content (mirroring the reveal), which hides all editor-title actions. In the **new-session** view a width reveal is momentary — R1 re-hides the editor, which stays closed until a file is opened. |
+| **Changes pill** | Session header meta row | Opens the managed Changes multi-diff editor and explicitly reveals the editor area when the side pane was closed or in detail-only mode. The managed Changes tab still remains excluded from automatic reveal-on-open, so merely activating its tab does not reveal the editor. |
 
 **Editor-title action visibility.** All single-pane editor-title actions (Maximize/Restore, Toggle Details, Hide Editor, Open in Modal) are hidden while the **editor area is closed** (`MainEditorAreaVisibleContext`). Hide Editor is additionally shown only when the active tab is **Changes or Files** (`SinglePaneDetailChangesOrFilesActiveContext`) and only while the editor area is **not maximized** (`EditorMaximizedContext` negated).
 
@@ -164,7 +165,12 @@ When the new session is submitted:
   editor reveals it. The user opens the editor when they want it (open a file/diff, or drag the sash).
 
 ### Quick chats / no workspace
-No side pane at all — the detail panel and managed tabs are not shown; the chat is full-width.
+No side pane at all — the detail panel and managed tabs are not shown; the chat is
+full-width. Switching to a quick chat never auto-reveals the docked editor part
+(`_shouldRevealEditorPartOnApply` excludes quick chats), and if a prior session left the
+editor part visible it is hidden once the quick chat's editor group is empty
+(`_registerQuickChatEditorHide`), so the whole side pane collapses. Because the side pane is
+then hidden, an auto-collapsed **sessions list** is restored (see Toggle Sessions List).
 
 ---
 
@@ -174,6 +180,7 @@ No side pane at all — the detail panel and managed tabs are not shown; the cha
 |------|--------|-----|
 | — | Enter new-session view | *Detail only* (File tab + Files detail, editor closed) |
 | *Detail only* (new session) | Open a file from Files | *Editor + Detail* (editor revealed, stays open) |
+| *Detail only* / *Side pane closed* (created session) | Click **Changes** pill | *Editor only* (Changes editor revealed, detail stays closed unless separately restored/opened) |
 | *Detail only* (new session) | Toggle Details (hide detail) | *Editor only* (empty editor revealed — the side pane does not vanish) |
 | *Detail only* (new session) | Drag grid sash wider | *Detail only* (editor stays closed; a momentary width reveal is re-hidden by R1 in the new-session view) |
 | *Detail only* (new session) | Toggle Sessions List closed | *Detail only*; the **detail panel** widens by the sessions-list width (editor stays closed) |
@@ -183,6 +190,7 @@ No side pane at all — the detail panel and managed tabs are not shown; the cha
 | *Editor only* | Toggle Details (show detail) | *Editor + Detail* |
 | *Detail only* / *Editor only* / *Editor + Detail* | Toggle Side Panel | *Side pane closed* |
 | *Side pane closed* | Toggle Side Panel | previous state restored |
+| *Side pane closed* (session A) | Switch to session B (side pane open), then back to A | A's *Side pane closed* is restored (the editor part is actively re-hidden on switch, not left open from B) |
 | editor/detail side pane visible | Toggle Sessions List closed | same pane state; editor/detail side pane widens by the sessions-list width |
 | sessions list closed after side-pane growth | Toggle Sessions List open | same pane state; editor/detail side pane returns to its pre-collapse width |
 | any | Close the last editor tab | *Side pane closed* (chat-only; opening a tab restores the pane) |
