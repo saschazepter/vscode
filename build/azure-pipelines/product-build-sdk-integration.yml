@@ -1,0 +1,66 @@
+# VS Code SDK Integration Build
+#
+# Validates a Copilot SDK / CLI canary against VS Code. Part of the Copilot
+# SDK -> VS Code integration pipeline (Stage 4). See
+# microsoft/vscode-engineering specs/sdk-vscode-integration.spec.md.
+#
+# This is a VS Code-owned superset of the product build: it runs the full
+# cross-platform build + test suites (VSCODE_BUILD_TYPE: CI) with the
+# @github/copilot-sdk / @github/copilot dependencies overridden to a canary
+# version published to the private npm feed. The override itself is applied by
+# the gated "Apply SDK canary override" step in each platform's node-modules
+# job (a no-op when VSCODE_SDK_CANARY_VERSION is empty).
+#
+# It is queued by the engineering orchestrator with the canary versions as
+# template parameters; there is no push to microsoft/vscode. Because this build
+# does not publish or sign, it extends product-build-template.yml directly
+# rather than the 1ES official wrapper used by product-build.yml.
+#
+# NOTE: This YAML must be wired to an Azure DevOps pipeline definition and
+# validated with a dry run before first use.
+
+name: $(Date:yyyyMMdd)$(Rev:.r)-sdk-integration
+
+pr: none
+trigger: none
+
+parameters:
+  - name: VSCODE_SDK_CANARY_VERSION
+    displayName: "@github/copilot-sdk canary version"
+    type: string
+  - name: VSCODE_CLI_CANARY_VERSION
+    displayName: "@github/copilot canary version (blank = leave as pinned)"
+    type: string
+    default: ""
+  - name: VSCODE_QUALITY
+    displayName: Quality
+    type: string
+    default: insider
+    values:
+      - exploration
+      - insider
+      - stable
+  - name: NPM_REGISTRY
+    displayName: "Custom NPM Registry (canary feed)"
+    type: string
+    default: "https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/npm/registry/"
+
+variables:
+  # Declared as pipeline variables so every platform node-modules job can read
+  # them (the override step is gated on VSCODE_SDK_CANARY_VERSION). NPM_REGISTRY
+  # is declared here too so the canary feed is used uniformly.
+  - name: NPM_REGISTRY
+    value: ${{ parameters.NPM_REGISTRY }}
+  - name: VSCODE_SDK_CANARY_VERSION
+    value: ${{ parameters.VSCODE_SDK_CANARY_VERSION }}
+  - name: VSCODE_CLI_CANARY_VERSION
+    value: ${{ parameters.VSCODE_CLI_CANARY_VERSION }}
+
+extends:
+  template: product-build-template.yml
+  parameters:
+    VSCODE_QUALITY: ${{ parameters.VSCODE_QUALITY }}
+    VSCODE_BUILD_TYPE: CI
+    NPM_REGISTRY: ${{ parameters.NPM_REGISTRY }}
+    VSCODE_PUBLISH: false
+    VSCODE_RELEASE: false

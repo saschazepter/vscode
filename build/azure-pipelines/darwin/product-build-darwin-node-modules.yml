@@ -41,6 +41,17 @@ jobs:
         condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
         displayName: Setup NPM Registry
 
+      # SDK canary integration (no-op unless VSCODE_SDK_CANARY_VERSION is set).
+      # Overrides @github/copilot-sdk / @github/copilot to a canary version and
+      # refreshes the lockfile, so the cache key below misses and npm ci installs
+      # the canary. See build/azure-pipelines/common/apply-sdk-canary-override.ts.
+      - script: node build/azure-pipelines/common/apply-sdk-canary-override.ts
+        condition: and(succeeded(), ne(variables['VSCODE_SDK_CANARY_VERSION'], ''))
+        env:
+          VSCODE_SDK_CANARY_VERSION: $(VSCODE_SDK_CANARY_VERSION)
+          VSCODE_CLI_CANARY_VERSION: $(VSCODE_CLI_CANARY_VERSION)
+        displayName: Apply SDK canary override
+
       - script: mkdir -p .build && node build/azure-pipelines/common/computeNodeModulesCacheKey.ts darwin $VSCODE_ARCH $(node -p process.arch) > .build/packagelockhash
         displayName: Prepare node_modules cache key
 
