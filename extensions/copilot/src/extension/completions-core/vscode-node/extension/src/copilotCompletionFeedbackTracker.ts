@@ -54,7 +54,7 @@ function generateGitHubIssueBody(
 	item: GhostTextCompletionItem | undefined,
 	telemetry: TelemetryData | undefined
 ) {
-	const diagnostics = collectCompletionDiagnostics(accessor, telemetry);
+	const diagnostics = collectCompletionDiagnostics(accessor, telemetry, item?.opportunityId);
 	const formattedDiagnostics = formatDiagnosticsAsMarkdown(diagnostics);
 	if (typeof item?.insertText !== 'string') {
 		return '';
