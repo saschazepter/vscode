@@ -262,3 +262,93 @@
 		transition: none;
 	}
 }
+
+/* Overview-ruler style: the session compressed into the rail height like the editor overview ruler (proportional marks + the scrollbar slider as a you-are-here thumb). */
+.prompt-timeline-ruler-marks {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+/* Each mark is a >=24px hit target positioned at its proportional scroll offset. */
+.prompt-timeline-ruler-mark {
+	position: absolute;
+	right: 0;
+	width: 22px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	padding-right: 4px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.prompt-timeline-ruler-mark.hidden {
+	display: none;
+}
+
+/* The visible mark: a short bar, neutral unless the turn changed code. */
+.prompt-timeline-ruler-bar {
+	width: 12px;
+	height: 2px;
+	border-radius: 1px;
+	background-color: var(--vscode-scrollbarSlider-background);
+	transition: width 80ms ease, height 80ms ease, background-color 80ms ease;
+}
+
+.prompt-timeline-ruler-bar.edited {
+	background-color: var(--vscode-editorOverviewRuler-addedForeground);
+}
+
+.prompt-timeline-ruler-mark:hover .prompt-timeline-ruler-bar {
+	width: 16px;
+	height: 3px;
+	background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.prompt-timeline-ruler-mark:hover .prompt-timeline-ruler-bar.edited {
+	background-color: var(--vscode-editorOverviewRuler-addedForeground);
+}
+
+/* Active = the prompt currently in view. */
+.prompt-timeline-ruler-mark.active .prompt-timeline-ruler-bar {
+	width: 18px;
+	height: 3px;
+	background-color: var(--vscode-focusBorder);
+}
+
+.prompt-timeline-rail .prompt-timeline-ruler-mark:focus {
+	outline: none;
+}
+
+.prompt-timeline-rail .prompt-timeline-ruler-mark:focus-visible .prompt-timeline-ruler-bar {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+/* The you-are-here thumb reuses the scrollbar slider. */
+.prompt-timeline-ruler-thumb {
+	position: absolute;
+	right: 2px;
+	width: 6px;
+	border-radius: 3px;
+	background-color: var(--vscode-scrollbarSlider-background);
+	pointer-events: none;
+}
+
+.prompt-timeline-ruler-thumb.hidden {
+	display: none;
+}
+
+.prompt-timeline-rail-ruler:hover .prompt-timeline-ruler-thumb {
+	background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.prompt-timeline-ruler-bar {
+		transition: none;
+	}
+}

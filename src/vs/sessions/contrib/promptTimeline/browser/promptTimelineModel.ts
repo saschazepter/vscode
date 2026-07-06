@@ -5,7 +5,7 @@
 
 import { localize } from '../../../../nls.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, derived, IObservable, IReader, ISettableObservable, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
+import { autorun, derived, IObservable, IObservableSignal, IReader, ISettableObservable, observableFromEvent, observableSignal, observableValue, transaction } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -38,6 +38,16 @@ export interface PromptFileDiff {
 	readonly diffModifiedURI: URI;
 	readonly added: number;
 	readonly removed: number;
+}
+
+/** Content-space layout used by the overview-ruler rail to place marks + the viewport thumb. */
+export interface IPromptScrollLayout {
+	/** Each prompt's top offset in transcript content pixels. */
+	readonly marks: readonly { readonly requestId: string; readonly top: number }[];
+	/** Total transcript content height in pixels. */
+	readonly total: number;
+	/** Current scroll offset in content pixels. */
+	readonly scrollTop: number;
 }
 
 /** A single tick shown on the prompt timeline rail. */
@@ -133,6 +143,10 @@ export class PromptTimelineModel extends Disposable {
 	private readonly _activeRequestId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
 	get activeRequestId(): IObservable<string | undefined> { return this._activeRequestId; }
 
+	/** Fires when the transcript scroll offset or content height changes (drives the ruler rail). */
+	private readonly _scrollLayoutSignal: IObservableSignal<void> = observableSignal<void>(this);
+	get onDidChangeScrollLayout(): IObservable<void> { return this._scrollLayoutSignal; }
+
 	private readonly _viewModelListener = this._register(new MutableDisposable());
 
 	constructor(
@@ -145,13 +159,40 @@ export class PromptTimelineModel extends Disposable {
 	) {
 		super();
 		this._register(this.widget.onDidChangeViewModel(() => this._bindViewModel()));
-		this._register(this.widget.onDidScroll(() => this._updateActive()));
+		this._register(this.widget.onDidScroll(() => { this._updateActive(); this._triggerScrollLayout(); }));
+		this._register(this.widget.onDidChangeContentHeight(() => this._triggerScrollLayout()));
 		// Re-evaluate the active tick whenever the ticks change (prompts or budget).
 		this._register(autorun(reader => {
 			this._baseTicks.read(reader);
 			this._updateActive();
+			this._triggerScrollLayout();
 		}));
 		this._bindViewModel();
+	}
+
+	private _triggerScrollLayout(): void {
+		transaction(tx => this._scrollLayoutSignal.trigger(tx));
+	}
+
+	/**
+	 * The prompts' positions in transcript content space, for the overview-ruler
+	 * rail. Offsets accumulate from each item's rendered height (the same source
+	 * as active tracking), so a tall response pushes later prompts further down.
+	 */
+	getScrollLayout(): IPromptScrollLayout | undefined {
+		const items = this.widget.viewModel?.getItems();
+		if (!items) {
+			return undefined;
+		}
+		const marks: { requestId: string; top: number }[] = [];
+		let offset = 0;
+		for (const item of items) {
+			if (isRequestVM(item)) {
+				marks.push({ requestId: item.id, top: offset });
+			}
+			offset += item.currentRenderedHeight ?? 0;
+		}
+		return { marks, total: offset, scrollTop: this.widget.scrollTop };
 	}
 
 	private _bindViewModel(): void {
