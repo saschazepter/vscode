@@ -64,7 +64,7 @@ export {
 	type ConfigSchema,
 	type ContentRef, type Customization, type CustomizationDegradedState,
 	type CustomizationErrorState, type CustomizationLoadedState, type CustomizationLoadingState, type CustomizationLoadState, type DirectoryCustomization, type ErrorInfo, type HookCustomization, type FileEdit as ISessionFileDiff, type ToolResultEmbeddedResourceContent as IToolResultBinaryContent, type MarkdownResponsePart, type McpServerCustomization, type MessageAttachment,
-	type MessageResourceAttachment, type MessageAnnotationsAttachment, type ModelSelection, type PendingMessage, type PluginCustomization, type ProjectInfo, type PromptCustomization, type ReasoningResponsePart,
+	type MessageResourceAttachment, type MessageEmbeddedResourceAttachment, type MessageAnnotationsAttachment, type ModelSelection, type PendingMessage, type PluginCustomization, type ProjectInfo, type PromptCustomization, type ReasoningResponsePart,
 	type ResponsePart,
 	type RootState, type RuleCustomization, type SessionActiveClient,
 	type SessionConfigState, type ChatInputAnswer as SessionInputAnswer,
@@ -532,7 +532,12 @@ export function createDefaultChatSummary(session: SessionSummary, chatUri: Proto
 		origin: { kind: ChatOriginKind.User },
 	};
 	if (session.activity !== undefined) { summary.activity = session.activity; }
-	if (session.workingDirectory !== undefined) { summary.workingDirectory = session.workingDirectory; }
+	// `workingDirectory` is deliberately NOT copied: per the protocol it is a
+	// per-chat OVERRIDE and, when absent, the chat inherits the session's
+	// working directory (see `mergeSessionWithDefaultChat`). Seeding it here
+	// would denormalize the session default onto every chat as a fake override,
+	// which then goes stale when the session's working directory is resolved
+	// later (e.g. a worktree resolved at materialization).
 	return summary;
 }
 
@@ -958,6 +963,48 @@ export function withSessionGitHubState(meta: SessionSummaryMeta | undefined, git
 		next[SESSION_META_GITHUB_KEY] = gitHubState;
 	} else {
 		delete next[SESSION_META_GITHUB_KEY];
+	}
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
+ * Reserved key under {@link SessionSummaryMeta} marking a session as
+ * workspace-less: a session with no workspace/folder binding (surfaced in the
+ * UI as a "Quick Chat"). Carried on the summary bag (not the full state) so
+ * clients can group/style such sessions in session lists without subscribing to
+ * full session state. VS Code-specific convention layered on the protocol's
+ * generic `_meta` bag.
+ */
+export const SESSION_META_WORKSPACELESS_KEY = 'workspaceless';
+
+/**
+ * Session-database metadata key recording whether a session is workspace-less (a
+ * workspace-less chat). Owned by the AH service: `AgentService` writes it centrally at
+ * create/materialize and overlays it onto every agent's summary `_meta` in
+ * `listSessions`; agents only read it (e.g. to pick the workspace-less system prompt
+ * on resume) and never persist it themselves.
+ */
+export const AH_META_WORKSPACELESS_DB_KEY = 'agentHost.workspaceless';
+
+/**
+ * Reads the workspace-less marker from {@link SessionSummaryMeta}. Returns
+ * `true` only when the well-known key is present and set to boolean `true`.
+ */
+export function readSessionWorkspaceless(meta: SessionSummaryMeta | undefined): boolean {
+	return meta?.[SESSION_META_WORKSPACELESS_KEY] === true;
+}
+
+/**
+ * Returns a new {@link SessionSummaryMeta} with the workspace-less marker set,
+ * or with the slot removed when `workspaceless` is `false`. Returns `undefined`
+ * if the result would be empty.
+ */
+export function withSessionWorkspaceless(meta: SessionSummaryMeta | undefined, workspaceless: boolean): SessionSummaryMeta | undefined {
+	const next: { [key: string]: unknown } = { ...meta };
+	if (workspaceless) {
+		next[SESSION_META_WORKSPACELESS_KEY] = true;
+	} else {
+		delete next[SESSION_META_WORKSPACELESS_KEY];
 	}
 	return Object.keys(next).length > 0 ? next : undefined;
 }
