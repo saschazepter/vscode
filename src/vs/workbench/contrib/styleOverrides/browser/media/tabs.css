@@ -39,6 +39,19 @@
 	--tab-border-top-color: transparent !important;
 }
 
+.style-override .part.editor .tabs-container > .tab.sizing-fit {
+	width: auto !important;
+	min-width: 0 !important;
+	flex: 0 0 auto !important;
+}
+
+.style-override .part.editor .tabs-container > .tab.sizing-fit .monaco-icon-label,
+.style-override .part.editor .tabs-container > .tab.sizing-fit .monaco-icon-label > .monaco-icon-label-container {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+
 /* Center tabs vertically and strip the bottom border so the pills float. */
 .style-override .part.editor .tabs-and-actions-container {
 	--tabs-border-bottom-color: transparent !important;
