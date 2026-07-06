@@ -176,8 +176,11 @@ export class PromptTimelineModel extends Disposable {
 
 	/**
 	 * The prompts' positions in transcript content space, for the overview-ruler
-	 * rail. Offsets accumulate from each item's rendered height (the same source
-	 * as active tracking), so a tall response pushes later prompts further down.
+	 * rail. Each prompt's top comes from the chat list's layout height model
+	 * (`ChatWidget.getElementTop`), the same virtualization-safe source the
+	 * scrollbar uses, so off-screen prompts get correct positions without waiting
+	 * for their rows to render. Marks, `total`, and `scrollTop` all share the
+	 * list's content-pixel space, so the viewport thumb stays aligned.
 	 */
 	getScrollLayout(): IPromptScrollLayout | undefined {
 		const items = this.widget.viewModel?.getItems();
@@ -185,14 +188,15 @@ export class PromptTimelineModel extends Disposable {
 			return undefined;
 		}
 		const marks: { requestId: string; top: number }[] = [];
-		let offset = 0;
 		for (const item of items) {
 			if (isRequestVM(item)) {
-				marks.push({ requestId: item.id, top: offset });
+				const top = this.widget.getElementTop(item);
+				if (top !== undefined) {
+					marks.push({ requestId: item.id, top });
+				}
 			}
-			offset += item.currentRenderedHeight ?? 0;
 		}
-		return { marks, total: offset, scrollTop: this.widget.scrollTop };
+		return { marks, total: this.widget.scrollHeight, scrollTop: this.widget.scrollTop };
 	}
 
 	private _bindViewModel(): void {
@@ -228,18 +232,20 @@ export class PromptTimelineModel extends Disposable {
 		}
 
 		// The active prompt is the last request whose top edge is at or above the
-		// viewport top. Offsets accumulate from each item's rendered height.
+		// viewport top. Positions come from the list's layout height model, so
+		// off-screen prompts resolve correctly (not just rendered ones).
 		const scrollTop = this.widget.scrollTop;
 		const threshold = 24;
-		let offset = 0;
 		let activeRequestId: string | undefined;
 		let activeTimestamp = 0;
 		for (const item of items) {
-			if (isRequestVM(item) && offset <= scrollTop + threshold) {
-				activeRequestId = item.id;
-				activeTimestamp = item.timestamp;
+			if (isRequestVM(item)) {
+				const top = this.widget.getElementTop(item);
+				if (top !== undefined && top <= scrollTop + threshold) {
+					activeRequestId = item.id;
+					activeTimestamp = item.timestamp;
+				}
 			}
-			offset += item.currentRenderedHeight ?? 0;
 		}
 
 		if (activeRequestId === undefined) {
