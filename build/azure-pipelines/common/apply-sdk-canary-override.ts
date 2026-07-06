@@ -31,6 +31,9 @@ import { execFileSync } from 'child_process';
 
 const ROOT = path.join(import.meta.dirname, '../../../');
 
+/** On Windows `npm` is a `.cmd` shim that `execFileSync` cannot resolve without a shell. */
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
 /** Manifests that declare the Copilot dependencies. */
 const TARGET_DIRS = ['', 'remote'];
 
@@ -47,14 +50,14 @@ interface Override {
  */
 function inferCliVersion(sdkVersion: string): string | undefined {
 	try {
-		const depsRaw = execFileSync('npm', ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8' });
+		const depsRaw = execFileSync(NPM, ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8' });
 		const deps = JSON.parse(depsRaw || '{}');
 		const range = deps['@github/copilot'];
 		if (!range) {
 			console.log(`[canary-override] SDK ${sdkVersion} declares no @github/copilot dependency — leaving VS Code's pinned CLI.`);
 			return undefined;
 		}
-		const versionRaw = execFileSync('npm', ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8' });
+		const versionRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8' });
 		const parsed = JSON.parse(versionRaw);
 		const resolved = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
 		if (typeof resolved !== 'string') {
@@ -111,7 +114,7 @@ function refreshLockfile(dir: string): void {
 	// so `npm ci` in the product build resolves the overridden versions. This
 	// contacts the configured registry, so npm auth for the private feed must
 	// already be established in the ambient environment.
-	execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts'], {
+	execFileSync(NPM, ['install', '--package-lock-only', '--ignore-scripts'], {
 		cwd: path.join(ROOT, dir),
 		stdio: 'inherit'
 	});
