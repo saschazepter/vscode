@@ -171,6 +171,14 @@ export interface IDockedEditorLayout {
 	 * uses this to avoid re-hiding an editor the user explicitly asked to show.
 	 */
 	isEditorRevealedExplicitly(): boolean;
+
+	/**
+	 * The docked auxiliary bar (detail panel) width, owned by the workbench's
+	 * single-pane layout state and read/written by the docked controller that the
+	 * editor part owns. Trivial in the classic layout.
+	 */
+	getDockedAuxiliaryBarWidth(): number;
+	setDockedAuxiliaryBarWidth(width: number): void;
 }
 
 export const IAgentWorkbenchLayoutService = refineServiceDecorator<IWorkbenchLayoutService, IAgentWorkbenchLayoutService>(IWorkbenchLayoutService);
@@ -1668,6 +1676,12 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 	isEditorRevealedExplicitly(): boolean {
 		return this._editorRevealedExplicitly;
 	}
+
+	getDockedAuxiliaryBarWidth(): number {
+		return 0;
+	}
+
+	setDockedAuxiliaryBarWidth(_width: number): void { }
 
 	private layoutMobileSidebar(): void {
 		const sidebarContainer = this.getContainer(mainWindow, Parts.SIDEBAR_PART);

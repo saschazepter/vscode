@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ISerializedNode, IViewSize } from '../../base/browser/ui/grid/grid.js';
-import { EditorPart } from '../../workbench/browser/parts/editor/editorPart.js';
 import { Parts } from '../../workbench/services/layout/browser/layoutService.js';
 import { DockedAuxiliaryBarController } from './dockedAuxiliaryBarController.js';
+import { SinglePaneMainEditorPart } from './parts/singlePaneEditorPart.js';
 import { ISideBarResizeContext, Workbench } from './workbench.js';
 
 interface IDockedSideBarResizeContext extends ISideBarResizeContext {
@@ -36,9 +36,10 @@ export class DockedEditorSizeMemento {
 
 /**
  * Single-pane workbench: the auxiliary bar is docked inside the editor part (below
- * a shared tab bar) rather than being its own grid column. Overrides the base
- * layout hooks to own the docked width, the {@link DockedAuxiliaryBarController},
- * the reveal-sync, and the docked size bookkeeping.
+ * a shared tab bar) rather than being its own grid column. The editor part
+ * ({@link SinglePaneMainEditorPart}) owns the auxiliary bar and its docked
+ * controller; this workbench owns the docked width, the reveal-sync, and the
+ * docked size bookkeeping.
  */
 export class SinglePaneWorkbench extends Workbench {
 
@@ -46,12 +47,20 @@ export class SinglePaneWorkbench extends Workbench {
 	private static readonly _EDITOR_CONTENT_VISIBLE_THRESHOLD = 4;
 
 	private _dockedAuxiliaryBarWidth = DockedAuxiliaryBarController.DEFAULT_WIDTH;
-	private _dockedAuxBar: DockedAuxiliaryBarController | undefined;
 	private _syncingEditorVisibility = false;
 	private readonly _memento = new DockedEditorSizeMemento();
 
+	override getDockedAuxiliaryBarWidth(): number {
+		return this._dockedAuxiliaryBarWidth;
+	}
+
+	override setDockedAuxiliaryBarWidth(width: number): void {
+		this._dockedAuxiliaryBarWidth = width;
+	}
+
+	/** Re-layouts the docked auxiliary bar, which the editor part owns. */
 	private _layoutDockedAuxBar(): void {
-		this._dockedAuxBar?.layout();
+		(this.editorGroupService.mainPart as SinglePaneMainEditorPart).layoutDockedAuxiliaryBar();
 	}
 
 	protected override _applyLayoutContainerClass(): void {
@@ -108,25 +117,6 @@ export class SinglePaneWorkbench extends Workbench {
 	protected override _topRightSectionChildren(sessionsNode: ISerializedNode, editorNode: ISerializedNode, _auxiliaryBarNode: ISerializedNode): ISerializedNode[] {
 		// The auxiliary bar is inside the editor part and omitted from the grid.
 		return [sessionsNode, editorNode];
-	}
-
-	protected override _attachSidePane(): void {
-		if (this._dockedAuxBar || !this._editorPartContainer) {
-			return;
-		}
-
-		this._dockedAuxBar = this._register(new DockedAuxiliaryBarController(
-			this._editorPartContainer,
-			this.getPart(Parts.AUXILIARYBAR_PART),
-			{
-				getWidth: () => this._dockedAuxiliaryBarWidth,
-				setWidth: (width: number) => { this._dockedAuxiliaryBarWidth = width; },
-				isEditorAreaVisible: () => this.partVisibility.editor || this.partVisibility.auxiliaryBar,
-				isEditorVisible: () => this.partVisibility.editor,
-				isAuxiliaryBarVisible: () => this.partVisibility.auxiliaryBar,
-				setEditorContentRightInset: (px: number) => (this.editorGroupService.mainPart as EditorPart).setContentRightInset(px),
-			},
-		));
 	}
 
 	protected override _layoutSidePane(): void {

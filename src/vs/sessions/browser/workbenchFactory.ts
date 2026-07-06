@@ -7,7 +7,7 @@ import { IConfigurationService } from '../../platform/configuration/common/confi
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILogService } from '../../platform/log/common/log.js';
-import { DOCK_DETAIL_PANEL_SETTING } from '../common/sessionConfig.js';
+import { shouldUseSinglePaneLayout } from './parts/singlePaneEditorPart.js';
 import { SinglePaneWorkbench } from './singlePaneWorkbench.js';
 import { IWorkbenchOptions, Workbench } from './workbench.js';
 
@@ -19,7 +19,7 @@ import { IWorkbenchOptions, Workbench } from './workbench.js';
 export function createSessionsWorkbench(parent: HTMLElement, options: IWorkbenchOptions | undefined, serviceCollection: ServiceCollection, logService: ILogService): Workbench {
 	const configurationService = serviceCollection.get(IConfigurationService);
 	const singlePane = !(configurationService instanceof SyncDescriptor)
-		&& configurationService?.getValue<boolean>(DOCK_DETAIL_PANEL_SETTING) === true;
+		&& shouldUseSinglePaneLayout(configurationService);
 	return singlePane
 		? new SinglePaneWorkbench(parent, options, serviceCollection, logService)
 		: new Workbench(parent, options, serviceCollection, logService);
