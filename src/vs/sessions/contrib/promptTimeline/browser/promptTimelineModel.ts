@@ -338,7 +338,7 @@ export class PromptTimelineModel extends Disposable {
 			if (!originalURI && !modifiedURI) {
 				continue;
 			}
-			// Diff the frozen before/after snapshots, but let "go to file" open the live file.
+			// Diff the best-available before/after content, but let "go to file" open the live file.
 			items.push(new MultiDiffEditorItem(originalURI, modifiedURI, f.modifiedURI));
 			if (file && isEqual(f.modifiedURI, file)) {
 				revealResource = { original: originalURI, modified: modifiedURI };
@@ -362,24 +362,28 @@ export class PromptTimelineModel extends Disposable {
 	}
 
 	/**
-	 * Resolves which sides of a file diff can actually be read, diffing the
-	 * frozen before/after snapshots so only this turn's changes show. Agent-host
-	 * checkpoint blobs can be missing (e.g. an added file's original), which
-	 * would otherwise crash the diff editor; an unreadable side is dropped so the
-	 * file still opens as a pure add/delete.
+	 * Resolves which sides of a file diff can actually be read. Prefers the frozen
+	 * before/after snapshots so only this turn's changes show, but the agent-host
+	 * checkpoint blobs backing them can be missing (an added file's original, or a
+	 * pruned/restored session where whole checkpoints are gone). The modified side
+	 * then falls back to the live working file so review still opens with the best
+	 * available fidelity; an unreadable side is dropped so the file still renders
+	 * as a pure add/delete instead of crashing the diff editor.
 	 */
 	private async _readableSides(file: PromptFileDiff): Promise<[URI | undefined, URI | undefined]> {
 		// The provider sets originalURI === modifiedURI when there is no "before"
-		// (a created file); show it as a pure add against the frozen after-content.
-		const hasOriginal = !isEqual(file.originalURI, file.modifiedURI);
-		const [originalReadable, modifiedReadable] = await Promise.all([
-			hasOriginal ? this._canRead(file.originalURI) : Promise.resolve(false),
-			this._canRead(file.diffModifiedURI),
+		// (a created file); treat that as no frozen original.
+		const hasFrozenOriginal = !isEqual(file.originalURI, file.modifiedURI);
+		const hasFrozenModified = !isEqual(file.diffModifiedURI, file.modifiedURI);
+		const [frozenOriginalReadable, frozenModifiedReadable, liveModifiedReadable] = await Promise.all([
+			hasFrozenOriginal ? this._canRead(file.originalURI) : Promise.resolve(false),
+			hasFrozenModified ? this._canRead(file.diffModifiedURI) : Promise.resolve(false),
+			this._canRead(file.modifiedURI),
 		]);
-		return [
-			originalReadable ? file.originalURI : undefined,
-			modifiedReadable ? file.diffModifiedURI : undefined,
-		];
+		const modified = frozenModifiedReadable ? file.diffModifiedURI
+			: liveModifiedReadable ? file.modifiedURI
+				: undefined;
+		return [frozenOriginalReadable ? file.originalURI : undefined, modified];
 	}
 
 	private async _canRead(resource: URI): Promise<boolean> {
