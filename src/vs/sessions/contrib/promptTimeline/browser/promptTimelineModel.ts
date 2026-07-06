@@ -99,9 +99,6 @@ export class PromptTimelineModel extends Disposable {
 	/** All user prompts in the chat, updated as the transcript changes. */
 	private readonly _prompts: ISettableObservable<readonly PromptItem[]> = observableValue<readonly PromptItem[]>(this, []);
 
-	/** Maximum ticks the rail can show at >=24px each; lowered as the transcript shrinks. */
-	private readonly _displayBudget: ISettableObservable<number> = observableValue<number>(this, MAX_TICKS);
-
 	/** The chat session resource, tracked reactively so the editing session can be resolved. */
 	private readonly _sessionResource = observableFromEvent(this, this.widget.onDidChangeViewModel, () => this.widget.viewModel?.sessionResource);
 
@@ -114,11 +111,10 @@ export class PromptTimelineModel extends Disposable {
 		return this.chatEditingService.editingSessionsObs.read(reader).find(s => isEqual(s.chatSessionResource, resource));
 	});
 
-	/** Recency-bucketed ticks, capped to the display budget so each keeps a >=24px slot. */
+	/** Recency-bucketed ticks, capped to a fixed maximum so each keeps a >=24px slot. */
 	private readonly _baseTicks = derived<readonly PromptTick[]>(this, reader => {
 		const prompts = this._prompts.read(reader);
-		const budget = this._displayBudget.read(reader);
-		return budgetBucketPrompts(prompts, Date.now(), budget).map((bucket): PromptTick => ({
+		return budgetBucketPrompts(prompts, Date.now(), MAX_TICKS).map((bucket): PromptTick => ({
 			requestId: bucket.prompt.requestId,
 			allRequestIds: bucket.prompts.map(p => p.requestId),
 			text: bucket.prompt.text,
@@ -397,17 +393,9 @@ export class PromptTimelineModel extends Disposable {
 		}
 	}
 
-	/** Sets how many ticks the rail can display (so each keeps a >=24px hit target). */
-	setDisplayBudget(maxTicks: number): void {
-		const clamped = Math.max(1, Math.min(MAX_TICKS, Math.floor(maxTicks)));
-		if (clamped !== this._displayBudget.get()) {
-			this._displayBudget.set(clamped, undefined);
-		}
-	}
-
 	/**
 	 * All user prompts (with diff stats where available) for the picker,
-	 * independent of the rail's display budget. Stats are resolved one-shot, so
+	 * independent of the rail's bucketing. Stats are resolved one-shot, so
 	 * agent-host prompts not currently observed by the rail fall back to their
 	 * timestamp in the picker rather than holding a subscription per prompt.
 	 */

@@ -11,17 +11,16 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IChatWidget } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatWidgetContrib, ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
-import { MIN_PROMPTS, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_ENABLED_SETTING, PROMPT_TIMELINE_STYLE_SETTING, PromptTimelineStyle } from '../common/promptTimeline.js';
+import { MIN_PROMPTS, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_ENABLED_SETTING } from '../common/promptTimeline.js';
 import { PromptTimelineModel, PromptEntry, PromptTick } from './promptTimelineModel.js';
 import { IPromptTimelineRail } from './promptTimelineRail.js';
-import { PromptTimelinePillRail } from './promptTimelinePillRail.js';
 import { PromptTimelineRulerRail } from './promptTimelineRulerRail.js';
 
 /**
  * Per-widget contribution that overlays a prompt timeline rail on the chat
  * transcript and exposes a navigation API for keyboard-driven commands. The rail
  * exists only while `sessions.promptTimeline.enabled` is set, and is torn down
- * and re-created when the enablement or `sessions.promptTimeline.style` changes.
+ * and re-created when the enablement changes.
  */
 export class PromptTimelineWidgetContrib extends Disposable implements IChatWidgetContrib {
 
@@ -33,7 +32,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 
 	/** Holds the model, rail and all their wiring while the feature is enabled. */
 	private readonly _enablement = this._register(new DisposableStore());
-	private _railKey: string | undefined;
+	private _enabled = false;
 
 	constructor(
 		private readonly widget: IChatWidget,
@@ -48,41 +47,32 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		}
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(PROMPT_TIMELINE_ENABLED_SETTING) || e.affectsConfiguration(PROMPT_TIMELINE_STYLE_SETTING)) {
+			if (e.affectsConfiguration(PROMPT_TIMELINE_ENABLED_SETTING)) {
 				this._updateRail();
 			}
 		}));
 		this._updateRail();
 	}
 
-	private _style(): PromptTimelineStyle {
-		return this.configurationService.getValue<PromptTimelineStyle>(PROMPT_TIMELINE_STYLE_SETTING) === PromptTimelineStyle.Overview
-			? PromptTimelineStyle.Overview
-			: PromptTimelineStyle.Compact;
-	}
-
-	/** Creates, disposes or swaps the rail to match the enablement + style settings. */
+	/** Creates or disposes the rail to match the enablement setting. */
 	private _updateRail(): void {
 		const enabled = this.configurationService.getValue<boolean>(PROMPT_TIMELINE_ENABLED_SETTING) !== false;
-		const key = enabled ? this._style() : undefined;
-		if (key === this._railKey) {
+		if (enabled === this._enabled) {
 			return;
 		}
-		this._railKey = key;
+		this._enabled = enabled;
 		this._enablement.clear();
 		this._model = undefined;
 		this._rail = undefined;
-		if (key !== undefined) {
-			this._createRail(key);
+		if (enabled) {
+			this._createRail();
 		}
 	}
 
-	private _createRail(style: PromptTimelineStyle): void {
+	private _createRail(): void {
 		// CONTRIBS always constructs contribs with the concrete widget.
 		const model = this._enablement.add(this.instantiationService.createInstance(PromptTimelineModel, this.widget as ChatWidget));
-		const rail: IPromptTimelineRail = this._enablement.add(style === PromptTimelineStyle.Overview
-			? new PromptTimelineRulerRail()
-			: new PromptTimelinePillRail());
+		const rail: IPromptTimelineRail = this._enablement.add(new PromptTimelineRulerRail());
 		this._model = model;
 		this._rail = rail;
 
@@ -92,7 +82,6 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		this._enablement.add(rail.onDidSelect(requestId => model.reveal(requestId)));
 		this._enablement.add(rail.onDidReview(tick => { void model.reviewChanges(tick); }));
 		this._enablement.add(rail.onDidReviewFile(e => { void model.reviewChanges(e.tick, e.file); }));
-		this._enablement.add(rail.onDidChangeCapacity(capacity => model.setDisplayBudget(capacity)));
 
 		this._enablement.add(autorun(reader => {
 			const ticks = model.ticks.read(reader);
@@ -106,13 +95,11 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 			rail.setActive(model.activeRequestId.read(reader));
 		}));
 
-		// The overview-ruler rail needs proportional scroll positions.
-		if (rail.setScrollLayout) {
-			this._enablement.add(autorun(reader => {
-				model.onDidChangeScrollLayout.read(reader);
-				rail.setScrollLayout!(model.getScrollLayout());
-			}));
-		}
+		// Supply proportional scroll positions for the marks and viewport thumb.
+		this._enablement.add(autorun(reader => {
+			model.onDidChangeScrollLayout.read(reader);
+			rail.setScrollLayout(model.getScrollLayout());
+		}));
 	}
 
 	private _mountRail(rail: IPromptTimelineRail): void {

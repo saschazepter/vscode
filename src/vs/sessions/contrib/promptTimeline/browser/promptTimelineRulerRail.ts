@@ -52,10 +52,6 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 	private readonly _onDidReviewFile = this._register(new Emitter<IPromptReviewFileEvent>());
 	readonly onDidReviewFile: Event<IPromptReviewFileEvent> = this._onDidReviewFile.event;
 
-	// The ruler shows every prompt proportionally, so it never constrains the budget.
-	private readonly _onDidChangeCapacity = this._register(new Emitter<number>());
-	readonly onDidChangeCapacity: Event<number> = this._onDidChangeCapacity.event;
-
 	get domNode(): HTMLElement { return this._domNode; }
 
 	constructor() {
