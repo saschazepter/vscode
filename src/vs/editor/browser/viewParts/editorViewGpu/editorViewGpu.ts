@@ -3,15 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { EditorView, EditorViewConfig, LineInput, ModelDeltaInput, SelectionInput, TokenInput } from '@vscode/editor-view';
-import { getActiveWindow } from '../../../../base/browser/dom.js';
+import type { EditorView, EditorViewConfig, CursorInput, CursorStyle, LineInput, ModelDeltaInput, SelectionInput, TokenInput } from '@vscode/editor-view';
+import { getActiveWindow, WindowIntervalTimer } from '../../../../base/browser/dom.js';
 import { createFastDomNode, type FastDomNode } from '../../../../base/browser/fastDomNode.js';
 import { Color } from '../../../../base/common/color.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
-import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight } from '../../../common/core/editorColorRegistry.js';
-import { EditorOption } from '../../../common/config/editorOptions.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground } from '../../../common/core/editorColorRegistry.js';
+import { EditorOption, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
@@ -71,7 +71,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
 	text: true,
 	selection: true,
 	currentLine: true,
-	cursor: false,
+	cursor: true,
 	lineNumbers: false,
 	decorations: false,
 	rulers: false,
@@ -122,6 +122,23 @@ export class EditorViewGpu extends ViewPart {
 	 * `.focused` CSS. Starts `false` and tracks {@link onFocusChanged}.
 	 */
 	private _focused = false;
+	/**
+	 * Caret positions (1-based `(lineNumber, column)`), one per cursor with the
+	 * primary at index 0 — the GPU renderer paints a caret at each. Mirrors the
+	 * DOM `ViewCursors` (primary + secondaries).
+	 */
+	private _cursorPositions: { lineNumber: number; column: number }[] = [{ lineNumber: 1, column: 1 }];
+	/**
+	 * Whether the caret is in its "on" phase this frame. VS Code's blink is
+	 * host-owned; we toggle this on {@link _blinkTimer} and repaint, and the
+	 * renderer draws the caret only when it (and focus) permit.
+	 */
+	private _caretOn = true;
+	/** Drives flat caret blinking (500ms), mirroring `ViewCursors`'s JS interval. */
+	private readonly _blinkTimer = new WindowIntervalTimer();
+
+	/** Flat-blink half-period, matching `ViewCursors.BLINK_INTERVAL`. */
+	private static readonly BLINK_INTERVAL = 500;
 
 	constructor(context: ViewContext) {
 		super(context);
@@ -208,7 +225,99 @@ export class EditorViewGpu extends ViewPart {
 			activeLine: this._activeLineNumber - 1,
 			selections: this._selections,
 			...this._highlightColors(),
+			...this._cursorConfig(),
 		};
+	}
+
+	/**
+	 * Resolve the caret list, style and geometry, mirroring VS Code's
+	 * `ViewCursor`. The caret is painted only when the editor is focused and the
+	 * blink phase is "on" (both host-owned — see {@link _updateBlinking}); on
+	 * those frames every cursor position gets a caret, coloured with
+	 * `editorCursor.foreground` (single) or the `editorMultiCursor.*` palette
+	 * (which itself defaults to `editorCursor.foreground`).
+	 */
+	private _cursorConfig(): Pick<EditorViewConfig, 'cursors' | 'cursorStyle' | 'cursorWidth' | 'cursorHeight'> {
+		const options = this._context.configuration.options;
+		const fontInfo = options.get(EditorOption.fontInfo);
+		const style = this._cursorStyle(options.get(EditorOption.effectiveCursorStyle));
+		// Match `ViewCursor`: cap the line-caret width at a typical character and
+		// let the renderer fall back to 2px when the option is 0 (the default).
+		const cursorWidth = Math.min(options.get(EditorOption.cursorWidth), fontInfo.typicalHalfwidthCharacterWidth);
+		const cursorHeight = options.get(EditorOption.cursorHeight);
+
+		const shouldShow = this._focused && this._caretOn && this._cursorPositions.length > 0;
+		if (!shouldShow) {
+			return { cursors: [], cursorStyle: style, cursorWidth, cursorHeight };
+		}
+
+		const theme = this._context.theme;
+		const single = this._cursorPositions.length === 1;
+		const fallback = 0xaeafadff; // editorCursor.foreground (dark) default.
+		const cursorFg = theme.getColor(editorCursorForeground);
+		// Caret foreground: single cursor uses `.cursor` (editorCursor.foreground);
+		// with multiple, index 0 is primary and the rest secondary (both default
+		// to editorCursor.foreground via the color registry).
+		const primaryFg = single ? cursorFg : (theme.getColor(editorMultiCursorPrimaryForeground) ?? cursorFg);
+		const secondaryFg = theme.getColor(editorMultiCursorSecondaryForeground) ?? cursorFg;
+		// Caret background = the color a block caret repaints the covered char in
+		// (VS Code's theming participant: the `*.background` token, else the
+		// foreground's `opposite()`).
+		const bgFor = (fg: Color | undefined, bg: Color | undefined): number =>
+			this._packColor(bg ?? fg?.opposite(), 0);
+		const primaryBg = single
+			? bgFor(cursorFg, theme.getColor(editorCursorBackground))
+			: bgFor(primaryFg, theme.getColor(editorMultiCursorPrimaryBackground) ?? theme.getColor(editorCursorBackground));
+		const secondaryBg = bgFor(secondaryFg, theme.getColor(editorMultiCursorSecondaryBackground) ?? theme.getColor(editorCursorBackground));
+		const primary = this._packColor(primaryFg, fallback);
+		const secondary = this._packColor(secondaryFg, fallback);
+		const cursors: CursorInput[] = this._cursorPositions.map((p, i) => ({
+			// View positions are 1-based; the renderer is 0-based.
+			line: p.lineNumber - 1,
+			column: p.column - 1,
+			color: i === 0 ? primary : secondary,
+			background: i === 0 ? primaryBg : secondaryBg,
+		}));
+		return { cursors, cursorStyle: style, cursorWidth, cursorHeight };
+	}
+
+	private _cursorStyle(style: TextEditorCursorStyle): CursorStyle {
+		switch (style) {
+			case TextEditorCursorStyle.Block: return 'block';
+			case TextEditorCursorStyle.Underline: return 'underline';
+			case TextEditorCursorStyle.LineThin: return 'line-thin';
+			case TextEditorCursorStyle.BlockOutline: return 'block-outline';
+			case TextEditorCursorStyle.UnderlineThin: return 'underline-thin';
+			case TextEditorCursorStyle.Line:
+			default: return 'line';
+		}
+	}
+
+	/**
+	 * (Re)configure caret blinking. The DOM `ViewCursors` uses CSS animations /
+	 * a JS interval; since the GPU canvas is painted imperatively we mirror the
+	 * flat-blink interval here (approximating smooth/phase/expand as flat blink)
+	 * and repaint each toggle. The caret shows solid on focus / cursor moves,
+	 * then blinks; it is hidden entirely when unfocused (matching
+	 * `_getCursorBlinking`'s `Hidden` on blur).
+	 */
+	private _updateBlinking(): void {
+		this._blinkTimer.cancel();
+		this._caretOn = true;
+		if (!this._focused) {
+			return;
+		}
+		const style = this._context.configuration.options.get(EditorOption.cursorBlinking);
+		if (style === TextEditorCursorBlinkingStyle.Hidden) {
+			this._caretOn = false;
+			return;
+		}
+		if (style !== TextEditorCursorBlinkingStyle.Solid) {
+			this._blinkTimer.cancelAndSet(() => {
+				this._caretOn = !this._caretOn;
+				this._present();
+			}, EditorViewGpu.BLINK_INTERVAL, getActiveWindow());
+		}
 	}
 
 	/**
@@ -457,6 +566,8 @@ export class EditorViewGpu extends ViewPart {
 		// Font/layout/tab changes don't alter the model's text or tokens; the
 		// fresh config is pushed on every present, so just request a repaint.
 		// (Wrapping-column changes surface separately via `onLineMappingChanged`.)
+		// The caret style/blink options may have changed, so re-arm blinking.
+		this._updateBlinking();
 		return true;
 	}
 	public override onCursorStateChanged(e: viewEvents.ViewCursorStateChangedEvent): boolean {
@@ -478,14 +589,24 @@ export class EditorViewGpu extends ViewPart {
 		this._selections = selections;
 		this._cursorLines = cursorLines;
 		this._selectionIsEmpty = e.selections.every(s => s.isEmpty());
+		// Caret positions (1-based) for the renderer, primary first.
+		this._cursorPositions = e.selections.map(s => {
+			const p = s.getPosition();
+			return { lineNumber: p.lineNumber, column: p.column };
+		});
+		// A cursor move re-shows the caret solid, then resumes blinking (so it
+		// doesn't flicker while typing) — matching `ViewCursors`.
+		this._updateBlinking();
 		return true;
 	}
 	public override onFocusChanged(e: viewEvents.ViewFocusChangedEvent): boolean {
 		if (this._focused === e.isFocused) {
 			return false;
 		}
-		// Focus flips selection / current-line highlight to their active colors.
+		// Focus flips selection / current-line highlight to their active colors,
+		// and gates the caret (hidden when unfocused).
 		this._focused = e.isFocused;
+		this._updateBlinking();
 		return true;
 	}
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
@@ -537,6 +658,7 @@ export class EditorViewGpu extends ViewPart {
 
 	public override dispose(): void {
 		this._disposed = true;
+		this._blinkTimer.dispose();
 		this._editorView?.dispose();
 		this._editorView = undefined;
 		this.canvas.domNode.remove();
