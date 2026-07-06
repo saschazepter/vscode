@@ -10,6 +10,7 @@ import { IObservable, constObservable } from '../../../../../base/common/observa
 import { mock } from '../../../../../base/test/common/mock.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { SubmenuItemAction } from '../../../../../platform/actions/common/actions.js';
+import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { AgentSessionApprovalKind, AgentSessionApprovalModel, IAgentSessionApprovalInfo } from '../../../../contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
 // eslint-disable-next-line local/code-import-patterns
 import { IChat, ISession, ISessionWorkspace } from '../../../../../sessions/services/sessions/common/session.js';
@@ -20,7 +21,7 @@ import { ISessionsService } from '../../../../../sessions/services/sessions/brow
 // eslint-disable-next-line local/code-import-patterns
 import { ISessionsProvidersService } from '../../../../../sessions/services/sessions/browser/sessionsProvidersService.js';
 // eslint-disable-next-line local/code-import-patterns
-import { BlockedSessionReason, IBlockedSession, IBlockedSessionsService } from '../../../../../sessions/contrib/blockedSessions/browser/blockedSessionsService.js';
+import { BlockedSessionReason, BlockedSessions, IBlockedSession } from '../../../../../sessions/contrib/blockedSessions/browser/blockedSessions.js';
 // eslint-disable-next-line local/code-import-patterns
 import { SessionActionFeedback } from '../../../../../sessions/contrib/sessions/browser/sessionActionFeedback.js';
 // eslint-disable-next-line local/code-import-patterns
@@ -127,15 +128,15 @@ function renderTitleBar(ctx: ComponentFixtureContext, state: ITitleBarState): vo
 			reg.defineInstance(ISessionsProvidersService, new class extends mock<ISessionsProvidersService>() {
 				override readonly onDidChangeProviders = Event.None;
 			}());
-			reg.defineInstance(IBlockedSessionsService, new class extends mock<IBlockedSessionsService>() {
-				override readonly blockedSessions: IObservable<readonly ISession[]> = constObservable(blocked.map(entry => entry.session));
-				override readonly blockedSessionsWithReasons: IObservable<readonly IBlockedSession[]> = constObservable(blocked);
-			}());
 			reg.defineInstance(IWorkbenchLayoutService, new class extends mock<IWorkbenchLayoutService>() {
 				override readonly onDidChangePartVisibility = Event.None;
 				override isVisible(part: Parts): boolean {
 					return part === Parts.SIDEBAR_PART ? sidebarVisible : true;
 				}
+			}());
+			// The blocked-sessions feature is only enabled outside of stable builds.
+			reg.defineInstance(IProductService, new class extends mock<IProductService>() {
+				override readonly quality = 'insider';
 			}());
 		},
 	});
@@ -161,7 +162,12 @@ function renderTitleBar(ctx: ComponentFixtureContext, state: ITitleBarState): vo
 		override notifyApproved(): void { }
 	}();
 
-	const widget = disposableStore.add(instantiationService.createInstance(SessionsTitleBarWidget, action, undefined, sessionActionFeedback, approvalModel));
+	const blockedSessionsModel = new class extends mock<BlockedSessions>() {
+		override readonly blockedSessions: IObservable<readonly ISession[]> = constObservable(blocked.map(entry => entry.session));
+		override readonly blockedSessionsWithReasons: IObservable<readonly IBlockedSession[]> = constObservable(blocked);
+	}();
+
+	const widget = disposableStore.add(instantiationService.createInstance(SessionsTitleBarWidget, action, undefined, sessionActionFeedback, approvalModel, blockedSessionsModel));
 	widget.render(widgetHost);
 }
 
