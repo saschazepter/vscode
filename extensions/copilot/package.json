@@ -4306,10 +4306,9 @@
           },
           "github.copilot.chat.localIndex.enabled": {
             "type": "boolean",
-            "default": false,
+            "default": true,
             "markdownDescription": "%github.copilot.config.localIndex.enabled%",
             "tags": [
-              "experimental",
               "onExp"
             ]
           },
