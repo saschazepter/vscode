@@ -236,8 +236,9 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 				// categorization event to join and ChatTelemetryBuilder will generate its own ID.
 				const telemetryMessageId = context.history.length === 0 ? generateUuid() : undefined;
 
-				// Categorize the first prompt (fire-and-forget)
-				if (telemetryMessageId !== undefined) {
+				// Categorize the first prompt (fire-and-forget), unless the main model is
+				// a BYOK model (no utility model is available for categorization in that case).
+				if (telemetryMessageId !== undefined && request.model?.vendor === 'copilot') {
 					this.promptCategorizerService.categorizePrompt(request, context, telemetryMessageId);
 				}
 

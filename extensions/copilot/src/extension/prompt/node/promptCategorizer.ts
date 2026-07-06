@@ -9,7 +9,6 @@ import { ChatFetchResponseType, ChatLocation } from '../../../platform/chat/comm
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
 import { ILogService } from '../../../platform/log/common/logService';
 import { ICopilotToolCall } from '../../../platform/networking/common/fetch';
-import { IChatEndpoint } from '../../../platform/networking/common/networking';
 import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
 import { IRequestLogger } from '../../../platform/requestLogger/common/requestLogger';
 import { ITabsAndEditorsService } from '../../../platform/tabs/common/tabsAndEditorsService';
@@ -180,14 +179,7 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 		const timeoutHandle = setTimeout(() => cts.cancel(), CATEGORIZATION_TIMEOUT_MS);
 
 		try {
-			const endpoint = await this._resolveCategorizationEndpoint();
-			if (!endpoint) {
-				// The utility model can't be resolved (e.g. a BYOK main model is
-				// selected and no utility model is configured). Skip
-				// categorization entirely rather than falling back to the
-				// request's main model.
-				return;
-			}
+			const endpoint = await this.endpointProvider.getChatEndpoint('copilot-utility-small');
 
 			const { messages } = await renderPromptElement(
 				this.instantiationService,
@@ -390,20 +382,5 @@ export class PromptCategorizerService implements IPromptCategorizerService {
 
 		this.logService.debug(`[PromptCategorizer] Classification complete: outcome=${outcome || 'success'}, latencyMs=${latencyMs}, intent=${classification?.intent}, domain=${classification?.domain}, scope=${classification?.scope}`);
 	}
-
-	/**
-	 * Resolves the endpoint used for categorization using the fast
-	 * `copilot-utility-small` model. That resolution throws when the selected
-	 * main model is BYOK and no utility model is configured. In that case,
-	 * return `undefined` so categorization is skipped rather than falling back
-	 * to the request's selected main model.
-	 */
-	private async _resolveCategorizationEndpoint(): Promise<IChatEndpoint | undefined> {
-		try {
-			return await this.endpointProvider.getChatEndpoint('copilot-utility-small');
-		} catch (err) {
-			this.logService.debug(`[PromptCategorizer] Skipping categorization; no utility model available: ${err instanceof Error ? err.message : String(err)}`);
-			return undefined;
-		}
-	}
 }
+
