@@ -2459,17 +2459,21 @@ body:has(.automation-dialog) .monaco-menu-container {
 }
 
 /*
- * Suppress every inter-chip divider drawn by chat.css
- * (`.chat-input-toolbar ... .action-item + .action-item::before`) inside
- * the dialog. CSS `+` matches by DOM order regardless of `display:none`,
- * so the divider would otherwise appear as an orphan vertical line on
- * whichever visible chip follows our hidden `+`/settings items. The
- * remaining visible chips (Agent, model, mode) already have enough
- * intrinsic padding to read as separate without the divider. Dropping
- * dividers entirely is simpler and more resilient than per-pair
- * suppression rules that depend on DOM order.
+ * Suppress every inter-chip divider drawn by chat.css inside the dialog,
+ * in both the primary (`.chat-input-toolbar`) and secondary
+ * (`.chat-secondary-input-toolbar`) toolbars. CSS `+` matches by DOM
+ * order regardless of `display:none`, so the divider would otherwise
+ * appear as an orphan vertical line on whichever visible chip follows
+ * our hidden `+`/settings items. For example the bar drawn to the left
+ * of the Folder/Worktree isolation chip because it follows the Copilot
+ * CLI chip in the secondary toolbar (microsoft/vscode-internalbacklog#8304). The remaining visible
+ * chips (Agent, model, mode, isolation) already have enough intrinsic
+ * padding to read as separate without the divider. Dropping dividers
+ * entirely is simpler and more resilient than per-pair suppression rules
+ * that depend on DOM order.
  */
-.automation-form-prompt-host .chat-input-toolbar .monaco-action-bar .actions-container > .action-item + .action-item::before {
+.automation-form-prompt-host .chat-input-toolbar .monaco-action-bar .actions-container > .action-item + .action-item::before,
+.automation-form-prompt-host .chat-secondary-input-toolbar .monaco-action-bar .actions-container > .action-item + .action-item::before {
 	display: none;
 }
 
