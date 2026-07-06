@@ -1047,6 +1047,12 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					const duplicateAdditionsMode = this.configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsXtabDuplicateAdditionsMode, this.expService);
 					const fastYieldLineWithCursor = this.configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsXtabProviderPatchFastYieldLineWithCursor, this.expService);
 					const splitPatchOnDiff = this.configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsXtabSplitPatchOnDiff, this.expService);
+					// Only emit cross-file edits whose target document is part of the request context.
+					// This mirrors the exact set createDocStateLookupMap (nextEditProvider) can resolve
+					// base state for; anything else would throw a BugIndicatingError downstream.
+					const isKnownTargetDocument = (docId: DocumentId): boolean =>
+						request.hasDocument(docId) ||
+						request.xtabEditHistory.some(entry => entry.kind === 'edit' && entry.docId === docId);
 					parseResult = new ResponseParseResult.DirectEdits(
 						XtabPatchResponseHandler.handleResponse(
 							linesStream,
@@ -1058,6 +1064,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 							duplicateAdditionsMode,
 							fastYieldLineWithCursor,
 							splitPatchOnDiff,
+							isKnownTargetDocument,
 						),
 					);
 					break;
