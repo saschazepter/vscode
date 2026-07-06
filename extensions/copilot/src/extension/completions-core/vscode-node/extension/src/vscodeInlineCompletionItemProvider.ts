@@ -188,8 +188,8 @@ export class CopilotInlineCompletionItemProvider extends Disposable implements I
 
 			// Only offer the "Send Copilot Completion Feedback" command to paid users.
 			// Free and unauthenticated users would otherwise spam the issue tracker.
-			const token = this.copilotTokenManager.token;
-			const canSendCompletionFeedback = !!token && !token.isFreeUser && !token.isNoAuthUser;
+			const copilotToken = this.copilotTokenManager.token;
+			const canSendCompletionFeedback = !!copilotToken && !copilotToken.isFreeUser && !copilotToken.isNoAuthUser;
 
 			return {
 				...list,
