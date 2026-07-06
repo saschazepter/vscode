@@ -939,9 +939,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			}
 
 			// Identify VS Code's agent host traffic in CAPI
-			// [TEMP] integration-id disabled to test enterprise model enumeration
-			// env['GITHUB_COPILOT_INTEGRATION_ID'] = COPILOT_INTEGRATION_ID;
-			// this._logService.info(`[Copilot] Set CLI env: GITHUB_COPILOT_INTEGRATION_ID=${COPILOT_INTEGRATION_ID}`);
+			env['GITHUB_COPILOT_INTEGRATION_ID'] = COPILOT_INTEGRATION_ID;
+			this._logService.info(`[Copilot] Set CLI env: GITHUB_COPILOT_INTEGRATION_ID=${COPILOT_INTEGRATION_ID}`);
 
 			// Point the Copilot CLI at a configured GitHub Enterprise host for its
 			// authentication and CAPI endpoint discovery. `COPILOT_GH_HOST` is
