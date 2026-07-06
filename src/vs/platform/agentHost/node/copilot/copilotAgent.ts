@@ -558,7 +558,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private _lastSessionSyncEnabled: boolean = this._isSessionSyncEnabled();
 	private _lastRubberDuckEnabled: boolean = this._isRubberDuckEnabled();
-	private _lastEnterpriseHost: string | undefined = this._gitHubEndpointService.getEnterpriseHost();
+	private _lastEnterpriseHost: string | undefined = this._getEnterpriseHost();
 
 	private _isSessionSyncEnabled(): boolean {
 		return this._configurationService.getRootValue(platformRootSchema, AgentHostSessionSyncEnabledConfigKey) === true;
@@ -566,6 +566,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private _isRubberDuckEnabled(): boolean {
 		return this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.RubberDuck) === true;
+	}
+
+	private _getEnterpriseHost(): string | undefined {
+		return this._gitHubEndpointService.getEnterpriseHost();
 	}
 
 	/**
@@ -581,7 +585,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private async _restartClientIfStartupConfigChanged(): Promise<void> {
 		const sessionSync = this._isSessionSyncEnabled();
 		const rubberDuck = this._isRubberDuckEnabled();
-		const enterpriseHost = this._gitHubEndpointService.getEnterpriseHost();
+		const enterpriseHost = this._getEnterpriseHost();
 		if (this._lastSessionSyncEnabled === sessionSync && this._lastRubberDuckEnabled === rubberDuck && this._lastEnterpriseHost === enterpriseHost) {
 			return;
 		}
@@ -893,7 +897,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// into the client options / subprocess env below).
 		const sessionSyncAtStartup = this._isSessionSyncEnabled();
 		const rubberDuckAtStartup = this._isRubberDuckEnabled();
-		const enterpriseHostAtStartup = this._gitHubEndpointService.getEnterpriseHost();
+		const enterpriseHostAtStartup = this._getEnterpriseHost();
 		const clientStarting = (async () => {
 			this._logService.info('[Copilot] Starting CopilotClient...');
 
@@ -946,7 +950,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// authentication and CAPI endpoint discovery. `COPILOT_GH_HOST` is
 			// Copilot-CLI-specific (it does not affect the `gh` CLI). Unset for
 			// github.com so the CLI uses its default host.
-			const enterpriseHost = this._gitHubEndpointService.getEnterpriseHost();
+			const enterpriseHost = this._getEnterpriseHost();
 			if (enterpriseHost) {
 				env['COPILOT_GH_HOST'] = enterpriseHost;
 				this._logService.info(`[Copilot] Set CLI env: COPILOT_GH_HOST=${enterpriseHost}`);
@@ -996,7 +1000,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			};
 			const client = this._createCopilotClient(clientOptions);
 			await client.start();
-			if (this._isSessionSyncEnabled() !== sessionSyncAtStartup || this._isRubberDuckEnabled() !== rubberDuckAtStartup || this._gitHubEndpointService.getEnterpriseHost() !== enterpriseHostAtStartup) {
+			if (this._isSessionSyncEnabled() !== sessionSyncAtStartup || this._isRubberDuckEnabled() !== rubberDuckAtStartup || this._getEnterpriseHost() !== enterpriseHostAtStartup) {
 				await client.stop();
 				throw new Error('Copilot startup config changed while the client was starting');
 			}
