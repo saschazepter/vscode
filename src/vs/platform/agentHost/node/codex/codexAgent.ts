@@ -19,7 +19,7 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformSessionSchema, schemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE, GITHUB_REPO_PROTECTED_RESOURCE, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentHostCodexForceReviewDeniedEnvVar, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE, GITHUB_REPO_PROTECTED_RESOURCE, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
@@ -603,6 +603,15 @@ export class CodexAgent extends Disposable implements IAgent {
 	private _connection: ConnectionState = { kind: 'idle' };
 	private _modelsRefreshPromise: Promise<void> | undefined;
 	private readonly _metadataStore: CodexSessionMetadataStore;
+
+	/**
+	 * Dev/test affordance gated on {@link AgentHostCodexForceReviewDeniedEnvVar}.
+	 * When enabled, {@link _handleGuardianReviewCompleted} coerces the next
+	 * completed auto-review into a denial so the denial-surfacing UI can be
+	 * verified without a real guardian denial (which the primary model normally
+	 * prevents by refusing unsafe actions before they reach the reviewer).
+	 */
+	private readonly _forceReviewDenied = !!process.env[AgentHostCodexForceReviewDeniedEnvVar];
 
 	/**
 	 * The agent host's server-tool host (feedback "comments" today, more in the
@@ -1604,6 +1613,22 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._logService.trace(`[Codex] autoApprovalReview/completed for unknown threadId=${params.threadId}; ignoring`);
 			return;
 		}
+		if (this._forceReviewDenied && params.review.status !== 'denied' && params.review.status !== 'inProgress') {
+			// Dev/test affordance: rewrite this completed review as a denial so the
+			// denial-surfacing UI below runs. Real denials are hard to provoke on
+			// demand because the primary model refuses unsafe actions before they
+			// reach the reviewer, so this env flag lets us verify the notification
+			// and "Approve anyway" card against an otherwise-approved review.
+			this._logService.warn(`[Codex:${sessionId}] ${AgentHostCodexForceReviewDeniedEnvVar} active — coercing review ${params.reviewId} (was ${params.review.status}) to denied for UI verification`);
+			params = {
+				...params,
+				review: {
+					...params.review,
+					status: 'denied',
+					rationale: params.review.rationale ?? `Forced denial for UI verification (${AgentHostCodexForceReviewDeniedEnvVar}).`,
+				},
+			};
+		}
 		if (params.review.status !== 'denied') {
 			return;
 		}
@@ -1620,17 +1645,20 @@ export class CodexAgent extends Disposable implements IAgent {
 
 		const summary = summarizeGuardianReviewAction(params.action);
 
-		// Durable record: a system-notification response part survives turn
-		// completion (unlike the tool-call card below, which the reducer cancels
-		// when the turn ends). The auto-review circuit-breaker interrupts the turn
-		// after repeated denials, so without this the user could be left with no
-		// feedback at all. Surfacing the reviewer rationale here mirrors the
-		// manual-approval feedback the Default permissions preset provides.
+		// Durable record: a Markdown response part survives turn completion AND is
+		// rendered by the live streaming path (unlike a system-notification part,
+		// which the workbench maps to a transient progress message and never emits
+		// mid-turn). The auto-review circuit-breaker interrupts the turn after
+		// repeated denials — cancelling the tool-call card below — so without this
+		// the user could be left with no feedback at all. Surfacing the reviewer
+		// rationale here mirrors the manual-approval feedback the Default
+		// permissions preset provides.
 		this._fire(session.sessionUri, {
 			type: ActionType.ChatResponsePart,
 			turnId,
 			part: {
-				kind: ResponsePartKind.SystemNotification,
+				kind: ResponsePartKind.Markdown,
+				id: generateUuid(),
 				content: formatGuardianDenialNotification(summary, params.review.rationale),
 			},
 		});
@@ -1690,6 +1718,19 @@ export class CodexAgent extends Disposable implements IAgent {
 		// action within the turn — skip the round-trip.
 		if (session.currentTurnId !== turnId) {
 			this._logService.trace(`[Codex:${sessionId}] turn ended before guardian approval could be applied for reviewId=${params.reviewId}`);
+			return;
+		}
+
+		if (this._forceReviewDenied) {
+			// The synthetic denial has no real pending action in the app-server, so
+			// there is nothing to approve; finalize the card as a successful no-op
+			// rather than attempting a round-trip the app-server would reject.
+			this._fire(session.sessionUri, {
+				type: ActionType.ChatToolCallComplete,
+				turnId,
+				toolCallId,
+				result: { success: true, pastTenseMessage: 'Approved (forced-denial verification - no real action to retry)' },
+			});
 			return;
 		}
 

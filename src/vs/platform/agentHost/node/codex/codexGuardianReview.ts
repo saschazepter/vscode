@@ -156,19 +156,40 @@ export function summarizeGuardianReviewAction(action: GuardianApprovalReviewActi
 	}
 }
 
+/** Escape the inline-code span so an embedded backtick can't break out of it. */
+function inlineCode(text: string): string {
+	// Use a fence long enough to contain any run of backticks in the text, per
+	// CommonMark's variable-length code-span rule, and pad with spaces when the
+	// content itself starts/ends with a backtick.
+	const longestRun = (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+	const fence = '`'.repeat(longestRun + 1);
+	const padding = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+	return `${fence}${padding}${text}${padding}${fence}`;
+}
+
 /**
- * Compose the durable system-notification text for an auto-review denial. This
- * is surfaced as a response part (which survives turn completion) so the user
- * always learns *why* an action was blocked — including the reviewer rationale
- * — even when the turn ends before the transient "Approve anyway" card can be
- * acted on.
+ * Compose the durable denial notice for an auto-review denial, rendered as a
+ * Markdown response part (which survives turn completion and, unlike a transient
+ * progress/system-notification message, is not dropped by the live streaming
+ * path) so the user always learns *why* an action was blocked — including the
+ * reviewer rationale — even when the turn ends before the best-effort "Approve
+ * anyway" card can be acted on. The notice is emitted as a blockquote so it
+ * stays visually distinct from the model's own prose even when adjacent
+ * Markdown parts are concatenated into one rendered block.
  */
 export function formatGuardianDenialNotification(summary: IGuardianActionSummary, rationale: string | null): string {
 	const detail = summary.detail?.trim();
-	const parts: string[] = [detail ? `Auto-review denied — ${summary.title}: ${detail}` : `Auto-review denied — ${summary.title}`];
+	const lines: string[] = [
+		detail
+			? `⚠️ **Auto-review denied** — ${summary.title}: ${inlineCode(detail)}`
+			: `⚠️ **Auto-review denied** — ${summary.title}`,
+	];
 	const reason = rationale?.trim();
 	if (reason) {
-		parts.push(reason);
+		lines.push('', ...reason.split('\n'));
 	}
-	return parts.join('\n\n');
+	const quoted = lines.map(line => (line ? `> ${line}` : '>')).join('\n');
+	// Leading blank line separates the blockquote from any preceding Markdown
+	// part; trailing newline keeps subsequent model output on its own block.
+	return `\n\n${quoted}\n`;
 }

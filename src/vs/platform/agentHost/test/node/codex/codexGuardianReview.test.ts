@@ -117,15 +117,15 @@ suite('codexGuardianReview', () => {
 		});
 	});
 
-	test('formatGuardianDenialNotification renders the action summary and rationale', () => {
+	test('formatGuardianDenialNotification renders the action summary and rationale as a distinct blockquote', () => {
 		assert.deepStrictEqual(
 			[
 				formatGuardianDenialNotification({ title: 'Network access', detail: 'https://example.com' }, 'Blocked for safety.'),
 				formatGuardianDenialNotification({ title: 'Elevated permissions', detail: '' }, null),
 			],
 			[
-				'Auto-review denied — Network access: https://example.com\n\nBlocked for safety.',
-				'Auto-review denied — Elevated permissions',
+				'\n\n> ⚠️ **Auto-review denied** — Network access: `https://example.com`\n>\n> Blocked for safety.\n',
+				'\n\n> ⚠️ **Auto-review denied** — Elevated permissions\n',
 			]
 		);
 	});
