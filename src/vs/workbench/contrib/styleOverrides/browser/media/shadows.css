@@ -42,3 +42,7 @@
 .style-override.monaco-workbench .part.editor .tabs-container > .tab.active {
 	box-shadow: none !important;
 }
+
+.style-override.monaco-workbench .terminal-resize-overlay {
+	box-shadow: var(--vscode-shadow-lg);
+}
