@@ -2212,7 +2212,7 @@ pane is first mounted. View switches inside the modal are not animated. */
 	min-width: min(520px, 92vw);
 	max-width: 92vw;
 	padding: 0;
-	background-color: var(--vscode-quickInput-background);
+	background-color: var(--vscode-editorWidget-background);
 	color: var(--vscode-quickInput-foreground);
 	/* Anchor for the absolutely-positioned close-X (see below). */
 	position: relative;
@@ -2272,11 +2272,15 @@ pane is first mounted. View switches inside the modal are not animated. */
 }
 
 /*
- * QuickInput-style titlebar. The visual "line" beneath it is purely
- * the background contrast between `quickInputTitle.background` (a
- * translucent stripe) and `quickInput.background` (the form area).
- * No `border-bottom`. Sticky so the title stays in view as the form
- * scrolls (the dialog's message-container is the scroll host).
+ * Titlebar background matches the dialog body so the header reads as
+ * part of the modal, with no contrasting stripe. Both are anchored to
+ * `editorWidget.background`, the dialog widget's own native background
+ * (see defaultDialogStyles), so the header and body are always the same
+ * color in every theme. Set explicitly (not transparent) because the
+ * titlebar is sticky. A transparent background would let scrolled form
+ * content show through. No `border-bottom`. Sticky so the title stays
+ * in view as the form scrolls (the dialog's message-container is the
+ * scroll host).
  */
 .automation-titlebar {
 	position: sticky;
@@ -2288,7 +2292,7 @@ pane is first mounted. View switches inside the modal are not animated. */
 	font-weight: var(--vscode-agents-fontWeight-semiBold);
 	font-size: var(--vscode-agents-fontSize-heading2);
 	color: var(--vscode-quickInput-foreground);
-	background-color: var(--vscode-quickInputTitle-background);
+	background-color: var(--vscode-editorWidget-background);
 }
 
 .automation-description {
