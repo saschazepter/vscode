@@ -50,6 +50,10 @@ export class SinglePaneWorkbench extends Workbench {
 	private _syncingEditorVisibility = false;
 	private readonly _memento = new DockedEditorSizeMemento();
 
+	override get isSinglePaneLayoutEnabled(): boolean {
+		return true;
+	}
+
 	override getDockedAuxiliaryBarWidth(): number {
 		return this._dockedAuxiliaryBarWidth;
 	}

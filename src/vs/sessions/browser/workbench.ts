@@ -32,7 +32,6 @@ import { getSingletonServiceDescriptors } from '../../platform/instantiation/com
 import { ILifecycleService, LifecyclePhase, WillShutdownEvent } from '../../workbench/services/lifecycle/common/lifecycle.js';
 import { IStorageService, WillSaveStateReason, StorageScope, StorageTarget } from '../../platform/storage/common/storage.js';
 import { IConfigurationChangeEvent, IConfigurationService } from '../../platform/configuration/common/configuration.js';
-import { DOCK_DETAIL_PANEL_SETTING } from '../common/sessionConfig.js';
 import { IHostService } from '../../workbench/services/host/browser/host.js';
 import { IDialogService } from '../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../platform/notification/common/notification.js';
@@ -138,11 +137,10 @@ export interface IAgentWorkbenchLayoutService extends IWorkbenchLayoutService, I
 	readonly onDidChangeEditorMaximized: Event<void>;
 
 	/**
-	 * Whether the single-pane (docked detail panel) layout setting is enabled.
-	 * Read live from configuration (toggling requires a window reload). This is the
-	 * single source of truth for the setting; features must query this instead of
-	 * reading the configuration key directly. Note this is the pure setting value and
-	 * differs from the phone-aware runtime layout used internally.
+	 * Whether the Agents window is using the single-pane (docked detail panel)
+	 * layout. Fixed at construction by the workbench subclass — `false` for the
+	 * classic/mobile workbench, `true` for {@link SinglePaneWorkbench}. Features
+	 * gate single-pane behaviour on this instead of reading the setting directly.
 	 */
 	readonly isSinglePaneLayoutEnabled: boolean;
 
@@ -326,12 +324,12 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 	/** The editor part container; the auxiliary bar is docked inside it. */
 	protected _editorPartContainer: HTMLElement | undefined;
+	/** `false` for the classic/mobile layout; {@link SinglePaneWorkbench} overrides to `true`. */
 	get isSinglePaneLayoutEnabled(): boolean {
-		return this._configurationServiceForLayout?.getValue<boolean>(DOCK_DETAIL_PANEL_SETTING) === true;
+		return false;
 	}
 	/** `true` while the editor's current visible state was produced by an explicit user reveal (opening an editor, or toggling the detail panel off) rather than an automatic layout/working-set reveal. Read by the single-pane new-session rule (R1) so it does not undo an explicit reveal. */
 	protected _editorRevealedExplicitly = false;
-	private _configurationServiceForLayout: IConfigurationService | undefined;
 
 	protected readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
@@ -473,7 +471,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 				const lifecycleService = accessor.get(ILifecycleService);
 				const storageService = accessor.get(IStorageService);
 				const configurationService = accessor.get(IConfigurationService);
-				this._configurationServiceForLayout = configurationService;
 				const hostService = accessor.get(IHostService);
 				const hoverService = accessor.get(IHoverService);
 				const dialogService = accessor.get(IDialogService);
