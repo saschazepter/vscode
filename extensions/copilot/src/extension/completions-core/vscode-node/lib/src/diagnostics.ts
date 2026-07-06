@@ -23,13 +23,13 @@ interface Section {
 	items: SectionItems;
 }
 
-export function collectCompletionDiagnostics(accessor: ServicesAccessor, telemetry: TelemetryData | undefined, requestUuid?: string): Report {
+export function collectCompletionDiagnostics(accessor: ServicesAccessor, telemetry: TelemetryData | undefined, opportunityId?: string): Report {
 	const telemetryItems: SectionItems = {};
-	// The request UUID (VS Code core's `InlineCompletionContext.requestUuid`) is sourced from the shown
+	// The opportunity ID (VS Code core's `InlineCompletionContext.requestUuid`) is sourced from the shown
 	// item rather than `telemetry.properties.opportunityId`, since the latter can be stale for cached or
 	// typing-as-suggested completions whose telemetry is derived from an earlier request.
-	if (requestUuid) {
-		telemetryItems['Request UUID'] = requestUuid;
+	if (opportunityId) {
+		telemetryItems['Opportunity ID'] = opportunityId;
 	}
 	if (telemetry !== undefined) {
 		if (telemetry.properties.headerRequestId) {
@@ -37,9 +37,6 @@ export function collectCompletionDiagnostics(accessor: ServicesAccessor, telemet
 		}
 		if (telemetry.properties.choiceIndex) {
 			telemetryItems['Choice Index'] = telemetry.properties.choiceIndex;
-		}
-		if (telemetry.properties.opportunityId) {
-			telemetryItems['Opportunity ID'] = telemetry.properties.opportunityId;
 		}
 		if (telemetry.properties.clientCompletionId) {
 			telemetryItems['Client Completion ID'] = telemetry.properties.clientCompletionId;

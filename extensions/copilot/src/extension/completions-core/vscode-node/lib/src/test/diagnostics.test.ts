@@ -17,11 +17,11 @@ suite('collectCompletionDiagnostics', function () {
 		accessor = createLibTestingContext().createTestingAccessor();
 	});
 
-	test('includes the request UUID alongside the telemetry fields', function () {
+	test('includes the opportunity ID alongside the telemetry fields', function () {
 		const telemetry = TelemetryWithExp.createEmptyConfigForTesting();
 		telemetry.properties.headerRequestId = 'header-123';
 		telemetry.properties.choiceIndex = '0';
-		// A different value than the passed request UUID to prove the two are sourced independently.
+		// A stale value that must be ignored: the opportunity ID comes from the item, not from telemetry.
 		telemetry.properties.opportunityId = 'stale-opportunity-id';
 		telemetry.properties.clientCompletionId = 'client-abc';
 		telemetry.properties.engineName = 'test-model';
@@ -34,19 +34,18 @@ suite('collectCompletionDiagnostics', function () {
 				items: {
 					Version: BuildInfo.getVersion(),
 					Editor: 'lib-tests-editor 1',
-					'Request UUID': 'icr-current-uuid',
+					'Opportunity ID': 'icr-current-uuid',
 					'Header Request ID': 'header-123',
 					'Choice Index': '0',
-					'Opportunity ID': 'stale-opportunity-id',
 					'Client Completion ID': 'client-abc',
 					'Model ID': 'test-model',
 				},
 			},
 		]);
-		assert.ok(formatDiagnosticsAsMarkdown(report).includes('- Request UUID: icr-current-uuid'));
+		assert.ok(formatDiagnosticsAsMarkdown(report).includes('- Opportunity ID: icr-current-uuid'));
 	});
 
-	test('includes the request UUID even when no telemetry is available', function () {
+	test('includes the opportunity ID even when no telemetry is available', function () {
 		const report = collectCompletionDiagnostics(accessor, undefined, 'icr-only');
 
 		assert.deepStrictEqual(report.sections, [
@@ -55,7 +54,7 @@ suite('collectCompletionDiagnostics', function () {
 				items: {
 					Version: BuildInfo.getVersion(),
 					Editor: 'lib-tests-editor 1',
-					'Request UUID': 'icr-only',
+					'Opportunity ID': 'icr-only',
 				},
 			},
 		]);
