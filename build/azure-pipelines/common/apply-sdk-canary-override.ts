@@ -18,8 +18,12 @@ import { execFileSync } from 'child_process';
  * misses).
  *
  * Driven by environment variables so it is a no-op in normal builds:
- *   VSCODE_SDK_CANARY_VERSION - version to pin `@github/copilot-sdk` to
- *   VSCODE_CLI_CANARY_VERSION - version to pin `@github/copilot` to
+ *   VSCODE_SDK_CANARY_VERSION - version to pin `@github/copilot-sdk` to (empty =
+ *                               no override / normal build)
+ *   VSCODE_CLI_CANARY_VERSION - version to pin `@github/copilot` to. When empty
+ *                               (and an SDK version is set) the CLI version is
+ *                               inferred from the SDK's own `@github/copilot`
+ *                               dependency so the two stay compatible.
  *
  * npm registry + auth must already be configured in the ambient environment
  * (the orchestrator authenticates to the private feed before invoking this).
@@ -35,13 +39,45 @@ interface Override {
 	readonly version: string;
 }
 
-function collectOverrides(): Override[] {
-	const overrides: Override[] = [];
-	const sdkVersion = process.env['VSCODE_SDK_CANARY_VERSION'];
-	const cliVersion = process.env['VSCODE_CLI_CANARY_VERSION'];
-	if (sdkVersion) {
-		overrides.push({ name: '@github/copilot-sdk', version: sdkVersion });
+/**
+ * Infers the `@github/copilot` version to use from the SDK canary's own
+ * `@github/copilot` dependency range, resolved to a concrete published version.
+ * Returns undefined (leaving VS Code's pinned CLI) if the SDK declares no such
+ * dependency or resolution fails — inference is best-effort, never fatal.
+ */
+function inferCliVersion(sdkVersion: string): string | undefined {
+	try {
+		const depsRaw = execFileSync('npm', ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8' });
+		const deps = JSON.parse(depsRaw || '{}');
+		const range = deps['@github/copilot'];
+		if (!range) {
+			console.log(`[canary-override] SDK ${sdkVersion} declares no @github/copilot dependency — leaving VS Code's pinned CLI.`);
+			return undefined;
+		}
+		const versionRaw = execFileSync('npm', ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8' });
+		const parsed = JSON.parse(versionRaw);
+		const resolved = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
+		if (typeof resolved !== 'string') {
+			console.warn(`[canary-override] Could not resolve @github/copilot@${range} to a concrete version — leaving VS Code's pinned CLI.`);
+			return undefined;
+		}
+		console.log(`[canary-override] Inferred @github/copilot ${resolved} from @github/copilot-sdk@${sdkVersion} (range ${range}).`);
+		return resolved;
+	} catch (err) {
+		console.warn(`[canary-override] Failed to infer @github/copilot from SDK ${sdkVersion}: ${err instanceof Error ? err.message : err}. Leaving VS Code's pinned CLI.`);
+		return undefined;
 	}
+}
+
+function collectOverrides(): Override[] {
+	const sdkVersion = (process.env['VSCODE_SDK_CANARY_VERSION'] ?? '').trim();
+	if (!sdkVersion) {
+		return [];
+	}
+	const overrides: Override[] = [{ name: '@github/copilot-sdk', version: sdkVersion }];
+
+	// Explicit CLI version wins; empty means "infer from the SDK".
+	const cliVersion = (process.env['VSCODE_CLI_CANARY_VERSION'] ?? '').trim() || inferCliVersion(sdkVersion);
 	if (cliVersion) {
 		overrides.push({ name: '@github/copilot', version: cliVersion });
 	}
