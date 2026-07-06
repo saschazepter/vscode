@@ -72,17 +72,26 @@ export function runInTerminalScenario(reply: string): unknown {
 /**
  * Matcher for the assistant text produced by {@link shellEchoScenario} or
  * {@link runInTerminalScenario}. The final response renders the tool result
- * as a ```json block; the exact field name varies by surface:
- *   - Copilot CLI (responses-API):    `{ "output": "<reply>..." }`
- *   - Local `run_in_terminal`:        `{ "output": "<reply>..." }`
- *   - Claude SDK Bash (messages-API): `{ "content": "<reply>..." }`
+ * as a ```json block; the exact format varies by surface:
+ *   - Copilot CLI (responses-API):     `{ "output": "<reply>" }`
+ *   - Local `run_in_terminal`:         `{ "output": "<reply>..." }`
+ *   - Claude SDK Bash (messages-API):  `{ "content": "<reply>" }`
+ *   - AgentHost custom terminal tool:  `{ "output": "ShellID: ...\nExitcode: 0\n<reply>" }`
  *
- * Anchoring on a JSON double-quote immediately preceding the reply matches
- * the value side of any `"<key>": "<reply>..."` pair while ignoring the
- * `echo <reply>` command preview, which renders the reply as a bareword
- * without surrounding quotes. `<reply>` must not contain regex
+ * Anchoring on a JSON double-quote OR newline immediately preceding the reply
+ * matches:
+ *   - the value side of any `"<key>": "<reply>..."` pair (Copilot CLI, Claude,
+ *     Local `run_in_terminal`), AND
+ *   - the AgentHost custom-terminal format where the reply is preceded by
+ *     `\n` inside a larger `"output"` string.
+ *
+ * This excludes the `echo <reply>` command preview (a bareword surrounded by
+ * whitespace, not `"` or `\n`). `<reply>` must not contain regex
  * metacharacters.
  */
 export function shellEchoResponseMatcher(reply: string): RegExp {
-	return new RegExp(`"${reply}`);
+	// The rendered JSON block collapses `\n` in the string value into a real
+	// newline in `textContent`, but the assistant output can also contain
+	// literal escaped `\n` when the JSON is displayed verbatim; match either.
+	return new RegExp(`(?:"|\\n|\\\\n)${reply}`);
 }
