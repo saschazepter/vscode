@@ -28,8 +28,8 @@ import { basename, dirname, isEqual } from '../../../../../base/common/resources
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { isWeb } from '../../../../../base/common/platform.js';
 import { IAgentPlugin, IAgentPluginService } from '../../common/plugins/agentPluginService.js';
-import { isContributionEnabled } from '../../common/enablement.js';
-import { getInstalledPluginContextMenuActions } from '../agentPluginActions.js';
+import { ContributionEnablementState, isContributionEnabled } from '../../common/enablement.js';
+import { getInstalledPluginContextMenuActions, isPluginPolicyBlocked } from '../agentPluginActions.js';
 import { IMarketplacePlugin, IPluginMarketplaceService } from '../../common/plugins/pluginMarketplaceService.js';
 import { IPluginInstallService } from '../../common/plugins/pluginInstallService.js';
 import { AgentPluginItemKind, IAgentPluginItem, IInstalledPluginItem, IMarketplacePluginItem } from '../agentPluginEditor/agentPluginItems.js';
@@ -155,7 +155,6 @@ class PluginSearchHeaderRenderer implements IListRenderer<IPluginSearchHeaderEnt
 interface IPluginInstalledItemTemplateData {
 	readonly container: HTMLElement;
 	readonly syncCheckboxContainer: HTMLElement;
-	readonly typeIcon: HTMLElement;
 	readonly name: HTMLElement;
 	readonly source: HTMLElement;
 	readonly description: HTMLElement;
@@ -174,9 +173,6 @@ class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemE
 		container.classList.add('plugin-list-item', 'plugin-installed-item');
 
 		const syncCheckboxContainer = DOM.append(container, $('.item-sync-checkbox'));
-		const typeIcon = DOM.append(container, $('.plugin-list-item-icon'));
-		typeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
-
 		const details = DOM.append(container, $('.plugin-list-item-details'));
 		const nameRow = DOM.append(details, $('.plugin-list-item-name-row'));
 		const name = DOM.append(nameRow, $('.plugin-list-item-name'));
@@ -184,7 +180,7 @@ class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemE
 		const description = DOM.append(details, $('.plugin-list-item-description'));
 		const metadata = DOM.append(details, $('.plugin-list-item-metadata'));
 
-		return { container, syncCheckboxContainer, typeIcon, name, source, description, metadata, disposables: new DisposableStore() };
+		return { container, syncCheckboxContainer, name, source, description, metadata, disposables: new DisposableStore() };
 	}
 
 	renderElement(element: IPluginInstalledItemEntry, _index: number, templateData: IPluginInstalledItemTemplateData): void {
@@ -249,7 +245,6 @@ class PluginInstalledItemRenderer implements IListRenderer<IPluginInstalledItemE
 
 interface IPluginRemoteItemTemplateData {
 	readonly container: HTMLElement;
-	readonly typeIcon: HTMLElement;
 	readonly name: HTMLElement;
 	readonly badge: HTMLElement;
 	readonly description: HTMLElement;
@@ -263,9 +258,6 @@ class PluginRemoteItemRenderer implements IListRenderer<IPluginRemoteItemEntry, 
 	renderTemplate(container: HTMLElement): IPluginRemoteItemTemplateData {
 		container.classList.add('plugin-list-item', 'plugin-remote-item');
 
-		const typeIcon = DOM.append(container, $('.plugin-list-item-icon'));
-		typeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
-
 		const details = DOM.append(container, $('.plugin-list-item-details'));
 		const nameRow = DOM.append(details, $('.plugin-list-item-name-row'));
 		const name = DOM.append(nameRow, $('span'));
@@ -274,7 +266,7 @@ class PluginRemoteItemRenderer implements IListRenderer<IPluginRemoteItemEntry, 
 		const metadata = DOM.append(details, $('.plugin-list-item-metadata'));
 		const status = DOM.append(container, $('.plugin-list-item-status'));
 
-		return { container, typeIcon, name, badge, description, metadata, status };
+		return { container, name, badge, description, metadata, status };
 	}
 
 	renderElement(element: IPluginRemoteItemEntry, _index: number, templateData: IPluginRemoteItemTemplateData): void {
@@ -339,7 +331,6 @@ class PluginRemoteItemRenderer implements IListRenderer<IPluginRemoteItemEntry, 
 
 interface IPluginMarketplaceItemTemplateData {
 	readonly container: HTMLElement;
-	readonly typeIcon: HTMLElement;
 	readonly name: HTMLElement;
 	readonly recommendedBadge: HTMLElement;
 	readonly publisher: HTMLElement;
@@ -361,8 +352,6 @@ class PluginMarketplaceItemRenderer implements IListRenderer<IPluginMarketplaceI
 
 	renderTemplate(container: HTMLElement): IPluginMarketplaceItemTemplateData {
 		container.classList.add('plugin-list-item', 'plugin-marketplace-item');
-		const typeIcon = DOM.append(container, $('.plugin-list-item-icon'));
-		typeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
 		const details = DOM.append(container, $('.plugin-list-item-details'));
 		const nameRow = DOM.append(details, $('.plugin-list-item-name-row'));
 		const name = DOM.append(nameRow, $('.plugin-list-item-name'));
@@ -378,7 +367,7 @@ class PluginMarketplaceItemRenderer implements IListRenderer<IPluginMarketplaceI
 		const templateDisposables = new DisposableStore();
 		templateDisposables.add(installButton);
 
-		return { container, typeIcon, name, recommendedBadge, publisher, description, metadata, installButton, elementDisposables: new DisposableStore(), templateDisposables };
+		return { container, name, recommendedBadge, publisher, description, metadata, installButton, elementDisposables: new DisposableStore(), templateDisposables };
 	}
 
 	renderElement(element: IPluginMarketplaceItemEntry, _index: number, templateData: IPluginMarketplaceItemTemplateData): void {
@@ -490,6 +479,10 @@ function getMarketplaceSnapshotRank(item: IMarketplacePluginItem): number {
 	return index === -1 ? curatedMarketplaceSnapshotOrder.length : index;
 }
 
+function compareInstalledPluginItems(a: IInstalledPluginItem, b: IInstalledPluginItem): number {
+	return formatDisplayName(a.name).localeCompare(formatDisplayName(b.name));
+}
+
 function getInstalledPluginMetadata(item: IInstalledPluginItem): string {
 	const metadata: string[] = [];
 	const contributionSummary = getInstalledPluginContributionSummary(item);
@@ -550,6 +543,12 @@ function getRemotePluginStatusLabel(item: ICustomizationItem): string {
 
 function getInstalledPluginContributionSummary(item: IInstalledPluginItem): string | undefined {
 	return getInstalledPluginContributionEntries(item).map(entry => entry.label).slice(0, 2).join(' • ');
+}
+
+function getInstalledPluginDisabledLabel(item: IInstalledPluginItem): string {
+	return item.plugin.enablement.get() === ContributionEnablementState.DisabledWorkspace
+		? localize('pluginDetailDisabledWorkspaceBadge', "Disabled (workspace)")
+		: localize('pluginDetailDisabledBadge', "Disabled");
 }
 
 //#endregion
@@ -1141,9 +1140,7 @@ export class PluginListWidget extends Disposable {
 		this.showCardSurface();
 
 		const content = DOM.append(this.cardContainer, $('.plugin-card-scroll'));
-		const enabledPlugins = this.installedItems.filter(item => isContributionEnabled(item.plugin.enablement.get()));
-		const disabledPlugins = this.installedItems.filter(item => !isContributionEnabled(item.plugin.enablement.get()));
-		const installedPlugins = [...enabledPlugins, ...disabledPlugins];
+		const installedPlugins = this.installedItems;
 
 		if (installedPlugins.length > 0) {
 			const installedGrid = this.renderCardSection(
@@ -1203,8 +1200,6 @@ export class PluginListWidget extends Disposable {
 		card.classList.toggle('disabled', !enabled);
 		this.addCardActivation(card, localize('openPluginDetails', "Open details for {0}", item.name), () => this._onDidSelectPlugin.fire(item));
 		const header = DOM.append(card, $('.plugin-card-header'));
-		const icon = DOM.append(header, $('.plugin-card-icon'));
-		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
 		const titleBlock = DOM.append(header, $('.plugin-card-title-block'));
 		const name = DOM.append(titleBlock, $('.plugin-card-title'));
 		name.textContent = formatDisplayName(item.name);
@@ -1212,11 +1207,39 @@ export class PluginListWidget extends Disposable {
 		const source = DOM.append(titleBlock, $('.plugin-card-subtitle'));
 		source.textContent = truncateToFirstLine(item.description || localize('pluginNoDescription', "No description provided."));
 		const actions = DOM.append(header, $('.plugin-card-actions'));
-		const more = this.cardDisposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true, supportIcons: true, ariaLabel: localize('pluginMoreActionsAria', "More actions for {0}", item.name) }));
-		more.element.classList.add('plugin-card-ghost-button', 'plugin-card-icon-button');
-		more.label = `$(${Codicon.ellipsis.id})`;
-		this.addCardActionButtonClick(more, () => this.showInstalledPluginActions(item, more.element));
+		this.appendInstalledPluginSwitch(actions, item);
 		this.appendContributionPreview(card, item);
+	}
+
+	private appendInstalledPluginSwitch(parent: HTMLElement, item: IInstalledPluginItem): void {
+		const checked = isContributionEnabled(item.plugin.enablement.get());
+		const blocked = isPluginPolicyBlocked(item.plugin);
+		const switchEl = DOM.append(parent, $('button.plugin-enable-switch')) as HTMLButtonElement;
+		switchEl.type = 'button';
+		switchEl.disabled = blocked;
+		switchEl.setAttribute('role', 'switch');
+		switchEl.setAttribute('aria-checked', checked ? 'true' : 'false');
+		switchEl.setAttribute('aria-label', checked
+			? localize('disablePluginSwitch', "Disable {0}", item.name)
+			: localize('enablePluginSwitch', "Enable {0}", item.name));
+		switchEl.classList.toggle('checked', checked);
+		switchEl.title = blocked
+			? localize('pluginPolicyBlockedSwitch', "This plugin is managed by your organization.")
+			: (checked ? localize('disable', "Disable") : localize('enable', "Enable"));
+		DOM.append(switchEl, $('.plugin-enable-switch-track'));
+		DOM.append(switchEl, $('.plugin-enable-switch-thumb'));
+		this.cardDisposables.add(DOM.addDisposableListener(switchEl, 'click', e => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (blocked) {
+				return;
+			}
+			this.agentPluginService.enablementModel.setEnabled(
+				item.plugin.uri.toString(),
+				checked ? ContributionEnablementState.DisabledProfile : ContributionEnablementState.EnabledProfile,
+			);
+			void this.refresh();
+		}));
 	}
 
 	private appendRemotePluginCard(parent: HTMLElement, item: ICustomizationItem): void {
@@ -1224,8 +1247,6 @@ export class PluginListWidget extends Disposable {
 		card.setAttribute('role', 'group');
 		card.setAttribute('aria-label', localize('pluginRemoteCardAria', "{0}. Remote plugin", item.name));
 		const header = DOM.append(card, $('.plugin-card-header'));
-		const icon = DOM.append(header, $('.plugin-card-icon'));
-		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
 		const titleBlock = DOM.append(header, $('.plugin-card-title-block'));
 		const name = DOM.append(titleBlock, $('.plugin-card-title'));
 		name.textContent = formatDisplayName(item.name);
@@ -1252,8 +1273,6 @@ export class PluginListWidget extends Disposable {
 		const card = DOM.append(parent, $('.plugin-card.plugin-marketplace-card'));
 		this.addCardActivation(card, localize('openPluginDetails', "Open details for {0}", item.name), () => this._onDidSelectPlugin.fire(item));
 		const header = DOM.append(card, $('.plugin-card-header'));
-		const icon = DOM.append(header, $('.plugin-card-icon'));
-		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.plug));
 		const titleBlock = DOM.append(header, $('.plugin-card-title-block'));
 		const name = DOM.append(titleBlock, $('.plugin-card-title'));
 		name.textContent = item.name;
@@ -1284,13 +1303,13 @@ export class PluginListWidget extends Disposable {
 		if (contributions.length === 0) {
 			if (!isContributionEnabled(item.plugin.enablement.get())) {
 				const preview = DOM.append(parent, $('.plugin-card-contribution-preview'));
-				this.appendCardBadge(preview, localize('pluginDetailDisabledBadge', "Disabled"));
+				this.appendCardBadge(preview, getInstalledPluginDisabledLabel(item));
 			}
 			return;
 		}
 		const preview = DOM.append(parent, $('.plugin-card-contribution-preview'));
 		if (!isContributionEnabled(item.plugin.enablement.get())) {
-			this.appendCardBadge(preview, localize('pluginDetailDisabledBadge', "Disabled"));
+			this.appendCardBadge(preview, getInstalledPluginDisabledLabel(item));
 		}
 		for (const contribution of contributions.slice(0, 3)) {
 			const chip = DOM.append(preview, $('.inline-badge.plugin-card-contribution-chip'));
@@ -1484,7 +1503,8 @@ export class PluginListWidget extends Disposable {
 				const allPlugins = this.agentPluginService.plugins.get();
 				this.installedItems = allPlugins
 					.map(p => installedPluginToItem(p, this.labelService))
-					.filter(item => item.name.toLowerCase().includes(query) || item.description.toLowerCase().includes(query));
+					.filter(item => item.name.toLowerCase().includes(query) || item.description.toLowerCase().includes(query))
+					.sort(compareInstalledPluginItems);
 				this.remoteItems = [...await this.getRemotePluginItems(query)];
 			}
 			const filtered = query
@@ -1621,7 +1641,8 @@ export class PluginListWidget extends Disposable {
 			.filter(item => !query ||
 				item.name.toLowerCase().includes(query) ||
 				item.description.toLowerCase().includes(query)
-			);
+			)
+			.sort(compareInstalledPluginItems);
 
 		if (!query) {
 			this.renderPluginHome();
@@ -1768,15 +1789,6 @@ export class PluginListWidget extends Disposable {
 			));
 		}
 		return actions;
-	}
-
-	private showInstalledPluginActions(item: IInstalledPluginItem, anchor: HTMLElement): void {
-		const disposables = new DisposableStore();
-		this.contextMenuService.showContextMenu({
-			getAnchor: () => anchor,
-			getActions: () => this.getInstalledPluginActions(item, disposables),
-			onHide: () => disposables.dispose()
-		});
 	}
 
 	private showRemotePluginActions(item: ICustomizationItem, anchor: HTMLElement): void {

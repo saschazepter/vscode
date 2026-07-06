@@ -225,10 +225,10 @@ Hooks and other non-markdown detail views continue to open directly in their exi
 
 ### Plugins Section
 
-The Plugins section uses a bolder card-based home surface while preserving `WorkbenchList` as the search and accessibility-safe fallback. The default **Plugins Home** shows installed plugins as cards, remote/session plugins as operational cards, and a progressive marketplace discovery snapshot below the installed content.
+The Plugins section uses a bolder single-column card-list home surface while preserving `WorkbenchList` as the search and accessibility-safe fallback. The default **Plugins Home** shows installed plugins as a flat card list, remote/session plugins as operational cards, and a progressive marketplace discovery snapshot below the installed content.
 
 Installed plugin cards show:
-- plugin identity, source/provenance, enabled/disabled state, and description
+- plugin identity, source/provenance, enabled/disabled state, and description without decorative image placeholders
 - contribution preview chips derived from real installed plugin data (`agents`, `skills`, `commands`, `instructions`, `mcpServerDefinitions`, `hooks`)
 - explicit action buttons (`View`, `More Actions`) rather than making the card itself clickable
 
@@ -240,6 +240,8 @@ Browse mode is a plugin-local destination with an explicit **Back to Installed**
 Marketplace cards only show metadata backed by current data (`name`, `description`, marketplace label, recommendation key). They must not show unverifiable claims such as popularity, verification, ratings, screenshots, or generic trust badges.
 
 The embedded plugin detail view shows identity, linked source/provenance, inline enable/disable/uninstall actions for installed plugins, a copyable local path, description, and full installed contribution inventory grouped by type under **Included capabilities**. Marketplace detail stays honest about data limits and explains that structured contribution details are available after install unless a future marketplace schema exposes them.
+
+Installed plugin cards are sorted alphabetically and do not move when enablement changes. Cards use a compact neutral switch control for enablement; the switch thumb should remain visually prominent within the rounded track, animate between states, avoid accent-color backgrounds, and honor VS Code's reduced-motion mode. Plugin README markdown is rendered through `IMarkdownRendererService` and scoped with VS Code markdown tokens for links, code, block quotes, tables, and compact headings so it matches the active theme inside the split-pane detail view. Marketplace plugin README links should point at the plugin's source repository/path when the marketplace entry declares a source repo, rather than always pointing at the marketplace index repository.
 
 ### AgenticPromptsService (Sessions)
 
