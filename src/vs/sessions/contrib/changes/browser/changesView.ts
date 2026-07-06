@@ -926,7 +926,7 @@ export class ChangesViewPane extends ViewPane {
 			return EMPTY_FILE_CHANGES_MIN_HEIGHT;
 		}
 
-		// Grow the minimum size to fit the file list (capped at 15 rows) plus header chrome.
+		// Grow the minimum size to fit the file list (capped at TREE_PANE_MIN_SIZE_MAX_ROWS rows) plus header chrome.
 		const filesHeaderHeight = this.filesHeaderNode?.offsetHeight ?? 0;
 		const treeContentHeight = this.tree?.contentHeight ?? 0;
 		const maxRowsHeight = TREE_PANE_MIN_SIZE_MAX_ROWS * ChangesTreeDelegate.ROW_HEIGHT;
