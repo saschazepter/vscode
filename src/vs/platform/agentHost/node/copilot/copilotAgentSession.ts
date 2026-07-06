@@ -388,6 +388,20 @@ type CopilotTurnState = 'pending' | 'running' | 'completed' | 'aborted';
  * completes a `pending` turn defensively, so a degenerate no-op send cannot
  * hang the session.
  */
+
+/**
+ * The token/model/cost context for a single model call, used to build a
+ * `UsageInfo`. All fields are optional so a partial or empty context (e.g. a
+ * subagent usage event seen before the parent's own context) is representable.
+ */
+interface UsageContext {
+	inputTokens?: number;
+	outputTokens?: number;
+	model?: string;
+	cacheReadTokens?: number;
+	cost?: number;
+}
+
 class CopilotTurn {
 
 	private _state: CopilotTurnState = 'pending';
@@ -409,7 +423,7 @@ class CopilotTurn {
 	 * values lets each subagent usage event refresh the parent aggregate's
 	 * credit total while preserving the model that produced the parent response.
 	 */
-	parentContextUsage: { inputTokens?: number; outputTokens?: number; model?: string; cacheReadTokens?: number; cost?: number } | undefined;
+	parentContextUsage: UsageContext | undefined;
 
 	/**
 	 * Current markdown response part IDs for this turn, keyed by
@@ -2984,7 +2998,7 @@ export class CopilotAgentSession extends Disposable {
 
 			// Builds a usage object carrying the given context's tokens/model
 			// and the running credit total for the given scope.
-			const buildUsage = (scope: string, context: typeof eventContext): UsageInfo => {
+			const buildUsage = (scope: string, context: UsageContext): UsageInfo => {
 				const metadata: UsageInfoMeta = {};
 				if (typeof context.cost === 'number') {
 					metadata.cost = context.cost;
