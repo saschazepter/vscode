@@ -4,8 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import type { ChatModelFamily } from '../../../../platform/endpoint/common/endpointProvider';
-import { IEndpointProvider } from '../../../../platform/endpoint/common/endpointProvider';
+import { type ChatModelFamily, IEndpointProvider } from '../../../../platform/endpoint/common/endpointProvider';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
 import { Event } from '../../../../util/vs/base/common/event';
 import { DisposableStore } from '../../../../util/vs/base/common/lifecycle';
