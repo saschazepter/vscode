@@ -292,6 +292,8 @@
 
 /* The visible mark: a short bar, neutral unless the turn changed code. */
 .prompt-timeline-ruler-bar {
+	display: flex;
+	overflow: hidden;
 	width: 12px;
 	height: 2px;
 	border-radius: 1px;
@@ -299,8 +301,19 @@
 	transition: width 80ms ease, height 80ms ease, background-color 80ms ease;
 }
 
-.prompt-timeline-ruler-bar.edited {
+/* Two-tone edited signal: a green added segment and a red removed segment, sized by the turn's split. */
+.prompt-timeline-ruler-bar .seg-add,
+.prompt-timeline-ruler-bar .seg-del {
+	height: 100%;
+	min-width: 1px;
+}
+
+.prompt-timeline-ruler-bar.edited .seg-add {
 	background-color: var(--vscode-editorOverviewRuler-addedForeground);
+}
+
+.prompt-timeline-ruler-bar.edited .seg-del {
+	background-color: var(--vscode-editorOverviewRuler-deletedForeground);
 }
 
 .prompt-timeline-ruler-mark:hover .prompt-timeline-ruler-bar {
@@ -309,15 +322,16 @@
 	background-color: var(--vscode-scrollbarSlider-hoverBackground);
 }
 
-.prompt-timeline-ruler-mark:hover .prompt-timeline-ruler-bar.edited {
-	background-color: var(--vscode-editorOverviewRuler-addedForeground);
-}
-
 /* Active = the prompt currently in view. */
 .prompt-timeline-ruler-mark.active .prompt-timeline-ruler-bar {
 	width: 18px;
 	height: 3px;
 	background-color: var(--vscode-focusBorder);
+}
+
+.prompt-timeline-ruler-mark.active .prompt-timeline-ruler-bar .seg-add,
+.prompt-timeline-ruler-mark.active .prompt-timeline-ruler-bar .seg-del {
+	background-color: transparent;
 }
 
 .prompt-timeline-rail .prompt-timeline-ruler-mark:focus {

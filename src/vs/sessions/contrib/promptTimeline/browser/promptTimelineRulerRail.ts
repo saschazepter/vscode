@@ -119,8 +119,22 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 	private _renderMark(entry: IMarkEntry, tick: PromptTick): void {
 		entry.tick = tick;
 		entry.button.setAttribute('aria-label', tick.ariaLabel);
-		const edited = !!tick.stat && tick.stat.added + tick.stat.removed > 0;
+		// Two-tone bar: a green added segment and a red removed segment, sized by
+		// the turn's diff split (like the pill rail). Gray when the turn made no edits.
+		clearNode(entry.bar);
+		const stat = tick.stat;
+		const edited = !!stat && stat.added + stat.removed > 0;
 		entry.bar.classList.toggle('edited', edited);
+		if (edited) {
+			// Only append the sides that exist so a pure-add turn is fully green and a
+			// pure-delete turn fully red; the min-width floor keeps a lopsided split visible.
+			if (stat!.added > 0) {
+				append(entry.bar, $('span.seg-add')).style.flexGrow = String(stat!.added);
+			}
+			if (stat!.removed > 0) {
+				append(entry.bar, $('span.seg-del')).style.flexGrow = String(stat!.removed);
+			}
+		}
 	}
 
 	setActive(requestId: string | undefined): void {
