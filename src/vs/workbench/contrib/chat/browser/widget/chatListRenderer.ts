@@ -69,7 +69,7 @@ import { AgentHostSnapshotController } from '../agentSessions/agentHost/agentHos
 import { RestoreCheckpointActionId } from '../chatEditing/chatEditingActions.js';
 import { ChatRestoreCheckpointActionViewItem } from './chatRestoreCheckpointActionViewItem.js';
 import { ChatAgentHover, getChatAgentHoverOptions } from './chatAgentHover.js';
-import { ChatHelpfulnessBanner, IChatHelpfulnessFeedback } from './chatHelpfulnessBanner.js';
+import { ChatHelpfulnessBanner, ChatHelpfulnessVote, IChatHelpfulnessFeedback } from './chatHelpfulnessBanner.js';
 import { ChatContentMarkdownRenderer } from './chatContentMarkdownRenderer.js';
 import { ChatAgentCommandContentPart } from './chatContentParts/chatAgentCommandContentPart.js';
 import { ChatAnonymousRateLimitedPart } from './chatContentParts/chatAnonymousRateLimitedPart.js';
@@ -332,6 +332,13 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	 */
 	private readonly _announcedToolProgressKeys = new Set<string>();
 
+	/**
+	 * Ids of responses in the helpfulness feedback prototype cohort whose
+	 * detail feedback has already been submitted, so the banner shows the
+	 * acknowledgement instead of the detail box when the row is re-rendered.
+	 */
+	private readonly _submittedHelpfulnessFeedback = new Set<string>();
+
 	constructor(
 		editorOptions: ChatEditorOptions,
 		private rendererOptions: IChatListItemRendererOptions,
@@ -495,6 +502,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		this.viewModel = viewModel;
 		this._announcedToolProgressKeys.clear();
 		this._notifiedQuestionCarousels.clear();
+		this._submittedHelpfulnessFeedback.clear();
 		this.codeBlocksByEditorUri.clear();
 		this.codeBlocksByResponseId.clear();
 		this.fileTreesByResponseId.clear();
@@ -665,13 +673,39 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 		}));
 
-		// Insert the details container into the toolbar's internal element structure
+		const helpfulnessBanner = templateDisposables.add(new ChatHelpfulnessBanner(footerToolbar.getElement(), footerToolbarContainer));
+
+		// Insert the details container into the toolbar's internal element structure.
+		// Created after the helpfulness prompt so the prompt sits inline to the left
+		// (right after the action icons) while the details are pushed to the right.
 		const footerDetailsContainer = dom.append(footerToolbar.getElement(), $('.chat-footer-details'));
 		footerDetailsContainer.tabIndex = 0;
 
-		const helpfulnessBanner = templateDisposables.add(new ChatHelpfulnessBanner(rowContainer));
+		templateDisposables.add(helpfulnessBanner.onDidVote(vote => {
+			const element = template.currentElement;
+			if (!isResponseVM(element)) {
+				return;
+			}
+			const direction = vote === ChatHelpfulnessVote.Yes ? ChatAgentVoteDirection.Up : ChatAgentVoteDirection.Down;
+			element.setVote(direction);
+			this.chatService.notifyUserAction({
+				agentId: element.agent?.id,
+				command: element.slashCommand?.name,
+				sessionResource: element.session.sessionResource,
+				requestId: element.requestId,
+				result: element.result,
+				action: {
+					kind: 'vote',
+					direction,
+				}
+			});
+		}));
 		templateDisposables.add(helpfulnessBanner.onDidSubmit(feedback => {
-			this.logHelpfulnessFeedbackTelemetry(template.currentElement, feedback);
+			const element = template.currentElement;
+			if (isResponseVM(element)) {
+				this._submittedHelpfulnessFeedback.add(element.id);
+			}
+			this.logHelpfulnessFeedbackTelemetry(element, feedback);
 		}));
 
 		const checkpointRestoreContainer = dom.append(rowContainer, $('.checkpoint-restore-container'));
@@ -829,10 +863,16 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	/**
-	 * The helpfulness banner prototype is only shown to Microsoft-internal users
-	 * whose response was produced by the MAI-Code-1-Flash model.
+	 * The helpfulness feedback prototype only applies to Microsoft-internal
+	 * users whose response was produced by the MAI-Code-1-Flash model. For this
+	 * cohort the standard thumbs up/down are replaced by the inline rating UX in
+	 * the footer toolbar.
 	 */
-	private shouldShowHelpfulnessBanner(element: IChatResponseViewModel): boolean {
+	private isInHelpfulnessCohort(element: ChatTreeItem): boolean {
+		if (!isResponseVM(element)) {
+			return false;
+		}
+
 		if (!this.chatEntitlementService.isInternal) {
 			return false;
 		}
@@ -906,10 +946,26 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			templateData.footerDetailsContainer.classList.add('hidden');
 		}
 
-		// Helpfulness banner prototype: only show for complete responses from
-		// Microsoft-internal users that used the MAI-Code-1-Flash model
+		// Helpfulness feedback prototype: for Microsoft-internal users on the
+		// MAI-Code-1-Flash model, the thumbs in the footer toolbar are replaced
+		// by an inline "Was this response helpful?" prompt with Yes/No buttons.
+		// Once the user rates the response, a full-width detail box is revealed
+		// below the toolbar; after submitting, the prompt is replaced inline by
+		// a short acknowledgement.
+		const inFeedbackCohort = this.isInHelpfulnessCohort(element);
+		ChatContextKeys.responseInFeedbackCohort.bindTo(templateData.contextKeyService).set(inFeedbackCohort);
+		templateData.rowContainer.classList.toggle('cohort-feedback', inFeedbackCohort);
 		templateData.helpfulnessBanner.reset();
-		templateData.helpfulnessBanner.setVisible(isResponseVM(element) && element.isComplete && this.shouldShowHelpfulnessBanner(element));
+		if (inFeedbackCohort && isResponseVM(element) && element.isComplete) {
+			if (this._submittedHelpfulnessFeedback.has(element.id)) {
+				templateData.helpfulnessBanner.showThanks();
+			} else if (element.vote === ChatAgentVoteDirection.Up || element.vote === ChatAgentVoteDirection.Down) {
+				templateData.helpfulnessBanner.showForVote(element.vote === ChatAgentVoteDirection.Up ? ChatHelpfulnessVote.Yes : ChatHelpfulnessVote.No);
+			}
+			templateData.helpfulnessBanner.setVisible(true);
+		} else {
+			templateData.helpfulnessBanner.setVisible(false);
+		}
 
 		ChatContextKeys.responseHasError.bindTo(templateData.contextKeyService).set(isResponseVM(element) && !!element.errorDetails);
 		const isFiltered = !!(isResponseVM(element) && element.errorDetails?.responseIsFiltered);
@@ -1090,6 +1146,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.checkpointContainer.classList.add('hidden');
 		templateData.checkpointRestoreContainer.classList.add('hidden');
 		templateData.footerToolbar.getElement().classList.add('hidden');
+		templateData.rowContainer.classList.remove('cohort-feedback');
+		templateData.helpfulnessBanner.reset();
+		templateData.helpfulnessBanner.setVisible(false);
 		if (templateData.titleToolbar) {
 			templateData.titleToolbar.getElement().classList.add('hidden');
 		}

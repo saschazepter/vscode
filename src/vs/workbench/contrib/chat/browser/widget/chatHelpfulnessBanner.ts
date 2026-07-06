@@ -5,15 +5,17 @@
 
 import * as dom from '../../../../../base/browser/dom.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 
 const $ = dom.$;
 
 /**
- * The vote a user can cast on a chat response in the helpfulness banner.
+ * The rating a user cast on a chat response through the footer toolbar.
  */
 export const enum ChatHelpfulnessVote {
 	Yes = 'yes',
@@ -29,95 +31,134 @@ export interface IChatHelpfulnessFeedback {
 }
 
 /**
- * A prototype banner shown below a chat response that asks "Was this response
- * helpful?". The user can answer Yes or No, after which a text box is revealed
- * for adding more detail.
+ * A prototype for the helpfulness feedback experiment shown to the
+ * MAI-Code-1-Flash cohort in place of the footer thumbs. It presents an obvious
+ * "Was this response helpful?" prompt with Yes/No buttons inline on the footer
+ * toolbar row; once a rating is cast it reveals an optional full-width detail
+ * text box below, and once submitted the prompt is replaced inline by a short
+ * "thanks" acknowledgement.
  */
 export class ChatHelpfulnessBanner extends Disposable {
 
 	private readonly _onDidSubmit = this._register(new Emitter<IChatHelpfulnessFeedback>());
 	readonly onDidSubmit: Event<IChatHelpfulnessFeedback> = this._onDidSubmit.event;
 
-	private readonly domNode: HTMLElement;
+	private readonly _onDidVote = this._register(new Emitter<ChatHelpfulnessVote>());
+	readonly onDidVote: Event<ChatHelpfulnessVote> = this._onDidVote.event;
+
 	private readonly promptRow: HTMLElement;
-	private readonly detailRow: HTMLElement;
 	private readonly thanksRow: HTMLElement;
+	private readonly detailRow: HTMLElement;
+	private readonly yesButton: Button;
+	private readonly noButton: Button;
 	private readonly detailInput: HTMLTextAreaElement;
 
+	private visible = false;
+	private submitted = false;
 	private vote: ChatHelpfulnessVote | undefined;
 
-	constructor(container: HTMLElement) {
+	/**
+	 * @param inlineContainer host for the prompt / thanks, rendered inline on the
+	 * footer toolbar row.
+	 * @param blockContainer host for the full-width detail box, rendered on its
+	 * own row below the toolbar.
+	 */
+	constructor(inlineContainer: HTMLElement, blockContainer: HTMLElement) {
 		super();
 
-		this.domNode = dom.append(container, $('.chat-helpfulness-banner'));
+		// Prompt row: label + Yes/No buttons, shown by default inline on the
+		// footer toolbar row as the obvious entry point into the feedback flow.
+		this.promptRow = dom.append(inlineContainer, $('.chat-helpfulness-prompt.hidden'));
+		const promptLabel = dom.append(this.promptRow, $('span.chat-helpfulness-prompt-label'));
+		promptLabel.textContent = localize('chat.helpfulness.prompt', "Was this response helpful?");
 
-		// Prompt row: question + Yes / No buttons
-		this.promptRow = dom.append(this.domNode, $('.chat-helpfulness-prompt'));
-		dom.append(this.promptRow, $('span.chat-helpfulness-question')).textContent = localize('chat.helpfulness.question', "How do you rate this response?");
+		const buttonsContainer = dom.append(this.promptRow, $('.chat-helpfulness-buttons'));
+		this.yesButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsup, localize('chat.helpfulness.yes', "Yes"), ChatHelpfulnessVote.Yes));
+		this.noButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsdown, localize('chat.helpfulness.no', "No"), ChatHelpfulnessVote.No));
 
-		const buttons = dom.append(this.promptRow, $('.chat-helpfulness-buttons'));
-		this.createVoteButton(buttons, ChatHelpfulnessVote.Yes, localize('chat.helpfulness.positive', "Positive"));
-		this.createVoteButton(buttons, ChatHelpfulnessVote.No, localize('chat.helpfulness.negative', "Negative"));
+		// Thanks row: replaces the prompt inline once feedback is submitted.
+		this.thanksRow = dom.append(inlineContainer, $('.chat-helpfulness-thanks.hidden'));
+		this.thanksRow.textContent = localize('chat.helpfulness.thanks', "Thanks for your feedback!");
 
-		// Detail row: textarea + submit button (hidden until a vote is cast)
-		this.detailRow = dom.append(this.domNode, $('.chat-helpfulness-details.hidden'));
+		// Detail row: full-width textarea + submit button, revealed on its own
+		// row below the toolbar once a rating is cast.
+		this.detailRow = dom.append(blockContainer, $('.chat-helpfulness-details.hidden'));
 		this.detailInput = dom.append(this.detailRow, $('textarea.chat-helpfulness-input')) as HTMLTextAreaElement;
 		this.detailInput.rows = 2;
 		this.detailInput.placeholder = localize('chat.helpfulness.detailPlaceholder', "Add more detail (optional)");
+		this.detailInput.setAttribute('aria-label', localize('chat.helpfulness.detailAriaLabel', "Additional feedback detail (optional)"));
 
 		const submitContainer = dom.append(this.detailRow, $('.chat-helpfulness-submit'));
 		const submitButton = this._register(new Button(submitContainer, { ...defaultButtonStyles, title: localize('chat.helpfulness.submit', "Submit") }));
 		submitButton.label = localize('chat.helpfulness.submit', "Submit");
 		this._register(submitButton.onDidClick(() => this.submit()));
-
-		// Thanks row: shown after submitting
-		this.thanksRow = dom.append(this.domNode, $('.chat-helpfulness-thanks.hidden'));
-		this.thanksRow.textContent = localize('chat.helpfulness.thanks', "Thanks for your feedback!");
 	}
 
-	private createVoteButton(container: HTMLElement, vote: ChatHelpfulnessVote, label: string): void {
-		const button = this._register(new Button(container, { ...defaultButtonStyles, secondary: true, title: label }));
-		button.element.classList.add('chat-helpfulness-vote', `chat-helpfulness-vote-${vote}`);
-		button.label = label;
-		this._register(button.onDidClick(() => this.onVote(vote)));
+	private createVoteButton(container: HTMLElement, icon: ThemeIcon, label: string, vote: ChatHelpfulnessVote): Button {
+		const button = new Button(container, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: label });
+		button.element.classList.add('chat-helpfulness-vote');
+		button.label = `$(${icon.id}) ${label}`;
+		this._register(button.onDidClick(() => {
+			this._onDidVote.fire(vote);
+			this.showForVote(vote);
+			this.detailInput.focus();
+		}));
+		return button;
 	}
 
-	private onVote(vote: ChatHelpfulnessVote): void {
+	private render(): void {
+		const showThanks = this.visible && this.submitted;
+		const showPrompt = this.visible && !this.submitted;
+		const showDetail = this.visible && !this.submitted && this.vote !== undefined;
+
+		this.promptRow.classList.toggle('hidden', !showPrompt);
+		this.thanksRow.classList.toggle('hidden', !showThanks);
+		this.detailRow.classList.toggle('hidden', !showDetail);
+
+		this.yesButton.element.classList.toggle('selected', this.vote === ChatHelpfulnessVote.Yes);
+		this.noButton.element.classList.toggle('selected', this.vote === ChatHelpfulnessVote.No);
+	}
+
+	/**
+	 * Reveals the optional detail text box for the given rating.
+	 */
+	showForVote(vote: ChatHelpfulnessVote): void {
 		this.vote = vote;
+		this.submitted = false;
+		this.render();
+	}
 
-		// Highlight the selected vote and reveal the detail text box
-		this.domNode.classList.toggle('voted-yes', vote === ChatHelpfulnessVote.Yes);
-		this.domNode.classList.toggle('voted-no', vote === ChatHelpfulnessVote.No);
-		this.detailRow.classList.remove('hidden');
-		this.detailInput.focus();
+	/**
+	 * Replaces the prompt inline with a short acknowledgement once feedback has
+	 * been submitted.
+	 */
+	showThanks(): void {
+		this.submitted = true;
+		this.render();
 	}
 
 	private submit(): void {
-		if (!this.vote) {
+		if (!this.vote || this.submitted) {
 			return;
 		}
 
 		this._onDidSubmit.fire({ vote: this.vote, detail: this.detailInput.value.trim() });
-
-		this.promptRow.classList.add('hidden');
-		this.detailRow.classList.add('hidden');
-		this.thanksRow.classList.remove('hidden');
+		this.showThanks();
 	}
 
 	/**
-	 * Resets the banner back to its initial state. Used when the row template is
-	 * recycled for a different response.
+	 * Resets the banner back to its initial (collapsed) state. Used when the row
+	 * template is recycled for a different response.
 	 */
 	reset(): void {
 		this.vote = undefined;
+		this.submitted = false;
 		this.detailInput.value = '';
-		this.domNode.classList.remove('voted-yes', 'voted-no');
-		this.promptRow.classList.remove('hidden');
-		this.detailRow.classList.add('hidden');
-		this.thanksRow.classList.add('hidden');
+		this.render();
 	}
 
 	setVisible(visible: boolean): void {
-		this.domNode.classList.toggle('hidden', !visible);
+		this.visible = visible;
+		this.render();
 	}
 }

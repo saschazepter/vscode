@@ -323,26 +323,33 @@
 	display: none !important;
 }
 
-/* Helpfulness banner prototype */
-.interactive-item-container .chat-helpfulness-banner {
+/* Helpfulness feedback prototype. For the MAI-Code-1-Flash cohort the footer
+thumbs are replaced by an obvious "Was this response helpful?" prompt with Yes/No
+buttons shown inline on the footer toolbar row; casting a rating reveals a
+full-width detail box below, and submitting replaces the prompt inline with a
+short acknowledgement. */
+
+/* For the feedback cohort, let the footer grow to fit the full-width detail box
+below the toolbar row, and keep it visible (rather than the hover-only reveal
+used for the thumbs) so the follow-up prompt is discoverable. */
+.interactive-item-container.cohort-feedback.interactive-response:not(.chat-response-loading) .chat-footer-toolbar {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	margin: 8px 0 4px 0;
-	padding: 8px 10px;
-	border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
-	border-radius: 6px;
-	background-color: var(--vscode-chat-requestBackground, var(--vscode-editorWidget-background));
+	align-items: stretch;
+	gap: 6px;
+	height: auto;
+	opacity: 1;
+	visibility: visible;
 }
 
-.interactive-item-container .chat-helpfulness-banner.hidden {
-	display: none !important;
-}
-
+/* The prompt and thanks render inline on the toolbar row, to the right of the
+action icons. */
 .interactive-item-container .chat-helpfulness-prompt {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-left: 12px;
 }
 
 .interactive-item-container .chat-helpfulness-prompt.hidden,
@@ -351,7 +358,7 @@
 	display: none !important;
 }
 
-.interactive-item-container .chat-helpfulness-question {
+.interactive-item-container .chat-helpfulness-prompt-label {
 	font-size: var(--vscode-chat-font-size-body-s, 13px);
 	color: var(--vscode-foreground);
 }
@@ -361,25 +368,26 @@
 	gap: 6px;
 }
 
-.interactive-item-container .chat-helpfulness-vote {
-	display: flex !important;
+.interactive-item-container .chat-helpfulness-vote.monaco-button {
+	width: auto;
+	padding: 2px 12px;
+	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	padding: 2px 10px !important;
-	width: auto !important;
 }
 
-.interactive-item-container .chat-helpfulness-banner.voted-yes .chat-helpfulness-vote-yes,
-.interactive-item-container .chat-helpfulness-banner.voted-no .chat-helpfulness-vote-no {
-	color: var(--vscode-inputOption-activeForeground) !important;
-	border-color: var(--vscode-inputOption-activeBorder) !important;
-	background-color: var(--vscode-inputOption-activeBackground) !important;
+.interactive-item-container .chat-helpfulness-vote.monaco-button.selected {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
 }
 
+/* The detail box takes its own row below the toolbar and spans the full chat
+width. */
 .interactive-item-container .chat-helpfulness-details {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+	width: 100%;
 }
 
 .interactive-item-container .chat-helpfulness-input {
@@ -417,6 +425,7 @@
 .interactive-item-container .chat-helpfulness-thanks {
 	font-size: var(--vscode-chat-font-size-body-s, 13px);
 	color: var(--vscode-descriptionForeground);
+	margin-left: 12px;
 }
 
 .interactive-item-container .value {
