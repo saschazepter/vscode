@@ -3316,7 +3316,7 @@ class SessionDiscoveredEntry extends Disposable {
 		instantiationService: IInstantiationService,
 	) {
 		super();
-		this._discovery = this._register(instantiationService.createInstance(SessionCustomizationDiscovery, workingDirectory, userHome));
+		this._discovery = this._register(instantiationService.createInstance(SessionCustomizationDiscovery, workingDirectory, userHome, URI.file));
 		this._settled = this._queueRefresh(false);
 		this._register(this._discovery.onDidChange(() => {
 			this._settled = this._queueRefresh(true);
