@@ -26,7 +26,7 @@ import { FileEditorInput } from '../../../../workbench/contrib/files/browser/edi
 import { IEditorGroup } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { LifecyclePhase } from '../../../../workbench/services/lifecycle/common/lifecycle.js';
-import { SinglePaneDetailChangesOrFilesActiveContext } from '../../../common/contextkeys.js';
+import { SinglePaneChangesTabMissingContext, SinglePaneFilesTabMissingContext, SinglePaneDetailChangesOrFilesActiveContext } from '../../../common/contextkeys.js';
 import { DOCK_DETAIL_PANEL_SETTING } from '../../../common/sessionConfig.js';
 import type { ISessionWorkspace } from '../../../services/sessions/common/session.js';
 import { CHANGES_VIEW_CONTAINER_ID } from '../../changes/common/changes.js';
@@ -97,6 +97,10 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 	private readonly _internallyClosingEditors = new Set<EditorInput>();
 	private _lastSyncedSessionKey: string | undefined;
 	private _sidePaneWasVisible = false;
+	/** True when the session supports a Changes editor but its tab is not currently open (drives the `+` "Changes" entry). */
+	private _changesTabMissingContext: IContextKey<boolean> | undefined;
+	/** True when the session supports a Files tab but its tab is not currently open (drives the `+` "Files" entry). */
+	private _filesTabMissingContext: IContextKey<boolean> | undefined;
 
 	// --- Editor-area tab collapse state ---
 	/** Non-managed editors closed (captured as reopenable inputs + their tab index) while the editor area is hidden. */
@@ -192,6 +196,9 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 	// --- Managed docked tabs (Changes + Files placeholder) ---
 
 	private _registerManagedTabs(): void {
+		this._changesTabMissingContext = SinglePaneChangesTabMissingContext.bindTo(this._contextKeyService);
+		this._filesTabMissingContext = SinglePaneFilesTabMissingContext.bindTo(this._contextKeyService);
+
 		// Re-sync the managed tabs when the session state changes, and also when the
 		// side pane (editor part or aux bar) visibility or the group's editors
 		// change. Tracking the aux bar too is essential: reopening the side pane in
@@ -306,6 +313,15 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 		return editor instanceof EmptyFileEditorInput || this._getChangesEditorResource(editor) !== undefined;
 	}
 
+	/** Offer the `+` "Changes"/"Files" entries when the session supports them but their tabs are closed. */
+	private _updateAddTabContexts(state: IManagedTabTargetState): void {
+		const group = this._editorGroupsService.mainPart.activeGroup;
+		const changesPresent = group.editors.some(editor => this._getChangesEditorResource(editor) !== undefined);
+		this._changesTabMissingContext?.set(!!state.changesSessionResource && !changesPresent);
+		const filesPresent = group.editors.some(editor => editor instanceof EmptyFileEditorInput);
+		this._filesTabMissingContext?.set(state.ensureFileTab && !filesPresent);
+	}
+
 	private _handleManagedTabClosed(editor: EditorInput): void {
 		// Ignore layout-driven closes (working-set apply on session switch): only a
 		// genuine user close should dismiss a managed tab. The controller's own
@@ -387,6 +403,10 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 				if (changesEditor) {
 					this._ensureFirst(group, changesEditor);
 				}
+			} else if (this._dismissedManagedTabs.has('changes') && changesResource && this._findChangesEditor(group, changesResource)) {
+				// The Changes tab was reopened (e.g. via the `+` "Changes" entry)
+				// after a user dismissal; resume managing it.
+				this._dismissedManagedTabs.delete('changes');
 			}
 
 			if (generation !== this._tabSyncGeneration || !state.ensureFileTab) {
@@ -401,6 +421,11 @@ export class SinglePaneDesktopSessionLayoutController extends LayoutController {
 			}
 		} finally {
 			suppressEditorPartAutoVisibility.dispose();
+			// Recompute the `+` add-tab contexts against the final group state, so
+			// they reflect the ensured/closed tabs rather than the pre-sync state.
+			if (generation === this._tabSyncGeneration) {
+				this._updateAddTabContexts(state);
+			}
 		}
 	}
 

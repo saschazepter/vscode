@@ -19,7 +19,7 @@ import { StorageScope, WillSaveStateReason } from '../../../../../platform/stora
 import { Parts } from '../../../../../workbench/services/layout/browser/layoutService.js';
 import { ViewContainerLocation } from '../../../../../workbench/common/views.js';
 import { ISessionFileChange, SessionStatus } from '../../../../services/sessions/common/session.js';
-import { SinglePaneDetailChangesOrFilesActiveContext } from '../../../../common/contextkeys.js';
+import { SinglePaneChangesTabMissingContext, SinglePaneDetailChangesOrFilesActiveContext, SinglePaneFilesTabMissingContext } from '../../../../common/contextkeys.js';
 import { BrowserEditorInput } from '../../../../../workbench/contrib/browserView/common/browserEditorInput.js';
 import { FileEditorInput } from '../../../../../workbench/contrib/files/browser/editors/fileEditorInput.js';
 import { EmptyFileEditorInput } from '../../../editor/browser/emptyFileEditorInput.js';
@@ -41,12 +41,21 @@ suite('LayoutController (desktop)', () => {
 		getViewState(sessionResource: URI) {
 			return this._viewStateBySession.get(sessionResource);
 		}
+		getEditorPartHidden(sessionResource: URI): boolean | undefined {
+			return this._editorPartHiddenBySession.get(sessionResource);
+		}
+		runWithRestore(work: () => void | Promise<unknown>): void {
+			this._withSessionLayoutRestore(work);
+		}
 	}
 
 	class TestSinglePaneController extends SinglePaneDesktopSessionLayoutController {
 		/** Runs `work` while a session-switch layout restore is held (see `_withSessionLayoutRestore`). */
 		runWithRestore(work: () => void | Promise<unknown>): void {
 			this._withSessionLayoutRestore(work);
+		}
+		getEditorPartHidden(sessionResource: URI): boolean | undefined {
+			return this._editorPartHiddenBySession.get(sessionResource);
 		}
 	}
 
@@ -527,6 +536,45 @@ suite('LayoutController (desktop)', () => {
 			aux: false,
 			editor: false,
 		});
+	});
+
+	test('[B2] captures editor-part hidden state eagerly when the user closes the side pane', () => {
+		const controller = createController();
+		const session = makeSession(URI.parse('session:1'));
+		harness.activeSessionObs.set(session, undefined);
+
+		// User closes the side pane (editor part hidden) while on the session.
+		setPartVisible(Parts.EDITOR_PART, false);
+
+		assert.strictEqual(controller.getEditorPartHidden(session.resource), true,
+			'editor-part hidden must be captured at the moment the user closes it');
+
+		// User reopens it.
+		setPartVisible(Parts.EDITOR_PART, true);
+		assert.strictEqual(controller.getEditorPartHidden(session.resource), false,
+			'editor-part hidden must update when the user reopens it');
+	});
+
+	test('[B2] a later transient editor reveal does not overwrite a session\'s captured closed state during a switch', () => {
+		const controller = createController();
+		const sessionA = makeSession(URI.parse('session:a'));
+		const sessionB = makeSession(URI.parse('session:b'));
+		harness.activeSessionObs.set(sessionA, undefined);
+
+		// A: user closes the editor part -> captured hidden.
+		setPartVisible(Parts.EDITOR_PART, false);
+		assert.strictEqual(controller.getEditorPartHidden(sessionA.resource), true);
+
+		// Simulate the switch-time race: while switching to B the editor part is
+		// revealed by B's layout restore (the capture listener ignores changes
+		// during a restore). A's captured closed state must be preserved.
+		controller.runWithRestore(() => {
+			harness.activeSessionObs.set(sessionB, undefined);
+			setPartVisible(Parts.EDITOR_PART, true);
+		});
+
+		assert.strictEqual(controller.getEditorPartHidden(sessionA.resource), true,
+			'a restore-driven editor reveal must not overwrite session A\'s captured closed state');
 	});
 
 	test('[D4] keeps the open side pane and shows Changes when a new session is submitted', () => {
@@ -2358,6 +2406,80 @@ suite('LayoutController (desktop)', () => {
 		await settle();
 
 		assert.strictEqual(hasFilesTab(), true, 'a dismissed tab is re-ensured for the new session');
+	});
+
+	test('[managed tabs / add-tab] closing the Changes tab flips SinglePaneChangesTabMissingContext', async () => {
+		createSinglePaneController({ activateAux: true });
+		await settle();
+
+		harness.activeSessionObs.set(makeSession(URI.parse('session:1')), undefined);
+		await settle();
+		const changesTab = harness.activeGroupEditors.find(e => !(e instanceof EmptyFileEditorInput) && e.resource !== undefined)!;
+		assert.strictEqual(harness.contextKeyService.getContextKeyValue(SinglePaneChangesTabMissingContext.key), false);
+
+		// User closes the Changes tab.
+		harness.activeGroupEditors.splice(harness.activeGroupEditors.indexOf(changesTab), 1);
+		harness.onDidCloseEditor.fire({ editor: changesTab });
+		harness.onDidEditorsChange.fire();
+		await settle();
+
+		assert.deepStrictEqual({
+			hasChangesTab: hasChangesTab(),
+			changesTabMissing: harness.contextKeyService.getContextKeyValue(SinglePaneChangesTabMissingContext.key)
+		}, { hasChangesTab: false, changesTabMissing: true });
+	});
+
+	test('[managed tabs / add-tab] closing the Files tab flips SinglePaneFilesTabMissingContext', async () => {
+		createSinglePaneController({ activateAux: true });
+		await settle();
+
+		harness.activeSessionObs.set(makeSession(URI.parse('session:1')), undefined);
+		await settle();
+		const fileTab = harness.activeGroupEditors.find(e => e instanceof EmptyFileEditorInput)!;
+		assert.strictEqual(harness.contextKeyService.getContextKeyValue(SinglePaneFilesTabMissingContext.key), false);
+
+		// User closes the Files tab.
+		harness.activeGroupEditors.splice(harness.activeGroupEditors.indexOf(fileTab), 1);
+		harness.onDidCloseEditor.fire({ editor: fileTab });
+		harness.onDidEditorsChange.fire();
+		await settle();
+
+		assert.deepStrictEqual({
+			hasFilesTab: hasFilesTab(),
+			filesTabMissing: harness.contextKeyService.getContextKeyValue(SinglePaneFilesTabMissingContext.key)
+		}, { hasFilesTab: false, filesTabMissing: true });
+	});
+
+	test('[managed tabs / add-tab] reopening the Changes tab clears its dismissal and the missing context', async () => {
+		createSinglePaneController({ activateAux: true });
+		await settle();
+
+		const session = URI.parse('session:1');
+		harness.activeSessionObs.set(makeSession(session), undefined);
+		await settle();
+		const changesTab = harness.activeGroupEditors.find(e => !(e instanceof EmptyFileEditorInput) && e.resource !== undefined)!;
+
+		// User closes the Changes tab -> dismissed, context becomes true.
+		harness.activeGroupEditors.splice(harness.activeGroupEditors.indexOf(changesTab), 1);
+		harness.onDidCloseEditor.fire({ editor: changesTab });
+		harness.onDidEditorsChange.fire();
+		await settle();
+		assert.strictEqual(harness.contextKeyService.getContextKeyValue(SinglePaneChangesTabMissingContext.key), true);
+
+		// Reopen it (as the `+` "Changes" entry does): the Changes editor reappears.
+		const changesResource = harness.sessionChangesService.getChangesEditorResource(session);
+		harness.activeGroupEditors.push(store.add(new TestStubEditorInput(changesResource)));
+		harness.onDidEditorsChange.fire();
+		await settle();
+
+		// The dismissal is cleared so the controller resumes managing the tab: a
+		// later routine sync retains it and the missing context stays false.
+		harness.onDidEditorsChange.fire();
+		await settle();
+		assert.deepStrictEqual({
+			hasChangesTab: hasChangesTab(),
+			changesTabMissing: harness.contextKeyService.getContextKeyValue(SinglePaneChangesTabMissingContext.key)
+		}, { hasChangesTab: true, changesTabMissing: false });
 	});
 
 	test('[managed tabs / reload] closing a stale Changes tab happens under editor-visibility suppression', async () => {
