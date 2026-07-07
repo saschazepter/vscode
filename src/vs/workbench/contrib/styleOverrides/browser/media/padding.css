@@ -159,7 +159,7 @@
 }
 
 .style-override.monaco-workbench .extensions-viewlet > .extensions .extension-view-header .count-badge-wrapper {
-	margin-right: 6px
+	margin-right: 6px;
 }
 
 .style-override.monaco-workbench .monaco-count-badge {
