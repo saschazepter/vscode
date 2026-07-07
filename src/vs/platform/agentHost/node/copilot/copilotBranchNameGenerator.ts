@@ -135,9 +135,7 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
  * the forwarded {@link AgentHostGitBranchPrefixEnvVar} environment variable.
  *
  * - Unset falls back to {@link COPILOT_BRANCH_PREFIX} (`agents/`).
- * - An explicit empty value means "no prefix" and is honored.
- * - A non-empty value that normalizes to empty (e.g. only illegal characters)
- *   falls back to {@link COPILOT_BRANCH_PREFIX}.
+ * - An empty or whitespace-only value means "no prefix" and is honored.
  */
 export function getAgentHostGitBranchPrefix(): string {
 	const prefix = process.env[AgentHostGitBranchPrefixEnvVar];
