@@ -6,8 +6,9 @@
 import type { CopilotSession, ExitPlanModeRequest, MessageOptions, PermissionRequestResult, SessionConfig, Tool, ToolResultObject, McpServerStatus as SdkMcpServerStatus } from '@github/copilot-sdk';
 import { DeferredPromise, raceTimeout } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../base/common/event.js';
-import { CancellationError, getErrorMessage } from '../../../../base/common/errors.js';
+import { CancellationError, getErrorMessage, isCancellationError } from '../../../../base/common/errors.js';
 import { escapeMarkdownSyntaxTokens } from '../../../../base/common/htmlContent.js';
 import { Disposable, IReference, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
@@ -24,6 +25,8 @@ import { INativeEnvironmentService } from '../../../environment/common/environme
 import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
+import { asJson, asText, IRequestService } from '../../../request/common/request.js';
+import { IHeaders } from '../../../../base/parts/request/common/request.js';
 import { ITelemetryService } from '../../../telemetry/common/telemetry.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
 import type { ChatInputRequestWithPlanReview, IAgentHostPlanReviewAction } from '../../common/agentHostPlanReview.js';
@@ -42,6 +45,7 @@ import { MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerVal
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import type { IExitPlanModeResponse } from './copilotAgent.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
+import { buildGitHubReferencesBlock, extractGitHubReferences, GitHubReferenceResolver, type IGitHubApiRequest, type IGitHubApiResponse } from './githubReferenceResolver.js';
 import { clientToolNamesFromSnapshot, type CopilotSessionLaunchPlan, type IActiveClientSnapshot, type ICopilotSessionLauncher, type ICopilotSessionRuntime } from './copilotSessionLauncher.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { AgentHostTelemetryReporter } from '../agentHostTelemetryReporter.js';
@@ -73,6 +77,9 @@ type RuntimeSlashCommandInfo = Awaited<ReturnType<CopilotSession['rpc']['command
 type McpAuthHandler = NonNullable<SessionConfig['onMcpAuthRequest']>;
 type McpAuthRequest = Parameters<McpAuthHandler>[0];
 type McpAuthResult = Awaited<ReturnType<McpAuthHandler>>;
+
+/** Upper bound on GitHub reference resolution before a send proceeds without it. */
+const GITHUB_REFERENCE_RESOLVE_TIMEOUT_MS = 4000;
 type RuntimeSlashCommandCatalog = {
 	readonly commands: readonly RuntimeSlashCommandInfo[];
 	readonly byName: ReadonlyMap<string, RuntimeSlashCommandInfo>;
@@ -592,6 +599,9 @@ export class CopilotAgentSession extends Disposable {
 	/** Stateless reporter used to emit restricted GH/MSFT telemetry for this session's model calls. */
 	private readonly _telemetryReporter: AgentHostTelemetryReporter;
 
+	/** Resolves github.com issue/PR references in outgoing prompts (per-session cache). */
+	private readonly _githubReferenceResolver: GitHubReferenceResolver;
+
 	constructor(
 		options: ICopilotAgentSessionOptions,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
@@ -601,6 +611,7 @@ export class CopilotAgentSession extends Disposable {
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
 		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IRequestService private readonly _requestService: IRequestService,
 	) {
 		super();
 		this.sessionId = options.rawSessionId;
@@ -615,6 +626,7 @@ export class CopilotAgentSession extends Disposable {
 		this._serverToolHost = options.serverToolHost;
 		this._platform = options.platform ?? process.platform;
 		this._telemetryReporter = new AgentHostTelemetryReporter(this._telemetryService);
+		this._githubReferenceResolver = new GitHubReferenceResolver((request, token) => this._githubApiRequest(request, token), this._logService);
 
 		this._appliedSnapshot = options.clientSnapshot ?? { tools: [], plugins: [], mcpServers: {} };
 		this._clientToolNames = clientToolNamesFromSnapshot(this._appliedSnapshot);
@@ -1253,10 +1265,79 @@ export class CopilotAgentSession extends Disposable {
 			this._logService.trace(`[Copilot:${this.sessionId}] Attachments: ${JSON.stringify(sdkAttachments.map(a => ({ type: a.type })))}`);
 		}
 
+		const referencesBlock = await this._resolveGitHubReferencesBlock(prompt);
+		const finalPrompt = referencesBlock ? `${prompt}\n\n${referencesBlock}` : prompt;
+
 		await this.applyMode(mode);
 		await this._applyEffectiveSandboxConfig();
-		await this._wrapper.session.send({ prompt, attachments: sdkAttachments?.length ? sdkAttachments : undefined });
+		await this._wrapper.session.send({ prompt: finalPrompt, attachments: sdkAttachments?.length ? sdkAttachments : undefined });
 		this._logService.info(`[Copilot:${this.sessionId}] session.send() returned`);
+	}
+
+	/**
+	 * Resolves github.com issue/PR/discussion references found in the outgoing
+	 * prompt into a `<github_references>` text block (github/github-app's format)
+	 * appended to the prompt so the Copilot runtime grounds the agent (e.g. to
+	 * produce a content-based session title). Best-effort and bounded by a
+	 * timeout; returns an empty string on missing token, no references, timeout,
+	 * or any failure.
+	 */
+	private async _resolveGitHubReferencesBlock(prompt: string): Promise<string> {
+		if (!this._launchPlan.githubToken) {
+			return '';
+		}
+		const references = extractGitHubReferences(prompt);
+		if (references.length === 0) {
+			return '';
+		}
+		const cts = new CancellationTokenSource();
+		const timer = setTimeout(() => cts.cancel(), GITHUB_REFERENCE_RESOLVE_TIMEOUT_MS);
+		try {
+			const resolved = await this._githubReferenceResolver.resolveReferences(references, cts.token);
+			return buildGitHubReferencesBlock(resolved);
+		} catch (err) {
+			if (!isCancellationError(err)) {
+				this._logService.warn(`[Copilot:${this.sessionId}] GitHub reference resolution failed`, err);
+			}
+			return '';
+		} finally {
+			clearTimeout(timer);
+			cts.dispose();
+		}
+	}
+
+	/**
+	 * Performs an authenticated GitHub API request (REST GET or GraphQL POST)
+	 * using the session's launch token. Returns `{ status, body }` where `body`
+	 * is the parsed JSON for 2xx responses (or `undefined` otherwise); the stream
+	 * is always drained.
+	 */
+	private async _githubApiRequest(request: IGitHubApiRequest, token: CancellationToken): Promise<IGitHubApiResponse | undefined> {
+		const headers: IHeaders = {
+			'Accept': 'application/vnd.github+json',
+			'X-GitHub-Api-Version': '2022-11-28',
+			'User-Agent': 'VSCode-AgentHost',
+		};
+		if (this._launchPlan.githubToken) {
+			headers['Authorization'] = `Bearer ${this._launchPlan.githubToken}`;
+		}
+		if (request.method === 'POST') {
+			headers['Content-Type'] = 'application/json';
+		}
+		try {
+			const context = await this._requestService.request({ type: request.method, url: request.url, data: request.body, headers, callSite: 'agentHost.githubReferenceResolver' }, token);
+			const status = context.res.statusCode ?? 0;
+			if (status < 200 || status >= 300) {
+				await asText(context);
+				return { status, body: undefined };
+			}
+			const body = await asJson<IGitHubApiResponse['body']>(context);
+			return { status, body: body ?? undefined };
+		} catch {
+			// Honor the GitHubApiRequestFn contract: transport/parse/cancellation failures yield undefined, not a throw.
+			this._logService.trace(`[Copilot:${this.sessionId}] GitHub API request failed (skipping): ${request.url}`);
+			return undefined;
+		}
 	}
 
 	async hasRuntimeSlashCommand(command: string): Promise<boolean> {

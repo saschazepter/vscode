@@ -6,8 +6,8 @@
 import type { CopilotSession, SessionEvent, SessionEventHandler, SessionEventPayload, SessionEventType, Tool, ToolResultObject, TypedSessionEventHandler } from '@github/copilot-sdk';
 import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
-import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
-import { Emitter } from '../../../../base/common/event.js';
+import { bufferToStream, encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { join, sep } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -17,6 +17,7 @@ import { IFileService } from '../../../files/common/files.js';
 import { InstantiationService } from '../../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../../instantiation/common/serviceCollection.js';
 import { ILogService, NullLogService } from '../../../log/common/log.js';
+import { IRequestService } from '../../../request/common/request.js';
 import { ITelemetryService } from '../../../telemetry/common/telemetry.js';
 import { NullTelemetryServiceShape } from '../../../telemetry/common/telemetryUtils.js';
 import { AgentSession, type AgentSignal, type IAgentActionSignal, type IAgentToolPendingConfirmationSignal } from '../../common/agentService.js';
@@ -254,6 +255,10 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	rootValues?: Record<string, unknown>;
 	fileContents?: Record<string, string>;
 	fileReadErrors?: readonly string[];
+	/** GitHub token surfaced on the launch plan; enables GitHub reference resolution when set. */
+	githubToken?: string;
+	/** Optional handler for GitHub REST calls made during send. Defaults to HTTP 404 (skip). */
+	requestHandler?: (url: string) => { status: number; body?: unknown };
 	/** Configure the mock session before {@link CopilotAgentSession.initializeSession} runs. */
 	configureMockSession?: (session: MockCopilotSession) => void;
 	/** Optional server-tool host wired into the session. */
@@ -309,7 +314,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 		resolvedAgentName: undefined,
 		snapshot: options?.clientSnapshot ?? { tools: [], plugins: [], mcpServers: {} },
 		shellManager: undefined,
-		githubToken: undefined,
+		githubToken: options?.githubToken,
 		model: undefined,
 	};
 	let launchedRuntime: ICopilotSessionRuntime | undefined;
@@ -337,6 +342,20 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	} as Partial<IFileService> as IFileService);
 	services.set(ISessionDataService, createSessionDataService());
 	services.set(IDiffComputeService, createZeroDiffComputeService());
+	const requestHandler = options?.requestHandler;
+	services.set(IRequestService, {
+		_serviceBrand: undefined,
+		onDidCompleteRequest: Event.None,
+		request: async (requestOptions: { url?: string }) => {
+			const result = requestHandler?.(requestOptions.url ?? '') ?? { status: 404 };
+			const payload = result.body === undefined ? '' : JSON.stringify(result.body);
+			return { res: { statusCode: result.status, headers: {} }, stream: bufferToStream(VSBuffer.fromString(payload)) };
+		},
+		resolveProxy: async () => undefined,
+		lookupAuthorization: async () => undefined,
+		lookupKerberosAuthorization: async () => undefined,
+		loadCertificates: async () => [],
+	} as unknown as IRequestService);
 	const sessionConfigUpdates: Array<{ session: string; patch: Record<string, unknown> }> = [];
 	const configValues = options?.configValues ?? {};
 	const rootValues = options?.rootValues ?? {};
@@ -484,6 +503,53 @@ suite('CopilotAgentSession', () => {
 					},
 				},
 			],
+		}]);
+	});
+
+	test('appends a resolved github.com issue reference as a <github_references> block on the prompt', async () => {
+		const { session, mockSession } = await createAgentSession(disposables, {
+			githubToken: 'gh-token',
+			requestHandler: url => url === 'https://api.github.com/repos/microsoft/vscode/issues/313987'
+				? { status: 200, body: { title: 'Dragging a pinned editor tab', state: 'open' } }
+				: { status: 404 },
+		});
+
+		await session.send('fix https://github.com/microsoft/vscode/issues/313987');
+
+		assert.deepStrictEqual(mockSession.sendRequests, [{
+			prompt: [
+				'fix https://github.com/microsoft/vscode/issues/313987',
+				'',
+				'<github_references>',
+				'#313987 - Dragging a pinned editor tab [issue] [OPEN] (https://github.com/microsoft/vscode/issues/313987)',
+				'</github_references>',
+			].join('\n'),
+			attachments: undefined,
+		}]);
+	});
+
+	test('leaves the prompt unchanged when no github token is available', async () => {
+		const { session, mockSession } = await createAgentSession(disposables);
+
+		await session.send('fix https://github.com/microsoft/vscode/issues/313987');
+
+		assert.deepStrictEqual(mockSession.sendRequests, [{
+			prompt: 'fix https://github.com/microsoft/vscode/issues/313987',
+			attachments: undefined,
+		}]);
+	});
+
+	test('leaves the prompt unchanged when GitHub reference resolution fails', async () => {
+		const { session, mockSession } = await createAgentSession(disposables, {
+			githubToken: 'gh-token',
+			requestHandler: () => ({ status: 404 }),
+		});
+
+		await session.send('fix https://github.com/microsoft/vscode/issues/313987');
+
+		assert.deepStrictEqual(mockSession.sendRequests, [{
+			prompt: 'fix https://github.com/microsoft/vscode/issues/313987',
+			attachments: undefined,
 		}]);
 	});
 
