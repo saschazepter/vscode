@@ -39,8 +39,83 @@ jobs:
           key-args: "compile $(node -p process.arch)"
 
       - name: Install build tools
+        id: install-build-tools
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: sudo apt update -y && sudo apt install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libnotify-bin libkrb5-dev
+
+      # TEMPORARY DIAGNOSTIC: capture the corrupt apt repository metadata that
+      # intermittently breaks `apt update` on the runner (packages.microsoft.com
+      # serving invalid InRelease/Release.gpg -> NOSPLIT/NODATA). Remove once the
+      # bad payload has been captured. See discussion on the apt CDN flakiness.
+      - name: Debug apt repository failure
+        if: always()
+        run: |
+          set +e
+
+          echo "::group::apt-get update (verbose, capture errors)"
+          sudo apt-get update -o Debug::Acquire::gpgv=true 2> apt-update.err
+          cat apt-update.err
+          echo "::endgroup::"
+
+          echo "::group::apt partial lists (raw bytes apt rejected)"
+          sudo ls -la /var/lib/apt/lists/partial/ 2>/dev/null
+          for f in /var/lib/apt/lists/partial/*; do
+            [ -e "$f" ] || continue
+            echo "----- $f -----"
+            sudo file "$f"
+            sudo head -40 "$f"
+            echo "----- hexdump (first 256 bytes) -----"
+            sudo hexdump -C "$f" | head -16
+          done
+          echo "::endgroup::"
+
+          # Build the list of URLs to probe: any InRelease apt just failed to
+          # fetch, plus the known Microsoft repositories that showed NOSPLIT/NODATA.
+          grep -oE 'https?://[^ ]+/InRelease' apt-update.err | sort -u > urls.txt
+          printf '%s\n' \
+            "https://packages.microsoft.com/repos/azure-cli/dists/jammy/InRelease" \
+            "https://packages.microsoft.com/ubuntu/22.04/prod/dists/jammy/InRelease" \
+            "https://packages.microsoft.com/repos/microsoft-ubuntu-jammy-prod/dists/jammy/InRelease" \
+            "https://packages.microsoft.com/repos/microsoft-ubuntu-jammy-prod/dists/jammy/Release.gpg" \
+            "https://packages.microsoft.com/repos/azurecore/dists/jammy/InRelease" \
+            "https://packages.microsoft.com/repos/azurecore/dists/jammy/Release.gpg" \
+            >> urls.txt
+          sort -u urls.txt -o urls.txt
+
+          bad=0
+          while read -r url; do
+            [ -z "$url" ] && continue
+            echo "::group::Probe $url"
+            for attempt in $(seq 1 10); do
+              hdr=$(mktemp); body=$(mktemp)
+              code=$(curl -sS -H 'Cache-Control: no-cache' -D "$hdr" -o "$body" -w '%{http_code}' "$url")
+              size=$(wc -c < "$body")
+              xcache=$(awk 'tolower($0) ~ /^x-cache:/ {sub(/\r/,""); print}' "$hdr")
+              xref=$(awk 'tolower($0) ~ /^x-azure-ref:/ {sub(/\r/,""); print}' "$hdr")
+              ok=1
+              if [ "$code" != "200" ]; then
+                ok=0
+              else
+                case "$url" in
+                  *InRelease) head -1 "$body" | grep -q 'BEGIN PGP SIGNED MESSAGE' || ok=0 ;;
+                  *Release.gpg) file "$body" | grep -qi 'PGP' || ok=0 ;;
+                esac
+              fi
+              echo "attempt=$attempt code=$code size=$size ok=$ok | $xcache | $xref"
+              if [ "$ok" = "0" ]; then
+                bad=1
+                echo "--- BAD: response headers ---"; cat "$hdr"
+                echo "--- BAD: first 40 lines of body ---"; head -40 "$body"
+                echo "--- BAD: file type ---"; file "$body"
+                echo "--- BAD: hexdump (first 512 bytes) ---"; hexdump -C "$body" | head -32
+              fi
+              rm -f "$hdr" "$body"
+              sleep 1
+            done
+            echo "::endgroup::"
+          done < urls.txt
+
+          echo "Reproduced at least one bad response: $bad"
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
