@@ -187,7 +187,7 @@
 
 .monaco-workbench .part.editor > .content .gettingStartedContainer .gettingStartedSlideCategories .category-title {
 	margin: 4px 0 4px;
-	font-size: var(--vscode-agents-fontSize-label1);
+	font-size: var(--vscode-bodyFontSize);
 	font-weight: var(--vscode-agents-fontWeight-semiBold);
 	text-align: left;
 	display: inline-block;
