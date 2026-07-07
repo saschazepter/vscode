@@ -16,14 +16,21 @@ import * as nls from '../../../../../../nls.js';
 import { ConfirmResult, IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
+<<<<<<< HEAD
 import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 import { registerIcon } from '../../../../../../platform/theme/common/iconRegistry.js';
 import { EditorInputCapabilities, IEditorIdentifier, IEditorSerializer, IUntypedEditorInput, Verbosity } from '../../../../../common/editor.js';
 import { EditorInput, IEditorCloseHandler } from '../../../../../common/editor/editorInput.js';
 import { IChatModelReference, IChatService } from '../../../common/chatService/chatService.js';
 import { IChatSessionsService, localChatSessionType } from '../../../common/chatSessionsService.js';
+<<<<<<< HEAD
 import { ChatAgentLocation, ChatEditorTitleMaxLength, getComputedDefaultSessionResource, getComputedDefaultSessionType, getDefaultNewChatSessionResource } from '../../../common/constants.js';
+=======
+import { ChatAgentLocation, ChatEditorTitleMaxLength, getDefaultNewChatSessionResource, getDefaultNewChatSessionType } from '../../../common/constants.js';
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 import { IChatEditingSession, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
 import { IChatModel } from '../../../common/model/chatModel.js';
 import { LocalChatSessionUri, getChatSessionType, isUntitledChatSession } from '../../../common/model/chatUri.js';
@@ -67,8 +74,11 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+<<<<<<< HEAD
 		@IStorageService private readonly storageService: IStorageService,
 		@ILogService private readonly logService: ILogService,
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 	) {
 		super();
 
@@ -257,7 +267,11 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 			if (this.options.explicitSessionType === localChatSessionType) {
 				this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveExplicitLocal' });
 			} else {
+<<<<<<< HEAD
 				const defaultResource = getDefaultNewChatSessionResource(this.configurationService, this.chatSessionsService, this.storageService);
+=======
+				const defaultResource = getDefaultNewChatSessionResource(this.configurationService, this.chatSessionsService);
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 				if (getChatSessionType(defaultResource) === localChatSessionType) {
 					this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveUntitled' });
 				} else {

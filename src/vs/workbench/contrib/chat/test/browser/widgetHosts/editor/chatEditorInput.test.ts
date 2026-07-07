@@ -10,8 +10,11 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../ba
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { IDialogService } from '../../../../../../../platform/dialogs/common/dialogs.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
+<<<<<<< HEAD
 import { NullLogService } from '../../../../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../../../../platform/storage/common/storage.js';
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 import { ChatEditorInput } from '../../../../browser/widgetHosts/editor/chatEditorInput.js';
 import { IChatService, IChatSessionStartOptions } from '../../../../common/chatService/chatService.js';
 import { IChatSessionsService, localChatSessionType } from '../../../../common/chatSessionsService.js';
@@ -52,8 +55,11 @@ suite('ChatEditorInput', () => {
 			{} as IConfigurationService,
 			{} as IChatSessionsService,
 			{} as IInstantiationService,
+<<<<<<< HEAD
 			{} as IStorageService,
 			new NullLogService(),
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 		);
 
 		try {
@@ -105,8 +111,11 @@ suite('ChatEditorInput', () => {
 			{} as IConfigurationService,
 			{} as IChatSessionsService,
 			{} as IInstantiationService,
+<<<<<<< HEAD
 			{} as IStorageService,
 			new NullLogService(),
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 		);
 
 		try {

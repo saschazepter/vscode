@@ -295,6 +295,7 @@ export function getComputedDefaultSessionResource(
 		: URI.from({ scheme: defaultType, path: `/untitled-${generateUuid()}` });
 }
 
+<<<<<<< HEAD
 export function isRememberedSessionTypeUsable(
 	sessionType: string,
 	configurationService: IConfigurationService,
@@ -361,6 +362,8 @@ export function recordUserSelectedSessionType(
 	}
 }
 
+=======
+>>>>>>> fc3def6774c ([Cherry-pick] Remove last-used session type and agent logic (#323484) (#324826))
 export function isEditorLocalAgentEnabled(configurationService: IConfigurationService): boolean {
 	return configurationService.getValue<boolean>(ChatConfiguration.EditorLocalAgentEnabled) ?? true;
 }
