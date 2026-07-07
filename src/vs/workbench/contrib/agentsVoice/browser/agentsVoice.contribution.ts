@@ -465,7 +465,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
-			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn when `agents.voice.turn.autoEndMode` is `vad` or `both`. The backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
+			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn. Applies only when `agents.voice.turn.autoEndMode` is `vad` or `both`; ignored otherwise. The backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
 			default: 800,
 			minimum: 200,
 			maximum: 5000,
@@ -476,7 +476,7 @@ configurationRegistry.registerConfiguration({
 		'agents.voice.turn.stopPhrases': {
 			type: 'array',
 			items: { type: 'string' },
-			description: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance and `agents.voice.turn.autoEndMode` is `phrase` or `both`. The backend strips the matched phrase from the transcript before it reaches the agent."),
+			description: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Applies only when `agents.voice.turn.autoEndMode` is `phrase` or `both`; ignored otherwise. The backend strips the matched phrase from the transcript before it reaches the agent."),
 			default: ['send it'],
 			scope: ConfigurationScope.APPLICATION,
 			included: false,
@@ -490,7 +490,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('agents.voice.turn.vadGateAsr.on', "Always gate: only forward audio to speech recognition when the backend voice-activity detector hears speech."),
 				nls.localize('agents.voice.turn.vadGateAsr.off', "Never gate: forward all captured audio to speech recognition."),
 			],
-			description: nls.localize('agents.voice.turn.vadGateAsr', "Controls voice-activity noise-gating of the audio sent to speech recognition."),
+			description: nls.localize('agents.voice.turn.vadGateAsr', "Controls voice-activity noise-gating of the audio sent to speech recognition. Independent of `agents.voice.turn.autoEndMode`, except that `default` derives its behavior from it (gating only when `autoEndMode` is `off`). Use `on`/`off` to force gating regardless of `autoEndMode`."),
 			default: 'default',
 			scope: ConfigurationScope.APPLICATION,
 			included: false,
