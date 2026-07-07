@@ -79,6 +79,7 @@ export async function renderChatInput(context: ComponentFixtureContext, fixtureO
 					override getPinnedModelIds() { return []; }
 					override getModelsControlManifest() { return { free: {}, paid: {} }; }
 					override lookupLanguageModel(modelId: string) { return modelsById.get(modelId)?.metadata; }
+					override getModelConfiguration() { return undefined; }
 					override getLanguageModelGroups() { return []; }
 					override hasResolvedVendor() { return true; }
 				}());
