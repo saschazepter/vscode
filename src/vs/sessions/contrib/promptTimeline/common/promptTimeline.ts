@@ -13,8 +13,6 @@ export const PROMPT_TIMELINE_ENABLED_SETTING = 'sessions.promptTimeline.enabled'
 export const MIN_PROMPTS = 2;
 
 export const enum PromptTimelineCommandId {
-	GoToNext = 'sessions.promptTimeline.goToNextPrompt',
-	GoToPrevious = 'sessions.promptTimeline.goToPreviousPrompt',
 	GoToPrompt = 'sessions.promptTimeline.goToPrompt',
 	ReviewChanges = 'sessions.promptTimeline.reviewChanges',
 }

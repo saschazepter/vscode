@@ -100,7 +100,7 @@ export class PromptTimelineModel extends Disposable {
 	private readonly _prompts: ISettableObservable<readonly PromptItem[]> = observableValue<readonly PromptItem[]>(this, []);
 
 	/** The chat session resource, tracked reactively so the editing session can be resolved. */
-	private readonly _sessionResource = observableFromEvent(this, this.widget.onDidChangeViewModel, () => this.widget.viewModel?.sessionResource);
+	private readonly _sessionResource: IObservable<URI | undefined>;
 
 	/** The chat editing session for this chat, if one exists (local or agent-host). */
 	private readonly _editingSession = derived(this, reader => {
@@ -154,6 +154,9 @@ export class PromptTimelineModel extends Disposable {
 		@IFileService private readonly fileService: IFileService,
 	) {
 		super();
+		// Assigned here (not as a field initializer) because it reads `this.widget`,
+		// which parameter properties only assign once the constructor body runs.
+		this._sessionResource = observableFromEvent(this, this.widget.onDidChangeViewModel, () => this.widget.viewModel?.sessionResource);
 		this._register(this.widget.onDidChangeViewModel(() => this._bindViewModel()));
 		this._register(this.widget.onDidScroll(() => { this._updateActive(); this._triggerScrollLayout(); }));
 		this._register(this.widget.onDidChangeContentHeight(() => this._triggerScrollLayout()));
@@ -245,7 +248,9 @@ export class PromptTimelineModel extends Disposable {
 		}
 
 		if (activeRequestId === undefined) {
-			this._activeRequestId.set(ticks.at(-1)?.requestId, undefined);
+			// Scrolled above the oldest prompt: the oldest tick is the active one
+			// (the loop advances oldest -> newest as you scroll down).
+			this._activeRequestId.set(ticks.at(0)?.requestId, undefined);
 			return;
 		}
 
@@ -270,24 +275,10 @@ export class PromptTimelineModel extends Disposable {
 		if (item) {
 			this.widget.reveal(item, 0);
 		}
-		// Normalize to the owning tick's representative id so sibling navigation and
-		// the active highlight work even when the id is a mid-bucket prompt (picker).
+		// Normalize to the owning tick's representative id so the active highlight
+		// works even when the id is a mid-bucket prompt (picker).
 		const owningTick = this._baseTicks.get().find(t => t.allRequestIds.includes(requestId));
 		this._activeRequestId.set(owningTick?.requestId ?? requestId, undefined);
-	}
-
-	/** The tick before/after the currently active one, for keyboard navigation. */
-	getSiblingTick(direction: 'next' | 'previous'): PromptTick | undefined {
-		const ticks = this._baseTicks.get();
-		if (ticks.length === 0) {
-			return undefined;
-		}
-		const activeId = this._activeRequestId.get();
-		const currentIndex = activeId !== undefined ? ticks.findIndex(t => t.requestId === activeId) : -1;
-		const nextIndex = direction === 'next'
-			? Math.min(ticks.length - 1, currentIndex + 1)
-			: Math.max(0, (currentIndex === -1 ? ticks.length : currentIndex) - 1);
-		return ticks[nextIndex];
 	}
 
 	/** The changed files for a tick's prompts, aggregated per file (for the hover card / drill-down). */

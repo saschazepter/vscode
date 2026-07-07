@@ -13,6 +13,11 @@
 	z-index: 10;
 }
 
+/* Anchors the rail overlay to the chat widget container (added/removed with the rail's lifecycle). */
+.prompt-timeline-host {
+	position: relative;
+}
+
 .prompt-timeline-rail.hidden {
 	display: none;
 }

@@ -105,10 +105,10 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	private _mountRail(rail: IPromptTimelineRail): void {
 		const railNode = rail.domNode;
 		const host = this.widget.domNode;
-		// Ensure the overlay resolves against the widget container.
-		if (getWindow(host).getComputedStyle(host).position === 'static') {
-			host.style.position = 'relative';
-		}
+		// Anchor the absolutely-positioned overlay to the chat widget via a class
+		// we own, removed on teardown so we never leave the foreign container mutated.
+		host.classList.add('prompt-timeline-host');
+		this._enablement.add(toDisposable(() => host.classList.remove('prompt-timeline-host')));
 		host.appendChild(railNode);
 		this._enablement.add(toDisposable(() => railNode.remove()));
 
@@ -138,15 +138,6 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	reveal(requestId: string): void {
 		this._model?.reveal(requestId);
 		this._rail?.focusTick(requestId);
-	}
-
-	/** Reveals the tick before/after the active one and returns it (for announcements). */
-	navigate(direction: 'next' | 'previous'): PromptTick | undefined {
-		const tick = this._model?.getSiblingTick(direction);
-		if (tick) {
-			this.reveal(tick.requestId);
-		}
-		return tick;
 	}
 
 	/** The tick whose prompt is currently in view, if any. */

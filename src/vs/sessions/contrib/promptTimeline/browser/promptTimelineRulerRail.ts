@@ -4,7 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { PromptTimelineCard } from './promptTimelineCard.js';
@@ -59,12 +61,16 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 		this._domNode = $('nav.prompt-timeline-rail.prompt-timeline-rail-ruler');
 		this._domNode.setAttribute('aria-label', localize('promptTimeline.railLabel', "Prompt timeline"));
 		this._domNode.setAttribute('role', 'toolbar');
+		this._domNode.setAttribute('aria-orientation', 'vertical');
 		this._marksContainer = append(this._domNode, $('.prompt-timeline-ruler-marks'));
 		this._thumb = append(this._domNode, $('.prompt-timeline-ruler-thumb'));
 		this._thumb.classList.add('hidden');
 		this._card = this._register(new PromptTimelineCard(this._domNode));
 		this._register(this._card.onDidReview(tick => this._onDidReview.fire(tick)));
 		this._register(this._card.onDidReviewFile(e => this._onDidReviewFile.fire(e)));
+
+		// Toolbar keyboard model: one Tab stop, Arrow/Home/End move between marks.
+		this._register(addDisposableListener(this._marksContainer, EventType.KEY_DOWN, e => this._onMarksKeyDown(e)));
 
 		this._register(addDisposableListener(this._domNode, EventType.FOCUS_OUT, () => {
 			if (!this._domNode.contains(getWindow(this._domNode).document.activeElement)) {
@@ -96,20 +102,51 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 
 		for (const tick of ticks) {
 			const button = append(this._marksContainer, $<HTMLButtonElement>('button.prompt-timeline-ruler-mark'));
+			button.tabIndex = -1;
 			const bar = append(button, $('span.prompt-timeline-ruler-bar'));
 			const entry: IMarkEntry = { tick, button, bar };
 			this._renderMark(entry, tick);
 			const requestId = tick.requestId;
 			this._markDisposables.add(addDisposableListener(button, EventType.CLICK, () => this._onDidSelect.fire(requestId)));
 			this._markDisposables.add(addDisposableListener(button, EventType.MOUSE_ENTER, () => this._showCard(entry)));
-			this._markDisposables.add(addDisposableListener(button, EventType.FOCUS, () => this._showCard(entry)));
+			this._markDisposables.add(addDisposableListener(button, EventType.FOCUS, () => { this._showCard(entry); this._updateTabStops(this._marks.indexOf(entry)); }));
 			this._markDisposables.add(addDisposableListener(button, EventType.MOUSE_LEAVE, () => this._card.scheduleHide()));
 			this._marks.push(entry);
 		}
 
 		this._ensureResizeObserver();
+		// Make the active mark (else the first) the single Tab stop into the toolbar.
+		const activeIndex = this._marks.findIndex(m => m.tick.requestId === this._activeRequestId);
+		this._updateTabStops(activeIndex >= 0 ? activeIndex : 0);
 		this._updateActiveClasses();
 		this._relayout();
+	}
+
+	/** Roving tabindex: exactly one mark is tabbable so the toolbar is a single Tab stop. */
+	private _updateTabStops(focusIndex: number): void {
+		for (let i = 0; i < this._marks.length; i++) {
+			this._marks[i].button.tabIndex = i === focusIndex ? 0 : -1;
+		}
+	}
+
+	private _onMarksKeyDown(e: KeyboardEvent): void {
+		if (this._marks.length === 0) {
+			return;
+		}
+		const event = new StandardKeyboardEvent(e);
+		const currentIndex = this._marks.findIndex(m => m.button === getWindow(this._domNode).document.activeElement);
+		let nextIndex: number;
+		switch (event.keyCode) {
+			case KeyCode.DownArrow: nextIndex = Math.min(this._marks.length - 1, currentIndex + 1); break;
+			case KeyCode.UpArrow: nextIndex = Math.max(0, currentIndex - 1); break;
+			case KeyCode.Home: nextIndex = 0; break;
+			case KeyCode.End: nextIndex = this._marks.length - 1; break;
+			default: return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		this._updateTabStops(nextIndex);
+		this._marks[nextIndex]?.button.focus();
 	}
 
 	private _renderMark(entry: IMarkEntry, tick: PromptTick): void {

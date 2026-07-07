@@ -4,12 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { status } from '../../../../base/browser/ui/aria/aria.js';
-import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
-import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
@@ -32,52 +30,6 @@ function getPromptTimeline(accessor: ServicesAccessor): PromptTimelineWidgetCont
 	const resource = sessionsService.activeSession.get()?.activeChat.get().resource;
 	const widget = (resource && widgetService.getWidgetBySessionResource(resource)) ?? widgetService.lastFocusedWidget;
 	return widget?.getContrib<PromptTimelineWidgetContrib>(PromptTimelineWidgetContrib.ID);
-}
-
-class GoToNextPromptAction extends Action2 {
-	constructor() {
-		super({
-			id: PromptTimelineCommandId.GoToNext,
-			title: localize2('promptTimeline.goToNext', "Go to Next Prompt"),
-			category: CATEGORY,
-			f1: true,
-			precondition: TIMELINE_PRECONDITION,
-			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				when: ContextKeyExpr.and(TIMELINE_PRECONDITION, ChatContextKeys.inChatSession),
-				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.DownArrow,
-			},
-		});
-	}
-	override run(accessor: ServicesAccessor): void {
-		const tick = getPromptTimeline(accessor)?.navigate('next');
-		if (tick) {
-			status(localize('promptTimeline.announce', "Prompt: {0}", tick.text));
-		}
-	}
-}
-
-class GoToPreviousPromptAction extends Action2 {
-	constructor() {
-		super({
-			id: PromptTimelineCommandId.GoToPrevious,
-			title: localize2('promptTimeline.goToPrevious', "Go to Previous Prompt"),
-			category: CATEGORY,
-			f1: true,
-			precondition: TIMELINE_PRECONDITION,
-			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				when: ContextKeyExpr.and(TIMELINE_PRECONDITION, ChatContextKeys.inChatSession),
-				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.UpArrow,
-			},
-		});
-	}
-	override run(accessor: ServicesAccessor): void {
-		const tick = getPromptTimeline(accessor)?.navigate('previous');
-		if (tick) {
-			status(localize('promptTimeline.announce', "Prompt: {0}", tick.text));
-		}
-	}
 }
 
 interface IPromptPickItem extends IQuickPickItem {
@@ -147,8 +99,6 @@ class ReviewPromptChangesAction extends Action2 {
 }
 
 export function registerPromptTimelineActions(): void {
-	registerAction2(GoToNextPromptAction);
-	registerAction2(GoToPreviousPromptAction);
 	registerAction2(GoToPromptAction);
 	registerAction2(ReviewPromptChangesAction);
 }
