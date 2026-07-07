@@ -254,6 +254,41 @@
 	box-sizing: border-box;
 }
 
+/* Lay the bar out as a row with spacing between the primary split-button and the
+ * trailing secondary icon buttons. In the single-pane editor-group header the
+ * `.session-changes-editor-header-right` normalization does not reach, so without
+ * this the buttons render cramped against the dropdown chevron. */
+.changes-actions-bar {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	gap: var(--vscode-spacing-size40);
+}
+
+/* Keep the primary split-button's dropdown chevron flush with its button. */
+.changes-actions-bar .monaco-button-dropdown {
+	display: flex;
+	align-items: center;
+	gap: 0;
+}
+
+/* Give the trailing secondary (icon-only) actions their bordered button chrome
+ * and comfortable padding, matching the classic changes-view actions bar. */
+.changes-actions-bar .monaco-button.secondary.monaco-text-button.codicon {
+	flex: 0 0 auto;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	border-radius: var(--vscode-cornerRadius-small);
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border-color: var(--vscode-button-secondaryBorder);
+}
+
+.changes-actions-bar .monaco-button.secondary.monaco-text-button.codicon:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+	color: var(--vscode-button-secondaryForeground);
+}
+
 .session-changes-editor-body {
 	position: relative;
 	flex: 1;
