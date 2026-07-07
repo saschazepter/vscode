@@ -18,7 +18,7 @@ import { ILogService, NullLogService } from '../../../../../../platform/log/comm
 import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { AgentSession, IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
 import { isChatAction, isSessionAction, type ActionEnvelope, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type INotification, type ClientAnnotationsAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
-import { buildDefaultChatUri, buildSubagentChatUri, createChatState, createDefaultChatSummary, MessageKind, SessionLifecycle, SessionStatus, createSessionState, StateComponents, parseDefaultChatUri, type ChatState, type SessionState, type SessionSummary, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildDefaultChatUri, buildSubagentChatUri, createChatState, createDefaultChatSummary, CustomizationType, MessageKind, SessionLifecycle, SessionStatus, createSessionState, StateComponents, parseDefaultChatUri, type ChatState, type ClientPluginCustomization, type SessionActiveClient, type SessionState, type SessionSummary, type RootState, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { chatReducer, sessionReducer } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import { ToolCallConfirmationReason, ToolCallContributorKind, ToolResultContentType } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
@@ -424,6 +424,7 @@ suite('AgentHostClientTools', () => {
 			disposables: DisposableStore,
 			tools: IToolData[],
 			toolServiceOptions?: { requireConfirmation?: boolean; throwBeforeConfirmation?: Error },
+			activeClientCustomizations?: readonly ClientPluginCustomization[],
 		) {
 			const instantiationService = disposables.add(new TestInstantiationService());
 			const connection = new MockAgentHostConnection();
@@ -517,9 +518,23 @@ suite('AgentHostClientTools', () => {
 			});
 
 			// Use the real active-client service so the handler's tools autorun
-			// observes the mocked ILanguageModelToolsService tool sets.
-			const activeClientService = disposables.add(instantiationService.createInstance(AgentHostActiveClientService));
-			instantiationService.stub(IAgentHostActiveClientService, activeClientService);
+			// observes the mocked ILanguageModelToolsService tool sets. Tests that
+			// exercise the on-open customization publish override it with a mock
+			// that returns a fixed customizations set.
+			if (activeClientCustomizations) {
+				const customizationsObs = constObservable(activeClientCustomizations);
+				instantiationService.stub(IAgentHostActiveClientService, new class extends mock<IAgentHostActiveClientService>() {
+					override registerForAgent() { return { syncProvider: undefined!, dispose() { } }; }
+					override getActiveClient(_sessionType: string, clientId: string): SessionActiveClient {
+						return { clientId, tools: [], customizations: [...activeClientCustomizations] };
+					}
+					override getCustomizations() { return customizationsObs; }
+					override getClientTools() { return constObservable<readonly ToolDefinition[]>([]); }
+				}());
+			} else {
+				const activeClientService = disposables.add(instantiationService.createInstance(AgentHostActiveClientService));
+				instantiationService.stub(IAgentHostActiveClientService, activeClientService);
+			}
 
 			const handler = disposables.add(instantiationService.createInstance(AgentHostSessionHandler, {
 				provider: 'copilot' as const,
@@ -630,6 +645,27 @@ suite('AgentHostClientTools', () => {
 			assert.strictEqual(runTestsDef.name, 'runTests');
 			assert.strictEqual(runTestsDef.title, 'Run Tests');
 			assert.strictEqual(runTestsDef.description, 'Runs unit tests');
+		});
+
+		test('publishes client customizations without tools when opening an existing session', async () => {
+			const customization: ClientPluginCustomization = {
+				type: CustomizationType.Plugin,
+				id: 'plugin-1',
+				uri: 'file:///plugins/inbox',
+				name: 'Inbox',
+				enabled: true,
+			};
+			const { handler, connection } = createHandlerWithMocks(disposables, [], undefined, [customization]);
+
+			await handler.provideChatSessionContent(URI.parse('agent-host-copilot:/session-1'), CancellationToken.None);
+			await timeout(0);
+
+			const entry = connection.dispatchedActions.find(e => e.action.type === ActionType.SessionActiveClientSet);
+			assert.ok(entry && entry.action.type === ActionType.SessionActiveClientSet, 'expected a SessionActiveClientSet dispatch on open');
+			assert.deepStrictEqual(
+				{ tools: entry.action.activeClient.tools, customizations: entry.action.activeClient.customizations },
+				{ tools: [], customizations: [customization] },
+			);
 		});
 
 		test('handles tools with when clauses via observeTools filtering', () => {

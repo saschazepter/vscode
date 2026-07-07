@@ -39,7 +39,7 @@ import { CompletionItemKind as AhpCompletionItemKind, type CompletionItem as Ahp
 import { ConfirmationOptionKind, CustomizationType, JsonPrimitive, McpServerAuthRequiredState, McpServerStatus, TerminalClaimKind, ToolCallContributorKind, ToolResultContentType, type ConfirmationOption, type ProtectedResourceMetadata, type SessionActiveClient } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, ChatTurnStartedAction, isChatAction, type ChatAction, type ClientChatAction, type ClientSessionAction, type ChatInputCompletedAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { buildSubagentChatUri, getToolSubagentContent, MessageAttachmentKind, MessageKind, PendingMessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, parseChatUri, mergeSessionWithDefaultChat, type ChatState, type ISessionWithDefaultChat, type ClientPluginCustomization, type ICompletedToolCall, type MarkdownResponsePart, type Message, type MessageAttachment, type MessageAnnotationsAttachment, type MessageResourceAttachment, type MessageEmbeddedResourceAttachment, type ModelSelection, type ReasoningResponsePart, type RootState, type ChatInputAnswer, type ChatInputRequest, type SessionState, type ToolCallResponsePart, type ToolCallState, type Turn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildSubagentChatUri, getToolSubagentContent, MessageAttachmentKind, MessageKind, PendingMessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, parseChatUri, mergeSessionWithDefaultChat, type ChatState, type ISessionWithDefaultChat, type ICompletedToolCall, type MarkdownResponsePart, type Message, type MessageAttachment, type MessageAnnotationsAttachment, type MessageResourceAttachment, type MessageEmbeddedResourceAttachment, type ModelSelection, type ReasoningResponsePart, type RootState, type ChatInputAnswer, type ChatInputRequest, type SessionState, type ToolCallResponsePart, type ToolCallState, type Turn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -736,8 +736,27 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				const backendSession = this._resolveSessionUri(sessionResource);
 				const state = this._getSessionState(backendSession.toString());
 				const existing = state?.activeClients.find(c => c.clientId === clientId);
-				if (existing && !equals(existing.customizations ?? [], refs)) {
-					this._dispatchActiveClient(backendSession, [...refs]);
+				if (existing) {
+					if (!equals(existing.customizations ?? [], refs)) {
+						// Preserve the existing tool contribution: tools are synced
+						// by their own autorun above and, for a session that was
+						// only opened (not yet messaged), stay empty until the
+						// first turn.
+						this._dispatchAction(backendSession, {
+							type: ActionType.SessionActiveClientSet,
+							activeClient: { ...existing, customizations: [...refs] },
+						});
+					}
+				} else if (refs.length > 0 && !this._isNewSessionResource(sessionResource)) {
+					// An existing session was opened before this client's
+					// customizations finished resolving, so it isn't an active
+					// client yet. Publish customizations-only now (tools stay
+					// deferred to the first turn) so the picker still lists them.
+					// New sessions are skipped: they publish via `createSession`.
+					this._dispatchAction(backendSession, {
+						type: ActionType.SessionActiveClientSet,
+						activeClient: { clientId, tools: [], customizations: [...refs] },
+					});
 				}
 			}
 		}));
@@ -1021,6 +1040,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			if (chatURI !== undefined) {
 				this._ensureDraftSyncSubscription(sessionResource, resolvedSession, chatURI);
 			}
+
+			// Surface this client's customizations (installed plugins / custom
+			// agents) on the session so the agent picker lists them when merely
+			// opening an existing session. Tools stay deferred to the first turn
+			// (see `_ensureActiveClientForMessage`) so viewing a session never
+			// changes tool ownership for another client's in-flight turn.
+			this._publishClientCustomizationsOnOpen(resolvedSession);
 
 			// Eagerly create the snapshot controller once the ChatModel for
 			// this session is available so that "Restore Checkpoint" works
@@ -1412,15 +1438,28 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	/**
-	 * Dispatches `session/activeClientSet` to add this connection as an
-	 * active client for this session and publish the current customizations
-	 * and client-provided tools. This client never removes itself.
+	 * Publishes this client's customizations (installed plugins / custom
+	 * agents) as an active-client entry with no tools, so the host expands
+	 * them into the session's `customizations` and the agent picker reflects
+	 * them when an existing session is opened. No-op if this client is already
+	 * an active client (e.g. a turn was already sent) so an existing tool
+	 * contribution is never downgraded. Tools are contributed later, on the
+	 * first turn, by {@link _ensureActiveClientForMessage}. This client never
+	 * removes itself.
 	 */
-	private _dispatchActiveClient(backendSession: URI, customizations: ClientPluginCustomization[]): void {
-		const current = this._getCurrentActiveClient();
+	private _publishClientCustomizationsOnOpen(backendSession: URI): void {
+		const clientId = this._config.connection.clientId;
+		const state = this._getSessionState(backendSession.toString());
+		if (state?.activeClients.some(c => c.clientId === clientId)) {
+			return;
+		}
+		const customizations = this._activeClientService.getCustomizations(this._config.sessionType).get();
+		if (customizations.length === 0) {
+			return;
+		}
 		this._dispatchAction(backendSession, {
 			type: ActionType.SessionActiveClientSet,
-			activeClient: { ...current, customizations },
+			activeClient: { clientId, tools: [], customizations: [...customizations] },
 		});
 	}
 
