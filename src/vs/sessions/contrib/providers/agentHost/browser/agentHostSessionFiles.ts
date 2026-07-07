@@ -12,7 +12,6 @@ import type { FileEdit } from '../../../../../platform/agentHost/common/state/pr
 import {
 	buildDefaultChatUri,
 	type ChatState,
-	type ChatSummary,
 	FileEditKind,
 	ResponsePartKind,
 	type SessionState,
@@ -24,7 +23,7 @@ import {
 } from '../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatSessionFileChange2 } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ISessionFile, ISessionFileChange, ISessionWorkspace, SessionFileOperation, sessionFileChangesEqual } from '../../../../services/sessions/common/session.js';
-import { createActiveSessionSubscriptionObs } from './agentHostSessionChangesets.js';
+import { createActiveSessionSubscriptionObs, selectMostRecentChatUri } from './agentHostSessionChangesets.js';
 import { IAgentHostAdapterOptions } from './baseAgentHostSessionsProvider.js';
 
 /**
@@ -132,22 +131,13 @@ export function createSessionOutputObs(
 
 	// The chat that holds the session's "last turn": the most recently modified
 	// chat (its in-progress turn, or last completed turn when idle). Mirrors the
-	// "Last Turn Changes" changeset's chat selection.
+	// "Last Turn Changes" changeset's chat selection via the shared helper.
 	const mostRecentChatUriObs = derivedOpts<URI>({ equalsFn: isEqual }, reader => {
-		const defaultChatUri = URI.parse(buildDefaultChatUri(sessionUri));
 		if (!enabledObs.read(reader)) {
-			return defaultChatUri;
+			return URI.parse(buildDefaultChatUri(sessionUri));
 		}
 		const sessionState = sessionStateObs.read(reader).read(reader);
-		if (!sessionState || sessionState instanceof Error) {
-			return defaultChatUri;
-		}
-		// `modifiedAt` is ISO 8601, so lexicographic compare is chronological.
-		const mostRecentChat = sessionState.chats.reduce<ChatSummary | undefined>(
-			(best, c) => !best || c.modifiedAt > best.modifiedAt ? c : best,
-			undefined,
-		);
-		return URI.parse(mostRecentChat?.resource ?? sessionState.defaultChat ?? buildDefaultChatUri(sessionUri));
+		return selectMostRecentChatUri(sessionState, sessionUri);
 	});
 
 	// One observable of parsed edits per chat, subscribing to that chat's state.
