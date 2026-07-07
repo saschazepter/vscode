@@ -43,6 +43,22 @@ const ROOT = path.join(import.meta.dirname, '../../../');
 const IS_WINDOWS = process.platform === 'win32';
 const NPM = IS_WINDOWS ? 'npm.cmd' : 'npm';
 
+/**
+ * Allowlist for npm version / range specifiers before they are interpolated
+ * into `npm view <pkg>@<spec>` argument strings. These specs come from
+ * queue-time pipeline parameters and from registry responses, and on Windows
+ * the npm calls run with `shell: true` — so restrict to the characters that
+ * appear in valid semver versions, ranges and dist-tags and reject anything a
+ * shell could otherwise interpret.
+ */
+const SAFE_SPEC = /^[\w.+~^><=|* -]+$/;
+
+function assertSafeSpec(label: string, value: string): void {
+	if (!SAFE_SPEC.test(value)) {
+		throw new Error(`[canary-override] Refusing unsafe ${label} "${value}": only semver versions, ranges and dist-tags are allowed.`);
+	}
+}
+
 /** Manifests that declare the Copilot dependencies. */
 const TARGET_DIRS = ['', 'remote'];
 
@@ -66,6 +82,7 @@ function inferCliVersion(sdkVersion: string): string | undefined {
 			console.log(`[canary-override] SDK ${sdkVersion} declares no @github/copilot dependency — leaving VS Code's pinned CLI.`);
 			return undefined;
 		}
+		assertSafeSpec('inferred @github/copilot range', range);
 		const versionRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
 		const parsed = JSON.parse(versionRaw);
 		const resolved = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
@@ -103,6 +120,7 @@ function assertCliSatisfiesSdk(sdkVersion: string, cliVersion: string): void {
 		console.log(`[canary-override] SDK ${sdkVersion} declares no @github/copilot dependency — skipping CLI compatibility check for pinned @github/copilot@${cliVersion}.`);
 		return;
 	}
+	assertSafeSpec('@github/copilot range', range);
 	let satisfying: string[];
 	try {
 		const versionsRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
@@ -127,6 +145,7 @@ function collectOverrides(): Override[] {
 	if (!sdkVersion) {
 		return [];
 	}
+	assertSafeSpec('SDK canary version', sdkVersion);
 	const overrides: Override[] = [{ name: '@github/copilot-sdk', version: sdkVersion }];
 
 	// Explicit CLI version wins (but must be compatible with the SDK); empty
@@ -134,6 +153,7 @@ function collectOverrides(): Override[] {
 	const explicitCli = (process.env['VSCODE_CLI_CANARY_VERSION'] ?? '').trim();
 	let cliVersion: string | undefined;
 	if (explicitCli) {
+		assertSafeSpec('CLI canary version', explicitCli);
 		assertCliSatisfiesSdk(sdkVersion, explicitCli);
 		cliVersion = explicitCli;
 	} else {
