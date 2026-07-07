@@ -254,6 +254,41 @@
 	box-sizing: border-box;
 }
 
+/* Single-pane editor-group header: this bar is rendered as a toolbar action item
+ * (`.action-item.changes-actions-bar` inside a `.monaco-action-bar`), where the
+ * classic `.session-changes-editor-header-right` normalization does not reach.
+ * Scope these to the action-item context so the classic internal changes-editor
+ * header and the aux-bar Changes view are left untouched. */
+.monaco-action-bar .action-item.changes-actions-bar {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--vscode-spacing-size40);
+}
+
+/* Primary split-button grows to fill; the trailing secondary icons stay natural size. */
+.monaco-action-bar .action-item.changes-actions-bar > .monaco-button-dropdown {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.monaco-action-bar .action-item.changes-actions-bar > .monaco-button-dropdown > .monaco-button:not(.monaco-dropdown-button) {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* The generic actionbar rule `.monaco-action-bar .action-item .codicon { width:
+ * 16px; height: 16px }` clamps every codicon — including the button elements
+ * themselves (which carry the `codicon` class), squashing the secondary icon
+ * buttons and detaching the split-button chevron. Un-clamp them (higher
+ * specificity than the base rule) so the buttons size to their own content. */
+.monaco-action-bar .action-item.changes-actions-bar .codicon {
+	width: auto;
+	height: auto;
+}
+
 .session-changes-editor-body {
 	position: relative;
 	flex: 1;
