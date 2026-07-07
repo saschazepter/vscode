@@ -722,11 +722,12 @@ export class ChatListWidget extends Disposable {
 	 * Scroll the list to reveal the last item.
 	 */
 	scrollToEnd(): void {
-		if (this._lastItem) {
-			const offset = Math.max(this._lastItem.currentRenderedHeight ?? 0, 1e6);
-			if (this._tree.hasElement(this._lastItem)) {
-				this._tree.reveal(this._lastItem, offset);
-			}
+		// Reveal the tree's actual last node rather than the held `_lastItem`. `reveal` reliably
+		// scrolls all the way down even while item heights are still settling (see #234089)
+		const lastElement = this._tree.getNode(null).children.at(-1)?.element;
+		if (lastElement) {
+			const offset = Math.max(lastElement.currentRenderedHeight ?? 0, 1e6);
+			this._tree.reveal(lastElement, offset);
 		}
 	}
 

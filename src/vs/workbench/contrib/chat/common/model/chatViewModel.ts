@@ -32,6 +32,31 @@ export function isPendingDividerVM(item: unknown): item is IChatPendingDividerVi
 	return !!item && typeof item === 'object' && (item as IChatPendingDividerViewModel).kind === 'pendingDivider';
 }
 
+interface IChatViewModelItemWithPendingState {
+	readonly id: string;
+	readonly kind?: string;
+	readonly pendingKind?: ChatRequestQueueKind;
+}
+
+function isPendingChatViewModelItem(item: IChatViewModelItemWithPendingState): boolean {
+	return item.kind === 'pendingDivider' || item.pendingKind !== undefined;
+}
+
+/**
+ * The active response that content streams into: the last non-pending item, ignoring
+ * trailing queued/steering rows (and their dividers). Falls back to the last item when
+ * everything is pending.
+ */
+export function getStickyScrollTargetItem<T extends IChatViewModelItemWithPendingState>(items: readonly T[]): T | undefined {
+	for (let i = items.length - 1; i >= 0; i--) {
+		const item = items[i];
+		if (!isPendingChatViewModelItem(item)) {
+			return item;
+		}
+	}
+	return items.at(-1);
+}
+
 export function isChatTreeItem(item: unknown): item is IChatRequestViewModel | IChatResponseViewModel {
 	return isRequestVM(item) || isResponseVM(item);
 }
@@ -648,6 +673,11 @@ export class ChatResponseViewModel extends Disposable implements IChatResponseVi
 	}
 
 	get isLast(): boolean {
+		// NOTE: this is used in `dataId` to force a re-render when the response transitions
+		// between being the last row and not, e.g. when a queued/steering row is added below
+		// it. It must reflect the actual last row so the row re-renders and drops the
+		// reserved-space filler class. Progressive rendering targets the streaming response
+		// separately (see `getStickyScrollTargetItem`).
 		return this.session.getItems().at(-1) === this;
 	}
 
