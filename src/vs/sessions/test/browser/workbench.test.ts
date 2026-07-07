@@ -27,11 +27,13 @@ suite('Sessions - Workbench', () => {
 	const setEditorMaximized = Reflect.get(Workbench.prototype, 'setEditorMaximized') as (this: IMaximizeTestHarness, maximized: boolean) => void;
 	const onEditorNodeResized = Reflect.get(SinglePaneWorkbench.prototype, '_onEditorNodeResized') as (this: ITestWorkbench, nodeWidth: number) => void;
 	const onGridDidChange = Reflect.get(SinglePaneWorkbench.prototype, '_onGridDidChange') as (this: ITestWorkbench) => void;
+	const persistedAuxiliaryBarWidth = Reflect.get(SinglePaneWorkbench.prototype, '_persistedAuxiliaryBarWidth') as (this: ITestWorkbench, gridWidth: number | undefined) => number | undefined;
 	const rememberAttachedEditorMaximizedState = Reflect.get(Workbench.prototype, 'rememberAttachedEditorMaximizedState') as (this: IWorkbenchTestHarness) => void;
 	const restoreAttachedEditorMaximizedState = Reflect.get(Workbench.prototype, 'restoreAttachedEditorMaximizedState') as (this: IWorkbenchTestHarness) => void;
 	const loadPartVisibility = Reflect.get(Workbench.prototype, '_loadPartVisibility') as (this: IWorkbenchTestHarness, storageService: { get(): string | undefined; remove(): void }) => { editor?: boolean; auxiliaryBar?: boolean; sidebar?: boolean };
 	const savePartVisibility = Reflect.get(Workbench.prototype, '_savePartVisibility') as (this: IWorkbenchTestHarness) => void;
 	const handleWillOpenEditor = Reflect.get(Workbench.prototype, '_handleWillOpenEditor') as (this: IWillOpenTestHarness, e: { groupId: number; editor: { typeId: string } }) => void;
+	const createDesktopGridDescriptor = Reflect.get(Workbench.prototype, 'createDesktopGridDescriptor') as (this: IGridDescriptorTestHarness, width: number, height: number) => { root: { data: readonly unknown[] } };
 
 	// --- Harness ------------------------------------------------------------
 
@@ -51,6 +53,15 @@ suite('Sessions - Workbench', () => {
 		readonly counts: { save: number; layout: number };
 		setEditorHidden(hidden: boolean, explicit?: boolean): void;
 		setAuxiliaryBarHidden(hidden: boolean): void;
+	}
+
+	interface IGridDescriptorTestHarness extends ITestWorkbench {
+		_savedPartSizes: { sidebar?: number; auxiliaryBar?: number; editor?: number; sessions?: number; panel?: number };
+		layoutPolicy: {
+			getPartSizes(width: number, height: number): { sideBarSize: number; auxiliaryBarSize: number; panelSize: number };
+			viewportClass: { get(): string };
+		};
+		titleBarPartView: { minimumHeight: number };
 	}
 
 	interface IHostOptions {
@@ -101,6 +112,7 @@ suite('Sessions - Workbench', () => {
 				resizeView: (view: object, size: IViewSize) => { resizes.push(size); viewSizes.set(view, size); },
 			},
 			_hasAppliedInitialEditorSplit: options.hasAppliedInitialEditorSplit ?? false,
+			_savedPartSizes: {},
 			_editorRevealedExplicitly: false,
 			_editorMaximized: false,
 			_editorPartAutoVisibilitySuppressionCount: options.suppressionCount ?? 0,
@@ -234,6 +246,52 @@ suite('Sessions - Workbench', () => {
 			detailSnapshot: undefined,
 			layoutCount: 2,
 		});
+	});
+
+	test('single-pane descriptor uses the docked detail width for a detail-only first open', () => {
+		const host = createHost({ single: true, dockedWidth: 300, partVisibility: { editor: false, auxiliaryBar: true } }) as IGridDescriptorTestHarness;
+		host.layoutPolicy = {
+			getPartSizes: () => ({ sideBarSize: 280, auxiliaryBarSize: 340, panelSize: 300 }),
+			viewportClass: { get: () => 'desktop' },
+		};
+		host.titleBarPartView = { minimumHeight: 30 };
+
+		const descriptor = createDesktopGridDescriptor.call(host, 1200, 800);
+		const contentSection = descriptor.root.data[1] as { data: readonly unknown[] };
+		const rightSection = contentSection.data[1] as { data: readonly unknown[] };
+		const topRightSection = rightSection.data[0] as { data: readonly unknown[] };
+		const editorNode = topRightSection.data[1] as { size: number; visible: boolean };
+
+		assert.deepStrictEqual({ size: editorNode.size, visible: editorNode.visible }, { size: 300, visible: true });
+	});
+
+	test('showing docked detail with hidden editor restores the preferred detail width instead of cached node width', () => {
+		const host = createHost({ single: true, editorWidth: 640, dockedWidth: 300, partVisibility: { editor: false, auxiliaryBar: false } });
+
+		setAuxiliaryBarHidden.call(host, false);
+
+		assert.deepStrictEqual({
+			auxiliaryBarVisible: host.partVisibility.auxiliaryBar,
+			editorVisible: host.partVisibility.editor,
+			resizes: host.resizes,
+			visibilityChanges: host.visibilityChanges,
+			events: host.events,
+			layoutCount: host.counts.layout,
+		}, {
+			auxiliaryBarVisible: true,
+			editorVisible: false,
+			resizes: [{ width: 300, height: 800 }],
+			visibilityChanges: [true],
+			events: [{ partId: Parts.AUXILIARYBAR_PART, visible: true }],
+			layoutCount: 1,
+		});
+	});
+
+	test('persists the user detail width instead of a temporary sidebar-collapse grow width', () => {
+		const host = createHost({ single: true, dockedWidth: 580 });
+		host._memento.detailWidthGrownForSidebarHide = 300;
+
+		assert.strictEqual(persistedAuxiliaryBarWidth.call(host, undefined), 300);
 	});
 
 	test('does not re-apply the even split on later editor reveals', () => {

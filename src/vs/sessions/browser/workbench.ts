@@ -773,7 +773,15 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 			return this.workbenchGrid.getViewCachedVisibleSize(view);
 		};
 
-		const editorGridWidth = getSize(this.editorPartView, 'width', this.partVisibility.editor);
+		// The editor-part grid node hosts the docked auxiliary bar in single-pane, so
+		// it is "visible" whenever the editor OR the detail is shown. Use the node's
+		// real visibility (not just `partVisibility.editor`) so a Detail-only session
+		// records its *current* collapsed node width — reading the stale cached visible
+		// size (wide) here would restore a wide node on reload and flicker the editor
+		// open via the width-based reveal-sync. Classic layout is unaffected
+		// (`_editorNodeVisible` returns `partVisibility.editor` there).
+		const editorNodeVisible = this._editorNodeVisible(this.partVisibility.editor, this.partVisibility.auxiliaryBar);
+		const editorGridWidth = getSize(this.editorPartView, 'width', editorNodeVisible);
 		const editorWidth = this._persistedEditorWidth(editorGridWidth);
 
 		const sizes: IPartSizesState = {
@@ -1220,6 +1228,19 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
 	}
 
+	/**
+	 * Handles a change in the editor-part grid view's visibility. In the classic
+	 * layout the editor part is a standalone grid view, so its view visibility *is*
+	 * the editor visibility — map it to `setEditorHidden` and raise the part event.
+	 * Single-pane overrides this: its editor-part grid view also hosts the docked
+	 * auxiliary bar, so the view can become visible purely to show the detail while
+	 * the editor content stays hidden; it fires its own editor-part events instead.
+	 */
+	protected _onEditorPartGridVisibilityChange(visible: boolean): void {
+		this.setEditorHidden(!visible);
+		this._onDidChangePartVisibility.fire({ partId: Parts.EDITOR_PART, visible });
+	}
+
 	protected get _isEditorPartAutoVisibilitySuppressed(): boolean {
 		return this._editorPartAutoVisibilitySuppressionCount > 0;
 	}
@@ -1418,6 +1439,18 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		// Listen for part visibility changes (for parts in grid)
 		for (const part of [titleBar, panelPart, sideBar, auxiliaryBarPart, sessionsPart, editorPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
+				// The editor part's grid-view visibility is fully owned by
+				// `_onEditorPartGridVisibilityChange`: in the classic layout it maps to
+				// the editor visibility and raises the part-visibility event; single-pane
+				// (whose editor-part view also hosts the docked auxiliary bar) overrides it
+				// so the shared node becoming visible for the detail neither reveals the
+				// editor content nor fires a bogus editor-part-visible event.
+				if (part === editorPart) {
+					this._onEditorPartGridVisibilityChange(visible);
+					this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
+					return;
+				}
+
 				if (part === sideBar) {
 					this.setSideBarHidden(!visible);
 				} else if (part === panelPart) {
@@ -1426,8 +1459,6 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 					this.setAuxiliaryBarHidden(!visible);
 				} else if (part === sessionsPart) {
 					this.setSessionsHidden(!visible);
-				} else if (part === editorPart) {
-					this.setEditorHidden(!visible);
 				}
 
 				this._onDidChangePartVisibility.fire({ partId: part.getId(), visible });
@@ -1491,8 +1522,11 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 		const defaultSideBarSize = this._defaultSideBarSize(sizes.sideBarSize);
 		const sideBarSize = this._savedPartSizes.sidebar
 			?? (this.partVisibility.sidebar ? defaultSideBarSize : Math.max(defaultSideBarSize, 250));
+		const defaultAuxiliaryBarSize = this.isSinglePaneLayoutEnabled
+			? this.getDockedAuxiliaryBarWidth()
+			: sizes.auxiliaryBarSize;
 		const auxiliaryBarSize = this._savedPartSizes.auxiliaryBar
-			?? (this.partVisibility.auxiliaryBar ? sizes.auxiliaryBarSize : Math.max(sizes.auxiliaryBarSize, 300));
+			?? (this.partVisibility.auxiliaryBar ? defaultAuxiliaryBarSize : Math.max(defaultAuxiliaryBarSize, 300));
 		const panelSize = this._savedPartSizes.panel
 			?? (this.partVisibility.panel ? sizes.panelSize : Math.max(sizes.panelSize, 250));
 		const editorSize = this._savedPartSizes.editor ?? 600;

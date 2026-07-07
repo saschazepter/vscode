@@ -28,7 +28,7 @@ import { EditorInput } from '../../../../../workbench/common/editor/editorInput.
 import { IEditorWillOpenEvent, IUntypedEditorInput, isResourceEditorInput } from '../../../../../workbench/common/editor.js';
 import { IActiveSession, ISessionsChangeEvent, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
-import { ChatInteractivity, IChat, ISessionFileChange, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
+import { ChatInteractivity, IChat, ISession, ISessionFileChange, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { ISessionChangesService, SessionChangesService } from '../../../changes/browser/sessionChangesService.js';
 import { CHANGES_VIEW_CONTAINER_ID } from '../../../changes/common/changes.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../../files/browser/files.contribution.js';
@@ -157,6 +157,7 @@ export interface ITestLayoutHarness {
 	activeSessionObs: ISettableObservable<IActiveSession | undefined>;
 	visibleSessionsObs: ISettableObservable<readonly (IActiveSession | undefined)[]>;
 	onDidChangeSessions: Emitter<ISessionsChangeEvent>;
+	onDidReplaceSession: Emitter<{ readonly from: ISession; readonly to: ISession }>;
 	onDidChangePartVisibility: Emitter<IPartVisibilityChangeEvent>;
 	onDidChangeEditorMaximized: Emitter<void>;
 	onDidActiveEditorChange: Emitter<void>;
@@ -214,13 +215,20 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 
 	const storageService = store.add(new TestStorageService());
 	if (options.layoutState) {
-		storageService.store('sessions.layoutState', JSON.stringify(options.layoutState), StorageScope.WORKSPACE, 0);
+		const raw = JSON.stringify(options.layoutState);
+		// Seed both the classic desktop key and the fresh single-pane key so the
+		// same harness serves both the LayoutController and SinglePaneLayoutController tests.
+		storageService.store('sessions.layoutState', raw, StorageScope.WORKSPACE, 0);
+		storageService.store('sessions.singlePane.layoutState', raw, StorageScope.WORKSPACE, 0);
 	}
 	if (options.newSessionViewState) {
-		storageService.store('sessions.newSessionViewState', JSON.stringify(options.newSessionViewState), StorageScope.WORKSPACE, 0);
+		const raw = JSON.stringify(options.newSessionViewState);
+		storageService.store('sessions.newSessionViewState', raw, StorageScope.WORKSPACE, 0);
+		storageService.store('sessions.singlePane.newSessionViewState', raw, StorageScope.WORKSPACE, 0);
 	}
 	if (options.newSessionViewStateRaw !== undefined) {
 		storageService.store('sessions.newSessionViewState', options.newSessionViewStateRaw, StorageScope.WORKSPACE, 0);
+		storageService.store('sessions.singlePane.newSessionViewState', options.newSessionViewStateRaw, StorageScope.WORKSPACE, 0);
 	}
 	instaService.stub(IStorageService, storageService);
 
@@ -237,6 +245,7 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		activeSessionObs: observableValue<IActiveSession | undefined>('activeSession', undefined),
 		visibleSessionsObs: observableValue<readonly (IActiveSession | undefined)[]>('visibleSessions', []),
 		onDidChangeSessions: store.add(new Emitter<ISessionsChangeEvent>()),
+		onDidReplaceSession: store.add(new Emitter<{ readonly from: ISession; readonly to: ISession }>()),
 		onDidChangePartVisibility: store.add(new Emitter<IPartVisibilityChangeEvent>()),
 		onDidChangeEditorMaximized: store.add(new Emitter<void>()),
 		onDidActiveEditorChange: store.add(new Emitter<void>()),
@@ -285,11 +294,21 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		override isPinned() { return true; }
 		override pinEditor() { }
 		override getIndexOfEditor(editor: EditorInput) { return harness.activeGroupEditors.indexOf(editor); }
-		override moveEditor() { return true; }
+		override moveEditor(editor: EditorInput, _target: IEditorGroup, options?: { index?: number }) {
+			const currentIndex = harness.activeGroupEditors.indexOf(editor);
+			if (currentIndex === -1) {
+				return false;
+			}
+			harness.activeGroupEditors.splice(currentIndex, 1);
+			const targetIndex = Math.max(0, Math.min(options?.index ?? harness.activeGroupEditors.length, harness.activeGroupEditors.length));
+			harness.activeGroupEditors.splice(targetIndex, 0, editor);
+			return true;
+		}
 	};
 
 	instaService.stub(ISessionsManagementService, new class extends mock<ISessionsManagementService>() {
 		override readonly onDidChangeSessions = harness.onDidChangeSessions.event;
+		override readonly onDidReplaceSession = harness.onDidReplaceSession.event;
 		override getSessions() { return []; }
 	});
 	instaService.stub(ISessionsService, new class extends mock<ISessionsService>() {
@@ -300,10 +319,16 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 	instaService.stub(ISessionChangesService, new class extends mock<ISessionChangesService>() {
 		override getChangesEditorResource(sessionResource: URI): URI { return harness.sessionChangesService.getChangesEditorResource(sessionResource); }
 		override getSessionResource(editorResource: URI): URI | undefined { return harness.sessionChangesService.getSessionResource(editorResource); }
-		override async openChangesEditor(sessionResource: URI): Promise<IEditorGroup> {
+		override async openChangesEditor(sessionResource: URI, options?: { index?: number }): Promise<IEditorGroup> {
 			const resource = harness.sessionChangesService.getChangesEditorResource(sessionResource);
 			if (!harness.activeGroupEditors.some(e => e.resource && isEqual(e.resource, resource))) {
-				harness.activeGroupEditors.push(store.add(new TestStubEditorInput(resource)));
+				const editor = store.add(new TestStubEditorInput(resource));
+				const index = options?.index;
+				if (typeof index === 'number' && index >= 0 && index <= harness.activeGroupEditors.length) {
+					harness.activeGroupEditors.splice(index, 0, editor);
+				} else {
+					harness.activeGroupEditors.push(editor);
+				}
 			}
 			return testActiveGroup;
 		}
@@ -429,7 +454,13 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		override async openEditor(...args: unknown[]): Promise<undefined> {
 			const editor = args[0];
 			if (editor instanceof EditorInput && !harness.activeGroupEditors.includes(editor)) {
-				harness.activeGroupEditors.push(store.add(editor));
+				const options = args[1] as { index?: number } | undefined;
+				const index = options?.index;
+				if (typeof index === 'number' && index >= 0 && index <= harness.activeGroupEditors.length) {
+					harness.activeGroupEditors.splice(index, 0, store.add(editor));
+				} else {
+					harness.activeGroupEditors.push(store.add(editor));
+				}
 			}
 			return undefined;
 		}

@@ -90,7 +90,7 @@ export class SinglePaneWorkbench extends Workbench {
 	}
 
 	protected override _restoreAuxiliaryBarWidth(width: number): void {
-		this._dockedAuxiliaryBarWidth = width;
+		this._dockedAuxiliaryBarWidth = Math.max(DockedAuxiliaryBarController.MIN_WIDTH, width);
 	}
 
 	protected override _persistedEditorWidth(editorGridWidth: number | undefined): number | undefined {
@@ -101,7 +101,7 @@ export class SinglePaneWorkbench extends Workbench {
 	}
 
 	protected override _persistedAuxiliaryBarWidth(_gridWidth: number | undefined): number | undefined {
-		return this._dockedAuxiliaryBarWidth;
+		return this._memento.detailWidthGrownForSidebarHide ?? this._dockedAuxiliaryBarWidth;
 	}
 
 	protected override _defaultSideBarSize(policySideBarSize: number): number {
@@ -137,6 +137,15 @@ export class SinglePaneWorkbench extends Workbench {
 
 	private _syncEditorVisibility(nodeWidth: number): void {
 		if (this._syncingEditorVisibility) {
+			return;
+		}
+		// A session-switch / reload layout restore holds `suppressEditorPartAutoVisibility`
+		// while it applies the working set, which can widen the docked node before the
+		// controller has set the target editor-part visibility. The width-based sync must
+		// not race that: revealing (or hiding) the editor here from the restored geometry
+		// flickers the editor open for a Detail-only session (and can persist it on reload).
+		// Only the user dragging the sash (unsuppressed) should drive width-based visibility.
+		if (this._isEditorPartAutoVisibilitySuppressed) {
 			return;
 		}
 
@@ -230,6 +239,17 @@ export class SinglePaneWorkbench extends Workbench {
 		}
 	}
 
+	/**
+	 * No-op: the editor-part grid view hosts the docked auxiliary bar, so its
+	 * visibility flips whenever the *detail* opens/closes (not the editor content).
+	 * Editor-content visibility and its part-visibility events are driven directly
+	 * by `setEditorHidden` / `_applyEditorVisibility` / `_applyAuxiliaryBarVisibility`
+	 * / `_syncEditorVisibility`, so mapping the shared node's grid visibility to
+	 * `setEditorHidden` here would wrongly reveal the editor when only the detail is
+	 * shown.
+	 */
+	protected override _onEditorPartGridVisibilityChange(_visible: boolean): void { }
+
 	protected override _applyAuxiliaryBarVisibility(hidden: boolean): void {
 		// The auxiliary bar is docked inside the editor part (not a grid view), so
 		// drive its visibility through the docked layout and fire the visibility
@@ -240,6 +260,17 @@ export class SinglePaneWorkbench extends Workbench {
 				this.editorPartView,
 				this.partVisibility.editor || this.partVisibility.auxiliaryBar
 			);
+			if (!hidden && !this.partVisibility.editor) {
+				this._syncingEditorVisibility = true;
+				try {
+					this.workbenchGrid.resizeView(this.editorPartView, {
+						width: this._dockedAuxiliaryBarWidth,
+						height: this.workbenchGrid.getViewSize(this.editorPartView).height
+					});
+				} finally {
+					this._syncingEditorVisibility = false;
+				}
+			}
 		}
 		this._layoutDockedAuxBar();
 		this._fireDidChangePartVisibility(Parts.AUXILIARYBAR_PART, !hidden);

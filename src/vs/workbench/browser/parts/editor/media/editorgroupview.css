@@ -249,7 +249,7 @@
 	align-items: center;
 	overflow: hidden;
 	min-width: 0;
-	flex: 1 1 auto;
+	flex: 9999 1 auto;
 	gap: var(--vscode-spacing-size40, 4px);
 }
 
@@ -261,9 +261,35 @@
 	justify-content: flex-end;
 	overflow: hidden;
 	min-width: 0;
-	flex: 0 2 auto;
-	margin-left: auto;
+	flex: 1 2 auto;
 	gap: var(--vscode-spacing-size40, 4px);
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary > .monaco-toolbar,
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary > .monaco-toolbar > .monaco-action-bar,
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary > .monaco-toolbar > .monaco-action-bar > .actions-container,
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary > .monaco-toolbar > .monaco-action-bar > .actions-container > .action-item {
+	display: flex;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary > .monaco-toolbar > .monaco-action-bar > .actions-container {
+	justify-content: stretch;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar {
+	justify-content: flex-start;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button-dropdown {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button-dropdown > .monaco-button:not(.monaco-dropdown-button) {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 /* Space the individual action items within each header toolbar (the picker,
