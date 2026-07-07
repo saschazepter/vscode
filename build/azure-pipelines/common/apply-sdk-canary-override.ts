@@ -34,8 +34,14 @@ import { execFileSync } from 'child_process';
 
 const ROOT = path.join(import.meta.dirname, '../../../');
 
-/** On Windows `npm` is a `.cmd` shim that `execFileSync` cannot resolve without a shell. */
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+/**
+ * On Windows `npm` is a `.cmd` shim. Two things matter:
+ *   1. The explicit `.cmd` suffix — Node won't resolve it via PATHEXT for `execFile`.
+ *   2. `shell: true` — since Node 20 (CVE-2024-27980) `child_process` refuses to
+ *      spawn a `.cmd`/`.bat` without it.
+ */
+const IS_WINDOWS = process.platform === 'win32';
+const NPM = IS_WINDOWS ? 'npm.cmd' : 'npm';
 
 /** Manifests that declare the Copilot dependencies. */
 const TARGET_DIRS = ['', 'remote'];
@@ -53,14 +59,14 @@ interface Override {
  */
 function inferCliVersion(sdkVersion: string): string | undefined {
 	try {
-		const depsRaw = execFileSync(NPM, ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8' });
+		const depsRaw = execFileSync(NPM, ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
 		const deps = JSON.parse(depsRaw || '{}');
 		const range = deps['@github/copilot'];
 		if (!range) {
 			console.log(`[canary-override] SDK ${sdkVersion} declares no @github/copilot dependency — leaving VS Code's pinned CLI.`);
 			return undefined;
 		}
-		const versionRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8' });
+		const versionRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
 		const parsed = JSON.parse(versionRaw);
 		const resolved = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
 		if (typeof resolved !== 'string') {
@@ -87,7 +93,7 @@ function inferCliVersion(sdkVersion: string): string | undefined {
 function assertCliSatisfiesSdk(sdkVersion: string, cliVersion: string): void {
 	let range: string | undefined;
 	try {
-		const depsRaw = execFileSync(NPM, ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8' });
+		const depsRaw = execFileSync(NPM, ['view', `@github/copilot-sdk@${sdkVersion}`, 'dependencies', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
 		range = JSON.parse(depsRaw || '{}')['@github/copilot'];
 	} catch (err) {
 		console.warn(`[canary-override] Could not read @github/copilot-sdk@${sdkVersion} dependencies to check CLI compatibility: ${err instanceof Error ? err.message : err}. Skipping check.`);
@@ -99,7 +105,7 @@ function assertCliSatisfiesSdk(sdkVersion: string, cliVersion: string): void {
 	}
 	let satisfying: string[];
 	try {
-		const versionsRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8' });
+		const versionsRaw = execFileSync(NPM, ['view', `@github/copilot@${range}`, 'version', '--json'], { encoding: 'utf8', shell: IS_WINDOWS });
 		const parsed = JSON.parse(versionsRaw || 'null');
 		satisfying = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
 	} catch (err) {
@@ -168,7 +174,8 @@ function refreshLockfile(dir: string): void {
 	// already be established in the ambient environment.
 	execFileSync(NPM, ['install', '--package-lock-only', '--ignore-scripts'], {
 		cwd: path.join(ROOT, dir),
-		stdio: 'inherit'
+		stdio: 'inherit',
+		shell: IS_WINDOWS
 	});
 }
 
