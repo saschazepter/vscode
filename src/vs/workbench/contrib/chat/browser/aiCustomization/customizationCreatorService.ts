@@ -161,18 +161,7 @@ export class CustomizationLocationPicker {
 			return undefined;
 		}
 
-		const projectRoot = this.workspaceService.getActiveProjectRoot();
-		const matchingFolders: ICustomizationSourceFolder[] = [];
-		const seenFolders = new ResourceSet();
-		for (const folder of allFolders) {
-			const isProjectFolder = !!projectRoot && isEqualOrParent(folder.uri, projectRoot);
-			if ((target === 'local' && isProjectFolder) || (target === 'user' && !isProjectFolder)) {
-				if (!seenFolders.has(folder.uri)) {
-					seenFolders.add(folder.uri);
-					matchingFolders.push(folder);
-				}
-			}
-		}
+		const matchingFolders = allFolders.filter(f => f.source === target);
 		if (matchingFolders.length === 0) {
 			// No matching folders — return undefined so the command can fall
 			// back to askForPromptSourceFolder (not null which means cancellation)
