@@ -11,8 +11,7 @@ import { ICopilotApiService, type ICopilotUtilityChatMessage } from '../shared/c
 /**
  * Default prefix applied to branches the agent host creates for worktree
  * sessions. Used when the `chat.agentHost.git.branchPrefix` setting (forwarded
- * as {@link AgentHostGitBranchPrefixEnvVar}) is not set, and as the fallback
- * that {@link getCopilotWorktreeName} always strips for back-compat.
+ * as {@link AgentHostGitBranchPrefixEnvVar}) is not set.
  */
 const COPILOT_BRANCH_PREFIX = 'agents/';
 const COPILOT_BRANCH_SESSION_ID_SUFFIX_LENGTH = 8;
