@@ -38,8 +38,6 @@ interface ITestContextState {
 	togglingSidePane: boolean;
 	hidingAuxiliaryBarForRestore: boolean;
 	readonly viewStateBySession: ResourceMap<ISessionViewState>;
-	/** Records every `withSessionLayoutRestore` invocation. */
-	readonly restoreCalls: number[];
 }
 
 /**
@@ -54,7 +52,6 @@ function createStrategyTestContext(harness: ITestLayoutHarness): { readonly ctx:
 		togglingSidePane: false,
 		hidingAuxiliaryBarForRestore: false,
 		viewStateBySession: new ResourceMap<ISessionViewState>(),
-		restoreCalls: [],
 	};
 
 	const activeSessionResourceObs = derived(reader => harness.activeSessionObs.read(reader)?.resource);
@@ -63,7 +60,6 @@ function createStrategyTestContext(harness: ITestLayoutHarness): { readonly ctx:
 	const ctx: ISinglePaneLayoutContext = {
 		get isRestoringSessionLayout() { return state.isRestoringSessionLayout; },
 		withSessionLayoutRestore: work => {
-			state.restoreCalls.push(state.restoreCalls.length);
 			const wasRestoring = state.isRestoringSessionLayout;
 			state.isRestoringSessionLayout = true;
 			try {
