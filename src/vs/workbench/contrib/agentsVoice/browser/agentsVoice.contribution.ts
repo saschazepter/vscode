@@ -50,7 +50,6 @@ export const AGENTS_VOICE_WIDGET_FOCUSED = new RawContextKey<boolean>('agentsVoi
 const AGENTS_VOICE_CONNECTED = new RawContextKey<boolean>('agentsVoiceConnected', false);
 const AGENTS_VOICE_CONNECTING = new RawContextKey<boolean>('agentsVoiceConnecting', false);
 const AGENTS_VOICE_LISTENING = new RawContextKey<boolean>('agentsVoiceListening', false);
-const AGENTS_VOICE_ACTIVE = new RawContextKey<boolean>('agentsVoiceActive', false);
 /** Set on the specific widget where voice was initiated — used to scope connecting/connected UI to that widget only. */
 const AGENTS_VOICE_INITIATED_HERE = new RawContextKey<boolean>('agentsVoiceInitiatedHere', false);
 
@@ -72,7 +71,6 @@ class AgentsVoiceConnectedKeyContribution extends Disposable implements IWorkben
 		const connectedKey = AGENTS_VOICE_CONNECTED.bindTo(contextKeyService);
 		const connectingKey = AGENTS_VOICE_CONNECTING.bindTo(contextKeyService);
 		const listeningKey = AGENTS_VOICE_LISTENING.bindTo(contextKeyService);
-		const activeKey = AGENTS_VOICE_ACTIVE.bindTo(contextKeyService);
 		let wasConnected = false;
 		this._register(autorun(reader => {
 			const connected = voiceSessionController.isConnected.read(reader);
@@ -80,7 +78,6 @@ class AgentsVoiceConnectedKeyContribution extends Disposable implements IWorkben
 			connectingKey.set(voiceSessionController.isConnecting.read(reader));
 			const state = voiceSessionController.voiceState.read(reader);
 			listeningKey.set(state === 'listening');
-			activeKey.set(state === 'listening' || state === 'speaking');
 
 			// Clear per-widget "initiated here" key when voice disconnects
 			if (wasConnected && !connected) {
@@ -477,7 +474,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
-			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn when `agents.voice.turn.autoEndMode` is `vad` or `both`. The backend clamps this to its supported range (currently 200–5000 ms) and is the source of truth."),
+			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn when `agents.voice.turn.autoEndMode` is `vad` or `both`. The backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
 			default: 800,
 			minimum: 200,
 			maximum: 5000,
