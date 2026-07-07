@@ -16,9 +16,10 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	properties: {
 		[PROMPT_TIMELINE_ENABLED_SETTING]: {
 			type: 'boolean',
-			default: true,
+			default: false,
 			description: localize('sessions.promptTimeline.enabled', "Controls whether the prompt timeline rail is shown alongside the chat transcript in the Agents window. The rail lets you scan and jump between the prompts you have sent."),
 			tags: ['experimental'],
+			experiment: { mode: 'startup' },
 		},
 	},
 });
