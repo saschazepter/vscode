@@ -298,14 +298,7 @@ export class FetchWebPageTool implements IToolImpl {
 						webUris.set(url, uriObj);
 					}
 				} else {
-					// Try to handle other schemes via file service.
-					// Normalize the URI up-front so that path-traversal segments (e.g. `..`)
-					// are resolved to their canonical location. The workspace-membership check
-					// in `prepareToolInvocation` (which decides whether a confirmation dialog is
-					// needed) must operate on the same path that `readFile` ultimately reads;
-					// otherwise a URL like `file:///<workspace>/../../secret` is judged to be
-					// inside the workspace (raw path-prefix match) while actually reading a file
-					// outside of it, bypassing the confirmation prompt.
+					// Normalize `..` so the confirmation-gating workspace check and the eventual read agree on one path.
 					fileUris.set(url, normalizePath(uriObj));
 				}
 			} catch (e) {
