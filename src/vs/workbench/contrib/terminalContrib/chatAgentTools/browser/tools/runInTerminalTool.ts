@@ -32,6 +32,7 @@ import { TerminalToolConfirmationStorageKeys } from '../../../../chat/browser/wi
 import { IChatService, ChatRequestQueueKind, ElicitationState, type IChatExternalToolInvocationUpdate, type IChatTerminalToolInvocationData } from '../../../../chat/common/chatService/chatService.js';
 import { autorun, constObservable, type IObservable } from '../../../../../../base/common/observable.js';
 import { ChatModel, type IChatRequestModeInfo } from '../../../../chat/common/model/chatModel.js';
+import { ChatConfiguration, ChatPermissionLevel, isAutoApproveLevel } from '../../../../chat/common/constants.js';
 import type { UserSelectedTools } from '../../../../chat/common/participants/chatAgents.js';
 import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolConfirmationMessages, IStreamedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolInvocationStreamContext, IToolResult, ToolDataSource, ToolInvocationPresentation, ToolProgress } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { ITerminalChatService, ITerminalService, type ITerminalInstance } from '../../../../terminal/browser/terminal.js';
@@ -374,11 +375,23 @@ export async function createRunInTerminalToolData(
 	const configurationService = accessor.get(IConfigurationService);
 	const allowToRunUnsandboxedCommands = configurationService.getValue<boolean>(AgentSandboxSettingId.AgentSandboxAllowUnsandboxedCommands) === true;
 	const retryWithAllowNetworkRequestsSetting = configurationService.getValue<boolean>(AgentSandboxSettingId.AgentSandboxRetryWithAllowNetworkRequests) === true;
-	// Only steer the model away from interactive privilege-escalation commands when auto-approve is
-	// enabled. In interactive mode the user can focus the terminal and type a password/UAC prompt
-	// directly (bypassing the model), which is a supported flow; in auto-approve/autopilot mode such
-	// prompts are cancelled since no human is available to answer them.
-	const includeElevationGuidance = configurationService.getValue(TerminalChatAgentToolsSettingId.EnableAutoApprove) === true;
+	// Only steer the model away from interactive privilege-escalation commands when the session is
+	// (or defaults to) an auto-approving mode. In interactive mode the user can focus the terminal and
+	// type a password/UAC prompt directly (bypassing the model), which is a supported flow; in
+	// auto-approve/Bypass Approvals/Autopilot mode such prompts are cancelled since no human is
+	// available to answer them.
+	//
+	// Note: the tool description is computed once at registration, so it cannot observe the live,
+	// per-session permission level (which can change mid-session via the picker). We therefore use the
+	// best available static signals: the terminal auto-approve setting, the global auto-approve
+	// setting, and the default permission level for new sessions. Sessions switched into Bypass
+	// Approvals/Autopilot mid-session from an otherwise-interactive default are not covered by this
+	// static description.
+	const defaultPermissionLevel = configurationService.getValue<ChatPermissionLevel | undefined>(ChatConfiguration.DefaultPermissionLevel);
+	const includeElevationGuidance =
+		configurationService.getValue(TerminalChatAgentToolsSettingId.EnableAutoApprove) === true ||
+		configurationService.getValue(ChatConfiguration.GlobalAutoApprove) === true ||
+		isAutoApproveLevel(defaultPermissionLevel);
 
 	const profileFetcher = instantiationService.createInstance(TerminalProfileFetcher);
 	const [shell, os, isSandboxEnabled, isSandboxAllowNetworkEnabled] = await Promise.all([
