@@ -1448,6 +1448,17 @@ export interface IAgent {
 	/** Dispose a session, freeing resources. */
 	disposeSession(session: URI): Promise<void>;
 
+	/**
+	 * Release a session's in-memory resources (SDK session/connection, cached
+	 * per-session state) without deleting any durable data. Unlike
+	 * {@link disposeSession}, this is non-destructive: the on-disk session log,
+	 * session database, and worktree are all preserved so the session can be
+	 * transparently resumed later. Used by idle-session eviction to bound
+	 * memory in long-lived host processes. Optional; providers that hold no
+	 * releasable in-memory state simply omit it.
+	 */
+	releaseSession?(session: URI): Promise<void>;
+
 	/** Respond to a pending permission request from the SDK. */
 	respondToPermissionRequest(requestId: string, approved: boolean): void;
 

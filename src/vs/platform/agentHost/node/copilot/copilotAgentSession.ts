@@ -503,6 +503,11 @@ export class CopilotAgentSession extends Disposable {
 	 */
 	private get _turnId(): string { return this._currentTurn?.id ?? ''; }
 	/**
+	 * Whether the session currently has an in-flight turn. Used by
+	 * non-destructive idle release to avoid disconnecting mid-turn.
+	 */
+	get hasActiveTurn(): boolean { return this._currentTurn !== undefined; }
+	/**
 	 * Last model id seen on the SDK's per-LLM-call `Usage` event (or a
 	 * direct {@link setModel} call). We rely on the
 	 * `Usage` event rather than the tool-call event itself because
