@@ -71,18 +71,6 @@ export interface IAgentConfigurationService {
 	getEffectiveWorkingDirectory(session: ProtocolURI): string | undefined;
 
 	/**
-	 * The effective working directory an agent should materialize its subprocess
-	 * in, or `undefined` while a fresh worktree-isolation session's worktree has
-	 * not yet been created (see {@link isWorkingDirectoryPending}). Agents read
-	 * their cwd from this so they stay unaware of the folder-vs-worktree
-	 * distinction: for folder sessions and restored worktree sessions it returns
-	 * the same value as {@link getEffectiveWorkingDirectory}; for a fresh worktree
-	 * session it returns the created worktree once the host resolves it on the
-	 * first send.
-	 */
-	getResolvedWorkingDirectory(session: ProtocolURI): string | undefined;
-
-	/**
 	 * Whether a fresh worktree-isolation session's worktree has not yet been
 	 * created. Agents consult this to defer prewarming (and any other eager
 	 * materialization) until the host resolves the worktree on the first send.
@@ -146,9 +134,8 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 	 * Host-owned worktree isolation controller. Injected after construction (via
 	 * {@link setWorktreeIsolation}) because it only becomes available once the
 	 * branch-name generator has been wired, which happens after this service is
-	 * built. Consulted by {@link getResolvedWorkingDirectory} /
-	 * {@link isWorkingDirectoryPending}; both degrade to folder behavior while it
-	 * is unset (tests, early startup).
+	 * built. Consulted by {@link isWorkingDirectoryPending}, which degrades to
+	 * folder behavior while it is unset (tests, early startup).
 	 */
 	private _worktree: WorktreeIsolation | undefined;
 
@@ -215,26 +202,6 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 			return this._stateManager.getSessionState(parentInfo.parentSession.toString())?.workingDirectory;
 		}
 		return undefined;
-	}
-
-	getResolvedWorkingDirectory(session: ProtocolURI): string | undefined {
-		const sessionId = AgentSession.id(session);
-		// A worktree created in this process wins: the session's persisted working
-		// directory still points at the user-picked folder until the agent's
-		// materialize event swaps it, so read the worktree straight off the
-		// controller.
-		const worktree = this._worktree?.getResolvedWorktree(sessionId);
-		if (worktree) {
-			return worktree.toString();
-		}
-		// A fresh worktree session whose worktree has not been created yet has no
-		// materialization cwd: report pending so agents defer.
-		if (this._worktree?.isWorkingDirectoryPending(sessionId)) {
-			return undefined;
-		}
-		// Folder sessions and restored worktree sessions (whose persisted working
-		// directory already points at the worktree) fall through here.
-		return this.getEffectiveWorkingDirectory(session);
 	}
 
 	isWorkingDirectoryPending(session: ProtocolURI): boolean {

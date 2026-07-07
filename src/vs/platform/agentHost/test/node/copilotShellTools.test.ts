@@ -121,7 +121,6 @@ suite('CopilotShellTools', () => {
 			onDidRootConfigChange: emitter.event,
 			getEffectiveValue: () => undefined,
 			getEffectiveWorkingDirectory: () => undefined,
-			getResolvedWorkingDirectory: () => undefined,
 			isWorkingDirectoryPending: () => false,
 			getSessionConfigValues: () => undefined,
 			updateSessionConfig: () => { /* no-op */ },

@@ -1627,8 +1627,8 @@ export class CodexAgent extends Disposable implements IAgent {
 			// default chat lives and dies with its session.
 			return Promise.resolve();
 		},
-		sendMessage: (chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string): Promise<void> => {
-			return this._sendMessage(chat, prompt, attachments, turnId);
+		sendMessage: (chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string, workingDirectory?: URI): Promise<void> => {
+			return this._sendMessage(chat, prompt, attachments, turnId, workingDirectory);
 		},
 		abort: (chat: URI): Promise<void> => {
 			return this._abort(chat);
@@ -1753,13 +1753,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 		if (!session.workingDirectory) {
 			throw new Error(`Cannot materialize codex session ${session.sessionId}: no working directory`);
-		}
-		// The host resolved (and, for worktree isolation, created) the working
-		// directory before this first send; read it back so `thread/start` locks
-		// the worktree cwd without this agent knowing about worktrees.
-		const resolvedWorkingDirectory = this._configurationService.getResolvedWorkingDirectory(session.sessionUri.toString());
-		if (resolvedWorkingDirectory) {
-			session.workingDirectory = URI.parse(resolvedWorkingDirectory);
 		}
 		const conn = await this._ensureConnection();
 		const config = this._readSessionConfig(session);
@@ -1905,13 +1898,19 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 	}
 
-	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string): Promise<void> {
+	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, workingDirectory?: URI): Promise<void> {
 		const sessionUri = this._sessionUriFromChat(chat);
 		this._logService.info(`[Codex DEBUG] sendMessage session=${sessionUri.toString()} prompt=${JSON.stringify(prompt).slice(0, 60)}`);
 		const sessionId = AgentSession.id(sessionUri);
 		const session = this._sessions.get(sessionId);
 		if (!session) {
 			throw new Error(`Codex session not found: ${sessionUri.toString()}`);
+		}
+		// The host hands us the resolved working directory (an isolated worktree for
+		// worktree isolation) on the first send; adopt it before materialize locks
+		// the codex subprocess cwd. The agent stays unaware of worktrees.
+		if (workingDirectory && session.threadId === undefined) {
+			session.workingDirectory = workingDirectory;
 		}
 		const conn = await this._ensureConnection();
 		const effectiveTurnId = turnId ?? generateUuid();

@@ -349,7 +349,6 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 		// session class will read.
 		getEffectiveValue: ((_session: string, _schema: unknown, key: string) => configValues[key]) as IAgentConfigurationService['getEffectiveValue'],
 		getEffectiveWorkingDirectory: () => undefined,
-		getResolvedWorkingDirectory: () => undefined,
 		isWorkingDirectoryPending: () => false,
 		getSessionConfigValues: () => undefined,
 		updateSessionConfig: (session, patch) => { sessionConfigUpdates.push({ session, patch }); },

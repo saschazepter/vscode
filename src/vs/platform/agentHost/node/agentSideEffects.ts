@@ -83,7 +83,7 @@ export interface IAgentSideEffectsOptions {
 	 * it) before the agent materializes. A no-op for folder sessions and after the
 	 * first send. Provided by {@link AgentService}.
 	 */
-	readonly resolveWorktreeBeforeSend?: (params: { session: ProtocolURI; chat: ProtocolURI; turnId: string; prompt: string }) => Promise<void>;
+	readonly resolveWorktreeBeforeSend?: (params: { session: ProtocolURI; chat: ProtocolURI; turnId: string; prompt: string }) => Promise<URI | undefined>;
 	/**
 	 * Called after each top-level session turn completes so git state can be
 	 * refreshed and published via `SessionMetaChanged`. Subagent turns are
@@ -1360,9 +1360,10 @@ export class AgentSideEffects extends Disposable {
 
 		// Host-owned worktree isolation: resolve (create) the session's worktree
 		// before the agent materializes, so the agent runs in the worktree without
-		// ever knowing about it. Idempotent; a no-op for folder sessions and after
+		// ever knowing about it. Returns the resolved worktree (handed to the agent
+		// as its working directory below); undefined for folder sessions and after
 		// the first send.
-		await this._options.resolveWorktreeBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
+		const resolvedWorkingDirectory = await this._options.resolveWorktreeBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
 
 		const selectionUpdates: Promise<void>[] = [];
 		if (message.model) {
@@ -1376,7 +1377,7 @@ export class AgentSideEffects extends Disposable {
 
 		await Promise.all(selectionUpdates);
 
-		await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId).catch(err => {
+		await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId, resolvedWorkingDirectory).catch(err => {
 			const errCode = (err as { code?: number })?.code;
 			this._logService.error(`[AgentSideEffects] sendMessage failed for session=${turnChannel}: code=${errCode}, message=${err instanceof Error ? err.message : String(err)}, type=${err?.constructor?.name}`, err);
 			this._stateManager.dispatchServerAction(turnChannel, {

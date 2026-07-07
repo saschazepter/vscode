@@ -461,14 +461,17 @@ export class AgentService extends Disposable implements IAgentService {
 	 * user's prompt for branch naming) and surfaces the "Created isolated
 	 * worktree" announcement as the first markdown response part of the turn.
 	 * Idempotent; a no-op for folder sessions and once the worktree exists.
+	 * Returns the created worktree URI (or `undefined` for folder sessions and
+	 * once the worktree already exists) so the caller can hand it to the agent as
+	 * the session's working directory at send time.
 	 */
-	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<void> {
+	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<URI | undefined> {
 		if (!this._worktree) {
-			return;
+			return undefined;
 		}
 		const sessionId = AgentSession.id(params.session);
 		if (!this._worktree.isWorkingDirectoryPending(sessionId)) {
-			return;
+			return undefined;
 		}
 		const pickedFolder = this._configurationService.getEffectiveWorkingDirectory(params.session);
 		try {
@@ -494,6 +497,7 @@ export class AgentService extends Disposable implements IAgentService {
 				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
 			});
 		}
+		return this._worktree.getResolvedWorktree(sessionId);
 	}
 
 	registerProvider(provider: IAgent): void {
@@ -1331,12 +1335,19 @@ export class AgentService extends Disposable implements IAgentService {
 		if (!config?.config && !config?.workingDirectory) {
 			return undefined;
 		}
+		const params: IAgentResolveSessionConfigParams = {
+			provider: provider.id,
+			workingDirectory: config.workingDirectory,
+			config: config.config,
+		};
 		try {
-			const resolved = await provider.resolveSessionConfig({
-				provider: provider.id,
-				workingDirectory: config.workingDirectory,
-				config: config.config,
-			});
+			// Wrap with the host's isolation schema so the created config carries the
+			// `isolation` / `branch` values (and their git-derived defaults). The
+			// agent's own `resolveSessionConfig` omits them (isolation is host-owned),
+			// so without this a fresh worktree session's isolation is `undefined` at
+			// create time — the pending mark below is skipped and the send falls back
+			// to folder even though the user picked worktree.
+			const resolved = await this._withIsolationSchema(await provider.resolveSessionConfig(params), params);
 			return { schema: resolved.schema, values: resolved.values };
 		} catch (err) {
 			this._logService.error(`[AgentService] Failed to resolve created session config for provider ${provider.id}`, err);

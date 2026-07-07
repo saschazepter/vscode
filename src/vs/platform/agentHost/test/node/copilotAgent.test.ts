@@ -651,16 +651,6 @@ async function disposeAgent(agent: CopilotAgent): Promise<void> {
 	await Promise.resolve();
 }
 
-/**
- * Injects a host-resolved working directory (folder or worktree) into a Copilot
- * agent's config service, standing in for the host's first-send worktree
- * resolution so materialization re-anchors to it.
- */
-function stubResolvedWorkingDirectory(agent: CopilotAgent, resolved: URI | undefined): void {
-	const configService = (agent as unknown as { _configurationService: IAgentConfigurationService })._configurationService;
-	(configService as unknown as { getResolvedWorkingDirectory: (session: string) => string | undefined }).getResolvedWorkingDirectory = () => resolved?.toString();
-}
-
 suite('CopilotAgent', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -3711,7 +3701,7 @@ suite('CopilotAgent', () => {
 			await fs.rm(tmpDir, { recursive: true, force: true });
 		});
 
-		async function materializeAndCaptureAnchor(resolvedWorkingDirectory: URI): Promise<{ anchor: URI | undefined; sdkWorkingDirectory: string | undefined; originalFolder: URI }> {
+		async function materializeAndCaptureAnchor(resolvedWorkingDirectory: URI | undefined): Promise<{ anchor: URI | undefined; sdkWorkingDirectory: string | undefined; originalFolder: URI }> {
 			const originalFolder = URI.joinPath(URI.file(tmpDir), 'repo');
 			await fs.mkdir(originalFolder.fsPath, { recursive: true });
 
@@ -3727,14 +3717,13 @@ suite('CopilotAgent', () => {
 				copilotClient: client,
 			});
 
-			// Stub working-directory resolution (worktree creation is covered by
-			// the worktree-announcement suite) and capture the customization
-			// anchor handed to `_createAgentSession`.
+			// Capture the customization anchor handed to `_createAgentSession`. The
+			// host pushes the resolved working directory (the worktree) into the first
+			// `sendMessage`, mirroring AgentSideEffects.
 			let anchor: URI | undefined;
 			const agentInternals = agent as unknown as {
 				_createAgentSession: (launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: unknown, channelUri?: URI) => CopilotAgentSession;
 			};
-			stubResolvedWorkingDirectory(agent, resolvedWorkingDirectory);
 			const originalCreateAgentSession = agentInternals._createAgentSession;
 			agentInternals._createAgentSession = (launchPlan, customizationDirectory, activeClient, channelUri) => {
 				anchor = customizationDirectory;
@@ -3745,7 +3734,7 @@ suite('CopilotAgent', () => {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({ session: AgentSession.uri('copilotcli', 'anchor-session'), workingDirectory: originalFolder });
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, resolvedWorkingDirectory);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3762,7 +3751,7 @@ suite('CopilotAgent', () => {
 
 		test('materialization without a worktree keeps the anchor on the original folder', async () => {
 			const originalFolder = URI.joinPath(URI.file(tmpDir), 'repo');
-			const { anchor } = await materializeAndCaptureAnchor(originalFolder);
+			const { anchor } = await materializeAndCaptureAnchor(undefined);
 			assert.strictEqual(anchor?.toString(), originalFolder.toString(), 'the anchor stays on the original folder when no worktree is created');
 		});
 
@@ -3792,11 +3781,9 @@ suite('CopilotAgent', () => {
 				fileService,
 			});
 
-			// Stub worktree resolution; the active-client claim anchors the
-			// provisional plugin controller to the ORIGINAL folder first, so this
-			// exercises the re-anchor at materialization.
-			stubResolvedWorkingDirectory(agent, worktree);
-
+			// The active-client claim anchors the provisional plugin controller to
+			// the ORIGINAL folder first; the host pushes the worktree into the first
+			// send, so this exercises the re-anchor at materialization.
 			try {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({
@@ -3805,7 +3792,7 @@ suite('CopilotAgent', () => {
 					activeClient: { clientId: 'c1', tools: [] },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktree);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3948,7 +3935,6 @@ suite('CopilotAgent', () => {
 
 			let launchAgentName: string | undefined;
 			const internals = agent as unknown as AgentInternals;
-			stubResolvedWorkingDirectory(agent, worktreeFolder);
 			const originalCreateAgentSession = internals._createAgentSession;
 			internals._createAgentSession = (launchPlan, customizationDirectory, activeClient, channelUri) => {
 				launchAgentName = launchPlan.resolvedAgentName;
@@ -3963,7 +3949,7 @@ suite('CopilotAgent', () => {
 					agent: { uri: repoAgentFile.toString() },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktreeFolder);
 
 				// `_readSessionMetadata` reads back the exact agent field the
 				// resume path consumes, so asserting it stands in for restore.

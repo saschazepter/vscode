@@ -1377,8 +1377,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this._disposeChat(session, chat);
 		},
-		sendMessage: (chatUri: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void> => {
-			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId);
+		sendMessage: (chatUri: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void> => {
+			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId, workingDirectory);
 		},
 		abort: (chatUri: URI): Promise<void> => {
 			return this._abortSession(chatUri);
@@ -1573,7 +1573,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * `SessionConfigChanged` actions that arrived after `createSession` are
 	 * honoured without bespoke forwarding.
 	 */
-	private async _materializeProvisional(sessionId: string): Promise<CopilotAgentSession> {
+	private async _materializeProvisional(sessionId: string, resolvedWorkingDirectory?: URI): Promise<CopilotAgentSession> {
 		const provisional = this._provisionalSessions.get(sessionId);
 		if (!provisional) {
 			throw new Error(`Cannot materialize unknown provisional session: ${sessionId}`);
@@ -1581,12 +1581,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const client = await this._ensureClient();
 		const sessionUri = provisional.sessionUri;
 
-		// The host has already resolved (and, for worktree isolation, created) the
-		// working directory before this first send; read it back so the SDK
-		// subprocess is spawned in the worktree without this agent knowing about
-		// worktrees at all. Falls back to the picked folder for folder isolation.
-		const resolvedWorkingDirectory = this._configurationService.getResolvedWorkingDirectory(sessionUri.toString());
-		const workingDirectory = resolvedWorkingDirectory ? URI.parse(resolvedWorkingDirectory) : provisional.workingDirectory;
+		// The host hands us the resolved working directory (an isolated worktree for
+		// worktree isolation) on the first send; use it so the SDK subprocess spawns
+		// in the worktree. Falls back to the folder / scratch dir captured at create
+		// time for folder / workspace-less sessions.
+		const workingDirectory = resolvedWorkingDirectory ?? provisional.workingDirectory;
 		// The customization anchor follows the working directory: once a worktree
 		// is created the agent must discover skills/instructions/agents from the
 		// worktree (not the user-picked folder) so the model reads and edits files
@@ -1765,7 +1764,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 	}
 
-	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void> {
+	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void> {
 		const context = this._getChatContext(chat);
 		// Additional (non-default) chats are backed by their own SDK
 		// chat hosted on the owning session entry, keyed by the chat URI.
@@ -1789,7 +1788,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// its branch-name hint from the user's first message.
 			let entry: CopilotAgentSession | undefined;
 			if (this._provisionalSessions.has(context.sessionId)) {
-				entry = await this._materializeProvisional(context.sessionId);
+				entry = await this._materializeProvisional(context.sessionId, workingDirectory);
 			} else {
 				entry = this._getChatContext(chat).target;
 			}

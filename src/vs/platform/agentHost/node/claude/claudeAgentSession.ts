@@ -127,16 +127,6 @@ export class ClaudeAgentSession extends Disposable {
 	/** Snapshot of permission-mode fallback used when live read is undefined. */
 	get permissionModeFallback(): ClaudePermissionMode { return this._permissionModeFallback; }
 
-	/**
-	 * Adopt the host-resolved working directory before {@link materialize} locks
-	 * the SDK subprocess `cwd` (a subprocess inherits `cwd` at fork time and
-	 * cannot change it afterwards). The agent stays unaware of whether the
-	 * directory is a plain folder or an isolated worktree — the host owns that.
-	 */
-	setResolvedWorkingDirectory(workingDirectory: URI): void {
-		this.workingDirectory = workingDirectory;
-	}
-
 	static createProvisional(
 		sessionId: string,
 		sessionUri: URI,
