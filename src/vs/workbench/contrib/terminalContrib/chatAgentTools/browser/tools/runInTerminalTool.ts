@@ -169,6 +169,7 @@ function createPowerShellModelDescription(shell: string, sandboxingOptions: ISan
 		'- NEVER pipe interactive commands through Select-Object, Where-Object, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.',
 		'',
 		'Interactive Input Handling:',
+		'- Prefer commands that will not block on a credential or secret prompt. Avoid triggering interactive elevation or Get-Credential prompts, and pass non-interactive flags where available. If a step genuinely requires elevated privileges or a secret, do NOT run it unattended — tell the user to run that step interactively themselves, because in auto-approve/autopilot mode the prompt cannot be answered and the command will be cancelled, wasting the turn.',
 		'- When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.',
 		`- NEVER use vscode_askQuestions to request sensitive input such as passwords, passphrases, API keys, tokens, or other secrets — answers to that tool are sent through the model. If the prompt requires a secret, tell the user to type it directly into the terminal and stop; do not call vscode_askQuestions or ${TerminalToolId.SendToTerminal} for that prompt.`,
 		`- Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.`,
@@ -316,6 +317,7 @@ Best Practices:
 - NEVER pipe interactive commands through tail, head, grep, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.
 
 Interactive Input Handling:
+- Prefer commands that will not block on a password or secret prompt. For privileged steps use sudo -n so they fail fast instead of hanging, prefer user-level installs (e.g. pip install --user, a local npm install instead of a global one), and pass non-interactive flags (e.g. -y, DEBIAN_FRONTEND=noninteractive). If a step genuinely requires sudo or another secret, do NOT run it unattended — tell the user to run that step interactively themselves, because in auto-approve/autopilot mode the prompt cannot be answered and the command will be cancelled, wasting the turn.
 - When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.
 - NEVER use vscode_askQuestions to request sensitive input such as passwords, passphrases, API keys, tokens, or other secrets — answers to that tool are sent through the model. If the prompt requires a secret, tell the user to type it directly into the terminal and stop; do not call vscode_askQuestions or send_to_terminal for that prompt.
 - Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.
