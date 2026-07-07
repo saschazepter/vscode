@@ -22,10 +22,12 @@ import { IAutomationSchedule } from '../../../../workbench/contrib/chat/common/a
 import { IAutomationDialogResult, IAutomationDialogService, IShowAutomationDialogOptions } from '../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
 import { ICreateAutomationOptions, IUpdateAutomationOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IAutomationSessionTypeProvider } from '../../../../workbench/contrib/chat/common/automations/automationSessionTypes.js';
+import { SessionType } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { IFormState, IValidationState, isAutomationDialogPopupTarget, renderForm, updateSaveButtonState } from './automationDialog.js';
 
 const $ = DOM.$;
+const COPILOT_PROVIDER_ID = 'default-copilot';
 
 /**
  * Owns the Automations create/edit dialog in the sessions layer, where the
@@ -163,8 +165,9 @@ export class AutomationDialogService implements IAutomationDialogService {
 					prompt,
 					schedule,
 					folderUri: state.folderUri,
-					providerId: state.providerId ?? null,
-					sessionTypeId: state.sessionTypeId ?? null,
+					// v0: Only copilot cli supported, explicitly mark as such to avoid accidental fallbacks
+					providerId: COPILOT_PROVIDER_ID,
+					sessionTypeId: SessionType.CopilotCLI,
 					modelId: modelId ?? null,
 					mode: mode ?? null,
 					permissionLevel: permissionLevel ?? null,
@@ -180,8 +183,9 @@ export class AutomationDialogService implements IAutomationDialogService {
 				prompt,
 				schedule,
 				folderUri: state.folderUri,
-				providerId: state.providerId,
-				sessionTypeId: state.sessionTypeId,
+				// v0: Only copilot cli supported, explicitly mark as such to avoid accidental fallbacks
+				providerId: COPILOT_PROVIDER_ID,
+				sessionTypeId: SessionType.CopilotCLI,
 				modelId,
 				mode,
 				permissionLevel,
