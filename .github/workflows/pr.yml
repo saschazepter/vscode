@@ -415,8 +415,10 @@ jobs:
         working-directory: extensions/copilot
         run: npm run test:prompt
 
+      - name: Build policy-watcher native module
+        run: npm rebuild @vscode/policy-watcher
+
       - name: Run Completions Core lib tests using VS Code
         working-directory: extensions/copilot
         run: npm run test:completions-core
-
 
