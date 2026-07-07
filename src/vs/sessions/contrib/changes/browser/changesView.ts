@@ -673,6 +673,20 @@ export class ChangesViewPane extends ViewPane {
 		const getSessionFilesPreferredHeight = () => Math.max(getSessionFilesMinimumHeight(), SessionFilesWidget.HEADER_HEIGHT + SessionFilesWidget.PREFERRED_BODY_HEIGHT);
 		const getCIContentHeight = () => Math.max(CIStatusWidget.HEADER_HEIGHT, this.ciStatusWidget?.desiredHeight ?? 0);
 		const getCIMinimumHeight = () => this.ciStatusWidget?.collapsed ? CIStatusWidget.HEADER_HEIGHT : Math.min(ciMinHeight, getCIContentHeight());
+		// Preferred default size for the CI pane: its content height, capped to
+		// about a third of the available split height so the changes list keeps
+		// the majority of the space.
+		const getCIPreferredHeight = () => {
+			const contentHeight = getCIContentHeight();
+			if (this.ciStatusWidget?.collapsed) {
+				return CIStatusWidget.HEADER_HEIGHT;
+			}
+			const availableHeight = this.getSplitViewAvailableHeight();
+			if (availableHeight > 0) {
+				return Math.max(getCIMinimumHeight(), Math.min(contentHeight, Math.round(availableHeight / 3)));
+			}
+			return contentHeight;
+		};
 		const thisView = this;
 
 		// Top pane: file tree
@@ -740,7 +754,7 @@ export class ChangesViewPane extends ViewPane {
 		this._register(this.sessionFilesWidget.onDidChangeHeight(() => this.fireTreePaneSizeChange()));
 
 		// CI checks pane (index 2)
-		this._wireSectionPane(this.ciStatusWidget, 2, CIStatusWidget.HEADER_HEIGHT, getCIContentHeight);
+		this._wireSectionPane(this.ciStatusWidget, 2, CIStatusWidget.HEADER_HEIGHT, getCIPreferredHeight);
 
 		this._register(this.onDidChangeBodyVisibility(visible => {
 			if (visible) {
@@ -1033,19 +1047,27 @@ export class ChangesViewPane extends ViewPane {
 		this.treePaneSizeChange.fire(undefined);
 	}
 
+	/** Compute the height available to the SplitView within the body. */
+	private getSplitViewAvailableHeight(): number {
+		const bodyHeight = this.currentBodyHeight;
+		if (bodyHeight <= 0) {
+			return 0;
+		}
+		const bodyPadding = 16; // 8px top + 8px bottom from .changes-view-body
+		const actionsHeight = this.actionsContainer?.offsetHeight ?? 0;
+		const actionsMargin = actionsHeight > 0 ? 8 : 0;
+		return Math.max(0, bodyHeight - bodyPadding - actionsHeight - actionsMargin);
+	}
+
 	/** Layout the SplitView to fill available body space. */
 	private layoutSplitView(): void {
 		if (!this.splitView || !this.splitViewContainer) {
 			return;
 		}
-		const bodyHeight = this.currentBodyHeight;
-		if (bodyHeight <= 0) {
+		const availableHeight = this.getSplitViewAvailableHeight();
+		if (availableHeight <= 0) {
 			return;
 		}
-		const bodyPadding = 16; // 8px top + 8px bottom from .changes-view-body
-		const actionsHeight = this.actionsContainer?.offsetHeight ?? 0;
-		const actionsMargin = actionsHeight > 0 ? 8 : 0;
-		const availableHeight = Math.max(0, bodyHeight - bodyPadding - actionsHeight - actionsMargin);
 		this.splitViewContainer.style.height = `${availableHeight}px`;
 		this.splitView.layout(availableHeight);
 	}
