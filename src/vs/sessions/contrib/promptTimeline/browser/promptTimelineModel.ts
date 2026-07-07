@@ -301,7 +301,16 @@ export class PromptTimelineModel extends Disposable {
 				const key = diff.modifiedURI.toString();
 				const existing = byPath.get(key);
 				if (existing) {
-					byPath.set(key, { ...existing, added: existing.added + diff.added, removed: existing.removed + diff.removed });
+					// Grouped tick, same file across prompts: the prompts are
+					// chronological, so keep the earliest `originalURI` (before) but
+					// advance `diffModifiedURI` to this later prompt's after-snapshot
+					// so the opened diff spans the whole tick, not just the first edit.
+					byPath.set(key, {
+						...existing,
+						diffModifiedURI: diff.modifiedContentURI ?? diff.modifiedURI,
+						added: existing.added + diff.added,
+						removed: existing.removed + diff.removed,
+					});
 				} else {
 					byPath.set(key, {
 						name: basename(diff.modifiedURI),
@@ -385,8 +394,10 @@ export class PromptTimelineModel extends Disposable {
 	private async _canRead(resource: URI): Promise<boolean> {
 		// Agent-host git-blob URIs always `stat` successfully even when the blob
 		// is missing, so probe with an actual read to detect unreadable sides.
+		// Read a single byte: enough to surface a not-found error without pulling
+		// whole (potentially large) file contents just to test availability.
 		try {
-			await this.fileService.readFile(resource);
+			await this.fileService.readFile(resource, { length: 1 });
 			return true;
 		} catch {
 			return false;
