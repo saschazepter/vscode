@@ -14,7 +14,7 @@ import { IInstantiationService } from '../../instantiation/common/instantiation.
 import { ILogService } from '../../log/common/log.js';
 import { IAgentHostChangesetService } from '../common/agentHostChangesetService.js';
 import { IAgentHostCheckpointService } from '../common/agentHostCheckpointService.js';
-import { AgentSignal, IAgent, IAgentToolPendingConfirmationSignal } from '../common/agentService.js';
+import { AgentSession, AgentSignal, IAgent, IAgentToolPendingConfirmationSignal } from '../common/agentService.js';
 import { toToolCallMeta } from '../common/meta/agentToolCallMeta.js';
 
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
@@ -59,6 +59,7 @@ import { SessionPermissionManager } from './sessionPermissions.js';
 import type { ICopilotApiService } from './shared/copilotApiService.js';
 import { stripProxyErrorMarker, toChatErrorMeta, tryParseForwardedChatError } from './shared/forwardedChatError.js';
 import { persistSessionMetadata } from './shared/persistSessionMetadata.js';
+import type { WorktreeIsolation } from './shared/worktreeIsolation.js';
 
 /**
  * Options for constructing an {@link AgentSideEffects} instance.
@@ -76,6 +77,13 @@ export interface IAgentSideEffectsOptions {
 	readonly getGitHubCopilotToken?: () => string | undefined;
 	/** CAPI service used for Copilot utility title generation. */
 	readonly copilotApiService?: ICopilotApiService;
+	/**
+	 * Host-owned worktree isolation hook, awaited before the agent's first send
+	 * so the session's worktree is created (and the agent's resolved cwd points at
+	 * it) before the agent materializes. A no-op for folder sessions and after the
+	 * first send. Provided by {@link AgentService}.
+	 */
+	readonly resolveWorktreeBeforeSend?: (params: { session: ProtocolURI; chat: ProtocolURI; turnId: string; prompt: string }) => Promise<void>;
 	/**
 	 * Called after each top-level session turn completes so git state can be
 	 * refreshed and published via `SessionMetaChanged`. Subagent turns are
@@ -135,6 +143,8 @@ export class AgentSideEffects extends Disposable {
 	private readonly _turnTracker: AgentHostTurnTracker;
 	private readonly _toolCallTracker: AgentHostToolCallTracker;
 	private readonly _titleController: AgentHostSessionTitleController;
+	/** Host-owned worktree isolation controller; injected post-construction. */
+	private _worktree: WorktreeIsolation | undefined;
 
 	constructor(
 		private readonly _stateManager: AgentHostStateManager,
@@ -1138,6 +1148,18 @@ export class AgentSideEffects extends Disposable {
 			}
 			case ActionType.SessionIsArchivedChanged: {
 				this._persistSessionFlag(channel, 'isArchived', action.isArchived ? 'true' : '');
+				// Host-owned worktree lifecycle (agents stay unaware): remove the
+				// clean, branch-preserved worktree on archive and recreate it on
+				// unarchive. Serialized per session inside the controller so it can't
+				// interleave with a first-send worktree resolution.
+				if (this._worktree) {
+					const sessionUri = URI.parse(channel);
+					const sessionId = AgentSession.id(channel);
+					const worktreeOp = action.isArchived
+						? this._worktree.cleanupWorktreeOnArchive(sessionUri, sessionId)
+						: this._worktree.recreateWorktreeOnUnarchive(sessionUri, sessionId);
+					worktreeOp.catch(err => this._logService.warn(`[AgentSideEffects] worktree ${action.isArchived ? 'cleanup' : 'recreate'} failed for ${channel}`, err));
+				}
 				const agent = this._options.getAgent(channel);
 				agent?.onArchivedChanged?.(URI.parse(channel), action.isArchived).catch(err => {
 					this._logService.warn(`[AgentSideEffects] onArchivedChanged failed for ${channel}`, err);
@@ -1162,6 +1184,11 @@ export class AgentSideEffects extends Disposable {
 				break;
 			}
 		}
+	}
+
+	/** Injects the host-owned worktree isolation controller (see {@link AgentService.setWorktreeIsolation}). */
+	setWorktreeIsolation(worktree: WorktreeIsolation): void {
+		this._worktree = worktree;
 	}
 
 	cancelSessionTitleGeneration(session: ProtocolURI): void {
@@ -1330,6 +1357,12 @@ export class AgentSideEffects extends Disposable {
 		const { agent, turnChannel, chat, message, turnId, senderClientId } = options;
 
 		const chatUri = URI.parse(chat);
+
+		// Host-owned worktree isolation: resolve (create) the session's worktree
+		// before the agent materializes, so the agent runs in the worktree without
+		// ever knowing about it. Idempotent; a no-op for folder sessions and after
+		// the first send.
+		await this._options.resolveWorktreeBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
 
 		const selectionUpdates: Promise<void>[] = [];
 		if (message.model) {

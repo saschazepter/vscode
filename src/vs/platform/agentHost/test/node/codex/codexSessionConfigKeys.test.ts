@@ -116,14 +116,11 @@ suite('codexSessionConfigKeys', () => {
 		});
 	});
 
-	test('resolveSessionConfig advertises shared isolation + branch alongside Codex config', async () => {
-		// Without a working directory the repo is unknown, so isolation is
-		// folder-only and no branch is offered.
-		const noRepoAgent = createAgent(disposables);
-		const noRepo = await noRepoAgent.resolveSessionConfig({});
-
-		// With a git repo (commits present) worktree isolation is offered and
-		// the branch property is contributed, matching Copilot/Claude.
+	test('resolveSessionConfig returns Codex config without host-owned isolation/branch', async () => {
+		// Isolation / branch are contributed by the host (see
+		// AgentService._withIsolationSchema), not this agent, so Codex's own
+		// resolveSessionConfig exposes only its Codex-specific keys even for a
+		// git repository with commits.
 		const repoRoot = URI.file('/repo');
 		const gitService: IAgentHostGitService = {
 			...createNoopGitService(),
@@ -136,23 +133,17 @@ suite('codexSessionConfigKeys', () => {
 		const repo = await repoAgent.resolveSessionConfig({ workingDirectory: repoRoot });
 
 		assert.deepStrictEqual({
-			noRepoIsolation: noRepo.schema.properties[SessionConfigKey.Isolation]?.enum,
-			noRepoIsolationValue: noRepo.values[SessionConfigKey.Isolation],
-			noRepoHasBranch: noRepo.schema.properties[SessionConfigKey.Branch] !== undefined,
-			repoIsolation: repo.schema.properties[SessionConfigKey.Isolation]?.enum,
-			repoIsolationValue: repo.values[SessionConfigKey.Isolation],
-			repoHasBranch: repo.schema.properties[SessionConfigKey.Branch] !== undefined,
-			repoBranchValue: repo.values[SessionConfigKey.Branch],
-			// The Codex-specific keys are still present next to the shared ones.
+			hasIsolation: repo.schema.properties[SessionConfigKey.Isolation] !== undefined,
+			hasBranch: repo.schema.properties[SessionConfigKey.Branch] !== undefined,
+			isolationValue: repo.values[SessionConfigKey.Isolation],
+			branchValue: repo.values[SessionConfigKey.Branch],
+			// The Codex-specific keys are still present.
 			codexKeysPresent: repo.schema.properties[CodexSessionConfigKey.SandboxMode] !== undefined,
 		}, {
-			noRepoIsolation: ['folder'],
-			noRepoIsolationValue: 'folder',
-			noRepoHasBranch: false,
-			repoIsolation: ['folder', 'worktree'],
-			repoIsolationValue: 'worktree',
-			repoHasBranch: true,
-			repoBranchValue: 'main',
+			hasIsolation: false,
+			hasBranch: false,
+			isolationValue: undefined,
+			branchValue: undefined,
 			codexKeysPresent: true,
 		});
 	});

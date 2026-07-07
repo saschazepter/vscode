@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs/promises';
+import { SequencerByKey } from '../../../../base/common/async.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { basename } from '../../../../base/common/path.js';
@@ -30,7 +31,7 @@ import { AGENT_BRANCH_PREFIX, IAgentBranchNameGenerator } from './agentBranchNam
  */
 const WORKTREE_META_BRANCH = 'copilot.worktree.branchName';
 const WORKTREE_META_PATH = 'copilot.worktree.path';
-const WORKTREE_META_REPOSITORY_ROOT = 'copilot.worktree.repositoryRoot';
+export const WORKTREE_META_REPOSITORY_ROOT = 'copilot.worktree.repositoryRoot';
 
 /** Default upper bound on branch names returned for the branch picker. */
 const BRANCH_COMPLETION_LIMIT = 25;
@@ -148,9 +149,11 @@ export interface IResolveWorkingDirectoryRequest {
  *   ({@link applyRestoreAnnouncement});
  * - cleaning up / recreating the worktree on dispose, archive, and unarchive.
  *
- * One instance is created per agent (via `IInstantiationService.createInstance`)
- * so the in-process `_createdWorktrees` and pending-announcement state stays
- * scoped to that agent.
+ * A single host-owned instance serves every agent: the orchestrator
+ * ({@link AgentService}) creates it and drives the lifecycle so individual
+ * agents stay unaware of the folder-vs-worktree distinction. Session state
+ * (`_createdWorktrees`, pending markers, pending announcements) is keyed by the
+ * globally-unique sessionId, so sharing one instance across agents is safe.
  */
 export class WorktreeIsolation extends Disposable {
 
@@ -170,8 +173,30 @@ export class WorktreeIsolation extends Disposable {
 	 */
 	private readonly _pendingFirstTurnAnnouncements = new Map<string, string>();
 
+	/**
+	 * SessionIds of freshly-created worktree-isolation sessions whose worktree
+	 * has not yet been created (creation is deferred to the first send so the
+	 * user's prompt can drive branch naming). While a session is in this set the
+	 * host reports its working directory as "pending" ({@link isWorkingDirectoryPending})
+	 * so agents defer prewarming / materializing until {@link resolveOnFirstSend}
+	 * runs. Never populated for restored sessions — their worktree already exists
+	 * on disk and their persisted working directory already points at it.
+	 */
+	private readonly _pending = new Set<string>();
+
+	/** Fixed log label; one host-owned instance serves every agent. */
+	private readonly _logLabel = 'AgentHost';
+
+	/**
+	 * Serializes the worktree lifecycle per session so a first-send creation
+	 * ({@link resolveOnFirstSend}) never interleaves with archive/unarchive
+	 * cleanup ({@link cleanupWorktreeOnArchive} / {@link recreateWorktreeOnUnarchive})
+	 * or dispose ({@link removeCreatedWorktree}) for the same session — the
+	 * guarantee each agent previously enforced with its own sequencer.
+	 */
+	private readonly _sequencer = new SequencerByKey<string>();
+
 	constructor(
-		private readonly _logLabel: string,
 		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
 		@IAgentBranchNameGenerator private readonly _branchNameGenerator: IAgentBranchNameGenerator,
 		@ISessionDataService private readonly _sessionDataService: ISessionDataService,
@@ -183,6 +208,46 @@ export class WorktreeIsolation extends Disposable {
 	/** SessionIds with a worktree created by this agent in the current process. */
 	get createdWorktreeSessionIds(): readonly string[] {
 		return [...this._createdWorktrees.keys()];
+	}
+
+	/**
+	 * Marks a fresh worktree-isolation session as pending — its worktree is
+	 * deferred to the first send. Called by the host from `createSession` when
+	 * the resolved session config selects `worktree` isolation.
+	 */
+	notePending(sessionId: string): void {
+		this._pending.add(sessionId);
+	}
+
+	/**
+	 * Whether a session's worktree is still pending creation. The host exposes
+	 * this through {@link IAgentConfigurationService.isWorkingDirectoryPending} so
+	 * agents defer materialization until the host has resolved the worktree.
+	 */
+	isWorkingDirectoryPending(sessionId: string): boolean {
+		return this._pending.has(sessionId);
+	}
+
+	/** The worktree created for a session in this process, if any. */
+	getResolvedWorktree(sessionId: string): URI | undefined {
+		return this._createdWorktrees.get(sessionId)?.worktree;
+	}
+
+	/**
+	 * First-send worktree resolution: creates the worktree (when the session
+	 * selected `worktree` isolation on a git repo) and clears the pending marker
+	 * regardless of outcome, so a failed creation falls back to folder isolation
+	 * instead of leaving the session permanently "pending". Delegates to
+	 * {@link resolveWorkingDirectory}, which is idempotent per session.
+	 */
+	async resolveOnFirstSend(request: IResolveWorkingDirectoryRequest): Promise<URI | undefined> {
+		return this._sequencer.queue(request.sessionId, async () => {
+			try {
+				return await this.resolveWorkingDirectory(request);
+			} finally {
+				this._pending.delete(request.sessionId);
+			}
+		});
 	}
 
 	/**
@@ -340,6 +405,10 @@ export class WorktreeIsolation extends Disposable {
 	 * any). Used on session dispose and on materialization failure.
 	 */
 	async removeCreatedWorktree(sessionId: string): Promise<void> {
+		return this._sequencer.queue(sessionId, () => this._removeCreatedWorktree(sessionId));
+	}
+
+	private async _removeCreatedWorktree(sessionId: string): Promise<void> {
 		const worktree = this._createdWorktrees.get(sessionId);
 		if (!worktree) {
 			return;
@@ -369,6 +438,10 @@ export class WorktreeIsolation extends Disposable {
 	 * missing or the tree is dirty.
 	 */
 	async cleanupWorktreeOnArchive(sessionUri: URI, sessionId: string): Promise<void> {
+		return this._sequencer.queue(sessionId, () => this._cleanupWorktreeOnArchive(sessionUri, sessionId));
+	}
+
+	private async _cleanupWorktreeOnArchive(sessionUri: URI, sessionId: string): Promise<void> {
 		const meta = await this._readWorktreeMetadata(sessionUri).catch(() => undefined);
 		if (!meta?.worktreePath || !meta.repositoryRoot) {
 			return;
@@ -414,6 +487,10 @@ export class WorktreeIsolation extends Disposable {
 	 * missing.
 	 */
 	async recreateWorktreeOnUnarchive(sessionUri: URI, sessionId: string): Promise<void> {
+		return this._sequencer.queue(sessionId, () => this._recreateWorktreeOnUnarchive(sessionUri, sessionId));
+	}
+
+	private async _recreateWorktreeOnUnarchive(sessionUri: URI, sessionId: string): Promise<void> {
 		const meta = await this._readWorktreeMetadata(sessionUri).catch(() => undefined);
 		if (!meta?.worktreePath || !meta.repositoryRoot) {
 			return;
@@ -546,6 +623,17 @@ export class WorktreeIsolation extends Disposable {
  */
 function projectFromRepositoryRoot(repositoryRoot: URI): IAgentSessionProjectInfo {
 	return { uri: repositoryRoot, displayName: basename(repositoryRoot.fsPath) || repositoryRoot.toString() };
+}
+
+/**
+ * Builds the repository {@link IAgentSessionProjectInfo} from a persisted
+ * {@link WORKTREE_META_REPOSITORY_ROOT} value (a URI string), or `undefined`
+ * when absent. Lets the host merge the repository project into a session's
+ * catalog entry directly from a metadata batch it already read, without a
+ * second database open.
+ */
+export function worktreeProjectFromRepositoryRoot(repositoryRootRaw: string | undefined): IAgentSessionProjectInfo | undefined {
+	return repositoryRootRaw ? projectFromRepositoryRoot(URI.parse(repositoryRootRaw)) : undefined;
 }
 
 function errorMessage(error: unknown): string {

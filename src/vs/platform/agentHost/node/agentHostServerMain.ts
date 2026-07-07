@@ -39,6 +39,7 @@ import { AgentHostProxyResolver, IAgentHostProxyResolver } from './agentHostProx
 import { IByokLmBridgeRegistry, NullByokLmBridgeRegistry } from './byokLmBridgeRegistry.js';
 import { IByokLmProxyService, NullByokLmProxyService } from './copilot/byokLmProxyService.js';
 import { AgentBranchNameGenerator, IAgentBranchNameGenerator } from './shared/agentBranchNameGenerator.js';
+import { WorktreeIsolation } from './shared/worktreeIsolation.js';
 import { CopilotApiService, ICopilotApiService } from './shared/copilotApiService.js';
 import { ClaudeAgent } from './claude/claudeAgent.js';
 import { ClaudeAgentSdkService, ClaudeSdkPackage, IClaudeAgentSdkService } from './claude/claudeAgentSdkService.js';
@@ -271,6 +272,10 @@ async function main(): Promise<void> {
 		const copilotApiService = instantiationService.createInstance(CopilotApiService, undefined);
 		diServices.set(ICopilotApiService, copilotApiService);
 		diServices.set(IAgentBranchNameGenerator, instantiationService.createInstance(AgentBranchNameGenerator));
+		// Host-owned worktree isolation controller: a single instance drives folder
+		// / worktree isolation for every agent, so providers stay unaware of it.
+		// Created after the branch-name generator it depends on.
+		agentService.setWorktreeIsolation(disposables.add(instantiationService.createInstance(WorktreeIsolation)));
 		// CLI flags become env vars BEFORE the downloader is constructed so
 		// `isAvailable()` and `loadSdkRoot()` see them as dev overrides.
 		if (options.claudeSdkRoot) {

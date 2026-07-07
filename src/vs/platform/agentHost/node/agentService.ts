@@ -22,14 +22,15 @@ import { ServiceCollection } from '../../instantiation/common/serviceCollection.
 import { ILogService } from '../../log/common/log.js';
 import { AgentProvider, AgentSession, AgentSignal, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentMaterializeSessionEvent, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
+import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
 import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction } from '../common/state/sessionActions.js';
-import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
+import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema } from '../common/state/protocol/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { ChangesSummary, ChatInteractivity, ChatOriginKind, MessageAttachmentKind, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
 import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../common/state/protocol/actions.js';
-import { ISessionGitHubState, ISessionGitState, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, hostBuildInfoFromProduct, isAhpChatChannel, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionWorkspaceless, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
+import { ISessionGitHubState, ISessionGitState, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionWorkspaceless, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { IProductService } from '../../product/common/productService.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentHostTerminalManager, IAgentHostTerminalManager } from './agentHostTerminalManager.js';
@@ -41,6 +42,7 @@ import { AgentSideEffects } from './agentSideEffects.js';
 import { AgentHostLocalTurns } from './agentHostLocalTurns.js';
 import { AgentServerToolHost } from './shared/agentServerToolHost.js';
 import { serverToolGroups } from './shared/serverToolGroups.js';
+import { WorktreeIsolation, WORKTREE_META_REPOSITORY_ROOT, worktreeProjectFromRepositoryRoot } from './shared/worktreeIsolation.js';
 import { AgentHostChangesetService } from './agentHostChangesetService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
 import { IAgentHostCheckpointService, NULL_CHECKPOINT_SERVICE } from '../common/agentHostCheckpointService.js';
@@ -206,7 +208,16 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _localTurns: AgentHostLocalTurns;
 	/** Server-side host for the agent host's server tools. */
 	private readonly _serverToolHost: AgentServerToolHost;
-	private readonly _configurationService: IAgentConfigurationService;
+	private readonly _configurationService: AgentConfigurationService;
+	/**
+	 * Host-owned worktree isolation controller. Set post-construction via
+	 * {@link setWorktreeIsolation} because it depends on the branch-name
+	 * generator, which is wired after this service is built. All worktree
+	 * behavior — schema contribution, first-send resolution, project /
+	 * announcement, archive, and cleanup — is driven from the host so individual
+	 * agents stay unaware of the folder-vs-worktree distinction.
+	 */
+	private _worktree: WorktreeIsolation | undefined;
 	/** Single source of truth for GitHub (Enterprise) endpoints and protected resources. */
 	private readonly _gitHubEndpointService: IAgentHostGitHubEndpointService;
 	/** Pluggable completion item providers (e.g. workspace file completions, agent-specific @-mentions). */
@@ -300,7 +311,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// Build a local instantiation scope so downstream components can
 		// consume {@link IAgentConfigurationService} (and later {@link ILogService})
 		// via DI rather than being plumbed plain-class references.
-		const configurationService: IAgentConfigurationService = this._register(new AgentConfigurationService(this._stateManager, this._logService, this._rootConfigResource));
+		const configurationService = this._register(new AgentConfigurationService(this._stateManager, this._logService, this._rootConfigResource));
 		this._configurationService = configurationService;
 		const fileMonitorService = _fileMonitorService ?? this._register(new AgentHostFileMonitorService(this._fileService, this._logService));
 		updateAgentHostTelemetryLevelFromConfig(this._telemetryService, this._stateManager.rootState.config?.values);
@@ -411,6 +422,7 @@ export class AgentService extends Disposable implements IAgentService {
 					scopes: this._gitHubEndpointService.getCopilotResource().scopes_supported,
 				});
 			},
+			resolveWorktreeBeforeSend: params => this._resolveWorktreeBeforeSend(params),
 			onTurnComplete: async session => {
 				// Refresh the git state for the session.
 				const workingDirStr = this._stateManager.getSessionState(session)?.workingDirectory;
@@ -429,6 +441,60 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	// ---- provider registration ----------------------------------------------
+
+	/**
+	 * Injects the host-owned {@link WorktreeIsolation} controller and forwards it
+	 * to the collaborators that consult it. Called once at startup (from
+	 * agentHostMain / agentHostServerMain) after the branch-name generator has
+	 * been wired.
+	 */
+	setWorktreeIsolation(worktree: WorktreeIsolation): void {
+		this._worktree = worktree;
+		this._configurationService.setWorktreeIsolation(worktree);
+		this._sideEffects.setWorktreeIsolation(worktree);
+	}
+
+	/**
+	 * Host-owned first-send hook (invoked by {@link AgentSideEffects} before the
+	 * agent locks its subprocess cwd). When the session selected `worktree`
+	 * isolation and its worktree has not been created yet, creates it (using the
+	 * user's prompt for branch naming) and surfaces the "Created isolated
+	 * worktree" announcement as the first markdown response part of the turn.
+	 * Idempotent; a no-op for folder sessions and once the worktree exists.
+	 */
+	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<void> {
+		if (!this._worktree) {
+			return;
+		}
+		const sessionId = AgentSession.id(params.session);
+		if (!this._worktree.isWorkingDirectoryPending(sessionId)) {
+			return;
+		}
+		const pickedFolder = this._configurationService.getEffectiveWorkingDirectory(params.session);
+		try {
+			await this._worktree.resolveOnFirstSend({
+				sessionUri: URI.parse(params.session),
+				sessionId,
+				workingDirectory: pickedFolder ? URI.parse(pickedFolder) : undefined,
+				config: this._configurationService.getSessionConfigValues(params.session),
+				prompt: params.prompt,
+				githubToken: this.getAuthToken({
+					resource: this._gitHubEndpointService.getCopilotResource().resource,
+					scopes: this._gitHubEndpointService.getCopilotResource().scopes_supported,
+				}),
+			});
+		} catch (err) {
+			this._logService.warn(`[AgentService] worktree resolution failed for ${params.session}: ${toErrorMessage(err)}`);
+		}
+		const announcement = this._worktree.takePendingAnnouncement(sessionId);
+		if (announcement !== undefined) {
+			this._stateManager.dispatchServerAction(params.chat, {
+				type: ActionType.ChatResponsePart,
+				turnId: params.turnId,
+				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
+			});
+		}
+	}
 
 	registerProvider(provider: IAgent): void {
 		if (this._providers.has(provider.id)) {
@@ -535,8 +601,8 @@ export class AgentService extends Disposable implements IAgentService {
 					const sessionStr = s.session.toString();
 					const changesetKeys = this._changesetCoordinator.getListMetadataKeys(sessionStr);
 					const metadataKeys: Record<string, true> = changesetKeys
-						? { customTitle: true, isRead: true, isArchived: true, isDone: true, [AH_META_WORKSPACELESS_DB_KEY]: true, [PEER_CHAT_BACKING_METADATA_KEY]: true, ...GIT_DB_METADATA_KEYS, ...changesetKeys }
-						: { customTitle: true, isRead: true, isArchived: true, isDone: true, [AH_META_WORKSPACELESS_DB_KEY]: true, [PEER_CHAT_BACKING_METADATA_KEY]: true, ...GIT_DB_METADATA_KEYS };
+						? { customTitle: true, isRead: true, isArchived: true, isDone: true, [AH_META_WORKSPACELESS_DB_KEY]: true, [PEER_CHAT_BACKING_METADATA_KEY]: true, [WORKTREE_META_REPOSITORY_ROOT]: true, ...GIT_DB_METADATA_KEYS, ...changesetKeys }
+						: { customTitle: true, isRead: true, isArchived: true, isDone: true, [AH_META_WORKSPACELESS_DB_KEY]: true, [PEER_CHAT_BACKING_METADATA_KEY]: true, [WORKTREE_META_REPOSITORY_ROOT]: true, ...GIT_DB_METADATA_KEYS };
 					const m = await ref.object.getMetadataObject(metadataKeys);
 					// This session is an internal peer-chat backing (e.g. a
 					// Claude peer chat's SDK session, enumerated by the agent's
@@ -577,6 +643,16 @@ export class AgentService extends Disposable implements IAgentService {
 
 					if (m[AH_META_WORKSPACELESS_DB_KEY] !== undefined) {
 						updated = { ...updated, _meta: withSessionWorkspaceless(updated._meta, m[AH_META_WORKSPACELESS_DB_KEY] === 'true') };
+					}
+
+					// Worktree-isolated sessions run out of `<repo>.worktrees/<name>` but
+					// must group under the repository in the sessions UI. Merge the repo
+					// project persisted alongside the worktree metadata so a list refresh
+					// doesn't revert the workspace name to the worktree directory. No-op
+					// for folder sessions (key absent).
+					const worktreeProject = worktreeProjectFromRepositoryRoot(m[WORKTREE_META_REPOSITORY_ROOT]);
+					if (worktreeProject) {
+						updated = { ...updated, project: worktreeProject };
 					}
 
 					return this._changesetCoordinator.decorateListEntry(updated, m as Record<string, string | undefined>);
@@ -829,6 +905,13 @@ export class AgentService extends Disposable implements IAgentService {
 			if (initialCustomizations && initialCustomizations.length > 0) {
 				state.customizations = [...initialCustomizations];
 			}
+			// A fresh worktree-isolation session defers worktree creation to the
+			// first send (so the user's prompt can name the branch). Mark it pending
+			// so agents don't prewarm / materialize in the picked folder before the
+			// host resolves the worktree.
+			if (created.provisional && sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree') {
+				this._worktree?.notePending(AgentSession.id(session));
+			}
 		}
 		// Persist initial config values so a subsequent `restoreSession` can
 		// re-hydrate them. We persist the full resolved values (not just the
@@ -992,8 +1075,16 @@ export class AgentService extends Disposable implements IAgentService {
 	 * Reconstruct the turns for a chat. `chat` is the concrete chat channel URI,
 	 * except for legacy restore paths that still address subagent sessions.
 	 */
-	private _getChatMessages(provider: IAgent, chat: URI): Promise<readonly Turn[]> {
-		return provider.chats.getMessages(chat);
+	private async _getChatMessages(provider: IAgent, chat: URI): Promise<readonly Turn[]> {
+		const turns = await provider.chats.getMessages(chat);
+		// Host-owned worktree restore announcement: re-inject the "Created isolated
+		// worktree" message at the top of the default chat's first turn from
+		// persisted metadata. No-op for folder sessions and non-default chats (peer
+		// / subagent). Agents stay unaware of worktrees.
+		if (this._worktree && isDefaultChatUri(chat)) {
+			return this._worktree.applyRestoreAnnouncement(URI.parse(parseRequiredSessionUriFromChatUri(chat.toString())), turns);
+		}
+		return turns;
 	}
 
 	/**
@@ -1128,9 +1219,13 @@ export class AgentService extends Disposable implements IAgentService {
 			this._logService.warn(`[AgentService] onDidMaterializeSession missing summary for session: ${sessionKey}`);
 			return;
 		}
+		// The agent no longer knows about worktrees; the host's worktree project
+		// (created in the first-send hook) wins for worktree-isolated sessions, and
+		// falls back to whatever the agent reported for folder sessions.
+		const project = this._worktree?.createdWorktreeProject(AgentSession.id(e.session)) ?? e.project;
 		const summary: SessionSummary = {
 			...currentSummary,
-			...(e.project ? { project: { uri: e.project.uri.toString(), displayName: e.project.displayName } } : {}),
+			...(project ? { project: { uri: project.uri.toString(), displayName: project.displayName } } : {}),
 			workingDirectory: e.workingDirectory?.toString() ?? currentSummary.workingDirectory,
 			modifiedAt: new Date().toISOString(),
 		};
@@ -1255,10 +1350,50 @@ export class AgentService extends Disposable implements IAgentService {
 		if (!provider) {
 			throw new Error(`No agent provider registered for: ${providerId ?? '(none)'}`);
 		}
-		return provider.resolveSessionConfig(params);
+		return this._withIsolationSchema(await provider.resolveSessionConfig(params), params);
+	}
+
+	/**
+	 * Host-owned contribution of the shared `isolation` (folder / worktree) and
+	 * `branch` session-config properties on top of whatever an agent returned
+	 * from `resolveSessionConfig`. This is what lets every agent — including
+	 * future ones — get the isolation picker for free. Additive-if-absent: an
+	 * agent that still contributes these keys itself is left untouched, so the
+	 * migration to host ownership is safe either way.
+	 */
+	private async _withIsolationSchema(result: ResolveSessionConfigResult, params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
+		if (!this._worktree) {
+			return result;
+		}
+		const hasIsolation = result.schema.properties[SessionConfigKey.Isolation] !== undefined;
+		const hasBranch = result.schema.properties[SessionConfigKey.Branch] !== undefined;
+		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
+		if (hasIsolation && (hasBranch || !iso.branchProperty)) {
+			return result;
+		}
+		// Isolation goes first (UI ordering) when the host contributes it.
+		const properties: Record<string, SessionConfigPropertySchema> = hasIsolation
+			? { ...result.schema.properties }
+			: { [SessionConfigKey.Isolation]: iso.isolationProperty.protocol, ...result.schema.properties };
+		if (iso.branchProperty && !hasBranch) {
+			properties[SessionConfigKey.Branch] = iso.branchProperty.protocol;
+		}
+		const values = { ...result.values };
+		if (!hasIsolation && values[SessionConfigKey.Isolation] === undefined) {
+			values[SessionConfigKey.Isolation] = iso.isolationValue;
+		}
+		if (iso.branchProperty && !hasBranch && iso.branchDefault !== undefined && values[SessionConfigKey.Branch] === undefined) {
+			values[SessionConfigKey.Branch] = iso.branchDefault;
+		}
+		return { schema: { ...result.schema, properties }, values };
 	}
 
 	async sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
+		// The host owns branch completions for every agent (they share the same
+		// git-backed branch list); all other properties stay provider-specific.
+		if (params.property === SessionConfigKey.Branch && this._worktree) {
+			return this._worktree.branchCompletions(params.workingDirectory, params.query);
+		}
 		const providerId = params.provider ?? this._defaultProvider;
 		const provider = providerId ? this._providers.get(providerId) : undefined;
 		if (!provider) {
@@ -1283,6 +1418,9 @@ export class AgentService extends Disposable implements IAgentService {
 			this._sessionToProvider.delete(session.toString());
 			this._clearDownloadProgressInterest(session.toString());
 		}
+		// Remove any worktree this process created for the session (host-owned;
+		// agents stay unaware).
+		await this._worktree?.removeCreatedWorktree(AgentSession.id(session));
 		this._changesetCoordinator.onSessionDisposed(session.toString());
 		this._sideEffects.cancelSessionTitleGeneration(session.toString());
 		// Remove all subagent sessions for this parent
@@ -2401,13 +2539,13 @@ export class AgentService extends Disposable implements IAgentService {
 		const sessionStr = session.toString();
 		if (agent.getSessionMetadata) {
 			try {
-				return await agent.getSessionMetadata(session);
+				return await this._withWorktreeProject(session, await agent.getSessionMetadata(session));
 			} catch (err) {
 				if (err instanceof ProtocolError) {
 					throw err;
 				}
 				try {
-					return await this._getSessionMetadataFromCatalog(agent, session);
+					return await this._withWorktreeProject(session, await this._getSessionMetadataFromCatalog(agent, session));
 				} catch (fallbackErr) {
 					if (fallbackErr instanceof ProtocolError) {
 						const message = err instanceof Error ? err.message : String(err);
@@ -2421,7 +2559,21 @@ export class AgentService extends Disposable implements IAgentService {
 		// Older providers only expose catalog enumeration. Keep the fallback so
 		// restore remains compatible, but providers with a direct lookup avoid
 		// blocking session open on a full catalog refresh.
-		return this._getSessionMetadataFromCatalog(agent, session);
+		return this._withWorktreeProject(session, await this._getSessionMetadataFromCatalog(agent, session));
+	}
+
+	/**
+	 * Merges the repository project for a worktree-isolated session onto its
+	 * restored metadata so the session groups under the repository (not the
+	 * `<repo>.worktrees/<name>` directory) in the sessions UI. No-op for folder
+	 * sessions and for `undefined` metadata. Host-owned so agents stay unaware.
+	 */
+	private async _withWorktreeProject(session: URI, meta: IAgentSessionMetadata | undefined): Promise<IAgentSessionMetadata | undefined> {
+		if (!meta || !this._worktree) {
+			return meta;
+		}
+		const project = await this._worktree.resolveWorktreeProject(session);
+		return project ? { ...meta, project } : meta;
 	}
 
 	private async _getSessionMetadataFromCatalog(agent: IAgent, session: URI): Promise<IAgentSessionMetadata | undefined> {
@@ -2823,6 +2975,8 @@ export class AgentService extends Disposable implements IAgentService {
 			promises.push(provider.shutdown());
 		}
 		await Promise.all(promises);
+		// Drain any worktrees this process created so none leak on shutdown.
+		await this._worktree?.removeAllCreatedWorktrees();
 		this._sessionToProvider.clear();
 		this._downloadProgressInterest.clear();
 	}

@@ -34,7 +34,7 @@ import { IAgentHostReviewService } from '../../common/agentHostReviewService.js'
 import { createPricingMetaFromBilling, hasLongContextSurcharge, type ICAPIModelBilling } from '../../common/agentModelPricing.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
 import { CopilotCliConfigKey, copilotCliConfigSchema } from '../../common/copilotCliConfig.js';
-import { AgentHostMcpServersConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
+import { AgentHostMcpServersConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
 import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
@@ -55,7 +55,7 @@ import { IAgentHostCompletions } from '../agentHostCompletions.js';
 import { IAgentHostGitService } from '../../common/agentHostGitService.js';
 import { findMcpChildId, type IMcpServerRuntimeState } from '../shared/mcpCustomizationController.js';
 import { IByokLmBridgeRegistry } from '../byokLmBridgeRegistry.js';
-import { WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../shared/worktreeIsolation.js';
+import { getWorktreeName, getWorktreesRoot } from '../shared/worktreeIsolation.js';
 import { CopilotAgentSession, type CopilotSdkMode } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
 import { parsedPluginsEqual, toChildCustomizations } from './copilotPluginConverters.js';
@@ -395,8 +395,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * out of this map and into {@link _sessions}. See {@link IProvisionalSession}.
 	 */
 	private readonly _provisionalSessions = new Map<string, IProvisionalSession>();
-	/** Shared git-worktree isolation machinery (folder / worktree + branch). */
-	private _worktree!: WorktreeIsolation;
 	private readonly _sessionSequencer = new SequencerByKey<string>();
 	private _shutdownPromise: Promise<void> | undefined;
 	private readonly _plugins: PluginController;
@@ -425,7 +423,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		super();
 		this._plugins = this._register(this._instantiationService.createInstance(PluginController));
 		this._sessionLauncher = this._instantiationService.createInstance(CopilotSessionLauncher);
-		this._worktree = this._register(this._instantiationService.createInstance(WorktreeIsolation, 'Copilot'));
 		this.onDidCustomizationsChange = this._plugins.onDidChange;
 		// Mirror the sub-agent fan-out signals onto the first-class spawned-
 		// chat channel so the orchestrator manages sub-agent chats
@@ -1576,24 +1573,20 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * `SessionConfigChanged` actions that arrived after `createSession` are
 	 * honoured without bespoke forwarding.
 	 */
-	private async _materializeProvisional(sessionId: string, prompt: string): Promise<CopilotAgentSession> {
+	private async _materializeProvisional(sessionId: string): Promise<CopilotAgentSession> {
 		const provisional = this._provisionalSessions.get(sessionId);
 		if (!provisional) {
 			throw new Error(`Cannot materialize unknown provisional session: ${sessionId}`);
 		}
 		const client = await this._ensureClient();
 		const sessionUri = provisional.sessionUri;
-		const liveSessionConfig = this._configurationService.getSessionConfigValues(sessionUri.toString());
 
-		const materializedConfig: IAgentCreateSessionConfig = {
-			provider: this.id,
-			session: sessionUri,
-			workingDirectory: provisional.workingDirectory,
-			model: provisional.model,
-			config: liveSessionConfig,
-		};
-
-		const workingDirectory = await this._resolveSessionWorkingDirectory(materializedConfig, sessionId, prompt);
+		// The host has already resolved (and, for worktree isolation, created) the
+		// working directory before this first send; read it back so the SDK
+		// subprocess is spawned in the worktree without this agent knowing about
+		// worktrees at all. Falls back to the picked folder for folder isolation.
+		const resolvedWorkingDirectory = this._configurationService.getResolvedWorkingDirectory(sessionUri.toString());
+		const workingDirectory = resolvedWorkingDirectory ? URI.parse(resolvedWorkingDirectory) : provisional.workingDirectory;
 		// The customization anchor follows the working directory: once a worktree
 		// is created the agent must discover skills/instructions/agents from the
 		// worktree (not the user-picked folder) so the model reads and edits files
@@ -1634,7 +1627,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			this._registerInitializedSession(sessionId, agentSession);
 		} catch (error) {
 			agentSession?.dispose();
-			await this._removeCreatedWorktree(sessionId);
 			throw error;
 		}
 
@@ -1697,36 +1689,28 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
-		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
-
-		const sessionSchema = createSchema({
-			[SessionConfigKey.Isolation]: iso.isolationProperty,
-			...platformSessionSchema.definition,
-			...(iso.branchProperty ? { [SessionConfigKey.Branch]: iso.branchProperty } : {}),
-		});
-
-		const values = sessionSchema.validateOrDefault(migrateLegacyAutopilotConfig(params.config), {
-			[SessionConfigKey.Isolation]: iso.isolationValue,
+		// Isolation / branch are contributed by the host (see
+		// AgentService._withIsolationSchema); this agent only owns its platform
+		// session config (auto-approve / mode / permissions).
+		const values = platformSessionSchema.validateOrDefault(migrateLegacyAutopilotConfig(params.config), {
 			[SessionConfigKey.AutoApprove]: 'default' satisfies AutoApproveLevel,
 			[SessionConfigKey.Mode]: 'interactive' satisfies SessionMode,
 			// Permissions intentionally omitted — leave unset so auto-approval
 			// falls through to the host-level `permissions` default, and only
 			// materializes on the session once the user hits "Allow in this
 			// Session".
-			...(iso.branchDefault !== undefined ? { [SessionConfigKey.Branch]: iso.branchDefault } : {}),
 		});
 
 		return {
-			schema: sessionSchema.toProtocol(),
+			schema: platformSessionSchema.toProtocol(),
 			values,
 		};
 	}
 
-	async sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
-		if (params.property !== SessionConfigKey.Branch) {
-			return { items: [] };
-		}
-		return this._worktree.branchCompletions(params.workingDirectory, params.query);
+	async sessionConfigCompletions(_params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
+		// Branch completions (the only dynamic Copilot property) are owned by the
+		// host now; no provider-specific completions remain.
+		return { items: [] };
 	}
 
 	getOrCreateActiveClient(session: URI, client: { readonly clientId: string; readonly displayName?: string }): IActiveClient {
@@ -1805,7 +1789,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// its branch-name hint from the user's first message.
 			let entry: CopilotAgentSession | undefined;
 			if (this._provisionalSessions.has(context.sessionId)) {
-				entry = await this._materializeProvisional(context.sessionId, prompt);
+				entry = await this._materializeProvisional(context.sessionId);
 			} else {
 				entry = this._getChatContext(chat).target;
 			}
@@ -1833,16 +1817,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// allocates a fresh response part.
 			if (turnId) {
 				entry.resetTurnState(turnId, senderClientId);
-			}
-
-			// Emit any pending first-turn announcement (e.g. worktree
-			// created) as a synthetic markdown response part before
-			// delegating to the SDK. The SDK's subsequent deltas append to
-			// the same markdown part because the session has already
-			// allocated `_currentMarkdownPartId`.
-			const announcement = this._worktree.takePendingAnnouncement(context.sessionId);
-			if (announcement !== undefined) {
-				entry.emitInitialMarkdown(announcement);
 			}
 
 			try {
@@ -1949,14 +1923,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 		if (!entry) {
 			return [];
 		}
-		const rawTurns = await entry.getMessages();
-
-		// If a worktree was created for this session at create-time, prepend
-		// the announcement to the first turn so it appears at the top of the
-		// first response when the session is reopened. The live path
-		// (sendMessage) handles the very first turn when the session is fresh;
-		// this path takes over on subsequent loads.
-		return this._worktree.applyRestoreAnnouncement(context.session, rawTurns);
+		// The host prepends the worktree "created" announcement on restore (see
+		// AgentService._getChatMessages); this agent just returns its turns.
+		return entry.getMessages();
 	}
 
 	async getSubagentSessions(session: URI): Promise<readonly IRestoredSubagentSession[]> {
@@ -2001,17 +1970,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			await this._destroyAndDisposeSession(sessionId);
 			if (isWorkspaceless) {
 				await this._cleanupWorkspacelessScratchDir(this._workspacelessScratchDir(sessionId), sessionId);
-			}
-		});
-	}
-
-	async onArchivedChanged(session: URI, isArchived: boolean): Promise<void> {
-		const sessionId = AgentSession.id(session);
-		await this._sessionSequencer.queue(sessionId, async () => {
-			if (isArchived) {
-				await this._worktree.cleanupWorktreeOnArchive(session, sessionId);
-			} else {
-				await this._worktree.recreateWorktreeOnUnarchive(session, sessionId);
 			}
 		});
 	}
@@ -2471,7 +2429,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// after teardown and resurrect the client.
 			this._modelRefreshRetry.clear();
 			this._logService.info('[Copilot] Shutting down...');
-			const sessionIds = new Set([...this._sessions.keys(), ...this._worktree.createdWorktreeSessionIds]);
+			const sessionIds = new Set([...this._sessions.keys()]);
 			for (const sessionId of sessionIds) {
 				await this._sessionSequencer.queue(sessionId, () => this._destroyAndDisposeSession(sessionId));
 			}
@@ -2718,7 +2676,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._mcpNotificationSubs.deleteAndDispose(sessionId);
 		this._activeClients.get(sessionUri)?.dispose();
 		this._activeClients.delete(sessionUri);
-		await this._removeCreatedWorktree(sessionId);
 	}
 
 	protected _resumeSession(sessionId: string): Promise<CopilotAgentSession> {
@@ -2802,28 +2759,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._registerInitializedSession(sessionId, agentSession);
 
 		return agentSession;
-	}
-
-	/**
-	 * Resolves the effective working directory for a session about to be
-	 * materialized, creating a git worktree when the session selected
-	 * `worktree` isolation. Delegates to the shared {@link WorktreeIsolation}
-	 * controller. Kept as a `protected` seam so tests can stub worktree
-	 * creation without shelling out to git.
-	 */
-	protected async _resolveSessionWorkingDirectory(config: IAgentCreateSessionConfig | undefined, sessionId: string, prompt?: string): Promise<URI | undefined> {
-		return this._worktree.resolveWorkingDirectory({
-			sessionUri: AgentSession.uri(this.id, sessionId),
-			sessionId,
-			workingDirectory: config?.workingDirectory,
-			config: config?.config,
-			prompt,
-			githubToken: this._githubToken,
-		});
-	}
-
-	private async _removeCreatedWorktree(sessionId: string): Promise<void> {
-		await this._worktree.removeCreatedWorktree(sessionId);
 	}
 
 	// ---- session metadata persistence --------------------------------------

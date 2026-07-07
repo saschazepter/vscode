@@ -52,7 +52,6 @@ import { resolvePromptToContentBlocks } from './claudePromptResolver.js';
 import { IClaudeProxyHandle, IClaudeProxyService, type ClaudeTransport } from './claudeProxyService.js';
 import { readClaudePermissionMode } from './claudeSessionPermissionMode.js';
 import { ClaudeSessionMetadataStore, IClaudeSessionOverlay } from './claudeSessionMetadataStore.js';
-import { WorktreeIsolation } from '../shared/worktreeIsolation.js';
 
 const USER_AGENT_PREFIX = 'vscode_claude_code';
 
@@ -330,8 +329,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	private readonly _sessionSequencer = new SequencerByKey<string>();
 
 	private readonly _metadataStore: ClaudeSessionMetadataStore;
-	/** Shared git-worktree isolation machinery (folder / worktree + branch). */
-	private readonly _worktree: WorktreeIsolation;
 
 	/**
 	 * Unified per-session lookup. Returns the session's default chat whether it
@@ -448,7 +445,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	) {
 		super();
 		this._metadataStore = _instantiationService.createInstance(ClaudeSessionMetadataStore, this.id);
-		this._worktree = this._register(_instantiationService.createInstance(WorktreeIsolation, 'Claude'));
 		// CAPI reports each request's billed credits via the proxy (the SDK
 		// strips `copilot_usage` from its `result`). Route every report to
 		// the originating session by the session id the proxy decoded from
@@ -969,7 +965,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 *   inside `materialize` throws so we never expose a live pipeline
 	 *   for a session the caller has already torn down.
 	 */
-	private async _materializeProvisional(sessionId: string, prompt?: string): Promise<ClaudeAgentSession> {
+	private async _materializeProvisional(sessionId: string): Promise<ClaudeAgentSession> {
 		const session = this._findAnySession(sessionId);
 		if (!session) {
 			throw new Error(`Cannot materialize unknown provisional session: ${sessionId}`);
@@ -978,39 +974,19 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 		const canUseTool = this._makeCanUseTool(sessionId);
 
-		// Resolve worktree isolation before `materialize` locks the SDK
-		// subprocess `cwd`. When the session selected `worktree` isolation the
-		// controller creates a fresh branch + worktree and we re-point the
-		// session's working directory at it.
-		const liveConfig = this._configurationService.getSessionConfigValues(session.sessionUri.toString());
-		const resolvedWorkingDirectory = await this._worktree.resolveWorkingDirectory({
-			sessionUri: session.sessionUri,
-			sessionId,
-			workingDirectory: session.workingDirectory,
-			config: liveConfig,
-			prompt,
-			githubToken: this._githubToken,
-		});
-		if (resolvedWorkingDirectory && resolvedWorkingDirectory.toString() !== session.workingDirectory?.toString()) {
-			// Recompute project metadata for the worktree and re-anchor the
-			// session (customization watcher + project) so everything that
-			// follows the working directory reflects the worktree, matching
-			// Copilot's re-anchor on materialize.
-			let worktreeProject: IAgentSessionProjectInfo | undefined;
-			try {
-				worktreeProject = await projectFromCopilotContext({ cwd: resolvedWorkingDirectory.fsPath }, this._gitService);
-			} catch (err) {
-				this._logService.warn(`[Claude:${sessionId}] worktree project resolution failed; continuing with previous project`, err);
-				worktreeProject = session.project;
-			}
-			session.setWorktreeWorkingDirectory(resolvedWorkingDirectory, worktreeProject);
+		// The host resolved (and, for worktree isolation, created) the working
+		// directory before this first send; read it back and re-anchor the session
+		// to it before `materialize` locks the SDK subprocess `cwd`. The agent stays
+		// unaware of whether the directory is a folder or an isolated worktree.
+		const resolvedWorkingDirectory = this._configurationService.getResolvedWorkingDirectory(session.sessionUri.toString());
+		if (resolvedWorkingDirectory && resolvedWorkingDirectory !== session.workingDirectory?.toString()) {
+			session.setResolvedWorkingDirectory(URI.parse(resolvedWorkingDirectory));
 		}
 
 		try {
 			await session.materialize({ transport, canUseTool, isResume: false, serverToolHost: this._serverToolHost });
 		} catch (err) {
 			this._sessions.deleteAndDispose(sessionId);
-			await this._worktree.removeCreatedWorktree(sessionId);
 			throw err;
 		}
 
@@ -1120,27 +1096,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		return this._disposeSequencer.queue(sessionId, async () => {
 			await this._teardownEntry(sessionId);
 			this._pruneActiveClientHandles(sessionId);
-			// Remove any worktree created for this session in this process.
-			await this._worktree.removeCreatedWorktree(sessionId);
-		});
-	}
-
-	async onArchivedChanged(session: URI, isArchived: boolean): Promise<void> {
-		const sessionId = AgentSession.id(session);
-		// Mirror Copilot/Codex: on archive remove the (clean, branch-preserved)
-		// worktree so it can be recreated on unarchive without losing work.
-		// Queued on the same `_sessionSequencer` key used by `_sendMessage`, so
-		// archive/unarchive never interleaves with first-send materialization
-		// (which creates + persists the worktree). Without this, an archive
-		// racing the first send could read no worktree metadata and return
-		// before the worktree exists, leaving an archived session with a live
-		// worktree.
-		await this._sessionSequencer.queue(sessionId, async () => {
-			if (isArchived) {
-				await this._worktree.cleanupWorktreeOnArchive(session, sessionId);
-			} else {
-				await this._worktree.recreateWorktreeOnUnarchive(session, sessionId);
-			}
 		});
 	}
 
@@ -1577,9 +1532,10 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		if (sess && !sess.isPipelineReady) {
 			return [];
 		}
-		// Default chat: its SDK chat id is the session id.
-		const turns = await this._reconstructTurns(sessionId, parentSessionUri, sess);
-		return this._worktree.applyRestoreAnnouncement(parentSessionUri, turns);
+		// Default chat: its SDK chat id is the session id. The host prepends the
+		// worktree "created" announcement on restore (see
+		// AgentService._getChatMessages).
+		return this._reconstructTurns(sessionId, parentSessionUri, sess);
 	}
 
 	/**
@@ -1662,12 +1618,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				// External session, or DB read failed: surface what the SDK gave us.
 				base = this._metadataStore.project(entry, {});
 			}
-			// Worktree-isolated sessions run out of `<repo>.worktrees/<name>` but
-			// must group under the repository in the sessions UI. Merge the repo
-			// project (persisted alongside the worktree metadata) so the workspace
-			// name stays the repository. No-op for folder sessions.
-			const project = await this._worktree.resolveWorktreeProject(sessionUri);
-			return project ? { ...base, project } : base;
+			// The host merges the worktree repository project in its own
+			// listSessions overlay; this agent returns folder metadata.
+			return base;
 		}));
 	}
 
@@ -1696,12 +1649,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		} catch (err) {
 			this._logService.warn(`[Claude] Overlay read failed for session ${sessionId}`, err);
 		}
-		const base = this._metadataStore.project(sdkInfo, overlay);
-		// Merge the repository project for worktree-isolated sessions so the
-		// workspace groups under the repo (not the worktree dir). No-op for folder
-		// sessions. See WorktreeIsolation.resolveWorktreeProject.
-		const project = await this._worktree.resolveWorktreeProject(session);
-		return project ? { ...base, project } : base;
+		// The host merges the worktree repository project on restore (see
+		// AgentService._withWorktreeProject); this agent returns folder metadata.
+		return this._metadataStore.project(sdkInfo, overlay);
 	}
 
 	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
@@ -1710,12 +1660,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// `permissionMode` axis matching the SDK's native enum. The
 		// platform `Permissions` key is reused unchanged because the
 		// Claude SDK accepts `allowedTools` / `disallowedTools`
-		// natively. The shared `isolation` (folder / worktree) + `branch`
-		// properties are contributed so Claude sessions get the same
-		// worktree picker as other Agents do.
-		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
+		// natively. The shared `isolation` (folder / worktree) + `branch` picker
+		// is contributed by the host (see AgentService._withIsolationSchema).
 		const sessionSchema = createSchema({
-			[SessionConfigKey.Isolation]: iso.isolationProperty,
 			[ClaudeSessionConfigKey.PermissionMode]: schemaProperty<ClaudePermissionMode>({
 				type: 'string',
 				title: localize('claude.sessionConfig.permissionMode', "Approvals"),
@@ -1739,17 +1686,14 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				sessionMutable: true,
 			}),
 			[SessionConfigKey.Permissions]: platformSessionSchema.definition[SessionConfigKey.Permissions],
-			...(iso.branchProperty ? { [SessionConfigKey.Branch]: iso.branchProperty } : {}),
 		});
 
 		const values = sessionSchema.validateOrDefault(params.config, {
-			[SessionConfigKey.Isolation]: iso.isolationValue,
 			[ClaudeSessionConfigKey.PermissionMode]: 'default' satisfies ClaudePermissionMode,
 			// Permissions intentionally omitted from defaults — leave
 			// unset so auto-approval falls through to the host-level
 			// default, materializing on the session only once the user
 			// approves a tool "in this Session".
-			...(iso.branchDefault !== undefined ? { [SessionConfigKey.Branch]: iso.branchDefault } : {}),
 		});
 
 		return {
@@ -1758,10 +1702,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		};
 	}
 
-	sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
-		if (params.property === SessionConfigKey.Branch) {
-			return this._worktree.branchCompletions(params.workingDirectory, params.query);
-		}
+	sessionConfigCompletions(_params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
+		// Branch completions are owned by the host now; Claude has no other
+		// dynamic session-config properties.
 		return Promise.resolve({ items: [] });
 	}
 
@@ -1804,9 +1747,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 					this._pruneActiveClientHandles(sessionId);
 				})
 			));
-			// Remove any worktrees this process created but whose sessions were
-			// never disposed individually, matching Copilot's shutdown drain.
-			await this._worktree.removeAllCreatedWorktrees();
 		})();
 	}
 
@@ -1844,17 +1784,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			if (existing?.isPipelineReady) {
 				session = existing;
 			} else if (existing) {
-				session = await this._materializeProvisional(context.sessionId, prompt);
+				session = await this._materializeProvisional(context.sessionId);
 			} else {
 				session = await this._resumeSession(context.sessionId, context.session);
-			}
-
-			// Surface the "Created isolated worktree" announcement as the first
-			// response part of the first turn. On restore it is
-			// re-injected from persisted metadata by `getSessionMessages`.
-			const announcement = this._worktree.takePendingAnnouncement(context.sessionId);
-			if (announcement !== undefined) {
-				session.emitAnnouncement(announcement, effectiveTurnId);
 			}
 
 			await session.send(this._buildSdkPrompt(context.sessionId, prompt, attachments, effectiveTurnId), effectiveTurnId);
@@ -2152,11 +2084,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				}
 			}
 		}
-		// Best-effort worktree cleanup on hard dispose (the graceful path runs
-		// in `shutdown`). `removeAllCreatedWorktrees` swallows per-worktree
-		// failures internally, so the floating promise never rejects; it is a
-		// no-op when this process created no worktrees.
-		void this._worktree.removeAllCreatedWorktrees();
 		super.dispose();
 		this._proxyHandle?.dispose();
 		this._proxyHandle = undefined;

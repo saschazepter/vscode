@@ -121,6 +121,8 @@ suite('CopilotShellTools', () => {
 			onDidRootConfigChange: emitter.event,
 			getEffectiveValue: () => undefined,
 			getEffectiveWorkingDirectory: () => undefined,
+			getResolvedWorkingDirectory: () => undefined,
+			isWorkingDirectoryPending: () => false,
 			getSessionConfigValues: () => undefined,
 			updateSessionConfig: () => { /* no-op */ },
 			getRootValue: ((_schema: unknown, key: string) => configValues[key]) as IAgentConfigurationService['getRootValue'],

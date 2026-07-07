@@ -68,7 +68,6 @@ suite('WorktreeIsolation', () => {
 			generateBranchName: async () => branchName,
 		};
 		return disposableStore.add(new WorktreeIsolation(
-			'Test',
 			createGitService(),
 			branchNameGenerator,
 			createSessionDataService(db),
