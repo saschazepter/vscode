@@ -162,9 +162,7 @@ export class CopilotSlashCommandCompletionProvider implements IAgentHostCompleti
 			if (typed.length > 0 && !command.name.toLowerCase().startsWith(typedLower) && !command.aliases?.some(alias => alias.toLowerCase().startsWith(typedLower))) {
 				continue;
 			}
-			// Hints contain sub commands like [on|off] or `on|off`
-			// First remove the brackets and then split by pipe to get the options
-			// If its a skill, then do not use the hint to construct the options.
+			// Use structured input choices as options; if there are none, emit a single item for the command and surface any free-text hint as a prompt.
 			const options: (NonNullable<NonNullable<ICopilotRuntimeSlashCommandInfo['input']>['choices']>[number] & { argumentHint?: string })[] = [];
 
 			// If we have a hint, then this means we have a structured command with sub commands or options.
