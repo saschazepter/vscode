@@ -88,11 +88,6 @@ variables:
     value: $[counter(variables['VSCODE_PUBLISH_COUNTER_PREFIX'], 1)]
   - name: VSCODE_STEP_ON_IT
     value: ${{ eq(parameters.VSCODE_STEP_ON_IT, true) }}
-  # De-flake knob for the Electron smoke test. This CI/TSA path never de-flakes,
-  # so it is pinned to 0; the manual product-build.yml path sources it from a
-  # queue-time parameter (used when validating a Copilot CLI/SDK canary).
-  - name: VSCODE_SMOKE_TEST_RETRIES
-    value: 0
   # Derived as an explicit lowercase string literal so downloadNotice.ts's
   # case-sensitive JS check (process.env['VSCODE_OVERWRITE_TPN'] === 'false')
   # works. ${{ eq(...) }} would emit 'True'/'False' (capitalized) and silently

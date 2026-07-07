@@ -126,15 +126,6 @@ parameters:
     displayName: "SDK canary: @github/copilot version ('auto' = infer from the SDK)"
     type: string
     default: auto
-  # De-flake knob: number of times to retry the Electron smoke test (which drives
-  # the real bundled Copilot CLI/SDK via the Agents Window) before it counts as a
-  # failure. Default 0 = current behavior; bump it (e.g. to 2) when validating a
-  # CLI/SDK canary so a single flaky smoke run doesn't block an otherwise-good
-  # bump. Max 10 (Azure DevOps limit).
-  - name: VSCODE_SMOKE_TEST_RETRIES
-    displayName: "Smoke test retries (de-flake; 0 = no retry)"
-    type: number
-    default: 0
 
 variables:
   - name: VSCODE_PRIVATE_BUILD
@@ -154,8 +145,6 @@ variables:
       value: ""
     ${{ else }}:
       value: ${{ parameters.VSCODE_CLI_CANARY_VERSION }}
-  - name: VSCODE_SMOKE_TEST_RETRIES
-    value: ${{ parameters.VSCODE_SMOKE_TEST_RETRIES }}
   - name: CARGO_REGISTRY
     value: ${{ parameters.CARGO_REGISTRY }}
   - name: VSCODE_QUALITY
