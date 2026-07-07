@@ -1,0 +1,17 @@
+version: 1
+exchanges:
+  - method: POST
+    path: /responses
+    dialect: responses
+    request:
+      model: gpt-5.3-codex
+      system: ${system}
+      messages:
+        - role: user
+          content: Say exactly "hello" and nothing else
+    response:
+      content: hello
+      stopReason: end_turn
+      usage:
+        inputTokens: 9418
+        outputTokens: 28

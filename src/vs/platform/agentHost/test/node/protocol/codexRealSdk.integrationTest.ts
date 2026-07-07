@@ -19,23 +19,24 @@
  */
 
 import { existsSync, mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import assert from 'assert';
 import { join } from '../../../../../base/common/path.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { MessageKind, PendingMessageKind, ChatInputResponseKind, type ChatInputRequest } from '../../../common/state/sessionState.js';
-import { createRealSession, defineSharedRealSdkTests, dispatchTurn, getAcceptedAnswers, type IRealSdkProviderConfig } from './realSdkTestHelpers.js';
+import { capiReplayFor, createRealSession, defineSharedRealSdkTests, dispatchTurn, getAcceptedAnswers, type IRealSdkProviderConfig } from './realSdkTestHelpers.js';
 import { getActionEnvelope, isActionNotification, startRealServer, TestProtocolClient, type IServerHandle } from './testHelpers.js';
 import { URI } from '../../../../../base/common/uri.js';
-
-const REAL_CODEX_ENABLED = process.env['AGENT_HOST_REAL_CODEX'] === '1';
 
 function resolveCodexSdkRoot(): string | undefined {
 	const sdkPackageDir = join(process.cwd(), 'node_modules', '@openai', 'codex');
 	return existsSync(sdkPackageDir) ? process.cwd() : undefined;
 }
 
-const CODEX_SDK_ROOT = REAL_CODEX_ENABLED ? resolveCodexSdkRoot() : undefined;
+// The shared suite runs by default in deterministic replay mode; recording is
+// opt-in via `AGENT_HOST_REPLAY_RECORD=1`. Both need the Codex CLI on disk (it
+// drives the /responses traffic the proxy answers), so resolve it always.
+const CODEX_SDK_ROOT = resolveCodexSdkRoot();
 
 const CODEX_CONFIG: IRealSdkProviderConfig = {
 	suiteTitle: 'Protocol WebSocket - Real Codex App Server',
@@ -44,7 +45,7 @@ const CODEX_CONFIG: IRealSdkProviderConfig = {
 	shellToolName: 'shell',
 	subagentToolNames: [],
 	exitPlanModeToolName: 'exit_plan_mode',
-	enabled: REAL_CODEX_ENABLED && !!CODEX_SDK_ROOT,
+	enabled: !!CODEX_SDK_ROOT,
 	codexSdkRoot: CODEX_SDK_ROOT,
 	supportsWorktreeIsolation: false,
 	supportsSubagents: false,
@@ -55,9 +56,9 @@ defineSharedRealSdkTests(CODEX_CONFIG);
 
 // Codex-specific steering coverage. Steering is wired via `turn/steer`; the
 // agent buffers the message and promotes the codex `userMessage` echo into a
-// fresh visible turn (clearing the pending bubble). This exercises the full
-// path against the real app-server.
-(CODEX_CONFIG.enabled ? suite : suite.skip)('Protocol WebSocket - Real Codex App Server - steering', function () {
+// fresh visible turn (clearing the pending bubble). Runs by default in
+// deterministic replay; recording is opt-in via `AGENT_HOST_REPLAY_RECORD=1`.
+(CODEX_SDK_ROOT ? suite : suite.skip)('Protocol WebSocket - Real Codex App Server - steering', function () {
 
 	let server: IServerHandle;
 	let client: TestProtocolClient;
@@ -66,7 +67,11 @@ defineSharedRealSdkTests(CODEX_CONFIG);
 
 	setup(async function () {
 		this.timeout(60_000);
-		server = await startRealServer({ codexSdkRoot: CODEX_CONFIG.codexSdkRoot });
+		server = await startRealServer({
+			codexSdkRoot: CODEX_CONFIG.codexSdkRoot,
+			homeDir: homedir(),
+			capiReplay: capiReplayFor(CODEX_CONFIG.provider, this.currentTest?.title ?? 'unknown'),
+		});
 		client = new TestProtocolClient(server.port);
 		await client.connect();
 	});
@@ -81,7 +86,13 @@ defineSharedRealSdkTests(CODEX_CONFIG);
 		}
 		createdSessions.length = 0;
 		client.close();
-		server?.process.kill();
+		// Flush the recording / surface strict replay cache-misses; kill even if
+		// the strict check throws.
+		try {
+			await server?.capiReplay?.stop();
+		} finally {
+			server?.process.kill();
+		}
 		for (const dir of tempDirs) {
 			try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best-effort */ }
 		}

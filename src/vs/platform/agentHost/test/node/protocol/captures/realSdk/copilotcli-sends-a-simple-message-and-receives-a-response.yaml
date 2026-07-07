@@ -1,0 +1,17 @@
+version: 1
+exchanges:
+  - method: POST
+    path: /v1/messages
+    dialect: anthropic
+    request:
+      model: claude-opus-4.6
+      system: ${system}
+      messages:
+        - role: user
+          content: Say exactly "hello" and nothing else
+    response:
+      content: hello
+      stopReason: end_turn
+      usage:
+        inputTokens: 3
+        outputTokens: 4

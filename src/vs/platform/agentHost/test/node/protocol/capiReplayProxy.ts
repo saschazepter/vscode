@@ -39,13 +39,17 @@ import type * as https from 'https';
 import { createRequire } from 'module';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from '../../../../../base/common/path.js';
+import { escapeRegExpCharacters } from '../../../../../base/common/strings.js';
+import { aggregateAnthropicSse, anthropicMessageToSse, ANTHROPIC_MESSAGES_PATH, aggregateResponsesSse, responsesMessageToSse, RESPONSES_PATH, summarizeResponsesRequest, deserializeAnthropicContent, serializeAnthropicContent, summarizeAnthropicRequest, type AnthropicContentBlock, type IAnthropicMessage, type IReadableAnthropicRequest } from './capiWireCodec.js';
+import { getAncillaryStub } from './capiStubs.js';
 
-// `http`/`https` are lazily required (they are slow to load and direct value
-// imports are disallowed in this layer); the `import type` above still gives us
-// their types for annotations.
+// `http`/`https`/`js-yaml` are lazily required (slow to load and/or not in this
+// layer's import allowlist); `import type` above still gives us http/https types.
 const nodeRequire = createRequire(import.meta.url);
 const httpModule = nodeRequire('http') as typeof http;
 const httpsModule = nodeRequire('https') as typeof https;
+const zlibModule = nodeRequire('zlib') as typeof import('zlib');
+const yamlModule = nodeRequire('js-yaml') as { load(input: string): unknown; dump(obj: unknown, opts?: { lineWidth?: number; noRefs?: boolean; quotingType?: '"' | '\''; forceQuotes?: boolean }): string };
 
 /** Model-producing endpoints. Replaying past the recorded count here is a hard
  * cache miss (reusing a stale turn could spin the agent loop forever), whereas
@@ -55,13 +59,55 @@ const MODEL_ENDPOINTS = new Set(['/chat/completions', '/responses', '/v1/message
 const WORKDIR_PLACEHOLDER = '${workdir}';
 const HOMEDIR_PLACEHOLDER = '${homedir}';
 /**
- * Placeholder for the upstream CAPI origin in recorded response bodies. The
- * mock LLM server echoes its own host into token responses (`endpoints.api`);
- * rewriting that origin to this placeholder — and back to the proxy's own URL
- * on replay — keeps the SDK pointed at the proxy across token refreshes rather
- * than at a mock port that no longer exists.
+ * Placeholder for the upstream CAPI origin in recorded response bodies. Token /
+ * user-discovery responses echo the CAPI host (`endpoints.api`); rewriting that
+ * origin to this placeholder — and back to the proxy's own URL on replay —
+ * keeps the SDK/agent host pointed at the proxy rather than at a real (or mock)
+ * host on replay.
  */
 const CAPI_PLACEHOLDER = '${capi}';
+/**
+ * Redacts short-lived credentials from recorded response bodies so fixtures
+ * carry no secrets. The GitHub bearer token lives only in request headers
+ * (never stored); the one response-side secret is the minted Copilot session
+ * token returned by `/copilot_internal/v2/token` (and `session_token` from the
+ * auto-model endpoint).
+ */
+const SECRET_PLACEHOLDER = '${redacted}';
+const SECRET_FIELD_RE = /("(?:token|session_token)"\s*:\s*)"[^"]*"/g;
+
+/**
+ * Scrub the echoed system prompt out of recorded response bodies. The OpenAI
+ * Responses API (`/responses`, used by Codex) echoes the full request
+ * `instructions` (the system prompt) back inside `response.created` /
+ * `in_progress` / `completed` events; replace it with a placeholder so the
+ * large prompt (and any tenant-specific content in it) never lands in fixtures.
+ */
+const SYSTEM_FIELD_RE = /("instructions"\s*:\s*)"(?:[^"\\]|\\.)*"/g;
+const SYSTEM_PROMPT_PLACEHOLDER = '${system}';
+
+/** GitHub-API path prefixes (routed to the GitHub upstream, not CAPI). */
+const GITHUB_API_PREFIXES = ['/copilot_internal', '/telemetry'];
+
+/**
+ * Real CAPI `/models` returns the full catalog, which includes unreleased /
+ * internal preview models that must never be committed to fixtures. When
+ * writing a fixture we keep only (a) models this recording actually used
+ * (referenced in a captured request body) plus (b) this hardcoded allowlist of
+ * stable, public models the suites may exercise. Every other entry — notably
+ * internal preview models — is dropped. Extend the allowlist only with public
+ * model ids; the used-model set already preserves whatever a run depends on.
+ */
+const MODELS_ALLOWLIST = new Set<string>([
+	'gpt-4o',
+	'gpt-4o-mini',
+	'gpt-4.1',
+	'gpt-5.3-codex',
+	'claude-sonnet-4.5',
+]);
+const MODEL_ID_IN_BODY_RE = /"model"\s*:\s*"([^"]+)"/g;
+/** Placeholder that replaces dropped (internal/unused) model ids and names. */
+const MODEL_PLACEHOLDER = '${model}';
 
 export type CapiReplayMode = 'auto' | 'record' | 'replay';
 
@@ -79,16 +125,66 @@ interface IRecordedExchange {
 	readonly response: IRecordedResponse;
 }
 
+/**
+ * A raw ancillary exchange in the YAML fixture (token / models / user). Served
+ * verbatim on replay.
+ */
+interface IRawFixtureExchange {
+	readonly method: string;
+	readonly path: string;
+	readonly response: IRecordedResponse;
+}
+
+/**
+ * The stored form of an assistant reply. Content is a bare string for a lone
+ * text reply, or an explicit block list for richer (tool-calling) replies.
+ */
+interface IStoredAnthropicMessage {
+	readonly content: string | AnthropicContentBlock[];
+	readonly stopReason: string | null;
+	readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number };
+}
+
+/** Wire dialect a model turn was captured in (drives SSE regeneration on replay). */
+type TurnDialect = 'anthropic' | 'responses';
+
+/**
+ * A model turn in the YAML fixture: a readable request summary + the captured
+ * assistant reply. On replay the reply is regenerated into the dialect's SSE
+ * stream, so captures stay human-readable instead of raw SSE blobs.
+ */
+interface ITurnExchange {
+	readonly method: string;
+	readonly path: string;
+	readonly dialect: TurnDialect;
+	readonly request: IReadableAnthropicRequest;
+	readonly response: IStoredAnthropicMessage;
+}
+
+type IFixtureExchange = IRawFixtureExchange | ITurnExchange;
+
 interface IFixture {
 	readonly version: 1;
-	readonly exchanges: IRecordedExchange[];
+	readonly exchanges: IFixtureExchange[];
+}
+
+function isTurnExchange(exchange: IFixtureExchange): exchange is ITurnExchange {
+	return (exchange as ITurnExchange).dialect !== undefined;
 }
 
 export interface ICapiReplayProxyOptions {
 	/** Absolute path to the JSON fixture for this test. */
 	readonly fixturePath: string;
-	/** Upstream base URL to forward to while recording (e.g. the mock LLM server). */
-	readonly upstreamUrl: string;
+	/**
+	 * Single upstream base URL to forward all traffic to while recording (e.g.
+	 * a mock server). Use {@link githubUpstreamUrl}/{@link capiUpstreamUrl}
+	 * instead to split GitHub-API vs CAPI traffic across two real hosts.
+	 */
+	readonly upstreamUrl?: string;
+	/** Real GitHub-API base for `/copilot_internal/*` while recording (e.g. `https://api.github.com`). */
+	readonly githubUpstreamUrl?: string;
+	/** Real CAPI base for model/`/models` traffic while recording (e.g. `https://api.githubcopilot.com`). */
+	readonly capiUpstreamUrl?: string;
 	/** Recording/replay behavior. Defaults to `auto`. */
 	readonly mode?: CapiReplayMode;
 	/** Absolute working directory to normalize out of request bodies. */
@@ -102,9 +198,14 @@ export interface ICapiReplayProxyOptions {
 	readonly strict?: boolean;
 }
 
+/** A replayable item: raw bytes (ancillary) or a model reply to regenerate. */
+type IReplayItem =
+	| { readonly kind: 'raw'; readonly response: IRecordedResponse }
+	| { readonly kind: 'turn'; readonly dialect: TurnDialect; readonly message: IAnthropicMessage };
+
 /** Sequence cursor for one `(method, path)` bucket during replay. */
 interface IReplayBucket {
-	readonly responses: IRecordedResponse[];
+	readonly items: IReplayItem[];
 	index: number;
 }
 
@@ -181,7 +282,13 @@ export class CapiReplayProxy {
 		const server = this._server;
 		this._server = undefined;
 		if (server) {
-			await new Promise<void>(resolve => server.close(() => resolve()));
+			// Force-drop any lingering sockets (e.g. an in-flight upstream
+			// request left open by an aborted turn) so `close` resolves instead
+			// of hanging until the connection drains.
+			await new Promise<void>(resolve => {
+				server.close(() => resolve());
+				server.closeAllConnections?.();
+			});
 		}
 
 		if (this._isReplaying) {
@@ -191,9 +298,11 @@ export class CapiReplayProxy {
 			return;
 		}
 
-		if (this._recorded.length > 0) {
-			this._writeFixture();
-		}
+		// Always write a fixture when recording, even with zero model turns:
+		// tests that only touch stubbed ancillary endpoints (e.g. listModels)
+		// need a committed fixture so replay serves stubs instead of trying to
+		// self-heal against real CAPI.
+		this._writeFixture();
 	}
 
 	// -- request handling -----------------------------------------------------
@@ -215,38 +324,57 @@ export class CapiReplayProxy {
 	private _replay(req: http.IncomingMessage, body: string, res: http.ServerResponse): void {
 		const method = req.method ?? 'GET';
 		const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+
+		// Ancillary bootstrap endpoints are never recorded — serve them from
+		// hardcoded stubs (keeps identity/model-catalog out of fixtures).
+		const stub = getAncillaryStub(method, path);
+		if (stub) {
+			res.writeHead(stub.status, { ...stub.headers });
+			res.end(replaceAll(stub.body, CAPI_PLACEHOLDER, this.url));
+			return;
+		}
+
 		const key = `${method} ${path}`;
 		const bucket = this._replayBuckets.get(key);
 
-		let recorded: IRecordedResponse | undefined;
+		let item: IReplayItem | undefined;
 		if (bucket) {
-			if (bucket.index < bucket.responses.length) {
-				recorded = bucket.responses[bucket.index++];
+			if (bucket.index < bucket.items.length) {
+				item = bucket.items[bucket.index++];
 			} else if (!MODEL_ENDPOINTS.has(path)) {
 				// Idempotent endpoint called more often than recorded — re-serve
-				// the last recorded response rather than failing.
-				recorded = bucket.responses[bucket.responses.length - 1];
+				// the last recorded item rather than failing.
+				item = bucket.items[bucket.items.length - 1];
 			}
 		}
 
-		if (!recorded) {
+		if (!item) {
 			this._cacheMisses.push(`${key} (call #${(bucket?.index ?? 0) + 1}) — no recorded response`);
 			this._fail(res, `no recorded response for ${key}`);
 			return;
 		}
 
-		const headers = { ...recorded.headers };
+		if (item.kind === 'turn') {
+			// Regenerate the dialect's SSE stream from the captured reply.
+			const body = item.dialect === 'responses' ? responsesMessageToSse(item.message) : anthropicMessageToSse(item.message);
+			res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+			res.end(body);
+			return;
+		}
+
+		const headers = { ...item.response.headers };
 		// Let Node recompute framing for the exact recorded body.
 		delete headers['content-length'];
 		delete headers['transfer-encoding'];
-		res.writeHead(recorded.status, headers);
-		res.end(replaceAll(recorded.body, CAPI_PLACEHOLDER, this.url));
+		res.writeHead(item.response.status, headers);
+		res.end(replaceAll(item.response.body, CAPI_PLACEHOLDER, this.url));
 	}
 
 	private _record(req: http.IncomingMessage, body: string, res: http.ServerResponse): void {
 		const method = req.method ?? 'GET';
 		const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-		const upstream = new URL(req.url ?? '/', this._options.upstreamUrl);
+		const upstreamBase = this._upstreamFor(path);
+		const upstream = new URL(req.url ?? '/', upstreamBase);
 		const isHttps = upstream.protocol === 'https:';
 		const transport = isHttps ? httpsModule : httpModule;
 
@@ -274,12 +402,29 @@ export class CapiReplayProxy {
 				});
 				upstreamRes.on('end', () => {
 					res.end();
-					const rawBody = Buffer.concat(respChunks).toString('utf8');
+					// Ancillary bootstrap endpoints are forwarded (so the live run
+					// works) but never stored — they are served from stubs on replay.
+					if (getAncillaryStub(method, path)) {
+						return;
+					}
+					// Decompress so stored bodies are readable text and the model
+					// filters / codecs can parse them. The live client already
+					// received the original (compressed) chunks above.
+					const decoded = decodeBody(Buffer.concat(respChunks), headers['content-encoding']);
+					const storedHeaders = { ...headers };
+					delete storedHeaders['content-encoding'];
+					// Rewrite the CAPI origin to a placeholder (so replay re-points
+					// discovery at the proxy), normalize local paths, and redact
+					// response-side secrets.
+					const capiOrigin = new URL(this._capiUpstream).origin;
+					const normalizedBody = this._normalize(replaceAll(decoded, capiOrigin, CAPI_PLACEHOLDER))
+						.replace(SECRET_FIELD_RE, `$1"${SECRET_PLACEHOLDER}"`)
+						.replace(SYSTEM_FIELD_RE, `$1"${SYSTEM_PROMPT_PLACEHOLDER}"`);
 					this._recorded.push({
 						method,
 						path,
 						requestBody: this._normalize(body),
-						response: { status, headers, body: replaceAll(rawBody, new URL(this._options.upstreamUrl).origin, CAPI_PLACEHOLDER) },
+						response: { status, headers: storedHeaders, body: normalizedBody },
 					});
 				});
 			},
@@ -289,6 +434,30 @@ export class CapiReplayProxy {
 			upstreamReq.write(body);
 		}
 		upstreamReq.end();
+	}
+
+	/** GitHub-API paths go to the GitHub upstream; everything else to CAPI. */
+	private _upstreamFor(path: string): string {
+		if (GITHUB_API_PREFIXES.some(prefix => path.startsWith(prefix))) {
+			return this._githubUpstream;
+		}
+		return this._capiUpstream;
+	}
+
+	private get _capiUpstream(): string {
+		const url = this._options.capiUpstreamUrl ?? this._options.upstreamUrl;
+		if (!url) {
+			throw new Error('[capi-replay] no CAPI upstream configured (set capiUpstreamUrl or upstreamUrl)');
+		}
+		return url;
+	}
+
+	private get _githubUpstream(): string {
+		const url = this._options.githubUpstreamUrl ?? this._options.upstreamUrl;
+		if (!url) {
+			throw new Error('[capi-replay] no GitHub upstream configured (set githubUpstreamUrl or upstreamUrl)');
+		}
+		return url;
 	}
 
 	private _fail(res: http.ServerResponse, message: string): void {
@@ -303,22 +472,202 @@ export class CapiReplayProxy {
 	// -- fixture I/O ----------------------------------------------------------
 
 	private _loadFixture(): void {
-		const fixture = JSON.parse(readFileSync(this._options.fixturePath, 'utf8')) as IFixture;
+		const fixture = yamlModule.load(readFileSync(this._options.fixturePath, 'utf8')) as IFixture;
 		for (const exchange of fixture.exchanges) {
 			const key = `${exchange.method} ${exchange.path}`;
 			let bucket = this._replayBuckets.get(key);
 			if (!bucket) {
-				bucket = { responses: [], index: 0 };
+				bucket = { items: [], index: 0 };
 				this._replayBuckets.set(key, bucket);
 			}
-			bucket.responses.push(exchange.response);
+			bucket.items.push(isTurnExchange(exchange)
+				? { kind: 'turn', dialect: exchange.dialect, message: { content: deserializeAnthropicContent(exchange.response.content), stopReason: exchange.response.stopReason, usage: exchange.response.usage } }
+				: { kind: 'raw', response: exchange.response });
 		}
 	}
 
 	private _writeFixture(): void {
-		const fixture: IFixture = { version: 1, exchanges: this._recorded };
+		const usedModels = this._collectUsedModels();
+		const keptIds = new Set<string>([...usedModels, ...MODELS_ALLOWLIST]);
+		// The full catalog the backend returned lets us scrub the models we drop
+		// from the `/models` list out of ancillary bodies too. (Model turns store
+		// the system prompt as a placeholder, so the big catalog leak is gone by
+		// construction there.)
+		const redactTerms = this._collectModelCatalog()
+			.filter(model => !keptIds.has(model.id))
+			.flatMap(model => model.name ? [model.id, model.name] : [model.id])
+			.sort((a, b) => b.length - a.length); // longest first so substrings don't leave fragments
+		const exchanges = this._recorded.map(exchange => this._toFixtureExchange(exchange, keptIds, redactTerms));
+		this._normalizeToolCallIds(exchanges);
+		const fixture: IFixture = { version: 1, exchanges };
 		mkdirSync(dirname(this._options.fixturePath), { recursive: true });
-		writeFileSync(this._options.fixturePath, JSON.stringify(fixture, null, '\t') + '\n');
+		writeFileSync(this._options.fixturePath, yamlModule.dump(fixture, { lineWidth: -1, noRefs: true }));
+	}
+
+	/**
+	 * Replace the backend's opaque tool-call ids with stable, readable ordinals
+	 * (`toolcall_0`, `toolcall_1`, ...) across the whole fixture. Assistant
+	 * `tool_use` blocks define the ordering; the `tool_result` blocks that refer
+	 * back to them in later requests reuse the same mapping. Keeps captures
+	 * deterministic across re-records and easy to follow.
+	 */
+	private _normalizeToolCallIds(exchanges: IFixtureExchange[]): void {
+		const idMap = new Map<string, string>();
+		const mapId = (id: string): string => {
+			let mapped = idMap.get(id);
+			if (mapped === undefined) {
+				mapped = `toolcall_${idMap.size}`;
+				idMap.set(id, mapped);
+			}
+			return mapped;
+		};
+		// First pass: assistant tool_use ids (in reply order) seed the mapping.
+		for (const exchange of exchanges) {
+			if (!isTurnExchange(exchange) || !Array.isArray(exchange.response.content)) {
+				continue;
+			}
+			for (const block of exchange.response.content) {
+				const b = block as { type?: string; id?: string };
+				if (b.type === 'tool_use' && typeof b.id === 'string' && b.id) {
+					b.id = mapId(b.id);
+				}
+			}
+		}
+		// Second pass: tool_result references in requests reuse the same ids.
+		for (const exchange of exchanges) {
+			if (!isTurnExchange(exchange)) {
+				continue;
+			}
+			for (const message of exchange.request.messages) {
+				const content = (message as { content?: unknown }).content;
+				if (!Array.isArray(content)) {
+					continue;
+				}
+				for (const block of content) {
+					const b = block as { type?: string; tool_use_id?: string };
+					if (b.type === 'tool_result' && typeof b.tool_use_id === 'string' && b.tool_use_id) {
+						b.tool_use_id = mapId(b.tool_use_id);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Convert a raw recorded exchange into its fixture form: model-endpoint calls
+	 * become readable turns (parsed request + regeneratable reply); everything
+	 * else stays raw (with model-catalog filtering + redaction applied).
+	 */
+	private _toFixtureExchange(exchange: IRecordedExchange, keptIds: ReadonlySet<string>, redactTerms: readonly string[]): IFixtureExchange {
+		if (exchange.method === 'POST' && exchange.path === ANTHROPIC_MESSAGES_PATH) {
+			const request = summarizeAnthropicRequest(exchange.requestBody);
+			const message = aggregateAnthropicSse(exchange.response.body);
+			if (request && message) {
+				const content = this._normalizeMessageContent(message.content);
+				return { method: exchange.method, path: exchange.path, dialect: 'anthropic', request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } };
+			}
+		}
+		if (exchange.method === 'POST' && exchange.path === RESPONSES_PATH) {
+			const request = summarizeResponsesRequest(exchange.requestBody);
+			const message = aggregateResponsesSse(exchange.response.body);
+			if (request && message) {
+				const content = this._normalizeMessageContent(message.content);
+				return { method: exchange.method, path: exchange.path, dialect: 'responses', request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } };
+			}
+		}
+		const filtered = this._filterModelsCatalog(exchange, keptIds);
+		const redacted = redactTerms.length ? this._redactModelTerms(filtered, redactTerms) : filtered;
+		return { method: redacted.method, path: redacted.path, response: redacted.response };
+	}
+
+	/**
+	 * Normalize local paths out of an aggregated assistant reply. Tool-input JSON
+	 * streams split across many SSE deltas, so a string replace on the raw body
+	 * can miss a path straddling a chunk boundary; normalizing the reassembled
+	 * content (text + tool inputs) is reliable.
+	 */
+	private _normalizeMessageContent(content: AnthropicContentBlock[]): AnthropicContentBlock[] {
+		return content.map((block): AnthropicContentBlock => {
+			if (block.type === 'text') {
+				return { type: 'text', text: this._normalize(block.text) };
+			}
+			let input = block.input;
+			try {
+				input = JSON.parse(this._normalize(JSON.stringify(block.input ?? {})));
+			} catch {
+				// non-serializable input; keep as-is
+			}
+			return { type: 'tool_use', id: block.id, name: block.name, input };
+		});
+	}
+
+	/** Model ids the recorded run actually referenced (from request bodies). */
+	private _collectUsedModels(): Set<string> {
+		const used = new Set<string>();
+		for (const exchange of this._recorded) {
+			MODEL_ID_IN_BODY_RE.lastIndex = 0;
+			let match: RegExpExecArray | null;
+			while ((match = MODEL_ID_IN_BODY_RE.exec(exchange.requestBody)) !== null) {
+				used.add(match[1]);
+			}
+		}
+		return used;
+	}
+
+	/** All `(id, name)` pairs the backend returned across `/models` responses. */
+	private _collectModelCatalog(): Array<{ id: string; name?: string }> {
+		const catalog = new Map<string, { id: string; name?: string }>();
+		for (const exchange of this._recorded) {
+			if (exchange.method !== 'GET' || exchange.path !== '/models') {
+				continue;
+			}
+			try {
+				const parsed = JSON.parse(exchange.response.body) as { data?: Array<{ id?: string; name?: string }> };
+				for (const entry of parsed.data ?? []) {
+					if (typeof entry.id === 'string') {
+						catalog.set(entry.id, { id: entry.id, name: typeof entry.name === 'string' ? entry.name : undefined });
+					}
+				}
+			} catch {
+				// non-JSON body; skip
+			}
+		}
+		return [...catalog.values()];
+	}
+
+	/** Replace dropped model ids/names (whole tokens only) with a placeholder. */
+	private _redactModelTerms(exchange: IRecordedExchange, terms: readonly string[]): IRecordedExchange {
+		let requestBody = exchange.requestBody;
+		let body = exchange.response.body;
+		for (const term of terms) {
+			// Whole-token match so e.g. dropping `gpt-4` never corrupts kept `gpt-4o`.
+			const re = new RegExp(`(?<![\\w.-])${escapeRegExpCharacters(term)}(?![\\w.-])`, 'g');
+			requestBody = requestBody.replace(re, MODEL_PLACEHOLDER);
+			body = body.replace(re, MODEL_PLACEHOLDER);
+		}
+		return { ...exchange, requestBody, response: { ...exchange.response, body } };
+	}
+
+	/**
+	 * Strip unused/internal models from a `/models` catalog response so fixtures
+	 * never leak unreleased model ids. Non-`/models` exchanges pass through.
+	 */
+	private _filterModelsCatalog(exchange: IRecordedExchange, keptIds: ReadonlySet<string>): IRecordedExchange {
+		if (exchange.method !== 'GET' || exchange.path !== '/models') {
+			return exchange;
+		}
+		let parsed: { data?: Array<{ id?: string }> };
+		try {
+			parsed = JSON.parse(exchange.response.body);
+		} catch {
+			return exchange;
+		}
+		if (!Array.isArray(parsed.data)) {
+			return exchange;
+		}
+		const data = parsed.data.filter(entry => typeof entry.id === 'string' && keptIds.has(entry.id));
+		const body = JSON.stringify({ ...parsed, data });
+		return { ...exchange, response: { ...exchange.response, body } };
 	}
 
 	private _normalize(text: string): string {
@@ -338,6 +687,21 @@ function replaceAll(text: string, search: string, replacement: string): string {
 		return text;
 	}
 	return text.split(search).join(replacement);
+}
+
+/** Decompress a response body per its `content-encoding` into a UTF-8 string. */
+function decodeBody(buffer: Buffer, encoding: string | undefined): string {
+	try {
+		switch (encoding) {
+			case 'gzip': return zlibModule.gunzipSync(buffer).toString('utf8');
+			case 'br': return zlibModule.brotliDecompressSync(buffer).toString('utf8');
+			case 'deflate': return zlibModule.inflateSync(buffer).toString('utf8');
+			default: return buffer.toString('utf8');
+		}
+	} catch {
+		// Not actually compressed / unknown encoding — fall back to raw text.
+		return buffer.toString('utf8');
+	}
 }
 
 function flattenHeaders(headers: http.IncomingHttpHeaders): Record<string, string> {

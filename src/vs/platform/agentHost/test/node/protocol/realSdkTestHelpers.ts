@@ -17,7 +17,9 @@
 import assert from 'assert';
 import { execSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
+import { fileURLToPath } from 'url';
+import { join } from '../../../../../base/common/path.js';
 import { removeAnsiEscapeCodes } from '../../../../../base/common/strings.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
@@ -40,14 +42,57 @@ import {
 } from '../../../common/state/sessionActions.js';
 import type { SessionAddedParams } from '../../../common/state/protocol/notifications.js';
 import { CopilotCliConfigKey } from '../../../common/copilotCliConfig.js';
+import { CapiReplayMode } from './capiReplayProxy.js';
 import {
 	getActionEnvelope, isActionNotification, fetchSessionWithChat, IServerHandle, startRealServer, TestProtocolClient,
 } from './testHelpers.js';
+
+// #region Record/replay
+
+/**
+ * When `AGENT_HOST_REPLAY_RECORD=1`, the shared suite runs against real CAPI (a
+ * real GitHub token) and captures the wire to per-test YAML fixtures. Otherwise
+ * it replays the committed fixtures deterministically with no token.
+ */
+const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
+const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'auto';
+/** A synthetic token used on replay (no real credential needed). */
+export const REPLAY_PLACEHOLDER_TOKEN = 'replay-no-token';
+
+/**
+ * Fixtures live in the source tree (committed) though the compiled test runs
+ * from `out/`/`out-build/` — resolve up to the repo root and into `src/...`.
+ */
+const CAPTURES_DIR = fileURLToPath(new URL('../../../../../../../src/vs/platform/agentHost/test/node/protocol/captures/realSdk/', import.meta.url));
+
+/** Per-test fixture path derived from the provider + test title. */
+function fixturePathFor(provider: string, testTitle: string): string {
+	const slug = testTitle.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+	return join(CAPTURES_DIR, `${provider}-${slug}.yaml`);
+}
+
+/**
+ * Build the `capiReplay` option for a test: replays the committed per-test
+ * fixture by default (tokenless), or records it against real CAPI when
+ * `AGENT_HOST_REPLAY_RECORD=1`. Shared by {@link defineSharedRealSdkTests} and
+ * provider-specific suites so both go through the same record/replay path.
+ */
+export function capiReplayFor(provider: string, testTitle: string): { fixturePath: string; real: true; mode: CapiReplayMode; workDir: string } {
+	return { fixturePath: fixturePathFor(provider, testTitle), real: true, mode: REPLAY_MODE, workDir: tmpdir() };
+}
+
+// #endregion
 
 // #region Token
 
 /** Resolve GitHub token from env or `gh auth token`. */
 export function resolveGitHubToken(): string {
+	// Replaying committed fixtures needs no real credential: the capture proxy
+	// serves recorded responses and ignores auth. Only recording talks to real
+	// CAPI and thus needs a real token.
+	if (!RECORD) {
+		return REPLAY_PLACEHOLDER_TOKEN;
+	}
 	const envToken = process.env['GITHUB_TOKEN'];
 	if (envToken) {
 		return envToken;
@@ -517,7 +562,14 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 
 		setup(async function () {
 			this.timeout(60_000);
-			server = await startRealServer({ claudeSdkRoot: config.claudeSdkRoot, codexSdkRoot: config.codexSdkRoot });
+			server = await startRealServer({
+				claudeSdkRoot: config.claudeSdkRoot,
+				codexSdkRoot: config.codexSdkRoot,
+				// Normalize the real home + temp roots out of recorded request
+				// bodies so committed fixtures carry no local absolute paths.
+				homeDir: homedir(),
+				capiReplay: capiReplayFor(config.provider, this.currentTest?.title ?? 'unknown'),
+			});
 			client = new TestProtocolClient(server.port);
 			await client.connect();
 		});
@@ -544,7 +596,13 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			}
 			createdSessions.length = 0;
 			client.close();
-			server?.process.kill();
+			// Flush the recording / surface strict replay cache-misses before the
+			// process goes away. Kill even if the strict check throws.
+			try {
+				await server?.capiReplay?.stop();
+			} finally {
+				server?.process.kill();
+			}
 
 			for (const dir of tempDirs) {
 				try {
@@ -679,6 +737,19 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 
 			const toolStarts = client.receivedNotifications(n => isActionNotification(n, 'chat/toolCallStart'));
 			assert.ok(toolStarts.length > 0, 'expected at least one shell tool call');
+
+			// While recording, let the post-tool continuation finish so its
+			// model call lands in the fixture. Replay always issues that
+			// continuation, so without capturing it here replay would hit an
+			// unrecorded model call. Bounded + best-effort: some providers'
+			// continuations for a trivial prompt can run long.
+			if (RECORD) {
+				try {
+					await client.waitForNotification(n =>
+						isActionNotification(n, 'chat/turnComplete') || isActionNotification(n, 'chat/error'),
+						30_000);
+				} catch { /* bounded drain */ }
+			}
 		});
 
 		(config.supportsPlanMode ? test : test.skip)('planning-mode session-state writes are auto-approved in default mode', async function () {
@@ -728,7 +799,11 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			assert.strictEqual(resubscribeResult.snapshot!.resource, sessionUri, 'follow-up turn should keep the original session resource');
 		});
 
-		test('can abort a running turn', async function () {
+		// Aborting a turn is inherently a real-streaming test: on replay the
+		// recorded (intentionally truncated) response is served instantly, so
+		// there is no mid-stream window to abort. Run it only while recording
+		// against real CAPI; it is skipped in deterministic replay.
+		(RECORD ? test : test.skip)('can abort a running turn', async function () {
 			this.timeout(120_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-abort-`);
@@ -760,14 +835,14 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			tempDirs.push(tempDir);
 			const workingDirUri = URI.file(tempDir).toString();
 
-			await client.call('initialize', { channel: ROOT_STATE_URI, protocolVersions: [PROTOCOL_VERSION], clientId: `real-sdk-workdir-${config.provider}` });
-			await client.call('authenticate', { channel: ROOT_STATE_URI, resource: 'https://api.github.com', token: resolveGitHubToken() });
+			await client.call('initialize', { channel: ROOT_STATE_URI, protocolVersions: [PROTOCOL_VERSION], clientId: `real-sdk-workdir-${config.provider}` }, 30_000);
+			await client.call('authenticate', { channel: ROOT_STATE_URI, resource: 'https://api.github.com', token: resolveGitHubToken() }, 30_000);
 
 			const sessionUri = URI.from({ scheme: config.scheme, path: `/${generateUuid()}` }).toString();
-			await client.call('createSession', { channel: sessionUri, provider: config.provider, workingDirectory: workingDirUri });
+			await client.call('createSession', { channel: sessionUri, provider: config.provider, workingDirectory: workingDirUri }, 30_000);
 			createdSessions.push(sessionUri);
 
-			const subscribeResult = await client.call<SubscribeResult>('subscribe', { channel: sessionUri });
+			const subscribeResult = await client.call<SubscribeResult>('subscribe', { channel: sessionUri }, 30_000);
 			const sessionState = subscribeResult.snapshot!.state as SessionState;
 			assert.strictEqual(sessionState.workingDirectory, workingDirUri,
 				`subscribe snapshot summary should carry the requested working directory`);
@@ -1014,8 +1089,10 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			// A unique phrase that only the subagent is asked to emit in an
 			// intermediate assistant message, so replay can detect whether
 			// subagent assistant text leaks upward without depending on the
-			// parent agent's final summary behavior.
-			const sentinel = `subagent replay note ${generateUuid().replace(/-/g, '').slice(0, 10)}`;
+			// parent agent's final summary behavior. It is a fixed string (not a
+			// per-run uuid) so the recorded subagent reply still contains the
+			// phrase the freshly-issued prompt asks for on replay.
+			const sentinel = 'subagent replay note sentinel-7f3a';
 
 			let approvalsActive = true;
 			let approvalSeq = 2000;

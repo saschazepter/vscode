@@ -1,0 +1,58 @@
+version: 1
+exchanges:
+  - method: POST
+    path: /responses
+    dialect: responses
+    request:
+      model: gpt-5.3-codex
+      system: ${system}
+      messages:
+        - role: user
+          content: 'Run the shell command: echo "hello from test"'
+    response:
+      content:
+        - type: text
+          text: Running the exact command in the current workspace and I’ll return the output.
+        - type: tool_use
+          id: toolcall_0
+          name: exec_command
+          input:
+            cmd: echo "hello from test"
+      stopReason: tool_use
+      usage:
+        inputTokens: 9433
+        outputTokens: 84
+  - method: POST
+    path: /responses
+    dialect: responses
+    request:
+      model: gpt-5.3-codex
+      system: ${system}
+      messages:
+        - role: user
+          content: 'Run the shell command: echo "hello from test"'
+        - role: assistant
+          content: Running the exact command in the current workspace and I’ll return the output.
+        - role: assistant
+          content:
+            - type: tool_use
+              name: exec_command
+              input:
+                cmd: echo "hello from test"
+        - role: user
+          content:
+            - type: tool_result
+              tool_use_id: toolcall_0
+              content: |-
+                Chunk ID: 5c3c23
+                Wall time: 0.0000 seconds
+                Process exited with code 0
+                Original token count: 4
+                Output:
+                hello from test
+    response:
+      content: hello from test
+      stopReason: end_turn
+      usage:
+        inputTokens: 9568
+        outputTokens: 7

@@ -320,18 +320,28 @@ export async function startServer(options?: { readonly quiet?: boolean; readonly
  * Start the agent host server with the Copilot SDK agent with either a real or mocked LLM.
  * The server is started with logging enabled so the CopilotAgent is registered.
  */
-export async function startRealServer(options?: { readonly claudeSdkRoot?: string; readonly codexSdkRoot?: string; readonly mockLlm?: boolean; readonly homeDir?: string; readonly env?: NodeJS.ProcessEnv; readonly capiReplay?: { readonly fixturePath: string; readonly mode?: CapiReplayMode; readonly workDir?: string }; readonly mockScenarios?: readonly IMockScenario[] }): Promise<IServerHandle> {
+export async function startRealServer(options?: { readonly claudeSdkRoot?: string; readonly codexSdkRoot?: string; readonly mockLlm?: boolean; readonly homeDir?: string; readonly env?: NodeJS.ProcessEnv; readonly capiReplay?: { readonly fixturePath: string; readonly mode?: CapiReplayMode; readonly workDir?: string; readonly real?: boolean }; readonly mockScenarios?: readonly IMockScenario[] }): Promise<IServerHandle> {
 	// `capiReplay` records/replays in front of the mock LLM server, so it implies
-	// a mock upstream even when `mockLlm` was not explicitly requested.
-	const mockLlmServer = (options?.mockLlm || options?.capiReplay) ? await startMockLlmServer(options?.mockScenarios) : undefined;
+	// a mock upstream even when `mockLlm` was not explicitly requested — unless
+	// `real` is set, in which case the proxy forwards to real CAPI/GitHub.
+	const realCapture = options?.capiReplay?.real === true;
+	const mockLlmServer = (options?.mockLlm || (options?.capiReplay && !realCapture)) ? await startMockLlmServer(options?.mockScenarios) : undefined;
 	let capiReplayProxy: CapiReplayProxy | undefined;
-	if (options?.capiReplay && mockLlmServer) {
-		capiReplayProxy = new CapiReplayProxy({
+	if (options?.capiReplay) {
+		capiReplayProxy = new CapiReplayProxy(realCapture ? {
 			fixturePath: options.capiReplay.fixturePath,
-			upstreamUrl: mockLlmServer.url,
 			mode: options.capiReplay.mode,
 			workDir: options.capiReplay.workDir,
 			homeDir: options.homeDir,
+			// Real hosts (consumer defaults); override for Enterprise/Business accounts.
+			githubUpstreamUrl: process.env['AGENT_HOST_RECORD_GITHUB_URL'] || 'https://api.github.com',
+			capiUpstreamUrl: process.env['AGENT_HOST_RECORD_CAPI_URL'] || 'https://api.githubcopilot.com',
+		} : {
+			fixturePath: options.capiReplay.fixturePath,
+			mode: options.capiReplay.mode,
+			workDir: options.capiReplay.workDir,
+			homeDir: options.homeDir,
+			upstreamUrl: mockLlmServer!.url,
 		});
 		await capiReplayProxy.start();
 	}
@@ -356,7 +366,14 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			// Codex defaults to disabled; opt it in for the real-SDK suite when a
 			// codex SDK root is supplied so the provider actually registers.
 			...(options?.codexSdkRoot ? { [AgentHostCodexAgentEnabledEnvVar]: 'true' } : {}),
-			...(mockLlmServer ? {
+			...(realCapture ? {
+				// Real-CAPI capture/replay: route all CAPI + GitHub-API traffic through
+				// the proxy. The real GitHub token flows via the `authenticate`
+				// protocol call (record) or a placeholder (replay), not via env.
+				COPILOT_API_URL: capiUrl,
+				COPILOT_DEBUG_GITHUB_API_URL: capiUrl,
+				VSCODE_AGENT_HOST_CAPI_URL_OVERRIDE: capiUrl,
+			} : mockLlmServer ? {
 				GITHUB_PAT: 'smoketest-fake-pat',
 				IS_SCENARIO_AUTOMATION: '1',
 				// Real-SDK Copilot tests run against responses-capable models
