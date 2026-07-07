@@ -214,8 +214,59 @@ export class RunInTerminalToolTelemetry {
 			compressOutputEnabled: this._configurationService.getValue<boolean>(ChatConfiguration.CompressOutputEnabled) === true,
 		});
 	}
+
+	logCompactionHint(command: string): void {
+		const lowerCaseCommand = command.toLowerCase();
+		const hasCompactionKeyword = compactionHintKeywords.some(keyword => lowerCaseCommand.includes(keyword));
+		if (!hasCompactionKeyword) {
+			return;
+		}
+		type TelemetryEvent = {
+			message: string;
+		};
+		type TelemetryClassification = {
+			owner: 'aiday-mar';
+			comment: 'Marks commands where compaction is done by copilot CLI';
+			message: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'A fixed marker indicating command output compaction is done by Copilot CLI.' };
+		};
+		this._telemetryService.publicLog2<TelemetryEvent, TelemetryClassification>('toolUse.runInTerminal.compactionDone', {
+			message: 'compaction is done by Copilot CLI',
+		});
+	}
 }
 
+const compactionHintKeywords: readonly string[] = [
+	'apt',
+	'npm',
+	'npm-pack',
+	'yarn-berry',
+	'pnpm',
+	'composer',
+	'poetry',
+	'pip',
+	'uv',
+	'maven',
+	'dotnet',
+	'python-build',
+	'go',
+	'unittest',
+	'js-test',
+	'cargo',
+	'node',
+	'pytest',
+	'git',
+	'git-clean',
+	'nx',
+	'python-build-ext',
+	'django-test',
+	'golangci-lint',
+	'clang-format-linter',
+	'gradle',
+	'cmake',
+	'make',
+	'shell-grep',
+	'python-script',
+];
 
 const commandAllowList: ReadonlySet<string> = new Set([
 	// Special chars/scripting
