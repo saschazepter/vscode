@@ -463,6 +463,19 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			scope: ConfigurationScope.APPLICATION,
 		},
+		'agents.voice.voice': {
+			type: 'string',
+			enum: ['victoria_neutral', 'kevin_neutral', 'maya_neutral', 'daniel_neutral'],
+			enumDescriptions: [
+				nls.localize('agents.voice.voice.victoria', "Victoria (neutral)."),
+				nls.localize('agents.voice.voice.kevin', "Kevin (neutral)."),
+				nls.localize('agents.voice.voice.maya', "Maya (neutral)."),
+				nls.localize('agents.voice.voice.daniel', "Daniel (neutral)."),
+			],
+			description: nls.localize('agents.voice.voice', "The voice used when the assistant reads responses aloud. Changing this while voice mode is connected takes effect immediately."),
+			default: 'victoria_neutral',
+			scope: ConfigurationScope.APPLICATION,
+		},
 		'agents.voice.showTranscript': {
 			type: 'boolean',
 			description: nls.localize('agents.voice.showTranscript', "Show the voice transcript overlay in the chat input area while voice mode is active."),

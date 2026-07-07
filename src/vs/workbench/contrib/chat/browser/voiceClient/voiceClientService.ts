@@ -116,7 +116,25 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 			) {
 				this._sendSetTurnConfig();
 			}
+			if (e.affectsConfiguration('agents.voice.voice')) {
+				this._sendSetVoice();
+			}
 		}));
+	}
+
+	/**
+	 * Resolve the configured voice key (e.g. ``victoria_neutral``) sent to the
+	 * backend on ``start_session`` and via ``set_voice`` when changed live.
+	 */
+	private _getVoice(): string {
+		const raw = this._configurationService.getValue<string>('agents.voice.voice');
+		return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : 'victoria_neutral';
+	}
+
+	private _sendSetVoice(): void {
+		if (this._ws?.readyState === WebSocket.OPEN) {
+			this._ws.send(JSON.stringify({ type: 'set_voice', voice: this._getVoice() }));
+		}
 	}
 
 	/**
@@ -565,7 +583,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 	sendStartSession(context: IVoiceSessionContext, machineId: string, priorTimeline?: readonly IVoicePriorTimelineEntry[]): void {
 		if (this._ws?.readyState === WebSocket.OPEN) {
 			this._seedTracking(context);
-			const payload: Record<string, unknown> = { type: 'start_session', session_context: context, machine_id: machineId, turn_config: this._getTurnConfig() };
+			const payload: Record<string, unknown> = { type: 'start_session', session_context: context, machine_id: machineId, turn_config: this._getTurnConfig(), voice: this._getVoice() };
 			if (priorTimeline && priorTimeline.length > 0) {
 				payload.prior_timeline = priorTimeline;
 			}
@@ -576,7 +594,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 	sendResumeSession(context: IVoiceSessionContext, machineId: string): void {
 		if (this._ws?.readyState === WebSocket.OPEN && this._lastSessionId) {
 			this._seedTracking(context);
-			this._ws.send(JSON.stringify({ type: 'resume_session', session_id: this._lastSessionId, session_context: context, machine_id: machineId, turn_config: this._getTurnConfig() }));
+			this._ws.send(JSON.stringify({ type: 'resume_session', session_id: this._lastSessionId, session_context: context, machine_id: machineId, turn_config: this._getTurnConfig(), voice: this._getVoice() }));
 		}
 	}
 
