@@ -17,6 +17,7 @@ import {
 	AgentHostCodexAgentEnabledSettingId,
 	AgentHostCodexAgentSdkRootSettingId,
 	AgentHostCodexAgentCodexHomeSettingId,
+	AgentHostGitBranchPrefixSettingId,
 	AgentHostOTelCaptureContentSettingId,
 	AgentHostOTelDbSpanExporterEnabledSettingId,
 	AgentHostOTelEnabledSettingId,
@@ -112,6 +113,11 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.agentHost.byokModels.enabled', "When enabled, the agent host wires up the BYOK ('bring your own key') language-model bridge so extension-provided BYOK models can run in agent-host sessions. Requires `#chat.agentHost.enabled#`. The agent host process must be restarted for changes to take effect."),
 			default: true,
 			tags: ['experimental', 'advanced'],
+		},
+		[AgentHostGitBranchPrefixSettingId]: {
+			type: 'string',
+			description: nls.localize('chat.agentHost.git.branchPrefix', "Prefix used when the agent host creates a branch for a new worktree session. Requires `#chat.agentHost.enabled#`. The agent host process must be restarted for changes to take effect."),
+			default: 'agents/',
 		},
 		[AgentHostCodexAgentEnabledSettingId]: {
 			type: 'boolean',

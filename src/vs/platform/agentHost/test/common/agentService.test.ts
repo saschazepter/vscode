@@ -7,7 +7,7 @@ import assert from 'assert';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
-import { AgentHostByokModelsEnabledEnvVar, AgentSession, AgentHostOTelEnvVars, buildAgentHostOTelEnv, buildAgentSdkEnv, isAgentEnabled, readAgentHostOTelPolicySettings, sanitizeAgentHostOTelPolicySettings } from '../../common/agentService.js';
+import { AgentHostByokModelsEnabledEnvVar, AgentHostGitBranchPrefixEnvVar, AgentSession, AgentHostOTelEnvVars, buildAgentHostOTelEnv, buildAgentSdkEnv, isAgentEnabled, readAgentHostOTelPolicySettings, sanitizeAgentHostOTelPolicySettings } from '../../common/agentService.js';
 import { buildChatUri, buildDefaultChatUri, resolveChatUri } from '../../common/state/sessionState.js';
 
 suite('AgentSession namespace', () => {
@@ -281,5 +281,24 @@ suite('buildAgentSdkEnv (BYOK gate forwarding)', () => {
 	test('lets an inherited env var win over the setting (developer override)', () => {
 		const env = buildAgentSdkEnv({ byokModelsEnabled: true }, { [AgentHostByokModelsEnabledEnvVar]: 'false' });
 		assert.strictEqual(env[AgentHostByokModelsEnabledEnvVar], undefined);
+	});
+});
+
+suite('buildAgentSdkEnv (branch prefix forwarding)', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('forwards branch prefix values, including an explicit empty string, and respects developer overrides', () => {
+		assert.deepStrictEqual({
+			value: buildAgentSdkEnv({ gitBranchPrefix: 'team/agents/' }, {})[AgentHostGitBranchPrefixEnvVar],
+			empty: buildAgentSdkEnv({ gitBranchPrefix: '' }, {})[AgentHostGitBranchPrefixEnvVar],
+			unset: buildAgentSdkEnv({}, {})[AgentHostGitBranchPrefixEnvVar],
+			override: buildAgentSdkEnv({ gitBranchPrefix: 'team/agents/' }, { [AgentHostGitBranchPrefixEnvVar]: 'dev/' })[AgentHostGitBranchPrefixEnvVar],
+		}, {
+			value: 'team/agents/',
+			empty: '',
+			unset: undefined,
+			override: undefined,
+		});
 	});
 });

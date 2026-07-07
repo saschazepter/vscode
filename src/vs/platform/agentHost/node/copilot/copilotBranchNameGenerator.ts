@@ -5,9 +5,16 @@
 
 import { ILogService } from '../../../log/common/log.js';
 import { createDecorator } from '../../../instantiation/common/instantiation.js';
+import { AgentHostGitBranchPrefixEnvVar } from '../../common/agentService.js';
 import { ICopilotApiService, type ICopilotUtilityChatMessage } from '../shared/copilotApiService.js';
 
-export const COPILOT_BRANCH_PREFIX = 'agents/';
+/**
+ * Default prefix applied to branches the agent host creates for worktree
+ * sessions. Used when the `chat.agentHost.git.branchPrefix` setting (forwarded
+ * as {@link AgentHostGitBranchPrefixEnvVar}) is not set, and as the fallback
+ * that {@link getCopilotWorktreeName} always strips for back-compat.
+ */
+const COPILOT_BRANCH_PREFIX = 'agents/';
 const COPILOT_BRANCH_SESSION_ID_SUFFIX_LENGTH = 8;
 const MAX_BRANCH_NAME_HINT_LENGTH = 48;
 const MIN_GENERATED_BRANCH_NAME_LENGTH = 8;
@@ -105,20 +112,43 @@ export class CopilotBranchNameGenerator implements ICopilotBranchNameGenerator {
 	}
 
 	private async _buildBranchName(request: ICopilotBranchNameGeneratorRequest, branchNameHint: string | undefined): Promise<string> {
+		const branchPrefix = getAgentHostGitBranchPrefix();
+
 		if (!branchNameHint) {
 			// No usable hint - fall back to the (already unique) session id.
-			return `${COPILOT_BRANCH_PREFIX}${request.sessionId}`;
+			return `${branchPrefix}${request.sessionId}`;
 		}
 
 		// Prefer the bare hint and only append a short session-id suffix when
 		// the branch name would collide with an existing branch.
-		const branchName = `${COPILOT_BRANCH_PREFIX}${branchNameHint}`;
+		const branchName = `${branchPrefix}${branchNameHint}`;
 		if (request.branchExists && await request.branchExists(branchName)) {
 			return `${branchName}-${request.sessionId.substring(0, COPILOT_BRANCH_SESSION_ID_SUFFIX_LENGTH)}`;
 		}
 
 		return branchName;
 	}
+}
+
+/**
+ * Resolves the effective branch prefix for agent-host worktree sessions from
+ * the forwarded {@link AgentHostGitBranchPrefixEnvVar} environment variable.
+ *
+ * - Unset falls back to {@link COPILOT_BRANCH_PREFIX} (`agents/`).
+ * - An explicit empty value means "no prefix" and is honored.
+ * - A non-empty value that normalizes to empty (e.g. only illegal characters)
+ *   falls back to {@link COPILOT_BRANCH_PREFIX}.
+ */
+export function getAgentHostGitBranchPrefix(): string {
+	const prefix = process.env[AgentHostGitBranchPrefixEnvVar];
+	if (prefix === undefined) {
+		return COPILOT_BRANCH_PREFIX;
+	}
+	if (prefix.trim() === '') {
+		return '';
+	}
+
+	return prefix;
 }
 
 export function normalizeCopilotBranchName(branchName: string): string {

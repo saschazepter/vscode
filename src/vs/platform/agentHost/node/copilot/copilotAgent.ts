@@ -56,7 +56,7 @@ import { IAgentHostCompletions } from '../agentHostCompletions.js';
 import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
 import { findMcpChildId, type IMcpServerRuntimeState } from '../shared/mcpCustomizationController.js';
 import { IByokLmBridgeRegistry } from '../byokLmBridgeRegistry.js';
-import { COPILOT_BRANCH_PREFIX, ICopilotBranchNameGenerator } from './copilotBranchNameGenerator.js';
+import { getAgentHostGitBranchPrefix, ICopilotBranchNameGenerator } from './copilotBranchNameGenerator.js';
 import { CopilotAgentSession, type CopilotSdkMode } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
 import { parsedPluginsEqual, toChildCustomizations } from './copilotPluginConverters.js';
@@ -238,10 +238,12 @@ export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
 }
 
 export function getCopilotWorktreeName(branchName: string): string {
-	// Strip the `agents/` branch prefix so the worktree directory name stays
-	// concise, then flatten any remaining path separators.
-	const withoutPrefix = branchName.startsWith(COPILOT_BRANCH_PREFIX)
-		? branchName.substring(COPILOT_BRANCH_PREFIX.length)
+	const branchPrefix = getAgentHostGitBranchPrefix();
+
+	// Strip the configured branch prefix so the worktree directory
+	// name stays concise, then flatten any remaining path separators.
+	const withoutPrefix = branchName.startsWith(branchPrefix)
+		? branchName.substring(branchPrefix.length)
 		: branchName;
 	return withoutPrefix.replace(/\//g, '-');
 }

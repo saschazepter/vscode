@@ -275,6 +275,18 @@ export const AgentHostCodexAgentBinaryArgsSettingId = 'chat.agentHost.codexAgent
  */
 export const AgentHostCodexAgentSdkRootEnvVar = 'VSCODE_AGENT_HOST_CODEX_SDK_ROOT';
 
+/**
+ * Prefix applied to branches the agent host creates for new worktree
+ * sessions. Empty means no prefix. Defaults to `agents/`.
+ */
+export const AgentHostGitBranchPrefixSettingId = 'chat.agentHost.git.branchPrefix';
+
+/**
+ * Environment variable form of {@link AgentHostGitBranchPrefixSettingId}.
+ * Forwarded by the starters from the setting.
+ */
+export const AgentHostGitBranchPrefixEnvVar = 'VSCODE_AGENT_HOST_GIT_BRANCH_PREFIX';
+
 /** Forwarded `$CODEX_HOME`. */
 export const AgentHostCodexAgentCodexHomeEnvVar = 'CODEX_HOME';
 
@@ -553,6 +565,7 @@ export interface IAgentSdkStarterSettings {
 	readonly claudeAgentEnabled?: boolean;
 	readonly codexAgentEnabled?: boolean;
 	readonly byokModelsEnabled?: boolean;
+	readonly gitBranchPrefix?: string;
 }
 
 export function buildAgentSdkEnv(
@@ -579,6 +592,12 @@ export function buildAgentSdkEnv(
 	}
 	if (settings.byokModelsEnabled !== undefined) {
 		setIfMissing(AgentHostByokModelsEnabledEnvVar, settings.byokModelsEnabled ? 'true' : 'false');
+	}
+	if (
+		settings.gitBranchPrefix !== undefined &&
+		inheritedEnv[AgentHostGitBranchPrefixEnvVar] === undefined
+	) {
+		out[AgentHostGitBranchPrefixEnvVar] = settings.gitBranchPrefix;
 	}
 	return out;
 }
