@@ -165,6 +165,7 @@ function createPowerShellModelDescription(shell: string, sandboxingOptions: ISan
 		'- Use Test-Path to check file/directory existence',
 		'- Be specific with Select-Object properties to avoid excessive output',
 		'- Avoid printing credentials unless absolutely required',
+		'- Avoid commands that trigger an interactive elevation prompt, such as Start-Process -Verb RunAs or runas.exe. They block on a UAC/password prompt that cannot be answered from chat, and secrets must never be routed through the model. If elevated privileges are required, tell the user to run the command themselves and stop — do NOT retry the command with variations.',
 		`- NEVER run Start-Sleep or similar wait commands. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.`,
 		'- NEVER pipe interactive commands through Select-Object, Where-Object, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.',
 		'',
@@ -312,6 +313,7 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
+- Avoid commands that require interactive privilege escalation, such as sudo/su/doas without a non-interactive flag (e.g. sudo -n). They block on a password prompt that cannot be answered from chat, and secrets must never be routed through the model. If a command needs elevated privileges, tell the user to run it themselves in the terminal and stop — do NOT retry the command with variations.
 - NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.
 - NEVER pipe interactive commands through tail, head, grep, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.
 
