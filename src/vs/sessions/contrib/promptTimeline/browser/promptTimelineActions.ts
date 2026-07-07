@@ -66,7 +66,7 @@ class GoToPromptAction extends Action2 {
 		const quickInputService = accessor.get(IQuickInputService);
 		const items: IPromptPickItem[] = prompts.map(prompt => ({
 			label: prompt.text || localize('promptTimeline.emptyPrompt', "(empty prompt)"),
-			description: formatStat(prompt) ?? new Date(prompt.timestamp).toLocaleString(),
+			description: formatStat(prompt),
 			requestId: prompt.requestId,
 		}));
 

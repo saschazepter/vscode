@@ -10,32 +10,6 @@ import { localize } from '../../../../nls.js';
 import { IPromptReviewFileEvent } from './promptTimelineRail.js';
 import { PromptFileDiff, PromptTick } from './promptTimelineModel.js';
 
-/** Short day label for grouped ticks (no time, since a bucket spans several prompts). */
-function formatTickDate(timestamp: number, now: Date): string {
-	const date = new Date(timestamp);
-	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const startOfYesterday = new Date(startOfToday);
-	startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-	if (date >= startOfToday) {
-		return localize('promptTimeline.today', "Today");
-	}
-	if (date >= startOfYesterday) {
-		return localize('promptTimeline.yesterday', "Yesterday");
-	}
-	return date.toLocaleDateString(undefined, {
-		month: 'short',
-		day: 'numeric',
-		...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
-	});
-}
-
-/** Precise time label for single-prompt ticks. */
-function formatTickTime(timestamp: number, now: Date): string {
-	const date = new Date(timestamp);
-	const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-	return `${formatTickDate(timestamp, now)}, ${time}`;
-}
-
 /**
  * The interactive preview shown when a prompt mark is hovered or focused, shared
  * by every rail style. Renders the prompt text, its diff summary (a shortcut to
@@ -75,11 +49,14 @@ export class PromptTimelineCard extends Disposable {
 		}
 		this._contentDisposables.clear();
 		clearNode(this._element);
-		const now = new Date();
 
 		const head = append(this._element, $('.prompt-timeline-card-head'));
 		append(head, $('.prompt-timeline-card-text')).textContent = tick.text;
-		this._renderMeta(append(head, $('.prompt-timeline-card-meta')), tick, now);
+		// Grouped ticks show how many prompts they cover. No absolute time: agent-host
+		// sessions don't record per-turn timestamps, so it would be misleading.
+		if (tick.count > 1) {
+			append(head, $('.prompt-timeline-card-meta')).textContent = localize('promptTimeline.groupedCount', "{0} prompts", tick.count);
+		}
 
 		const files = tick.stat ? this._filesProvider(tick) : [];
 		if (tick.stat) {
@@ -120,13 +97,6 @@ export class PromptTimelineCard extends Disposable {
 		const top = anchorCenterY - this._element.offsetHeight / 2;
 		const clampedTop = Math.max(4, Math.min(top, this._container.clientHeight - this._element.offsetHeight - 4));
 		this._element.style.top = `${clampedTop}px`;
-	}
-
-	private _renderMeta(container: HTMLElement, tick: PromptTick, now: Date): void {
-		const time = append(container, $('span'));
-		time.textContent = tick.count > 1
-			? localize('promptTimeline.groupedMeta', "{0} · {1} prompts", formatTickDate(tick.timestamp, now), tick.count)
-			: formatTickTime(tick.timestamp, now);
 	}
 
 	private _renderStat(container: HTMLElement, added: number, removed: number): void {
