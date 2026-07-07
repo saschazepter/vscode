@@ -1532,9 +1532,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		if (sess && !sess.isPipelineReady) {
 			return [];
 		}
-		// Default chat: its SDK chat id is the session id. The host prepends the
-		// worktree "created" announcement on restore (see
-		// AgentService._getChatMessages).
+		// Default chat: its SDK chat id is the session id.
 		return this._reconstructTurns(sessionId, parentSessionUri, sess);
 	}
 
@@ -1608,19 +1606,15 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return [];
 		}
 		return Promise.all(sdkEntries.map(async entry => {
-			const sessionUri = AgentSession.uri(this.id, entry.sessionId);
-			let base: IAgentSessionMetadata;
 			try {
+				const sessionUri = AgentSession.uri(this.id, entry.sessionId);
 				const overlay = await this._metadataStore.read(sessionUri);
-				base = this._metadataStore.project(entry, overlay);
+				return this._metadataStore.project(entry, overlay);
 			} catch (err) {
 				this._logService.warn(`[Claude] Overlay read failed for session ${entry.sessionId}`, err);
-				// External session, or DB read failed: surface what the SDK gave us.
-				base = this._metadataStore.project(entry, {});
 			}
-			// The host merges the worktree repository project in its own
-			// listSessions overlay; this agent returns folder metadata.
-			return base;
+			// External session, or DB read failed: surface what the SDK gave us.
+			return this._metadataStore.project(entry, {});
 		}));
 	}
 
@@ -1649,19 +1643,19 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		} catch (err) {
 			this._logService.warn(`[Claude] Overlay read failed for session ${sessionId}`, err);
 		}
-		// The host merges the worktree repository project on restore (see
-		// AgentService._withWorktreeProject); this agent returns folder metadata.
 		return this._metadataStore.project(sdkInfo, overlay);
 	}
 
-	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
+	resolveSessionConfig(_params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
 		// Decision B5 (plan section 3.3.5): Claude collapses the platform's
 		// `autoApprove` × `mode` two-axis approval surface onto a single
 		// `permissionMode` axis matching the SDK's native enum. The
 		// platform `Permissions` key is reused unchanged because the
 		// Claude SDK accepts `allowedTools` / `disallowedTools`
-		// natively. The shared `isolation` (folder / worktree) + `branch` picker
-		// is contributed by the host (see AgentService._withIsolationSchema).
+		// natively. Skipped: AutoApprove, Mode, Isolation, Branch,
+		// BranchNameHint — workbench pickers key off the property names
+		// to decide what to render, so omitting these intentionally
+		// suppresses the default mode/branch UI for Claude sessions.
 		const sessionSchema = createSchema({
 			[ClaudeSessionConfigKey.PermissionMode]: schemaProperty<ClaudePermissionMode>({
 				type: 'string',
@@ -1688,7 +1682,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			[SessionConfigKey.Permissions]: platformSessionSchema.definition[SessionConfigKey.Permissions],
 		});
 
-		const values = sessionSchema.validateOrDefault(params.config, {
+		const values = sessionSchema.validateOrDefault(_params.config, {
 			[ClaudeSessionConfigKey.PermissionMode]: 'default' satisfies ClaudePermissionMode,
 			// Permissions intentionally omitted from defaults — leave
 			// unset so auto-approval falls through to the host-level
@@ -1696,15 +1690,17 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			// approves a tool "in this Session".
 		});
 
-		return {
+		return Promise.resolve({
 			schema: sessionSchema.toProtocol(),
 			values,
-		};
+		});
 	}
 
 	sessionConfigCompletions(_params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
-		// Branch completions are owned by the host now; Claude has no other
-		// dynamic session-config properties.
+		// Plan section 3.3.5: Claude's only schema property is the
+		// `permissionMode` static enum, so dynamic completion is
+		// definitionally empty in Phase 5. Branch completion lands in
+		// Phase 6 once worktree extraction (section 8) is settled.
 		return Promise.resolve({ items: [] });
 	}
 

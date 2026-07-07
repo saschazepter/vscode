@@ -7,7 +7,7 @@ import type { McpSdkServerConfigWithInstance, Options, PermissionMode, SDKUserMe
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { INativeEnvironmentService } from '../../../environment/common/environment.js';
 import { IFileService } from '../../../files/common/files.js';
@@ -117,8 +117,8 @@ export class ClaudeAgentSession extends Disposable {
 	private _provisionalAgent: AgentSelection | undefined;
 	/** Pre-materialize `IAgentCreateSessionConfig.config` bag. Read at materialize time. */
 	readonly provisionalConfig: Record<string, unknown> | undefined;
-	/** Resolved project metadata, captured at create time. */
-	project: IAgentSessionProjectInfo | undefined;
+	/** Resolved project metadata captured at create time (if any). */
+	readonly project: IAgentSessionProjectInfo | undefined;
 	/** Always-present abort controller; wired into `Options.abortController` at materialize time. */
 	readonly abortController: AbortController;
 
@@ -128,16 +128,13 @@ export class ClaudeAgentSession extends Disposable {
 	get permissionModeFallback(): ClaudePermissionMode { return this._permissionModeFallback; }
 
 	/**
-	 * Re-anchor the session to the host-resolved working directory before
-	 * {@link materialize} locks the SDK subprocess `cwd` (the subprocess inherits
-	 * `cwd` at fork time and cannot change it afterwards). Rebuilds the
-	 * customization watcher against the new directory. The agent stays unaware of
-	 * whether the directory is a plain folder or an isolated worktree — the host
-	 * owns that decision.
+	 * Adopt the host-resolved working directory before {@link materialize} locks
+	 * the SDK subprocess `cwd` (a subprocess inherits `cwd` at fork time and
+	 * cannot change it afterwards). The agent stays unaware of whether the
+	 * directory is a plain folder or an isolated worktree — the host owns that.
 	 */
 	setResolvedWorkingDirectory(workingDirectory: URI): void {
 		this.workingDirectory = workingDirectory;
-		this._installCustomizationWatcher();
 	}
 
 	static createProvisional(
@@ -304,14 +301,6 @@ export class ClaudeAgentSession extends Disposable {
 		return { ...signal, action: { ...signal.action, contributor: { kind: ToolCallContributorKind.MCP, customizationId } } };
 	}
 
-	/**
-	 * The customization file watcher plus its change subscription, held in a
-	 * {@link MutableDisposable} so it can be re-anchored to the worktree when
-	 * the session's working directory changes. Replacing the value disposes the
-	 * previous watcher and subscription.
-	 */
-	private readonly _customizationWatcher = this._register(new MutableDisposable<DisposableStore>());
-
 	constructor(
 		readonly sessionId: string,
 		readonly sessionUri: URI,
@@ -347,23 +336,14 @@ export class ClaudeAgentSession extends Disposable {
 		// Watch the on-disk Claude customization sources so edits made outside
 		// the session (a new `~/.claude/agents/*.md`, an edited skill, a changed
 		// `.mcp.json`) drive a workbench re-fetch. Active from construction so
-		// it covers the provisional (pre-materialize) window too, and re-anchored
-		// by {@link setResolvedWorkingDirectory} when the host moves the session
-		// into its resolved working directory.
-		this._installCustomizationWatcher();
-	}
-
-	/** (Re)create the customization watcher anchored to the current working directory. */
-	private _installCustomizationWatcher(): void {
-		const store = new DisposableStore();
-		const watcher = store.add(new ClaudeCustomizationWatcher(
+		// it covers the provisional (pre-materialize) window too.
+		const customizationWatcher = this._register(new ClaudeCustomizationWatcher(
 			this.workingDirectory,
 			this._environmentService.userHome,
 			this._fileService,
 			this._logService,
 		));
-		store.add(watcher.onDidChange(() => this._onDidCustomizationsChange.fire()));
-		this._customizationWatcher.value = store;
+		this._register(customizationWatcher.onDidChange(() => this._onDidCustomizationsChange.fire()));
 	}
 
 	/**

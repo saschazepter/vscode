@@ -1830,8 +1830,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._onDidMaterializeSession.fire({
 			session: session.sessionUri,
 			workingDirectory: session.workingDirectory,
-			// The host fills the worktree repository project for worktree-isolated
-			// sessions (see AgentService._onDidMaterializeSession).
 			project: undefined,
 		});
 	}
@@ -1922,7 +1920,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// `_materializeIfNeeded` is idempotent.
 		try {
 			this._claimPrewarm(session);
-			await this._materializeIfNeeded(session, true);
+			await this._materializeIfNeeded(session);
 			this._persistMaterializedSession(session);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -2189,8 +2187,6 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	async onArchivedChanged(sessionUri: URI, isArchived: boolean): Promise<void> {
-		// The host owns worktree cleanup/recreation on archive/unarchive; this
-		// agent only mirrors the archive state onto its codex thread.
 		const threadId = await this._resolveThreadId(sessionUri);
 		if (threadId === undefined) {
 			return;
@@ -2248,10 +2244,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	getSessionMessages(chat: URI): Promise<readonly Turn[]> {
-		// The host prepends the worktree "created" announcement on restore (see
-		// AgentService._getChatMessages); this agent just replays its thread.
-		const sessionUri = this._sessionUriFromChat(chat);
-		return this._readSession(sessionUri).then(read => read ? replayThreadToTurns(read.thread) : []);
+		return this._readSession(this._sessionUriFromChat(chat)).then(read => read ? replayThreadToTurns(read.thread) : []);
 	}
 
 	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
@@ -2306,8 +2299,6 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._serverToolHost.advertise(restored.sessionUri.toString());
 			}
 		}
-		// The host merges the worktree repository project on restore (see
-		// AgentService._withWorktreeProject); this agent returns folder metadata.
 		return this._threadToMetadata(read.thread, session);
 	}
 
@@ -2376,12 +2367,10 @@ export class CodexAgent extends Disposable implements IAgent {
 					liveUriByThreadId.set(s.threadId, s.sessionUri);
 				}
 			}
-			return response.data.map(t => {
-				const sessionUri = liveUriByThreadId.get(t.id) ?? AgentSession.uri(this.id, t.id);
-				// The host merges the worktree repository project in its own
-				// listSessions overlay; this agent returns folder metadata.
-				return this._threadToMetadata(t, sessionUri);
-			});
+			return response.data.map(t => this._threadToMetadata(
+				t,
+				liveUriByThreadId.get(t.id) ?? AgentSession.uri(this.id, t.id),
+			));
 		} catch (err) {
 			this._logService.warn(`[Codex] thread/list failed: ${err instanceof Error ? err.message : String(err)}`);
 			return [];
@@ -2652,15 +2641,6 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	async shutdown(): Promise<void> {
-		this._teardownConnectionAndSessions();
-	}
-
-	/**
-	 * Synchronous teardown shared by {@link shutdown} and {@link dispose}:
-	 * drops the codex connection, unparks every session's pending requests,
-	 * and clears the in-memory session/thread/MCP maps.
-	 */
-	private _teardownConnectionAndSessions(): void {
 		if (this._connection.kind === 'ready') {
 			try { this._connection.client.dispose(); } catch { /* ignore */ }
 			try { this._connection.proxyHandle.dispose(); } catch { /* ignore */ }
@@ -2677,16 +2657,12 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._mcpInventory.clear();
 	}
 
-	async resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
-		// Isolation / branch are contributed by the host (see
-		// AgentService._withIsolationSchema); this agent only owns its codex
-		// session config.
+	resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
 		const values = codexSessionConfigSchema.validateOrDefault(params.config, codexSessionConfigDefaults);
 		const isWorkspaceWrite = values[CodexSessionConfigKey.SandboxMode] === 'workspace-write';
-		const baseSchema = isWorkspaceWrite
-			? codexWorkspaceWriteSessionConfigSchema
-			: codexVisibleSessionConfigSchema;
-
+		const schema = isWorkspaceWrite
+			? codexWorkspaceWriteSessionConfigSchema.toProtocol()
+			: codexVisibleSessionConfigSchema.toProtocol();
 		const resolvedValues: Record<string, unknown> = {
 			[SessionConfigKey.Mode]: values[SessionConfigKey.Mode],
 			[CodexSessionConfigKey.ApprovalPolicy]: values[CodexSessionConfigKey.ApprovalPolicy],
@@ -2698,11 +2674,10 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (isWorkspaceWrite) {
 			resolvedValues[CodexSessionConfigKey.NetworkAccessEnabled] = values[CodexSessionConfigKey.NetworkAccessEnabled];
 		}
-		return { values: resolvedValues, schema: baseSchema.toProtocol() };
+		return Promise.resolve({ values: resolvedValues, schema });
 	}
 
 	async sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult> {
-		// Branch completions are owned by the host now.
 		if (params.property !== CodexSessionConfigKey.AdditionalDirectories) {
 			return { items: [] };
 		}
@@ -2739,7 +2714,20 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	override dispose(): void {
-		this._teardownConnectionAndSessions();
+		if (this._connection.kind === 'ready') {
+			try { this._connection.client.dispose(); } catch { /* ignore */ }
+			try { this._connection.proxyHandle.dispose(); } catch { /* ignore */ }
+		}
+		this._connection = { kind: 'idle' };
+		for (const s of this._sessions.values()) {
+			s.pendingCommandApprovals.denyAll('decline');
+			s.pendingClientToolCalls.rejectAll(new CancellationError());
+			s.pendingUserInputs.rejectAll(new CancellationError());
+			s.mcpController?.dispose();
+		}
+		this._sessions.clear();
+		this._sessionIdByThreadId.clear();
+		this._mcpInventory.clear();
 		super.dispose();
 	}
 }

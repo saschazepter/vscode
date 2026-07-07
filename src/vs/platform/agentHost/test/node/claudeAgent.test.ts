@@ -3966,13 +3966,11 @@ suite('ClaudeAgent', () => {
 		// Tested keys: presence + ordering of enum + the five-value
 		// canonical set (matching SDK `PermissionMode` typedef at
 		// `sdk.d.ts:1560`, excluding `dontAsk`, ratified in Phase 6.1 Cycle A
-		// under I2) + default. Isolation / branch are contributed by the host
-		// (see AgentService._withIsolationSchema), not this agent, so they are
-		// absent from Claude's own resolveSessionConfig. Skipped keys
-		// (AutoApprove, Mode, BranchNameHint) MUST also be absent — workbench
-		// `AgentHostModePicker` and friends key off these property names to
-		// decide what to render, and accidentally re-introducing `mode` would
-		// drop the wrong picker into the Claude UI.
+		// under I2) + default. Skipped keys (AutoApprove, Mode, Isolation,
+		// Branch, BranchNameHint) MUST be absent — workbench
+		// `AgentHostModePicker` and friends key off these property names
+		// to decide what to render, and accidentally re-introducing
+		// `mode` would drop the wrong picker into the Claude UI.
 		const { agent } = createTestContext(disposables);
 		const result = await agent.resolveSessionConfig({});
 		const properties = result.schema.properties;
