@@ -99,7 +99,7 @@ suite('AgentHostResponseFileChangesProvider', () => {
 			removed: d.removed,
 			modified: d.modifiedURI.path,
 			// The RHS diff content is the frozen after-turn snapshot, not the live file.
-			after: d.modifiedContentURI && fromAgentHostUri(d.modifiedContentURI).authority,
+			after: d.modifiedSnapshotURI && fromAgentHostUri(d.modifiedSnapshotURI).authority,
 		})), [
 			{ added: 3, removed: 1, modified: '/repo/a.ts', after: 'a-after' },
 			{ added: 5, removed: 0, modified: '/repo/b.ts', after: 'b-after' },

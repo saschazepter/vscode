@@ -12,7 +12,7 @@ import { IChatWidget } from '../../../../workbench/contrib/chat/browser/chat.js'
 import { IChatWidgetContrib, ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { MIN_PROMPTS, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_ENABLED_SETTING } from '../common/promptTimeline.js';
-import { PromptTimelineModel, PromptEntry, PromptTick } from './promptTimelineModel.js';
+import { PromptTimelineModel, PromptEntry } from './promptTimelineModel.js';
 import { IPromptTimelineRail } from './promptTimelineRail.js';
 import { PromptTimelineRulerRail } from './promptTimelineRulerRail.js';
 
@@ -138,20 +138,5 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	reveal(requestId: string): void {
 		this._model?.reveal(requestId);
 		this._rail?.focusTick(requestId);
-	}
-
-	/** The tick whose prompt is currently in view, if any. */
-	getActiveTick(): PromptTick | undefined {
-		const activeId = this._model?.activeRequestId.get();
-		return activeId !== undefined ? this._model?.ticks.get().find(t => t.requestId === activeId) : undefined;
-	}
-
-	/** Opens the per-prompt diff for a tick (defaults to the active tick). */
-	async reviewChanges(tick: PromptTick | undefined = this.getActiveTick()): Promise<boolean> {
-		if (!tick?.stat || !this._model) {
-			return false;
-		}
-		await this._model.reviewChanges(tick);
-		return true;
 	}
 }

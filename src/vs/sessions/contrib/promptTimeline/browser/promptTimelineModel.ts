@@ -298,7 +298,7 @@ export class PromptTimelineModel extends Disposable {
 					// so the opened diff spans the whole tick, not just the first edit.
 					byPath.set(key, {
 						...existing,
-						diffModifiedURI: diff.modifiedContentURI ?? diff.modifiedURI,
+						diffModifiedURI: diff.modifiedSnapshotURI ?? diff.modifiedURI,
 						added: existing.added + diff.added,
 						removed: existing.removed + diff.removed,
 					});
@@ -307,7 +307,7 @@ export class PromptTimelineModel extends Disposable {
 						name: basename(diff.modifiedURI),
 						originalURI: diff.originalURI,
 						modifiedURI: diff.modifiedURI,
-						diffModifiedURI: diff.modifiedContentURI ?? diff.modifiedURI,
+						diffModifiedURI: diff.modifiedSnapshotURI ?? diff.modifiedURI,
 						added: diff.added,
 						removed: diff.removed,
 					});

@@ -298,8 +298,12 @@ export interface IEditSessionEntryDiff extends IEditSessionDiffStats {
 	 * working file and therefore include later changes. Consumers that want the
 	 * changeset's own diff should prefer this when present; {@link modifiedURI}
 	 * remains the file's identity for labels and go-to-file.
+	 *
+	 * Note: distinct from the agent-host checkpoint-ref readability fix (#323932).
+	 * That made the frozen snapshot blobs *readable*; this field carries *which*
+	 * snapshot to diff against so a per-turn review shows only that turn's changes.
 	 */
-	modifiedContentURI?: URI;
+	modifiedSnapshotURI?: URI;
 
 	/** Diff state information: */
 	quitEarly: boolean;

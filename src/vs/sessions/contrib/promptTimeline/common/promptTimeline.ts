@@ -14,5 +14,4 @@ export const MIN_PROMPTS = 2;
 
 export const enum PromptTimelineCommandId {
 	GoToPrompt = 'sessions.promptTimeline.goToPrompt',
-	ReviewChanges = 'sessions.promptTimeline.reviewChanges',
 }

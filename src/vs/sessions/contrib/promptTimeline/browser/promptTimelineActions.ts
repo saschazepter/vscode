@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { status } from '../../../../base/browser/ui/aria/aria.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
@@ -80,25 +79,6 @@ class GoToPromptAction extends Action2 {
 	}
 }
 
-class ReviewPromptChangesAction extends Action2 {
-	constructor() {
-		super({
-			id: PromptTimelineCommandId.ReviewChanges,
-			title: localize2('promptTimeline.reviewChanges', "Review Changes for Prompt"),
-			category: CATEGORY,
-			f1: true,
-			precondition: TIMELINE_PRECONDITION,
-		});
-	}
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		const reviewed = await getPromptTimeline(accessor)?.reviewChanges();
-		if (!reviewed) {
-			status(localize('promptTimeline.noChanges', "This prompt produced no file changes."));
-		}
-	}
-}
-
 export function registerPromptTimelineActions(): void {
 	registerAction2(GoToPromptAction);
-	registerAction2(ReviewPromptChangesAction);
 }
