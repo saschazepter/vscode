@@ -263,7 +263,6 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 
 	private shouldReplaceEmptyLocalSession(sessionResource: URI): boolean {
 		return LocalChatSessionUri.isLocalSession(sessionResource)
-			&& this.options.explicitSessionType !== localChatSessionType
 			&& !!this.model
 			&& !this.model.hasRequests
 			&& getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService) !== localChatSessionType;
