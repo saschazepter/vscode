@@ -13,5 +13,5 @@ exchanges:
       content: hello
       stopReason: end_turn
       usage:
-        inputTokens: 9418
-        outputTokens: 28
+        inputTokens: 9406
+        outputTokens: 23

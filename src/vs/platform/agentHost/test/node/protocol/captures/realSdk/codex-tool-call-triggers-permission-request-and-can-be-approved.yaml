@@ -12,7 +12,7 @@ exchanges:
     response:
       content:
         - type: text
-          text: Running the exact command in the current workspace and I’ll return the output.
+          text: Running `echo "hello from test"` now and I’ll return the output directly.
         - type: tool_use
           id: toolcall_0
           name: exec_command
@@ -20,8 +20,8 @@ exchanges:
             cmd: echo "hello from test"
       stopReason: tool_use
       usage:
-        inputTokens: 9433
-        outputTokens: 84
+        inputTokens: 9417
+        outputTokens: 71
   - method: POST
     path: /responses
     dialect: responses
@@ -32,7 +32,7 @@ exchanges:
         - role: user
           content: 'Run the shell command: echo "hello from test"'
         - role: assistant
-          content: Running the exact command in the current workspace and I’ll return the output.
+          content: Running `echo "hello from test"` now and I’ll return the output directly.
         - role: assistant
           content:
             - type: tool_use
@@ -44,8 +44,8 @@ exchanges:
             - type: tool_result
               tool_use_id: toolcall_0
               content: |-
-                Chunk ID: 5c3c23
-                Wall time: 0.0000 seconds
+                Chunk ID: 0f585f
+                Wall time: 1.1521 seconds
                 Process exited with code 0
                 Original token count: 4
                 Output:
@@ -54,5 +54,5 @@ exchanges:
       content: hello from test
       stopReason: end_turn
       usage:
-        inputTokens: 9568
+        inputTokens: 9538
         outputTokens: 7
