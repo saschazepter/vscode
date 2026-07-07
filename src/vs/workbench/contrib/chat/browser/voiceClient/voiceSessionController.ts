@@ -900,14 +900,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._statusText.set('Hold to speak...', undefined);
 				this._voiceState.set('idle', undefined);
 
-				// Hands-free: enter listening once the session is ready. We wait
-				// for the backend `session_init` ack (see onSessionInit below)
-				// rather than acting here, because the mic/handshake isn't
-				// settled yet at connection time. Previously this was deferred
-				// until a welcome greeting finished playing, but the greeting
-				// was removed. A short fallback timer covers backends that
-				// don't emit `session_init`.
-				this._enterListenOnSessionInit = !isResuming && this._isHandsFreeEnabled();
+				// Enter listening as soon as a fresh session is ready. Starting
+				// voice mode always begins the first turn listening, regardless
+				// of `handsFree` (which only controls whether we RE-listen after
+				// the assistant speaks). We wait for the backend `session_init`
+				// ack (see onSessionInit below) rather than acting here, because
+				// the mic/handshake isn't settled yet at connection time.
+				// Previously this was deferred until a welcome greeting finished
+				// playing, but the greeting was removed. A short fallback timer
+				// covers backends that don't emit `session_init`.
+				this._enterListenOnSessionInit = !isResuming;
 				this.logService.info(`[voice] connected: isResuming=${isResuming} handsFree=${this._isHandsFreeEnabled()} armListen=${this._enterListenOnSessionInit}`);
 				if (this._enterListenOnSessionInit) {
 					this._voiceEventDisposables.add(disposableTimeout(() => {
