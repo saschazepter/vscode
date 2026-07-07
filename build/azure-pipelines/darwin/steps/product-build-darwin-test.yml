@@ -110,6 +110,7 @@ steps:
         APP_NAME="`ls $APP_ROOT | head -n 1`"
         npm run smoketest-no-compile -- --tracing --build "$APP_ROOT/$APP_NAME"
       timeoutInMinutes: 20
+      retryCountOnTaskFailure: $(VSCODE_SMOKE_TEST_RETRIES)
       displayName: 🧪 Run smoke tests (Electron)
 
   - ${{ if eq(parameters.VSCODE_RUN_BROWSER_TESTS, true) }}:
