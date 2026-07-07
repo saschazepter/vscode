@@ -1635,9 +1635,15 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (session.handledGuardianReviews.has(params.reviewId)) {
 			return;
 		}
-		const turnId = session.currentTurnId;
-		if (turnId === undefined) {
-			this._logService.trace(`[Codex:${sessionId}] autoApprovalReview/completed without active turn; ignoring reviewId=${params.reviewId}`);
+		// Bind the denial surfacing to the review's OWN turn (mapped app→host),
+		// not whatever turn happens to be current. An `autoApprovalReview/completed`
+		// that arrives out of order — after its turn ended, or once a later turn is
+		// active — must not mis-attribute the notice/card to a different turn, nor
+		// apply this review's stale action against it. When the review's turn is no
+		// longer the active turn there is nothing left to approve within it, so ignore.
+		const turnId = this._hostTurnId(session, params.turnId);
+		if (session.currentTurnId !== turnId) {
+			this._logService.trace(`[Codex:${sessionId}] autoApprovalReview/completed for non-current turn ${turnId} (current=${session.currentTurnId ?? '(none)'}); ignoring reviewId=${params.reviewId}`);
 			return;
 		}
 
@@ -2042,12 +2048,22 @@ export class CodexAgent extends Disposable implements IAgent {
 		const newThreadId = forkResult.thread.id;
 
 		// The fork copies the full source history; drop the trailing turns so
-		// the new thread ends at the requested fork point.
+		// the new thread ends at the requested fork point. A failed rollback
+		// would leave the fork carrying the very turns the user asked to branch
+		// away from, so treat it as a hard failure: archive the orphaned fork
+		// and reject rather than returning a session with the wrong history.
 		if (numTurnsToDrop > 0) {
 			try {
 				await conn.client.request<'thread/rollback'>('thread/rollback', { threadId: newThreadId, numTurns: numTurnsToDrop });
 			} catch (err) {
-				this._logService.warn(`[Codex:${newThreadId}] fork rollback failed (numTurns=${numTurnsToDrop}): ${err instanceof Error ? err.message : String(err)}`);
+				const message = err instanceof Error ? err.message : String(err);
+				this._logService.warn(`[Codex:${newThreadId}] fork rollback failed (numTurns=${numTurnsToDrop}); discarding fork: ${message}`);
+				try {
+					await conn.client.request<'thread/archive'>('thread/archive', { threadId: newThreadId });
+				} catch (archiveErr) {
+					this._logService.warn(`[Codex:${newThreadId}] failed to archive orphaned fork after rollback failure: ${archiveErr instanceof Error ? archiveErr.message : String(archiveErr)}`);
+				}
+				throw new Error(`Failed to fork codex session ${sourceThreadId}: could not roll back forked thread ${newThreadId} to the requested turn (${message})`);
 			}
 		}
 

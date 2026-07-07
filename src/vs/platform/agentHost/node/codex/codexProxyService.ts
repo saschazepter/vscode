@@ -72,6 +72,15 @@ interface ICodexProxyState {
 	 * auto-review reviewer model (see {@link CODEX_AUTO_REVIEW_MODEL}) onto a
 	 * model that is known to be supported by the Copilot CAPI. `undefined`
 	 * until the first primary request is seen.
+	 *
+	 * Bind-global, not per-session: the proxy is a single refcounted bind
+	 * shared by every concurrent Codex session and reviewer requests carry no
+	 * session identity, so this tracks the last primary model seen across all
+	 * sessions. Under the documented single-tenant assumption (one active model
+	 * at a time) that is correct; with two concurrent sessions on *different*
+	 * models where one uses Auto-review, the reviewer may run on the other
+	 * session's model. That only affects reviewer model choice, never
+	 * correctness of the primary turns (which are forwarded verbatim).
 	 */
 	lastPrimaryModel: string | undefined;
 }
