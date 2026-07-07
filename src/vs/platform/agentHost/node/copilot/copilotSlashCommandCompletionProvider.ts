@@ -165,15 +165,15 @@ export class CopilotSlashCommandCompletionProvider implements IAgentHostCompleti
 			// Hints contain sub commands like [on|off] or `on|off`
 			// First remove the brackets and then split by pipe to get the options
 			// If its a skill, then do not use the hint to construct the options.
-			const options: NonNullable<NonNullable<ICopilotRuntimeSlashCommandInfo['input']>['choices']> = [];
-			let hint = '';
-			if (command.input?.choices) {
-				options.push(...command.input.choices);
+			const options: (NonNullable<NonNullable<ICopilotRuntimeSlashCommandInfo['input']>['choices']>[number] & { argumentHint?: string })[] = [];
+
+			// If we have a hint, then this means we have a structured command with sub commands or options.
+			// I.e. the standalone command is also valie.
+			if (command.input?.hint || !command.input?.choices?.length) {
+				options.push({ name: '', description: command.description, argumentHint: command.input?.hint });
 			}
-			if (options.length === 0) {
-				// If there are no options, we still want to generate a completion item for the alias.
-				options.push({ name: '', description: command.description });
-				hint = command.input?.hint ? `  \n(Prompt: ${command.input.hint})` : '';
+			if (command.input?.choices?.length) {
+				options.push(...command.input.choices);
 			}
 
 			// Generate completion items for each alias and option combination.
@@ -187,9 +187,8 @@ export class CopilotSlashCommandCompletionProvider implements IAgentHostCompleti
 							// Add a trailing space after the command (and sub command/option if present).
 							// This is so user can continue to type additional arguments after the command and option.
 							const insertText = `/${alias}${option.name ? ' ' + option.name : ''} `;
-							const optionDescription = option.description ?? command.description;
-							const description = `${optionDescription}${hint}`;
-
+							const description = option.description ?? command.description;
+							const argumentHint = option.argumentHint;
 							addedAliases.add(alias);
 
 							completionItems.push({
@@ -201,7 +200,8 @@ export class CopilotSlashCommandCompletionProvider implements IAgentHostCompleti
 									label: insertText,
 									_meta: toCommandCompletionAttachmentMeta({
 										command: command.name,
-										...(description !== undefined ? { description } : {})
+										...(description !== undefined ? { description } : {}),
+										...(argumentHint !== undefined ? { argumentHint } : {})
 									}),
 								},
 							});

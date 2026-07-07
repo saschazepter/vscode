@@ -205,7 +205,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'plan',
-						description: 'Runtime plan  \n(Prompt: task)',
+						description: 'Runtime plan',
+						argumentHint: 'task',
 					},
 				},
 				{
@@ -213,7 +214,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'research',
-						description: 'Runtime research  \n(Prompt: query)',
+						description: 'Runtime research',
+						argumentHint: 'query',
 					},
 				},
 				{
@@ -221,7 +223,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'review',
-						description: 'Runtime review  \n(Prompt: scope)',
+						description: 'Runtime review',
+						argumentHint: 'scope',
 					},
 				},
 				{
@@ -229,7 +232,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'rubber-duck',
-						description: 'Runtime rubber-duck  \n(Prompt: review prompt)',
+						description: 'Runtime rubber-duck',
+						argumentHint: 'review prompt',
 					},
 				},
 				{
@@ -237,7 +241,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'security-review',
-						description: 'Runtime security review  \n(Prompt: scope)',
+						description: 'Runtime security review',
+						argumentHint: 'scope',
 					},
 				},
 			]);
@@ -346,7 +351,7 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			const gated = new CopilotSlashCommandCompletionProvider('copilotcli', {
 				isRubberDuckEnabled: () => true,
 				getRuntimeSlashCommands: async () => [
-					{ name: 'toggle', description: 'Toggle a feature on or off', kind: 'builtin', allowDuringAgentExecution: true, input: { hint: '[on|off]', choices: [{ name: 'on', description: 'Turn the feature on' }, { name: 'off', description: 'Turn the feature off' }] } },
+					{ name: 'toggle', description: 'Toggle a feature on or off', kind: 'builtin', allowDuringAgentExecution: true, input: { hint: '', choices: [{ name: 'on', description: 'Turn the feature on' }, { name: 'off', description: 'Turn the feature off' }] } },
 				],
 				getSessionCustomizations: async () => [],
 			});
@@ -364,7 +369,7 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			const gated = new CopilotSlashCommandCompletionProvider('copilotcli', {
 				isRubberDuckEnabled: () => true,
 				getRuntimeSlashCommands: async () => [
-					{ name: 'toggle', description: 'Toggle a feature on or off', kind: 'builtin', allowDuringAgentExecution: true, input: { hint: '[on|off]', choices: [{ name: '', description: 'Show the current state' }, { name: 'on', description: 'Turn on' }, { name: 'off', description: 'Turn off' }] } },
+					{ name: 'toggle', description: 'Toggle a feature on or off', kind: 'builtin', allowDuringAgentExecution: true, input: { hint: '', choices: [{ name: '', description: 'Show the current state' }, { name: 'on', description: 'Turn on' }, { name: 'off', description: 'Turn off' }] } },
 				],
 				getSessionCustomizations: async () => [],
 			});
@@ -375,7 +380,7 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			assert.deepStrictEqual(items.map(i => i.insertText), ['/toggle ', '/toggle off ', '/toggle on ']);
 		});
 
-		test('surfaces the free-text hint as a prompt suffix when there are no choices', async () => {
+		test('surfaces the free-text hint as an argument hint when there are no choices', async () => {
 			const gated = new CopilotSlashCommandCompletionProvider('copilotcli', {
 				isRubberDuckEnabled: () => true,
 				getRuntimeSlashCommands: async () => [
@@ -386,9 +391,9 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			const items = await gated.provideCompletionItems({
 				kind: CompletionItemKind.UserMessage, channel: session, text: '/t', offset: 2,
 			}, CancellationToken.None);
-			// Without structured choices, the free-text hint is not expanded into options; it is surfaced as a prompt hint on a single item.
+			// Without structured choices, the free-text hint is not expanded into options; it is surfaced as an argument hint on a single item.
 			assert.deepStrictEqual(items.map(item => ({ insertText: item.insertText, meta: item.attachment?._meta })), [
-				{ insertText: '/toggle ', meta: { command: 'toggle', description: 'Toggle a feature on or off  \n(Prompt: [on|off])' } },
+				{ insertText: '/toggle ', meta: { command: 'toggle', description: 'Toggle a feature on or off', argumentHint: '[on|off]' } },
 			]);
 		});
 
@@ -525,7 +530,7 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			assert.deepStrictEqual(items.map(i => i.insertText), ['/my-skill ']);
 		});
 
-		test('appends the skill prompt hint to the description', async () => {
+		test('surfaces the skill prompt hint as an argument hint', async () => {
 			const provider = createProvider([
 				{ name: 'my-skill', description: 'Runtime skill', kind: 'skill', allowDuringAgentExecution: true, input: { hint: 'do stuff' } },
 			]);
@@ -536,7 +541,8 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 					type: MessageAttachmentKind.Simple,
 					meta: {
 						command: 'my-skill',
-						description: 'Runtime skill  \n(Prompt: do stuff)',
+						description: 'Runtime skill',
+						argumentHint: 'do stuff',
 					},
 				},
 			]);
