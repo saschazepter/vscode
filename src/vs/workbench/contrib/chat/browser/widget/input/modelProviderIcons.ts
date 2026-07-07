@@ -7,7 +7,7 @@ import { Codicon } from '../../../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { registerIcon } from '../../../../../../platform/theme/common/iconRegistry.js';
-import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier, isAutoLanguageModel } from '../../../common/languageModels.js';
 
 const copilotModelProviderIcon = registerIcon('chat-model-provider-copilot', Codicon.copilotCompact, localize('chatModelProviderCopilotIcon', "Icon for Copilot models."));
 const openAIModelProviderIcon = registerIcon('chat-model-provider-openai', Codicon.openai, localize('chatModelProviderOpenAIIcon', "Icon for OpenAI models."));
@@ -16,6 +16,9 @@ const geminiModelProviderIcon = registerIcon('chat-model-provider-gemini', Codic
 const genericModelProviderIcon = registerIcon('chat-model-provider-generic', Codicon.sparkle, localize('chatModelProviderGenericIcon', "Icon for other model providers."));
 
 export function getModelProviderIcon(model: ILanguageModelChatMetadataAndIdentifier, useGenericIcon = false): ThemeIcon {
+	if (isAutoLanguageModel(model)) {
+		return copilotModelProviderIcon;
+	}
 	if (useGenericIcon) {
 		return genericModelProviderIcon;
 	}
@@ -29,7 +32,7 @@ export function getModelProviderIcon(model: ILanguageModelChatMetadataAndIdentif
 	if (identity.includes('openai') || identity.includes('gpt') || identity.includes('codex') || /\bo[134]\b/.test(identity)) {
 		return openAIModelProviderIcon;
 	}
-	if (model.metadata.id === 'auto' || identity.includes('copilot')) {
+	if (identity.includes('copilot')) {
 		return copilotModelProviderIcon;
 	}
 	return genericModelProviderIcon;
