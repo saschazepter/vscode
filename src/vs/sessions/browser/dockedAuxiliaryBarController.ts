@@ -39,6 +39,8 @@ export interface IDockedAuxiliaryBarHost {
 export class DockedAuxiliaryBarController extends Disposable {
 
 	static readonly TOP = 34;
+	/** Thickness (px) of the header/tab-bar bottom divider the aux bar starts below. */
+	static readonly DIVIDER = 1;
 	static readonly MIN_WIDTH = 220;
 	static readonly EDITOR_MIN_WIDTH = 300;
 	static readonly DEFAULT_WIDTH = 300;
@@ -86,7 +88,9 @@ export class DockedAuxiliaryBarController extends Disposable {
 		const editorRect = this.editorPartContainer.getBoundingClientRect();
 		const editorContentHidden = !this.host.isEditorVisible();
 		const auxWidth = editorContentHidden ? editorRect.width : this._auxiliaryBarWidth(this.host.getWidth(), editorRect.width);
-		const top = DockedAuxiliaryBarController.TOP + this.host.getHeaderHeight();
+		// Start below the header/tab-bar bottom divider so the aux bar's solid
+		// background does not overlay it (the divider spans the full width).
+		const top = DockedAuxiliaryBarController.TOP + this.host.getHeaderHeight() + DockedAuxiliaryBarController.DIVIDER;
 		const height = Math.max(0, editorRect.height - top);
 
 		auxiliaryBarContainer.style.display = '';
@@ -132,8 +136,8 @@ export class DockedAuxiliaryBarController extends Disposable {
 				const auxWidth = this._auxiliaryBarWidth(this.host.getWidth(), width);
 				return Math.max(0, width - auxWidth);
 			},
-			getVerticalSashTop: () => DockedAuxiliaryBarController.TOP + this.host.getHeaderHeight(),
-			getVerticalSashHeight: () => Math.max(0, editorPartContainer.clientHeight - DockedAuxiliaryBarController.TOP - this.host.getHeaderHeight()),
+			getVerticalSashTop: () => DockedAuxiliaryBarController.TOP + this.host.getHeaderHeight() + DockedAuxiliaryBarController.DIVIDER,
+			getVerticalSashHeight: () => Math.max(0, editorPartContainer.clientHeight - DockedAuxiliaryBarController.TOP - this.host.getHeaderHeight() - DockedAuxiliaryBarController.DIVIDER),
 		};
 
 		const sash = this._register(new Sash(editorPartContainer, layoutProvider, { orientation: SashOrientation.VERTICAL }));
