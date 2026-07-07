@@ -44,6 +44,34 @@ suite('Changes View Actions', () => {
 		});
 	});
 
+	test('expand all diffs is contributed to the single-pane editor title bar', () => {
+		const item = MenuRegistry.getMenuItems(MenuId.EditorTitle)
+			.filter(isIMenuItem)
+			.find(item => item.command.id === 'workbench.action.agentSessions.expandAllDiffs');
+
+		assert.ok(item, 'expected expand all diffs action on EditorTitle');
+		const when = item.when?.serialize() ?? '';
+		assert.deepStrictEqual({
+			group: item.group,
+			order: item.order,
+			icon: ThemeIcon.isThemeIcon(item.command.icon) ? item.command.icon.id : undefined,
+			hasSessionsWindowGate: when.includes(IsSessionsWindowContext.key),
+			hasActiveEditorGate: when.includes(ActiveEditorContext.key) && when.includes(SessionChangesEditor.ID),
+			hasSinglePaneConfigGate: when.includes(`config.${DOCK_DETAIL_PANEL_SETTING}`),
+			hasEditorAreaVisibleGate: when.includes(MainEditorAreaVisibleContext.key),
+			hasAllCollapsedGate: when.includes(EditorContextKeys.multiDiffEditorAllCollapsed.key),
+		}, {
+			group: 'navigation',
+			order: 100,
+			icon: Codicon.expandAll.id,
+			hasSessionsWindowGate: true,
+			hasActiveEditorGate: true,
+			hasSinglePaneConfigGate: true,
+			hasEditorAreaVisibleGate: true,
+			hasAllCollapsedGate: true,
+		});
+	});
+
 	test('toggle inline view command is contributed to the single-pane editor title bar', () => {
 		const item = MenuRegistry.getMenuItems(MenuId.EditorTitle)
 			.filter(isIMenuItem)
