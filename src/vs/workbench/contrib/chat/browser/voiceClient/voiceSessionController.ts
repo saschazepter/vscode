@@ -162,6 +162,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** When true, the auto-listen loop is suppressed (user pressed Stop
 	 *  Recording). Cleared on the next explicit `pttDown` or on connect. */
 	private _autoListenSuppressed = false;
+	/** Armed on a fresh connect (hands-free); consumed on `session_init` to
+	 *  enter listening once the backend acks the session. */
+	private _enterListenOnSessionInit = false;
 	private _pttCurrentTurnId = '';
 	private _window: (Window & typeof globalThis) | undefined;
 	private readonly _voiceEventDisposables = this._register(new DisposableStore());
@@ -897,11 +900,21 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._statusText.set('Hold to speak...', undefined);
 				this._voiceState.set('idle', undefined);
 
-				// Hands-free: enter listening as soon as we connect. Previously
-				// this was deferred until a welcome greeting finished playing,
-				// but the greeting was removed, so trigger listening directly.
-				if (!isResuming && this._isHandsFreeEnabled()) {
-					this._enterAutoListen();
+				// Hands-free: enter listening once the session is ready. We wait
+				// for the backend `session_init` ack (see onSessionInit below)
+				// rather than acting here, because the mic/handshake isn't
+				// settled yet at connection time. Previously this was deferred
+				// until a welcome greeting finished playing, but the greeting
+				// was removed. A short fallback timer covers backends that
+				// don't emit `session_init`.
+				this._enterListenOnSessionInit = !isResuming && this._isHandsFreeEnabled();
+				if (this._enterListenOnSessionInit) {
+					this._voiceEventDisposables.add(disposableTimeout(() => {
+						if (this._enterListenOnSessionInit && this._isConnected.get()) {
+							this._enterListenOnSessionInit = false;
+							this._enterAutoListen();
+						}
+					}, 750));
 				}
 			} else if (this._isConnected.get()) {
 				this._onConnectionLost();
@@ -917,6 +930,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._statusText.set('Tap to start', undefined);
 			} else {
 				this._voiceState.set('idle', undefined);
+			}
+		}));
+
+		// Session ready: the backend has acked start_session. This is the
+		// point at which the mic/handshake is settled and a turn will stick,
+		// so enter hands-free listening here (armed in the connect handler).
+		this._voiceEventDisposables.add(this.voiceClientService.onSessionInit(() => {
+			if (this._enterListenOnSessionInit) {
+				this._enterListenOnSessionInit = false;
+				this._enterAutoListen();
 			}
 		}));
 
@@ -1102,6 +1125,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._clearAutoListenTimer();
 		this._clearAwaitingReply();
 		this._autoListenSuppressed = false;
+		this._enterListenOnSessionInit = false;
 		this._hasPlayedInitialListenCue = false;
 		this._replyPlayedSinceSend = false;
 		this._audioQueue.length = 0;
@@ -1359,7 +1383,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _isHandsFreeEnabled(): boolean {
-		return this.configurationService.getValue<boolean>('agents.voice.handsFree') === true;
+		// Default-on: treat only an explicit `false` as disabled so an
+		// unresolved/undefined value still enables hands-free (matches the
+		// `handsFree` default and the window-service `!== false` check).
+		return this.configurationService.getValue<boolean>('agents.voice.handsFree') !== false;
 	}
 
 	/** Re-enter listening via synthetic short tap. */
