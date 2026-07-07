@@ -908,9 +908,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// was removed. A short fallback timer covers backends that
 				// don't emit `session_init`.
 				this._enterListenOnSessionInit = !isResuming && this._isHandsFreeEnabled();
+				this.logService.info(`[voice] connected: isResuming=${isResuming} handsFree=${this._isHandsFreeEnabled()} armListen=${this._enterListenOnSessionInit}`);
 				if (this._enterListenOnSessionInit) {
 					this._voiceEventDisposables.add(disposableTimeout(() => {
 						if (this._enterListenOnSessionInit && this._isConnected.get()) {
+							this.logService.info('[voice] session_init not seen within 750ms; entering listening via fallback');
 							this._enterListenOnSessionInit = false;
 							this._enterAutoListen();
 						}
@@ -937,6 +939,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// point at which the mic/handshake is settled and a turn will stick,
 		// so enter hands-free listening here (armed in the connect handler).
 		this._voiceEventDisposables.add(this.voiceClientService.onSessionInit(() => {
+			this.logService.info(`[voice] session_init received; armListen=${this._enterListenOnSessionInit}`);
 			if (this._enterListenOnSessionInit) {
 				this._enterListenOnSessionInit = false;
 				this._enterAutoListen();
@@ -1201,16 +1204,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	pttDown(): void {
-		if (!this._isConnected.get()) { return; }
+		if (!this._isConnected.get()) { this.logService.info('[voice] pttDown ignored: not connected'); return; }
 
 		// Toggle mode: second tap finishes recording
 		if (this._pttToggleMode) {
+			this.logService.info('[voice] pttDown: toggle-mode second tap -> finishing turn');
 			this._pttToggleMode = false;
 			this._finishPtt();
 			return;
 		}
 
-		if (this._pttHeld) { return; }
+		if (this._pttHeld) { this.logService.info('[voice] pttDown ignored: already held'); return; }
 		this._pttHeld = true;
 		this._autoListenSuppressed = false;
 		this._clearAutoListenTimer();
@@ -1246,7 +1250,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.micCaptureService.isMuted = false;
 		// Lazily acquire the mic — fire-and-forget. The mic service handles
 		// the case where the user releases before acquisition completes.
-		this.micCaptureService.pttDown(this._pttCurrentTurnId).catch(() => {
+		this.micCaptureService.pttDown(this._pttCurrentTurnId).catch((err) => {
+			this.logService.warn('[voice] mic acquisition failed on pttDown; disconnecting', err);
 			this._pttHeld = false;
 			this._statusText.set('Microphone denied', undefined);
 			this._voiceState.set('error', undefined);
@@ -1393,12 +1398,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _enterAutoListen(): void {
 		this._clearAutoListenTimer();
 		if (this._autoListenSuppressed || !this._isConnected.get() || this._pttHeld) {
+			this.logService.info(`[voice] _enterAutoListen skipped: suppressed=${this._autoListenSuppressed} connected=${this._isConnected.get()} pttHeld=${this._pttHeld}`);
 			return;
 		}
 		// Don't enter listening if audio is still playing or queued.
 		if (this.ttsPlaybackService.isPlaying || this._audioQueue.length > 0 || this._currentPlaybackSessionId !== null) {
+			this.logService.info(`[voice] _enterAutoListen skipped: audio busy (playing=${this.ttsPlaybackService.isPlaying} queue=${this._audioQueue.length} pbSession=${this._currentPlaybackSessionId !== null})`);
 			return;
 		}
+		this.logService.info('[voice] _enterAutoListen entering listening');
 		this.pttDown();
 		this.pttUp();
 	}
