@@ -43,6 +43,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 import { ChatAgentLocation } from '../../chat/common/constants.js';
 import { IChatWidgetService } from '../../chat/browser/chat.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 // --- Context Keys ---
 
@@ -279,6 +280,37 @@ registerAction2(class extends Action2 {
 	}
 });
 
+// --- Open Voice Mode Settings (gear button, shown left of Disconnect when connected) ---
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'agentsVoice.openSettings',
+			title: nls.localize2('agentsVoice.openSettings', "Voice Mode Settings"),
+			icon: Codicon.settingsGear,
+			f1: true,
+			precondition: ContextKeyExpr.equals('config.agents.voice.enabled', true),
+			menu: {
+				id: MenuId.ChatExecute,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
+					ChatContextKeys.currentlyEditing.negate(),
+					AGENTS_VOICE_CONNECTED.isEqualTo(true),
+					AGENTS_VOICE_INITIATED_HERE.isEqualTo(true),
+				),
+				group: 'navigation',
+				// Just before the Disconnect button (order -9) and after the mic/stop button (order -10).
+				order: -9.5
+			},
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const commandService = accessor.get(ICommandService);
+		await commandService.executeCommand('workbench.action.openSettings', { query: 'agents.voice' });
+	}
+});
+
 // --- Simulate Voice Connection (dev utility, backend down) ---
 
 registerAction2(class extends Action2 {
@@ -423,30 +455,24 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('agents.voice.backendUrl', "Voice backend WebSocket URL. Leave empty to use the default hosted backend. Set to e.g. `ws://localhost:8000/api/v1/realtime/voice` to point at a backend running on your machine."),
 			default: '',
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
 		},
 		'agents.voice.textToSpeech': {
 			type: 'boolean',
 			description: nls.localize('agents.voice.textToSpeech', "When enabled, the assistant reads responses aloud. When disabled, responses appear as text transcripts only."),
 			default: true,
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
 		},
 		'agents.voice.showTranscript': {
 			type: 'boolean',
 			description: nls.localize('agents.voice.showTranscript', "Show the voice transcript overlay in the chat input area while voice mode is active."),
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 		'agents.voice.handsFree': {
 			type: 'boolean',
 			description: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by `agents.voice.turn.autoEndMode`."),
 			default: true,
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 		'agents.voice.turn.autoEndMode': {
 			type: 'string',
@@ -460,8 +486,6 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('agents.voice.turn.autoEndMode', "Controls whether and how the voice backend ends a held turn on its own. The backend is the single source of truth for turn-ending: `vad` ends on trailing silence (`agents.voice.turn.silenceMs`), `phrase` ends on a spoken stop phrase (`agents.voice.turn.stopPhrases`), `both` enables either, and `off` requires you to end the turn manually."),
 			default: 'vad',
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
@@ -470,8 +494,6 @@ configurationRegistry.registerConfiguration({
 			minimum: 200,
 			maximum: 5000,
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 		'agents.voice.turn.stopPhrases': {
 			type: 'array',
@@ -479,8 +501,6 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Applies only when `agents.voice.turn.autoEndMode` is `phrase` or `both`; ignored otherwise. The backend strips the matched phrase from the transcript before it reaches the agent."),
 			default: ['send it'],
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 		'agents.voice.turn.vadGateAsr': {
 			type: 'string',
@@ -493,8 +513,6 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('agents.voice.turn.vadGateAsr', "Controls voice-activity noise-gating of the audio sent to speech recognition. Independent of `agents.voice.turn.autoEndMode`, except that `default` derives its behavior from it (gating only when `autoEndMode` is `off`). Use `on`/`off` to force gating regardless of `autoEndMode`."),
 			default: 'default',
 			scope: ConfigurationScope.APPLICATION,
-			included: false,
-			tags: ['advanced'],
 		},
 	}
 });
