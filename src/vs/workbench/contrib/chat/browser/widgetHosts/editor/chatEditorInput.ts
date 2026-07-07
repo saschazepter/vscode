@@ -254,24 +254,20 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 				this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: true, debugOwner: 'ChatEditorInput#resolveNewLocalSession' });
 			}
 		} else if (!this.options.target) {
-			if (this.options.explicitSessionType === localChatSessionType) {
-				this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveExplicitLocal' });
+			const defaultResource = getDefaultNewChatSessionResource(this.configurationService, this.chatSessionsService, this.storageService);
+			if (getChatSessionType(defaultResource) === localChatSessionType) {
+				this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveUntitled' });
 			} else {
-				const defaultResource = getDefaultNewChatSessionResource(this.configurationService, this.chatSessionsService, this.storageService);
-				if (getChatSessionType(defaultResource) === localChatSessionType) {
-					this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveUntitled' });
+				try {
+					this.modelRef.value = await this.chatService.acquireOrLoadSession(defaultResource, ChatAgentLocation.Chat, CancellationToken.None, 'ChatEditorInput#resolveDefaultUntitled');
+				} catch (error) {
+					this.logService.warn(`[ChatEditorInput] Failed to acquire default session ${defaultResource.toString()}`, error);
+				}
+				if (this.model) {
+					this._sessionResource = defaultResource;
 				} else {
-					try {
-						this.modelRef.value = await this.chatService.acquireOrLoadSession(defaultResource, ChatAgentLocation.Chat, CancellationToken.None, 'ChatEditorInput#resolveDefaultUntitled');
-					} catch (error) {
-						this.logService.warn(`[ChatEditorInput] Failed to acquire default session ${defaultResource.toString()}`, error);
-					}
-					if (this.model) {
-						this._sessionResource = defaultResource;
-					} else {
-						this.logService.warn(`[ChatEditorInput] Falling back to a local chat session because ${defaultResource.toString()} could not be acquired`);
-						this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveUntitledFallback' });
-					}
+					this.logService.warn(`[ChatEditorInput] Falling back to a local chat session because ${defaultResource.toString()} could not be acquired`);
+					this.modelRef.value = this.chatService.startNewLocalSession(ChatAgentLocation.Chat, { canUseTools: !inputType, debugOwner: 'ChatEditorInput#resolveUntitledFallback' });
 				}
 			}
 		} else if (this.options.target.data) {
@@ -299,7 +295,6 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 
 	private shouldReplaceEmptyLocalSession(sessionResource: URI): boolean {
 		return LocalChatSessionUri.isLocalSession(sessionResource)
-			&& this.options.explicitSessionType !== localChatSessionType
 			&& !!this.model
 			&& !this.model.hasRequests
 			&& getComputedDefaultSessionType(this.configurationService, this.chatSessionsService) !== localChatSessionType;
