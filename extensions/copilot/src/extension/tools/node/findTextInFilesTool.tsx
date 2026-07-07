@@ -448,7 +448,7 @@ Then if you want to include those files you can call the tool again by setting "
 		}
 
 		return {
-			maxResults: mode === CopilotToolMode.FullContext ? 200 : 20,
+			maxResults: mode === CopilotToolMode.FullContext ? this.getMaxResultsCap() : this.getDefaultMaxResults(),
 			...input,
 			includePattern,
 		};
@@ -456,7 +456,7 @@ Then if you want to include those files you can call the tool again by setting "
 
 	private getOutputFormat(): 'grep' | 'tag' {
 		const expFlag = this.configurationService.getExperimentBasedConfig(ConfigKey.GrepSearchOutputFormat, this.experimentationService);
-		return expFlag === 'grep' ? 'grep' : 'tag';
+		return expFlag === 'tag' ? 'tag' : 'grep';
 	}
 
 	private getDefaultMaxResults(): number {
