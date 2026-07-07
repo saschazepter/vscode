@@ -184,8 +184,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Set after send_to_chat; blocks auto-listen until the reply TTS starts. */
 	private _awaitingReplyAudio = false;
 	private _awaitingReplyWatchdog: ReturnType<typeof setTimeout> | undefined;
-	/** Enter listening immediately after greeting finishes (no debounce). */
-	private _autoListenAfterGreeting = false;
 	/** Tracks whether the initial listen cue has been played after connecting. */
 	private _hasPlayedInitialListenCue = false;
 
@@ -593,14 +591,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					if (this._pttWaitingForPlayback) {
 						this._scheduleDelayedMicStop();
 					}
-					// Hands-free: enter listening after audio finishes.
-					if (this._isHandsFreeEnabled() && !this._awaitingReplyAudio) {
-						if (this._autoListenAfterGreeting) {
-							this._autoListenAfterGreeting = false;
-							this._enterAutoListen();
-						} else if (this._replyPlayedSinceSend) {
-							this._scheduleAutoListen();
-						}
+					// Hands-free: re-enter listening after the assistant's reply
+					// audio finishes.
+					if (this._isHandsFreeEnabled() && !this._awaitingReplyAudio && this._replyPlayedSinceSend) {
+						this._scheduleAutoListen();
 					}
 				}
 			}
@@ -903,8 +897,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._statusText.set('Hold to speak...', undefined);
 				this._voiceState.set('idle', undefined);
 
+				// Hands-free: enter listening as soon as we connect. Previously
+				// this was deferred until a welcome greeting finished playing,
+				// but the greeting was removed, so trigger listening directly.
 				if (!isResuming && this._isHandsFreeEnabled()) {
-					this._autoListenAfterGreeting = true;
+					this._enterAutoListen();
 				}
 			} else if (this._isConnected.get()) {
 				this._onConnectionLost();
@@ -1104,7 +1101,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._transcriptTurns.set([], undefined);
 		this._clearAutoListenTimer();
 		this._clearAwaitingReply();
-		this._autoListenAfterGreeting = false;
 		this._autoListenSuppressed = false;
 		this._hasPlayedInitialListenCue = false;
 		this._replyPlayedSinceSend = false;
@@ -1193,7 +1189,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._pttHeld) { return; }
 		this._pttHeld = true;
 		this._autoListenSuppressed = false;
-		this._autoListenAfterGreeting = false;
 		this._clearAutoListenTimer();
 		this._pttCurrentTurnId = generateUuid();
 		this._pttWaitingForPlayback = false;
