@@ -422,7 +422,7 @@ export class AgentService extends Disposable implements IAgentService {
 					scopes: this._gitHubEndpointService.getCopilotResource().scopes_supported,
 				});
 			},
-			resolveWorktreeBeforeSend: params => this._resolveWorktreeBeforeSend(params),
+			ensureWorktreeBeforeSend: params => this._ensureWorktreeBeforeSend(params),
 			onTurnComplete: async session => {
 				// Refresh the git state for the session.
 				const workingDirStr = this._stateManager.getSessionState(session)?.workingDirectory;
@@ -461,17 +461,19 @@ export class AgentService extends Disposable implements IAgentService {
 	 * user's prompt for branch naming) and surfaces the "Created isolated
 	 * worktree" announcement as the first markdown response part of the turn.
 	 * Idempotent; a no-op for folder sessions and once the worktree exists.
-	 * Returns the created worktree URI (or `undefined` for folder sessions and
-	 * once the worktree already exists) so the caller can hand it to the agent as
-	 * the session's working directory at send time.
+	 *
+	 * The created worktree is recorded on the {@link WorktreeIsolation}
+	 * controller; the agent picks it up as its working directory at materialize
+	 * time via {@link IAgentConfigurationService.getResolvedWorkingDirectory}, so
+	 * nothing needs to be threaded back through `sendMessage`.
 	 */
-	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<URI | undefined> {
+	private async _ensureWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<void> {
 		if (!this._worktree) {
-			return undefined;
+			return;
 		}
 		const sessionId = AgentSession.id(params.session);
 		if (!this._worktree.isWorkingDirectoryPending(sessionId)) {
-			return undefined;
+			return;
 		}
 		const pickedFolder = this._configurationService.getEffectiveWorkingDirectory(params.session);
 		try {
@@ -497,7 +499,6 @@ export class AgentService extends Disposable implements IAgentService {
 				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
 			});
 		}
-		return this._worktree.getResolvedWorktree(sessionId);
 	}
 
 	registerProvider(provider: IAgent): void {

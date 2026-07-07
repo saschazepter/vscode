@@ -1037,14 +1037,8 @@ export interface IAgentChats {
 	 */
 	disposeChat(chat: URI): Promise<void>;
 
-	/**
-	 * Send a user message into `chat`. When the host has resolved a dedicated
-	 * working directory for the session (e.g. an isolated worktree created on the
-	 * first send), it is passed as `workingDirectory` so the agent materializes
-	 * the session there; omitted for sessions that keep the directory captured at
-	 * create time (folder / workspace-less).
-	 */
-	sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void>;
+	/** Send a user message into `chat`. */
+	sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void>;
 
 	/** Abort the in-flight turn for `chat`. */
 	abort(chat: URI): Promise<void>;
