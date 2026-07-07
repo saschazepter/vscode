@@ -455,6 +455,7 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('agents.voice.backendUrl', "Voice backend WebSocket URL. Leave empty to use the default hosted backend. Set to e.g. `ws://localhost:8000/api/v1/realtime/voice` to point at a backend running on your machine."),
 			default: '',
 			scope: ConfigurationScope.APPLICATION,
+			included: false,
 		},
 		'agents.voice.textToSpeech': {
 			type: 'boolean',
