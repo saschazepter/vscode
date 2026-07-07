@@ -52,9 +52,12 @@ jobs:
         run: |
           set +e
 
+          # Work outside the checkout so temp files aren't picked up by hygiene.
+          tmp="$(mktemp -d)"
+
           echo "::group::apt-get update (verbose, capture errors)"
-          sudo apt-get update -o Debug::Acquire::gpgv=true 2> apt-update.err
-          cat apt-update.err
+          sudo apt-get update -o Debug::Acquire::gpgv=true 2> "$tmp/apt-update.err"
+          cat "$tmp/apt-update.err"
           echo "::endgroup::"
 
           echo "::group::apt partial lists (raw bytes apt rejected)"
@@ -71,7 +74,7 @@ jobs:
 
           # Build the list of URLs to probe: any InRelease apt just failed to
           # fetch, plus the known Microsoft repositories that showed NOSPLIT/NODATA.
-          grep -oE 'https?://[^ ]+/InRelease' apt-update.err | sort -u > urls.txt
+          grep -oE 'https?://[^ ]+/InRelease' "$tmp/apt-update.err" | sort -u > "$tmp/urls.txt"
           printf '%s\n' \
             "https://packages.microsoft.com/repos/azure-cli/dists/jammy/InRelease" \
             "https://packages.microsoft.com/ubuntu/22.04/prod/dists/jammy/InRelease" \
@@ -79,8 +82,8 @@ jobs:
             "https://packages.microsoft.com/repos/microsoft-ubuntu-jammy-prod/dists/jammy/Release.gpg" \
             "https://packages.microsoft.com/repos/azurecore/dists/jammy/InRelease" \
             "https://packages.microsoft.com/repos/azurecore/dists/jammy/Release.gpg" \
-            >> urls.txt
-          sort -u urls.txt -o urls.txt
+            >> "$tmp/urls.txt"
+          sort -u "$tmp/urls.txt" -o "$tmp/urls.txt"
 
           bad=0
           while read -r url; do
@@ -113,8 +116,9 @@ jobs:
               sleep 1
             done
             echo "::endgroup::"
-          done < urls.txt
+          done < "$tmp/urls.txt"
 
+          rm -rf "$tmp"
           echo "Reproduced at least one bad response: $bad"
 
       - name: Install dependencies
