@@ -116,7 +116,7 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 		entry.tick = tick;
 		entry.button.setAttribute('aria-label', tick.ariaLabel);
 		// Two-tone bar: a green added segment and a red removed segment, sized by
-		// the turn's diff split (like the pill rail). Gray when the turn made no edits.
+		// the turn's diff split. Gray when the turn made no edits.
 		clearNode(entry.bar);
 		const stat = tick.stat;
 		const edited = !!stat && stat.added + stat.removed > 0;

@@ -130,7 +130,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 
 	// -- Navigation API (used by promptTimelineActions) --
 
-	/** All user prompts for the picker (independent of the rail's visual density). */
+	/** All user prompts for the picker (every prompt, not just the bucketed ticks). */
 	getAllPrompts(): readonly PromptEntry[] {
 		return this._model?.getAllPrompts() ?? [];
 	}

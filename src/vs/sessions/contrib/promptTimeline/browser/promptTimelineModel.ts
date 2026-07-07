@@ -157,7 +157,7 @@ export class PromptTimelineModel extends Disposable {
 		this._register(this.widget.onDidChangeViewModel(() => this._bindViewModel()));
 		this._register(this.widget.onDidScroll(() => { this._updateActive(); this._triggerScrollLayout(); }));
 		this._register(this.widget.onDidChangeContentHeight(() => this._triggerScrollLayout()));
-		// Re-evaluate the active tick whenever the ticks change (prompts or budget).
+		// Re-evaluate the active tick whenever the ticks change.
 		this._register(autorun(reader => {
 			this._baseTicks.read(reader);
 			this._updateActive();
