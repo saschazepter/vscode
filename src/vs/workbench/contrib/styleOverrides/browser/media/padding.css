@@ -158,3 +158,13 @@
 	padding: 4px 8px;
 }
 
+.style-override.monaco-workbench .extensions-viewlet > .extensions .extension-view-header .count-badge-wrapper {
+	margin-right: 6px
+}
+
+.style-override.monaco-workbench .monaco-count-badge {
+	padding: 4px 6px;
+	min-width: 19px;
+	min-height: 19px;
+}
+
