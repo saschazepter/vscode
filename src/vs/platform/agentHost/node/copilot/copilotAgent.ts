@@ -66,7 +66,6 @@ import { ICopilotApiService } from '../shared/copilotApiService.js';
 import { CopilotSlashCommandCompletionProvider } from './copilotSlashCommandCompletionProvider.js';
 import { DiscoveredType, SessionCustomizationDiscovery, areDiscoveredDirectoriesEqual, type IDiscoveredDirectory } from './sessionCustomizationDiscovery.js';
 import { COPILOT_INTEGRATION_ID } from '../../../endpoint/common/licenseAgreement.js';
-import product from '../../../product/common/product.js';
 
 const RUNTIME_SLASH_COMMAND_COMPLETION_WAIT_MS = 300;
 const COPILOT_CAPI_URL = 'https://api.githubcopilot.com';
@@ -938,7 +937,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// spawned), while in dev they live in `node_modules`.
 			// We can't use require.resolve() because @github/copilot's exports map
 			// blocks direct subpath access.
-			const moduleRootPath = product.commit ? nodeModulesAsarUnpackedPath : nodeModulesPath;
+			const moduleRootPath = this._environmentService.isBuilt ? nodeModulesAsarUnpackedPath : nodeModulesPath;
 			const nodeModulesUri = FileAccess.asFileUri(moduleRootPath);
 			const cliPath = await resolveCopilotCliPath(nodeModulesUri);
 

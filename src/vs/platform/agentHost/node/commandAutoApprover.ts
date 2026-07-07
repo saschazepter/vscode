@@ -9,8 +9,8 @@ import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { FileAccess, nodeModulesAsarUnpackedPath, nodeModulesPath } from '../../../base/common/network.js';
 import { escapeRegExpCharacters, regExpLeadsToEndlessLoop } from '../../../base/common/strings.js';
 import { URI } from '../../../base/common/uri.js';
-import product from '../../product/common/product.js';
 import { ILogService } from '../../log/common/log.js';
+import product from '../../product/common/product.js';
 import type { AgentHostTerminalAutoApproveRuleValue, AgentHostTerminalAutoApproveRules } from '../common/agentHostSchema.js';
 
 /**
