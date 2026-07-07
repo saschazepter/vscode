@@ -215,6 +215,10 @@ function shouldCreateEmptySessionAfterResumeError(err: unknown): boolean {
 	return !/\b(corrupt|corrupted|invalid|validation|schema|must be|parse|malformed|unexpected token)\b/i.test(message);
 }
 
+function isCustomAgentNotFoundError(err: unknown): boolean {
+	return getCopilotSdkErrorCode(err) === -32603 && /\bCustom agent '.+' not found\b/i.test(getErrorMessage(err));
+}
+
 export function getCopilotReasoningEffort(model: ModelSelection | undefined): SessionConfig['reasoningEffort'] {
 	const thinkingLevel = model?.config?.[ThinkingLevelConfigKey];
 	return isReasoningEffort(thinkingLevel) ? thinkingLevel : undefined;
@@ -342,11 +346,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 		try {
 			const stopWatch = new StopWatch();
 			this._logService.trace(`[Copilot:${plan.sessionId}] Calling SDK resumeSession...`);
-			const raw = await plan.client.resumeSession(plan.sessionId, {
-				...config,
-				workingDirectory: plan.workingDirectory.fsPath,
-				...(plan.resolvedAgentName ? { agent: plan.resolvedAgentName } : {}),
-			});
+			const raw = await plan.client.resumeSession(plan.sessionId, config);
 			this._logService.trace(`[Copilot:${plan.sessionId}] SDK resumeSession succeeded after ${stopWatch.elapsed()}ms`);
 			await this._applySandboxConfig(raw, sandboxConfig, plan.sessionId);
 			return new CopilotSessionWrapper(raw);
@@ -354,6 +354,16 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			const errCode = getCopilotSdkErrorCode(err);
 			const errMsg = getErrorMessage(err);
 			this._logService.warn(`[Copilot:${plan.sessionId}] SDK resumeSession failed: code=${errCode}, message=${errMsg}`);
+			if (plan.resolvedAgentName && isCustomAgentNotFoundError(err)) {
+				this._logService.warn(`[Copilot:${plan.sessionId}] Stored custom agent '${plan.resolvedAgentName}' was not found; retrying resume without a custom agent`);
+				try {
+					const raw = await plan.client.resumeSession(plan.sessionId, { ...config, agent: undefined });
+					await this._applySandboxConfig(raw, sandboxConfig, plan.sessionId);
+					return new CopilotSessionWrapper(raw);
+				} catch (retryErr) {
+					this._logService.warn(`[Copilot:${plan.sessionId}] SDK resumeSession without custom agent failed: code=${getCopilotSdkErrorCode(retryErr)}, message=${getErrorMessage(retryErr)}`);
+				}
+			}
 			// The SDK fails to resume sessions that have no messages.
 			// Fall back to creating a new session with the same ID,
 			// seeding model & working directory from stored metadata.
@@ -528,6 +538,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			onExitPlanModeRequest: (request, invocation) => runtime.handleExitPlanModeRequest(request, invocation),
 			workingDirectory: plan.workingDirectory?.fsPath,
 			customAgents,
+			agent: plan.resolvedAgentName,
 			skillDirectories,
 			instructionDirectories,
 			systemMessage,
