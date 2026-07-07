@@ -279,7 +279,12 @@
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
 	justify-content: flex-start;
+	gap: var(--vscode-spacing-size40, 4px);
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button-dropdown {
@@ -290,6 +295,24 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button-dropdown > .monaco-button:not(.monaco-dropdown-button) {
 	flex: 1 1 auto;
 	min-width: 0;
+}
+
+/* Trailing secondary (icon-only) actions (e.g. Mark as Done, Run Code Review):
+ * give them the bordered secondary-button chrome and padding that the classic
+ * changes-view actions bar has, so they don't render flat and cramped in the
+ * single-pane editor-group header. */
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button.secondary.monaco-text-button.codicon {
+	flex: 0 0 auto;
+	padding: var(--vscode-spacing-size20, 2px) var(--vscode-spacing-size60, 6px);
+	border-radius: var(--vscode-cornerRadius-small);
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: 1px solid var(--vscode-button-secondaryBorder);
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-header .editor-group-header-secondary .changes-actions-bar > .monaco-button.secondary.monaco-text-button.codicon:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+	color: var(--vscode-button-secondaryForeground);
 }
 
 /* Space the individual action items within each header toolbar (the picker,
