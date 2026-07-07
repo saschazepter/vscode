@@ -503,6 +503,11 @@ export class ChangesViewPane extends ViewPane {
 	private splitViewContainer: HTMLElement | undefined;
 	private readonly treePaneSizeChange = this._register(new Emitter<number | undefined>());
 
+	/** Computes the CI pane's default height (content, capped to a third of the split). */
+	private computeCIPreferredHeight: (() => number) | undefined;
+	/** Once the user drags a sash we stop imposing the CI pane's default height. */
+	private ciPaneUserResized = false;
+
 	private readonly isMergeBaseBranchProtectedContextKey: IContextKey<boolean>;
 	private readonly isolationModeContextKey: IContextKey<IsolationMode>;
 	private readonly hasGitRepositoryContextKey: IContextKey<boolean>;
@@ -673,9 +678,7 @@ export class ChangesViewPane extends ViewPane {
 		const getSessionFilesPreferredHeight = () => Math.max(getSessionFilesMinimumHeight(), SessionFilesWidget.HEADER_HEIGHT + SessionFilesWidget.PREFERRED_BODY_HEIGHT);
 		const getCIContentHeight = () => Math.max(CIStatusWidget.HEADER_HEIGHT, this.ciStatusWidget?.desiredHeight ?? 0);
 		const getCIMinimumHeight = () => this.ciStatusWidget?.collapsed ? CIStatusWidget.HEADER_HEIGHT : Math.min(ciMinHeight, getCIContentHeight());
-		// Preferred default size for the CI pane: its content height, capped to
-		// about a third of the available split height so the changes list keeps
-		// the majority of the space.
+		// Preferred default size for the CI pane: content height, capped to a third of the split.
 		const getCIPreferredHeight = () => {
 			const contentHeight = getCIContentHeight();
 			if (this.ciStatusWidget?.collapsed) {
@@ -687,6 +690,7 @@ export class ChangesViewPane extends ViewPane {
 			}
 			return contentHeight;
 		};
+		this.computeCIPreferredHeight = getCIPreferredHeight;
 		const thisView = this;
 
 		// Top pane: file tree
@@ -745,6 +749,9 @@ export class ChangesViewPane extends ViewPane {
 		updateSplitViewStyles();
 		this._register(this.themeService.onDidColorThemeChange(updateSplitViewStyles));
 
+		// A manual sash drag hands layout control to the user: stop imposing the CI default size.
+		this._register(this.splitView.onDidSashChange(() => { this.ciPaneUserResized = true; }));
+
 		// Initially hide the other files and CI panes until content arrives
 		this.splitView.setViewVisible(1, false);
 		this.splitView.setViewVisible(2, false);
@@ -754,7 +761,7 @@ export class ChangesViewPane extends ViewPane {
 		this._register(this.sessionFilesWidget.onDidChangeHeight(() => this.fireTreePaneSizeChange()));
 
 		// CI checks pane (index 2)
-		this._wireSectionPane(this.ciStatusWidget, 2, CIStatusWidget.HEADER_HEIGHT, getCIPreferredHeight);
+		this._wireSectionPane(this.ciStatusWidget, 2, CIStatusWidget.HEADER_HEIGHT, getCIPreferredHeight, () => { this.ciPaneUserResized = false; });
 
 		this._register(this.onDidChangeBodyVisibility(visible => {
 			if (visible) {
@@ -1070,6 +1077,26 @@ export class ChangesViewPane extends ViewPane {
 		}
 		this.splitViewContainer.style.height = `${availableHeight}px`;
 		this.splitView.layout(availableHeight);
+		this.applyCIDefaultSize();
+	}
+
+	/**
+	 * Re-assert the CI pane's default height (capped to a third of the split) after layout.
+	 * This is where the split height is reliably known — the preferred height can otherwise be
+	 * evaluated during wiring when the body height is still 0, yielding an uncapped fallback.
+	 * Once the user drags a sash we back off and preserve their chosen size.
+	 */
+	private applyCIDefaultSize(): void {
+		if (!this.splitView || this.ciPaneUserResized || !this.computeCIPreferredHeight) {
+			return;
+		}
+		if (!this.ciStatusWidget?.visible || this.ciStatusWidget.collapsed) {
+			return;
+		}
+		const preferred = this.computeCIPreferredHeight();
+		if (this.splitView.getViewSize(2) !== preferred) {
+			this.splitView.resizeView(2, preferred);
+		}
 	}
 
 	/**
@@ -1083,6 +1110,7 @@ export class ChangesViewPane extends ViewPane {
 		paneIndex: number,
 		headerHeight: number,
 		getPreferredHeight: () => number,
+		onDidBecomeVisible?: () => void,
 	): void {
 		let savedPaneHeight = getPreferredHeight();
 
@@ -1113,6 +1141,7 @@ export class ChangesViewPane extends ViewPane {
 			if (visible !== isCurrentlyVisible) {
 				this.splitView.setViewVisible(paneIndex, visible);
 				if (visible && !widget.collapsed) {
+					onDidBecomeVisible?.();
 					savedPaneHeight = getPreferredHeight();
 					this.splitView.resizeView(paneIndex, savedPaneHeight);
 				}
