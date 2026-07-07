@@ -155,13 +155,10 @@ export function isGpt55(model: LanguageModelChat | IChatEndpoint | string) {
 }
 
 export function isGpt56(model: LanguageModelChat | IChatEndpoint | string) {
-	return isGpt56SolOrTerra(model) || isGpt56Luna(model);
+	const family = typeof model === 'string' ? model : model.family;
+	return family === 'gpt-5.6-sol' || family === 'gpt-5.6-terra' || family === 'gpt-5.6-luna';
 }
 
-export function isGpt56SolOrTerra(model: LanguageModelChat | IChatEndpoint | string) {
-	const family = typeof model === 'string' ? model : model.family;
-	return family === 'ember-alpha';
-}
 
 export function isGpt56Luna(model: LanguageModelChat | IChatEndpoint | string) {
 	const family = typeof model === 'string' ? model : model.family;
