@@ -96,6 +96,12 @@ const VERSIONS_PICKER_ACTION_ID = 'chatEditing.versionsPicker';
 const DIFF_STATS_ACTION_ID = 'workbench.changesView.action.viewChanges';
 const EMPTY_FILE_CHANGES_MIN_HEIGHT = 140;
 
+/** Maximum number of file rows the tree pane's minimum size grows to accommodate. */
+const TREE_PANE_MIN_SIZE_MAX_ROWS = 13;
+
+/** Breathing room rendered beneath the last file row when the whole list fits. */
+const TREE_PANE_LIST_BOTTOM_PADDING = 12;
+
 // --- ButtonBar widget
 
 class ChangesMenuWorkbenchButtonBarWidget extends Disposable {
@@ -1001,7 +1007,15 @@ export class ChangesViewPane extends ViewPane {
 		if (this.listContainer?.style.display === 'none') {
 			return EMPTY_FILE_CHANGES_MIN_HEIGHT;
 		}
-		return 3 * ChangesTreeDelegate.ROW_HEIGHT;
+
+		// Grow the minimum size to fit the file list (capped at TREE_PANE_MIN_SIZE_MAX_ROWS rows) plus header chrome.
+		const filesHeaderHeight = this.filesHeaderNode?.offsetHeight ?? 0;
+		const treeContentHeight = this.tree?.contentHeight ?? 0;
+		const maxRowsHeight = TREE_PANE_MIN_SIZE_MAX_ROWS * ChangesTreeDelegate.ROW_HEIGHT;
+		const cappedContentHeight = Math.min(treeContentHeight, maxRowsHeight);
+		const bottomPadding = treeContentHeight <= maxRowsHeight ? TREE_PANE_LIST_BOTTOM_PADDING : 0;
+
+		return Math.max(EMPTY_FILE_CHANGES_MIN_HEIGHT, filesHeaderHeight + cappedContentHeight + bottomPadding);
 	}
 
 	private getTreePaneMaximumSize(): number {
@@ -1011,7 +1025,8 @@ export class ChangesViewPane extends ViewPane {
 
 		const filesHeaderHeight = this.filesHeaderNode?.offsetHeight ?? 0;
 		const treeContentHeight = this.listContainer?.style.display === 'none' ? 0 : this.tree?.contentHeight ?? 0;
-		return Math.max(this.getTreePaneMinimumSize(), filesHeaderHeight + treeContentHeight);
+		const bottomPadding = treeContentHeight > 0 ? TREE_PANE_LIST_BOTTOM_PADDING : 0;
+		return Math.max(this.getTreePaneMinimumSize(), filesHeaderHeight + treeContentHeight + bottomPadding);
 	}
 
 	private fireTreePaneSizeChange(): void {
