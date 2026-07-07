@@ -116,7 +116,7 @@ configurationRegistry.registerConfiguration({
 		},
 		[AgentHostGitBranchPrefixSettingId]: {
 			type: 'string',
-			description: nls.localize('chat.agentHost.git.branchPrefix', "Prefix used when the agent host creates a branch for a new worktree session. Requires `#chat.agentHost.enabled#`. The agent host process must be restarted for changes to take effect."),
+			markdownDescription: nls.localize('chat.agentHost.git.branchPrefix', "Prefix used when the agent host creates a branch for a new worktree session. Requires `#chat.agentHost.enabled#`. The agent host process must be restarted for changes to take effect."),
 			default: 'agents/',
 		},
 		[AgentHostCodexAgentEnabledSettingId]: {
