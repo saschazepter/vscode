@@ -51,7 +51,6 @@ suite('ChatEditorInput', () => {
 			{} as IConfigurationService,
 			{} as IChatSessionsService,
 			{} as IInstantiationService,
-			{} as IStorageService,
 		);
 
 		try {
