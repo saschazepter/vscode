@@ -1298,8 +1298,10 @@ export class AgentService extends Disposable implements IAgentService {
 	 *
 	 * `displayName` is the provider's brand noun (e.g. `Claude`). It is woven
 	 * into the notification's localized, human-readable `message` (e.g.
-	 * "Downloading Claude agent…") so a generic client can render the indicator
-	 * verbatim without knowing the resource is an agent SDK.
+	 * "Downloading Claude agent") so a generic client can render the indicator
+	 * verbatim without knowing the resource is an agent SDK. No trailing
+	 * ellipsis: clients render progress as "<title>: <percent>", so an ellipsis
+	 * would read as an unusual "…:" (see #324455).
 	 */
 	emitDownloadProgress(packageId: string, displayName: string, receivedBytes: number, totalBytes: number | undefined, terminal: boolean): void {
 		const sessions = this._downloadProgressInterest.get(packageId);
@@ -1311,7 +1313,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// indeterminate one where `totalBytes` was never known, plus failures —
 		// the real error surfaces via the session-failure path).
 		const total = terminal ? receivedBytes : totalBytes;
-		const message = localize('agentHost.download.agentSdkTitle', "Downloading {0} agent…", displayName);
+		const message = localize('agentHost.download.agentSdkTitle', "Downloading {0} agent", displayName);
 		// `progressToken` is the download's own stable identity (the package id),
 		// shared by every session of the provider, so the client coalesces all
 		// frames into one indicator and dismisses it on the terminal frame.
@@ -1385,12 +1387,12 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	/**
-	 * Host-owned contribution of the shared `isolation` (folder / worktree) and
-	 * `branch` session-config properties on top of whatever an agent returned
-	 * from `resolveSessionConfig`. This is what lets every agent — including
-	 * future ones — get the isolation picker for free. Additive-if-absent: an
-	 * agent that still contributes these keys itself is left untouched, so the
-	 * migration to host ownership is safe either way.
+	 * Host-owned contribution of the shared `isolation` (folder / worktree),
+	 * `branch`, and `worktreeBranchPrefix` session-config properties on top of
+	 * whatever an agent returned from `resolveSessionConfig`. This is what lets
+	 * every agent — including future ones — get the isolation picker for free.
+	 * Additive-if-absent: an agent that still contributes these keys itself is
+	 * left untouched, so the migration to host ownership is safe either way.
 	 */
 	private async _withIsolationSchema(result: ResolveSessionConfigResult, params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {
 		if (!this._worktree) {
@@ -1398,8 +1400,9 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		const hasIsolation = result.schema.properties[SessionConfigKey.Isolation] !== undefined;
 		const hasBranch = result.schema.properties[SessionConfigKey.Branch] !== undefined;
+		const hasWorktreeBranchPrefix = result.schema.properties[SessionConfigKey.WorktreeBranchPrefix] !== undefined;
 		const iso = await this._worktree.resolveIsolationConfig({ workingDirectory: params.workingDirectory, config: params.config });
-		if (hasIsolation && (hasBranch || !iso.branchProperty)) {
+		if (hasIsolation && (hasBranch || !iso.branchProperty) && (hasWorktreeBranchPrefix || !iso.worktreeBranchPrefixProperty)) {
 			return result;
 		}
 		// Isolation goes first (UI ordering) when the host contributes it.
@@ -1409,12 +1412,24 @@ export class AgentService extends Disposable implements IAgentService {
 		if (iso.branchProperty && !hasBranch) {
 			properties[SessionConfigKey.Branch] = iso.branchProperty.protocol;
 		}
+		if (iso.worktreeBranchPrefixProperty && !hasWorktreeBranchPrefix) {
+			properties[SessionConfigKey.WorktreeBranchPrefix] = iso.worktreeBranchPrefixProperty.protocol;
+		}
 		const values = { ...result.values };
 		if (!hasIsolation && values[SessionConfigKey.Isolation] === undefined) {
 			values[SessionConfigKey.Isolation] = iso.isolationValue;
 		}
 		if (iso.branchProperty && !hasBranch && iso.branchDefault !== undefined && values[SessionConfigKey.Branch] === undefined) {
 			values[SessionConfigKey.Branch] = iso.branchDefault;
+		}
+		// Echo the client-seeded `worktreeBranchPrefix` back so it rides the
+		// resolved config and survives isolation toggles (worktree → folder →
+		// worktree). It has no default; when the client doesn't supply one it
+		// simply stays unset.
+		if (iso.worktreeBranchPrefixProperty && !hasWorktreeBranchPrefix
+			&& typeof params.config?.[SessionConfigKey.WorktreeBranchPrefix] === 'string'
+			&& values[SessionConfigKey.WorktreeBranchPrefix] === undefined) {
+			values[SessionConfigKey.WorktreeBranchPrefix] = params.config[SessionConfigKey.WorktreeBranchPrefix];
 		}
 		return { schema: { ...result.schema, properties }, values };
 	}

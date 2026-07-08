@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/sessionsTitleBarWidget.css';
-import { $, addDisposableGenericMouseDownListener, addDisposableListener, EventType, isAncestor, reset } from '../../../../base/browser/dom.js';
+import { $, addDisposableGenericMouseDownListener, addDisposableListener, EventType, getDomNodePagePosition, getWindow, isAncestor, reset } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
@@ -18,15 +18,15 @@ import { CommandsRegistry, ICommandService } from '../../../../platform/commands
 import { Menus } from '../../../browser/menus.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
-import { autorun, derived, IObservable, IReader, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
+import { autorun, derived, IObservable, IReader, observableValue } from '../../../../base/common/observable.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { URI } from '../../../../base/common/uri.js';
-import { AnchorAlignment, AnchorPosition } from '../../../../base/common/layout.js';
+import { AnchorAlignment, AnchorPosition, IAnchor } from '../../../../base/common/layout.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { IContextViewService, IOpenContextView } from '../../../../platform/contextview/browser/contextView.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
-import { IWorkbenchLayoutService, Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { SHOW_SESSIONS_PICKER_COMMAND_ID } from './sessionsActions.js';
@@ -46,6 +46,19 @@ import { openSessionToTheSide } from './views/sessionsView.js';
  * opening the full sessions picker so the popup doesn't linger behind it.
  */
 const SHOW_ALL_SESSIONS_FROM_BLOCKED_LIST_COMMAND_ID = 'sessions.blockedSessions.showAllSessions';
+
+/**
+ * Minimum width of the blocked-sessions dropdown, in pixels. The dropdown is at
+ * least as wide as the command center box it hangs off, but never narrower than
+ * this so its rows have room to breathe.
+ */
+const BLOCKED_DROPDOWN_MIN_WIDTH = 550;
+
+/**
+ * Maximum width of the blocked-sessions dropdown as a fraction of the window
+ * width, so it never spans (nearly) the entire window on narrow layouts.
+ */
+const BLOCKED_DROPDOWN_MAX_WIDTH_RATIO = 0.9;
 
 /**
  * The specific reason a homogeneous set of blocked sessions needs attention,
@@ -71,13 +84,12 @@ const enum RequiresInputKind {
  * - Kind icon at the beginning (provider type icon)
  * - Repository folder name and active branch/worktree name when available
  *
- * When the primary side bar is hidden and at least one session is blocked
- * (needs input, has failing CI checks, or has unresolved pull request comments),
- * the widget instead adopts an orange "N sessions require input" state and, on
- * click, reveals those sessions as a flat list in a dropdown anchored below the
- * command center box. A short blink animation plays whenever a new session
- * becomes blocked. In every other case it behaves as the active-session pill and
- * opens the sessions picker on click.
+ * When at least one session is blocked (needs input, has failing CI checks, or
+ * has unresolved pull request comments), the widget instead adopts an orange
+ * "N sessions require input" state and, on click, reveals those sessions as a
+ * flat list in a dropdown anchored below the command center box. A short blink
+ * animation plays whenever a new session becomes blocked. In every other case it
+ * behaves as the active-session pill and opens the sessions picker on click.
  *
  * Session actions (changes, terminal, etc.) are rendered via the
  * SessionTitleActions menu toolbar next to this widget.
@@ -97,15 +109,11 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	private _isRendering = false;
 
 	/**
-	 * Last observed blocked-session count, tracked on every render regardless of
-	 * side-bar visibility. Because the count is captured even while the
-	 * requires-input state is hidden (side bar visible), toggling the side bar to
-	 * reveal the indicator leaves the count unchanged and never blinks.
+	 * Last observed blocked-session count, tracked on every render. Used to detect
+	 * when a *new* blocked session pushes the count up so the attention blink only
+	 * fires for genuinely new blocks.
 	 */
 	private _lastBlockedCount = 0;
-
-	/** Reactive primary-side-bar visibility. */
-	private readonly _sidebarVisible: IObservable<boolean>;
 
 	/**
 	 * Blocked sessions that are NOT currently visible on screen. A session the
@@ -173,12 +181,6 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		// The widget owns the blocked-sessions model; the optional parameter is a
 		// test seam so fixtures can supply a preset instance.
 		this._blockedSessionsModel = blockedSessions ?? this._register(this.instantiationService.createInstance(BlockedSessions));
-
-		this._sidebarVisible = observableFromEvent(
-			this,
-			this.layoutService.onDidChangePartVisibility,
-			() => this.layoutService.isVisible(Parts.SIDEBAR_PART),
-		);
 
 		// A session that is currently visible on screen is not treated as blocked:
 		// exclude visible sessions from the requires-input indicator and the dropdown.
@@ -265,11 +267,10 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 			this._render();
 		}));
 
-		// Re-render when the set of blocked sessions or the side bar visibility changes;
-		// both feed the "N sessions require input" state. Keep an open dropdown in sync.
+		// Re-render when the set of blocked sessions changes; it feeds the
+		// "N sessions require input" state. Keep an open dropdown in sync.
 		this._register(autorun(reader => {
 			const blocked = this._blockedSessions.read(reader);
-			this._sidebarVisible.read(reader);
 			this._sessionActionFeedback.approvedCount.read(reader);
 			this._requiresInputKind.read(reader);
 			if (this._openContextView && this._blockedList) {
@@ -328,7 +329,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		try {
 			const approvedCount = this._sessionActionFeedback.approvedCount.get();
 			const blockedCount = this._blockedSessions.get().length;
-			const requiresInput = blockedCount > 0 && !this._sidebarVisible.get();
+			const requiresInput = blockedCount > 0;
 
 			// The transient "Approved N sessions" confirmation takes precedence over the
 			// requires-input state while it is showing.
@@ -337,9 +338,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 
 			// The attention blink fires only when a *new* blocked session pushes the
 			// count up while the requires-input state is shown — including the very first
-			// one. The count is tracked even while the state is hidden (side bar visible),
-			// so merely revealing the indicator by hiding the side bar (count unchanged)
-			// never blinks.
+			// one.
 			const previousBlockedCount = this._lastBlockedCount;
 			this._lastBlockedCount = blockedCount;
 			const shouldBlink = showRequiresInput && blockedCount > previousBlockedCount;
@@ -365,8 +364,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 			this._lastRenderState = renderState;
 
 			// Close the open blocked-sessions dropdown only when there are no blocked
-			// sessions left to show (or the requires-input UI no longer applies, e.g.
-			// the side bar became visible). Note this keys off `requiresInput`, not
+			// sessions left to show. Note this keys off `requiresInput`, not
 			// `showRequiresInput`: approving a session shows the transient green state
 			// (suppressing `showRequiresInput`) but the dropdown must stay open while
 			// other sessions remain blocked — it just drops the approved row.
@@ -635,7 +633,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	 * sessions when the requires-input state applies, otherwise the sessions picker.
 	 */
 	private _activateDefaultAction(): void {
-		const requiresInput = this._blockedSessions.get().length > 0 && !this._sidebarVisible.get();
+		const requiresInput = this._blockedSessions.get().length > 0;
 		if (requiresInput) {
 			this._toggleBlockedSessions();
 		} else {
@@ -688,12 +686,14 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 			return;
 		}
 
-		// Match the dropdown width to the command center box it hangs off.
-		const width = container.getBoundingClientRect().width;
+		// Match the dropdown width to the command center box it hangs off, but keep
+		// it within a sensible min/max so it stays readable on wide layouts and
+		// doesn't overflow on narrow ones.
+		const width = this._computeBlockedDropdownWidth(container);
 
 		const store = new DisposableStore();
 		this._openContextView = this.contextViewService.showContextView({
-			getAnchor: () => container,
+			getAnchor: () => this._getBlockedDropdownAnchor(container),
 			anchorAlignment: AnchorAlignment.LEFT,
 			anchorPosition: AnchorPosition.BELOW,
 			render: (viewContainer): IDisposable => {
@@ -713,9 +713,10 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 				}));
 
 				// Keep the dropdown width matched to the command center box as the
-				// window resizes (the command center reflows to a new width).
+				// window resizes (the command center reflows to a new width, and the
+				// min/max clamp tracks the new window width).
 				store.add(this.layoutService.onDidLayoutActiveContainer(() => {
-					list.setWidth(container.getBoundingClientRect().width);
+					list.setWidth(this._computeBlockedDropdownWidth(container));
 					this.contextViewService.layout();
 				}));
 
@@ -745,6 +746,38 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 				this._blockedList = undefined;
 			},
 		});
+	}
+
+	/**
+	 * Compute the width of the blocked-sessions dropdown: at least as wide as the
+	 * command center box (the anchor) and {@link BLOCKED_DROPDOWN_MIN_WIDTH}, but
+	 * never wider than {@link BLOCKED_DROPDOWN_MAX_WIDTH_RATIO} of the window so it
+	 * stays within the viewport on narrow layouts.
+	 */
+	private _computeBlockedDropdownWidth(container: HTMLElement): number {
+		const anchorWidth = getDomNodePagePosition(container).width;
+		const windowWidth = getWindow(container).innerWidth;
+		const minWidth = Math.max(anchorWidth, BLOCKED_DROPDOWN_MIN_WIDTH);
+		const maxWidth = windowWidth * BLOCKED_DROPDOWN_MAX_WIDTH_RATIO;
+		return Math.round(Math.min(minWidth, maxWidth));
+	}
+
+	/**
+	 * Anchor the blocked-sessions dropdown so it is horizontally centered on the
+	 * command center box. Because the dropdown can be wider than the box, we hand
+	 * the context view a zero-width anchor positioned at the dropdown's target
+	 * left edge (the box center minus half the dropdown width).
+	 */
+	private _getBlockedDropdownAnchor(container: HTMLElement): IAnchor {
+		const position = getDomNodePagePosition(container);
+		const width = this._computeBlockedDropdownWidth(container);
+		const centerX = position.left + position.width / 2;
+		return {
+			x: Math.round(centerX - width / 2),
+			y: position.top,
+			width: 0,
+			height: position.height,
+		};
 	}
 
 	private _openBlockedSession(resource: URI, preserveFocus: boolean, sideBySide: boolean): void {

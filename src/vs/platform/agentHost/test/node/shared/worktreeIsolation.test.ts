@@ -117,11 +117,13 @@ suite('WorktreeIsolation', () => {
 			named: getWorktreeName('agents/add-config'),
 			namedFlattened: getWorktreeName('agents/feature/sub-topic'),
 			namedNoPrefix: getWorktreeName('plain-branch'),
+			namedWithBranchPrefix: getWorktreeName('users/alice/agents/add-config', 'users/alice/'),
 		}, {
 			root: URI.file('/src/vscode.worktrees').fsPath,
 			named: 'add-config',
 			namedFlattened: 'feature-sub-topic',
 			namedNoPrefix: 'plain-branch',
+			namedWithBranchPrefix: 'add-config',
 		});
 	});
 
@@ -135,15 +137,15 @@ suite('WorktreeIsolation', () => {
 		const noCommits = await isolation.resolveIsolationConfig({ workingDirectory: repoRoot, config: undefined });
 
 		assert.deepStrictEqual({
-			noRepo: { enum: noRepo.isolationProperty.protocol.enum, value: noRepo.isolationValue, branch: noRepo.branchProperty },
-			repoWorktree: { enum: repoWorktree.isolationProperty.protocol.enum, value: repoWorktree.isolationValue, branchDefault: repoWorktree.branchDefault, branchReadOnly: repoWorktree.branchProperty?.protocol.readOnly },
-			repoFolder: { value: repoFolder.isolationValue, branchDefault: repoFolder.branchDefault, branchReadOnly: repoFolder.branchProperty?.protocol.readOnly },
-			noCommits: { enum: noCommits.isolationProperty.protocol.enum, value: noCommits.isolationValue, branch: noCommits.branchProperty },
+			noRepo: { enum: noRepo.isolationProperty.protocol.enum, value: noRepo.isolationValue, branch: noRepo.branchProperty, prefix: noRepo.worktreeBranchPrefixProperty },
+			repoWorktree: { enum: repoWorktree.isolationProperty.protocol.enum, value: repoWorktree.isolationValue, branchDefault: repoWorktree.branchDefault, branchReadOnly: repoWorktree.branchProperty?.protocol.readOnly, prefixReadOnly: repoWorktree.worktreeBranchPrefixProperty?.protocol.readOnly },
+			repoFolder: { value: repoFolder.isolationValue, branchDefault: repoFolder.branchDefault, branchReadOnly: repoFolder.branchProperty?.protocol.readOnly, hasPrefix: !!repoFolder.worktreeBranchPrefixProperty },
+			noCommits: { enum: noCommits.isolationProperty.protocol.enum, value: noCommits.isolationValue, branch: noCommits.branchProperty, prefix: noCommits.worktreeBranchPrefixProperty },
 		}, {
-			noRepo: { enum: ['folder'], value: 'folder', branch: undefined },
-			repoWorktree: { enum: ['folder', 'worktree'], value: 'worktree', branchDefault: 'main', branchReadOnly: false },
-			repoFolder: { value: 'folder', branchDefault: 'feature', branchReadOnly: true },
-			noCommits: { enum: ['folder'], value: 'folder', branch: undefined },
+			noRepo: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined },
+			repoWorktree: { enum: ['folder', 'worktree'], value: 'worktree', branchDefault: 'main', branchReadOnly: false, prefixReadOnly: true },
+			repoFolder: { value: 'folder', branchDefault: 'feature', branchReadOnly: true, hasPrefix: true },
+			noCommits: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined },
 		});
 	});
 

@@ -52,14 +52,19 @@ export function getWorktreesRoot(repositoryRoot: URI): URI {
 
 /**
  * Derives the on-disk worktree directory name from a branch name: strips the
- * `agents/` prefix so the directory stays concise, then flattens any
- * remaining path separators.
+ * caller-supplied prefix (e.g. the user's `git.branchPrefix`) and the built-in
+ * `agents/` prefix so the directory stays concise, then flattens any remaining
+ * path separators.
  */
-export function getWorktreeName(branchName: string): string {
-	const withoutPrefix = branchName.startsWith(AGENT_BRANCH_PREFIX)
-		? branchName.substring(AGENT_BRANCH_PREFIX.length)
-		: branchName;
-	return withoutPrefix.replace(/\//g, '-');
+export function getWorktreeName(branchName: string, branchPrefix: string = ''): string {
+	let name = branchName;
+	if (branchPrefix && name.startsWith(branchPrefix)) {
+		name = name.substring(branchPrefix.length);
+	}
+	if (name.startsWith(AGENT_BRANCH_PREFIX)) {
+		name = name.substring(AGENT_BRANCH_PREFIX.length);
+	}
+	return name.replace(/\//g, '-');
 }
 
 /**
@@ -115,13 +120,20 @@ export interface IResolveIsolationConfigRequest {
 /**
  * The isolation + branch schema contribution for an agent's
  * `resolveSessionConfig`. Callers merge {@link isolationProperty} (and
- * {@link branchProperty} when present) into their own schema and merge the
- * default values ({@link isolationValue} / {@link branchDefault}) into the
- * defaults bag they pass to `validateOrDefault`.
+ * {@link branchProperty} / {@link worktreeBranchPrefixProperty} when present)
+ * into their own schema and merge the default values ({@link isolationValue} /
+ * {@link branchDefault}) into the defaults bag they pass to `validateOrDefault`.
  */
 export interface IIsolationConfigContribution {
 	readonly isolationProperty: ISchemaProperty<'folder' | 'worktree'>;
 	readonly branchProperty: ISchemaProperty<string> | undefined;
+	/**
+	 * Read-only carrier for the client's `git.branchPrefix`. Declared for both
+	 * isolations (like `branch`) so the value rides `_config.values` and
+	 * survives isolation toggles; the agent only *consumes* it for worktree
+	 * isolation (see {@link WorktreeIsolation.resolveWorkingDirectory}).
+	 */
+	readonly worktreeBranchPrefixProperty: ISchemaProperty<string> | undefined;
 	readonly isolationValue: 'folder' | 'worktree';
 	readonly branchDefault: string | undefined;
 }
@@ -286,6 +298,7 @@ export class WorktreeIsolation extends Disposable {
 
 		let branchProperty: ISchemaProperty<string> | undefined;
 		let branchDefault: string | undefined;
+		let worktreeBranchPrefixProperty: ISchemaProperty<string> | undefined;
 		if (gitInfo) {
 			const branchReadOnly = isolationValue === 'folder';
 			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
@@ -300,9 +313,28 @@ export class WorktreeIsolation extends Disposable {
 				readOnly: branchReadOnly,
 				sessionMutable: false,
 			});
+
+			// Carrier for the client's `git.branchPrefix`: the agent prepends it
+			// to the branch it creates for an isolated worktree. Declared for
+			// both isolations (like `branch`), so the value rides
+			// `_config.values` and survives isolation toggles — a user who flips
+			// worktree → folder → worktree keeps the prefix, and it reaches the
+			// agent via the send-time config snapshot. It has no
+			// `enum`/`enumDynamic`, so the config picker treats it as
+			// non-pickable and never surfaces it as a chip: the client seeds it
+			// (from `git.branchPrefix`), the user never edits it, and the agent
+			// only *consumes* it for worktree isolation (see
+			// {@link resolveWorkingDirectory}).
+			worktreeBranchPrefixProperty = schemaProperty<string>({
+				type: 'string',
+				title: localize('agentHost.sessionConfig.worktreeBranchPrefix', "Worktree Branch Prefix"),
+				description: localize('agentHost.sessionConfig.worktreeBranchPrefixDescription', "Prefix applied to the branch created for an isolated worktree."),
+				readOnly: true,
+				sessionMutable: false,
+			});
 		}
 
-		return { isolationProperty, branchProperty, isolationValue, branchDefault };
+		return { isolationProperty, branchProperty, worktreeBranchPrefixProperty, isolationValue, branchDefault };
 	}
 
 	/**
@@ -347,16 +379,23 @@ export class WorktreeIsolation extends Disposable {
 		}
 
 		const worktreesRoot = getWorktreesRoot(repositoryRoot);
+		// Prefix (e.g. the user's `git.branchPrefix`) the client forwards for
+		// worktree-isolated sessions. Prepended ahead of the built-in `agents/`
+		// prefix when naming the branch and stripped from the worktree dir name.
+		const worktreeBranchPrefix = typeof config[SessionConfigKey.WorktreeBranchPrefix] === 'string'
+			? config[SessionConfigKey.WorktreeBranchPrefix] as string
+			: undefined;
 		const branchName = await this._branchNameGenerator.generateBranchName({
 			sessionId,
 			message: prompt,
 			githubToken,
+			branchPrefix: worktreeBranchPrefix,
 			// Treat a failed existence check as a collision so we fall back to a
 			// suffixed branch name rather than risk `addWorktree` failing because
 			// the branch already exists.
 			branchExists: candidate => this._gitService.branchExists(repositoryRoot, candidate).catch(() => true),
 		});
-		const worktree = URI.joinPath(worktreesRoot, getWorktreeName(branchName));
+		const worktree = URI.joinPath(worktreesRoot, getWorktreeName(branchName, worktreeBranchPrefix));
 		await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
 		const baseBranch = typeof config[SessionConfigKey.Branch] === 'string' ? config[SessionConfigKey.Branch] as string : undefined;
 		// `addWorktree`'s signature requires a startPoint, but historically the
