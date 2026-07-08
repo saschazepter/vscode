@@ -682,6 +682,20 @@ const configuration: IConfigurationNode = {
 				},
 			}
 		},
+		'accessibility.signals.voiceResponseReceived': {
+			...signalFeatureBase,
+			'description': localize('accessibility.signals.voiceResponseReceived', "Plays a signal - sound (audio cue) and/or announcement (alert) - when a voice response is received for a session that is not currently focused."),
+			'properties': {
+				'sound': {
+					'description': localize('accessibility.signals.voiceResponseReceived.sound', "Plays a sound when a voice response is received for a session that is not currently focused."),
+					...soundFeatureBase,
+				},
+				'announcement': {
+					'description': localize('accessibility.signals.voiceResponseReceived.announcement', "Announces when a voice response is received for a session that is not currently focused."),
+					...announcementFeatureBase,
+				},
+			},
+		},
 		'accessibility.signals.clear': {
 			...signalFeatureBase,
 			'description': localize('accessibility.signals.clear', "Plays a signal - sound (audio cue) and/or announcement (alert) - when a feature is cleared (for example, the terminal, Debug Console, or Output channel)."),

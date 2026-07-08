@@ -139,9 +139,15 @@ export class VoicePlaybackService extends Disposable implements IVoicePlaybackSe
 	}
 
 	setPendingResponse(sessionResource: URI, pending: boolean): void {
-		const changed = pending
-			? !this._pendingResponses.has(sessionResource) && (this._pendingResponses.add(sessionResource), true)
-			: this._pendingResponses.delete(sessionResource);
+		let changed: boolean;
+		if (pending) {
+			changed = !this._pendingResponses.has(sessionResource);
+			if (changed) {
+				this._pendingResponses.add(sessionResource);
+			}
+		} else {
+			changed = this._pendingResponses.delete(sessionResource);
+		}
 		if (changed) {
 			this._pendingResponseVersion.set(this._pendingResponseVersion.get() + 1, undefined);
 		}

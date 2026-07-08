@@ -25,7 +25,6 @@ import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js'
 import { AgentSessionStatus } from '../agentSessions/agentSessionsModel.js';
 import { IChatService, IChatToolInvocation, ToolConfirmKind, IChatModelReference } from '../../common/chatService/chatService.js';
 import { IChatWidgetService } from '../chat.js';
-import { FileAccess } from '../../../../../base/common/network.js';
 import { IChatModel } from '../../common/model/chatModel.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
@@ -212,7 +211,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Buffered audio for responses that arrived while their session was not
 	 *  focused. Flushed to playback when the session becomes focused. */
 	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
-	private _responseReceivedCue: HTMLAudioElement | undefined;
 
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
@@ -490,7 +488,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._isConnecting.get() || this._isConnected.get()) { return; }
 
 		this._window = window;
-		void this._onFocusedSessionChanged();
+		this._onFocusedSessionChanged();
 		this._isConnecting.set(true, undefined);
 		this._statusText.set('Connecting...', undefined);
 		this._voiceState.set('idle', undefined);
@@ -1903,8 +1901,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Refresh the cached focused session and flush any response that was held
 	 * for the session that just became focused.
 	 */
-	private async _onFocusedSessionChanged(): Promise<void> {
-		const focused = await this.commandService.executeCommand<string | undefined>('_chat.voice.getCurrentSession').catch(() => undefined);
+	private _onFocusedSessionChanged(): void {
+		// Read focus from the same source that fires `onDidChangeFocusedSession`
+		// (the last-focused chat widget) so the cached focus and the change
+		// event never disagree. Using the view-pane command here would be
+		// inconsistent: it can point at a different widget than the one whose
+		// focus/session actually changed, which would leave a deferred response
+		// buffered forever (never flushed) and the controller stuck listening.
+		const focused = this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
 		this._focusedSessionId = focused;
 		if (focused) {
 			this._flushDeferredResponse(focused);
@@ -1944,9 +1948,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const buffer = this._deferredResponses.get(sessionId);
 		this._deferredResponses.delete(sessionId);
 		this._markPendingResponse(sessionId, false);
-		if (!buffer) {
+		if (!buffer || buffer.length === 0) {
 			return;
 		}
+
+		// Clear any speculative auto-listen that engaged while the response was
+		// held; otherwise the controller can sit in listening mode and the
+		// buffered audio is suppressed instead of played. Also drop the incoming
+		// suppression flag so the first buffered chunk isn't discarded.
+		this._clearAutoListenTimer();
+		this._suppressIncomingAudio = false;
+
+		// If the playback slot is stale (nothing is actually playing) reset it so
+		// `_enqueueAudio` can claim it and drive the state machine to 'speaking'.
+		if (!this.ttsPlaybackService.isPlaying && this._audioQueue.length === 0) {
+			this._currentPlaybackSessionId = null;
+			this._isProcessingQueue = false;
+		}
+
 		for (const chunk of buffer) {
 			this._enqueueAudio(sessionId, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
 		}
@@ -1968,20 +1987,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _playResponseReceivedCue(): void {
-		const window = this._window;
-		if (!window) {
-			return;
-		}
-		try {
-			const uri = FileAccess.asBrowserUri('vs/workbench/contrib/chat/browser/voiceClient/media/voiceResponseReceived.mp3').toString(true);
-			if (!this._responseReceivedCue) {
-				this._responseReceivedCue = new window.Audio(uri);
-			}
-			this._responseReceivedCue.currentTime = 0;
-			this._responseReceivedCue.play().catch(err => this.logService.warn('[voice] response-received cue play failed:', err));
-		} catch (err) {
-			this.logService.warn('[voice] response-received cue error:', err);
-		}
+		// Route through the accessibility signal service so the cue respects the
+		// user's `accessibility.signals.voiceResponseReceived` sound/announcement
+		// settings and emits a screen-reader announcement.
+		this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceResponseReceived);
 	}
 
 	// --- Audio FIFO queue ---
