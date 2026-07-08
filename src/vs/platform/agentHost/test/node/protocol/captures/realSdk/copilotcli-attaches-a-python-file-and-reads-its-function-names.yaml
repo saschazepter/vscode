@@ -1,9 +1,7 @@
 version: 1
+dialect: anthropic
 exchanges:
-  - method: POST
-    path: /v1/messages
-    dialect: anthropic
-    request:
+  - request:
       model: claude-opus-4.6
       system: ${system}
       messages:
@@ -30,10 +28,7 @@ exchanges:
       usage:
         inputTokens: 3
         outputTokens: 136
-  - method: POST
-    path: /v1/messages
-    dialect: anthropic
-    request:
+  - request:
       model: claude-opus-4.6
       system: ${system}
       messages:

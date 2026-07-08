@@ -111,15 +111,17 @@ interface IRecordedExchange {
 	readonly response: IRecordedResponse;
 }
 
-/**
- * A raw ancillary exchange in the YAML fixture (token / models / user). Served
- * verbatim on replay.
- */
-interface IRawFixtureExchange {
-	readonly method: string;
-	readonly path: string;
-	readonly response: IRecordedResponse;
-}
+/** Wire dialect the fixture's model turns were captured in. Drives SSE
+ * regeneration on replay and the `(method, path)` the turns replay under. */
+type TurnDialect = 'anthropic' | 'responses';
+
+/** The `(method, path)` each dialect's turns are recorded/replayed under.
+ * `method` is always POST and `path` is fixed per dialect, so neither is stored
+ * per exchange — the fixture carries a single top-level `dialect` instead. */
+const DIALECT_ENDPOINT: Readonly<Record<TurnDialect, { readonly method: string; readonly path: string }>> = {
+	anthropic: { method: 'POST', path: ANTHROPIC_MESSAGES_PATH },
+	responses: { method: 'POST', path: RESPONSES_PATH },
+};
 
 /**
  * The stored form of an assistant reply. Content is a bare string for a lone
@@ -131,31 +133,41 @@ interface IStoredAnthropicMessage {
 	readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number };
 }
 
-/** Wire dialect a model turn was captured in (drives SSE regeneration on replay). */
-type TurnDialect = 'anthropic' | 'responses';
-
 /**
  * A model turn in the YAML fixture: a readable request summary + the captured
- * assistant reply. On replay the reply is regenerated into the dialect's SSE
- * stream, so captures stay human-readable instead of raw SSE blobs.
+ * assistant reply. On replay the reply is regenerated into the fixture
+ * dialect's SSE stream, so captures stay human-readable instead of raw SSE
+ * blobs. The endpoint is derived from the fixture-level `dialect`, so it is not
+ * repeated here.
  */
 interface ITurnExchange {
-	readonly method: string;
-	readonly path: string;
-	readonly dialect: TurnDialect;
 	readonly request: IReadableAnthropicRequest;
 	readonly response: IStoredAnthropicMessage;
 }
 
-type IFixtureExchange = IRawFixtureExchange | ITurnExchange;
+/**
+ * A raw ancillary exchange served verbatim on replay. Carries its own
+ * `(method, path)` since it is not tied to the fixture dialect. Not produced by
+ * the current recorder — model turns cover every captured exchange — but the
+ * loader still honours it if a fixture contains one.
+ */
+interface IRawFixtureExchange {
+	readonly method: string;
+	readonly path: string;
+	readonly response: IRecordedResponse;
+}
+
+type IFixtureExchange = ITurnExchange | IRawFixtureExchange;
 
 interface IFixture {
 	readonly version: 1;
+	/** Dialect shared by every turn exchange; omitted when there are no turns. */
+	readonly dialect?: TurnDialect;
 	readonly exchanges: IFixtureExchange[];
 }
 
 function isTurnExchange(exchange: IFixtureExchange): exchange is ITurnExchange {
-	return (exchange as ITurnExchange).dialect !== undefined;
+	return (exchange as ITurnExchange).request !== undefined;
 }
 
 export interface ICapiReplayProxyOptions {
@@ -461,23 +473,38 @@ export class CapiReplayProxy {
 
 	private _loadFixture(): void {
 		const fixture = yamlModule.load(readFileSync(this._options.fixturePath, 'utf8')) as IFixture;
+		const turnEndpoint = fixture.dialect ? DIALECT_ENDPOINT[fixture.dialect] : undefined;
 		for (const exchange of fixture.exchanges) {
-			const key = `${exchange.method} ${exchange.path}`;
+			let key: string;
+			let item: IReplayItem;
+			if (isTurnExchange(exchange)) {
+				if (!turnEndpoint) {
+					throw new Error(`[capi-replay] fixture has turn exchanges but no top-level dialect: ${this._options.fixturePath}`);
+				}
+				key = `${turnEndpoint.method} ${turnEndpoint.path}`;
+				item = { kind: 'turn', dialect: fixture.dialect!, message: { content: deserializeAnthropicContent(exchange.response.content), stopReason: exchange.response.stopReason, usage: exchange.response.usage } };
+			} else {
+				key = `${exchange.method} ${exchange.path}`;
+				item = { kind: 'raw', response: exchange.response };
+			}
 			let bucket = this._replayBuckets.get(key);
 			if (!bucket) {
 				bucket = { items: [], index: 0 };
 				this._replayBuckets.set(key, bucket);
 			}
-			bucket.items.push(isTurnExchange(exchange)
-				? { kind: 'turn', dialect: exchange.dialect, message: { content: deserializeAnthropicContent(exchange.response.content), stopReason: exchange.response.stopReason, usage: exchange.response.usage } }
-				: { kind: 'raw', response: exchange.response });
+			bucket.items.push(item);
 		}
 	}
 
 	private _writeFixture(): void {
-		const exchanges = this._recorded.map(exchange => this._toFixtureExchange(exchange));
+		const built = this._recorded.map(exchange => this._toFixtureExchange(exchange));
+		const exchanges = built.map(b => b.exchange);
 		this._normalizeToolCallIds(exchanges);
-		const fixture: IFixture = { version: 1, exchanges };
+		// Every turn in a fixture shares one endpoint, so the dialect (and the
+		// `(method, path)` it implies) is stored once at the top instead of on each
+		// exchange.
+		const dialect = built.find(b => b.dialect !== undefined)?.dialect;
+		const fixture: IFixture = { version: 1, ...(dialect ? { dialect } : {}), exchanges };
 		mkdirSync(dirname(this._options.fixturePath), { recursive: true });
 		writeFileSync(this._options.fixturePath, yamlModule.dump(fixture, { lineWidth: -1, noRefs: true }));
 	}
@@ -533,16 +560,17 @@ export class CapiReplayProxy {
 
 	/**
 	 * Convert a raw recorded exchange into its fixture form: model-endpoint calls
-	 * become readable turns (parsed request + regeneratable reply); everything
-	 * else stays raw.
+	 * become readable turns (parsed request + regeneratable reply) tagged with
+	 * their dialect (hoisted to the fixture level by {@link _writeFixture});
+	 * everything else stays raw.
 	 */
-	private _toFixtureExchange(exchange: IRecordedExchange): IFixtureExchange {
+	private _toFixtureExchange(exchange: IRecordedExchange): { exchange: IFixtureExchange; dialect?: TurnDialect } {
 		if (exchange.method === 'POST' && exchange.path === ANTHROPIC_MESSAGES_PATH) {
 			const request = summarizeAnthropicRequest(exchange.requestBody);
 			const message = aggregateAnthropicSse(exchange.response.body);
 			if (request && message) {
 				const content = this._normalizeMessageContent(message.content);
-				return { method: exchange.method, path: exchange.path, dialect: 'anthropic', request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } };
+				return { exchange: { request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } }, dialect: 'anthropic' };
 			}
 		}
 		if (exchange.method === 'POST' && exchange.path === RESPONSES_PATH) {
@@ -550,10 +578,10 @@ export class CapiReplayProxy {
 			const message = aggregateResponsesSse(exchange.response.body);
 			if (request && message) {
 				const content = this._normalizeMessageContent(message.content);
-				return { method: exchange.method, path: exchange.path, dialect: 'responses', request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } };
+				return { exchange: { request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } }, dialect: 'responses' };
 			}
 		}
-		return { method: exchange.method, path: exchange.path, response: exchange.response };
+		return { exchange: { method: exchange.method, path: exchange.path, response: exchange.response } };
 	}
 
 	/**

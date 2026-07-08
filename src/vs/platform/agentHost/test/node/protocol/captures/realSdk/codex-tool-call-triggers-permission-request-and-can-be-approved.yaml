@@ -1,9 +1,7 @@
 version: 1
+dialect: responses
 exchanges:
-  - method: POST
-    path: /responses
-    dialect: responses
-    request:
+  - request:
       model: gpt-5.3-codex
       system: ${system}
       messages:
@@ -22,10 +20,7 @@ exchanges:
       usage:
         inputTokens: 9417
         outputTokens: 71
-  - method: POST
-    path: /responses
-    dialect: responses
-    request:
+  - request:
       model: gpt-5.3-codex
       system: ${system}
       messages:
