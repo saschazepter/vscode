@@ -13,7 +13,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { combinedDisposable, Disposable, DisposableMap, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
-import { FileAccess } from '../../../../base/common/network.js';
+import { FileAccess, nodeModulesAsarUnpackedPath, nodeModulesPath } from '../../../../base/common/network.js';
 import { formatTokenCount } from '../../../../base/common/numbers.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun, observableValue, type ISettableObservable } from '../../../../base/common/observable.js';
@@ -67,6 +67,7 @@ import { ICopilotApiService } from '../shared/copilotApiService.js';
 import { CopilotSlashCommandCompletionProvider } from './copilotSlashCommandCompletionProvider.js';
 import { DiscoveredType, SessionCustomizationDiscovery, areDiscoveredDirectoriesEqual, type IDiscoveredDirectory } from './sessionCustomizationDiscovery.js';
 import { COPILOT_INTEGRATION_ID } from '../../../endpoint/common/licenseAgreement.js';
+import product from '../../../product/common/product.js';
 
 const RUNTIME_SLASH_COMMAND_COMPLETION_WAIT_MS = 300;
 const COPILOT_CAPI_URL = 'https://api.githubcopilot.com';
@@ -236,13 +237,18 @@ export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
 	return URI.joinPath(repositoryRoot, '..', `${basename(repositoryRoot.fsPath)}.worktrees`);
 }
 
-export function getCopilotWorktreeName(branchName: string): string {
-	// Strip the `agents/` branch prefix so the worktree directory name stays
-	// concise, then flatten any remaining path separators.
-	const withoutPrefix = branchName.startsWith(COPILOT_BRANCH_PREFIX)
-		? branchName.substring(COPILOT_BRANCH_PREFIX.length)
-		: branchName;
-	return withoutPrefix.replace(/\//g, '-');
+export function getCopilotWorktreeDirectoryName(branchName: string, branchPrefix: string = ''): string {
+	// Strip the caller-supplied prefix (e.g. `git.branchPrefix`) and the
+	// built-in `agents/` prefix so the worktree directory name stays concise,
+	// then flatten any remaining path separators.
+	let name = branchName;
+	if (branchPrefix && name.startsWith(branchPrefix)) {
+		name = name.substring(branchPrefix.length);
+	}
+	if (name.startsWith(COPILOT_BRANCH_PREFIX)) {
+		name = name.substring(COPILOT_BRANCH_PREFIX.length);
+	}
+	return name.replace(/\//g, '-');
 }
 
 /**
@@ -965,15 +971,20 @@ export class CopilotAgent extends Disposable implements IAgent {
 				delete env['RUBBER_DUCK_AGENT'];
 			}
 
-			// Resolve the CLI entry point from node_modules. We can't use require.resolve()
-			// because @github/copilot's exports map blocks direct subpath access.
-			// FileAccess.asFileUri('') points to the `out/` directory; node_modules is one level up.
-			const nodeModulesUri = URI.joinPath(FileAccess.asFileUri(''), '..', 'node_modules');
+			// Resolve the CLI entry point and native SDK binaries from node_modules.
+			// In a built app these live next to the ASAR archive in
+			// `node_modules.asar.unpacked` (the `@github/copilot-<platform>` CLI and
+			// the `@microsoft/mxc-sdk/bin` executables are unpacked so they can be
+			// spawned), while in dev they live in `node_modules`.
+			// We can't use require.resolve() because @github/copilot's exports map
+			// blocks direct subpath access.
+			const moduleRootPath = product.commit ? nodeModulesAsarUnpackedPath : nodeModulesPath;
+			const nodeModulesUri = FileAccess.asFileUri(moduleRootPath);
 			const cliPath = await resolveCopilotCliPath(nodeModulesUri);
 
 			// The SDK's sandbox auto-detection looks for `<MXC_BIN_DIR>/<arch>/wxc-exec.exe`
 			// (and the Linux/macOS equivalents). VS Code core ships the MXC sandbox binaries
-			// at `node_modules/@microsoft/mxc-sdk/bin/<arch>/`, so point `MXC_BIN_DIR` there.
+			// at `<nodeModules>/@microsoft/mxc-sdk/bin/<arch>/`, so point `MXC_BIN_DIR` there.
 			// The @github/copilot package's own `mxc-bin/` is excluded from the product build
 			// (see build/.moduleignore), mirroring `CopilotCLISDK.getPackage` in the extension.
 			env['MXC_BIN_DIR'] = URI.joinPath(nodeModulesUri, '@microsoft', 'mxc-sdk', 'bin').fsPath;
@@ -1788,6 +1799,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		let branchProperty: ISchemaProperty<string> | undefined;
 		let branchDefault: string | undefined;
+		let worktreeBranchPrefixProperty: ISchemaProperty<string> | undefined;
 		if (gitInfo) {
 			const branchReadOnly = isolationValue === 'folder';
 			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
@@ -1802,12 +1814,32 @@ export class CopilotAgent extends Disposable implements IAgent {
 				readOnly: branchReadOnly,
 				sessionMutable: false,
 			});
+
+			// Carrier for the client's `git.branchPrefix`: the agent prepends it
+			// to the branch it creates for an isolated worktree. Declared for
+			// both isolations (like `branch`), so the value rides
+			// `_config.values` and survives isolation toggles — a user who flips
+			// worktree → folder → worktree keeps the prefix, and it reaches the
+			// agent via the send-time config snapshot. It has no
+			// `enum`/`enumDynamic`, so the config picker treats it as
+			// non-pickable and never surfaces it as a chip: the client seeds it
+			// (from `git.branchPrefix`), the user never edits it, and the agent
+			// only *consumes* it for worktree isolation (see
+			// `_resolveSessionWorkingDirectory`).
+			worktreeBranchPrefixProperty = schemaProperty<string>({
+				type: 'string',
+				title: localize('agentHost.sessionConfig.worktreeBranchPrefix', "Worktree Branch Prefix"),
+				description: localize('agentHost.sessionConfig.worktreeBranchPrefixDescription', "Prefix applied to the branch created for an isolated worktree."),
+				readOnly: true,
+				sessionMutable: false,
+			});
 		}
 
 		const sessionSchema = createSchema({
 			[SessionConfigKey.Isolation]: isolationProperty,
 			...platformSessionSchema.definition,
 			...(branchProperty ? { [SessionConfigKey.Branch]: branchProperty } : {}),
+			...(worktreeBranchPrefixProperty ? { [SessionConfigKey.WorktreeBranchPrefix]: worktreeBranchPrefixProperty } : {}),
 		});
 
 		const values = sessionSchema.validateOrDefault(migrateLegacyAutopilotConfig(params.config), {
@@ -1818,6 +1850,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// falls through to the host-level `permissions` default, and only
 			// materializes on the session once the user hits "Allow in this
 			// Session".
+			// worktreeBranchPrefix intentionally omitted from defaults — the
+			// value originates on the client (`git.branchPrefix`); when the
+			// client doesn't supply one it simply stays unset.
 			...(branchDefault !== undefined ? { [SessionConfigKey.Branch]: branchDefault } : {}),
 		});
 
@@ -3026,16 +3061,23 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 
 		const worktreesRoot = getCopilotWorktreesRoot(repositoryRoot);
+		// Prefix (e.g. the user's `git.branchPrefix`) the client forwards for
+		// worktree-isolated sessions. Prepended ahead of the built-in `agents/`
+		// prefix when naming the branch and stripped from the worktree dir name.
+		const worktreeBranchPrefix = typeof config.config[SessionConfigKey.WorktreeBranchPrefix] === 'string'
+			? config.config[SessionConfigKey.WorktreeBranchPrefix] as string
+			: undefined;
 		const branchName = await this._branchNameGenerator.generateBranchName({
 			sessionId,
 			message: prompt,
 			githubToken: this._githubToken,
+			branchPrefix: worktreeBranchPrefix,
 			// Treat a failed existence check as a collision so we fall back to a
 			// suffixed branch name rather than risk `addWorktree` failing because
 			// the branch already exists.
 			branchExists: branchName => this._gitService.branchExists(repositoryRoot, branchName).catch(() => true),
 		});
-		const worktree = URI.joinPath(worktreesRoot, getCopilotWorktreeName(branchName));
+		const worktree = URI.joinPath(worktreesRoot, getCopilotWorktreeDirectoryName(branchName, worktreeBranchPrefix));
 		await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
 		const baseBranch = typeof config.config[SessionConfigKey.Branch] === 'string' ? config.config[SessionConfigKey.Branch] as string : undefined;
 		// `addWorktree`'s signature requires a startPoint, but historically the
